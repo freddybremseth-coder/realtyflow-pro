@@ -44,7 +44,7 @@ export default function NeuralBeatPage() {
   }, []);
 
   const handleProcess = async (songId: string) => {
-    setIsProcessing(true);
+    setProcessing(songId);
     try {
       const res = await fetch("/api/neural-beat", {
         method: "POST",
@@ -56,7 +56,7 @@ export default function NeuralBeatPage() {
     } catch (err) {
       console.error("Neural Beat pipeline-feil:", err);
     } finally {
-      setIsProcessing(false);
+      setProcessing(null);
     }
   };
 
