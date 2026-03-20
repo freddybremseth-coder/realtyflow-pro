@@ -179,13 +179,37 @@ export default function YouTubeStudioPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handleGenerate = () => {
+    const handleGenerate = async () => {
+    if (!toolInput.trim()) {
+      setToolOutput("Skriv inn en beskrivelse i tekstfeltet for du genererer.");
+      return;
+    }
     setIsProcessing(true);
     setToolOutput("");
-    setTimeout(() => {
-      setToolOutput(mockOutputs[selectedTool] || "");
+    try {
+      const res = await fetch("/api/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: selectedTool, topic: toolInput }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "API-feil");
+      const output =
+        data.output ||
+        data.content ||
+        data.result?.output ||
+        data.result?.content ||
+        data.text ||
+        (typeof data.result === "string" ? data.result : null) ||
+        JSON.stringify(data, null, 2);
+      setToolOutput(output);
+    } catch (err) {
+      setToolOutput(
+        "Feil: " + (err instanceof Error ? err.message : "Noe gikk galt. Sjekk at API-nokkel er konfigurert i Innstillinger.")
+      );
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
   const handleCopy = () => {
