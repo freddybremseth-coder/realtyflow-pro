@@ -35,18 +35,7 @@ const tones = [
   "Informativ", "Salgsfremmende", "Emosjonell", "Eksklusiv",
 ];
 
-const mockGeneratedContent = `Droem du om en spansk morgensol pa din egen terrasse?
-
-Soleada presenterer: Eksklusive villaer i Altea med panoramisk havutsikt langs Costa Blanca.
-
-Med over 300 soldager i aret og en livsstil mange bare kan droemme om, er det pa tide a gjoere droemmen til virkelighet.
-
-Kontakt oss i dag for en uforpliktende konsultasjon!
-
-#Soleada #CostaBlanca #SpaniaEiendom #Altea #Droemmehjemmet #InvestereISpania #NorskeISpania`;
-
-const activeAgents = [
-  { name: "Alex Marketing Pro", status: "Skriver innhold...", color: "bg-purple-500" },
+,
   { name: "Sam SEO Expert", status: "Optimaliserer hashtags...", color: "bg-emerald-500" },
 ];
 
@@ -66,13 +55,34 @@ export default function ContentStudioPage() {
     );
   };
 
-  const handleGenerate = () => {
+    const handleGenerate = async () => {
+    if (!goal.trim() && !audience.trim()) return;
     setIsGenerating(true);
-    setGeneratedContent("");
-    setTimeout(() => {
-      setGeneratedContent(mockGeneratedContent);
+    setGeneratedContent(null);
+    try {
+      const prompt = `Lag innhald for ${selectedPlatforms.join(", ")} med ${selectedTone}-tone for merkevaren ${selectedBrand}. Mal: ${goal}. Maelgruppe: ${audience}.`;
+      const res = await fetch("/api/content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Generering feilet");
+      const output =
+        data.output ||
+        data.content ||
+        data.result?.output ||
+        data.result?.content ||
+        data.text ||
+        (typeof data.result === "string" ? data.result : null) ||
+        JSON.stringify(data, null, 2);
+      setGeneratedContent(output);
+    } catch (err) {
+      console.error("Content generation error:", err);
+      setGeneratedContent("Feil: " + (err instanceof Error ? err.message : "Noe gjekk gale. Sjekk at API-nokkel er konfigurert i Innstillinger."));
+    } finally {
       setIsGenerating(false);
-    }, 2500);
+    }
   };
 
   const handleCopy = () => {
