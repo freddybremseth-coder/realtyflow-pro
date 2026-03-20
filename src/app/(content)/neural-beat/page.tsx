@@ -37,7 +37,7 @@ export default function NeuralBeatPage() {
     fetch("/api/neural-beat")
       .then(r => r.json())
       .then(data => {
-        if (data.records) setSongs(data.records);
+        if (data.songs) setSongs(data.songs);
         else if (Array.isArray(data)) setSongs(data);
       })
       .catch(err => console.error("Klarte ikke laste inn sanger:", err));
@@ -49,7 +49,7 @@ export default function NeuralBeatPage() {
       const res = await fetch("/api/neural-beat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ songId, action: "process" }),
+        body: JSON.stringify({ songId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Pipeline feilet");
