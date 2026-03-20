@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +16,7 @@ interface Song {
   steps: string[];
 }
 
-const mockSongs: Song[] = [
-  { id: "1", name: "Midnight Pulse", artist: "Neural Beat", genre: "EDM", status: "completed", youtubeUrl: "#", steps: ["Analyze", "Generate", "Render", "Upload"] },
-  { id: "2", name: "Solar Waves", artist: "Neural Beat", genre: "Trance", status: "ready", steps: [] },
-  { id: "3", name: "Digital Rain", artist: "Neural Beat", genre: "Synthwave", status: "ready", steps: [] },
-];
+
 
 const pipelineSteps = [
   "Henter sang fra Airtable",
@@ -32,27 +28,36 @@ const pipelineSteps = [
 ];
 
 export default function NeuralBeatPage() {
-  const [songs, setSongs] = useState<Song[]>(mockSongs);
+  const [songs, setSongs] = useState<Song[]>([]);
   const [processing, setProcessing] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
 
+  
+  useEffect(() => {
+    fetch("/api/neural-beat")
+      .then(r => r.json())
+      .then(data => {
+        if (data.records) setSongs(data.records);
+        else if (Array.isArray(data)) setSongs(data);
+      })
+      .catch(err => console.error("Klarte ikke laste inn sanger:", err));
+  }, []);
+
   const handleProcess = async (songId: string) => {
-    setProcessing(songId);
-    setCurrentStep(0);
-
-    for (let i = 0; i < pipelineSteps.length; i++) {
-      setCurrentStep(i);
-      await new Promise((r) => setTimeout(r, 1500));
+    setIsProcessing(true);
+    try {
+      const res = await fetch("/api/neural-beat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ songId, action: "process" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Pipeline feilet");
+    } catch (err) {
+      console.error("Neural Beat pipeline-feil:", err);
+    } finally {
+      setIsProcessing(false);
     }
-
-    setSongs((prev) =>
-      prev.map((s) =>
-        s.id === songId
-          ? { ...s, status: "completed" as const, youtubeUrl: "#", steps: pipelineSteps }
-          : s
-      )
-    );
-    setProcessing(null);
   };
 
   return (
