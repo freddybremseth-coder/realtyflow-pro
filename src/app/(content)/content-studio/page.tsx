@@ -35,7 +35,8 @@ const tones = [
   "Informativ", "Salgsfremmende", "Emosjonell", "Eksklusiv",
 ];
 
-,
+const activeAgents = [
+  { name: "Clara Content", status: "Analyserer merkevare...", color: "bg-purple-500" },
   { name: "Sam SEO Expert", status: "Optimaliserer hashtags...", color: "bg-emerald-500" },
 ];
 
@@ -58,7 +59,7 @@ export default function ContentStudioPage() {
     const handleGenerate = async () => {
     if (!goal.trim() && !audience.trim()) return;
     setIsGenerating(true);
-    setGeneratedContent(null);
+    setGeneratedContent("");
     try {
       const prompt = `Lag innhald for ${selectedPlatforms.join(", ")} med ${selectedTone}-tone for merkevaren ${selectedBrand}. Mal: ${goal}. Maelgruppe: ${audience}.`;
       const res = await fetch("/api/content", {
