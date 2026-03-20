@@ -1,0 +1,125 @@
+import type { Brand } from "@/types";
+
+export const BRANDS: Brand[] = [
+  {
+    id: "soleada",
+    name: "Soleada.no",
+    type: "real_estate",
+    description: "Premium Spanish real estate for Scandinavian buyers",
+    color: "#06b6d4",
+    website: "https://soleada.no",
+    tone: "professional, warm, luxurious",
+    target_audience: "Norwegian property buyers in Spain",
+    specialties: ["Costa Blanca", "Costa Cálida", "luxury villas"],
+  },
+  {
+    id: "zeneco",
+    name: "Zen Eco Homes",
+    type: "real_estate",
+    description: "Eco-friendly sustainable housing in Spain",
+    color: "#10b981",
+    website: "https://zenecohomes.com",
+    tone: "eco-conscious, modern, innovative",
+    target_audience: "Environmentally conscious international buyers",
+    specialties: ["sustainable homes", "solar energy", "green building"],
+  },
+  {
+    id: "chatgenius",
+    name: "ChatGenius.pro",
+    type: "saas",
+    description: "AI-powered chat platform for businesses",
+    color: "#8b5cf6",
+    website: "https://chatgenius.pro",
+    tone: "technical, innovative, solution-oriented",
+    target_audience: "SMB owners and marketing teams",
+    specialties: ["AI chatbots", "customer service automation", "lead generation"],
+  },
+  {
+    id: "donaanna",
+    name: "Dona Anna",
+    type: "agriculture",
+    description: "Premium olive oil and sustainable agriculture",
+    color: "#f59e0b",
+    website: "https://donaanna.es",
+    tone: "authentic, artisanal, Mediterranean",
+    target_audience: "Gourmet food enthusiasts and health-conscious consumers",
+    specialties: ["extra virgin olive oil", "organic farming", "farm-to-table"],
+  },
+  {
+    id: "freddyb",
+    name: "Freddy Bremseth",
+    type: "personal",
+    description: "Personal brand - entrepreneur and real estate expert in Spain",
+    color: "#3b82f6",
+    website: "https://freddybremseth.com",
+    tone: "authentic, inspiring, knowledgeable",
+    target_audience: "Aspiring entrepreneurs and expats in Spain",
+    specialties: ["entrepreneurship", "Spanish real estate", "digital nomad life"],
+  },
+  {
+    id: "neuralbeat",
+    name: "Neural Beat",
+    type: "music",
+    description: "AI-driven EDM and electronic music production",
+    color: "#ec4899",
+    website: "https://youtube.com/@neuralbeat",
+    tone: "energetic, futuristic, creative",
+    target_audience: "EDM fans and electronic music listeners",
+    specialties: ["AI music", "EDM production", "music videos"],
+  },
+];
+
+export const LEAD_STATUSES = [
+  "NEW",
+  "CONTACT",
+  "QUALIFIED",
+  "VIEWING",
+  "NEGOTIATION",
+  "WON",
+  "ON_HOLD",
+  "LOST",
+] as const;
+
+export const PLATFORMS = [
+  "instagram",
+  "facebook",
+  "linkedin",
+  "twitter",
+  "tiktok",
+  "youtube",
+] as const;
+
+export const SIDEBAR_NAV = {
+  overview: [
+    { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
+  ],
+  realty: [
+    { label: "Pipeline", href: "/pipeline", icon: "GitBranch" },
+    { label: "Eiendommer", href: "/inventory", icon: "Building2" },
+    { label: "Vurdering", href: "/valuation", icon: "Calculator" },
+    { label: "CRM", href: "/crm", icon: "Users" },
+    { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
+  ],
+  content: [
+    { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
+    { label: "YouTube Studio", href: "/youtube-studio", icon: "Youtube" },
+    { label: "Neural Beat", href: "/neural-beat", icon: "Music" },
+    { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
+    { label: "Innlegg", href: "/posts", icon: "FileText" },
+  ],
+  business: [
+    { label: "Brands", href: "/brands", icon: "Palette" },
+    { label: "Growth Hub", href: "/growth-hub", icon: "TrendingUp" },
+    { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
+    { label: "Business Oversikt", href: "/business-overview", icon: "PieChart" },
+  ],
+  tools: [
+    { label: "AI Agenter", href: "/agents", icon: "Bot" },
+    { label: "Automasjon", href: "/automation", icon: "Zap" },
+    { label: "Kalender", href: "/calendar", icon: "Calendar" },
+    { label: "Analytics", href: "/analytics", icon: "BarChart3" },
+    { label: "Scanner", href: "/scanner", icon: "ScanLine" },
+    { label: "Marketing Tasks", href: "/marketing-tasks", icon: "CheckSquare" },
+    { label: "Innstillinger", href: "/settings", icon: "Settings" },
+  ],
+} as const;
