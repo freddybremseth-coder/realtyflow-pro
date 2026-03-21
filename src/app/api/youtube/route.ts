@@ -1,17 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import {
+  getChannelInfo,
+  listVideos,
+  uploadVideo,
+  updateVideoMetadata,
+  isConfigured,
+} from "@/services/integrations/youtube-client";
 
+/**
+ * GET /api/youtube
+ *
+ * Returns channel statistics and recent videos with analytics.
+ * If YouTube is not configured, returns { configured: false }.
+ */
 export async function GET() {
   try {
-    const supabase = createServerClient();
-    const { data, error } = await supabase
-      .from("youtube_videos")
-      .select("*")
-      .order("created_at", { ascending: false });
+    if (!isConfigured()) {
+      return NextResponse.json({
+        configured: false,
+        channel: null,
+        videos: [],
+      });
+    }
 
-    if (error) throw error;
-    return NextResponse.json({ videos: data });
+    const [channel, videos] = await Promise.all([
+      getChannelInfo(),
+      listVideos(),
+    ]);
+
+    return NextResponse.json({
+      configured: true,
+      channel,
+      videos,
+    });
   } catch (error) {
+    console.error("[YouTube API] GET error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
       { status: 500 }
@@ -19,38 +42,111 @@ export async function GET() {
   }
 }
 
+/**
+ * POST /api/youtube
+ *
+ * Upload a video to YouTube via multipart form data.
+ * Expected form fields:
+ *   - file: video file (required)
+ *   - title: string (required)
+ *   - description: string (optional)
+ *   - tags: comma-separated string (optional)
+ *   - categoryId: string (optional, defaults to '10' for Music)
+ *   - privacyStatus: 'public' | 'unlisted' | 'private' (optional, defaults to 'private')
+ */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { type, topic } = body;
-
-    const TOOL_PROMPTS: Record<string, string> = {
-      script: "Du er ein profesjonell YouTube-manusforfatter for eigedomsmeglarar i Spania. Lag eit detaljert videomanus med intro, hoveddel og outro for temaet:",
-      title: "Du er ein YouTube CTR-ekspert for eigedomsinnhald. Lag 5 klikkvennlege videotitlar optimalisert for soek og hoeyklikk for temaet:",
-      seo: "Du er ein YouTube SEO-ekspert for eigedomsmeglarar. Lag ein komplett SEO-optimalisert videobeskrivelse med tidsstempel, noekkelord og oppfording til handling for temaet:",
-      tags: "Du er ein YouTube-ekspert. Lag 20 relevante tags og soekeord (kommaseparert) for ein eigedomsvideo om temaet:",
-      thumbnail: "Du er ein kreativ YouTube-thumbnaildesignar for eigedom. Lag 3 detaljerte thumbnail-konsept med tekst, fargar og bilete for temaet:",
-    };
-
-    if (type && TOOL_PROMPTS[type]) {
-      const { AgentOrchestrator } = await import("@/services/agents/orchestrator");
-      const orchestrator = new AgentOrchestrator();
-      const fullPrompt = TOOL_PROMPTS[type] + " " + (topic || "generell YouTube-video om eigedom i Spania");
-      const result = await orchestrator.executeCommand("youtube", fullPrompt);
-      return NextResponse.json(result);
+    if (!isConfigured()) {
+      return NextResponse.json(
+        { error: "YouTube is not configured" },
+        { status: 503 }
+      );
     }
 
-    // Default: save video metadata
-    const supabase = createServerClient();
-    const { data, error } = await supabase
-      .from("youtube_videos")
-      .insert(body)
-      .select()
-      .single();
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-    if (error) throw error;
-    return NextResponse.json({ video: data }, { status: 201 });
+    if (!file) {
+      return NextResponse.json(
+        { error: "No video file provided" },
+        { status: 400 }
+      );
+    }
+
+    const title = formData.get("title") as string;
+    if (!title) {
+      return NextResponse.json(
+        { error: "Title is required" },
+        { status: 400 }
+      );
+    }
+
+    const description = (formData.get("description") as string) || "";
+    const tagsRaw = (formData.get("tags") as string) || "";
+    const tags = tagsRaw
+      ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
+    const categoryId = (formData.get("categoryId") as string) || "10";
+    const privacyStatus =
+      (formData.get("privacyStatus") as "public" | "unlisted" | "private") ||
+      "private";
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    const result = await uploadVideo(buffer, {
+      title,
+      description,
+      tags,
+      categoryId,
+      privacyStatus,
+    });
+
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    console.error("[YouTube API] POST error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/youtube
+ *
+ * Update video metadata on YouTube.
+ * Expected JSON body:
+ *   - videoId: string (required)
+ *   - title: string (optional)
+ *   - description: string (optional)
+ *   - tags: string[] (optional)
+ *   - categoryId: string (optional)
+ *   - privacyStatus: 'public' | 'unlisted' | 'private' (optional)
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    if (!isConfigured()) {
+      return NextResponse.json(
+        { error: "YouTube is not configured" },
+        { status: 503 }
+      );
+    }
+
+    const body = await req.json();
+    const { videoId, ...metadata } = body;
+
+    if (!videoId) {
+      return NextResponse.json(
+        { error: "videoId is required" },
+        { status: 400 }
+      );
+    }
+
+    await updateVideoMetadata(videoId, metadata);
+
+    return NextResponse.json({ success: true, videoId });
+  } catch (error) {
+    console.error("[YouTube API] PATCH error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
       { status: 500 }
