@@ -121,6 +121,7 @@ export const SIDEBAR_NAV = {
   ],
   business: [
     { label: "Brands", href: "/brands", icon: "Palette" },
+    { label: "ChatGenius SaaS", href: "/saas", icon: "Globe" },
     { label: "Growth Hub", href: "/growth-hub", icon: "TrendingUp" },
     { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
     { label: "Business Oversikt", href: "/business-overview", icon: "PieChart" },

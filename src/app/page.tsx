@@ -4,13 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2, Users, TrendingUp, FileText,
-  Eye, Zap, BarChart3, Bot,
+  Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
 } from "lucide-react";
 
 const realtyStats = [
   { label: "Aktive Leads", value: "47", change: "+12%", icon: Users, color: "text-primary-400" },
   { label: "Eiendommer", value: "124", change: "+3", icon: Building2, color: "text-emerald-400" },
-  { label: "Pipeline Verdi", value: "€2.4M", change: "+8%", icon: TrendingUp, color: "text-amber-400" },
+  { label: "Pipeline Verdi", value: "\u20AC2.4M", change: "+8%", icon: TrendingUp, color: "text-amber-400" },
   { label: "Closing Rate", value: "23%", change: "+2%", icon: BarChart3, color: "text-blue-400" },
 ];
 
@@ -18,14 +18,22 @@ const contentStats = [
   { label: "Publiserte Innlegg", value: "156", change: "+24", icon: FileText, color: "text-purple-400" },
   { label: "Total Rekkevidde", value: "45.2K", change: "+18%", icon: Eye, color: "text-pink-400" },
   { label: "Viralitetsscore", value: "8.4", change: "+0.6", icon: Zap, color: "text-amber-400" },
-  { label: "AI Agenter Aktive", value: "6", change: "Online", icon: Bot, color: "text-emerald-400" },
+  { label: "AI Agenter Aktive", value: "8", change: "Online", icon: Bot, color: "text-emerald-400" },
+];
+
+const saasStats = [
+  { label: "Live Apper", value: "3", change: "+1", icon: Globe, color: "text-violet-400" },
+  { label: "SaaS Brukere", value: "0", change: "Launch", icon: Users, color: "text-blue-400" },
+  { label: "MRR", value: "$0", change: "Pre-revenue", icon: DollarSign, color: "text-emerald-400" },
+  { label: "Konvertering", value: "--", change: "Snart", icon: Target, color: "text-amber-400" },
 ];
 
 const recentActivity = [
+  { type: "saas", text: "Astro AI: Ny brukerregistrering fra LinkedIn", time: "8m siden" },
   { type: "lead", text: "Ny lead: Erik Hansen - Villa i Altea", time: "12m siden" },
   { type: "content", text: "AI genererte 3 innlegg for Soleada.no", time: "28m siden" },
   { type: "youtube", text: "Neural Beat: 'Midnight Pulse' lastet opp", time: "1t siden" },
-  { type: "lead", text: "Lead oppgradert: Maria S. → VIEWING", time: "2t siden" },
+  { type: "lead", text: "Lead oppgradert: Maria S. \u2192 VIEWING", time: "2t siden" },
   { type: "content", text: "Instagram-post publisert for Dona Anna", time: "3t siden" },
 ];
 
@@ -90,6 +98,31 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* SaaS KPIs */}
+      <div>
+        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+          ChatGenius SaaS
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {saasStats.map((stat) => (
+            <Card key={stat.label}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400">{stat.label}</p>
+                    <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                    <Badge variant="default" className="mt-2 text-[10px]">
+                      {stat.change}
+                    </Badge>
+                  </div>
+                  <stat.icon className={`${stat.color} opacity-60`} size={28} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
       {/* Recent Activity & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -104,6 +137,8 @@ export default function Dashboard() {
                     className={`w-2 h-2 rounded-full mt-1.5 ${
                       item.type === "lead"
                         ? "bg-primary-400"
+                        : item.type === "saas"
+                        ? "bg-violet-400"
                         : item.type === "content"
                         ? "bg-purple-400"
                         : "bg-pink-400"
@@ -126,8 +161,10 @@ export default function Dashboard() {
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "Ny Lead", href: "/pipeline", icon: Users, color: "bg-primary-500/20 text-primary-300" },
+                { label: "Content Hub", href: "/content-hub", icon: Target, color: "bg-pink-500/20 text-pink-300" },
                 { label: "Generer Innhold", href: "/content-studio", icon: Zap, color: "bg-purple-500/20 text-purple-300" },
+                { label: "ChatGenius SaaS", href: "/saas", icon: Globe, color: "bg-violet-500/20 text-violet-300" },
+                { label: "Ny Lead", href: "/pipeline", icon: Users, color: "bg-primary-500/20 text-primary-300" },
                 { label: "Se Eiendommer", href: "/inventory", icon: Building2, color: "bg-emerald-500/20 text-emerald-300" },
                 { label: "AI Agenter", href: "/agents", icon: Bot, color: "bg-amber-500/20 text-amber-300" },
               ].map((action) => (
