@@ -134,27 +134,31 @@ export default function NeuralBeatPage() {
     }
   };
 
-  // Upload MP3 directly to Supabase Storage (bypasses Vercel 4.5MB limit)
-  // Then notify API to create Airtable record
+  // Two-step upload: get signed URL from API, then upload directly to Supabase
+  // This bypasses both Vercel 4.5MB limit AND Supabase RLS
   const handleMp3Upload = async () => {
     if (!mp3File || !mp3Title) return;
     setIsUploading(true);
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      // Step 1: Get a signed upload URL from our API (small JSON request)
+      const signRes = await fetch('/api/neural-beat/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: mp3File.name }),
+      });
 
-      if (!supabaseUrl || !supabaseKey) {
-        window.alert('Supabase er ikke konfigurert. Sett NEXT_PUBLIC_SUPABASE_URL og NEXT_PUBLIC_SUPABASE_ANON_KEY.');
-        return;
+      if (!signRes.ok) {
+        const err = await signRes.json();
+        throw new Error(err.error || 'Kunne ikke opprette opplastings-URL');
       }
 
-      const fileName = `neural-beat/${Date.now()}-${mp3File.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { uploadUrl, token, publicUrl } = await signRes.json();
 
-      // 1. Upload MP3 directly to Supabase Storage from browser
-      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/assets/${fileName}`, {
+      // Step 2: Upload MP3 directly to Supabase Storage (large file, no Vercel limit)
+      const uploadRes = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${supabaseKey}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'audio/mpeg',
           'x-upsert': 'true',
         },
@@ -162,11 +166,23 @@ export default function NeuralBeatPage() {
       });
 
       if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
-        throw new Error(`Opplasting feilet: ${errText}`);
+        // Try PUT method as fallback
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'audio/mpeg',
+            'x-upsert': 'true',
+          },
+          body: mp3File,
+        });
+        if (!putRes.ok) {
+          const errText = await putRes.text();
+          throw new Error(`Opplasting feilet: ${errText}`);
+        }
       }
 
-      const audioUrl = `${supabaseUrl}/storage/v1/object/public/assets/${fileName}`;
+      const audioUrl = publicUrl;
 
       // 2. Tell API to create Airtable record with the audio URL
       const res = await fetch('/api/neural-beat', {
