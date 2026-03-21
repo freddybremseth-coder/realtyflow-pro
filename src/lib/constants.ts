@@ -112,6 +112,7 @@ export const SIDEBAR_NAV = {
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
   ],
   content: [
+    { label: "Content Hub", href: "/content-hub", icon: "Target" },
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
     { label: "YouTube Studio", href: "/youtube-studio", icon: "Youtube" },
     { label: "Neural Beat", href: "/neural-beat", icon: "Music" },

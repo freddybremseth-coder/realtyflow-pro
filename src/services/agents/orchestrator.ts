@@ -5,6 +5,7 @@ import { SEOAgent } from "./seo-agent";
 import { BusinessAgent } from "./business-agent";
 import { MultiDomainExpertAgent } from "./multi-domain-expert";
 import { YouTubeAgent } from "./youtube-agent";
+import { CEOAgent } from "./ceo-agent";
 
 export interface MultiAgentResult {
   task: string;
@@ -24,6 +25,7 @@ export class AgentOrchestrator {
     this.agents.set("business", new BusinessAgent());
     this.agents.set("multi-domain", new MultiDomainExpertAgent());
     this.agents.set("youtube", new YouTubeAgent());
+    this.agents.set("ceo", new CEOAgent());
   }
 
   getAgent(name: string): BaseAgent | undefined {

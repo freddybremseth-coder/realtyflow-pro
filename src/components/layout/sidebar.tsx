@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV } from "@/lib/constants";
 import {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
-  Sparkles, Youtube, Music, Image, FileText,
+  Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, TrendingUp, Briefcase, PieChart,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, Menu, X,
@@ -15,7 +15,7 @@ import {
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
-  Sparkles, Youtube, Music, Image, FileText,
+  Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, TrendingUp, Briefcase, PieChart,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
 };
