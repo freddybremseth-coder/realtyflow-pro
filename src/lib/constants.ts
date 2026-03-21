@@ -129,6 +129,7 @@ export const SIDEBAR_NAV = {
   tools: [
     { label: "AI Agenter", href: "/agents", icon: "Bot" },
     { label: "E-post AI", href: "/email", icon: "Mail" },
+    { label: "Market Intelligence", href: "/reports", icon: "TrendingUp" },
     { label: "Automasjon", href: "/automation", icon: "Zap" },
     { label: "Kalender", href: "/calendar", icon: "Calendar" },
     { label: "Analytics", href: "/analytics", icon: "BarChart3" },
