@@ -565,7 +565,7 @@ export default function TomtebasePage() {
       {viewMode === "map" && (
         <div className="flex gap-4" style={{ height: "calc(100vh - 380px)", minHeight: "500px" }}>
           {/* Map */}
-          <div className="flex-1 rounded-xl overflow-hidden border border-slate-700">
+          <div className="flex-1 rounded-xl overflow-hidden border border-slate-700 relative" style={{ zIndex: 1 }}>
             <LeafletMap
               plots={filtered}
               selectedId={selectedPlot?.id || null}
@@ -743,7 +743,7 @@ export default function TomtebasePage() {
 
       {/* ========== NEW PLOT MODAL ========== */}
       {showNewModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowNewModal(false)}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setShowNewModal(false)}>
           <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-slate-700">
               <h2 className="text-lg font-semibold text-white">Ny tomt</h2>
@@ -797,7 +797,7 @@ export default function TomtebasePage() {
 
       {/* ========== IMPORT MODAL ========== */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowImportModal(false)}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setShowImportModal(false)}>
           <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-slate-700">
               <h2 className="text-lg font-semibold text-white">Importer tomter</h2>
@@ -902,7 +902,7 @@ export default function TomtebasePage() {
 
       {/* ========== EDIT MODAL ========== */}
       {editPlot && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setEditPlot(null)}>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4" style={{ zIndex: 9999 }} onClick={() => setEditPlot(null)}>
           <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-slate-700">
               <h2 className="text-lg font-semibold text-white">Rediger {editPlot.plotNumber}</h2>
