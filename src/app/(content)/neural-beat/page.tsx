@@ -152,34 +152,26 @@ export default function NeuralBeatPage() {
         throw new Error(err.error || 'Kunne ikke opprette opplastings-URL');
       }
 
-      const { uploadUrl, token, publicUrl } = await signRes.json();
+      const { uploadUrl, token, publicUrl, method: uploadMethod } = await signRes.json();
 
       // Step 2: Upload MP3 directly to Supabase Storage (large file, no Vercel limit)
+      // Signed URLs use PUT with token in URL (no Authorization header needed)
+      // Direct URLs use POST with Authorization: Bearer <service_role_key>
+      const headers: Record<string, string> = { 'Content-Type': 'audio/mpeg' };
+      if (uploadMethod === 'direct') {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-upsert'] = 'true';
+      }
+
       const uploadRes = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'audio/mpeg',
-          'x-upsert': 'true',
-        },
+        method: 'PUT',
+        headers,
         body: mp3File,
       });
 
       if (!uploadRes.ok) {
-        // Try PUT method as fallback
-        const putRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'audio/mpeg',
-            'x-upsert': 'true',
-          },
-          body: mp3File,
-        });
-        if (!putRes.ok) {
-          const errText = await putRes.text();
-          throw new Error(`Opplasting feilet: ${errText}`);
-        }
+        const errText = await uploadRes.text();
+        throw new Error(`Opplasting feilet: ${errText}`);
       }
 
       const audioUrl = publicUrl;
