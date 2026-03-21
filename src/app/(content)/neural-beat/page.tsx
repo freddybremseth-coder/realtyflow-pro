@@ -675,12 +675,12 @@ export default function NeuralBeatPage() {
       <Tabs defaultValue="pipeline" className="space-y-6">
         <TabsList>
           <TabsTrigger value="pipeline">
-            <Waves className="mr-2 h-4 w-4" /> Pipeline
+            <Waves className="mr-2 h-4 w-4" /> Pipeline ({stats.ready + stats.processing + stats.errors})
           </TabsTrigger>
           <TabsTrigger value="published">
-            <Youtube className="mr-2 h-4 w-4" /> Publiserte
+            <Youtube className="mr-2 h-4 w-4" /> Publiserte ({stats.done})
           </TabsTrigger>
-          <TabsTrigger value="youtube-stats" onClick={fetchYouTubeStats}>
+          <TabsTrigger value="youtube-stats" onClick={() => { if (!ytChannel && !ytLoading) fetchYouTubeStats(); }}>
             <BarChart3 className="mr-2 h-4 w-4" /> YouTube Statistikk
           </TabsTrigger>
           <TabsTrigger value="how-it-works">
@@ -694,19 +694,19 @@ export default function NeuralBeatPage() {
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
             </div>
-          ) : songs.length === 0 ? (
+          ) : songs.filter((s) => !s.youtubeUrl).length === 0 ? (
             <Card className="bg-slate-800/50 border-slate-700/50">
               <CardContent className="p-12 text-center">
-                <Music className="h-16 w-16 mx-auto mb-4 text-pink-500/30" />
-                <h3 className="text-lg font-semibold text-white mb-2">Ingen spor funnet</h3>
+                <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500/30" />
+                <h3 className="text-lg font-semibold text-white mb-2">Alle sanger er publisert!</h3>
                 <p className="text-slate-400 text-sm">
-                  Legg til sanger i Airtable-tabellen &quot;Make.com Songs&quot; for a komme i gang.
+                  Last opp nye MP3-filer ovenfor, eller legg til sanger i Airtable.
                 </p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">
-              {songs.map((song) => {
+              {songs.filter((s) => !s.youtubeUrl).map((song) => {
                 const status = getSongStatus(song);
                 const pipelineStatus = pipelineStatuses[song.id];
                 const stepProgress = getStepProgress(song.id);
