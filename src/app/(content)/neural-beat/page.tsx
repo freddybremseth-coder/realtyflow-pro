@@ -134,19 +134,77 @@ export default function NeuralBeatPage() {
     }
   };
 
-  // Upload MP3 as new song record
+  // Upload MP3 directly to Supabase Storage (bypasses Vercel 4.5MB limit)
+  // Then notify API to create Airtable record
   const handleMp3Upload = async () => {
     if (!mp3File || !mp3Title) return;
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', mp3File);
-      formData.append('title', mp3Title);
-      formData.append('artist', mp3Artist);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+      if (!supabaseUrl || !supabaseKey) {
+        window.alert('Supabase er ikke konfigurert. Sett NEXT_PUBLIC_SUPABASE_URL og NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+        return;
+      }
+
+      const fileName = `neural-beat/${Date.now()}-${mp3File.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+      // 1. Upload MP3 directly to Supabase Storage from browser
+      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'audio/mpeg',
+          'x-upsert': 'true',
+        },
+        body: mp3File,
+      });
+
+      if (!uploadRes.ok) {
+        // Maybe bucket doesn't exist - try creating it
+        if (uploadRes.status === 404 || uploadRes.status === 400) {
+          await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ id: 'audio', name: 'audio', public: true }),
+          });
+
+          // Retry upload
+          const retryRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              'Content-Type': 'audio/mpeg',
+              'x-upsert': 'true',
+            },
+            body: mp3File,
+          });
+
+          if (!retryRes.ok) {
+            const errText = await retryRes.text();
+            throw new Error(`Opplasting feilet: ${errText}`);
+          }
+        } else {
+          const errText = await uploadRes.text();
+          throw new Error(`Opplasting feilet: ${errText}`);
+        }
+      }
+
+      const audioUrl = `${supabaseUrl}/storage/v1/object/public/audio/${fileName}`;
+
+      // 2. Tell API to create Airtable record with the audio URL
       const res = await fetch('/api/neural-beat', {
         method: 'PUT',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: mp3Title,
+          artist: mp3Artist,
+          audioUrl,
+        }),
       });
 
       const data = await res.json();
@@ -159,10 +217,12 @@ export default function NeuralBeatPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
         setTimeout(fetchSongs, 1500);
       } else {
-        window.alert('Feil: ' + (data.error || 'Opplasting feilet'));
+        // File is uploaded to storage even if Airtable fails
+        window.alert('MP3 lastet opp til lagring, men Airtable-feil: ' + (data.error || 'Ukjent'));
+        setTimeout(fetchSongs, 1500);
       }
     } catch (err) {
-      window.alert('Nettverksfeil ved opplasting');
+      window.alert('Feil: ' + (err instanceof Error ? err.message : 'Nettverksfeil ved opplasting'));
     } finally {
       setIsUploading(false);
     }
