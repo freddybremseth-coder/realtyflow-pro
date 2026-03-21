@@ -145,25 +145,24 @@ export default function NeuralBeatPage() {
       formData.append('artist', mp3Artist);
 
       const res = await fetch('/api/neural-beat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          upload: true,
-          title: mp3Title,
-          artist: mp3Artist,
-          fileName: mp3File.name,
-        }),
+        method: 'PUT',
+        body: formData,
       });
 
-      if (res.ok) {
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        window.alert('Sang lastet opp! Klar for prosessering.');
         setMp3File(null);
         setMp3Title('');
         setMp3Artist('Neural Beat');
         if (fileInputRef.current) fileInputRef.current.value = '';
-        setTimeout(fetchSongs, 1000);
+        setTimeout(fetchSongs, 1500);
+      } else {
+        window.alert('Feil: ' + (data.error || 'Opplasting feilet'));
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      window.alert('Nettverksfeil ved opplasting');
     } finally {
       setIsUploading(false);
     }

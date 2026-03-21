@@ -4,6 +4,7 @@ import {
   getSongsWithoutYouTube,
   isConfigured,
   getRecord,
+  createRecord,
   clearSongFields,
 } from '@/services/integrations/airtable-client';
 import { deleteVideo, extractVideoId } from '@/services/integrations/youtube-client';
@@ -87,6 +88,124 @@ export async function GET(request: NextRequest) {
         source: 'error',
         message: error instanceof Error ? error.message : 'Airtable error',
       },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/neural-beat
+ * Upload an MP3 file as a new song.
+ * Accepts multipart/form-data with: file (MP3), title, artist
+ * Stores MP3 in Supabase Storage and creates an Airtable record.
+ */
+export async function PUT(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file') as File | null;
+    const title = (formData.get('title') as string) || 'Untitled';
+    const artist = (formData.get('artist') as string) || 'Neural Beat';
+
+    if (!file) {
+      return NextResponse.json({ error: 'No MP3 file provided' }, { status: 400 });
+    }
+
+    // Validate file type
+    if (!file.name.endsWith('.mp3') && file.type !== 'audio/mpeg') {
+      return NextResponse.json({ error: 'Only MP3 files are supported' }, { status: 400 });
+    }
+
+    // Upload to Supabase Storage
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    let audioUrl: string;
+
+    if (supabaseUrl && supabaseKey) {
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const fileName = `neural-beat/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+      // Upload to Supabase Storage
+      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'audio/mpeg',
+          'x-upsert': 'true',
+        },
+        body: buffer,
+      });
+
+      if (!uploadRes.ok) {
+        // If the bucket doesn't exist, create it first
+        if (uploadRes.status === 404) {
+          await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ id: 'audio', name: 'audio', public: true }),
+          });
+
+          // Retry upload
+          const retryRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseKey}`,
+              'Content-Type': 'audio/mpeg',
+              'x-upsert': 'true',
+            },
+            body: buffer,
+          });
+
+          if (!retryRes.ok) {
+            const errText = await retryRes.text();
+            throw new Error(`Supabase storage upload failed: ${errText}`);
+          }
+        } else {
+          const errText = await uploadRes.text();
+          throw new Error(`Supabase storage upload failed: ${errText}`);
+        }
+      }
+
+      audioUrl = `${supabaseUrl}/storage/v1/object/public/audio/${fileName}`;
+    } else {
+      return NextResponse.json(
+        { error: 'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 503 }
+      );
+    }
+
+    // Create Airtable record if configured
+    let recordId: string | undefined;
+    if (isConfigured()) {
+      const songsTable = process.env.AIRTABLE_SONGS_TABLE || 'Songs';
+      try {
+        const record = await createRecord(songsTable, {
+          [SONG_FIELD_MAP.trackName]: title,
+          [SONG_FIELD_MAP.audioFile]: [{ url: audioUrl }],
+        });
+        recordId = record.id;
+      } catch (airtableErr) {
+        console.warn('[NeuralBeat] Airtable create failed, song saved to Supabase only:', airtableErr);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      song: {
+        id: recordId || `local-${Date.now()}`,
+        title,
+        artist,
+        audioUrl,
+      },
+      message: `MP3 lastet opp${recordId ? ' og Airtable-post opprettet' : ''}`,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Upload failed' },
       { status: 500 }
     );
   }
