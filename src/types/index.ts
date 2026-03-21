@@ -254,6 +254,87 @@ export interface PipelineRun {
   completed_at?: string;
 }
 
+// ===== EMAIL AUTOMATION =====
+export type EmailDirection = "inbound" | "outbound";
+export type EmailIntent = "inquiry" | "viewing_request" | "offer" | "complaint" | "follow_up" | "general";
+export type EmailUrgency = "low" | "medium" | "high" | "critical";
+export type EmailSentiment = "positive" | "neutral" | "negative";
+export type EmailDraftStatus = "draft" | "approved" | "sent" | "discarded";
+
+export interface BrandEmailConfig {
+  id: string;
+  brand_id: string;
+  email_address: string;
+  display_name?: string;
+  imap_host: string;
+  imap_port: number;
+  imap_secure: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_secure: boolean;
+  auto_fetch: boolean;
+  fetch_interval_minutes: number;
+  ai_auto_draft: boolean;
+  signature?: string;
+  is_active: boolean;
+  last_fetched_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailMessage {
+  id: string;
+  brand_id: string;
+  message_id?: string;
+  thread_id?: string;
+  direction: EmailDirection;
+  from_address: string;
+  from_name?: string;
+  to_addresses: string[];
+  cc_addresses?: string[];
+  subject?: string;
+  body_text?: string;
+  body_html?: string;
+  attachments?: unknown[];
+  ai_summary?: string;
+  ai_intent?: EmailIntent;
+  ai_language?: string;
+  ai_urgency?: EmailUrgency;
+  ai_sentiment?: EmailSentiment;
+  ai_suggested_action?: string;
+  matched_lead_id?: string;
+  matched_customer_id?: string;
+  matched_property_ids?: string[];
+  matched_plot_ids?: string[];
+  is_read: boolean;
+  is_starred: boolean;
+  is_archived: boolean;
+  has_draft_reply: boolean;
+  replied_at?: string;
+  received_at: string;
+  created_at: string;
+}
+
+export interface EmailDraft {
+  id: string;
+  email_message_id: string;
+  brand_id: string;
+  to_addresses: string[];
+  subject?: string;
+  body_text: string;
+  body_html?: string;
+  ai_model?: string;
+  ai_context?: Record<string, unknown>;
+  ai_confidence?: number;
+  tone?: string;
+  language?: string;
+  status: EmailDraftStatus;
+  edited_by_user: boolean;
+  sent_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ===== SETTINGS =====
 export type AppLanguage = "NO" | "EN" | "ES" | "DE" | "RU" | "FR";
 

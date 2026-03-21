@@ -1,0 +1,193 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@/lib/supabase/server";
+import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
+import { decryptPassword } from "@/services/email/crypto";
+
+/**
+ * GET /api/email/inbox
+ * Fetch emails for a brand from Supabase.
+ * Query params: brand_id, limit, offset, unread_only, intent, urgency
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const brandId = searchParams.get("brand_id");
+    const limit = parseInt(searchParams.get("limit") || "50");
+    const offset = parseInt(searchParams.get("offset") || "0");
+    const unreadOnly = searchParams.get("unread_only") === "true";
+    const intent = searchParams.get("intent");
+    const urgency = searchParams.get("urgency");
+    const archived = searchParams.get("archived") === "true";
+
+    const supabase = createServerClient();
+
+    let query = supabase
+      .from("email_messages")
+      .select("*")
+      .eq("is_archived", archived)
+      .order("received_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (brandId) {
+      query = query.eq("brand_id", brandId);
+    }
+    if (unreadOnly) {
+      query = query.eq("is_read", false);
+    }
+    if (intent) {
+      query = query.eq("ai_intent", intent);
+    }
+    if (urgency) {
+      query = query.eq("ai_urgency", urgency);
+    }
+
+    const { data: messages, error, count } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    // Get unread counts per brand
+    const { data: unreadCounts } = await supabase
+      .from("email_messages")
+      .select("brand_id")
+      .eq("is_read", false)
+      .eq("is_archived", false);
+
+    const brandUnreadMap: Record<string, number> = {};
+    for (const msg of unreadCounts || []) {
+      brandUnreadMap[msg.brand_id] = (brandUnreadMap[msg.brand_id] || 0) + 1;
+    }
+
+    return NextResponse.json({
+      messages: messages || [],
+      total: count ?? messages?.length ?? 0,
+      unread_by_brand: brandUnreadMap,
+    });
+  } catch (error) {
+    console.error("[Email Inbox GET]", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/email/inbox
+ * Trigger email fetch from IMAP for a brand and store new messages.
+ * Body: { brand_id: string }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const { brand_id } = await req.json();
+
+    if (!brand_id) {
+      return NextResponse.json(
+        { error: "brand_id is required" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = createServerClient();
+
+    // Get brand email config
+    const { data: config, error: configError } = await supabase
+      .from("brand_email_configs")
+      .select("*")
+      .eq("brand_id", brand_id)
+      .eq("is_active", true)
+      .single();
+
+    if (configError || !config) {
+      return NextResponse.json(
+        { error: "No active email config found for this brand" },
+        { status: 404 }
+      );
+    }
+
+    // Decrypt password
+    const password = decryptPassword(config.encrypted_password, config.encryption_iv);
+
+    const imapConfig: ImapConfig = {
+      host: config.imap_host,
+      port: config.imap_port,
+      secure: config.imap_secure,
+      email: config.email_address,
+      password,
+    };
+
+    // Determine fetch window
+    const sinceDays = config.last_fetched_at
+      ? Math.max(
+          1,
+          Math.ceil(
+            (Date.now() - new Date(config.last_fetched_at).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+        )
+      : 7;
+
+    // Fetch from IMAP
+    const fetchedEmails = await fetchRecentEmails(imapConfig, 100, sinceDays);
+
+    // Get existing message IDs to avoid duplicates
+    const { data: existingMessages } = await supabase
+      .from("email_messages")
+      .select("message_id")
+      .eq("brand_id", brand_id);
+
+    const existingIds = new Set(
+      (existingMessages || []).map((m) => m.message_id)
+    );
+
+    // Filter new emails
+    const newEmails = fetchedEmails.filter(
+      (e) => e.messageId && !existingIds.has(e.messageId)
+    );
+
+    // Insert new emails
+    let insertedCount = 0;
+    for (const email of newEmails) {
+      const { error: insertError } = await supabase
+        .from("email_messages")
+        .insert({
+          brand_id,
+          message_id: email.messageId,
+          thread_id: email.threadId || email.messageId,
+          direction: "inbound",
+          from_address: email.from.address,
+          from_name: email.from.name || null,
+          to_addresses: email.to.map((t) => t.address),
+          cc_addresses: email.cc?.map((c) => c.address) || null,
+          subject: email.subject,
+          body_text: email.bodyText || null,
+          body_html: email.bodyHtml || null,
+          received_at: email.date.toISOString(),
+        });
+
+      if (!insertError) {
+        insertedCount++;
+      }
+    }
+
+    // Update last_fetched_at
+    await supabase
+      .from("brand_email_configs")
+      .update({ last_fetched_at: new Date().toISOString() })
+      .eq("id", config.id);
+
+    return NextResponse.json({
+      success: true,
+      fetched: fetchedEmails.length,
+      new_messages: insertedCount,
+      already_exists: fetchedEmails.length - newEmails.length,
+    });
+  } catch (error) {
+    console.error("[Email Inbox POST]", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal error" },
+      { status: 500 }
+    );
+  }
+}

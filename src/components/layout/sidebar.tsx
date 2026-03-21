@@ -9,7 +9,7 @@ import {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
   Sparkles, Youtube, Music, Image, FileText,
   Palette, TrendingUp, Briefcase, PieChart,
-  Bot, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
+  Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, Menu, X,
 } from "lucide-react";
 
@@ -17,7 +17,7 @@ const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
   Sparkles, Youtube, Music, Image, FileText,
   Palette, TrendingUp, Briefcase, PieChart,
-  Bot, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
+  Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
 };
 
 const sectionLabels: Record<string, string> = {
