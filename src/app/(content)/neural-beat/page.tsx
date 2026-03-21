@@ -151,7 +151,7 @@ export default function NeuralBeatPage() {
       const fileName = `neural-beat/${Date.now()}-${mp3File.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
       // 1. Upload MP3 directly to Supabase Storage from browser
-      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
+      const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/assets/${fileName}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${supabaseKey}`,
@@ -162,39 +162,11 @@ export default function NeuralBeatPage() {
       });
 
       if (!uploadRes.ok) {
-        // Maybe bucket doesn't exist - try creating it
-        if (uploadRes.status === 404 || uploadRes.status === 400) {
-          await fetch(`${supabaseUrl}/storage/v1/bucket`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ id: 'audio', name: 'audio', public: true }),
-          });
-
-          // Retry upload
-          const retryRes = await fetch(`${supabaseUrl}/storage/v1/object/audio/${fileName}`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              'Content-Type': 'audio/mpeg',
-              'x-upsert': 'true',
-            },
-            body: mp3File,
-          });
-
-          if (!retryRes.ok) {
-            const errText = await retryRes.text();
-            throw new Error(`Opplasting feilet: ${errText}`);
-          }
-        } else {
-          const errText = await uploadRes.text();
-          throw new Error(`Opplasting feilet: ${errText}`);
-        }
+        const errText = await uploadRes.text();
+        throw new Error(`Opplasting feilet: ${errText}`);
       }
 
-      const audioUrl = `${supabaseUrl}/storage/v1/object/public/audio/${fileName}`;
+      const audioUrl = `${supabaseUrl}/storage/v1/object/public/assets/${fileName}`;
 
       // 2. Tell API to create Airtable record with the audio URL
       const res = await fetch('/api/neural-beat', {
