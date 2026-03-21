@@ -293,6 +293,7 @@ export default function SaaSPage() {
       <Tabs defaultValue="portfolio" className="space-y-6">
         <TabsList>
           <TabsTrigger value="portfolio"><Layout className="mr-2 h-4 w-4" /> Portfolio ({apps.length})</TabsTrigger>
+          <TabsTrigger value="factory"><Sparkles className="mr-2 h-4 w-4" /> App Factory</TabsTrigger>
           <TabsTrigger value="analytics"><BarChart3 className="mr-2 h-4 w-4" /> Analytics</TabsTrigger>
           <TabsTrigger value="marketing"><Zap className="mr-2 h-4 w-4" /> Marketing</TabsTrigger>
         </TabsList>
@@ -348,6 +349,132 @@ export default function SaaSPage() {
               )}
             </>
           )}
+        </TabsContent>
+
+        {/* App Factory Tab */}
+        <TabsContent value="factory" className="space-y-4">
+          <Card className="bg-gradient-to-br from-purple-500/10 to-violet-500/10 border-purple-500/20">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                App Factory &mdash; Fra ide til live app
+              </CardTitle>
+              <CardDescription>Bruk AI til a planlegge, deretter Claude Code til a bygge</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {/* Workflow */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  {[
+                    { step: '1', title: 'Ide & Konsept', desc: 'Victoria CEO analyserer marked, maalgruppe og konkurranse. Lager forretningsplan.', icon: '💡', color: 'border-amber-500/30' },
+                    { step: '2', title: 'Bygg med Claude Code', desc: 'Apne appen i Claude Code. Bruk planen som kontekst. Du styrer dialogen og endrer underveis.', icon: '🔨', color: 'border-blue-500/30' },
+                    { step: '3', title: 'Koble Stripe & Deploy', desc: 'Legg til Stripe product, sett prising. Deploy til Vercel. Registrer i RealtyFlow Pro.', icon: '🚀', color: 'border-green-500/30' },
+                    { step: '4', title: 'Markedsforing & Vekst', desc: 'Content Hub + Victoria lager kampanjer. Automatisk publisering pa 6 plattformer.', icon: '📈', color: 'border-pink-500/30' },
+                  ].map((item) => (
+                    <div key={item.step} className={`p-4 rounded-lg bg-slate-800/50 border ${item.color}`}>
+                      <div className="text-2xl mb-2">{item.icon}</div>
+                      <h4 className="text-sm font-semibold text-white mb-1">Steg {item.step}: {item.title}</h4>
+                      <p className="text-xs text-slate-400">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Ny app planlegger */}
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm">Planlegg ny app med Victoria CEO</CardTitle>
+                    <CardDescription>Beskriv app-ideen, sa lager AI-en en komplett plan</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <textarea
+                        className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none resize-none"
+                        rows={3}
+                        placeholder="Beskriv app-ideen din... F.eks: En AI-drevet fitness-coach som lager treningsprogrammer og maalplan basert pa brukerens mal og preferanser. Maalgruppe: 25-45 ar, helsebeviste, villige til a betale $15/mnd."
+                      />
+                      <div className="flex gap-3">
+                        <Button className="bg-gradient-to-r from-purple-600 to-violet-600" disabled>
+                          <Sparkles className="mr-2 h-4 w-4" /> Generer Plan (krever ANTHROPIC_API_KEY)
+                        </Button>
+                        <Button variant="outline" className="border-slate-600" onClick={() => { resetForm(); setShowAddModal(true); }}>
+                          <Plus className="mr-2 h-4 w-4" /> Manuelt oppsett
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Stripe Setup Guide */}
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm flex items-center gap-2">
+                      <DollarSign className="h-4 w-4 text-emerald-400" />
+                      Stripe-integrasjon
+                    </CardTitle>
+                    <CardDescription>Automatisk revenue tracking via webhooks</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                        <h4 className="text-sm font-medium text-emerald-400 mb-2">Slik setter du opp:</h4>
+                        <ol className="space-y-2 text-xs text-slate-300">
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">1.</span> Opprett konto pa <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">stripe.com</a></li>
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">2.</span> Ga til Developers &rarr; Webhooks &rarr; Add endpoint</li>
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">3.</span> URL: <code className="bg-slate-700 px-1 rounded text-emerald-300">https://realtyflow-pro-two.vercel.app/api/saas/stripe</code></li>
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">4.</span> Events: checkout.session.completed, customer.subscription.created/updated/deleted, invoice.paid</li>
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">5.</span> Kopier Webhook Secret &rarr; legg i Vercel env som <code className="bg-slate-700 px-1 rounded">STRIPE_WEBHOOK_SECRET</code></li>
+                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">6.</span> Legg ogsa til <code className="bg-slate-700 px-1 rounded">STRIPE_SECRET_KEY</code> i Vercel env</li>
+                        </ol>
+                      </div>
+                      <div className="p-3 rounded-lg bg-slate-700/30">
+                        <h4 className="text-sm font-medium text-white mb-1">I hver ChatGenius-app:</h4>
+                        <p className="text-xs text-slate-400">
+                          Nar du oppretter Stripe Checkout i appen, legg til <code className="bg-slate-700 px-1 rounded text-purple-300">metadata: {'{'} app_slug: &quot;astro&quot; {'}'}</code> slik at webhook vet hvilken app betalingen tilhorer. Da oppdateres MRR, brukere og revenue automatisk i dashboardet.
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                        <h4 className="text-sm font-medium text-blue-400 mb-1">Hva skjer automatisk:</h4>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+                          <div>&#10003; Ny betaling &rarr; MRR oppdateres</div>
+                          <div>&#10003; Kansellering &rarr; Churn beregnes</div>
+                          <div>&#10003; Ny bruker &rarr; Brukertall oker</div>
+                          <div>&#10003; Faktura betalt &rarr; Revenue sporers</div>
+                          <div>&#10003; Dashboard oppdateres live</div>
+                          <div>&#10003; Daglig analytics lagres</div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Recommended Tech Stack */}
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm">Anbefalt tech stack for nye apper</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { name: 'Next.js 14', role: 'Frontend + API', color: 'text-white' },
+                        { name: 'Supabase', role: 'Database + Auth', color: 'text-emerald-400' },
+                        { name: 'Stripe', role: 'Betaling', color: 'text-purple-400' },
+                        { name: 'Vercel', role: 'Hosting + Deploy', color: 'text-blue-400' },
+                        { name: 'Claude API', role: 'AI-funksjoner', color: 'text-amber-400' },
+                        { name: 'Tailwind CSS', role: 'Styling', color: 'text-cyan-400' },
+                        { name: 'Claude Code', role: 'Utvikling', color: 'text-pink-400' },
+                        { name: 'RealtyFlow Pro', role: 'Business ops', color: 'text-violet-400' },
+                      ].map((tech) => (
+                        <div key={tech.name} className="p-3 rounded-lg bg-slate-700/30 text-center">
+                          <div className={`text-sm font-medium ${tech.color}`}>{tech.name}</div>
+                          <div className="text-[10px] text-slate-500">{tech.role}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Analytics Tab */}

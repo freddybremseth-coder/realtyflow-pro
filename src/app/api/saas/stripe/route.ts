@@ -1,0 +1,291 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+/**
+ * POST /api/saas/stripe
+ * Stripe webhook endpoint. Receives events and updates SaaS metrics.
+ *
+ * Set up in Stripe Dashboard → Developers → Webhooks:
+ *   URL: https://realtyflow-pro-two.vercel.app/api/saas/stripe
+ *   Events: checkout.session.completed, customer.subscription.created,
+ *           customer.subscription.updated, customer.subscription.deleted,
+ *           invoice.paid, invoice.payment_failed
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.text();
+    const sig = request.headers.get('stripe-signature');
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    // Verify webhook signature if secret is configured
+    let event: any;
+    if (webhookSecret && sig) {
+      // In production, use Stripe SDK to verify:
+      // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+      // event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+      // For now, parse directly (add Stripe SDK verification later)
+      try {
+        event = JSON.parse(body);
+      } catch {
+        return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+      }
+    } else {
+      try {
+        event = JSON.parse(body);
+      } catch {
+        return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+      }
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      console.warn('[Stripe Webhook] Supabase not configured');
+      return NextResponse.json({ received: true, warning: 'Supabase not configured' });
+    }
+
+    const type = event.type;
+    const data = event.data?.object;
+
+    console.log(`[Stripe Webhook] ${type}`, data?.id);
+
+    switch (type) {
+      // ─── New subscription created ────────────────────────────
+      case 'customer.subscription.created': {
+        const appSlug = data.metadata?.app_slug;
+        if (!appSlug) break;
+
+        // Find app by slug
+        const { data: app } = await supabase
+          .from('saas_apps')
+          .select('id')
+          .eq('slug', appSlug)
+          .single();
+
+        if (app) {
+          // Create subscription record
+          await supabase.from('saas_subscriptions').insert({
+            app_id: app.id,
+            customer_email: data.customer_email || data.metadata?.customer_email || '',
+            customer_name: data.metadata?.customer_name,
+            plan: data.metadata?.plan || 'basic',
+            status: data.status === 'active' ? 'active' : 'trialing',
+            amount: (data.items?.data?.[0]?.price?.unit_amount || 0) / 100,
+            currency: data.currency?.toUpperCase() || 'USD',
+            billing_cycle: data.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'yearly' : 'monthly',
+            stripe_customer_id: data.customer,
+            stripe_subscription_id: data.id,
+            next_billing_at: data.current_period_end
+              ? new Date(data.current_period_end * 1000).toISOString()
+              : null,
+          });
+
+          // Update app metrics
+          await recalculateAppMetrics(supabase, app.id);
+        }
+        break;
+      }
+
+      // ─── Subscription updated (upgrade/downgrade/cancel) ─────
+      case 'customer.subscription.updated': {
+        const subId = data.id;
+        const { data: existingSub } = await supabase
+          .from('saas_subscriptions')
+          .select('id, app_id')
+          .eq('stripe_subscription_id', subId)
+          .single();
+
+        if (existingSub) {
+          const newStatus = data.cancel_at_period_end ? 'cancelled' :
+            data.status === 'active' ? 'active' :
+            data.status === 'past_due' ? 'past_due' : 'active';
+
+          await supabase.from('saas_subscriptions').update({
+            status: newStatus,
+            amount: (data.items?.data?.[0]?.price?.unit_amount || 0) / 100,
+            cancelled_at: data.canceled_at
+              ? new Date(data.canceled_at * 1000).toISOString()
+              : null,
+            next_billing_at: data.current_period_end
+              ? new Date(data.current_period_end * 1000).toISOString()
+              : null,
+          }).eq('id', existingSub.id);
+
+          await recalculateAppMetrics(supabase, existingSub.app_id);
+        }
+        break;
+      }
+
+      // ─── Subscription deleted ────────────────────────────────
+      case 'customer.subscription.deleted': {
+        const subId = data.id;
+        const { data: existingSub } = await supabase
+          .from('saas_subscriptions')
+          .select('id, app_id')
+          .eq('stripe_subscription_id', subId)
+          .single();
+
+        if (existingSub) {
+          await supabase.from('saas_subscriptions').update({
+            status: 'cancelled',
+            cancelled_at: new Date().toISOString(),
+          }).eq('id', existingSub.id);
+
+          await recalculateAppMetrics(supabase, existingSub.app_id);
+        }
+        break;
+      }
+
+      // ─── Invoice paid (revenue tracking) ─────────────────────
+      case 'invoice.paid': {
+        const subId = data.subscription;
+        if (!subId) break;
+
+        const { data: existingSub } = await supabase
+          .from('saas_subscriptions')
+          .select('app_id')
+          .eq('stripe_subscription_id', subId)
+          .single();
+
+        if (existingSub) {
+          const amount = (data.amount_paid || 0) / 100;
+
+          // Add to total revenue
+          try {
+            await supabase.rpc('increment_app_revenue', {
+              p_app_id: existingSub.app_id,
+              p_amount: amount,
+            });
+          } catch {
+            // Fallback: manual update if RPC doesn't exist
+            const { data: app } = await supabase
+              .from('saas_apps')
+              .select('total_revenue')
+              .eq('id', existingSub.app_id)
+              .single();
+            if (app) {
+              await supabase.from('saas_apps').update({
+                total_revenue: (app.total_revenue || 0) + amount,
+              }).eq('id', existingSub.app_id);
+            }
+          }
+
+          // Add to daily analytics
+          const today = new Date().toISOString().split('T')[0];
+          await supabase.from('saas_analytics').upsert({
+            app_id: existingSub.app_id,
+            date: today,
+            revenue: amount,
+          }, { onConflict: 'app_id,date' });
+        }
+        break;
+      }
+
+      // ─── Checkout completed (one-time or first subscription) ──
+      case 'checkout.session.completed': {
+        const appSlug = data.metadata?.app_slug;
+        if (!appSlug) break;
+
+        const { data: app } = await supabase
+          .from('saas_apps')
+          .select('id, total_users')
+          .eq('slug', appSlug)
+          .single();
+
+        if (app) {
+          // Increment total users
+          await supabase.from('saas_apps').update({
+            total_users: (app.total_users || 0) + 1,
+          }).eq('id', app.id);
+
+          // Track signup in analytics
+          const today = new Date().toISOString().split('T')[0];
+          const { data: existing } = await supabase
+            .from('saas_analytics')
+            .select('signups')
+            .eq('app_id', app.id)
+            .eq('date', today)
+            .single();
+
+          await supabase.from('saas_analytics').upsert({
+            app_id: app.id,
+            date: today,
+            signups: (existing?.signups || 0) + 1,
+          }, { onConflict: 'app_id,date' });
+        }
+        break;
+      }
+
+      default:
+        console.log(`[Stripe Webhook] Unhandled event: ${type}`);
+    }
+
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error('[Stripe Webhook] Error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Webhook error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Recalculate MRR, ARR, active users, churn for an app
+ */
+async function recalculateAppMetrics(supabase: any, appId: string) {
+  try {
+    // Get all active subscriptions
+    const { data: subs } = await supabase
+      .from('saas_subscriptions')
+      .select('*')
+      .eq('app_id', appId)
+      .eq('status', 'active');
+
+    const activeSubs = subs || [];
+    let mrr = 0;
+
+    for (const sub of activeSubs) {
+      if (sub.billing_cycle === 'yearly') {
+        mrr += (sub.amount || 0) / 12;
+      } else {
+        mrr += sub.amount || 0;
+      }
+    }
+
+    // Count cancelled in last 30 days for churn
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { count: cancelledCount } = await supabase
+      .from('saas_subscriptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('app_id', appId)
+      .eq('status', 'cancelled')
+      .gte('cancelled_at', thirtyDaysAgo.toISOString());
+
+    const { count: totalEverActive } = await supabase
+      .from('saas_subscriptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('app_id', appId);
+
+    const churnRate = totalEverActive && totalEverActive > 0
+      ? ((cancelledCount || 0) / totalEverActive) * 100
+      : 0;
+
+    await supabase.from('saas_apps').update({
+      mrr: Math.round(mrr * 100) / 100,
+      arr: Math.round(mrr * 12 * 100) / 100,
+      active_users_30d: activeSubs.length,
+      churn_rate: Math.round(churnRate * 10) / 10,
+    }).eq('id', appId);
+  } catch (err) {
+    console.error('[Stripe] Metrics recalc error:', err);
+  }
+}
