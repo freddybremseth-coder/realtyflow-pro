@@ -53,6 +53,7 @@ export default function ValuationPage() {
     bedrooms: "",
     bathrooms: "",
     area: "",
+    yearBuilt: "",
     condition: "God",
     selectedAmenities: [] as string[],
   });
@@ -68,10 +69,42 @@ export default function ValuationPage() {
     }));
   };
 
+  const resetForm = () => {
+    setFormData({
+      type: "Villa", location: "", bedrooms: "", bathrooms: "",
+      area: "", yearBuilt: "", condition: "God", selectedAmenities: [],
+    });
+    setResult(null);
+  };
+
   const handleGenerate = () => {
+    setResult(null);
     setIsLoading(true);
+    // Generate dynamic mock based on form input
+    const area = parseInt(formData.area) || 150;
+    const basePricePerM2 = formData.type === "Villa" ? 2800 : formData.type === "Penthouse" ? 3200 : 2200;
+    const locationBonus = formData.location.toLowerCase().includes("altea") ? 1.15 : formData.location.toLowerCase().includes("javea") ? 1.2 : 1.0;
+    const amenityBonus = 1 + (formData.selectedAmenities.length * 0.03);
+    const basePrice = Math.round(area * basePricePerM2 * locationBonus * amenityBonus);
     setTimeout(() => {
-      setResult(mockResult);
+      setResult({
+        low: Math.round(basePrice * 0.85),
+        agent: basePrice,
+        high: Math.round(basePrice * 1.15),
+        confidence: 78 + Math.min(formData.selectedAmenities.length * 2, 15),
+        factors: [
+          { label: "Beliggenhet", impact: locationBonus > 1 ? "positive" : "neutral", detail: formData.location ? `${formData.location} - ${locationBonus > 1 ? "ettertraktet område" : "standard marked"}` : "Ingen beliggenhet oppgitt" },
+          { label: "Areal", impact: area > 120 ? "positive" : "neutral", detail: `${area} m² - ${area > 120 ? "over gjennomsnittet" : "standard størrelse"}` },
+          { label: "Fasiliteter", impact: formData.selectedAmenities.length > 3 ? "positive" : "neutral", detail: `${formData.selectedAmenities.length} fasiliteter valgt` },
+          { label: "Tilstand", impact: formData.condition === "Nybygget" ? "positive" : formData.condition === "Oppussingsobjekt" ? "negative" : "neutral", detail: formData.condition },
+          ...(formData.yearBuilt ? [{ label: "Byggeår", impact: (parseInt(formData.yearBuilt) > 2015 ? "positive" : parseInt(formData.yearBuilt) < 1990 ? "negative" : "neutral") as "positive" | "neutral" | "negative", detail: `Bygget i ${formData.yearBuilt}` }] : []),
+        ],
+        comparable: [
+          { address: `Calle del Mar 14, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 0.96), area: area - 10, date: "2024-02" },
+          { address: `Av. del Albir 22, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 1.05), area: area + 15, date: "2024-01" },
+          { address: `Partida Cap Negret 8, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 0.92), area: area - 15, date: "2023-12" },
+        ],
+      });
       setIsLoading(false);
     }, 2000);
   };
@@ -182,6 +215,17 @@ export default function ValuationPage() {
                 </div>
               </div>
 
+              {/* Year Built */}
+              <div>
+                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Byggeår</label>
+                <Input
+                  type="number"
+                  placeholder="F.eks. 2005"
+                  value={formData.yearBuilt}
+                  onChange={(e) => setFormData((p) => ({ ...p, yearBuilt: e.target.value }))}
+                />
+              </div>
+
               {/* Condition */}
               <div>
                 <label className="text-xs font-medium text-slate-300 mb-1.5 block">Tilstand</label>
@@ -216,6 +260,11 @@ export default function ValuationPage() {
                 </div>
               </div>
 
+              {result && (
+                <Button onClick={resetForm} variant="outline" className="w-full mb-2">
+                  Ny vurdering (tøm skjema)
+                </Button>
+              )}
               <Button onClick={handleGenerate} disabled={isLoading} className="w-full">
                 {isLoading ? (
                   <>

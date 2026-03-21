@@ -57,6 +57,17 @@ export const BRANDS: Brand[] = [
     specialties: ["entrepreneurship", "Spanish real estate", "digital nomad life"],
   },
   {
+    id: "pinososecolife",
+    name: "Pinosos Ecolife",
+    type: "real_estate",
+    description: "Sustainable rural living in Pinosos, Alicante - eco-friendly country homes",
+    color: "#84cc16",
+    website: "https://pinososecolife.com",
+    tone: "natural, sustainable, community-oriented",
+    target_audience: "Eco-conscious families seeking rural Spanish lifestyle",
+    specialties: ["country homes", "sustainable living", "Pinosos area", "rural properties"],
+  },
+  {
     id: "neuralbeat",
     name: "Neural Beat",
     type: "music",
