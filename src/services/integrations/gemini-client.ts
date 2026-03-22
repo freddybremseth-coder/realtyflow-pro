@@ -1,33 +1,17 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { askClaude } from '@/services/ai/claude-client';
+
+// ─── Gemini client (ONLY for image generation) ──────────────────────
 
 let genAI: GoogleGenerativeAI | null = null;
 
-function getClient(): GoogleGenerativeAI {
+function getGeminiClient(): GoogleGenerativeAI {
   if (!genAI) {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured (needed for image generation)');
     genAI = new GoogleGenerativeAI(apiKey);
   }
   return genAI;
-}
-
-/**
- * Send a text prompt to Gemini and get a text response.
- */
-async function askGemini(
-  prompt: string,
-  options?: { temperature?: number; maxTokens?: number }
-): Promise<string> {
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: options?.temperature ?? 0.7,
-      maxOutputTokens: options?.maxTokens ?? 1000,
-    },
-  });
-  return result.response.text();
 }
 
 /**
@@ -43,9 +27,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+// ─── Image Generation (Gemini) ──────────────────────────────────────
+
 /**
  * Generate an image using Google Gemini's image generation capabilities.
- * Includes a 60-second timeout per image to prevent pipeline hangs.
+ * This is the ONLY function that uses Gemini — all text tasks use Claude.
  */
 export async function generateImage(
   prompt: string,
@@ -54,7 +40,7 @@ export async function generateImage(
     aspectRatio?: '1:1' | '16:9' | '9:16';
   }
 ): Promise<{ base64: string; mimeType: string }> {
-  const client = getClient();
+  const client = getGeminiClient();
 
   const enhancedPrompt = options?.style
     ? `${prompt}. Style: ${options.style}. Aspect ratio: ${options.aspectRatio || '16:9'}`
@@ -88,9 +74,10 @@ export async function generateImage(
   throw new Error('Gemini did not return an image in the response');
 }
 
+// ─── Text Tasks (Claude Haiku) ──────────────────────────────────────
+
 /**
- * Generate a music cover image using Gemini for both the prompt and the image.
- * No Anthropic dependency.
+ * Generate a music cover image using Claude for prompt + Gemini for image.
  */
 export async function generateMusicCoverImage(
   options: {
@@ -106,7 +93,6 @@ export async function generateMusicCoverImage(
   let imagePrompt = options.imagePrompt;
 
   if (!imagePrompt) {
-    // Use Gemini to create an optimized image generation prompt
     const analysisPrompt = `You are a creative art director for music visuals.
 
 Create a visually striking image description for a music video cover/thumbnail:
@@ -127,7 +113,7 @@ Create a detailed image prompt (in English) that:
 
 Reply ONLY with the image prompt text, no explanation.`;
 
-    imagePrompt = await askGemini(analysisPrompt, { temperature: 0.8, maxTokens: 500 });
+    imagePrompt = await askClaude(analysisPrompt, { temperature: 0.8, maxTokens: 500 });
   }
 
   // Generate the image with Gemini
@@ -228,14 +214,12 @@ function getMoodCategory(mood: string, energy: string): string {
   if (moodLower.includes('euphoric') || moodLower.includes('uplifting') || moodLower.includes('epic')) return 'euphoric';
   if (energy === 'high') return 'energetic';
   if (energy === 'low') return 'chill';
-  return 'energetic'; // default for EDM
+  return 'energetic';
 }
 
 /**
  * Generate a set of cover images for a music video slideshow.
- * Creates unique images based on the song's mood and energy.
- * Images are generated in batches of 2 with delays to avoid rate limits.
- * Minimum 3 images required; accepts partial results on failures.
+ * Uses Gemini for image generation only.
  */
 export async function generateMusicImageSet(
   options: {
@@ -249,36 +233,32 @@ export async function generateMusicImageSet(
     count?: number;
   }
 ): Promise<{ images: Array<{ base64: string; mimeType: string; prompt: string }> }> {
-  const count = Math.min(options.count || 8, 10); // Default 8, max 10
+  const count = Math.min(options.count || 8, 10);
   const moodCategory = getMoodCategory(options.mood || 'energetic', options.energy || 'high');
   const themes = MOOD_VISUAL_THEMES[moodCategory] || MOOD_VISUAL_THEMES.energetic;
 
-  // Select themes (pick as many as needed, cycling if necessary)
   const selectedThemes = Array.from({ length: count }, (_, i) => themes[i % themes.length]);
 
-  // Add genre/style enhancement to each prompt
   const enhancedPrompts = selectedThemes.map((theme) =>
     `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Cinematic, atmospheric, no text or faces, 16:9 aspect ratio.`
   );
 
-  console.log(`[Gemini] Generating ${count} images for mood: ${moodCategory}`);
+  console.log(`[ImageGen] Generating ${count} images for mood: ${moodCategory} (Gemini)`);
 
-  // Generate images in batches of 2 (smaller batches = less rate limit risk)
   const batchSize = 2;
   const results: Array<{ base64: string; mimeType: string; prompt: string }> = [];
   let consecutiveFailures = 0;
 
   for (let i = 0; i < enhancedPrompts.length; i += batchSize) {
-    // If we have enough images and are hitting failures, stop early
     if (results.length >= 3 && consecutiveFailures >= 2) {
-      console.warn(`[Gemini] Stopping early with ${results.length} images after ${consecutiveFailures} consecutive failures`);
+      console.warn(`[ImageGen] Stopping early with ${results.length} images after ${consecutiveFailures} consecutive failures`);
       break;
     }
 
     const batch = enhancedPrompts.slice(i, i + batchSize);
     const batchNum = Math.floor(i / batchSize) + 1;
     const totalBatches = Math.ceil(enhancedPrompts.length / batchSize);
-    console.log(`[Gemini] Batch ${batchNum}/${totalBatches} (${batch.length} images)...`);
+    console.log(`[ImageGen] Batch ${batchNum}/${totalBatches} (${batch.length} images)...`);
 
     const batchStartTime = Date.now();
     const batchResults = await Promise.all(
@@ -291,26 +271,25 @@ export async function generateMusicImageSet(
             aspectRatio: '16:9',
           });
           const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-          console.log(`[Gemini] Image ${imgNum}/${count} generated (${elapsed}s)`);
+          console.log(`[ImageGen] Image ${imgNum}/${count} generated (${elapsed}s)`);
           consecutiveFailures = 0;
           return { ...image, prompt };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          console.warn(`[Gemini] Image ${imgNum} failed: ${errMsg}`);
+          console.warn(`[ImageGen] Image ${imgNum} failed: ${errMsg}`);
 
-          // Retry once after a short delay
           await new Promise((resolve) => setTimeout(resolve, 2000));
           try {
             const image = await generateImage(prompt, {
               style: 'cinematic digital art, vibrant colors',
               aspectRatio: '16:9',
             });
-            console.log(`[Gemini] Image ${imgNum} succeeded on retry`);
+            console.log(`[ImageGen] Image ${imgNum} succeeded on retry`);
             consecutiveFailures = 0;
             return { ...image, prompt };
           } catch (retryErr) {
             const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-            console.error(`[Gemini] Image ${imgNum} failed permanently: ${retryMsg}`);
+            console.error(`[ImageGen] Image ${imgNum} failed permanently: ${retryMsg}`);
             consecutiveFailures++;
             return null;
           }
@@ -322,29 +301,30 @@ export async function generateMusicImageSet(
     results.push(...succeeded);
 
     const batchElapsed = ((Date.now() - batchStartTime) / 1000).toFixed(1);
-    console.log(`[Gemini] Batch ${batchNum} done: ${succeeded.length}/${batch.length} succeeded (${batchElapsed}s). Total: ${results.length}/${count}`);
+    console.log(`[ImageGen] Batch ${batchNum} done: ${succeeded.length}/${batch.length} succeeded (${batchElapsed}s). Total: ${results.length}/${count}`);
 
-    // Delay between batches to avoid rate limits (1.5 seconds)
     if (i + batchSize < enhancedPrompts.length) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
   }
 
   if (results.length === 0) {
-    throw new Error('Failed to generate any images for the music video. Check Gemini API key and rate limits.');
+    throw new Error('Failed to generate any images. Check Gemini API key and rate limits.');
   }
 
   if (results.length < 3) {
-    console.warn(`[Gemini] Only ${results.length} images generated (minimum 3 recommended)`);
+    console.warn(`[ImageGen] Only ${results.length} images generated (minimum 3 recommended)`);
   }
 
-  console.log(`[Gemini] Successfully generated ${results.length}/${count} images`);
+  console.log(`[ImageGen] Successfully generated ${results.length}/${count} images`);
   return { images: results };
 }
 
+// ─── Song Analysis & YouTube SEO (Claude Haiku) ─────────────────────
+
 /**
- * Analyze a song's characteristics using Gemini AI.
- * No Anthropic dependency.
+ * Analyze a song's characteristics using Claude Haiku.
+ * Fast, cheap, high-quality text analysis.
  */
 export async function analyzeSong(
   options: {
@@ -385,7 +365,7 @@ Respond with ONLY this JSON structure, no markdown:
   "imageGenre": "MUST be exactly one of: romantic, sensual, rock, pop, dance, dream, nostalgic, training — pick the best visual category for this song's mood and energy"
 }`;
 
-  const result = await askGemini(prompt, { temperature: 0.3, maxTokens: 500 });
+  const result = await askClaude(prompt, { temperature: 0.3, maxTokens: 500 });
 
   try {
     const jsonMatch = result.match(/\{[\s\S]*\}/);
@@ -407,8 +387,7 @@ Respond with ONLY this JSON structure, no markdown:
 }
 
 /**
- * Generate YouTube SEO metadata using Gemini.
- * Replaces the YouTubeAgent (which required Anthropic).
+ * Generate YouTube SEO metadata using Claude Haiku.
  */
 export async function generateYouTubeSEO(
   options: {
@@ -445,7 +424,7 @@ Respond with ONLY this JSON, no markdown:
   "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)"
 }`;
 
-  const result = await askGemini(prompt, { temperature: 0.7, maxTokens: 800 });
+  const result = await askClaude(prompt, { temperature: 0.7, maxTokens: 800 });
 
   try {
     const jsonMatch = result.match(/\{[\s\S]*\}/);
@@ -464,6 +443,16 @@ Respond with ONLY this JSON, no markdown:
   };
 }
 
-export function isConfigured(): boolean {
+/**
+ * Check if Gemini is configured (for image generation).
+ */
+export function isGeminiConfigured(): boolean {
   return !!process.env.GEMINI_API_KEY;
+}
+
+/**
+ * @deprecated Use isGeminiConfigured() instead
+ */
+export function isConfigured(): boolean {
+  return isGeminiConfigured();
 }

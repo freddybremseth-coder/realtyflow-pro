@@ -1,10 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+/**
+ * AI Service — uses Claude Haiku for all text/analysis tasks.
+ * Replaces the previous Gemini-only implementation.
+ * Gemini is now only used for image generation (see gemini-client.ts).
+ */
+import { askClaude, askClaudeWithImage } from '@/services/ai/claude-client';
 
 export class GeminiService {
-  private model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   async generatePropertyValuation(propertyData: Record<string, unknown>): Promise<string> {
     const prompt = `Du er en erfaren eiendomsmegler og takstmann i Spania (Costa Blanca / Costa Cálida).
 
@@ -21,8 +22,7 @@ Gi en rapport med:
 
 Svar på norsk. Bruk EUR som valuta.`;
 
-    const result = await this.model.generateContent(prompt);
-    return result.response.text();
+    return askClaude(prompt, { maxTokens: 2000 });
   }
 
   async generateMarketPulse(location: string, brandContext?: string): Promise<string> {
@@ -39,20 +39,12 @@ Inkluder:
 
 Svar på norsk. Vær konkret med tall og trender.`;
 
-    const result = await this.model.generateContent(prompt);
-    return result.response.text();
+    return askClaude(prompt, { maxTokens: 1500 });
   }
 
   async extractLeadFromImage(imageBase64: string): Promise<Record<string, string>> {
-    const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const result = await visionModel.generateContent([
-      {
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: imageBase64,
-        },
-      },
+    const result = await askClaudeWithImage(
+      imageBase64,
       `Analyser dette bildet (visittkort, skjema, eller kontaktinformasjon) og ekstraher følgende informasjon i JSON-format:
 {
   "first_name": "",
@@ -65,10 +57,10 @@ Svar på norsk. Vær konkret med tall og trender.`;
 }
 
 Returner KUN gyldig JSON, ingen annen tekst.`,
-    ]);
+      { mimeType: 'image/jpeg', maxTokens: 500 }
+    );
 
-    const text = result.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Could not extract JSON from response");
     return JSON.parse(jsonMatch[0]);
   }
@@ -87,17 +79,16 @@ Gi:
 
 Svar på norsk.`;
 
-    const result = await this.model.generateContent(prompt);
-    return result.response.text();
+    return askClaude(prompt, { maxTokens: 1500 });
   }
 
   async generateMarketingImage(prompt: string): Promise<string | null> {
     try {
-      const imageModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await imageModel.generateContent(
-        `Create a marketing image description for: ${prompt}. Describe the image in detail for a designer.`
+      const result = await askClaude(
+        `Create a marketing image description for: ${prompt}. Describe the image in detail for a designer.`,
+        { maxTokens: 500 }
       );
-      return result.response.text();
+      return result;
     } catch {
       return null;
     }
@@ -124,8 +115,7 @@ Krav:
 
 Svar på norsk.`;
 
-    const result = await this.model.generateContent(prompt);
-    return result.response.text();
+    return askClaude(prompt, { maxTokens: 1000 });
   }
 }
 
