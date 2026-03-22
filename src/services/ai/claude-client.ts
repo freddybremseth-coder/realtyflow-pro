@@ -27,7 +27,7 @@ export async function askClaude(
   const claude = getClient();
   const model = options?.model === 'sonnet'
     ? 'claude-sonnet-4-20250514'
-    : 'claude-3-5-haiku-20241022';
+    : 'claude-haiku-4-20250414';
 
   const response = await claude.messages.create({
     model,
@@ -56,7 +56,7 @@ export async function askClaudeWithImage(
   const claude = getClient();
 
   const response = await claude.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-20250414',
     max_tokens: options?.maxTokens ?? 1000,
     messages: [
       {
