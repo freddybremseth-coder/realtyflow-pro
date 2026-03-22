@@ -84,6 +84,7 @@ interface Opportunity {
   refinement_notes?: string;
   business_plan?: string;
   user_feedback?: string;
+  build_prompt?: string;
   vercel_url?: string;
   created_at: string;
   updated_at?: string;
@@ -104,6 +105,7 @@ const OPP_STATUS_CONFIG: Record<string, { label: string; color: string; icon: Re
   investigating: { label: 'Undersokes', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: Microscope },
   refining: { label: 'Forfines', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: Brain },
   approved: { label: 'Godkjent', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: ThumbsUp },
+  queued_for_build: { label: 'I byggeko', color: 'bg-teal-500/20 text-teal-300 border-teal-500/30', icon: Clock },
   building: { label: 'Bygges', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30', icon: Wrench },
   deployed: { label: 'Deployet', color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: Rocket },
   testing: { label: 'Testes', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', icon: Eye },
@@ -392,22 +394,23 @@ export default function SaaSPage() {
           suggested_pricing: opp.suggested_pricing,
           target_audience: opp.target_audience,
           category: opp.category,
-          color: '#8b5cf6',
+          tech_stack_suggestion: opp.tech_stack_suggestion,
+          business_plan: opp.business_plan,
         }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setBuildResult({ repo_url: data.repo_url, vercel_url: data.vercel_url });
+        setBuildResult({});
+        setBuildPrompt(data.build_prompt);
         setOpportunities((prev) =>
-          prev.map((o) => o.id === opp.id ? { ...o, status: 'deployed', vercel_url: data.vercel_url } : o)
+          prev.map((o) => o.id === opp.id ? { ...o, status: 'queued_for_build' } : o)
         );
-        setSelectedOpp((prev) => prev?.id === opp.id ? { ...prev, status: 'deployed', vercel_url: data.vercel_url } : prev);
-        fetchApps(); // Refresh apps list
+        setSelectedOpp((prev) => prev?.id === opp.id ? { ...prev, status: 'queued_for_build' } : prev);
       } else {
-        setBuildResult({ error: data.error || 'Build feilet' });
+        setBuildResult({ error: data.error || 'Kunne ikke lagre byggoppgave' });
       }
     } catch {
-      setBuildResult({ error: 'Nettverksfeil under bygging' });
+      setBuildResult({ error: 'Nettverksfeil' });
     } finally {
       setBuilding(null);
     }
@@ -419,7 +422,7 @@ export default function SaaSPage() {
   // ─── Pipeline counts ──────────────────────────────────────────────────────
   const discoveredCount = opportunities.filter(o => o.status === 'discovered').length;
   const investigatingCount = opportunities.filter(o => o.status === 'investigating' || o.status === 'refining').length;
-  const approvedCount = opportunities.filter(o => ['approved', 'building'].includes(o.status)).length;
+  const approvedCount = opportunities.filter(o => ['approved', 'queued_for_build', 'building'].includes(o.status)).length;
   const deployedCount = opportunities.filter(o => ['deployed', 'testing', 'live'].includes(o.status)).length;
 
   return (
@@ -580,7 +583,7 @@ export default function SaaSPage() {
 
         {/* ─── Pipeline Tab ────────────────────────────────────────────────── */}
         <TabsContent value="pipeline" className="space-y-6">
-          {['approved', 'building', 'deployed', 'testing'].map((status) => {
+          {['approved', 'queued_for_build', 'building', 'deployed', 'testing'].map((status) => {
             const filtered = opportunities.filter(o => o.status === status);
             if (filtered.length === 0) return null;
             const cfg = OPP_STATUS_CONFIG[status];
@@ -614,8 +617,14 @@ export default function SaaSPage() {
                         <div className="flex gap-2 mt-3">
                           {status === 'approved' && (
                             <Button size="sm" className="h-7 text-xs bg-cyan-600 hover:bg-cyan-500"
-                              onClick={(e) => { e.stopPropagation(); updateOppStatus(opp.id, 'building'); }}>
-                              <Wrench className="h-3 w-3 mr-1" /> Start bygg
+                              onClick={(e) => { e.stopPropagation(); setSelectedOpp(opp); }}>
+                              <Rocket className="h-3 w-3 mr-1" /> Klargjor for bygging
+                            </Button>
+                          )}
+                          {status === 'queued_for_build' && (
+                            <Button size="sm" className="h-7 text-xs bg-teal-600 hover:bg-teal-500"
+                              onClick={(e) => { e.stopPropagation(); setSelectedOpp(opp); }}>
+                              <Clock className="h-3 w-3 mr-1" /> I ko - se detaljer
                             </Button>
                           )}
                           {status === 'building' && (
@@ -649,7 +658,7 @@ export default function SaaSPage() {
             );
           })}
 
-          {opportunities.filter(o => ['approved', 'building', 'deployed', 'testing'].includes(o.status)).length === 0 && (
+          {opportunities.filter(o => ['approved', 'queued_for_build', 'building', 'deployed', 'testing'].includes(o.status)).length === 0 && (
             <Card className="bg-slate-800/50 border-slate-700/50">
               <CardContent className="p-12 text-center">
                 <Target className="h-12 w-12 mx-auto text-slate-600 mb-4" />
@@ -916,10 +925,10 @@ export default function SaaSPage() {
                 )}
                 {['refining', 'approved'].includes(selectedOpp.status) && (
                   <>
-                    <Button onClick={() => autoBuild(selectedOpp)} disabled={building === selectedOpp.id || !buildReady}
+                    <Button onClick={() => autoBuild(selectedOpp)} disabled={building === selectedOpp.id}
                       className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500">
-                      {building === selectedOpp.id ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Bygger &amp; deployer...</>
-                        : <><Rocket className="mr-2 h-4 w-4" /> Bygg &amp; deploy automatisk</>}
+                      {building === selectedOpp.id ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lagrer...</>
+                        : <><Rocket className="mr-2 h-4 w-4" /> Lagre &amp; klargjor for bygging</>}
                     </Button>
                     <Button onClick={() => generateBuildPrompt(selectedOpp)} disabled={loadingPrompt}
                       variant="outline" className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10">
@@ -932,11 +941,30 @@ export default function SaaSPage() {
                     </Button>
                   </>
                 )}
+                {selectedOpp.status === 'queued_for_build' && (
+                  <div className="w-full space-y-3">
+                    <div className="flex items-center gap-2 text-teal-400">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="text-sm font-medium">Byggoppgave lagret! Apne Claude Code og kjor: /build-saas</span>
+                    </div>
+                    {buildPrompt && (
+                      <div className="relative">
+                        <Button size="sm" variant="outline" className="absolute top-2 right-2 h-7 text-xs border-slate-600"
+                          onClick={() => copyToClipboard(buildPrompt)}>
+                          {copied ? <><CheckCircle className="h-3 w-3 mr-1" /> Kopiert!</> : <><Copy className="h-3 w-3 mr-1" /> Kopier prompt</>}
+                        </Button>
+                        <pre className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 text-xs text-slate-300 overflow-auto max-h-60 whitespace-pre-wrap">
+                          {buildPrompt.slice(0, 500)}...
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {selectedOpp.status === 'building' && (
                   <div className="flex items-center gap-3 w-full">
-                    <div className="flex items-center gap-2 text-amber-400">
+                    <div className="flex items-center gap-2 text-cyan-400">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Bygger og deployer... dette tar 2-5 minutter</span>
+                      <span className="text-sm">Bygges av Claude Code...</span>
                     </div>
                   </div>
                 )}
@@ -997,12 +1025,12 @@ export default function SaaSPage() {
                 </div>
               )}
 
-              {/* Build readiness warning */}
-              {buildReady === false && (
-                <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
-                  <p className="text-xs text-amber-400">
+              {/* Build queue info */}
+              {buildReady !== null && (
+                <div className="mt-3 p-3 rounded-lg bg-slate-500/5 border border-slate-500/20">
+                  <p className="text-xs text-slate-400">
                     <AlertCircle className="h-3 w-3 inline mr-1" />
-                    Auto-build krever GITHUB_TOKEN og VERCEL_TOKEN i Vercel miljøvariabler. Bruk &quot;Manuell prompt&quot; i mellomtiden.
+                    Byggoppgaver lagres i ko og plukkes opp av Claude Code. Klikk &quot;Lagre &amp; klargjor for bygging&quot; for a legge til.
                   </p>
                 </div>
               )}

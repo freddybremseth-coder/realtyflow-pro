@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { SaaSAutoDeployer } from '@/services/saas/auto-deployer';
-
-export const maxDuration = 300; // 5 minutes for full build + deploy
+import { SaaSOpportunityScanner } from '@/services/saas/opportunity-scanner';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,12 +11,9 @@ function getSupabase() {
 
 /**
  * POST /api/saas/build
- * Triggers the full auto-build pipeline:
- * 1. Generate app code from opportunity data
- * 2. Create GitHub repo
- * 3. Push all files
- * 4. Deploy to Vercel
- * 5. Update opportunity status + create saas_app entry
+ * Saves the build task to Supabase queue instead of building inline.
+ * Generates the build prompt and marks opportunity as queued_for_build.
+ * The actual build is done by Claude Code picking up queued tasks.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +27,8 @@ export async function POST(request: NextRequest) {
       suggested_pricing,
       target_audience,
       category,
-      color,
+      tech_stack_suggestion,
+      business_plan,
     } = body;
 
     if (!slug || !title) {
@@ -42,119 +38,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check required env vars
-    const missing: string[] = [];
-    if (!process.env.GITHUB_TOKEN) missing.push('GITHUB_TOKEN');
-    if (!process.env.VERCEL_TOKEN) missing.push('VERCEL_TOKEN');
-    if (!process.env.ANTHROPIC_API_KEY) missing.push('ANTHROPIC_API_KEY');
-
-    if (missing.length > 0) {
+    const supabase = getSupabase();
+    if (!supabase) {
       return NextResponse.json(
-        {
-          error: `Mangler miljøvariabler: ${missing.join(', ')}. Legg til i Vercel Dashboard → Settings → Environment Variables.`,
-          missing_env_vars: missing,
-        },
+        { error: 'Database not configured' },
         { status: 503 }
       );
     }
 
-    const deployer = new SaaSAutoDeployer();
-    const supabase = getSupabase();
-
-    console.log(`[SaaS Build] Starting auto-build for: ${title} (${slug})`);
-
-    // Update opportunity status to "building"
-    if (supabase && opportunity_id) {
-      await supabase
-        .from('saas_opportunities')
-        .update({
-          status: 'building',
-          build_started_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', opportunity_id);
-    }
-
-    // Run the full build pipeline
-    const result = await deployer.buildAndDeploy({
+    // Generate the build prompt using the opportunity scanner
+    const scanner = new SaaSOpportunityScanner();
+    const buildPrompt = await scanner.generateBuildPrompt({
       title,
       slug,
       description: description || '',
-      features: mvp_features || [],
-      pricing: suggested_pricing || 'Free + $19/mo Pro + $49/mo Business',
-      color: color || '#8b5cf6',
-      target_audience: target_audience || '',
-      category: category || 'ai',
+      mvp_features: mvp_features || [],
+      tech_stack_suggestion: tech_stack_suggestion || ['next.js', 'supabase', 'stripe'],
+      business_plan: business_plan || '',
+      suggested_pricing: suggested_pricing || '',
     });
 
-    if (!result.success) {
-      // Update status back to approved on failure
-      if (supabase && opportunity_id) {
-        await supabase
-          .from('saas_opportunities')
-          .update({
-            status: 'approved',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', opportunity_id);
-      }
+    console.log(`[SaaS Build] Queuing build task for: ${title} (${slug})`);
 
-      return NextResponse.json(
-        { error: result.error || 'Build failed' },
-        { status: 500 }
-      );
-    }
-
-    // Update opportunity with deploy info
-    if (supabase && opportunity_id) {
-      await supabase
+    // Save build prompt and mark as queued_for_build
+    if (opportunity_id) {
+      const { error } = await supabase
         .from('saas_opportunities')
         .update({
-          status: 'deployed',
-          repo_url: result.repo_url,
-          vercel_url: result.vercel_url,
-          deployed_at: new Date().toISOString(),
+          status: 'queued_for_build',
+          build_prompt: buildPrompt,
           updated_at: new Date().toISOString(),
         })
         .eq('id', opportunity_id);
-    }
 
-    // Create saas_app entry
-    if (supabase) {
-      try {
-        const domain = `${slug}.chatgenius.pro`;
-        await supabase.from('saas_apps').insert({
-          slug,
-          name: title,
-          domain,
-          description,
-          category,
-          color: color || '#8b5cf6',
-          status: 'development',
-          pricing_model: 'freemium',
-          tech_stack: ['next.js', 'supabase', 'stripe', 'tailwindcss'],
-          dev_platform: 'claude-code',
-          repo_url: result.repo_url,
-          live_url: result.vercel_url,
-        });
-      } catch (err) {
-        console.error('[SaaS Build] Failed to create saas_app entry:', err);
+      if (error) {
+        console.error('[SaaS Build] Failed to queue build task:', error);
+        return NextResponse.json(
+          { error: 'Failed to save build task: ' + error.message },
+          { status: 500 }
+        );
       }
     }
 
-    console.log(`[SaaS Build] ✅ Successfully deployed: ${result.vercel_url}`);
+    console.log(`[SaaS Build] Build task queued for: ${title}`);
 
     return NextResponse.json({
       success: true,
-      repo_url: result.repo_url,
-      vercel_url: result.vercel_url,
-      message: `${title} er bygget og deployet!`,
+      build_prompt: buildPrompt,
+      message: `Byggoppgave for "${title}" er lagret og klar for Claude Code.`,
     });
   } catch (error) {
     console.error('[SaaS Build] Error:', error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Build pipeline failed',
+        error: error instanceof Error ? error.message : 'Failed to queue build task',
       },
       { status: 500 }
     );
@@ -163,22 +100,37 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/saas/build
- * Check build status and required environment variables
+ * Check build status and list queued tasks
  */
 export async function GET() {
-  const envStatus = {
-    github: !!process.env.GITHUB_TOKEN,
-    vercel: !!process.env.VERCEL_TOKEN,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-  };
+  const supabase = getSupabase();
 
-  const ready = envStatus.github && envStatus.vercel && envStatus.anthropic;
+  if (!supabase) {
+    return NextResponse.json({
+      ready: false,
+      message: 'Database not configured',
+    });
+  }
+
+  // Get queued build tasks
+  const { data: queuedTasks, error } = await supabase
+    .from('saas_opportunities')
+    .select('id, title, slug, status, build_prompt, updated_at')
+    .eq('status', 'queued_for_build')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({
-    ready,
-    env_status: envStatus,
-    message: ready
-      ? 'Auto-build pipeline er klar!'
-      : 'Mangler miljøvariabler. Legg til GITHUB_TOKEN, VERCEL_TOKEN og ANTHROPIC_API_KEY i Vercel.',
+    ready: true,
+    queued_tasks: queuedTasks || [],
+    message: queuedTasks && queuedTasks.length > 0
+      ? `${queuedTasks.length} byggoppgave(r) i ko.`
+      : 'Ingen byggoppgaver i ko.',
   });
 }
