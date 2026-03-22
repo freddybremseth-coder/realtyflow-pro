@@ -80,7 +80,7 @@ export const REPORT_TEMPLATES = {
     brands: [
       'soleada',
       'zeneco',
-      'pinososecolife',
+      'pinosoecolife',
       'donaanna',
       'chatgenius',
       'freddyb',

@@ -126,8 +126,8 @@ const brandDataMap: Record<string, BrandData> = {
     ],
     chartData: [{ month: "Jan", value: 55 }, { month: "Feb", value: 72 }, { month: "Mar", value: 95 }],
   },
-  pinososecolife: {
-    brandId: "pinososecolife",
+  pinosoecolife: {
+    brandId: "pinosoecolife",
     revenue: "€92.000",
     revenueChange: "+5%",
     customers: 14,

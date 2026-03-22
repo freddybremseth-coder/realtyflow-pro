@@ -163,8 +163,9 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/actions" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
-        setActions(data.actions || data || []);
-        const activeCount = (data.actions || data || []).filter((a: GrowthAction) => ["planned", "ready"].includes(a.status)).length;
+        const rawActions = (data.actions || data || []).map((a: Record<string, unknown>) => ({ ...a, brand_id: a.brand_id || a.brand }));
+        setActions(rawActions);
+        const activeCount = rawActions.filter((a: GrowthAction) => ["planned", "ready"].includes(a.status)).length;
         setStats((s) => ({ ...s, activeActions: activeCount }));
       }
     } catch {
@@ -192,7 +193,8 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/lead-magnets" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
-        setLeadMagnets(data.lead_magnets || data || []);
+        const rawLM = (data.lead_magnets || data || []).map((lm: Record<string, unknown>) => ({ ...lm, brand_id: lm.brand_id || lm.brand }));
+        setLeadMagnets(rawLM);
       }
     } catch {
       // silently handle
@@ -251,11 +253,11 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run_cycle", brand_id: selectedBrand !== "all" ? selectedBrand : undefined }),
+        body: JSON.stringify({ action: "run_cycle", brand: selectedBrand !== "all" ? selectedBrand : undefined }),
       });
       if (res.ok) {
         const data = await res.json();
-        const newActions = data.actions || data.results || [];
+        const newActions = (data.actions || data.results || []).map((a: Record<string, unknown>) => ({ ...a, brand_id: a.brand_id || a.brand }));
         setActions((prev) => [...newActions, ...prev]);
         setStats((s) => ({ ...s, cyclesRun: s.cyclesRun + 1, activeActions: s.activeActions + newActions.length }));
         addToast(`Vekstsyklus fullfort! ${newActions.length} nye handlinger generert.`, "success");
@@ -320,11 +322,12 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "generate_lead_magnet", brand_id: brandId }),
+        body: JSON.stringify({ action: "generate_lead_magnet", brand: brandId }),
       });
       if (res.ok) {
         const data = await res.json();
-        const newMagnet = data.lead_magnet || data;
+        const raw = data.lead_magnet || data;
+        const newMagnet = { ...raw, brand_id: raw.brand_id || raw.brand };
         setLeadMagnets((prev) => [newMagnet, ...prev]);
         addToast("Lead magnet generert!", "success");
       }
@@ -338,10 +341,10 @@ export default function GrowthHubPage() {
   const toggleLeadMagnet = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "active" ? "paused" : "active";
     try {
-      await fetch(`/api/growth/lead-magnets/${id}`, {
+      await fetch(`/api/growth/lead-magnets`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ id, status: newStatus }),
       });
       setLeadMagnets((prev) => prev.map((lm) => lm.id === id ? { ...lm, status: newStatus as "active" | "paused" } : lm));
       addToast(`Lead magnet ${newStatus === "active" ? "aktivert" : "pauset"}.`, "success");
@@ -357,7 +360,7 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ab_test", brand_id: abTestForm.brand_id, content_type: abTestForm.content_type }),
+        body: JSON.stringify({ action: "ab_test", brand: abTestForm.brand_id, content_type: abTestForm.content_type }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -374,10 +377,10 @@ export default function GrowthHubPage() {
 
   const selectWinner = async (testId: string, winner: "a" | "b") => {
     try {
-      await fetch(`/api/growth/ab-tests/${testId}`, {
+      await fetch(`/api/growth/ab-tests`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ winner, status: "completed" }),
+        body: JSON.stringify({ id: testId, winner, status: "completed" }),
       });
       setABTests((prev) => prev.map((t) => t.id === testId ? { ...t, winner, status: "completed" as const } : t));
       addToast(`Variant ${winner.toUpperCase()} valgt som vinner!`, "success");
@@ -392,7 +395,7 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "analyze", brand_id: selectedBrand !== "all" ? selectedBrand : undefined }),
+        body: JSON.stringify({ action: "analyze", brand: selectedBrand !== "all" ? selectedBrand : undefined }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -411,7 +414,7 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update_strategy", brand_id: brandId }),
+        body: JSON.stringify({ action: "update_strategy", brand: brandId }),
       });
       if (res.ok) {
         addToast("Strategi oppdatert!", "success");
