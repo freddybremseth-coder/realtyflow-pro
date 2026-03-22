@@ -117,7 +117,19 @@ function interactionIcon(type: string) {
   }
 }
 
-const emptyCustomer = { name: "", email: "", phone: "", type: "BUYER" as CustomerType, location: "", budget: "", notes: "" };
+type PipelineStage = "NEW" | "CONTACT" | "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "CUSTOMER" | "VIP";
+
+const PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
+  { value: "CUSTOMER", label: "Kunde (CRM)" },
+  { value: "VIP", label: "VIP-kunde" },
+  { value: "NEW", label: "Ny lead (Pipeline)" },
+  { value: "CONTACT", label: "Kontaktet (Pipeline)" },
+  { value: "QUALIFIED", label: "Kvalifisert (Pipeline)" },
+  { value: "VIEWING", label: "Visning (Pipeline)" },
+  { value: "NEGOTIATION", label: "Forhandling (Pipeline)" },
+];
+
+const emptyCustomer = { name: "", email: "", phone: "", type: "BUYER" as CustomerType, pipelineStage: "CUSTOMER" as PipelineStage, location: "", budget: "", notes: "" };
 
 export default function CRMPage() {
   const [customers, setCustomers] = useState(initialCustomers);
@@ -148,7 +160,7 @@ export default function CRMPage() {
           email: c.email || '',
           phone: c.phone || '',
           status: mapPipelineToCustomerStatus(c.pipeline_status),
-          type: (c.type as CustomerType) || 'BUYER',
+          type: ((c.type || 'buyer').toUpperCase() as CustomerType),
           preferredLocation: c.preferred_location || c.interested_in || '',
           budget: c.budget || undefined,
           lastContact: c.last_contact || c.updated_at?.split('T')[0] || '',
@@ -228,12 +240,13 @@ export default function CRMPage() {
   const addCustomer = async () => {
     if (!newCustomer.name) return;
     const now = new Date().toISOString();
+    const pipelineStatus = newCustomer.pipelineStage || 'CUSTOMER';
     const contactPayload = {
       name: newCustomer.name,
       email: newCustomer.email,
       phone: newCustomer.phone,
-      type: newCustomer.type,
-      pipeline_status: 'CUSTOMER',
+      type: newCustomer.type.toLowerCase(), // DB uses lowercase: buyer, seller, investor
+      pipeline_status: pipelineStatus,
       preferred_location: newCustomer.location,
       budget: newCustomer.budget || null,
       notes: newCustomer.notes || null,
@@ -242,30 +255,47 @@ export default function CRMPage() {
     };
 
     let customerId = `C${String(customers.length + 1).padStart(3, "0")}`;
+    let saveOk = false;
     try {
       const res = await fetch('/api/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contactPayload),
       });
-      const { contact } = await res.json();
-      if (contact?.id) customerId = contact.id;
-    } catch {
-      // Fallback: add locally
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('[CRM] Save failed:', data.error);
+      } else if (data.contact?.id) {
+        customerId = data.contact.id;
+        saveOk = true;
+      }
+    } catch (err) {
+      console.error('[CRM] Network error saving contact:', err);
     }
 
-    const customer: Customer = {
-      id: customerId,
-      name: newCustomer.name, email: newCustomer.email, phone: newCustomer.phone,
-      status: "ACTIVE", type: newCustomer.type, preferredLocation: newCustomer.location,
-      budget: newCustomer.budget || undefined, lastContact: now.split("T")[0],
-      notes: newCustomer.notes, avatar: newCustomer.name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase(),
-      interactions: [{ id: `i${Date.now()}`, type: "note", content: "Kunde opprettet", date: now.split("T")[0] }],
-      nextStep: "Ta f\u00f8rste kontakt",
-    };
-    setCustomers((prev) => [customer, ...prev]);
+    // Only add to CRM view if pipeline_status is a CRM stage
+    const isCrmStage = ['WON', 'CUSTOMER', 'VIP'].includes(pipelineStatus);
+
+    if (isCrmStage) {
+      const customer: Customer = {
+        id: customerId,
+        name: newCustomer.name, email: newCustomer.email, phone: newCustomer.phone,
+        status: pipelineStatus === 'VIP' ? 'VIP' : 'ACTIVE',
+        type: newCustomer.type, preferredLocation: newCustomer.location,
+        budget: newCustomer.budget || undefined, lastContact: now.split("T")[0],
+        notes: newCustomer.notes, avatar: newCustomer.name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase(),
+        interactions: [{ id: `i${Date.now()}`, type: "note", content: "Kunde opprettet", date: now.split("T")[0] }],
+        nextStep: "Ta f\u00f8rste kontakt",
+      };
+      setCustomers((prev) => [customer, ...prev]);
+    }
+
     setNewCustomer(emptyCustomer);
     setShowNewCustomer(false);
+
+    if (!isCrmStage && saveOk) {
+      alert(`${newCustomer.name} lagt til i Pipeline som "${PIPELINE_STAGES.find(s => s.value === pipelineStatus)?.label}". Gå til Pipeline for å se.`);
+    }
   };
 
   const addInteraction = (type: "email" | "call" | "meeting", content: string) => {
@@ -333,6 +363,12 @@ export default function CRMPage() {
                     </select>
                   </div>
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">Budsjett</label><Input placeholder="€300K - €500K" value={newCustomer.budget} onChange={(e) => setNewCustomer((p) => ({ ...p, budget: e.target.value }))} /></div>
+                </div>
+                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Status / Pipeline-steg</label>
+                  <select value={newCustomer.pipelineStage} onChange={(e) => setNewCustomer((p) => ({ ...p, pipelineStage: e.target.value as PipelineStage }))} className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    {PIPELINE_STAGES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">Velg hvor i prosessen denne kontakten er</p>
                 </div>
                 <div><label className="text-xs font-medium text-slate-300 mb-1 block">Foretrukket lokasjon</label><Input placeholder="Altea, Costa Blanca" value={newCustomer.location} onChange={(e) => setNewCustomer((p) => ({ ...p, location: e.target.value }))} /></div>
                 <div><label className="text-xs font-medium text-slate-300 mb-1 block">Notater</label><textarea placeholder="Tilleggsinfo..." value={newCustomer.notes} onChange={(e) => setNewCustomer((p) => ({ ...p, notes: e.target.value }))} className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-20 resize-none" /></div>
