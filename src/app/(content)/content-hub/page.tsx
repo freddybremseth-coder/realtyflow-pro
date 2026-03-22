@@ -197,23 +197,56 @@ export default function ContentHubPage() {
 
   const handleAiGenerate = useCallback(async (field: string) => {
     setAiGenerating(field);
-    // Simulate AI generation
-    await new Promise((r) => setTimeout(r, 1500));
     const brand = BRANDS.find((b) => b.id === selectedBrand);
-    if (field === "title") {
-      setTitle(`${brand?.name} - Oppdag ${brand?.specialties?.[0] || "nye muligheter"}`);
-    } else if (field === "description") {
-      setDescription(
-        `Utforsk ${brand?.description || "fantastiske muligheter"} med ${brand?.name}. ${brand?.tone ? `Tone: ${brand.tone}` : ""}\n\n#${brand?.id} #${brand?.type}`
-      );
-    } else if (field === "tags") {
-      setTags(
-        (brand?.specialties || []).map((s) => `#${s.replace(/\s+/g, "")}`).join(" ") +
-          ` #${brand?.id} #${brand?.type}`
-      );
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent: 'marketing',
+          tasks: [{
+            type: 'create_content',
+            parameters: {
+              brand: brand?.id || selectedBrand,
+              brand_name: brand?.name,
+              brand_description: brand?.description,
+              target_audience: brand?.target_audience,
+              tone: brand?.tone,
+              specialties: brand?.specialties,
+              field,
+              platform: selectedPlatforms[0] || 'instagram',
+              existing_title: title,
+              existing_description: description,
+              instruction: field === 'title'
+                ? `Lag en fengende tittel for ${brand?.name} innlegg. Kun tittel, ingen annet.`
+                : field === 'description'
+                ? `Skriv en engasjerende beskrivelse/caption for ${brand?.name}. Maks 200 ord. Inkluder relevante hashtags.`
+                : `Generer 8-12 relevante hashtags for ${brand?.name}. Kun hashtags separert med mellomrom.`,
+            }
+          }]
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const output = data.results?.[0]?.output || '';
+        const text = typeof output === 'string' ? output : JSON.stringify(output);
+        if (field === 'title') setTitle(text.replace(/^["']|["']$/g, '').trim());
+        else if (field === 'description') setDescription(text.trim());
+        else if (field === 'tags') setTags(text.trim());
+      } else {
+        // Fallback
+        if (field === "title") setTitle(`${brand?.name} - Oppdag ${brand?.specialties?.[0] || "nye muligheter"}`);
+        else if (field === "description") setDescription(`Utforsk ${brand?.description || "fantastiske muligheter"} med ${brand?.name}.`);
+        else if (field === "tags") setTags((brand?.specialties || []).map((s) => `#${s.replace(/\s+/g, "")}`).join(" "));
+      }
+    } catch {
+      const brand = BRANDS.find((b) => b.id === selectedBrand);
+      if (field === "title") setTitle(`${brand?.name} - Oppdag ${brand?.specialties?.[0] || "nye muligheter"}`);
+      else if (field === "description") setDescription(`Utforsk ${brand?.description || "fantastiske muligheter"} med ${brand?.name}.`);
+      else if (field === "tags") setTags((brand?.specialties || []).map((s) => `#${s.replace(/\s+/g, "")}`).join(" "));
     }
     setAiGenerating(null);
-  }, [selectedBrand]);
+  }, [selectedBrand, selectedPlatforms, title, description]);
 
   const handlePublish = useCallback(async () => {
     if (selectedPlatforms.length === 0) return;
@@ -273,29 +306,56 @@ export default function ContentHubPage() {
     setStrategyInput("");
     setStrategyLoading(true);
 
-    await new Promise((r) => setTimeout(r, 2000));
-
     const brand = BRANDS.find((b) => b.id === selectedBrand);
-    let response = "";
-    if (text.toLowerCase().includes("vekststrategi")) {
-      response = `Her er en vekststrategi for ${brand?.name}:\n\n1. **Innholdspilarer**: Fokuser pa ${brand?.specialties?.join(", ") || "kjerneomrader"}\n2. **Plattformprioritet**: YouTube (langt innhold), Instagram (visuelt), LinkedIn (B2B)\n3. **Publiseringsfrekvens**: 3x/uke pa Instagram, 1x/uke pa YouTube, 2x/uke pa LinkedIn\n4. **Malgruppe**: ${brand?.target_audience || "relevant publikum"}\n5. **KPI-er**: Folger +20%/maned, Engasjement >4%, Leads +15%/maned`;
-    } else if (text.toLowerCase().includes("ytelse") || text.toLowerCase().includes("analyser")) {
-      response = `Ytelsesanalyse siste 30 dager:\n\n- **Total rekkevidde**: 127,400 visninger (+18% fra forrige maned)\n- **Engasjementsrate**: 4.2% (bransjesnitt: 2.8%)\n- **Beste innhold**: "Villa Tour Costa Blanca" (12,300 visninger)\n- **Beste plattform**: YouTube (38% av total trafikk)\n- **Konverteringer**: 23 leads generert\n\nAnbefaling: Skap mer videoinnhold - det driver 3x mer engasjement enn statiske poster.`;
-    } else if (text.toLowerCase().includes("neste uke") || text.toLowerCase().includes("innhold")) {
-      response = `Innholdsforslag for neste uke:\n\n**Mandag**: LinkedIn-artikkel om eiendomstrender i Spania 2026\n**Tirsdag**: Instagram Reel - "3 grunner til a bo i Costa Blanca"\n**Onsdag**: YouTube - Virtuell visning av ny villa\n**Torsdag**: Facebook-innlegg - Kundehistorie/testimonial\n**Fredag**: TikTok - "Day in the life" i Pinosos\n**Lordag**: Pinterest - Drommeboliger-pins (5 stk)\n**Sondag**: Instagram Story - Behind the scenes`;
-    } else {
-      response = `Takk for sporsmalet! Basert pa ${brand?.name} sin profil og malgruppe (${brand?.target_audience}), vil jeg anbefale a fokusere pa:\n\n1. Visuelt innhold som viser ${brand?.specialties?.[0] || "produktene"}\n2. Storytelling som resonerer med malgruppen\n3. Konsistent publisering pa de viktigste plattformene\n\nVil du at jeg utdyper noen av disse punktene?`;
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent: 'ceo',
+          tasks: [{
+            type: 'plan_content_calendar',
+            parameters: {
+              message: text,
+              brand: brand?.id,
+              brand_name: brand?.name,
+              brand_description: brand?.description,
+              target_audience: brand?.target_audience,
+              tone: brand?.tone,
+              specialties: brand?.specialties,
+              conversation_history: strategyMessages.slice(-6).map(m => ({
+                role: m.role,
+                content: m.content,
+              })),
+            }
+          }]
+        }),
+      });
+      let response = '';
+      if (res.ok) {
+        const data = await res.json();
+        const output = data.results?.[0]?.output || data.results?.[0]?.result;
+        response = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+      } else {
+        response = `Beklager, AI-agenten er ikke tilgjengelig akkurat nå. Sjekk at ANTHROPIC_API_KEY er konfigurert i Vercel.`;
+      }
+      const assistantMsg: StrategyMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: response,
+        timestamp: new Date().toISOString(),
+      };
+      setStrategyMessages((prev) => [...prev, assistantMsg]);
+    } catch {
+      setStrategyMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: "assistant" as const,
+        content: "Kunne ikke nå AI-agenten. Prøv igjen om litt.",
+        timestamp: new Date().toISOString(),
+      }]);
     }
-
-    const assistantMsg: StrategyMessage = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: response,
-      timestamp: new Date().toISOString(),
-    };
-    setStrategyMessages((prev) => [...prev, assistantMsg]);
     setStrategyLoading(false);
-  }, [strategyInput, selectedBrand]);
+  }, [strategyInput, selectedBrand, strategyMessages]);
 
   const currentBrand = BRANDS.find((b) => b.id === selectedBrand);
 

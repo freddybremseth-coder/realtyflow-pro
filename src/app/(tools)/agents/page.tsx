@@ -18,7 +18,7 @@ interface Agent {
 }
 
 interface ChatMessage {
-  role: "user" | "agent";
+  role: "user" | "assistant";
   text: string;
 }
 
@@ -78,52 +78,22 @@ const initialAgents: Agent[] = [
     color: "#3b82f6",
   },
   {
-    id: "realty",
-    name: "Realty Agent",
-    description: "Spesialisert på eiendomsmarkedet i Spania - vurdering, prospekter og markedsdata.",
-    status: "idle",
-    capabilities: ["Eiendomsvurdering", "Markedsrapporter", "Prospektgenerering", "Prisanalyse"],
-    lastRun: "3 timer siden",
+    id: "ceo",
+    name: "Victoria CEO",
+    description: "CEO & strategisk leder - koordinerer alle agenter, multi-brand strategi og vekstplanlegging.",
+    status: "active",
+    capabilities: ["Multi-brand strategi", "Kampanjekoordinering", "Ytelsesanalyse", "Vekstplanlegging"],
+    lastRun: "8 min siden",
     color: "#06b6d4",
   },
 ];
-
-const mockResponses: Record<string, string[]> = {
-  marketing: [
-    "Jeg har analysert de siste kampanjene. Anbefaler å øke Instagram Reels-frekvensen med 40% for Soleada.",
-    "Ny kampanjeidé: 'Solkysten venter' - en 3-ukers kampanje rettet mot norske pensjonister. Estimert rekkevidde: 15K.",
-  ],
-  sales: [
-    "3 leads med score over 80 trenger oppfølging i dag. Jeg har satt opp e-postsekvenser.",
-    "Konverteringsraten økte 12% forrige uke etter at vi justerte oppfølgingstidspunktet.",
-  ],
-  seo: [
-    "Søkeordet 'bolig spania' har økt 23% i volum. Anbefaler ny bloggartikkel.",
-    "Konkurrentanalyse viser at vi mangler innhold om 'bærekraftige hus costa blanca'.",
-  ],
-  business: [
-    "Q1 viser 18% vekst totalt. Dona Anna har størst vekstpotensial med 45% margin.",
-    "Anbefaler strategisk partnerskap med lokal bank for boliglånsformidling.",
-  ],
-  youtube: [
-    "Trending tema: 'Flytte til Spania 2026' - anbefaler video innen 48 timer. Manus er klart.",
-    "Siste Short fikk 12K visninger. Algoritmen favoriserer 45-60 sek formatet nå.",
-  ],
-  "multi-domain": [
-    "Synergirapport: Soleada-leads som også følger Freddy Bremseth har 3x høyere konvertering.",
-    "Neural Beat-innhold kan brukes som bakgrunnsmusikk i Soleada-videoer. Kryssmarkedsføring anbefalt.",
-  ],
-  realty: [
-    "Markedsrapport: Prisene i Altea steg 8% siste kvartal. 14 nye eiendommer matcher våre kriterier.",
-    "Vurdering utført: Villa i Moraira estimert til €485.000 basert på 12 sammenlignbare salg.",
-  ],
-};
 
 export default function AgentsPage() {
   const [agents] = useState<Agent[]>(initialAgents);
   const [chatAgent, setChatAgent] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
   const [chatInput, setChatInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [showNewAgent, setShowNewAgent] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: "", description: "", capabilities: "" });
 
@@ -131,16 +101,57 @@ export default function AgentsPage() {
   const activeTasks = agents.filter((a) => a.status === "active").length;
   const completedThisWeek = 23;
 
-  const handleSendMessage = (agentId: string) => {
-    if (!chatInput.trim()) return;
+  const handleSendMessage = async (agentId: string) => {
+    if (!chatInput.trim() || isLoading) return;
     const userMsg: ChatMessage = { role: "user", text: chatInput };
-    const responses = mockResponses[agentId] || ["Forstått. Jeg jobber med forespørselen din."];
-    const agentMsg: ChatMessage = { role: "agent", text: responses[Math.floor(Math.random() * responses.length)] };
     setChatMessages((prev) => ({
       ...prev,
-      [agentId]: [...(prev[agentId] || []), userMsg, agentMsg],
+      [agentId]: [...(prev[agentId] || []), userMsg],
     }));
     setChatInput("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: agentId,
+          command: userMsg.text,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const reply = data.output || data.result || "Ingen respons fra agenten.";
+        setChatMessages((prev) => ({
+          ...prev,
+          [agentId]: [
+            ...(prev[agentId] || []),
+            { role: "assistant", text: typeof reply === "string" ? reply : JSON.stringify(reply, null, 2) },
+          ],
+        }));
+      } else {
+        const errData = await res.json().catch(() => null);
+        setChatMessages((prev) => ({
+          ...prev,
+          [agentId]: [
+            ...(prev[agentId] || []),
+            { role: "assistant", text: `Feil: ${errData?.error || `HTTP ${res.status}`}` },
+          ],
+        }));
+      }
+    } catch {
+      setChatMessages((prev) => ({
+        ...prev,
+        [agentId]: [
+          ...(prev[agentId] || []),
+          { role: "assistant", text: "Beklager, kunne ikke nå AI-agenten. Sjekk at ANTHROPIC_API_KEY er konfigurert." },
+        ],
+      }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAddAgent = () => {

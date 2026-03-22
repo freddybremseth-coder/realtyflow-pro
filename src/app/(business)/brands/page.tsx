@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,8 @@ export default function BrandsPage() {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
   const [newBrand, setNewBrand] = useState({
     name: "",
     type: "real_estate",
@@ -86,6 +88,45 @@ export default function BrandsPage() {
   });
 
   const selectedBrand = brands.find((b) => b.id === selectedId) || null;
+
+  // Load saved brand settings from Supabase on mount
+  useEffect(() => {
+    fetch("/api/brands/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.settings && Object.keys(data.settings).length > 0) {
+          setBrands((prev) =>
+            prev.map((b) =>
+              data.settings[b.id]
+                ? { ...b, settings: { ...emptySettings, ...data.settings[b.id] } }
+                : b
+            )
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveSettings = useCallback(async (brandId: string) => {
+    const brand = brands.find((b) => b.id === brandId);
+    if (!brand) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/brands/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand_id: brandId, settings: brand.settings }),
+      });
+      if (res.ok) {
+        setSavedToast(true);
+        setTimeout(() => setSavedToast(false), 2000);
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setSaving(false);
+    }
+  }, [brands]);
 
   const updateSettings = (field: keyof BrandSettings, value: string) => {
     if (!selectedId) return;
@@ -665,9 +706,17 @@ export default function BrandsPage() {
               </div>
 
               {/* Save Button */}
-              <div className="mt-6 flex justify-end">
-                <Button onClick={() => setSelectedId(null)}>
-                  Lagre innstillinger
+              <div className="mt-6 flex items-center justify-end gap-3">
+                {savedToast && (
+                  <Badge className="bg-green-500/20 text-green-300 border-green-500/30 animate-pulse">
+                    Lagret!
+                  </Badge>
+                )}
+                <Button
+                  onClick={() => saveSettings(selectedBrand.id)}
+                  disabled={saving}
+                >
+                  {saving ? "Lagrer..." : "Lagre innstillinger"}
                 </Button>
               </div>
             </CardContent>

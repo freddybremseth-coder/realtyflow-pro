@@ -37,8 +37,8 @@ const tones = [
 ];
 
 const activeAgents = [
-  { name: "Clara Content", status: "Analyserer merkevare...", color: "bg-purple-500" },
-  { name: "Sam SEO Expert", status: "Optimaliserer hashtags...", color: "bg-emerald-500" },
+  { name: "Clara Content", status: "Online", color: "bg-purple-500" },
+  { name: "Sam SEO Expert", status: "Online", color: "bg-emerald-500" },
 ];
 
 interface HistoryEntry {
@@ -50,126 +50,6 @@ interface HistoryEntry {
   prompt: string;
   content: string;
   createdAt: Date;
-}
-
-function generateMockContent(
-  brandName: string,
-  platformNames: string[],
-  contentType: string,
-  tone: string,
-  prompt: string
-): string {
-  const platformLabel = platformNames.join(", ");
-  const contentTypeName = contentTypes.find((c) => c.id === contentType)?.name ?? contentType;
-
-  const templates: Record<string, string> = {
-    post: `📱 ${brandName} | ${platformLabel}
-
-${prompt}
-
-✨ ${tone} innhold generert av AI:
-
-Visste du at ${brandName} tilbyr unike løsninger for akkurat dette? Vi har jobbet hardt for å gi deg det beste — og nå er vi klare til å dele det med verden.
-
-🔑 Nøkkelpunkter:
-• Skreddersydd for din målgruppe
-• Optimalisert for ${platformLabel}
-• Bygget på ${brandName} sin merkevareidentitet
-
-💬 Hva tenker du? Del dine tanker i kommentarene!
-
-#${brandName.replace(/[\s.]/g, "")} #innhold #digital #${tone.toLowerCase()}`,
-
-    story: `🎬 Story for ${brandName}
-
-Slide 1: Hook — "${prompt}"
-Slide 2: Problemet mange opplever
-Slide 3: Løsningen fra ${brandName}
-Slide 4: Sosialt bevis / tall
-Slide 5: CTA — "Swipe opp for mer!" / "Trykk på linken i bio"
-
-Tone: ${tone}
-Plattform: ${platformLabel}
-Anbefalt musikk: Trending lyd
-Varighet: 5 slides, 3-5 sek per slide`,
-
-    reel: `🎥 Reel-manus for ${brandName}
-
-[0-3 sek] HOOK: "${prompt}" — fang oppmerksomheten umiddelbart
-[3-8 sek] PROBLEM: "Mange sliter med dette..."
-[8-15 sek] LØSNING: Vis hva ${brandName} tilbyr
-[15-22 sek] BEVIS: Resultater, tall, kundeuttalelser
-[22-27 sek] CTA: "Følg for mer! Link i bio."
-
-Tone: ${tone}
-Hashtags: #${brandName.replace(/[\s.]/g, "")} #reels #tips #${tone.toLowerCase()}
-Plattform: ${platformLabel}
-Anbefalt format: 9:16 vertikal`,
-
-    article: `📝 Artikkel for ${brandName}
-
-Tittel: "${prompt} — Alt du trenger å vite i 2026"
-
-Ingress:
-I en verden som stadig endrer seg, er det viktig å holde seg oppdatert. ${brandName} deler innsikt og ekspertise om ${prompt.toLowerCase()}.
-
-Hoveddel:
-
-1. Bakgrunn og kontekst
-${brandName} har lang erfaring med dette feltet, og vi ser tydelige trender som former fremtiden.
-
-2. De viktigste faktorene
-• Punkt 1: Markedsutvikling og muligheter
-• Punkt 2: Teknologiske fremskritt
-• Punkt 3: Kundeopplevelse i fokus
-
-3. Ekspertråd fra ${brandName}
-"Vi anbefaler å starte med å forstå målgruppen din, deretter bygge en strategi som er bærekraftig over tid."
-
-Avslutning:
-Vil du vite mer? Ta kontakt med ${brandName} for en uforpliktende samtale.
-
-Tone: ${tone}
-Plattform: ${platformLabel}
-Lengde: ~800 ord`,
-
-    "video-script": `🎬 Videomanus for ${brandName}
-
-TITTEL: "${prompt}"
-VARIGHET: 3-5 minutter
-TONE: ${tone}
-PLATTFORM: ${platformLabel}
-
----
-
-[INTRO — 0:00-0:15]
-🎵 Intro-musikk
-Tekst på skjerm: "${brandName} presenterer"
-Forteller: "Hei! I dag skal vi snakke om ${prompt.toLowerCase()}."
-
-[DEL 1 — 0:15-1:30]
-"La oss starte med det grunnleggende..."
-• Vis B-roll av relevante bilder
-• Forklar hovedkonseptet
-
-[DEL 2 — 1:30-2:45]
-"Her er det det blir interessant..."
-• Gå dypere inn i temaet
-• Del eksempler og tall
-• Vis ${brandName} sin tilnærming
-
-[DEL 3 — 2:45-3:30]
-"Hva betyr dette for deg?"
-• Praktiske tips
-• Handlingsbare råd
-
-[OUTRO — 3:30-4:00]
-"Takk for at du så på! Husk å like og abonnere."
-• CTA: Besøk ${brandName} for mer informasjon
-• Vis logo og kontaktinfo`,
-  };
-
-  return templates[contentType] || templates["post"];
 }
 
 export default function ContentStudioPage() {
@@ -193,7 +73,7 @@ export default function ContentStudioPage() {
     );
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
     setGeneratedContent("");
@@ -202,29 +82,61 @@ export default function ContentStudioPage() {
       (pid) => platforms.find((p) => p.id === pid)?.name ?? pid
     );
 
-    setTimeout(() => {
-      const content = generateMockContent(
-        currentBrand.name,
-        platformNames,
-        selectedContentType,
-        selectedTone,
-        prompt
-      );
-      setGeneratedContent(content);
+    let content = "";
 
-      const entry: HistoryEntry = {
-        id: `h-${Date.now()}`,
-        brand: currentBrand.name,
-        platforms: [...selectedPlatforms],
-        contentType: selectedContentType,
-        tone: selectedTone,
-        prompt,
-        content,
-        createdAt: new Date(),
-      };
-      setHistory((prev) => [entry, ...prev].slice(0, 20));
-      setIsGenerating(false);
-    }, 2200);
+    try {
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: "marketing",
+          tasks: [
+            {
+              type: "create_content",
+              parameters: {
+                brand: selectedBrand,
+                platform: selectedPlatforms.join(","),
+                content_type: selectedContentType,
+                tone: selectedTone,
+                audience: audience || undefined,
+                topic: prompt,
+                language: "no",
+              },
+            },
+          ],
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const output =
+          data.results?.[0]?.output ||
+          data.results?.[0]?.result ||
+          "Ingen innhold generert";
+        content = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+      } else {
+        console.error("API returned error status:", res.status);
+        content = `[Feil fra API - status ${res.status}] Kunne ikke generere innhold. Prøv igjen.`;
+      }
+    } catch (err) {
+      console.error("AI generation failed:", err);
+      content = `[Feil] Kunne ikke nå AI-tjenesten. Sjekk at serveren kjører og prøv igjen.`;
+    }
+
+    setGeneratedContent(content);
+
+    const entry: HistoryEntry = {
+      id: `h-${Date.now()}`,
+      brand: currentBrand.name,
+      platforms: [...selectedPlatforms],
+      contentType: selectedContentType,
+      tone: selectedTone,
+      prompt,
+      content,
+      createdAt: new Date(),
+    };
+    setHistory((prev) => [entry, ...prev].slice(0, 20));
+    setIsGenerating(false);
   };
 
   const handleCopy = () => {
