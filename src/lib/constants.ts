@@ -122,7 +122,7 @@ export const SIDEBAR_NAV = {
     { label: "Business Oversikt", href: "/business-overview", icon: "PieChart" },
   ],
   tools: [
-    { label: "AI Agenter", href: "/agents", icon: "Bot" },
+    { label: "Kommandosenter", href: "/agents", icon: "Bot" },
     { label: "E-post AI", href: "/email", icon: "Mail" },
     { label: "Market Intelligence", href: "/reports", icon: "TrendingUp" },
     { label: "Analytics", href: "/analytics", icon: "BarChart3" },

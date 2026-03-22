@@ -1,320 +1,787 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useRef } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Bot, MessageSquare, Zap, Brain, Plus, Send, X } from "lucide-react";
+import {
+  Bot,
+  Send,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  Mail,
+  FileText,
+  TrendingUp,
+  Users,
+  Sparkles,
+  ChevronRight,
+  Loader2,
+  X,
+  MessageSquare,
+  Crown,
+  Zap,
+  Brain,
+  Play,
+  Rocket,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
-interface Agent {
-  id: string;
-  name: string;
+// --- Types ---
+
+interface PlanStep {
+  id: number;
   description: string;
-  status: "active" | "idle";
-  capabilities: string[];
-  lastRun: string;
-  color: string;
+  agent: string;
+  system: string;
+  status: "pending" | "running" | "done" | "error";
+  result?: string;
+}
+
+interface Plan {
+  id: string;
+  title: string;
+  steps: PlanStep[];
+  status: "draft" | "confirmed" | "executing" | "done" | "error";
+}
+
+interface Execution {
+  id: string;
+  planId: string;
+  startedAt: number;
+  completedSteps: number;
+  totalSteps: number;
+  elapsedSeconds: number;
 }
 
 interface ChatMessage {
   role: "user" | "assistant";
-  text: string;
+  content: string;
+  plan?: Plan;
+  execution?: Execution;
 }
 
-const initialAgents: Agent[] = [
+interface AgentInfo {
+  id: string;
+  name: string;
+  role: string;
+  color: string;
+  status: "active" | "idle" | "busy";
+  currentTask?: string;
+  lastActivity: string;
+  tasksCompleted: number;
+}
+
+// --- Data ---
+
+const agents: AgentInfo[] = [
+  {
+    id: "ceo",
+    name: "Victoria CEO",
+    role: "Strategisk leder & koordinator",
+    color: "#06b6d4",
+    status: "active",
+    lastActivity: "Akkurat n\u00e5",
+    tasksCompleted: 47,
+  },
   {
     id: "marketing",
     name: "Marketing Agent",
-    description: "Genererer kampanjer, sosiale medier-innlegg og markedsstrategier for alle brands.",
-    status: "active",
-    capabilities: ["Kampanjegenerering", "SoMe-innlegg", "E-postkopier", "A/B-testing"],
-    lastRun: "12 min siden",
+    role: "Kampanjer & innhold",
     color: "#ec4899",
+    status: "idle",
+    lastActivity: "12 min siden",
+    tasksCompleted: 34,
   },
   {
     id: "sales",
     name: "Sales Agent",
-    description: "Håndterer lead-scoring, oppfølging og salgsstrategier automatisk.",
-    status: "active",
-    capabilities: ["Lead-scoring", "Oppfølgingssekvenser", "Salgskopier", "CRM-oppdatering"],
-    lastRun: "34 min siden",
+    role: "Leads & salg",
     color: "#f59e0b",
+    status: "idle",
+    lastActivity: "34 min siden",
+    tasksCompleted: 28,
   },
   {
     id: "seo",
     name: "SEO Agent",
-    description: "Analyserer søkeord, optimaliserer innhold og bygger organisk synlighet.",
-    status: "idle",
-    capabilities: ["Søkeordanalyse", "On-page SEO", "Lenkestrategi", "Konkurrentanalyse"],
-    lastRun: "2 timer siden",
+    role: "S\u00f8kemotoroptimalisering",
     color: "#10b981",
+    status: "idle",
+    lastActivity: "2 timer siden",
+    tasksCompleted: 19,
   },
   {
     id: "business",
     name: "Business Agent",
-    description: "Strategisk rådgivning, markedsanalyse og forretningsutvikling.",
-    status: "idle",
-    capabilities: ["Markedsanalyse", "Vekststrategi", "Partnerskap", "Budsjettoptimalisering"],
-    lastRun: "5 timer siden",
+    role: "Forretningsstrategi",
     color: "#8b5cf6",
+    status: "idle",
+    lastActivity: "5 timer siden",
+    tasksCompleted: 15,
   },
   {
     id: "youtube",
     name: "YouTube Agent",
-    description: "Lager manus, optimaliserer titler, thumbnails og YouTube-strategi.",
-    status: "active",
-    capabilities: ["Manusskrivning", "Titteloptimalisering", "Thumbnail-ideer", "Shorts-strategi"],
-    lastRun: "1 time siden",
+    role: "Video & manus",
     color: "#ef4444",
+    status: "idle",
+    lastActivity: "1 time siden",
+    tasksCompleted: 22,
   },
   {
     id: "multi-domain",
     name: "Multi-Domain Expert",
-    description: "Tverrfaglig ekspert som koordinerer mellom eiendom, SaaS, landbruk og musikk.",
-    status: "active",
-    capabilities: ["Kryss-brand strategi", "Synergianalyse", "Ressursallokering", "Helhetlig planlegging"],
-    lastRun: "20 min siden",
+    role: "Tverrfaglig koordinering",
     color: "#3b82f6",
-  },
-  {
-    id: "ceo",
-    name: "Victoria CEO",
-    description: "CEO & strategisk leder - koordinerer alle agenter, multi-brand strategi og vekstplanlegging.",
-    status: "active",
-    capabilities: ["Multi-brand strategi", "Kampanjekoordinering", "Ytelsesanalyse", "Vekstplanlegging"],
-    lastRun: "8 min siden",
-    color: "#06b6d4",
+    status: "idle",
+    lastActivity: "20 min siden",
+    tasksCompleted: 31,
   },
 ];
 
-export default function AgentsPage() {
-  const [agents] = useState<Agent[]>(initialAgents);
-  const [chatAgent, setChatAgent] = useState<string | null>(null);
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
-  const [chatInput, setChatInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [showNewAgent, setShowNewAgent] = useState(false);
-  const [newAgent, setNewAgent] = useState({ name: "", description: "", capabilities: "" });
+const suggestedCommands = [
+  "Send oppf\u00f8lgingsepost til alle leads i pipeline",
+  "Lag en Facebook-kampanje for Soleada sine nye eiendommer",
+  "Generer innhold for alle brands denne uken",
+  "Analyser hvilke leads som er kaldest og lag en varmekampanje",
+  "Lag lead magnet for Zen Eco Homes",
+  "Send ukentlig nyhetsbrev til alle kontakter",
+  "Start A/B test p\u00e5 Instagram-innhold for Neural Beat",
+  "Vis meg status p\u00e5 alle brands",
+];
 
-  const totalAgents = agents.length;
-  const activeTasks = agents.filter((a) => a.status === "active").length;
-  const completedThisWeek = 23;
+const recentActions = [
+  { label: "Kampanje sendt til 12 VIEWING-leads", time: "14:32", status: "done" as const },
+  { label: "Innhold generert for Soleada Instagram", time: "13:15", status: "done" as const },
+  { label: "Lead magnet publisert for Zen Eco Homes", time: "11:48", status: "done" as const },
+  { label: "SEO-rapport generert for RealtyFlow", time: "10:20", status: "done" as const },
+];
 
-  const handleSendMessage = async (agentId: string) => {
-    if (!chatInput.trim() || isLoading) return;
-    const userMsg: ChatMessage = { role: "user", text: chatInput };
-    setChatMessages((prev) => ({
-      ...prev,
-      [agentId]: [...(prev[agentId] || []), userMsg],
-    }));
-    setChatInput("");
-    setIsLoading(true);
+// --- Helper Components ---
 
-    try {
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agent: agentId,
-          command: userMsg.text,
-        }),
-      });
+function ThinkingIndicator() {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+        <Crown size={14} className="text-cyan-400" />
+      </div>
+      <div className="bg-slate-800 rounded-lg px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+          <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+          <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      if (res.ok) {
-        const data = await res.json();
-        const reply = data.output || data.result || "Ingen respons fra agenten.";
-        setChatMessages((prev) => ({
-          ...prev,
-          [agentId]: [
-            ...(prev[agentId] || []),
-            { role: "assistant", text: typeof reply === "string" ? reply : JSON.stringify(reply, null, 2) },
-          ],
-        }));
-      } else {
-        const errData = await res.json().catch(() => null);
-        setChatMessages((prev) => ({
-          ...prev,
-          [agentId]: [
-            ...(prev[agentId] || []),
-            { role: "assistant", text: `Feil: ${errData?.error || `HTTP ${res.status}`}` },
-          ],
-        }));
-      }
-    } catch {
-      setChatMessages((prev) => ({
-        ...prev,
-        [agentId]: [
-          ...(prev[agentId] || []),
-          { role: "assistant", text: "Beklager, kunne ikke nå AI-agenten. Sjekk at ANTHROPIC_API_KEY er konfigurert." },
-        ],
-      }));
-    } finally {
-      setIsLoading(false);
-    }
+function PlanCard({
+  plan,
+  onExecute,
+  onCancel,
+}: {
+  plan: Plan;
+  onExecute: () => void;
+  onCancel: () => void;
+}) {
+  const statusLabels: Record<string, string> = {
+    draft: "Venter p\u00e5 bekreftelse",
+    confirmed: "Bekreftet",
+    executing: "Utf\u00f8rer...",
+    done: "Fullf\u00f8rt",
+    error: "Feil oppsto",
   };
 
-  const handleAddAgent = () => {
-    if (!newAgent.name) return;
-    setNewAgent({ name: "", description: "", capabilities: "" });
-    setShowNewAgent(false);
+  const stepIcons: Record<string, React.ReactNode> = {
+    pending: <Clock size={14} className="text-slate-500" />,
+    running: <Loader2 size={14} className="text-cyan-400 animate-spin" />,
+    done: <CheckCircle size={14} className="text-emerald-400" />,
+    error: <AlertCircle size={14} className="text-red-400" />,
+  };
+
+  const systemIcons: Record<string, React.ReactNode> = {
+    CRM: <Users size={12} className="text-amber-400" />,
+    "Content Studio": <FileText size={12} className="text-pink-400" />,
+    "Email AI": <Mail size={12} className="text-blue-400" />,
+    Analytics: <TrendingUp size={12} className="text-emerald-400" />,
+    Marketing: <Sparkles size={12} className="text-purple-400" />,
+    SEO: <TrendingUp size={12} className="text-green-400" />,
+    YouTube: <Play size={12} className="text-red-400" />,
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="bg-slate-800/80 border border-slate-700 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <FileText size={16} className="text-cyan-400" />
+        <span className="text-sm font-semibold text-white">Plan: {plan.title}</span>
+      </div>
+      <div className="space-y-2">
+        {plan.steps.map((step) => (
+          <div key={step.id} className="flex items-start gap-2">
+            <div className="mt-0.5">{stepIcons[step.status]}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-slate-200">{step.id}. {step.description}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <Badge variant="outline" className="text-[10px] gap-1">
+                  <Bot size={10} />
+                  {step.agent}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px] gap-1">
+                  {systemIcons[step.system] || <Zap size={10} />}
+                  {step.system}
+                </Badge>
+                {step.result && (
+                  <span className="text-[10px] text-emerald-400">{step.result}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between pt-2 border-t border-slate-700">
+        <span className="text-xs text-slate-400">
+          Status: {statusLabels[plan.status] || plan.status}
+        </span>
+        {plan.status === "draft" && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={onExecute} className="gap-1.5 text-xs">
+              <Rocket size={12} />
+              Kj\u00f8r plan
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel} className="text-xs">
+              <X size={12} />
+              Avbryt
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionCard({ execution, plan }: { execution: Execution; plan?: Plan }) {
+  const stepIcons: Record<string, React.ReactNode> = {
+    pending: <Clock size={14} className="text-slate-500" />,
+    running: <Loader2 size={14} className="text-cyan-400 animate-spin" />,
+    done: <CheckCircle size={14} className="text-emerald-400" />,
+    error: <AlertCircle size={14} className="text-red-400" />,
+  };
+
+  return (
+    <div className="bg-slate-800/80 border border-cyan-500/30 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Zap size={16} className="text-cyan-400" />
+        <span className="text-sm font-semibold text-white">
+          Utf\u00f8rer: {plan?.title || "Oppgave"}
+        </span>
+      </div>
+      {plan && (
+        <div className="space-y-1.5">
+          {plan.steps.map((step) => (
+            <div key={step.id} className="flex items-center gap-2">
+              {stepIcons[step.status]}
+              <span className={`text-sm ${step.status === "done" ? "text-slate-300" : step.status === "running" ? "text-white" : "text-slate-500"}`}>
+                Steg {step.id}: {step.description}
+                {step.result && <span className="text-emerald-400 ml-1">- {step.result}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-xs text-slate-500">
+        Tid: {execution.elapsedSeconds} sekunder
+      </div>
+    </div>
+  );
+}
+
+// --- Main Page ---
+
+export default function AgentsCommandCenter() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [agentStatuses, setAgentStatuses] = useState<AgentInfo[]>(agents);
+  const [mobilePanel, setMobilePanel] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const executionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, thinking]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (executionTimerRef.current) clearInterval(executionTimerRef.current);
+    };
+  }, []);
+
+  const handleSend = async (overrideMessage?: string) => {
+    const userMsg = (overrideMessage || input).trim();
+    if (!userMsg || executing) return;
+
+    setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setThinking(true);
+
+    // Check if this is an execution command
+    const isExecuteCommand =
+      /^(start|kj\u00f8r|sett i gang|utf\u00f8r|gj\u00f8r det|ja\s*,?\s*(kj\u00f8r|start)|bekreft)/i.test(userMsg);
+
+    try {
+      const res = await fetch("/api/agents/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMsg,
+          conversation: messages,
+          execute: isExecuteCommand,
+          currentPlan: activePlan,
+        }),
+      });
+
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.response,
+          plan: data.plan,
+          execution: data.execution,
+        },
+      ]);
+
+      if (data.plan) setActivePlan(data.plan);
+      if (data.execution) {
+        setExecuting(true);
+        pollExecution(data.execution.id);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "Beklager, kunne ikke n\u00e5 AI-systemet. Sjekk at ANTHROPIC_API_KEY er konfigurert.",
+        },
+      ]);
+    }
+    setThinking(false);
+  };
+
+  const pollExecution = (executionId: string) => {
+    let elapsed = 0;
+    executionTimerRef.current = setInterval(async () => {
+      elapsed += 2;
+      try {
+        const res = await fetch(`/api/agents/command/status?id=${executionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.done) {
+            if (executionTimerRef.current) clearInterval(executionTimerRef.current);
+            setExecuting(false);
+            if (data.plan) setActivePlan(data.plan);
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: data.response || "Plan fullf\u00f8rt!",
+                plan: data.plan,
+              },
+            ]);
+            // Update agent statuses to reflect completed work
+            setAgentStatuses((prev) =>
+              prev.map((a) => ({
+                ...a,
+                status: "idle" as const,
+                currentTask: undefined,
+              }))
+            );
+          } else if (data.plan) {
+            // Update progress in last execution message
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastExecIdx = updated.findLastIndex((m) => m.execution);
+              if (lastExecIdx >= 0) {
+                updated[lastExecIdx] = {
+                  ...updated[lastExecIdx],
+                  execution: {
+                    ...updated[lastExecIdx].execution!,
+                    elapsedSeconds: elapsed,
+                    completedSteps: data.plan.steps.filter(
+                      (s: PlanStep) => s.status === "done"
+                    ).length,
+                  },
+                  plan: data.plan,
+                };
+              }
+              return updated;
+            });
+            // Update agent statuses
+            if (data.activeAgents) {
+              setAgentStatuses((prev) =>
+                prev.map((a) => {
+                  const active = data.activeAgents.find(
+                    (aa: { id: string; task: string }) => aa.id === a.id
+                  );
+                  return active
+                    ? { ...a, status: "busy" as const, currentTask: active.task }
+                    : { ...a, status: a.id === "ceo" ? "active" as const : "idle" as const, currentTask: undefined };
+                })
+              );
+            }
+          }
+        }
+      } catch {
+        // Silently continue polling
+      }
+
+      // Safety: stop polling after 5 minutes
+      if (elapsed > 300) {
+        if (executionTimerRef.current) clearInterval(executionTimerRef.current);
+        setExecuting(false);
+      }
+    }, 2000);
+  };
+
+  const handleExecutePlan = () => {
+    handleSend("Kj\u00f8r");
+  };
+
+  const handleCancelPlan = () => {
+    setActivePlan(null);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "Plan avbrutt. Hva vil du gj\u00f8re i stedet?" },
+    ]);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Auto-resize
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  };
+
+  const totalTasksToday = agentStatuses.reduce((sum, a) => sum + a.tasksCompleted, 0);
+
+  return (
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-1 pb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Bot className="text-primary-400" size={28} />
-            AI Agenter
+            <div className="w-9 h-9 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+              <Brain className="text-cyan-400" size={20} />
+            </div>
+            AI Kommandosenter
           </h1>
-          <p className="text-sm text-slate-400 mt-1">7 spesialiserte AI-agenter klare til bruk</p>
+          <p className="text-sm text-slate-400 mt-1">
+            Snakk med Victoria - din strategiske AI-assistent
+          </p>
         </div>
-        <Button onClick={() => setShowNewAgent(true)}>
-          <Plus size={16} className="mr-2" />
-          Foreslå ny agent
+        <Button
+          variant="outline"
+          size="sm"
+          className="lg:hidden"
+          onClick={() => setMobilePanel(!mobilePanel)}
+        >
+          {mobilePanel ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          <span className="ml-1.5">Agenter</span>
         </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: "Totalt agenter", value: totalAgents, icon: Bot },
-          { label: "Aktive oppgaver", value: activeTasks, icon: Zap },
-          { label: "Fullført denne uken", value: completedThisWeek, icon: Brain },
-        ].map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <stat.icon size={24} className="text-slate-400" />
-              <div>
-                <p className="text-2xl font-bold text-white">{stat.value}</p>
-                <p className="text-xs text-slate-400">{stat.label}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* New Agent Modal */}
-      {showNewAgent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowNewAgent(false)}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">Foreslå ny agent</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowNewAgent(false)}>
-                  <X size={18} />
-                </Button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Navn *</label>
-                  <Input placeholder="F.eks. PR Agent" value={newAgent.name} onChange={(e) => setNewAgent((p) => ({ ...p, name: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Beskrivelse</label>
-                  <Input placeholder="Hva skal agenten gjøre?" value={newAgent.description} onChange={(e) => setNewAgent((p) => ({ ...p, description: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Kapabiliteter</label>
-                  <textarea
-                    placeholder="Liste over ting agenten kan gjøre, en per linje..."
-                    value={newAgent.capabilities}
-                    onChange={(e) => setNewAgent((p) => ({ ...p, capabilities: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none"
-                  />
-                </div>
-                <Button onClick={handleAddAgent} className="w-full" disabled={!newAgent.name}>
-                  <Plus size={16} className="mr-1" />
-                  Send forslag
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Chat Modal */}
-      {chatAgent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setChatAgent(null)}>
-          <Card className="w-full max-w-xl mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare size={18} />
-                  Chat med {agents.find((a) => a.id === chatAgent)?.name}
-                </CardTitle>
-                <Button variant="ghost" size="icon" onClick={() => setChatAgent(null)}>
-                  <X size={18} />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto space-y-3 pb-3">
-              {(chatMessages[chatAgent] || []).length === 0 && (
-                <p className="text-sm text-slate-500 text-center py-8">Start en samtale med agenten...</p>
-              )}
-              {(chatMessages[chatAgent] || []).map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${msg.role === "user" ? "bg-primary-600 text-white" : "bg-slate-800 text-slate-200"}`}>
-                    {msg.text}
+      {/* Main Layout */}
+      <div className="flex-1 flex gap-4 min-h-0">
+        {/* Left: Chat */}
+        <div className="flex-[3] flex flex-col min-w-0">
+          <Card className="flex-1 flex flex-col min-h-0 border-slate-700">
+            {/* Chat Messages */}
+            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.length === 0 && !thinking && (
+                <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                  <div className="w-16 h-16 rounded-full bg-cyan-500/20 flex items-center justify-center mb-4">
+                    <Crown size={28} className="text-cyan-400" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-white mb-1">Hei Freddy!</h2>
+                  <p className="text-sm text-slate-400 mb-6 max-w-md">
+                    Jeg er Victoria, din strategiske AI-assistent. Fortell meg hva du vil
+                    oppn\u00e5, s\u00e5 koordinerer jeg alle agentene for \u00e5 f\u00e5 det gjort.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                    {suggestedCommands.map((cmd) => (
+                      <button
+                        key={cmd}
+                        onClick={() => handleSend(cmd)}
+                        className="text-left text-xs text-slate-300 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700 rounded-lg px-3 py-2.5 transition-colors flex items-center gap-2"
+                      >
+                        <ChevronRight size={12} className="text-cyan-400 flex-shrink-0" />
+                        <span>{cmd}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
+              )}
+
+              {messages.map((msg, i) => (
+                <div key={i}>
+                  {msg.role === "user" ? (
+                    <div className="flex justify-end">
+                      <div className="max-w-[80%] bg-primary-600 text-white rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap">
+                        {msg.content}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Crown size={14} className="text-cyan-400" />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-3">
+                        <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                          Victoria
+                        </div>
+                        {msg.content && (
+                          <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+                            {msg.content}
+                          </div>
+                        )}
+                        {msg.plan && (
+                          <PlanCard
+                            plan={msg.plan}
+                            onExecute={handleExecutePlan}
+                            onCancel={handleCancelPlan}
+                          />
+                        )}
+                        {msg.execution && (
+                          <ExecutionCard
+                            execution={msg.execution}
+                            plan={msg.plan}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
+
+              {thinking && <ThinkingIndicator />}
+              <div ref={chatEndRef} />
             </CardContent>
-            <div className="p-4 border-t border-slate-700">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Skriv en melding..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage(chatAgent)}
+
+            {/* Input Area */}
+            <div className="p-4 border-t border-slate-700 flex-shrink-0">
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    executing
+                      ? "Venter p\u00e5 at planen fullf\u00f8res..."
+                      : "Fortell Victoria hva du vil gj\u00f8re..."
+                  }
+                  disabled={executing}
+                  rows={1}
+                  className="flex-1 resize-none rounded-lg border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 disabled:opacity-50 min-h-[42px] max-h-[160px]"
                 />
-                <Button onClick={() => handleSendMessage(chatAgent)} disabled={!chatInput.trim()}>
-                  <Send size={16} />
+                <Button
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() || executing}
+                  className="h-[42px] w-[42px] p-0 flex-shrink-0"
+                >
+                  {executing ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Send size={16} />
+                  )}
                 </Button>
               </div>
+              <p className="text-[10px] text-slate-600 mt-1.5 text-center">
+                Shift+Enter for ny linje - Enter for \u00e5 sende
+              </p>
             </div>
           </Card>
         </div>
-      )}
 
-      {/* Agent Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {agents.map((agent) => (
-          <Card key={agent.id} className="hover:border-slate-500 transition-all">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: agent.color + "22", color: agent.color }}
-                >
-                  <Bot size={18} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white text-sm">{agent.name}</h3>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <Badge variant={agent.status === "active" ? "success" : "secondary"} className="text-[10px]">
-                      {agent.status === "active" ? "Aktiv" : "Inaktiv"}
-                    </Badge>
-                    <span className="text-[10px] text-slate-500">{agent.lastRun}</span>
+        {/* Right: Agent Status Panel */}
+        <div
+          className={`flex-[2] flex flex-col gap-4 min-h-0 overflow-y-auto ${
+            mobilePanel ? "block" : "hidden"
+          } lg:flex`}
+        >
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 gap-2 flex-shrink-0">
+            {[
+              { label: "Oppgaver i dag", value: totalTasksToday, icon: Zap, color: "text-cyan-400" },
+              { label: "Vellykket", value: "98%", icon: CheckCircle, color: "text-emerald-400" },
+              { label: "E-poster sendt", value: 156, icon: Mail, color: "text-blue-400" },
+              { label: "Innhold generert", value: 42, icon: FileText, color: "text-pink-400" },
+            ].map((stat) => (
+              <Card key={stat.label} className="border-slate-700">
+                <CardContent className="p-3 flex items-center gap-2.5">
+                  <stat.icon size={16} className={stat.color} />
+                  <div>
+                    <p className="text-lg font-bold text-white leading-none">{stat.value}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{stat.label}</p>
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Agent Status List */}
+          <Card className="border-slate-700 flex-shrink-0">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Bot size={14} className="text-slate-400" />
+                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                  Agenter
+                </span>
               </div>
-              <p className="text-xs text-slate-400 mb-3">{agent.description}</p>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {agent.capabilities.map((cap) => (
-                  <Badge key={cap} variant="outline" className="text-[10px]">
-                    {cap}
-                  </Badge>
+              <div className="space-y-1">
+                {agentStatuses.map((agent) => (
+                  <div
+                    key={agent.id}
+                    className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor:
+                          agent.status === "busy"
+                            ? agent.color
+                            : agent.status === "active"
+                            ? agent.color
+                            : "#475569",
+                        boxShadow:
+                          agent.status === "busy"
+                            ? `0 0 8px ${agent.color}80`
+                            : "none",
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-slate-200 truncate">
+                          {agent.name}
+                        </span>
+                        {agent.id === "ceo" && (
+                          <Crown size={10} className="text-cyan-400 flex-shrink-0" />
+                        )}
+                      </div>
+                      {agent.currentTask ? (
+                        <p className="text-[10px] text-cyan-400 truncate">{agent.currentTask}</p>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">{agent.lastActivity}</p>
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        agent.status === "busy"
+                          ? "warning"
+                          : agent.status === "active"
+                          ? "success"
+                          : "secondary"
+                      }
+                      className="text-[9px] px-1.5"
+                    >
+                      {agent.status === "busy"
+                        ? "Opptatt"
+                        : agent.status === "active"
+                        ? "Aktiv"
+                        : "Klar"}
+                    </Badge>
+                    <span className="text-[10px] text-slate-600 w-6 text-right flex-shrink-0">
+                      {agent.tasksCompleted}
+                    </span>
+                  </div>
                 ))}
               </div>
-              <Button size="sm" className="w-full" onClick={() => setChatAgent(agent.id)}>
-                <MessageSquare size={14} className="mr-1" />
-                Chat med agent
-              </Button>
             </CardContent>
           </Card>
-        ))}
+
+          {/* Active Plans */}
+          {activePlan && activePlan.status !== "done" && (
+            <Card className="border-slate-700 flex-shrink-0">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <Rocket size={14} className="text-cyan-400" />
+                  <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                    Aktiv plan
+                  </span>
+                </div>
+                <div className="bg-slate-800/50 rounded-md p-2.5">
+                  <p className="text-xs font-medium text-white mb-1">{activePlan.title}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        activePlan.status === "executing"
+                          ? "warning"
+                          : activePlan.status === "draft"
+                          ? "outline"
+                          : "success"
+                      }
+                      className="text-[9px]"
+                    >
+                      {activePlan.status === "draft"
+                        ? "Venter"
+                        : activePlan.status === "executing"
+                        ? "Utf\u00f8rer"
+                        : activePlan.status}
+                    </Badge>
+                    <span className="text-[10px] text-slate-500">
+                      {activePlan.steps.filter((s) => s.status === "done").length}/
+                      {activePlan.steps.length} steg
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Recent Actions */}
+          <Card className="border-slate-700 flex-shrink-0">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare size={14} className="text-slate-400" />
+                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                  Siste handlinger
+                </span>
+              </div>
+              <div className="space-y-2">
+                {recentActions.map((action, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <CheckCircle size={12} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-300 leading-snug">{action.label}</p>
+                      <p className="text-[10px] text-slate-600">{action.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
