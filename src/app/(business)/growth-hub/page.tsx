@@ -160,7 +160,7 @@ export default function GrowthHubPage() {
   const fetchActions = useCallback(async () => {
     setLoadingActions(true);
     try {
-      const res = await fetch("/api/growth/actions" + (selectedBrand !== "all" ? `?brand_id=${selectedBrand}` : ""));
+      const res = await fetch("/api/growth/actions" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
         setActions(data.actions || data || []);
@@ -189,7 +189,7 @@ export default function GrowthHubPage() {
   const fetchLeadMagnets = useCallback(async () => {
     setLoadingLeadMagnets(true);
     try {
-      const res = await fetch("/api/growth/lead-magnets" + (selectedBrand !== "all" ? `?brand_id=${selectedBrand}` : ""));
+      const res = await fetch("/api/growth/lead-magnets" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
         setLeadMagnets(data.lead_magnets || data || []);
@@ -204,7 +204,7 @@ export default function GrowthHubPage() {
   const fetchABTests = useCallback(async () => {
     setLoadingABTest(true);
     try {
-      const res = await fetch("/api/growth/ab-tests" + (selectedBrand !== "all" ? `?brand_id=${selectedBrand}` : ""));
+      const res = await fetch("/api/growth/ab-tests" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
         setABTests(data.tests || data || []);
@@ -271,7 +271,7 @@ export default function GrowthHubPage() {
 
   const publishAction = async (actionId: string) => {
     try {
-      const res = await fetch(`/api/growth/actions/${actionId}`, {
+      const res = await fetch(`/api/growth/actions?id=${actionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "published" }),
@@ -287,7 +287,7 @@ export default function GrowthHubPage() {
 
   const addMetrics = async (actionId: string) => {
     try {
-      const res = await fetch(`/api/growth/actions/${actionId}`, {
+      const res = await fetch(`/api/growth/actions?id=${actionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
