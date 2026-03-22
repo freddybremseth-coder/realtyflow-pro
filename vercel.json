@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/saas-scanner",
       "schedule": "0 7 * * 1"
+    },
+    {
+      "path": "/api/cron/property-scanner",
+      "schedule": "0 8 * * 0"
     }
   ]
 }
