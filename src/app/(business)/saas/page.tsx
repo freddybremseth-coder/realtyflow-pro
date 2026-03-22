@@ -171,6 +171,8 @@ export default function SaaSPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<SaaSApp | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [dbWarning, setDbWarning] = useState<string | null>(null);
 
   // Opportunity state
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -206,14 +208,23 @@ export default function SaaSPage() {
     try {
       const res = await fetch('/api/saas');
       const data = await res.json();
-      if (data.apps?.length > 0) {
+      if (data.error) {
+        console.warn('[SaaS] API error:', data.error);
+        setDbWarning(`Databasefeil: ${data.error}. Viser eksempeldata.`);
+        setApps(SEED_APPS as SaaSApp[]);
+        setTotals({ totalApps: SEED_APPS.length, liveApps: SEED_APPS.filter(a => a.status === 'live').length, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
+      } else if (data.apps?.length > 0) {
+        setDbWarning(null);
         setApps(data.apps);
         setTotals(data.totals || { totalApps: 0, liveApps: 0, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
       } else {
+        setDbWarning('Ingen apper i databasen. Viser eksempeldata. Opprett en ny app for å komme i gang.');
         setApps(SEED_APPS as SaaSApp[]);
         setTotals({ totalApps: SEED_APPS.length, liveApps: SEED_APPS.filter(a => a.status === 'live').length, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
       }
-    } catch {
+    } catch (err) {
+      console.error('[SaaS] Failed to fetch apps:', err);
+      setDbWarning('Kunne ikke koble til API. Viser eksempeldata.');
       setApps(SEED_APPS as SaaSApp[]);
     } finally {
       setIsLoading(false);
@@ -246,6 +257,7 @@ export default function SaaSPage() {
   const handleSaveApp = async () => {
     if (!formSlug || !formName) return;
     setIsSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch('/api/saas', {
         method: 'POST',
@@ -260,15 +272,31 @@ export default function SaaSPage() {
           dev_platform: formDevPlatform, repo_url: formRepoUrl || undefined,
         }),
       });
-      if (res.ok) { setShowAddModal(false); resetForm(); fetchApps(); }
-    } catch { /* ignore */ } finally { setIsSaving(false); }
+      const data = await res.json();
+      if (res.ok) {
+        setSaveError(null);
+        setShowAddModal(false);
+        resetForm();
+        fetchApps();
+      } else {
+        const msg = data.error || `Lagring feilet (${res.status})`;
+        console.error('[SaaS] Save failed:', msg);
+        setSaveError(msg);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Nettverksfeil ved lagring';
+      console.error('[SaaS] Save error:', err);
+      setSaveError(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetForm = () => {
     setFormSlug(''); setFormName(''); setFormDesc(''); setFormCategory('ai-chat');
     setFormStatus('development'); setFormColor('#8b5cf6'); setFormPrice('');
     setFormPricing('freemium'); setFormTech(''); setFormDevPlatform('claude-code');
-    setFormRepoUrl(''); setSelectedApp(null);
+    setFormRepoUrl(''); setSelectedApp(null); setSaveError(null);
   };
 
   const openEditModal = (app: SaaSApp) => {
@@ -445,6 +473,13 @@ export default function SaaSPage() {
           </Button>
         </div>
       </div>
+
+      {dbWarning && (
+        <div className="mb-6 p-3 rounded-lg border bg-yellow-500/10 border-yellow-500/30 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-yellow-400 flex-shrink-0" />
+          <p className="text-sm text-yellow-300">{dbWarning}</p>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-5">
@@ -1137,12 +1172,20 @@ export default function SaaSPage() {
                   placeholder="https://github.com/..." />
               </div>
             </div>
+            {saveError && (
+              <div className="mt-4 p-3 rounded-lg border bg-red-500/10 border-red-500/30">
+                <p className="text-sm text-red-400 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  {saveError}
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 mt-6">
               <Button onClick={handleSaveApp} disabled={!formSlug || !formName || isSaving}
                 className="flex-1 bg-gradient-to-r from-purple-600 to-violet-600">
                 {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lagrer...</> : selectedApp ? 'Oppdater' : 'Opprett App'}
               </Button>
-              <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); }} className="border-slate-600">Avbryt</Button>
+              <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); setSaveError(null); }} className="border-slate-600">Avbryt</Button>
             </div>
           </div>
         </div>

@@ -47,25 +47,14 @@ interface PropertySource {
 
 const PROPERTY_SOURCES: PropertySource[] = [
   {
-    name: 'Idealista',
-    type: 'scrape',
-    base_url: 'https://www.idealista.com',
-    search_urls: [
-      'https://www.idealista.com/en/venta-viviendas/alicante-provincia/con-obra-nueva/',
-      'https://www.idealista.com/en/venta-viviendas/costa-blanca/con-obra-nueva/',
-      'https://www.idealista.com/en/venta-terrenos/alicante-provincia/',
-    ],
-    description: 'Spanias største eiendomsportal. Nybygg og tomter i Alicante-provinsen.',
-  },
-  {
-    name: 'Kyero',
-    type: 'scrape',
+    name: 'Kyero RSS',
+    type: 'rss',
     base_url: 'https://www.kyero.com',
     search_urls: [
-      'https://www.kyero.com/en/costa-blanca-property-for-sale?property_types=new_development',
-      'https://www.kyero.com/en/costa-blanca-property-for-sale?property_types=land',
+      'https://www.kyero.com/en/costa-blanca-property-for-sale.rss',
+      'https://www.kyero.com/en/alicante-province-property-for-sale.rss',
     ],
-    description: 'Internasjonal portal med fokus på utenlandske kjøpere. God dekning Costa Blanca.',
+    description: 'Kyero RSS feed - less protected than HTML pages. International portal for Costa Blanca.',
   },
   {
     name: 'ThinkSpain',
@@ -74,19 +63,8 @@ const PROPERTY_SOURCES: PropertySource[] = [
     search_urls: [
       'https://www.thinkspain.com/property-for-sale/costa-blanca-north/new-builds',
       'https://www.thinkspain.com/property-for-sale/costa-blanca-south/new-builds',
-      'https://www.thinkspain.com/land-for-sale/costa-blanca',
     ],
     description: 'Britisk-fokusert portal for eiendom i Spania. God for nye prosjekter.',
-  },
-  {
-    name: 'SpanishPropertyChoice',
-    type: 'scrape',
-    base_url: 'https://www.spanishpropertychoice.com',
-    search_urls: [
-      'https://www.spanishpropertychoice.com/new-build-properties-for-sale-in-costa-blanca',
-      'https://www.spanishpropertychoice.com/plots-for-sale-in-costa-blanca',
-    ],
-    description: 'Spesialisert på Costa Blanca og Costa Cálida.',
   },
   {
     name: 'Newbuilds.es',
@@ -94,19 +72,17 @@ const PROPERTY_SOURCES: PropertySource[] = [
     base_url: 'https://newbuilds.es',
     search_urls: [
       'https://newbuilds.es/costa-blanca/',
-      'https://newbuilds.es/costa-blanca-south/',
     ],
     description: 'Kun nybygg i Spania. Komplett oversikt over nye prosjekter.',
   },
   {
-    name: 'Fotocasa',
+    name: 'SpanishPropertyChoice',
     type: 'scrape',
-    base_url: 'https://www.fotocasa.es',
+    base_url: 'https://www.spanishpropertychoice.com',
     search_urls: [
-      'https://www.fotocasa.es/en/buy/new-homes/alicante-province/all-zones/l',
-      'https://www.fotocasa.es/en/buy/lands/alicante-province/all-zones/l',
+      'https://www.spanishpropertychoice.com/new-build-properties-for-sale-in-costa-blanca',
     ],
-    description: 'Spanias nest største portal etter Idealista.',
+    description: 'Spesialisert på Costa Blanca og Costa Cálida.',
   },
 ];
 
@@ -191,30 +167,39 @@ export class PropertyScanner {
       };
     }
 
-    // Use AI to discover and analyze current market
+    // PRIMARY METHOD: AI-powered market discovery (always works, uses Claude's knowledge)
     try {
+      console.log('[PropertyScanner] Starting AI Market Discovery (primary method)...');
       const properties = await this.aiMarketDiscovery();
       allProperties.push(...properties);
       bySource['AI Market Discovery'] = properties.length;
+      console.log(`[PropertyScanner] AI Discovery found ${properties.length} properties`);
     } catch (err) {
       errors.push(`AI Discovery: ${err instanceof Error ? err.message : 'Failed'}`);
+      console.error('[PropertyScanner] AI Discovery failed:', err);
     }
 
-    // Try to fetch from sources that allow it
+    // SUPPLEMENTARY: Try to fetch from portal sources (many will be blocked by anti-bot)
     for (const source of PROPERTY_SOURCES) {
       try {
-        for (const searchUrl of source.search_urls.slice(0, 1)) { // 1 URL per source to save time
+        for (const searchUrl of source.search_urls.slice(0, 1)) {
+          console.log(`[PropertyScanner] Trying ${source.name}: ${searchUrl}`);
           const result = await this.scanUrl(searchUrl);
           if (result.properties.length > 0) {
             allProperties.push(...result.properties);
             bySource[source.name] = (bySource[source.name] || 0) + result.properties.length;
+            console.log(`[PropertyScanner] ${source.name}: found ${result.properties.length} properties`);
+          } else {
+            console.log(`[PropertyScanner] ${source.name}: no properties found (likely blocked by anti-bot)`);
           }
           if (result.errors.length > 0) {
             errors.push(...result.errors.map(e => `${source.name}: ${e}`));
           }
         }
       } catch (err) {
-        errors.push(`${source.name}: ${err instanceof Error ? err.message : 'Failed'}`);
+        const msg = err instanceof Error ? err.message : 'Failed';
+        errors.push(`${source.name}: ${msg}`);
+        console.log(`[PropertyScanner] ${source.name}: failed - ${msg}`);
       }
     }
 
@@ -236,35 +221,39 @@ export class PropertyScanner {
     if (!this.client) return [];
 
     const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 6000,
       system: `Du er en eiendomsekspert med dyp kunnskap om det spanske eiendomsmarkedet, spesielt Costa Blanca (Alicante-provinsen).
 
-OPPGAVE: Identifiser reelle, aktuelle nybygg-prosjekter og tomter til salgs langs Costa Blanca. Fokuser på:
+OPPGAVE: List opp reelle, kjente nybygg-prosjekter og tomter til salgs langs Costa Blanca. Fokuser på KJENTE utviklinger som faktisk eksisterer og kan verifiseres.
 
-GEOGRAFISK FOKUS:
-- Costa Blanca Nord: Dénia, Jávea, Moraira, Calpe, Altea, Benidorm, Villajoyosa, El Campello
-- Costa Blanca Syd: Alicante, Santa Pola, Guardamar, Torrevieja, Orihuela Costa, Pilar de la Horadada
-- Innland: Pinosos, Elda, Novelda, Castalla, Onil, Ibi, Jijona
+GEOGRAFISK FOKUS (inkluder minst 2-3 eiendommer fra hver sone):
+- Costa Blanca Nord: Dénia, Jávea, Moraira, Calpe, Altea, Benidorm, Villajoyosa, El Campello, Finestrat, La Nucia
+- Costa Blanca Syd: Alicante by, Santa Pola, Guardamar del Segura, Torrevieja, Orihuela Costa, Pilar de la Horadada, San Miguel de Salinas, Rojales
+- Innland (rimeligere): Pinosos, Elda, Novelda, Castalla, Onil, Ibi, Jijona, Aspe, Hondón de las Nieves
 
 TYPE EIENDOMMER:
-1. Nye byggeprosjekter (obra nueva) - villaer, leiligheter, rekkehus
-2. Tomter til salgs (parcelas, solares) - byggetomter, landbrukstomter med mulighet for bygging
-3. Off-plan prosjekter som ikke har startet ennå
+1. Nye byggeprosjekter (obra nueva) fra KJENTE utviklere som: TM Grupo Inmobiliario, Grupo Vapf, Allure Homes, AQ Acentor, Medvilla Spanje, Taylor Wimpey España, AEDAS Homes, Neinor Homes, Metrovacesa, Habitat Inmobiliaria
+2. Tomter til salgs (parcelas, solares) - med realistiske priser for området
+3. Off-plan prosjekter
 
 VIKTIG:
-- Fokuser på eiendommer som faktisk finnes i markedet nå
-- Oppgi realistiske priser basert på 2025/2026 markedspriser
-- Inkluder utvikler/promotor-navn der du vet det
-- Referer til kjente portaler der eiendommene kan finnes
-- Prioriter prosjekter med FÅ enheter igjen eller som nettopp er lansert
+- Returner MINST 15 og opptil 20 eiendommer
+- Bruk VIRKELIGE prosjektnavn der du kjenner dem (f.eks. "Blue Infinity", "Allure Calpe", "Vistabella Golf", "La Finca Golf", "Cumbre del Sol")
+- Priser MÅ være realistiske for 2025/2026-markedet:
+  * Innland tomter: €20.000-€80.000
+  * Kyst leiligheter: €180.000-€400.000
+  * Kyst villaer: €350.000-€900.000
+  * Premium villaer (Jávea/Moraira): €500.000-€1.500.000
+- Oppgi utvikler/promotor-navn for alle nybygg
+- Bruk source_url som peker til kjente portaler (idealista.com, kyero.com, thinkspain.com, spanishpropertychoice.com)
 
 RETURNER JSON-array med objekter:
 {
   "title": "Prosjektnavn eller beskrivelse",
   "price": "€250.000",
   "price_numeric": 250000,
-  "location": "Calpe, Costa Blanca",
+  "location": "Calpe, Costa Blanca Nord",
   "municipality": "Calpe",
   "province": "Alicante",
   "size_m2": 120,
@@ -272,23 +261,28 @@ RETURNER JSON-array med objekter:
   "bedrooms": 3,
   "bathrooms": 2,
   "type": "villa|apartment|townhouse|finca|plot|new_build",
-  "description": "Kort beskrivelse av eiendommen/prosjektet",
-  "source": "Portalens navn",
-  "source_url": "URL der man kan finne mer info",
+  "description": "Kort beskrivelse inkludert hva som gjør prosjektet unikt",
+  "source": "Portal eller utvikler",
+  "source_url": "URL til relevant portal-søk",
   "image_urls": [],
   "features": ["basseng", "havutsikt", "parkering"],
   "is_new_build": true,
-  "developer": "Utviklerens navn hvis kjent",
+  "developer": "Utviklerens fulle navn",
   "completion_date": "Q3 2026",
   "energy_rating": "A",
   "ref_number": "REF-123"
 }
 
-Returner 10-15 eiendommer. Kun valid JSON-array, ingen annen tekst.`,
+Returner 15-20 eiendommer. Kun valid JSON-array, ingen annen tekst.`,
       messages: [
         {
           role: 'user',
-          content: `Dato: ${new Date().toISOString().split('T')[0]}. Identifiser aktuelle nybygg-prosjekter og tomter til salgs langs Costa Blanca. Inkluder både populære kystbyer og rimligere innlandsområder som Pinosos. Fokuser på prosjekter som er aktive akkurat nå.`,
+          content: `Dato: ${new Date().toISOString().split('T')[0]}. List opp kjente nybygg-prosjekter og tomter til salgs langs Costa Blanca. Inkluder:
+- Minst 4-5 prosjekter fra Costa Blanca Nord (Jávea, Calpe, Benidorm, Finestrat, Altea)
+- Minst 4-5 prosjekter fra Costa Blanca Syd (Torrevieja, Orihuela Costa, Santa Pola, Guardamar)
+- Minst 3-4 tomter fra innlandsområder (Pinosos, Novelda, Aspe, Hondón)
+- Minst 2-3 prosjekter fra kjente utviklere (TM Grupo, Taylor Wimpey, AEDAS Homes, etc.)
+Bruk virkelige prosjektnavn der du kjenner dem. Returner minst 15 eiendommer.`,
         },
       ],
     });
@@ -311,38 +305,108 @@ Returner 10-15 eiendommer. Kun valid JSON-array, ingen annen tekst.`,
 
   /**
    * Fetch a web page and return clean text/HTML
+   * Handles anti-bot protection gracefully with fallbacks
    */
   private async fetchPage(url: string): Promise<string | null> {
+    const fullUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    const headers: Record<string, string> = {
+      'User-Agent': fullUserAgent,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9,es;q=0.8,no;q=0.7',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+    };
+
+    // Attempt 1: Direct fetch
     try {
       const res = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          'Accept': 'text/html,application/xhtml+xml',
-          'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
-        },
+        headers,
+        redirect: 'follow',
         signal: AbortSignal.timeout(15000),
       });
 
-      if (!res.ok) return null;
-      const html = await res.text();
+      if (res.ok) {
+        const html = await res.text();
+        const cleaned = this.cleanHtml(html);
 
-      // Strip scripts, styles, and reduce to meaningful content
-      const cleaned = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      // Limit to ~8000 chars to fit in AI context
-      return cleaned.substring(0, 8000);
-    } catch {
-      return null;
+        // Check if we got real content or a captcha/block page
+        if (cleaned.length > 200 && !this.looksLikeAntiBot(cleaned)) {
+          console.log(`[PropertyScanner] fetchPage OK: ${url} (${cleaned.length} chars)`);
+          return cleaned;
+        } else {
+          console.log(`[PropertyScanner] fetchPage got anti-bot/empty response from: ${url}`);
+        }
+      } else {
+        console.log(`[PropertyScanner] fetchPage HTTP ${res.status} from: ${url}`);
+      }
+    } catch (err) {
+      console.log(`[PropertyScanner] fetchPage direct failed for: ${url} - ${err instanceof Error ? err.message : 'timeout'}`);
     }
+
+    // Attempt 2: Try Google cache as fallback
+    try {
+      const cacheUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}`;
+      const res = await fetch(cacheUrl, {
+        headers: { ...headers, 'Referer': 'https://www.google.com/' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.ok) {
+        const html = await res.text();
+        const cleaned = this.cleanHtml(html);
+        if (cleaned.length > 200) {
+          console.log(`[PropertyScanner] fetchPage OK via Google cache: ${url} (${cleaned.length} chars)`);
+          return cleaned;
+        }
+      }
+    } catch {
+      // Google cache not available, that's fine
+    }
+
+    console.log(`[PropertyScanner] fetchPage: all attempts failed for ${url}`);
+    return null;
+  }
+
+  /**
+   * Strip HTML to meaningful text content
+   */
+  private cleanHtml(html: string): string {
+    const cleaned = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Limit to ~8000 chars to fit in AI context
+    return cleaned.substring(0, 8000);
+  }
+
+  /**
+   * Detect if page content looks like an anti-bot/captcha response
+   */
+  private looksLikeAntiBot(content: string): boolean {
+    const lower = content.toLowerCase();
+    const botSignals = [
+      'captcha', 'recaptcha', 'hcaptcha', 'challenge-platform',
+      'just a moment', 'checking your browser', 'access denied',
+      'please verify you are a human', 'bot detection',
+      'cloudflare', 'ray id', 'please turn javascript on',
+      'enable cookies', 'unusual traffic',
+    ];
+    const matchCount = botSignals.filter(s => lower.includes(s)).length;
+    return matchCount >= 2;
   }
 
   /**
@@ -357,7 +421,7 @@ Returner 10-15 eiendommer. Kun valid JSON-array, ingen annen tekst.`,
 
     try {
       const response = await this.client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 3000,
         system: `Du er en eiendomsdata-ekstraktor. Analyser innhold fra en eiendomsside og ekstraher strukturerte data om eiendommer.
 

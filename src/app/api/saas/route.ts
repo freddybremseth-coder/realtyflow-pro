@@ -25,7 +25,16 @@ export async function GET(request: NextRequest) {
     if (status) query = query.eq('status', status);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      console.error('[API /api/saas GET] Supabase query error:', error.message, error.code, error.details);
+      if (error.code === '42P01') {
+        return NextResponse.json(
+          { error: 'Table "saas_apps" does not exist. Run the migration to create it.', apps: [], code: error.code },
+          { status: 500 }
+        );
+      }
+      throw error;
+    }
 
     // Get subscription counts per app
     const { data: subCounts } = await supabase
@@ -54,6 +63,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ apps, totals });
   } catch (error) {
+    console.error('[API /api/saas GET] Unhandled error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch apps' },
       { status: 500 }
@@ -83,7 +93,10 @@ export async function POST(request: NextRequest) {
         .eq('id', id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        console.error('[API /api/saas POST] Update error:', error.message, error.code, error.details);
+        throw error;
+      }
       return NextResponse.json({ app: data });
     } else {
       // Create new
@@ -96,10 +109,20 @@ export async function POST(request: NextRequest) {
         .insert(fields)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        console.error('[API /api/saas POST] Insert error:', error.message, error.code, error.details);
+        if (error.code === '42P01') {
+          return NextResponse.json(
+            { error: 'Table "saas_apps" does not exist. Run the database migration first.' },
+            { status: 500 }
+          );
+        }
+        throw error;
+      }
       return NextResponse.json({ app: data }, { status: 201 });
     }
   } catch (error) {
+    console.error('[API /api/saas POST] Unhandled error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to save app' },
       { status: 500 }
