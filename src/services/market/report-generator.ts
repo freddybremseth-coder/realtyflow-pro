@@ -282,12 +282,118 @@ export class ReportGenerator {
         .map((b: any) => b.text)
         .join('\n') || '';
 
-    return this.parseClaudeResponse(rawContent, templateId, template, options);
+    const report = this.parseClaudeResponse(rawContent, templateId, template, options);
+
+    // Override key_metrics with actual data to prevent AI hallucination
+    report.key_metrics = [];
+    if (marketData.exchangeRates?.length) {
+      const eurNok = marketData.exchangeRates.find((r: any) => r.pair === 'EUR/NOK');
+      if (eurNok) {
+        report.key_metrics.push({
+          label: 'EUR/NOK',
+          value: eurNok.rate.toFixed(4),
+          change: eurNok.change7d ? `${eurNok.change7d > 0 ? '+' : ''}${eurNok.change7d.toFixed(2)}%` : undefined,
+        });
+      }
+    }
+    if (marketData.ecbRate) {
+      report.key_metrics.push({
+        label: 'ECB Rente',
+        value: `${marketData.ecbRate.rate}%`,
+        change: marketData.ecbRate.rate !== marketData.ecbRate.previousRate
+          ? `${marketData.ecbRate.rate > marketData.ecbRate.previousRate ? '+' : ''}${(marketData.ecbRate.rate - marketData.ecbRate.previousRate).toFixed(2)}pp`
+          : 'Uendret',
+      });
+    }
+    if (marketData.internalMetrics) {
+      report.key_metrics.push(
+        { label: 'Pipeline', value: `\u20AC${(marketData.internalMetrics.pipelineValue || 0).toLocaleString()}` },
+        { label: 'Nye Leads', value: `${marketData.internalMetrics.newLeadsWeek || 0}` },
+      );
+    }
+
+    return report;
   }
 
   // -----------------------------------------------------------------------
   // Prompt Building
   // -----------------------------------------------------------------------
+
+  private formatDataContext(marketData: any): string {
+    let context = 'VIKTIG: Bruk KUN disse tallene. IKKE gjett eller anta trender som ikke støttes av dataene.\n\n';
+
+    // Exchange rates
+    if (marketData.exchangeRates?.length) {
+      context += 'VALUTAKURSER (siste 30 dager):\n';
+      for (const rate of marketData.exchangeRates) {
+        context += `- ${rate.pair}: ${rate.rate} per ${rate.date || 'siste'}. `;
+        if (rate.change7d !== undefined && rate.change7d !== null) {
+          const pct = rate.change7d.toFixed(2);
+          context += `Endring siste 7 dager: ${rate.change7d > 0 ? '+' : ''}${pct}%.\n`;
+          if (rate.pair === 'EUR/NOK') {
+            if (rate.change7d < 0) {
+              context += '  NOK har STYRKET seg mot EUR (billigere for nordmenn).\n';
+            } else if (rate.change7d > 0) {
+              context += '  NOK har SVEKKET seg mot EUR (dyrere for nordmenn).\n';
+            } else {
+              context += '  NOK er uendret mot EUR.\n';
+            }
+          }
+          if (rate.pair === 'EUR/SEK') {
+            if (rate.change7d < 0) {
+              context += '  SEK har STYRKET seg mot EUR.\n';
+            } else if (rate.change7d > 0) {
+              context += '  SEK har SVEKKET seg mot EUR.\n';
+            }
+          }
+        } else {
+          context += '\n';
+        }
+      }
+      context += '\n';
+    }
+
+    // ECB rate
+    if (marketData.ecbRate) {
+      context += `ECB STYRINGSRENTE: ${marketData.ecbRate.rate}%`;
+      if (marketData.ecbRate.previousRate !== undefined) {
+        context += ` (forrige: ${marketData.ecbRate.previousRate}%)\n`;
+        if (marketData.ecbRate.rate < marketData.ecbRate.previousRate) {
+          context += 'ECB har KUTTET renten.\n';
+        } else if (marketData.ecbRate.rate > marketData.ecbRate.previousRate) {
+          context += 'ECB har HEVET renten.\n';
+        } else {
+          context += 'ECB har HOLDT renten uendret.\n';
+        }
+      } else {
+        context += '\n';
+      }
+      context += '\n';
+    }
+
+    // News
+    if (marketData.idealistaNews?.length) {
+      context += 'NYHETER FRA IDEALISTA:\n';
+      for (const news of marketData.idealistaNews) {
+        context += `- ${news.title}${news.date ? ` (${news.date})` : ''}\n`;
+      }
+      context += '\n';
+    }
+
+    // Internal metrics
+    if (marketData.internalMetrics) {
+      const m = marketData.internalMetrics;
+      context += 'INTERNE TALL:\n';
+      context += `- Totalt leads: ${m.totalLeads ?? 'Ukjent'}\n`;
+      context += `- Nye leads siste 7 dager: ${m.newLeadsWeek ?? 'Ukjent'}\n`;
+      context += `- Pipeline-verdi: ${m.pipelineValue !== undefined ? m.pipelineValue + ' EUR' : 'Ukjent'}\n`;
+      context += `- Totalt eiendommer: ${m.totalProperties ?? 'Ukjent'}\n`;
+      context += `- Nye oppforinger siste uke: ${m.newListingsWeek ?? 'Ukjent'}\n`;
+      context += '\n';
+    }
+
+    return context;
+  }
 
   private buildSystemPrompt(
     templateId: string,
@@ -302,7 +408,9 @@ Regler:
 - Varier skrivestilen: noen ganger narrativt, andre ganger datadrevet.
 - Inkluder handlingsrettede innsikter.
 - Gjenta aldri samme struktur to ganger.
-- Svar med ren JSON i formatet beskrevet i brukerens melding.`;
+- Svar med ren JSON i formatet beskrevet i brukerens melding.
+
+STRENG REGEL: Du skal ALDRI skrive noe som motsier tallene du far. Hvis EUR/NOK har falt (NOK styrket seg), skal du IKKE skrive at kronen svekker seg. Bruk alltid de eksakte tallene som er oppgitt. Hvis du er usikker pa en trend, si det eksplisitt i stedet for a gjette.`;
 
     switch (templateId) {
       case REPORT_TEMPLATES.B.id:
@@ -349,6 +457,7 @@ Spesielt for denne rapporten:
     options?: { theme?: string; brand?: string },
   ): string {
     const dataJson = JSON.stringify(marketData, null, 2);
+    const formattedContext = this.formatDataContext(marketData);
     const dateStr = new Date().toLocaleDateString('nb-NO', {
       year: 'numeric',
       month: 'long',
@@ -357,7 +466,9 @@ Spesielt for denne rapporten:
 
     return `Dato: ${dateStr}
 
-Markedsdata:
+${formattedContext}
+
+Radata (for referanse):
 \`\`\`json
 ${dataJson}
 \`\`\`

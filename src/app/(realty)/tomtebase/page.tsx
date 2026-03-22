@@ -271,8 +271,81 @@ function LeafletMap({
   return <div ref={mapRef} className="w-full h-full rounded-lg" />;
 }
 
+// ─── Extract price/area from notes text ──────────────────────
+function extractPriceFromNotes(notes: string): number {
+  const m = notes.match(/(?:precio|price|pris)?[:\s]*(?:€\s*)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(?:€|euros?|EUR)/i)
+    || notes.match(/(\d{1,3}(?:[.,]\d{3})*)\s*(?:€|euros?)/i)
+    || notes.match(/€\s*(\d{1,3}(?:[.,]\d{3})*)/i);
+  return m ? parseFloat(m[1].replace(/\./g, '').replace(',', '.')) : 0;
+}
+
+function extractAreaFromNotes(notes: string): number {
+  const m = notes.match(/(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?)\s*(?:m2|m²|sqm|metros?)/i);
+  return m ? parseFloat(m[1].replace(/\./g, '').replace(',', '.')) : 0;
+}
+
+function enrichPlot<T extends { price: number; area: number; notes: string }>(plot: T): T {
+  let { price, area, notes } = plot;
+  if ((!price || price === 0) && notes) {
+    const extracted = extractPriceFromNotes(notes);
+    if (extracted) price = extracted;
+  }
+  if ((!area || area === 0) && notes) {
+    const extracted = extractAreaFromNotes(notes);
+    if (extracted) area = extracted;
+  }
+  return { ...plot, price, area };
+}
+
+// ─── Helper to sync plots to Supabase ─────────────────────────
+async function syncToSupabase(plots: LandPlot | LandPlot[]): Promise<LandPlot[]> {
+  try {
+    const res = await fetch('/api/plots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Array.isArray(plots) ? plots : [plots]),
+    });
+    const data = await res.json();
+    if (data.plots) {
+      return data.plots.map((p: any) => ({
+        id: p.id,
+        plotNumber: p.plot_number,
+        area: p.area,
+        price: p.price,
+        location: p.location,
+        municipality: p.municipality,
+        zoning: p.zoning,
+        water: p.water,
+        electricity: p.electricity,
+        slope: p.slope,
+        roadAccess: p.road_access,
+        notes: p.notes,
+        lat: p.lat,
+        lng: p.lng,
+        source: p.source,
+      }));
+    }
+  } catch (e) {
+    console.error('Failed to sync to Supabase:', e);
+  }
+  return [];
+}
+
+async function deleteFromSupabase(id: string) {
+  try {
+    await fetch('/api/plots', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+  } catch (e) {
+    console.error('Failed to delete from Supabase:', e);
+  }
+}
+
 export default function TomtebasePage() {
   const [plots, setPlots] = useState<LandPlot[]>(initialPlots);
+  const [dbLoaded, setDbLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"map" | "grid" | "list">("map");
   const [showFilters, setShowFilters] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -303,6 +376,36 @@ export default function TomtebasePage() {
   const [filterMaxPrice, setFilterMaxPrice] = useState("");
   const [searchText, setSearchText] = useState("");
 
+  // Load plots from Supabase on mount
+  useEffect(() => {
+    fetch('/api/plots')
+      .then(res => res.json())
+      .then(data => {
+        if (data.plots && data.plots.length > 0) {
+          const mapped = data.plots.map((p: any) => ({
+            id: p.id,
+            plotNumber: p.plot_number,
+            area: p.area,
+            price: p.price,
+            location: p.location,
+            municipality: p.municipality,
+            zoning: p.zoning,
+            water: p.water,
+            electricity: p.electricity,
+            slope: p.slope,
+            roadAccess: p.road_access,
+            notes: p.notes,
+            lat: p.lat,
+            lng: p.lng,
+            source: p.source,
+          }));
+          setPlots(mapped);
+        }
+        setDbLoaded(true);
+      })
+      .catch(() => setDbLoaded(false));
+  }, []);
+
   const handleSelectPlot = useCallback((plot: LandPlot) => {
     setSelectedPlot(plot);
   }, []);
@@ -328,7 +431,7 @@ export default function TomtebasePage() {
   };
 
   const handleAddPlot = () => {
-    const plot: LandPlot = {
+    const plot: LandPlot = enrichPlot({
       id: `T-${Date.now()}`,
       plotNumber: newPlot.plotNumber || `TOMT-${Date.now().toString(36).toUpperCase()}`,
       area: parseInt(newPlot.area) || 0,
@@ -343,23 +446,32 @@ export default function TomtebasePage() {
       notes: newPlot.notes,
       lat: parseFloat(newPlot.lat) || 0,
       lng: parseFloat(newPlot.lng) || 0,
-      source: "manual",
-    };
+      source: "manual" as const,
+    });
     setPlots(prev => [plot, ...prev]);
     setShowNewModal(false);
     setNewPlot({ plotNumber: "", area: "", price: "", location: "", municipality: "Pinosos", zoning: "rustico", water: false, electricity: false, slope: "", roadAccess: false, notes: "", lat: "", lng: "" });
+    // Sync to Supabase and update with server-generated ID
+    syncToSupabase(plot).then(saved => {
+      if (saved.length > 0) {
+        setPlots(prev => prev.map(p => p.id === plot.id ? saved[0] : p));
+      }
+    });
   };
 
   const handleDeletePlot = (id: string) => {
     setPlots(prev => prev.filter(p => p.id !== id));
     if (selectedPlot?.id === id) setSelectedPlot(null);
+    deleteFromSupabase(id);
   };
 
   const handleSaveEdit = () => {
     if (!editPlot) return;
-    setPlots(prev => prev.map(p => p.id === editPlot.id ? editPlot : p));
+    const enriched = enrichPlot(editPlot);
+    setPlots(prev => prev.map(p => p.id === enriched.id ? enriched : p));
     setEditPlot(null);
-    if (selectedPlot?.id === editPlot.id) setSelectedPlot(editPlot);
+    if (selectedPlot?.id === enriched.id) setSelectedPlot(enriched);
+    syncToSupabase(enriched);
   };
 
   // Import coordinates (one per line: lat,lng or lat,lng,name)
@@ -384,6 +496,16 @@ export default function TomtebasePage() {
       setPlots(prev => [...imported, ...prev]);
       setImportResult({ count: imported.length });
       setCoordInput("");
+      // Sync to Supabase and update with server IDs
+      syncToSupabase(imported).then(saved => {
+        if (saved.length > 0) {
+          setPlots(prev => {
+            const importedIds = new Set(imported.map(p => p.id));
+            const withoutImported = prev.filter(p => !importedIds.has(p.id));
+            return [...saved, ...withoutImported];
+          });
+        }
+      });
     } else {
       setImportResult({ count: 0, error: "Ingen gyldige koordinater funnet. Format: lat,lng per linje" });
     }
@@ -407,6 +529,12 @@ export default function TomtebasePage() {
     setPlots(prev => [plot, ...prev]);
     setImportResult({ count: 1 });
     setGoogleUrl("");
+    // Sync to Supabase and update with server ID
+    syncToSupabase(plot).then(saved => {
+      if (saved.length > 0) {
+        setPlots(prev => prev.map(p => p.id === plot.id ? saved[0] : p));
+      }
+    });
   };
 
   // Import file (CSV, KML, KMZ)
@@ -432,7 +560,7 @@ export default function TomtebasePage() {
 
         if (parsed.length === 0) throw new Error("Ingen tomter funnet i filen");
 
-        const newPlots: LandPlot[] = parsed.map((p, i) => ({
+        const newPlots: LandPlot[] = parsed.map((p, i) => enrichPlot({
           id: `IMP-${Date.now()}-${i}`,
           plotNumber: p.plotNumber || `IMP-${i + 1}`,
           area: p.area || 0,
@@ -452,6 +580,16 @@ export default function TomtebasePage() {
 
         setPlots(prev => [...newPlots, ...prev]);
         setImportResult({ count: newPlots.length });
+        // Sync to Supabase and update with server IDs
+        syncToSupabase(newPlots).then(saved => {
+          if (saved.length > 0) {
+            setPlots(prev => {
+              const importedIds = new Set(newPlots.map(p => p.id));
+              const withoutImported = prev.filter(p => !importedIds.has(p.id));
+              return [...saved, ...withoutImported];
+            });
+          }
+        });
       } catch (err) {
         setImportResult({ count: 0, error: err instanceof Error ? err.message : "Feil ved parsing" });
       }

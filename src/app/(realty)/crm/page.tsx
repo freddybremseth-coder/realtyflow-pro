@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
   MessageSquare, Calendar, Eye,
   Users, Filter, ArrowUpDown, X, Send,
   ArrowRight, Bot, Clock, CheckCircle2,
+  Sparkles, Loader2, Undo2,
 } from "lucide-react";
 
 type CustomerStatus = "ACTIVE" | "VIP" | "INACTIVE";
@@ -132,6 +133,90 @@ export default function CRMPage() {
   const [callNotes, setCallNotes] = useState("");
   const [showMeetingModal, setShowMeetingModal] = useState(false);
   const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
+  const [dbLoaded, setDbLoaded] = useState(false);
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
+
+  // Load customers from database
+  const loadCustomers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/contacts?view=crm');
+      const { contacts } = await res.json();
+      if (contacts && contacts.length > 0) {
+        const mapped: Customer[] = contacts.map((c: any) => ({
+          id: c.id,
+          name: c.name || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          status: mapPipelineToCustomerStatus(c.pipeline_status),
+          type: (c.type as CustomerType) || 'BUYER',
+          preferredLocation: c.preferred_location || c.interested_in || '',
+          budget: c.budget || undefined,
+          lastContact: c.last_contact || c.updated_at?.split('T')[0] || '',
+          notes: c.notes || '',
+          interactions: c.interactions || [],
+          avatar: (c.name || '').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase(),
+          nextStep: c.next_step || undefined,
+        }));
+        setCustomers(mapped);
+        setDbLoaded(true);
+      }
+    } catch {
+      // Fallback to hardcoded data silently
+    }
+  }, []);
+
+  useEffect(() => { loadCustomers(); }, [loadCustomers]);
+
+  function mapPipelineToCustomerStatus(status: string): CustomerStatus {
+    switch (status) {
+      case 'VIP': return 'VIP';
+      case 'LOST':
+      case 'INACTIVE': return 'INACTIVE';
+      default: return 'ACTIVE';
+    }
+  }
+
+  const generateAiDraft = async () => {
+    if (!selectedCustomer) return;
+    setAiDraftLoading(true);
+    try {
+      const res = await fetch('/api/contacts/email-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact: {
+            name: selectedCustomer.name,
+            email: selectedCustomer.email,
+            status: selectedCustomer.status,
+            type: selectedCustomer.type,
+            property: selectedCustomer.preferredLocation,
+            last_contact: selectedCustomer.lastContact,
+            notes: selectedCustomer.notes,
+          },
+          context: selectedCustomer.nextStep || 'Generell oppfolging',
+        }),
+      });
+      const { draft } = await res.json();
+      setEmailContent(draft || '');
+      setShowEmailModal(true);
+    } catch {
+      setEmailContent('Kunne ikke generere AI-utkast. Skriv e-posten manuelt.');
+      setShowEmailModal(true);
+    }
+    setAiDraftLoading(false);
+  };
+
+  const sendToPipeline = async (customerId: string) => {
+    if (dbLoaded) {
+      await fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: customerId, pipeline_status: 'QUALIFIED' }),
+      }).catch(() => {});
+    }
+    setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+    if (selectedCustomer?.id === customerId) setSelectedCustomer(null);
+  };
 
   const filtered = customers.filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.email.toLowerCase().includes(search.toLowerCase())) return false;
@@ -140,16 +225,43 @@ export default function CRMPage() {
     return true;
   });
 
-  const addCustomer = () => {
+  const addCustomer = async () => {
     if (!newCustomer.name) return;
+    const now = new Date().toISOString();
+    const contactPayload = {
+      name: newCustomer.name,
+      email: newCustomer.email,
+      phone: newCustomer.phone,
+      type: newCustomer.type,
+      pipeline_status: 'CUSTOMER',
+      preferred_location: newCustomer.location,
+      budget: newCustomer.budget || null,
+      notes: newCustomer.notes || null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    let customerId = `C${String(customers.length + 1).padStart(3, "0")}`;
+    try {
+      const res = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contactPayload),
+      });
+      const { contact } = await res.json();
+      if (contact?.id) customerId = contact.id;
+    } catch {
+      // Fallback: add locally
+    }
+
     const customer: Customer = {
-      id: `C${String(customers.length + 1).padStart(3, "0")}`,
+      id: customerId,
       name: newCustomer.name, email: newCustomer.email, phone: newCustomer.phone,
       status: "ACTIVE", type: newCustomer.type, preferredLocation: newCustomer.location,
-      budget: newCustomer.budget || undefined, lastContact: new Date().toISOString().split("T")[0],
+      budget: newCustomer.budget || undefined, lastContact: now.split("T")[0],
       notes: newCustomer.notes, avatar: newCustomer.name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase(),
-      interactions: [{ id: `i${Date.now()}`, type: "note", content: "Kunde opprettet", date: new Date().toISOString().split("T")[0] }],
-      nextStep: "Ta første kontakt",
+      interactions: [{ id: `i${Date.now()}`, type: "note", content: "Kunde opprettet", date: now.split("T")[0] }],
+      nextStep: "Ta f\u00f8rste kontakt",
     };
     setCustomers((prev) => [customer, ...prev]);
     setNewCustomer(emptyCustomer);
@@ -162,10 +274,23 @@ export default function CRMPage() {
       id: `i${Date.now()}`, type, content, date: new Date().toISOString().split("T")[0],
       direction: type === "email" ? "out" : undefined,
     };
+    const updatedInteractions = [interaction, ...selectedCustomer.interactions];
     setCustomers((prev) => prev.map((c) =>
-      c.id === selectedCustomer.id ? { ...c, interactions: [interaction, ...c.interactions], lastContact: interaction.date } : c
+      c.id === selectedCustomer.id ? { ...c, interactions: updatedInteractions, lastContact: interaction.date } : c
     ));
-    setSelectedCustomer((prev) => prev ? { ...prev, interactions: [interaction, ...prev.interactions], lastContact: interaction.date } : null);
+    setSelectedCustomer((prev) => prev ? { ...prev, interactions: updatedInteractions, lastContact: interaction.date } : null);
+    // Persist to DB
+    if (dbLoaded) {
+      fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedCustomer.id,
+          interactions: updatedInteractions,
+          last_contact: interaction.date,
+        }),
+      }).catch(() => {});
+    }
   };
 
   const sendEmail = () => { addInteraction("email", emailContent); setEmailContent(""); setShowEmailModal(false); };
@@ -229,7 +354,12 @@ export default function CRMPage() {
               </div>
               <p className="text-xs text-slate-400 mb-2">Til: {selectedCustomer.email}</p>
               <textarea value={emailContent} onChange={(e) => setEmailContent(e.target.value)} placeholder="Skriv din melding..." className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-40 resize-none mb-3" />
-              <Button onClick={sendEmail} className="w-full" disabled={!emailContent}><Send size={16} className="mr-1" />Send e-post</Button>
+              <div className="flex gap-2">
+                <Button onClick={sendEmail} className="flex-1" disabled={!emailContent}><Send size={16} className="mr-1" />Send e-post</Button>
+                <Button variant="outline" onClick={generateAiDraft} disabled={aiDraftLoading}>
+                  {aiDraftLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -361,6 +491,15 @@ export default function CRMPage() {
                     </Button>
                     <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowMeetingModal(true)}>
                       <Calendar size={12} className="mr-1" />Møte
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" className="text-xs" onClick={generateAiDraft} disabled={aiDraftLoading}>
+                      {aiDraftLoading ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Sparkles size={12} className="mr-1" />}
+                      AI Utkast
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-xs text-amber-400 hover:text-amber-300" onClick={() => selectedCustomer && sendToPipeline(selectedCustomer.id)}>
+                      <Undo2 size={12} className="mr-1" />Pipeline
                     </Button>
                   </div>
                 </CardContent>

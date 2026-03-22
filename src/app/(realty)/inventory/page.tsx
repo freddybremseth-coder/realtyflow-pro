@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -303,8 +303,129 @@ function parseCsvProperties(csvText: string): Property[] {
   return properties;
 }
 
+// Map a Supabase DB row (snake_case) to the page's Property interface (camelCase)
+function dbRowToProperty(row: Record<string, unknown>): Property {
+  return {
+    id: String(row.id || ""),
+    title: String(row.title || row.title_no || ""),
+    description: String(row.description || row.description_no || ""),
+    location: String(row.location || ""),
+    price: Number(row.price) || 0,
+    type: String(row.property_type || row.type || "Villa"),
+    bedrooms: Number(row.bedrooms) || 0,
+    bathrooms: Number(row.bathrooms) || 0,
+    area: Number(row.built_area || row.area) || 0,
+    plotArea: Number(row.plot_size || row.plotArea) || 0,
+    status: (row.status as Property["status"]) || "TILGJENGELIG",
+    featured: Boolean(row.featured),
+    views: Number(row.views) || 0,
+    imageColor: String(row.image_color || row.imageColor || gradients[Math.floor(Math.random() * gradients.length)]),
+    imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
+    externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
+    source: (row.source as Property["source"]) || "manual",
+    yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
+    pool: Boolean(row.pool),
+    garage: Boolean(row.garage),
+    energyRating: (row.energy_rating || row.energyRating || undefined) as string | undefined,
+    ref: (row.ref || undefined) as string | undefined,
+  };
+}
+
+// Map a Property object to Supabase DB row format for insert/update
+function propertyToDbRow(p: Partial<Property> & { id?: string }) {
+  const row: Record<string, unknown> = {};
+  if (p.title !== undefined) { row.title = p.title; row.title_no = p.title; }
+  if (p.description !== undefined) { row.description = p.description; row.description_no = p.description; }
+  if (p.location !== undefined) row.location = p.location;
+  if (p.price !== undefined) row.price = p.price;
+  if (p.type !== undefined) row.property_type = p.type;
+  if (p.bedrooms !== undefined) row.bedrooms = p.bedrooms;
+  if (p.bathrooms !== undefined) row.bathrooms = p.bathrooms;
+  if (p.area !== undefined) row.built_area = p.area;
+  if (p.plotArea !== undefined) row.plot_size = p.plotArea;
+  if (p.status !== undefined) row.status = p.status;
+  if (p.featured !== undefined) row.featured = p.featured;
+  if (p.views !== undefined) row.views = p.views;
+  if (p.imageColor !== undefined) row.image_color = p.imageColor;
+  if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
+  if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
+  if (p.source !== undefined) row.source = p.source;
+  if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
+  if (p.pool !== undefined) row.pool = p.pool;
+  if (p.garage !== undefined) row.garage = p.garage;
+  if (p.energyRating !== undefined) row.energy_rating = p.energyRating;
+  if (p.ref !== undefined) row.ref = p.ref;
+  return row;
+}
+
+// Fire-and-forget helper for API calls (errors logged but don't break UI)
+async function apiSaveProperty(property: Property) {
+  try {
+    await fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(propertyToDbRow(property)),
+    });
+  } catch (err) {
+    console.error('Failed to save property to DB:', err);
+  }
+}
+
+async function apiUpdateProperty(property: Property) {
+  try {
+    await fetch(`/api/properties?id=${encodeURIComponent(property.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(propertyToDbRow(property)),
+    });
+  } catch (err) {
+    console.error('Failed to update property in DB:', err);
+  }
+}
+
+async function apiDeleteProperty(id: string) {
+  try {
+    await fetch(`/api/properties?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  } catch (err) {
+    console.error('Failed to delete property from DB:', err);
+  }
+}
+
+async function apiSaveProperties(properties: Property[]) {
+  try {
+    await fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(properties.map(propertyToDbRow)),
+    });
+  } catch (err) {
+    console.error('Failed to save properties to DB:', err);
+  }
+}
+
 export default function InventoryPage() {
   const [properties, setProperties] = useState<Property[]>(INITIAL_PROPERTIES);
+  const [dbLoaded, setDbLoaded] = useState(false);
+
+  // Load properties from Supabase on mount
+  useEffect(() => {
+    fetch('/api/properties')
+      .then(res => res.json())
+      .then((data: Record<string, unknown>[] | { error: string }) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setProperties(data.map(dbRowToProperty));
+        }
+        // If API returns empty array, keep INITIAL_PROPERTIES as fallback
+        setDbLoaded(true);
+      })
+      .catch(() => {
+        // On error, keep INITIAL_PROPERTIES as fallback
+        setDbLoaded(false);
+      });
+  }, []);
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("Alle");
   const [priceFilter, setPriceFilter] = useState("Alle");
@@ -344,6 +465,7 @@ export default function InventoryPage() {
   const deleteProperty = (id: string) => {
     setProperties(prev => prev.filter(p => p.id !== id));
     if (showDetailModal?.id === id) setShowDetailModal(null);
+    apiDeleteProperty(id);
   };
 
   const handleAddProperty = () => {
@@ -370,6 +492,7 @@ export default function InventoryPage() {
       energyRating: addForm.energyRating || undefined,
     };
     setProperties(prev => [newProp, ...prev]);
+    apiSaveProperty(newProp);
     setShowAddModal(false);
     setAddForm({
       title: "", description: "", location: "", price: "", type: "Villa",
@@ -399,6 +522,7 @@ export default function InventoryPage() {
       const imported = parseRedSPXml(text);
       if (imported.length === 0) throw new Error("Ingen eiendommer funnet i XML-feeden");
       setProperties(prev => [...imported, ...prev]);
+      apiSaveProperties(imported);
       setImportResult({ count: imported.length });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ukjent feil";
@@ -420,6 +544,7 @@ export default function InventoryPage() {
         if (imported.length === 0) throw new Error("Ingen eiendommer funnet i XML-filen");
         imported.forEach(p => p.source = "xml");
         setProperties(prev => [...imported, ...prev]);
+        apiSaveProperties(imported);
         setImportResult({ count: imported.length });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Ukjent feil";
@@ -442,6 +567,7 @@ export default function InventoryPage() {
         const imported = parseCsvProperties(csvText);
         if (imported.length === 0) throw new Error("Ingen eiendommer funnet i CSV-filen");
         setProperties(prev => [...imported, ...prev]);
+        apiSaveProperties(imported);
         setImportResult({ count: imported.length });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Ukjent feil";
@@ -467,6 +593,7 @@ export default function InventoryPage() {
   const handleSaveEdit = () => {
     if (!showEditModal) return;
     setProperties(prev => prev.map(p => p.id === showEditModal.id ? showEditModal : p));
+    apiUpdateProperty(showEditModal);
     setShowEditModal(null);
   };
 
@@ -943,6 +1070,7 @@ export default function InventoryPage() {
                     const newStatus = e.target.value as Property["status"];
                     setProperties(prev => prev.map(p => p.id === showDetailModal.id ? {...p, status: newStatus} : p));
                     setShowDetailModal({...showDetailModal, status: newStatus});
+                    apiUpdateProperty({...showDetailModal, status: newStatus});
                   }}
                   className="ml-auto h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100">
                   <option value="TILGJENGELIG">Tilgjengelig</option>

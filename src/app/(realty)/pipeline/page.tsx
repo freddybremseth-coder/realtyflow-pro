@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   Users, Mail, DollarSign, Search, Plus, GripVertical,
   ThumbsUp, ThumbsDown, Minus, Phone, Globe,
   X, Upload, FileSpreadsheet, UserPlus, ArrowRight,
+  Crown, Trash2, Loader2,
 } from "lucide-react";
 
 type LeadStatus = "NEW" | "CONTACT" | "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "WON" | "LOST";
@@ -75,7 +76,38 @@ export default function PipelinePage() {
   const [newLead, setNewLead] = useState(emptyLead);
   const [csvData, setCsvData] = useState<Lead[]>([]);
   const [csvRaw, setCsvRaw] = useState("");
+  const [dbLoaded, setDbLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Load leads from database
+  const loadLeads = useCallback(async () => {
+    try {
+      const res = await fetch('/api/contacts?view=pipeline');
+      const { contacts } = await res.json();
+      if (contacts && contacts.length > 0) {
+        const mapped: Lead[] = contacts.map((c: any) => ({
+          id: c.id,
+          name: c.name || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          budget: c.budget || '\u20AC0',
+          source: c.source || 'Manuell',
+          sentiment: c.sentiment ?? 50,
+          status: (c.pipeline_status || 'NEW') as LeadStatus,
+          property: c.interested_in || c.property || undefined,
+          notes: c.notes || undefined,
+          createdAt: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+        }));
+        setLeads(mapped);
+        setDbLoaded(true);
+      }
+    } catch {
+      // Fallback to hardcoded data silently
+    }
+  }, []);
+
+  useEffect(() => { loadLeads(); }, [loadLeads]);
 
   const filteredLeads = leads.filter(
     (l) =>
@@ -88,7 +120,41 @@ export default function PipelinePage() {
   const handleDrop = (newStatus: LeadStatus) => {
     if (!draggedLead) return;
     setLeads((prev) => prev.map((l) => (l.id === draggedLead ? { ...l, status: newStatus } : l)));
+    // Persist status change to DB
+    if (dbLoaded) {
+      fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draggedLead, pipeline_status: newStatus }),
+      }).catch(() => {});
+    }
     setDraggedLead(null);
+  };
+
+  const upgradeToCustomer = async (leadId: string) => {
+    setSaving(true);
+    try {
+      await fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: leadId, pipeline_status: 'CUSTOMER' }),
+      });
+      setLeads((prev) => prev.filter((l) => l.id !== leadId));
+    } catch {
+      // silent fail
+    }
+    setSaving(false);
+  };
+
+  const deleteLead = async (leadId: string) => {
+    if (dbLoaded) {
+      await fetch('/api/contacts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: leadId }),
+      }).catch(() => {});
+    }
+    setLeads((prev) => prev.filter((l) => l.id !== leadId));
   };
 
   const totalValue = leads
@@ -98,22 +164,61 @@ export default function PipelinePage() {
       return sum + (isNaN(num) ? 0 : num);
     }, 0);
 
-  const addNewLead = () => {
+  const addNewLead = async () => {
     if (!newLead.name) return;
-    const lead: Lead = {
-      id: `L${String(leads.length + 1).padStart(3, "0")}`,
+    const now = new Date().toISOString();
+    const contactPayload = {
       name: newLead.name,
       email: newLead.email || "",
       phone: newLead.phone || "",
-      budget: newLead.budget ? `€${newLead.budget}` : "€0",
+      budget: newLead.budget ? `\u20AC${newLead.budget}` : "\u20AC0",
       source: newLead.source || "Manuell",
       sentiment: 50,
-      status: "NEW",
-      property: newLead.property || undefined,
-      notes: newLead.notes || undefined,
-      createdAt: new Date().toISOString().split("T")[0],
+      pipeline_status: "NEW",
+      interested_in: newLead.property || null,
+      notes: newLead.notes || null,
+      created_at: now,
+      updated_at: now,
     };
-    setLeads((prev) => [lead, ...prev]);
+
+    try {
+      const res = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contactPayload),
+      });
+      const { contact } = await res.json();
+      const lead: Lead = {
+        id: contact?.id || `L${String(leads.length + 1).padStart(3, "0")}`,
+        name: newLead.name,
+        email: newLead.email || "",
+        phone: newLead.phone || "",
+        budget: newLead.budget ? `\u20AC${newLead.budget}` : "\u20AC0",
+        source: newLead.source || "Manuell",
+        sentiment: 50,
+        status: "NEW",
+        property: newLead.property || undefined,
+        notes: newLead.notes || undefined,
+        createdAt: now.split("T")[0],
+      };
+      setLeads((prev) => [lead, ...prev]);
+    } catch {
+      // Fallback: add locally
+      const lead: Lead = {
+        id: `L${String(leads.length + 1).padStart(3, "0")}`,
+        name: newLead.name,
+        email: newLead.email || "",
+        phone: newLead.phone || "",
+        budget: newLead.budget ? `\u20AC${newLead.budget}` : "\u20AC0",
+        source: newLead.source || "Manuell",
+        sentiment: 50,
+        status: "NEW",
+        property: newLead.property || undefined,
+        notes: newLead.notes || undefined,
+        createdAt: now.split("T")[0],
+      };
+      setLeads((prev) => [lead, ...prev]);
+    }
     setNewLead(emptyLead);
     setShowNewLead(false);
   };
@@ -383,6 +488,24 @@ export default function PipelinePage() {
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-700/50">
                         <Badge variant="outline" className="text-[10px]"><Globe size={8} className="mr-1" />{lead.source}</Badge>
                         <span className="text-[10px] text-slate-500">{lead.createdAt}</span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); upgradeToCustomer(lead.id); }}
+                          disabled={saving}
+                          className="flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 transition-colors"
+                          title="Oppgrader til kunde"
+                        >
+                          {saving ? <Loader2 size={10} className="animate-spin" /> : <Crown size={10} />}
+                          <span>Kunde</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteLead(lead.id); }}
+                          className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 transition-colors ml-auto"
+                          title="Slett lead"
+                        >
+                          <Trash2 size={10} />
+                        </button>
                       </div>
                     </CardContent>
                   </Card>
