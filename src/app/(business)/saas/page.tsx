@@ -9,7 +9,12 @@ import {
   Globe, Plus, ExternalLink, Code2, Users, DollarSign, TrendingUp,
   BarChart3, Loader2, Rocket, PauseCircle, Wrench, Archive,
   Eye, Zap, CheckCircle, XCircle, Clock, Sparkles, Layout, Package,
+  Search, ThumbsUp, ThumbsDown, Microscope, Brain, Copy, ChevronRight,
+  Target, Lightbulb, Shield, Star, AlertCircle, RefreshCw, FileText,
+  ArrowRight, X,
 } from 'lucide-react';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SaaSApp {
   id: string;
@@ -50,6 +55,42 @@ interface Totals {
   totalRevenue: number;
 }
 
+interface Opportunity {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  category: string;
+  problem_statement: string;
+  target_audience: string;
+  market_size: string;
+  competitor_count: number;
+  competitors: string[];
+  competitor_weakness: string;
+  opportunity_score: number;
+  suggested_pricing: string;
+  estimated_mrr_potential: string;
+  monetization_strategy: string;
+  tech_stack_suggestion: string[];
+  build_complexity: string;
+  estimated_build_days: number;
+  mvp_features: string[];
+  differentiators: string[];
+  trend_keywords: string[];
+  trend_sources: string[];
+  trend_momentum: string;
+  search_volume_trend: string;
+  status: string;
+  refinement_notes?: string;
+  business_plan?: string;
+  user_feedback?: string;
+  vercel_url?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   development: { label: 'Utvikling', color: 'bg-amber-500/20 text-amber-400', icon: Wrench },
   beta: { label: 'Beta', color: 'bg-blue-500/20 text-blue-400', icon: Rocket },
@@ -58,80 +99,87 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   archived: { label: 'Arkivert', color: 'bg-red-500/20 text-red-400', icon: Archive },
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  'ai-chat': 'AI Chat',
-  'real-estate': 'Eiendom',
-  music: 'Musikk',
-  social: 'Sosiale Medier',
-  productivity: 'Produktivitet',
-  finance: 'Finans',
-  health: 'Helse',
-  education: 'Utdanning',
+const OPP_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  discovered: { label: 'Oppdaget', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: Lightbulb },
+  investigating: { label: 'Undersokes', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: Microscope },
+  refining: { label: 'Forfines', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: Brain },
+  approved: { label: 'Godkjent', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: ThumbsUp },
+  building: { label: 'Bygges', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30', icon: Wrench },
+  deployed: { label: 'Deployet', color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: Rocket },
+  testing: { label: 'Testes', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', icon: Eye },
+  live: { label: 'Live', color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: CheckCircle },
+  rejected: { label: 'Forkastet', color: 'bg-red-500/20 text-red-300 border-red-500/30', icon: XCircle },
+  archived: { label: 'Arkivert', color: 'bg-slate-500/20 text-slate-300 border-slate-500/30', icon: Archive },
 };
 
-// Pre-configured apps based on user's portfolio
+const COMPLEXITY_COLORS: Record<string, string> = {
+  simple: 'text-green-400',
+  medium: 'text-amber-400',
+  complex: 'text-red-400',
+};
+
+const MOMENTUM_LABELS: Record<string, { label: string; color: string }> = {
+  rising: { label: 'Stigende', color: 'text-green-400' },
+  stable: { label: 'Stabil', color: 'text-blue-400' },
+  peaking: { label: 'Topper', color: 'text-amber-400' },
+  declining: { label: 'Synkende', color: 'text-red-400' },
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  'ai-chat': 'AI Chat', 'ai': 'AI', 'real-estate': 'Eiendom', music: 'Musikk',
+  social: 'Sosiale Medier', productivity: 'Produktivitet', finance: 'Finans',
+  health: 'Helse', education: 'Utdanning', ecommerce: 'E-handel',
+  'developer-tools': 'Utviklerverktoy', legal: 'Juridisk', marketing: 'Markedsforing',
+};
+
 const SEED_APPS: Partial<SaaSApp>[] = [
   {
-    slug: 'astro',
-    name: 'Astro AI',
-    domain: 'astro.chatgenius.pro',
+    slug: 'astro', name: 'Astro AI', domain: 'astro.chatgenius.pro',
     description: 'AI-drevet astrologiassistent med personlige horoskoper og livscoaching',
-    category: 'ai-chat',
-    color: '#8b5cf6',
-    status: 'live',
-    pricing_model: 'freemium',
-    price_monthly: 9.99,
-    tech_stack: ['next.js', 'openai', 'supabase'],
-    dev_platform: 'claude-code',
+    category: 'ai-chat', color: '#8b5cf6', status: 'live', pricing_model: 'freemium',
+    price_monthly: 9.99, tech_stack: ['next.js', 'openai', 'supabase'], dev_platform: 'claude-code',
   },
   {
-    slug: 'olivia',
-    name: 'Olivia AI',
-    domain: 'olivia.chatgenius.pro',
+    slug: 'olivia', name: 'Olivia AI', domain: 'olivia.chatgenius.pro',
     description: 'Personlig AI-assistent for daglige oppgaver, planlegging og produktivitet',
-    category: 'ai-chat',
-    color: '#ec4899',
-    status: 'live',
-    pricing_model: 'freemium',
-    price_monthly: 14.99,
-    tech_stack: ['next.js', 'anthropic', 'supabase'],
-    dev_platform: 'claude-code',
+    category: 'ai-chat', color: '#ec4899', status: 'live', pricing_model: 'freemium',
+    price_monthly: 14.99, tech_stack: ['next.js', 'anthropic', 'supabase'], dev_platform: 'claude-code',
   },
   {
-    slug: 'realtyflow',
-    name: 'RealtyFlow Chat',
-    domain: 'realtyflow.chatgenius.pro',
-    description: 'AI eiendomsassistent for kjøpere og selgere i Spania',
-    category: 'real-estate',
-    color: '#06b6d4',
-    status: 'live',
-    pricing_model: 'subscription',
-    price_monthly: 29.99,
-    tech_stack: ['next.js', 'anthropic', 'supabase', 'leaflet'],
-    dev_platform: 'claude-code',
+    slug: 'realtyflow', name: 'RealtyFlow Chat', domain: 'realtyflow.chatgenius.pro',
+    description: 'AI eiendomsassistent for kjopere og selgere i Spania',
+    category: 'real-estate', color: '#06b6d4', status: 'live', pricing_model: 'subscription',
+    price_monthly: 29.99, tech_stack: ['next.js', 'anthropic', 'supabase', 'leaflet'], dev_platform: 'claude-code',
   },
   {
-    slug: 'socialmusichub',
-    name: 'Social Music Hub',
-    domain: 'socialmusichub.chatgenius.pro',
-    description: 'AI-drevet musikkmarkedsføring og sosiale medier-styring',
-    category: 'social',
-    color: '#f59e0b',
-    status: 'beta',
-    pricing_model: 'freemium',
-    price_monthly: 19.99,
-    tech_stack: ['next.js', 'anthropic', 'youtube-api', 'airtable'],
-    dev_platform: 'claude-code',
+    slug: 'socialmusichub', name: 'Social Music Hub', domain: 'socialmusichub.chatgenius.pro',
+    description: 'AI-drevet musikkmarkedsforing og sosiale medier-styring',
+    category: 'social', color: '#f59e0b', status: 'beta', pricing_model: 'freemium',
+    price_monthly: 19.99, tech_stack: ['next.js', 'anthropic', 'youtube-api', 'airtable'], dev_platform: 'claude-code',
   },
 ];
 
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function SaaSPage() {
+  // Portfolio state
   const [apps, setApps] = useState<SaaSApp[]>([]);
   const [totals, setTotals] = useState<Totals>({ totalApps: 0, liveApps: 0, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<SaaSApp | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Opportunity state
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [loadingOpps, setLoadingOpps] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [refining, setRefining] = useState<string | null>(null);
+  const [buildPrompt, setBuildPrompt] = useState<string | null>(null);
+  const [loadingPrompt, setLoadingPrompt] = useState(false);
+  const [userFeedback, setUserFeedback] = useState('');
+  const [latestScan, setLatestScan] = useState<{ created_at: string; opportunities_found: number } | null>(null);
 
   // Form state
   const [formSlug, setFormSlug] = useState('');
@@ -146,6 +194,8 @@ export default function SaaSPage() {
   const [formDevPlatform, setFormDevPlatform] = useState('claude-code');
   const [formRepoUrl, setFormRepoUrl] = useState('');
 
+  // ─── Data Fetching ─────────────────────────────────────────────────────────
+
   const fetchApps = useCallback(async () => {
     try {
       const res = await fetch('/api/saas');
@@ -154,15 +204,8 @@ export default function SaaSPage() {
         setApps(data.apps);
         setTotals(data.totals || { totalApps: 0, liveApps: 0, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
       } else {
-        // Show seed apps as placeholder
         setApps(SEED_APPS as SaaSApp[]);
-        setTotals({
-          totalApps: SEED_APPS.length,
-          liveApps: SEED_APPS.filter(a => a.status === 'live').length,
-          totalUsers: 0,
-          totalMRR: 0,
-          totalRevenue: 0,
-        });
+        setTotals({ totalApps: SEED_APPS.length, liveApps: SEED_APPS.filter(a => a.status === 'live').length, totalUsers: 0, totalMRR: 0, totalRevenue: 0 });
       }
     } catch {
       setApps(SEED_APPS as SaaSApp[]);
@@ -171,7 +214,23 @@ export default function SaaSPage() {
     }
   }, []);
 
+  const fetchOpportunities = useCallback(async () => {
+    setLoadingOpps(true);
+    try {
+      const res = await fetch('/api/saas/opportunities?status=active');
+      const data = await res.json();
+      setOpportunities(data.opportunities || []);
+      if (data.latest_scan) setLatestScan(data.latest_scan);
+    } catch {
+      // silently handle
+    } finally {
+      setLoadingOpps(false);
+    }
+  }, []);
+
   useEffect(() => { fetchApps(); }, [fetchApps]);
+
+  // ─── Handlers ──────────────────────────────────────────────────────────────
 
   const handleSaveApp = async () => {
     if (!formSlug || !formName) return;
@@ -181,29 +240,17 @@ export default function SaaSPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: selectedApp?.id,
-          slug: formSlug,
-          name: formName,
-          domain: `${formSlug}.chatgenius.pro`,
-          description: formDesc,
-          category: formCategory,
-          status: formStatus,
-          color: formColor,
+          id: selectedApp?.id, slug: formSlug, name: formName,
+          domain: `${formSlug}.chatgenius.pro`, description: formDesc,
+          category: formCategory, status: formStatus, color: formColor,
           pricing_model: formPricing,
           price_monthly: formPrice ? parseFloat(formPrice) : undefined,
           tech_stack: formTech ? formTech.split(',').map(t => t.trim()) : [],
-          dev_platform: formDevPlatform,
-          repo_url: formRepoUrl || undefined,
+          dev_platform: formDevPlatform, repo_url: formRepoUrl || undefined,
         }),
       });
-      if (res.ok) {
-        setShowAddModal(false);
-        resetForm();
-        fetchApps();
-      }
-    } catch { /* ignore */ } finally {
-      setIsSaving(false);
-    }
+      if (res.ok) { setShowAddModal(false); resetForm(); fetchApps(); }
+    } catch { /* ignore */ } finally { setIsSaving(false); }
   };
 
   const resetForm = () => {
@@ -224,9 +271,96 @@ export default function SaaSPage() {
     setShowAddModal(true);
   };
 
+  // ─── Opportunity Handlers ──────────────────────────────────────────────────
+
+  const runScan = async () => {
+    setScanning(true);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'discover' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOpportunities((prev) => [...(data.opportunities || []), ...prev]);
+        setLatestScan({ created_at: new Date().toISOString(), opportunities_found: data.count || 0 });
+      }
+    } catch { /* ignore */ } finally { setScanning(false); }
+  };
+
+  const updateOppStatus = async (id: string, status: string, feedback?: string) => {
+    try {
+      await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_status', id, status, user_feedback: feedback }),
+      });
+      setOpportunities((prev) =>
+        prev.map((o) => o.id === id ? { ...o, status, user_feedback: feedback || o.user_feedback } : o)
+          .filter((o) => !['rejected', 'archived'].includes(o.status))
+      );
+      if (selectedOpp?.id === id) {
+        setSelectedOpp((prev) => prev ? { ...prev, status } : null);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const refineOpp = async (opp: Opportunity) => {
+    setRefining(opp.id);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'refine', id: opp.id, title: opp.title,
+          description: opp.description, category: opp.category,
+          target_audience: opp.target_audience, competitors: opp.competitors,
+          mvp_features: opp.mvp_features, user_feedback: userFeedback || opp.user_feedback,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updated = data.opportunity || { ...opp, status: 'refining', ...data.refined };
+        setOpportunities((prev) => prev.map((o) => o.id === opp.id ? { ...o, ...updated } : o));
+        setSelectedOpp((prev) => prev?.id === opp.id ? { ...prev, ...updated } : prev);
+      }
+    } catch { /* ignore */ } finally { setRefining(null); }
+  };
+
+  const generateBuildPrompt = async (opp: Opportunity) => {
+    setLoadingPrompt(true);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generate_build_prompt', id: opp.id, title: opp.title,
+          slug: opp.slug, description: opp.description,
+          mvp_features: opp.mvp_features, tech_stack_suggestion: opp.tech_stack_suggestion,
+          business_plan: opp.business_plan, suggested_pricing: opp.suggested_pricing,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBuildPrompt(data.build_prompt);
+        updateOppStatus(opp.id, 'approved');
+      }
+    } catch { /* ignore */ } finally { setLoadingPrompt(false); }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
   const liveApps = apps.filter(a => a.status === 'live');
   const devApps = apps.filter(a => a.status !== 'live' && a.status !== 'archived');
-  const archivedApps = apps.filter(a => a.status === 'archived');
+
+  // ─── Pipeline counts ──────────────────────────────────────────────────────
+  const discoveredCount = opportunities.filter(o => o.status === 'discovered').length;
+  const investigatingCount = opportunities.filter(o => o.status === 'investigating' || o.status === 'refining').length;
+  const approvedCount = opportunities.filter(o => ['approved', 'building'].includes(o.status)).length;
+  const deployedCount = opportunities.filter(o => ['deployed', 'testing', 'live'].includes(o.status)).length;
 
   return (
     <div>
@@ -239,13 +373,11 @@ export default function SaaSPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-white">ChatGenius.pro</h1>
-              <p className="text-slate-400">SaaS Portfolio &bull; App Management &bull; Revenue Tracking</p>
+              <p className="text-slate-400">SaaS Portfolio &bull; AI Discovery &bull; Auto-Build Pipeline</p>
             </div>
           </div>
-          <Button
-            onClick={() => { resetForm(); setShowAddModal(true); }}
-            className="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500"
-          >
+          <Button onClick={() => { resetForm(); setShowAddModal(true); }}
+            className="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500">
             <Plus className="mr-2 h-4 w-4" /> Ny App
           </Button>
         </div>
@@ -253,52 +385,222 @@ export default function SaaSPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-5">
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4 text-center">
-            <Package className="h-5 w-5 mx-auto mb-1 text-purple-400" />
-            <div className="text-2xl font-bold text-white">{totals.totalApps}</div>
-            <div className="text-xs text-slate-400">Totalt Apper</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4 text-center">
-            <Rocket className="h-5 w-5 mx-auto mb-1 text-green-400" />
-            <div className="text-2xl font-bold text-green-400">{totals.liveApps}</div>
-            <div className="text-xs text-slate-400">Live</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4 text-center">
-            <Users className="h-5 w-5 mx-auto mb-1 text-blue-400" />
-            <div className="text-2xl font-bold text-blue-400">{totals.totalUsers.toLocaleString('nb-NO')}</div>
-            <div className="text-xs text-slate-400">Brukere</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4 text-center">
-            <DollarSign className="h-5 w-5 mx-auto mb-1 text-emerald-400" />
-            <div className="text-2xl font-bold text-emerald-400">${totals.totalMRR.toLocaleString('en-US', { minimumFractionDigits: 0 })}</div>
-            <div className="text-xs text-slate-400">MRR</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardContent className="p-4 text-center">
-            <TrendingUp className="h-5 w-5 mx-auto mb-1 text-amber-400" />
-            <div className="text-2xl font-bold text-amber-400">${totals.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}</div>
-            <div className="text-xs text-slate-400">Total Revenue</div>
-          </CardContent>
-        </Card>
+        {[
+          { icon: Package, label: 'Totalt Apper', value: totals.totalApps, color: 'text-purple-400' },
+          { icon: Rocket, label: 'Live', value: totals.liveApps, color: 'text-green-400' },
+          { icon: Users, label: 'Brukere', value: totals.totalUsers, color: 'text-blue-400' },
+          { icon: DollarSign, label: 'MRR', value: `$${totals.totalMRR.toFixed(0)}`, color: 'text-emerald-400' },
+          { icon: Search, label: 'Muligheter', value: opportunities.length, color: 'text-amber-400' },
+        ].map(({ icon: Icon, label, value, color }) => (
+          <Card key={label} className="bg-slate-800/50 border-slate-700/50">
+            <CardContent className="p-4 text-center">
+              <Icon className={`h-5 w-5 mx-auto mb-1 ${color}`} />
+              <div className={`text-2xl font-bold ${color}`}>{value}</div>
+              <div className="text-xs text-slate-400">{label}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <Tabs defaultValue="portfolio" className="space-y-6">
+      <Tabs defaultValue="discovery" className="space-y-6" onValueChange={(v) => {
+        if (v === 'discovery' && opportunities.length === 0) fetchOpportunities();
+      }}>
         <TabsList>
-          <TabsTrigger value="portfolio"><Layout className="mr-2 h-4 w-4" /> Portfolio ({apps.length})</TabsTrigger>
-          <TabsTrigger value="factory"><Sparkles className="mr-2 h-4 w-4" /> App Factory</TabsTrigger>
+          <TabsTrigger value="discovery">
+            <Search className="mr-2 h-4 w-4" /> SaaS Radar {discoveredCount > 0 && <Badge className="ml-2 bg-amber-500/20 text-amber-300 text-[10px]">{discoveredCount} nye</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="pipeline">
+            <Target className="mr-2 h-4 w-4" /> Pipeline {approvedCount > 0 && <Badge className="ml-2 bg-emerald-500/20 text-emerald-300 text-[10px]">{approvedCount}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="portfolio"><Layout className="mr-2 h-4 w-4" /> Mine Apper ({apps.length})</TabsTrigger>
           <TabsTrigger value="analytics"><BarChart3 className="mr-2 h-4 w-4" /> Analytics</TabsTrigger>
-          <TabsTrigger value="marketing"><Zap className="mr-2 h-4 w-4" /> Marketing</TabsTrigger>
         </TabsList>
 
-        {/* Portfolio Tab */}
+        {/* ─── SaaS Radar Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="discovery" className="space-y-6">
+          {/* Scan controls */}
+          <Card className="bg-gradient-to-br from-purple-500/10 to-violet-500/10 border-purple-500/20">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-purple-400" />
+                    SaaS Opportunity Radar
+                  </h3>
+                  <p className="text-sm text-slate-400 mt-1">
+                    AI skanner markedet for underserverte nisjer med lav konkurranse og hoy betalingsvilje.
+                    {latestScan && (
+                      <span className="text-slate-500 ml-2">
+                        Siste skann: {new Date(latestScan.created_at).toLocaleDateString('nb-NO')} ({latestScan.opportunities_found} funn)
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Automatisk skanning hver mandag kl 07:00</p>
+                </div>
+                <Button onClick={runScan} disabled={scanning}
+                  className="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500">
+                  {scanning ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Skanner...</>
+                    : <><Search className="mr-2 h-4 w-4" /> Skann na</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pipeline overview */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: 'Oppdaget', count: discoveredCount, color: 'border-blue-500/30 text-blue-400', icon: Lightbulb },
+              { label: 'Undersokes', count: investigatingCount, color: 'border-amber-500/30 text-amber-400', icon: Microscope },
+              { label: 'Godkjent/Bygges', count: approvedCount, color: 'border-emerald-500/30 text-emerald-400', icon: Wrench },
+              { label: 'Deployet', count: deployedCount, color: 'border-green-500/30 text-green-400', icon: Rocket },
+            ].map(({ label, count, color, icon: Icon }) => (
+              <div key={label} className={`p-3 rounded-lg bg-slate-800/50 border ${color} text-center`}>
+                <Icon className={`h-4 w-4 mx-auto mb-1 ${color.split(' ')[1]}`} />
+                <div className={`text-xl font-bold ${color.split(' ')[1]}`}>{count}</div>
+                <div className="text-[10px] text-slate-500">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Opportunity cards */}
+          {loadingOpps || scanning ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+              <span className="ml-3 text-slate-400">{scanning ? 'AI skanner markedet...' : 'Laster muligheter...'}</span>
+            </div>
+          ) : opportunities.filter(o => o.status === 'discovered').length === 0 && !scanning ? (
+            <Card className="bg-slate-800/50 border-slate-700/50">
+              <CardContent className="p-12 text-center">
+                <Search className="h-12 w-12 mx-auto text-slate-600 mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">Ingen nye muligheter</h3>
+                <p className="text-sm text-slate-400 mb-4">Trykk &quot;Skann na&quot; for a la AI finne underserverte SaaS-nisjer</p>
+                <Button onClick={runScan} className="bg-purple-600 hover:bg-purple-500">
+                  <Search className="mr-2 h-4 w-4" /> Start skanning
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <Lightbulb className="h-3 w-3 text-amber-400" /> Nye muligheter ({opportunities.filter(o => o.status === 'discovered').length})
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {opportunities.filter(o => o.status === 'discovered').map((opp) => (
+                  <OpportunityCard key={opp.id} opp={opp}
+                    onApprove={() => updateOppStatus(opp.id, 'approved')}
+                    onInvestigate={() => { updateOppStatus(opp.id, 'investigating'); setSelectedOpp(opp); }}
+                    onReject={() => updateOppStatus(opp.id, 'rejected')}
+                    onSelect={() => setSelectedOpp(opp)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Investigating section */}
+          {opportunities.filter(o => ['investigating', 'refining'].includes(o.status)).length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <Microscope className="h-3 w-3 text-amber-400" /> Under vurdering
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {opportunities.filter(o => ['investigating', 'refining'].includes(o.status)).map((opp) => (
+                  <OpportunityCard key={opp.id} opp={opp}
+                    onApprove={() => updateOppStatus(opp.id, 'approved')}
+                    onInvestigate={() => setSelectedOpp(opp)}
+                    onReject={() => updateOppStatus(opp.id, 'rejected')}
+                    onSelect={() => setSelectedOpp(opp)}
+                    showRefine
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ─── Pipeline Tab ────────────────────────────────────────────────── */}
+        <TabsContent value="pipeline" className="space-y-6">
+          {['approved', 'building', 'deployed', 'testing'].map((status) => {
+            const filtered = opportunities.filter(o => o.status === status);
+            if (filtered.length === 0) return null;
+            const cfg = OPP_STATUS_CONFIG[status];
+            const StatusIcon = cfg?.icon || Lightbulb;
+            return (
+              <div key={status} className="space-y-3">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <StatusIcon className="h-3 w-3" /> {cfg?.label} ({filtered.length})
+                </h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {filtered.map((opp) => (
+                    <Card key={opp.id} className="bg-slate-800/50 border-slate-700/50 hover:border-slate-600 transition-all cursor-pointer"
+                      onClick={() => setSelectedOpp(opp)}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-semibold text-white">{opp.title}</h4>
+                          <Badge className={`text-[10px] ${cfg?.color}`}>{cfg?.label}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-400 mb-3">{opp.description}</p>
+                        <div className="flex items-center gap-3 text-xs text-slate-500">
+                          <span>{opp.estimated_build_days}d bygg</span>
+                          <span>{opp.estimated_mrr_potential}</span>
+                          {opp.vercel_url && (
+                            <a href={opp.vercel_url} target="_blank" rel="noopener noreferrer"
+                              className="text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                              onClick={e => e.stopPropagation()}>
+                              <ExternalLink className="h-3 w-3" /> Apne
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          {status === 'approved' && (
+                            <Button size="sm" className="h-7 text-xs bg-cyan-600 hover:bg-cyan-500"
+                              onClick={(e) => { e.stopPropagation(); updateOppStatus(opp.id, 'building'); }}>
+                              <Wrench className="h-3 w-3 mr-1" /> Start bygg
+                            </Button>
+                          )}
+                          {status === 'building' && (
+                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-500"
+                              onClick={(e) => { e.stopPropagation(); updateOppStatus(opp.id, 'deployed'); }}>
+                              <Rocket className="h-3 w-3 mr-1" /> Marker som deployet
+                            </Button>
+                          )}
+                          {status === 'deployed' && (
+                            <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500"
+                              onClick={(e) => { e.stopPropagation(); updateOppStatus(opp.id, 'testing'); }}>
+                              <Eye className="h-3 w-3 mr-1" /> Start testing
+                            </Button>
+                          )}
+                          {status === 'testing' && (
+                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-500"
+                              onClick={(e) => { e.stopPropagation(); updateOppStatus(opp.id, 'live'); }}>
+                              <CheckCircle className="h-3 w-3 mr-1" /> Godkjenn &amp; Go Live
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-7 text-xs border-slate-600"
+                            onClick={(e) => { e.stopPropagation(); setSelectedOpp(opp); }}>
+                            Detaljer
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {opportunities.filter(o => ['approved', 'building', 'deployed', 'testing'].includes(o.status)).length === 0 && (
+            <Card className="bg-slate-800/50 border-slate-700/50">
+              <CardContent className="p-12 text-center">
+                <Target className="h-12 w-12 mx-auto text-slate-600 mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">Ingen i pipeline</h3>
+                <p className="text-sm text-slate-400">Godkjenn muligheter fra SaaS Radar for a starte bygging</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ─── Portfolio Tab ───────────────────────────────────────────────── */}
         <TabsContent value="portfolio" className="space-y-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
@@ -306,44 +608,23 @@ export default function SaaSPage() {
             </div>
           ) : (
             <>
-              {/* Live Apps */}
               {liveApps.length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                     <CheckCircle className="h-3 w-3 text-green-400" /> Live Apper ({liveApps.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {liveApps.map((app) => (
-                      <AppCard key={app.slug} app={app} onEdit={openEditModal} />
-                    ))}
+                    {liveApps.map((app) => <AppCard key={app.slug} app={app} onEdit={openEditModal} />)}
                   </div>
                 </div>
               )}
-
-              {/* In Development */}
               {devApps.length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                     <Wrench className="h-3 w-3 text-amber-400" /> Under Utvikling ({devApps.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {devApps.map((app) => (
-                      <AppCard key={app.slug} app={app} onEdit={openEditModal} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Archived */}
-              {archivedApps.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                    Arkiverte ({archivedApps.length})
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {archivedApps.map((app) => (
-                      <AppCard key={app.slug} app={app} onEdit={openEditModal} />
-                    ))}
+                    {devApps.map((app) => <AppCard key={app.slug} app={app} onEdit={openEditModal} />)}
                   </div>
                 </div>
               )}
@@ -351,133 +632,7 @@ export default function SaaSPage() {
           )}
         </TabsContent>
 
-        {/* App Factory Tab */}
-        <TabsContent value="factory" className="space-y-4">
-          <Card className="bg-gradient-to-br from-purple-500/10 to-violet-500/10 border-purple-500/20">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-400" />
-                App Factory &mdash; Fra ide til live app
-              </CardTitle>
-              <CardDescription>Bruk AI til a planlegge, deretter Claude Code til a bygge</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {/* Workflow */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  {[
-                    { step: '1', title: 'Ide & Konsept', desc: 'Victoria CEO analyserer marked, maalgruppe og konkurranse. Lager forretningsplan.', icon: '💡', color: 'border-amber-500/30' },
-                    { step: '2', title: 'Bygg med Claude Code', desc: 'Apne appen i Claude Code. Bruk planen som kontekst. Du styrer dialogen og endrer underveis.', icon: '🔨', color: 'border-blue-500/30' },
-                    { step: '3', title: 'Koble Stripe & Deploy', desc: 'Legg til Stripe product, sett prising. Deploy til Vercel. Registrer i RealtyFlow Pro.', icon: '🚀', color: 'border-green-500/30' },
-                    { step: '4', title: 'Markedsforing & Vekst', desc: 'Content Hub + Victoria lager kampanjer. Automatisk publisering pa 6 plattformer.', icon: '📈', color: 'border-pink-500/30' },
-                  ].map((item) => (
-                    <div key={item.step} className={`p-4 rounded-lg bg-slate-800/50 border ${item.color}`}>
-                      <div className="text-2xl mb-2">{item.icon}</div>
-                      <h4 className="text-sm font-semibold text-white mb-1">Steg {item.step}: {item.title}</h4>
-                      <p className="text-xs text-slate-400">{item.desc}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Ny app planlegger */}
-                <Card className="bg-slate-800/50 border-slate-700/50">
-                  <CardHeader>
-                    <CardTitle className="text-white text-sm">Planlegg ny app med Victoria CEO</CardTitle>
-                    <CardDescription>Beskriv app-ideen, sa lager AI-en en komplett plan</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <textarea
-                        className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none resize-none"
-                        rows={3}
-                        placeholder="Beskriv app-ideen din... F.eks: En AI-drevet fitness-coach som lager treningsprogrammer og maalplan basert pa brukerens mal og preferanser. Maalgruppe: 25-45 ar, helsebeviste, villige til a betale $15/mnd."
-                      />
-                      <div className="flex gap-3">
-                        <Button className="bg-gradient-to-r from-purple-600 to-violet-600" disabled>
-                          <Sparkles className="mr-2 h-4 w-4" /> Generer Plan (krever ANTHROPIC_API_KEY)
-                        </Button>
-                        <Button variant="outline" className="border-slate-600" onClick={() => { resetForm(); setShowAddModal(true); }}>
-                          <Plus className="mr-2 h-4 w-4" /> Manuelt oppsett
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Stripe Setup Guide */}
-                <Card className="bg-slate-800/50 border-slate-700/50">
-                  <CardHeader>
-                    <CardTitle className="text-white text-sm flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-emerald-400" />
-                      Stripe-integrasjon
-                    </CardTitle>
-                    <CardDescription>Automatisk revenue tracking via webhooks</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                        <h4 className="text-sm font-medium text-emerald-400 mb-2">Slik setter du opp:</h4>
-                        <ol className="space-y-2 text-xs text-slate-300">
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">1.</span> Opprett konto pa <a href="https://stripe.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">stripe.com</a></li>
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">2.</span> Ga til Developers &rarr; Webhooks &rarr; Add endpoint</li>
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">3.</span> URL: <code className="bg-slate-700 px-1 rounded text-emerald-300">https://realtyflow-pro-two.vercel.app/api/saas/stripe</code></li>
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">4.</span> Events: checkout.session.completed, customer.subscription.created/updated/deleted, invoice.paid</li>
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">5.</span> Kopier Webhook Secret &rarr; legg i Vercel env som <code className="bg-slate-700 px-1 rounded">STRIPE_WEBHOOK_SECRET</code></li>
-                          <li className="flex gap-2"><span className="text-emerald-400 font-bold">6.</span> Legg ogsa til <code className="bg-slate-700 px-1 rounded">STRIPE_SECRET_KEY</code> i Vercel env</li>
-                        </ol>
-                      </div>
-                      <div className="p-3 rounded-lg bg-slate-700/30">
-                        <h4 className="text-sm font-medium text-white mb-1">I hver ChatGenius-app:</h4>
-                        <p className="text-xs text-slate-400">
-                          Nar du oppretter Stripe Checkout i appen, legg til <code className="bg-slate-700 px-1 rounded text-purple-300">metadata: {'{'} app_slug: &quot;astro&quot; {'}'}</code> slik at webhook vet hvilken app betalingen tilhorer. Da oppdateres MRR, brukere og revenue automatisk i dashboardet.
-                        </p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                        <h4 className="text-sm font-medium text-blue-400 mb-1">Hva skjer automatisk:</h4>
-                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                          <div>&#10003; Ny betaling &rarr; MRR oppdateres</div>
-                          <div>&#10003; Kansellering &rarr; Churn beregnes</div>
-                          <div>&#10003; Ny bruker &rarr; Brukertall oker</div>
-                          <div>&#10003; Faktura betalt &rarr; Revenue sporers</div>
-                          <div>&#10003; Dashboard oppdateres live</div>
-                          <div>&#10003; Daglig analytics lagres</div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Recommended Tech Stack */}
-                <Card className="bg-slate-800/50 border-slate-700/50">
-                  <CardHeader>
-                    <CardTitle className="text-white text-sm">Anbefalt tech stack for nye apper</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {[
-                        { name: 'Next.js 14', role: 'Frontend + API', color: 'text-white' },
-                        { name: 'Supabase', role: 'Database + Auth', color: 'text-emerald-400' },
-                        { name: 'Stripe', role: 'Betaling', color: 'text-purple-400' },
-                        { name: 'Vercel', role: 'Hosting + Deploy', color: 'text-blue-400' },
-                        { name: 'Claude API', role: 'AI-funksjoner', color: 'text-amber-400' },
-                        { name: 'Tailwind CSS', role: 'Styling', color: 'text-cyan-400' },
-                        { name: 'Claude Code', role: 'Utvikling', color: 'text-pink-400' },
-                        { name: 'RealtyFlow Pro', role: 'Business ops', color: 'text-violet-400' },
-                      ].map((tech) => (
-                        <div key={tech.name} className="p-3 rounded-lg bg-slate-700/30 text-center">
-                          <div className={`text-sm font-medium ${tech.color}`}>{tech.name}</div>
-                          <div className="text-[10px] text-slate-500">{tech.role}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Analytics Tab */}
+        {/* ─── Analytics Tab ───────────────────────────────────────────────── */}
         <TabsContent value="analytics" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card className="bg-slate-800/50 border-slate-700/50">
@@ -498,196 +653,268 @@ export default function SaaSPage() {
                       </div>
                     </div>
                   ))}
+                  {apps.filter(a => a.status === 'live').length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-4">Ingen live-apper med data enda</p>
+                  )}
                 </div>
-                {apps.filter(a => a.status === 'live').length === 0 && (
-                  <p className="text-sm text-slate-500 text-center py-4">Ingen live-apper med data enda</p>
-                )}
               </CardContent>
             </Card>
 
             <Card className="bg-slate-800/50 border-slate-700/50">
               <CardHeader>
-                <CardTitle className="text-white text-sm">Viktige Metrikker</CardTitle>
+                <CardTitle className="text-white text-sm">Discovery Pipeline</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-400">ARR (Annual Recurring Revenue)</span>
-                    <span className="text-lg font-bold text-emerald-400">${(totals.totalMRR * 12).toLocaleString('en-US')}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-400">Gjennomsnittlig pris/bruker</span>
-                    <span className="text-lg font-bold text-blue-400">
-                      ${totals.totalUsers > 0 ? (totals.totalMRR / totals.totalUsers).toFixed(2) : '0'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-400">Konverteringsrate (trial→paid)</span>
-                    <span className="text-lg font-bold text-purple-400">--</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-400">Gjennomsnittlig churn</span>
-                    <span className="text-lg font-bold text-amber-400">--</span>
-                  </div>
+                <div className="space-y-3">
+                  {[
+                    { label: 'Totalt oppdaget', value: opportunities.length, color: 'text-blue-400' },
+                    { label: 'Under vurdering', value: investigatingCount, color: 'text-amber-400' },
+                    { label: 'Godkjent/Bygges', value: approvedCount, color: 'text-emerald-400' },
+                    { label: 'Deployet/Live', value: deployedCount, color: 'text-green-400' },
+                    { label: 'ARR', value: `$${(totals.totalMRR * 12).toLocaleString('en-US')}`, color: 'text-purple-400' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="flex justify-between items-center">
+                      <span className="text-sm text-slate-400">{label}</span>
+                      <span className={`text-lg font-bold ${color}`}>{value}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="bg-slate-800/50 border-slate-700/50">
-            <CardHeader>
-              <CardTitle className="text-white text-sm">Vekstplan</CardTitle>
-              <CardDescription>ChatGenius.pro SaaS-strategi</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[
-                  { phase: 'Fase 1', goal: 'Launch 4 apper live med betalende brukere', status: 'active', kpi: '100 betalende brukere' },
-                  { phase: 'Fase 2', goal: 'Markedsforing via Content Hub og LinkedIn', status: 'planned', kpi: '500 brukere, $2K MRR' },
-                  { phase: 'Fase 3', goal: 'Scale med ads, SEO og referral-program', status: 'planned', kpi: '2000 brukere, $10K MRR' },
-                  { phase: 'Fase 4', goal: 'Enterprise-plan og partner-integrasjoner', status: 'planned', kpi: '5000 brukere, $25K MRR' },
-                ].map((item) => (
-                  <div key={item.phase} className="flex items-center gap-4 p-3 rounded-lg bg-slate-700/30">
-                    <Badge className={item.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-slate-500/20 text-slate-400'}>
-                      {item.phase}
-                    </Badge>
-                    <div className="flex-1">
-                      <p className="text-sm text-white">{item.goal}</p>
-                      <p className="text-xs text-slate-500">KPI: {item.kpi}</p>
-                    </div>
-                    {item.status === 'active' ? (
-                      <Loader2 className="h-4 w-4 text-green-400 animate-spin" />
-                    ) : (
-                      <Clock className="h-4 w-4 text-slate-600" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Marketing Tab */}
-        <TabsContent value="marketing" className="space-y-4">
+          {/* Stripe Setup */}
           <Card className="bg-slate-800/50 border-slate-700/50">
             <CardHeader>
               <CardTitle className="text-white text-sm flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-purple-400" />
-                Markedsforing via Content Hub
+                <DollarSign className="h-4 w-4 text-emerald-400" /> Stripe-integrasjon
               </CardTitle>
-              <CardDescription>Publiser innhold for dine SaaS-apper pa tvers av alle plattformer</CardDescription>
+              <CardDescription>Automatisk revenue tracking via webhooks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <p className="text-sm text-slate-300">
-                  Bruk <strong>Content Hub</strong> til a markedsfore ChatGenius-appene dine. Victoria CEO-agenten kan lage kampanjer spesifikt for SaaS:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                  {[
-                    { platform: 'LinkedIn', tip: 'Thought leadership-artikler om AI-chatbots, case studies, ROI-tall', color: 'text-blue-400' },
-                    { platform: 'YouTube', tip: 'Produktdemoer, tutorials, "Bygg din egen AI-assistent"-serier', color: 'text-red-400' },
-                    { platform: 'TikTok', tip: 'Korte democlips, "AI kan gjore dette"-trender, behind the scenes', color: 'text-pink-400' },
-                    { platform: 'Instagram', tip: 'UI-screenshots, testimonials, feature-highlights i Reels', color: 'text-purple-400' },
-                    { platform: 'Facebook', tip: 'Målrettet annonsering mot SMB-eiere, gruppeengasjement', color: 'text-blue-500' },
-                    { platform: 'Pinterest', tip: 'Infografikker om AI, "How to automate"-pins', color: 'text-red-500' },
-                  ].map((item) => (
-                    <div key={item.platform} className="p-3 rounded-lg bg-slate-700/30 border border-slate-600/30">
-                      <h4 className={`text-sm font-medium ${item.color}`}>{item.platform}</h4>
-                      <p className="text-xs text-slate-400 mt-1">{item.tip}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 flex gap-3">
-                  <Button
-                    onClick={() => window.location.href = '/content-hub'}
-                    className="bg-gradient-to-r from-purple-600 to-violet-600"
-                  >
-                    <Zap className="mr-2 h-4 w-4" /> Apne Content Hub
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => window.location.href = '/content-studio'}
-                    className="border-slate-600"
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" /> Content Studio
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800/50 border-slate-700/50">
-            <CardHeader>
-              <CardTitle className="text-white text-sm">Innholds-ideer per App</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {apps.filter(a => a.status === 'live' || a.status === 'beta').map((app) => (
-                  <div key={app.slug} className="p-3 rounded-lg bg-slate-700/20 border border-slate-700/30">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: app.color || '#8b5cf6' }} />
-                      <h4 className="text-sm font-medium text-white">{app.name}</h4>
-                      <Badge className="text-[10px]" variant="outline">{app.domain}</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {getContentIdeas(app.slug).map((idea, i) => (
-                        <Badge key={i} variant="outline" className="text-[10px] border-slate-600 text-slate-400 cursor-pointer hover:border-purple-500/50 hover:text-purple-300">
-                          {idea}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                <ol className="space-y-2 text-xs text-slate-300">
+                  <li className="flex gap-2"><span className="text-emerald-400 font-bold">1.</span> Webhook URL: <code className="bg-slate-700 px-1 rounded text-emerald-300">https://realtyflow-pro-two.vercel.app/api/saas/stripe</code></li>
+                  <li className="flex gap-2"><span className="text-emerald-400 font-bold">2.</span> Events: checkout.session.completed, customer.subscription.*, invoice.paid</li>
+                  <li className="flex gap-2"><span className="text-emerald-400 font-bold">3.</span> Env vars: STRIPE_WEBHOOK_SECRET + STRIPE_SECRET_KEY</li>
+                  <li className="flex gap-2"><span className="text-emerald-400 font-bold">4.</span> I appen: <code className="bg-slate-700 px-1 rounded text-purple-300">{'metadata: { app_slug: "astro" }'}</code></li>
+                </ol>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Add/Edit Modal */}
+      {/* ─── Opportunity Detail Modal ──────────────────────────────────────── */}
+      {selectedOpp && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={() => { setSelectedOpp(null); setBuildPrompt(null); setUserFeedback(''); }}>
+          <div className="bg-slate-800 border border-slate-700 rounded-t-xl sm:rounded-xl w-full sm:max-w-2xl sm:mx-4 max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-1">
+                    <h2 className="text-xl font-bold text-white">{selectedOpp.title}</h2>
+                    {(() => {
+                      const cfg = OPP_STATUS_CONFIG[selectedOpp.status];
+                      return cfg ? <Badge className={`text-[10px] ${cfg.color}`}>{cfg.label}</Badge> : null;
+                    })()}
+                  </div>
+                  <p className="text-sm text-slate-400">{selectedOpp.description}</p>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => { setSelectedOpp(null); setBuildPrompt(null); setUserFeedback(''); }}>
+                  <X size={18} />
+                </Button>
+              </div>
+
+              {/* Score & key metrics */}
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="p-3 rounded-lg bg-slate-700/30 text-center">
+                  <div className={`text-2xl font-bold ${selectedOpp.opportunity_score >= 75 ? 'text-green-400' : selectedOpp.opportunity_score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {selectedOpp.opportunity_score}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Score</div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-700/30 text-center">
+                  <div className="text-lg font-bold text-blue-400">{selectedOpp.competitor_count}</div>
+                  <div className="text-[10px] text-slate-500">Konkurrenter</div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-700/30 text-center">
+                  <div className={`text-lg font-bold ${COMPLEXITY_COLORS[selectedOpp.build_complexity] || 'text-white'}`}>
+                    {selectedOpp.estimated_build_days}d
+                  </div>
+                  <div className="text-[10px] text-slate-500">Byggetid</div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-700/30 text-center">
+                  <div className={`text-sm font-bold ${MOMENTUM_LABELS[selectedOpp.trend_momentum]?.color || 'text-white'}`}>
+                    {MOMENTUM_LABELS[selectedOpp.trend_momentum]?.label || selectedOpp.trend_momentum}
+                  </div>
+                  <div className="text-[10px] text-slate-500">Trend</div>
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-4 mb-6">
+                <div className="p-3 rounded-lg bg-slate-700/20">
+                  <h4 className="text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Problem</h4>
+                  <p className="text-sm text-slate-300">{selectedOpp.problem_statement}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-700/20">
+                    <h4 className="text-xs font-semibold text-slate-400 mb-1">Malgruppe</h4>
+                    <p className="text-sm text-slate-300">{selectedOpp.target_audience}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-700/20">
+                    <h4 className="text-xs font-semibold text-slate-400 mb-1">MRR-potensial</h4>
+                    <p className="text-sm text-emerald-400 font-medium">{selectedOpp.estimated_mrr_potential}</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-700/20">
+                  <h4 className="text-xs font-semibold text-slate-400 mb-1">Konkurrenter ({selectedOpp.competitor_count})</h4>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {selectedOpp.competitors?.map(c => <Badge key={c} variant="outline" className="text-[10px] border-slate-600">{c}</Badge>)}
+                  </div>
+                  <p className="text-xs text-red-300">{selectedOpp.competitor_weakness}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-700/20">
+                  <h4 className="text-xs font-semibold text-slate-400 mb-1">MVP-features</h4>
+                  <div className="space-y-1">
+                    {selectedOpp.mvp_features?.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm text-slate-300">
+                        <ChevronRight className="h-3 w-3 text-purple-400 shrink-0" /> {f}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-700/20">
+                    <h4 className="text-xs font-semibold text-slate-400 mb-1">Prisforslag</h4>
+                    <p className="text-sm text-slate-300">{selectedOpp.suggested_pricing}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-700/20">
+                    <h4 className="text-xs font-semibold text-slate-400 mb-1">Differensiatorer</h4>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedOpp.differentiators?.map((d, i) => <Badge key={i} variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-300">{d}</Badge>)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Business plan if refined */}
+                {selectedOpp.business_plan && (
+                  <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                    <h4 className="text-xs font-semibold text-purple-400 mb-2 flex items-center gap-1"><FileText className="h-3 w-3" /> Forretningsplan</h4>
+                    <div className="text-xs text-slate-300 whitespace-pre-wrap max-h-40 overflow-y-auto">{selectedOpp.business_plan}</div>
+                  </div>
+                )}
+
+                {/* Build prompt */}
+                {buildPrompt && (
+                  <div className="p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-semibold text-cyan-400 flex items-center gap-1"><Code2 className="h-3 w-3" /> Claude Code Build Prompt</h4>
+                      <Button size="sm" variant="outline" className="h-6 text-[10px] border-cyan-500/30 text-cyan-300"
+                        onClick={() => copyToClipboard(buildPrompt)}>
+                        <Copy className="h-3 w-3 mr-1" /> Kopier
+                      </Button>
+                    </div>
+                    <div className="text-xs text-slate-300 whitespace-pre-wrap max-h-60 overflow-y-auto font-mono bg-slate-900/50 p-3 rounded">{buildPrompt}</div>
+                    <p className="text-[10px] text-cyan-400/70 mt-2">Kopier denne prompten og lim inn i Claude Code for a bygge appen automatisk.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Feedback input */}
+              <div className="mb-4">
+                <textarea
+                  value={userFeedback}
+                  onChange={e => setUserFeedback(e.target.value)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none resize-none"
+                  rows={2}
+                  placeholder="Legg til tilbakemelding, onsker eller endringer..."
+                />
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-2">
+                {['discovered', 'investigating'].includes(selectedOpp.status) && (
+                  <>
+                    <Button onClick={() => { refineOpp(selectedOpp); }} disabled={refining === selectedOpp.id}
+                      className="bg-purple-600 hover:bg-purple-500">
+                      {refining === selectedOpp.id ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Forfiner...</>
+                        : <><Brain className="mr-2 h-4 w-4" /> Undersok &amp; forfin</>}
+                    </Button>
+                    <Button onClick={() => updateOppStatus(selectedOpp.id, 'approved', userFeedback)}
+                      className="bg-emerald-600 hover:bg-emerald-500">
+                      <ThumbsUp className="mr-2 h-4 w-4" /> Godkjenn
+                    </Button>
+                    <Button onClick={() => updateOppStatus(selectedOpp.id, 'rejected')}
+                      variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10">
+                      <ThumbsDown className="mr-2 h-4 w-4" /> Forkast
+                    </Button>
+                  </>
+                )}
+                {['refining', 'approved'].includes(selectedOpp.status) && (
+                  <>
+                    <Button onClick={() => generateBuildPrompt(selectedOpp)} disabled={loadingPrompt}
+                      className="bg-cyan-600 hover:bg-cyan-500">
+                      {loadingPrompt ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Genererer...</>
+                        : <><Code2 className="mr-2 h-4 w-4" /> Generer build-prompt</>}
+                    </Button>
+                    <Button onClick={() => { refineOpp(selectedOpp); }} disabled={refining === selectedOpp.id}
+                      variant="outline" className="border-purple-500/30 text-purple-300">
+                      <RefreshCw className="mr-2 h-4 w-4" /> Forfin mer
+                    </Button>
+                  </>
+                )}
+                {selectedOpp.status === 'building' && (
+                  <Button onClick={() => updateOppStatus(selectedOpp.id, 'deployed')}
+                    className="bg-green-600 hover:bg-green-500">
+                    <Rocket className="mr-2 h-4 w-4" /> Marker som deployet
+                  </Button>
+                )}
+                {selectedOpp.status === 'testing' && (
+                  <Button onClick={() => updateOppStatus(selectedOpp.id, 'live')}
+                    className="bg-green-600 hover:bg-green-500">
+                    <CheckCircle className="mr-2 h-4 w-4" /> Go Live
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Add/Edit App Modal ────────────────────────────────────────────── */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAddModal(false)}>
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-white mb-4">
               {selectedApp ? 'Rediger App' : 'Ny ChatGenius App'}
             </h2>
-
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Slug (subdomain)</label>
-                  <input
-                    type="text"
-                    value={formSlug}
+                  <input type="text" value={formSlug}
                     onChange={e => setFormSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                     className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 focus:border-purple-500 focus:outline-none"
-                    placeholder="min-app"
-                  />
+                    placeholder="min-app" />
                   <p className="text-[10px] text-slate-500 mt-1">{formSlug || 'xxx'}.chatgenius.pro</p>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Navn</label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={e => setFormName(e.target.value)}
+                  <input type="text" value={formName} onChange={e => setFormName(e.target.value)}
                     className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 focus:border-purple-500 focus:outline-none"
-                    placeholder="Min App AI"
-                  />
+                    placeholder="Min App AI" />
                 </div>
               </div>
-
               <div>
                 <label className="text-xs font-medium text-slate-300 mb-1.5 block">Beskrivelse</label>
-                <textarea
-                  value={formDesc}
-                  onChange={e => setFormDesc(e.target.value)}
-                  rows={2}
+                <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2}
                   className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none resize-none"
-                  placeholder="Hva gjor denne appen?"
-                />
+                  placeholder="Hva gjor denne appen?" />
               </div>
-
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Kategori</label>
@@ -713,7 +940,6 @@ export default function SaaSPage() {
                     className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 cursor-pointer" />
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Prismodell</label>
@@ -733,7 +959,6 @@ export default function SaaSPage() {
                     placeholder="9.99" step="0.01" />
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Tech Stack</label>
@@ -747,13 +972,10 @@ export default function SaaSPage() {
                     className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none">
                     <option value="claude-code">Claude Code</option>
                     <option value="gemini">Gemini</option>
-                    <option value="ai-studio">AI Studio</option>
                     <option value="manual">Manuell</option>
-                    <option value="mixed">Blanding</option>
                   </select>
                 </div>
               </div>
-
               <div>
                 <label className="text-xs font-medium text-slate-300 mb-1.5 block">Repo URL (valgfritt)</label>
                 <input type="text" value={formRepoUrl} onChange={e => setFormRepoUrl(e.target.value)}
@@ -761,16 +983,12 @@ export default function SaaSPage() {
                   placeholder="https://github.com/..." />
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
               <Button onClick={handleSaveApp} disabled={!formSlug || !formName || isSaving}
                 className="flex-1 bg-gradient-to-r from-purple-600 to-violet-600">
                 {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lagrer...</> : selectedApp ? 'Oppdater' : 'Opprett App'}
               </Button>
-              <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); }}
-                className="border-slate-600">
-                Avbryt
-              </Button>
+              <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); }} className="border-slate-600">Avbryt</Button>
             </div>
           </div>
         </div>
@@ -779,7 +997,93 @@ export default function SaaSPage() {
   );
 }
 
-// App Card Component
+// ─── Opportunity Card ────────────────────────────────────────────────────────
+
+function OpportunityCard({ opp, onApprove, onInvestigate, onReject, onSelect, showRefine }: {
+  opp: Opportunity;
+  onApprove: () => void;
+  onInvestigate: () => void;
+  onReject: () => void;
+  onSelect: () => void;
+  showRefine?: boolean;
+}) {
+  const scoreColor = opp.opportunity_score >= 75 ? 'text-green-400 border-green-500/30'
+    : opp.opportunity_score >= 50 ? 'text-amber-400 border-amber-500/30' : 'text-red-400 border-red-500/30';
+
+  return (
+    <Card className="bg-slate-800/50 border-slate-700/50 hover:border-slate-600 transition-all group">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex-1 cursor-pointer" onClick={onSelect}>
+            <h4 className="font-semibold text-white group-hover:text-purple-300 transition-colors">{opp.title}</h4>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-[10px] border-slate-600">
+                {CATEGORY_LABELS[opp.category] || opp.category}
+              </Badge>
+              {opp.trend_momentum && (
+                <span className={`text-[10px] ${MOMENTUM_LABELS[opp.trend_momentum]?.color || 'text-slate-400'}`}>
+                  {MOMENTUM_LABELS[opp.trend_momentum]?.label}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className={`flex items-center justify-center w-12 h-12 rounded-lg border ${scoreColor} bg-slate-900/50`}>
+            <div>
+              <div className={`text-lg font-bold ${scoreColor.split(' ')[0]}`}>{opp.opportunity_score}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Description */}
+        <p className="text-xs text-slate-400 mb-3 line-clamp-2 cursor-pointer" onClick={onSelect}>{opp.description}</p>
+
+        {/* Key metrics row */}
+        <div className="grid grid-cols-4 gap-2 mb-3 text-center">
+          <div className="p-1.5 rounded bg-slate-700/30">
+            <div className="text-xs font-bold text-blue-400">{opp.competitor_count}</div>
+            <div className="text-[9px] text-slate-500">Konk.</div>
+          </div>
+          <div className="p-1.5 rounded bg-slate-700/30">
+            <div className={`text-xs font-bold ${COMPLEXITY_COLORS[opp.build_complexity] || 'text-white'}`}>{opp.estimated_build_days}d</div>
+            <div className="text-[9px] text-slate-500">Bygg</div>
+          </div>
+          <div className="p-1.5 rounded bg-slate-700/30">
+            <div className="text-xs font-bold text-emerald-400">{opp.estimated_mrr_potential?.split(' ')[0] || '?'}</div>
+            <div className="text-[9px] text-slate-500">MRR</div>
+          </div>
+          <div className="p-1.5 rounded bg-slate-700/30">
+            <div className="text-xs font-bold text-purple-400">{opp.mvp_features?.length || 0}</div>
+            <div className="text-[9px] text-slate-500">Features</div>
+          </div>
+        </div>
+
+        {/* Tech stack */}
+        <div className="flex flex-wrap gap-1 mb-3">
+          {opp.tech_stack_suggestion?.slice(0, 4).map((t) => (
+            <Badge key={t} variant="outline" className="text-[9px] border-slate-600 text-slate-500">{t}</Badge>
+          ))}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onApprove} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 flex-1">
+            <ThumbsUp className="h-3 w-3 mr-1" /> Godkjenn
+          </Button>
+          <Button size="sm" onClick={onInvestigate} variant="outline" className="h-7 text-xs border-amber-500/30 text-amber-300 hover:bg-amber-500/10 flex-1">
+            <Microscope className="h-3 w-3 mr-1" /> {showRefine ? 'Detaljer' : 'Undersok'}
+          </Button>
+          <Button size="sm" onClick={onReject} variant="outline" className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10">
+            <ThumbsDown className="h-3 w-3" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── App Card ────────────────────────────────────────────────────────────────
+
 function AppCard({ app, onEdit }: { app: SaaSApp; onEdit: (app: SaaSApp) => void }) {
   const statusCfg = STATUS_CONFIG[app.status] || STATUS_CONFIG.development;
   const StatusIcon = statusCfg.icon;
@@ -800,15 +1104,10 @@ function AppCard({ app, onEdit }: { app: SaaSApp; onEdit: (app: SaaSApp) => void
             </div>
           </div>
           <Badge className={`text-[10px] ${statusCfg.color}`}>
-            <StatusIcon className="h-3 w-3 mr-1" />
-            {statusCfg.label}
+            <StatusIcon className="h-3 w-3 mr-1" />{statusCfg.label}
           </Badge>
         </div>
-
-        {app.description && (
-          <p className="text-xs text-slate-400 mb-3 line-clamp-2">{app.description}</p>
-        )}
-
+        {app.description && <p className="text-xs text-slate-400 mb-3 line-clamp-2">{app.description}</p>}
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="text-center p-2 rounded bg-slate-700/30">
             <div className="text-sm font-bold text-white">{app.total_users || 0}</div>
@@ -823,42 +1122,25 @@ function AppCard({ app, onEdit }: { app: SaaSApp; onEdit: (app: SaaSApp) => void
             <div className="text-[10px] text-slate-500">Pris/mnd</div>
           </div>
         </div>
-
         <div className="flex items-center justify-between">
           <div className="flex flex-wrap gap-1">
             {app.tech_stack?.slice(0, 3).map((tech) => (
-              <Badge key={tech} variant="outline" className="text-[9px] border-slate-600 text-slate-500">
-                {tech}
-              </Badge>
+              <Badge key={tech} variant="outline" className="text-[9px] border-slate-600 text-slate-500">{tech}</Badge>
             ))}
           </div>
           <div className="flex items-center gap-1">
             {app.dev_platform && (
               <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-400">
-                <Code2 className="h-2.5 w-2.5 mr-0.5" />
-                {app.dev_platform}
+                <Code2 className="h-2.5 w-2.5 mr-0.5" />{app.dev_platform}
               </Badge>
             )}
             {app.live_url && (
-              <a href={app.live_url} target="_blank" rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                className="text-slate-500 hover:text-purple-400">
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+              <a href={app.live_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                className="text-slate-500 hover:text-purple-400"><ExternalLink className="h-3.5 w-3.5" /></a>
             )}
           </div>
         </div>
       </CardContent>
     </Card>
   );
-}
-
-function getContentIdeas(slug: string): string[] {
-  const ideas: Record<string, string[]> = {
-    astro: ['Daglige horoskop-reels', 'Manedshoroskop-video', '"AI forutsa dette"-TikTok', 'Zodiac-kompatibilitet'],
-    olivia: ['Produktivitetstips-serie', 'AI vs menneskelig assistent', 'Demo: planlegg uken med AI', 'Bruker-testimonials'],
-    realtyflow: ['Virtuelle eiendomsvisninger', 'Spania-kjopsprosess forklart', 'AI finner drommehuset ditt', 'Prisutvikling-grafer'],
-    socialmusichub: ['Slik gar en sang viral', 'AI musikkmarkedsforing demo', 'Before/after: AI-optimalisert', 'Artist success stories'],
-  };
-  return ideas[slug] || ['Feature-demo', 'Bruker-case', 'Tutorial-video', 'Sammenligningsartikkel'];
 }

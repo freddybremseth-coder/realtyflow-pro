@@ -20,14 +20,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
     if (!supabase) {
-      // Return mock data if no Supabase
-      const engine = new AutonomousGrowthEngine();
-      const actions = await engine.runCycle(brand ? [brand] : undefined);
+      // Return empty data if no Supabase (don't run heavy AI cycle on GET)
       return NextResponse.json({
         success: true,
-        actions,
+        actions: [],
         strategy: null,
-        message: 'Supabase not configured - returning generated data',
+        message: 'Supabase not configured',
       });
     }
 
@@ -136,7 +134,15 @@ export async function POST(request: NextRequest) {
 
       case 'run_cycle':
       default: {
-        const targetBrands = brands || (brand ? [brand] : undefined);
+        // Limit to max 1 brand per API call to stay within serverless timeout
+        let targetBrands = brands || (brand ? [brand] : undefined);
+        if (!targetBrands || targetBrands.length === 0) {
+          // Pick a random brand if none specified
+          const allBrandIds = ['soleada', 'zeneco', 'chatgenius', 'donaanna', 'freddyb', 'pinosoecolife', 'neuralbeat'];
+          targetBrands = [allBrandIds[Math.floor(Math.random() * allBrandIds.length)]];
+        } else if (targetBrands.length > 2) {
+          targetBrands = targetBrands.slice(0, 2);
+        }
         const actions = await engine.runCycle(targetBrands);
 
         // Save to Supabase if available
