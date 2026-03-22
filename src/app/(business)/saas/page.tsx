@@ -178,8 +178,12 @@ export default function SaaSPage() {
   const [refining, setRefining] = useState<string | null>(null);
   const [buildPrompt, setBuildPrompt] = useState<string | null>(null);
   const [loadingPrompt, setLoadingPrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [userFeedback, setUserFeedback] = useState('');
   const [latestScan, setLatestScan] = useState<{ created_at: string; opportunities_found: number } | null>(null);
+  const [building, setBuilding] = useState<string | null>(null);
+  const [buildResult, setBuildResult] = useState<{ repo_url?: string; vercel_url?: string; error?: string } | null>(null);
+  const [buildReady, setBuildReady] = useState<boolean | null>(null);
 
   // Form state
   const [formSlug, setFormSlug] = useState('');
@@ -229,6 +233,11 @@ export default function SaaSPage() {
   }, []);
 
   useEffect(() => { fetchApps(); }, [fetchApps]);
+
+  // Check build readiness on mount
+  useEffect(() => {
+    fetch('/api/saas/build').then(r => r.json()).then(d => setBuildReady(d.ready)).catch(() => {});
+  }, []);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
@@ -349,8 +358,59 @@ export default function SaaSPage() {
     } catch { /* ignore */ } finally { setLoadingPrompt(false); }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for older browsers or insecure contexts
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const autoBuild = async (opp: Opportunity) => {
+    setBuilding(opp.id);
+    setBuildResult(null);
+    try {
+      const res = await fetch('/api/saas/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          opportunity_id: opp.id,
+          title: opp.title,
+          slug: opp.slug,
+          description: opp.description,
+          mvp_features: opp.mvp_features,
+          suggested_pricing: opp.suggested_pricing,
+          target_audience: opp.target_audience,
+          category: opp.category,
+          color: '#8b5cf6',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBuildResult({ repo_url: data.repo_url, vercel_url: data.vercel_url });
+        setOpportunities((prev) =>
+          prev.map((o) => o.id === opp.id ? { ...o, status: 'deployed', vercel_url: data.vercel_url } : o)
+        );
+        setSelectedOpp((prev) => prev?.id === opp.id ? { ...prev, status: 'deployed', vercel_url: data.vercel_url } : prev);
+        fetchApps(); // Refresh apps list
+      } else {
+        setBuildResult({ error: data.error || 'Build feilet' });
+      }
+    } catch {
+      setBuildResult({ error: 'Nettverksfeil under bygging' });
+    } finally {
+      setBuilding(null);
+    }
   };
 
   const liveApps = apps.filter(a => a.status === 'live');
@@ -815,7 +875,7 @@ export default function SaaSPage() {
                       <h4 className="text-xs font-semibold text-cyan-400 flex items-center gap-1"><Code2 className="h-3 w-3" /> Claude Code Build Prompt</h4>
                       <Button size="sm" variant="outline" className="h-6 text-[10px] border-cyan-500/30 text-cyan-300"
                         onClick={() => copyToClipboard(buildPrompt)}>
-                        <Copy className="h-3 w-3 mr-1" /> Kopier
+                        <Copy className="h-3 w-3 mr-1" /> {copied ? 'Kopiert!' : 'Kopier'}
                       </Button>
                     </div>
                     <div className="text-xs text-slate-300 whitespace-pre-wrap max-h-60 overflow-y-auto font-mono bg-slate-900/50 p-3 rounded">{buildPrompt}</div>
@@ -856,10 +916,15 @@ export default function SaaSPage() {
                 )}
                 {['refining', 'approved'].includes(selectedOpp.status) && (
                   <>
+                    <Button onClick={() => autoBuild(selectedOpp)} disabled={building === selectedOpp.id || !buildReady}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500">
+                      {building === selectedOpp.id ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Bygger &amp; deployer...</>
+                        : <><Rocket className="mr-2 h-4 w-4" /> Bygg &amp; deploy automatisk</>}
+                    </Button>
                     <Button onClick={() => generateBuildPrompt(selectedOpp)} disabled={loadingPrompt}
-                      className="bg-cyan-600 hover:bg-cyan-500">
+                      variant="outline" className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10">
                       {loadingPrompt ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Genererer...</>
-                        : <><Code2 className="mr-2 h-4 w-4" /> Generer build-prompt</>}
+                        : <><Code2 className="mr-2 h-4 w-4" /> Manuell prompt</>}
                     </Button>
                     <Button onClick={() => { refineOpp(selectedOpp); }} disabled={refining === selectedOpp.id}
                       variant="outline" className="border-purple-500/30 text-purple-300">
@@ -868,18 +933,79 @@ export default function SaaSPage() {
                   </>
                 )}
                 {selectedOpp.status === 'building' && (
-                  <Button onClick={() => updateOppStatus(selectedOpp.id, 'deployed')}
-                    className="bg-green-600 hover:bg-green-500">
-                    <Rocket className="mr-2 h-4 w-4" /> Marker som deployet
-                  </Button>
+                  <div className="flex items-center gap-3 w-full">
+                    <div className="flex items-center gap-2 text-amber-400">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Bygger og deployer... dette tar 2-5 minutter</span>
+                    </div>
+                  </div>
+                )}
+                {selectedOpp.status === 'deployed' && (
+                  <>
+                    {selectedOpp.vercel_url && (
+                      <a href={selectedOpp.vercel_url} target="_blank" rel="noopener noreferrer">
+                        <Button className="bg-green-600 hover:bg-green-500">
+                          <ExternalLink className="mr-2 h-4 w-4" /> Apne app
+                        </Button>
+                      </a>
+                    )}
+                    <Button onClick={() => updateOppStatus(selectedOpp.id, 'testing')}
+                      className="bg-indigo-600 hover:bg-indigo-500">
+                      <Eye className="mr-2 h-4 w-4" /> Start testing
+                    </Button>
+                  </>
                 )}
                 {selectedOpp.status === 'testing' && (
-                  <Button onClick={() => updateOppStatus(selectedOpp.id, 'live')}
-                    className="bg-green-600 hover:bg-green-500">
-                    <CheckCircle className="mr-2 h-4 w-4" /> Go Live
-                  </Button>
+                  <>
+                    {selectedOpp.vercel_url && (
+                      <a href={selectedOpp.vercel_url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="outline" className="border-slate-600">
+                          <ExternalLink className="mr-2 h-4 w-4" /> Apne app
+                        </Button>
+                      </a>
+                    )}
+                    <Button onClick={() => updateOppStatus(selectedOpp.id, 'live')}
+                      className="bg-green-600 hover:bg-green-500">
+                      <CheckCircle className="mr-2 h-4 w-4" /> Godkjenn &amp; Go Live
+                    </Button>
+                  </>
                 )}
               </div>
+
+              {/* Build result */}
+              {buildResult && (
+                <div className={`mt-4 p-3 rounded-lg border ${buildResult.error ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'}`}>
+                  {buildResult.error ? (
+                    <p className="text-sm text-red-400">{buildResult.error}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-green-400 font-medium">Appen er bygget og deployet!</p>
+                      {buildResult.vercel_url && (
+                        <a href={buildResult.vercel_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-sm text-green-300 hover:text-green-200">
+                          <ExternalLink className="h-3 w-3" /> {buildResult.vercel_url}
+                        </a>
+                      )}
+                      {buildResult.repo_url && (
+                        <a href={buildResult.repo_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-300">
+                          <Code2 className="h-3 w-3" /> {buildResult.repo_url}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Build readiness warning */}
+              {buildReady === false && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-xs text-amber-400">
+                    <AlertCircle className="h-3 w-3 inline mr-1" />
+                    Auto-build krever GITHUB_TOKEN og VERCEL_TOKEN i Vercel miljøvariabler. Bruk &quot;Manuell prompt&quot; i mellomtiden.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
