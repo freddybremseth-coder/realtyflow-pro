@@ -8,7 +8,7 @@ import { SIDEBAR_NAV } from "@/lib/constants";
 import {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
   Target, Sparkles, Youtube, Music, Image, FileText,
-  Palette, Globe, TrendingUp, Briefcase, PieChart,
+  Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, Menu, X,
 } from "lucide-react";
@@ -16,7 +16,7 @@ import {
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
   Target, Sparkles, Youtube, Music, Image, FileText,
-  Palette, Globe, TrendingUp, Briefcase, PieChart,
+  Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
 };
 

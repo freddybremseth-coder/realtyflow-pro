@@ -116,6 +116,7 @@ export const SIDEBAR_NAV = {
     { label: "Neural Beat", href: "/neural-beat", icon: "Music" },
   ],
   business: [
+    { label: "Vekstmotor", href: "/growth-hub", icon: "Rocket" },
     { label: "Brands", href: "/brands", icon: "Palette" },
     { label: "ChatGenius SaaS", href: "/saas", icon: "Globe" },
     { label: "Business Oversikt", href: "/business-overview", icon: "PieChart" },
