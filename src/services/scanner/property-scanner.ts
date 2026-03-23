@@ -246,7 +246,13 @@ VIKTIG:
   * Kyst villaer: €350.000-€900.000
   * Premium villaer (Jávea/Moraira): €500.000-€1.500.000
 - Oppgi utvikler/promotor-navn for alle nybygg
-- Bruk source_url som peker til kjente portaler (idealista.com, kyero.com, thinkspain.com, spanishpropertychoice.com)
+- For source_url: IKKE dikt opp URLer! Bruk alltid en av disse SØKE-URLer basert på kommune:
+  * Idealista: https://www.idealista.com/en/venta-viviendas/{kommune}-alicante/con-obra-nueva/ (f.eks. calpe, javea, benidorm, torrevieja)
+  * Kyero: https://www.kyero.com/en/{kommune}-property-for-sale (f.eks. calpe, javea, benidorm)
+  * ThinkSpain: https://www.thinkspain.com/property-for-sale/{kommune}
+  * For tomter: https://www.idealista.com/en/venta-terrenos/{kommune}-alicante/
+  * For utviklere: Bruk utviklerens offisielle nettside som source_url (f.eks. https://www.tmgrupo.es, https://www.taylorwimpeyspain.com)
+  * Hvis usikker, bruk: https://www.idealista.com/en/venta-viviendas/{kommune}-alicante/
 
 RETURNER JSON-array med objekter:
 {
@@ -294,6 +300,7 @@ Bruk virkelige prosjektnavn der du kjenner dem. Returner minst 15 eiendommer.`,
       if (!jsonMatch) return [];
       const properties: ScannedProperty[] = JSON.parse(jsonMatch[0]).map((p: ScannedProperty) => ({
         ...p,
+        source_url: this.sanitizeSourceUrl(p.source_url, p.municipality, p.type),
         scraped_at: new Date().toISOString(),
       }));
       return properties;
@@ -471,6 +478,53 @@ Returner KUN valid JSON-array. Hvis ingen eiendommer finnes, returner [].`,
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Ensure source_url points to a real, working URL.
+   * AI often fabricates specific listing URLs that don't exist.
+   * Replace with verified search URLs based on municipality and property type.
+   */
+  private sanitizeSourceUrl(url: string | undefined, municipality: string | undefined, type: string | undefined): string {
+    const muni = (municipality || '').toLowerCase().replace(/\s+/g, '-');
+    if (!muni) return 'https://www.idealista.com/en/venta-viviendas/alicante-provincia/con-obra-nueva/';
+
+    // If URL looks like a known developer website, keep it
+    const knownDomains = ['tmgrupo.es', 'taylorwimpeyspain.com', 'aedashomes.com', 'neinorhomes.com', 'metrovacesa.com', 'habitat.es', 'grupovapf.com', 'newbuilds.es'];
+    if (url && knownDomains.some(d => url.includes(d))) return url;
+
+    // If URL contains a long path with specific IDs/slugs that are likely fabricated, replace it
+    // Real portal URLs have predictable patterns; AI-generated ones often have made-up paths
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        const pathParts = parsed.pathname.split('/').filter(Boolean);
+        // If path has 4+ segments, it's likely a specific (fake) listing URL
+        if (pathParts.length <= 3) return url; // Short paths are usually category/search pages - keep them
+      } catch {
+        // Invalid URL, replace it
+      }
+    }
+
+    // Generate a working search URL based on municipality and type
+    const muniMap: Record<string, string> = {
+      'jávea': 'javea', 'xàbia': 'javea', 'dénia': 'denia', 'benidorm': 'benidorm',
+      'calpe': 'calpe', 'altea': 'altea', 'moraira': 'moraira', 'torrevieja': 'torrevieja',
+      'orihuela-costa': 'orihuela', 'orihuela': 'orihuela', 'santa-pola': 'santa-pola',
+      'guardamar': 'guardamar-del-segura', 'guardamar-del-segura': 'guardamar-del-segura',
+      'pinosos': 'pinoso', 'pilar-de-la-horadada': 'pilar-de-la-horadada',
+      'finestrat': 'finestrat', 'la-nucia': 'la-nucia', 'villajoyosa': 'villajoyosa',
+      'el-campello': 'el-campello', 'alicante': 'alicante', 'elda': 'elda',
+      'novelda': 'novelda', 'aspe': 'aspe', 'rojales': 'rojales',
+    };
+
+    const idealistaMuni = muniMap[muni] || muni;
+
+    if (type === 'plot') {
+      return `https://www.idealista.com/en/venta-terrenos/${idealistaMuni}-alicante/`;
+    }
+
+    return `https://www.idealista.com/en/venta-viviendas/${idealistaMuni}-alicante/con-obra-nueva/`;
   }
 
   /**
