@@ -74,9 +74,33 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 const MUNICIPALITIES = [
-  "Alle", "Calpe", "Javea", "Moraira", "Altea", "Benidorm", "Villajoyosa",
-  "El Campello", "Alicante", "Santa Pola", "Guardamar del Segura", "Torrevieja",
-  "Orihuela Costa", "Pinosos", "Novelda", "Elda", "Denia",
+  "Alle", "Alicante", "Altea", "Aspe", "Benidorm", "Calpe", "Castalla",
+  "Denia", "El Campello", "Elda", "Finestrat", "Guardamar del Segura",
+  "Hondón de las Nieves", "Javea", "Jijona", "La Nucia", "Moraira",
+  "Novelda", "Onil", "Orihuela Costa", "Pilar de la Horadada",
+  "Pinosos", "Polop", "Rojales", "San Miguel de Salinas", "Santa Pola",
+  "Torrevieja", "Villajoyosa",
+];
+
+const AREA_SCAN_ZONES = [
+  { label: "Benidorm", value: "Benidorm" },
+  { label: "Finestrat", value: "Finestrat" },
+  { label: "Polop", value: "Polop" },
+  { label: "La Nucia", value: "La Nucia" },
+  { label: "Altea", value: "Altea" },
+  { label: "Calpe", value: "Calpe" },
+  { label: "Jávea", value: "Jávea" },
+  { label: "Moraira", value: "Moraira" },
+  { label: "Dénia", value: "Dénia" },
+  { label: "Alicante", value: "Alicante" },
+  { label: "El Campello", value: "El Campello" },
+  { label: "Villajoyosa", value: "Villajoyosa" },
+  { label: "Santa Pola", value: "Santa Pola" },
+  { label: "Torrevieja", value: "Torrevieja" },
+  { label: "Orihuela Costa", value: "Orihuela Costa" },
+  { label: "Guardamar del Segura", value: "Guardamar del Segura" },
+  { label: "Pinosos", value: "Pinosos" },
+  { label: "Novelda", value: "Novelda" },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -91,6 +115,9 @@ export default function ScannerPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [scanningUrl, setScanningUrl] = useState(false);
+  const [scanningArea, setScanningArea] = useState(false);
+  const [selectedArea, setSelectedArea] = useState("");
+  const [onlyNewBuilds, setOnlyNewBuilds] = useState(true);
   const [url, setUrl] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("nye");
@@ -173,6 +200,32 @@ export default function ScannerPage() {
       // silently handle
     } finally {
       setScanningUrl(false);
+    }
+  };
+
+  const runAreaScan = async () => {
+    if (!selectedArea) return;
+    setScanningArea(true);
+    try {
+      const res = await fetch("/api/scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "area_scan", area: selectedArea, only_new_builds: onlyNewBuilds }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newProps = (data.properties || []).map((p: ScannedProperty, i: number) => ({
+          ...p,
+          id: p.id || `area-${Date.now()}-${i}`,
+          status: p.status || "new",
+        }));
+        setProperties((prev) => [...newProps, ...prev]);
+        setLatestScan({ created_at: new Date().toISOString(), properties_found: data.total_found || 0 });
+      }
+    } catch {
+      // silently handle
+    } finally {
+      setScanningArea(false);
     }
   };
 
@@ -300,6 +353,69 @@ export default function ScannerPage() {
               {scanningUrl ? <><Loader2 size={16} className="animate-spin mr-2" /> Skanner...</>
                 : <><Globe size={16} className="mr-2" /> Skann URL</>}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Area Scanner */}
+      <Card className="bg-slate-800/50 border-slate-700/50">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-medium text-slate-300 flex items-center gap-2">
+            <MapPin size={14} className="text-cyan-400" />
+            Skann spesifikt område
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-2">
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-[200px]">
+              <label className="text-[10px] font-medium text-slate-400 mb-1 block">Velg område</label>
+              <select
+                value={selectedArea}
+                onChange={(e) => setSelectedArea(e.target.value)}
+                className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-2 text-sm text-slate-100"
+              >
+                <option value="">Velg kommune...</option>
+                {AREA_SCAN_ZONES.map((z) => (
+                  <option key={z.value} value={z.value}>{z.label}</option>
+                ))}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer h-9">
+              <input
+                type="checkbox"
+                checked={onlyNewBuilds}
+                onChange={(e) => setOnlyNewBuilds(e.target.checked)}
+                className="rounded border-slate-600"
+              />
+              <span className="text-xs text-slate-300">Kun nye prosjekter</span>
+            </label>
+            <Button
+              onClick={runAreaScan}
+              disabled={scanningArea || !selectedArea}
+              className="bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500"
+            >
+              {scanningArea ? (
+                <><Loader2 size={16} className="animate-spin mr-2" /> Skanner {selectedArea}...</>
+              ) : (
+                <><Search size={16} className="mr-2" /> Skann {selectedArea || "område"}</>
+              )}
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {AREA_SCAN_ZONES.slice(0, 10).map((z) => (
+              <Badge
+                key={z.value}
+                variant="outline"
+                className={`text-[10px] cursor-pointer transition-all ${
+                  selectedArea === z.value
+                    ? "border-cyan-500 text-cyan-300 bg-cyan-500/10"
+                    : "border-slate-600 text-slate-500 hover:border-cyan-500/50 hover:text-cyan-300"
+                }`}
+                onClick={() => setSelectedArea(z.value)}
+              >
+                {z.label}
+              </Badge>
+            ))}
           </div>
         </CardContent>
       </Card>

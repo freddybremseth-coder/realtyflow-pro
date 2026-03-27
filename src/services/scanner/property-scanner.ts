@@ -75,15 +75,6 @@ const PROPERTY_SOURCES: PropertySource[] = [
     ],
     description: 'Kun nybygg i Spania. Komplett oversikt over nye prosjekter.',
   },
-  {
-    name: 'SpanishPropertyChoice',
-    type: 'scrape',
-    base_url: 'https://www.spanishpropertychoice.com',
-    search_urls: [
-      'https://www.spanishpropertychoice.com/new-build-properties-for-sale-in-costa-blanca',
-    ],
-    description: 'Spesialisert på Costa Blanca og Costa Cálida.',
-  },
 ];
 
 // ─── Property Scanner Service ────────────────────────────────────────────────
@@ -513,9 +504,18 @@ Returner KUN valid JSON-array. Hvis ingen eiendommer finnes, returner [].`,
       'orihuela-costa': 'orihuela', 'orihuela': 'orihuela', 'santa-pola': 'santa-pola',
       'guardamar': 'guardamar-del-segura', 'guardamar-del-segura': 'guardamar-del-segura',
       'pinosos': 'pinoso', 'pilar-de-la-horadada': 'pilar-de-la-horadada',
-      'finestrat': 'finestrat', 'la-nucia': 'la-nucia', 'villajoyosa': 'villajoyosa',
+      'finestrat': 'finestrat', 'la-nucia': 'la-nucia', 'la-nucía': 'la-nucia',
+      'villajoyosa': 'villajoyosa', 'la-vila-joiosa': 'villajoyosa',
       'el-campello': 'el-campello', 'alicante': 'alicante', 'elda': 'elda',
       'novelda': 'novelda', 'aspe': 'aspe', 'rojales': 'rojales',
+      'polop': 'polop', 'alfaz-del-pi': 'alfaz-del-pi', "l'alfàs-del-pi": 'alfaz-del-pi',
+      'san-juan-de-alicante': 'san-juan-de-alicante', 'mutxamel': 'mutxamel',
+      'busot': 'busot', 'aigües': 'aigues', 'relleu': 'relleu',
+      'sella': 'sella', 'bolulla': 'bolulla', 'callosa-d\'en-sarrià': 'callosa-d-en-sarria',
+      'san-miguel-de-salinas': 'san-miguel-de-salinas',
+      'ciudad-quesada': 'rojales', 'gran-alacant': 'santa-pola',
+      'hondón-de-las-nieves': 'hondon-de-las-nieves', 'hondon-de-las-nieves': 'hondon-de-las-nieves',
+      'castalla': 'castalla', 'onil': 'onil', 'ibi': 'ibi', 'jijona': 'jijona',
     };
 
     const idealistaMuni = muniMap[muni] || muni;
@@ -525,6 +525,129 @@ Returner KUN valid JSON-array. Hvis ingen eiendommer finnes, returner [].`,
     }
 
     return `https://www.idealista.com/en/venta-viviendas/${idealistaMuni}-alicante/con-obra-nueva/`;
+  }
+
+  /**
+   * Area-specific AI discovery scan
+   * Focuses on a specific municipality/area, primarily new projects
+   */
+  async areaScan(area: string, onlyNewBuilds: boolean = true): Promise<{
+    all_properties: ScannedProperty[];
+    by_source: Record<string, number>;
+    errors: string[];
+  }> {
+    if (!this.client) {
+      return {
+        all_properties: [],
+        by_source: {},
+        errors: ['ANTHROPIC_API_KEY not configured'],
+      };
+    }
+
+    try {
+      console.log(`[PropertyScanner] Starting area scan for: ${area} (new builds only: ${onlyNewBuilds})`);
+      const properties = await this.aiAreaDiscovery(area, onlyNewBuilds);
+      return {
+        all_properties: properties,
+        by_source: { [`AI Area Discovery: ${area}`]: properties.length },
+        errors: [],
+      };
+    } catch (err) {
+      return {
+        all_properties: [],
+        by_source: {},
+        errors: [`Area scan ${area}: ${err instanceof Error ? err.message : 'Failed'}`],
+      };
+    }
+  }
+
+  /**
+   * AI-powered discovery for a specific area/municipality
+   */
+  private async aiAreaDiscovery(area: string, onlyNewBuilds: boolean): Promise<ScannedProperty[]> {
+    if (!this.client) return [];
+
+    const typeFilter = onlyNewBuilds
+      ? `Fokuser PRIMÆRT på:
+1. Nye byggeprosjekter (obra nueva) - leiligheter, villaer, rekkehus
+2. Off-plan prosjekter under bygging eller planlagt
+3. Tomter til salgs (parcelas, solares) med byggemulighet
+
+IKKE inkluder brukte/videresalg-eiendommer med mindre det er svært få nybygg i området.`
+      : `Inkluder alle typer eiendommer: nybygg, brukte, tomter, fincaer.`;
+
+    const response = await this.client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 6000,
+      system: `Du er en eiendomsekspert med dyp kunnskap om det spanske eiendomsmarkedet, spesielt Costa Blanca (Alicante-provinsen).
+
+OPPGAVE: List opp reelle, kjente eiendommer og prosjekter til salgs i og rundt ${area}, Alicante-provinsen.
+
+${typeFilter}
+
+KJENTE UTVIKLERE I OMRÅDET (bruk der relevant): TM Grupo Inmobiliario, Grupo Vapf, Allure Homes, AQ Acentor, Medvilla Spanje, Taylor Wimpey España, AEDAS Homes, Neinor Homes, Metrovacesa, Habitat Inmobiliaria, Vistahermosa, Prointer
+
+VIKTIG:
+- Returner MINST 10 og opptil 15 eiendommer i/rundt ${area}
+- Bruk VIRKELIGE prosjektnavn der du kjenner dem
+- Priser MÅ være realistiske for 2025/2026-markedet
+- Oppgi utvikler/promotor-navn for alle nybygg
+- For source_url: IKKE dikt opp URLer! Bruk alltid en av disse SØKE-URLer:
+  * Idealista: https://www.idealista.com/en/venta-viviendas/{kommune}-alicante/con-obra-nueva/
+  * Kyero: https://www.kyero.com/en/{kommune}-property-for-sale
+  * ThinkSpain: https://www.thinkspain.com/property-for-sale/{kommune}
+  * For tomter: https://www.idealista.com/en/venta-terrenos/{kommune}-alicante/
+  * For utviklere: Bruk utviklerens offisielle nettside
+
+RETURNER JSON-array med objekter:
+{
+  "title": "Prosjektnavn eller beskrivelse",
+  "price": "€250.000",
+  "price_numeric": 250000,
+  "location": "${area}, Costa Blanca",
+  "municipality": "${area}",
+  "province": "Alicante",
+  "size_m2": 120,
+  "plot_m2": 500,
+  "bedrooms": 3,
+  "bathrooms": 2,
+  "type": "villa|apartment|townhouse|finca|plot|new_build",
+  "description": "Kort beskrivelse",
+  "source": "Portal eller utvikler",
+  "source_url": "URL til relevant portal-søk",
+  "image_urls": [],
+  "features": ["basseng", "havutsikt", "parkering"],
+  "is_new_build": true,
+  "developer": "Utviklerens fulle navn",
+  "completion_date": "Q3 2026",
+  "energy_rating": "A",
+  "ref_number": "REF-123"
+}
+
+Returner 10-15 eiendommer. Kun valid JSON-array, ingen annen tekst.`,
+      messages: [
+        {
+          role: 'user',
+          content: `Dato: ${new Date().toISOString().split('T')[0]}. List opp kjente ${onlyNewBuilds ? 'nybygg-prosjekter og tomter' : 'eiendommer'} til salgs i og rundt ${area}, Alicante-provinsen. Inkluder prosjekter fra kjente utviklere der du kjenner dem. Returner minst 10 eiendommer.`,
+        },
+      ],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+
+    try {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+      const properties: ScannedProperty[] = JSON.parse(jsonMatch[0]).map((p: ScannedProperty) => ({
+        ...p,
+        source_url: this.sanitizeSourceUrl(p.source_url, p.municipality || area, p.type),
+        scraped_at: new Date().toISOString(),
+      }));
+      return properties;
+    } catch {
+      console.error(`[PropertyScanner] Failed to parse area discovery response for ${area}`);
+      return [];
+    }
   }
 
   /**

@@ -172,6 +172,64 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // ── Area-specific scan ───────────────────────────────────────
+      case 'area_scan': {
+        const { area, only_new_builds } = body;
+        if (!area) return NextResponse.json({ error: 'area required' }, { status: 400 });
+
+        const { all_properties, by_source, errors } = await scanner.areaScan(area, only_new_builds !== false);
+
+        if (supabase && all_properties.length > 0) {
+          const toInsert = all_properties.map((p) => ({
+            title: p.title,
+            price: p.price,
+            price_numeric: p.price_numeric,
+            location: p.location,
+            municipality: p.municipality,
+            province: p.province,
+            size_m2: p.size_m2,
+            plot_m2: p.plot_m2,
+            bedrooms: p.bedrooms,
+            bathrooms: p.bathrooms,
+            type: p.type,
+            description: p.description,
+            source: p.source,
+            source_url: p.source_url,
+            image_urls: p.image_urls || [],
+            features: p.features || [],
+            is_new_build: p.is_new_build,
+            developer: p.developer,
+            completion_date: p.completion_date,
+            energy_rating: p.energy_rating,
+            ref_number: p.ref_number,
+            status: 'new',
+            scraped_at: p.scraped_at,
+          }));
+
+          await supabase.from('scanned_properties').insert(toInsert);
+
+          try {
+            await supabase.from('property_scan_runs').insert({
+              run_type: 'area',
+              properties_found: all_properties.length,
+              sources_scanned: Object.keys(by_source),
+              by_source,
+              errors,
+            });
+          } catch {
+            // non-critical
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          total_found: all_properties.length,
+          by_source,
+          properties: all_properties,
+          errors,
+        });
+      }
+
       // ── Update property status ──────────────────────────────────
       case 'update_status': {
         const { id, status: newStatus, notes } = body;

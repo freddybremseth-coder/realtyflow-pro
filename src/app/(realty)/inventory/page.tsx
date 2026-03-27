@@ -10,6 +10,9 @@ import {
   Heart, Eye, Building2, Filter, Grid3X3, List,
   Plus, X, Globe, FileText, Loader2, Link2,
   Euro, Pencil, Trash2, ExternalLink, RefreshCw,
+  Sparkles, Copy, CheckCircle2, Target, Calendar,
+  DollarSign, BarChart3, Instagram, Linkedin,
+  Facebook, Mail, MessageSquare, Clock,
 } from "lucide-react";
 
 interface Property {
@@ -439,6 +442,14 @@ export default function InventoryPage() {
   const [showDetailModal, setShowDetailModal] = useState<Property | null>(null);
   const [showEditModal, setShowEditModal] = useState<Property | null>(null);
 
+  // Marketing Kit state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [marketingKit, setMarketingKit] = useState<any | null>(null);
+  const [showMarketingKit, setShowMarketingKit] = useState(false);
+  const [generatingKit, setGeneratingKit] = useState(false);
+  const [kitTab, setKitTab] = useState<"content" | "strategy" | "analysis">("content");
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   // Import state
   const [importTab, setImportTab] = useState<"redsp" | "xml" | "csv">("redsp");
   const [redspUrl, setRedspUrl] = useState("https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml");
@@ -452,6 +463,36 @@ export default function InventoryPage() {
     bedrooms: "3", bathrooms: "2", area: "", plotArea: "", externalUrl: "",
     yearBuilt: "", pool: false, garage: false, energyRating: "",
   });
+
+  const generateMarketingKit = async (prop: Property) => {
+    setGeneratingKit(true);
+    setShowMarketingKit(true);
+    setMarketingKit(null);
+    setKitTab("content");
+    try {
+      const res = await fetch('/api/marketing-kit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property: prop }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMarketingKit(data);
+      } else {
+        setMarketingKit({ error: data.error || 'Generering feilet' });
+      }
+    } catch (err) {
+      setMarketingKit({ error: 'Nettverksfeil ved generering' });
+    } finally {
+      setGeneratingKit(false);
+    }
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
@@ -1052,6 +1093,15 @@ export default function InventoryPage() {
                 {showDetailModal.garage && <Badge className="bg-slate-500/20 text-slate-300 border-slate-500/30">Garasje</Badge>}
               </div>
 
+              {/* Marketing Kit Button */}
+              <Button
+                className="w-full mb-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium"
+                onClick={() => generateMarketingKit(showDetailModal)}
+              >
+                <Sparkles size={16} className="mr-2" />
+                Generer Markedsføringskit
+              </Button>
+
               <div className="flex items-center gap-2">
                 <Button size="sm" onClick={() => { setShowEditModal({...showDetailModal}); setShowDetailModal(null); }}>
                   <Pencil size={14} className="mr-1.5" />Rediger
@@ -1161,6 +1211,435 @@ export default function InventoryPage() {
       )}
 
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+
+      {/* ========== MARKETING KIT MODAL ========== */}
+      {showMarketingKit && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowMarketingKit(false)}>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center">
+                  <Sparkles size={20} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Markedsføringskit</h2>
+                  <p className="text-xs text-slate-400">AI-generert innhold for alle plattformer</p>
+                </div>
+              </div>
+              <button onClick={() => setShowMarketingKit(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+            </div>
+
+            {generatingKit ? (
+              <div className="p-16 text-center">
+                <Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-4" />
+                <p className="text-white font-medium text-lg mb-2">Genererer markedsføringskit...</p>
+                <p className="text-slate-400 text-sm">3 AI-agenter jobber sammen:</p>
+                <div className="mt-4 space-y-2 text-left max-w-sm mx-auto">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Target size={14} className="text-cyan-400" />
+                    <span className="text-slate-300">Agent 1: Analyserer eiendom & målgruppe</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <MessageSquare size={14} className="text-purple-400" />
+                    <span className="text-slate-300">Agent 2: Skriver innhold for alle plattformer</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar size={14} className="text-pink-400" />
+                    <span className="text-slate-300">Agent 3: Planlegger kampanjestrategi</span>
+                  </div>
+                </div>
+              </div>
+            ) : marketingKit?.error ? (
+              <div className="p-16 text-center">
+                <p className="text-red-400 mb-2">Feil ved generering</p>
+                <p className="text-sm text-slate-400">{marketingKit.error}</p>
+              </div>
+            ) : marketingKit ? (
+              <>
+                {/* Tab Navigation */}
+                <div className="flex border-b border-slate-700">
+                  {([
+                    { key: "content", label: "Innhold", icon: MessageSquare },
+                    { key: "strategy", label: "Kampanjestrategi", icon: BarChart3 },
+                    { key: "analysis", label: "Analyse", icon: Target },
+                  ] as const).map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setKitTab(tab.key)}
+                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+                        kitTab === tab.key
+                          ? "text-purple-400 border-b-2 border-purple-400 bg-slate-900/30"
+                          : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <tab.icon size={16} />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-5">
+                  {/* ─── CONTENT TAB ─── */}
+                  {kitTab === "content" && marketingKit.content && (
+                    <div className="space-y-4">
+                      {/* Headline */}
+                      <ContentBlock
+                        title="Tittel / Overskrift"
+                        icon={<FileText size={16} className="text-cyan-400" />}
+                        text={marketingKit.content.headline}
+                        field="headline"
+                        copiedField={copiedField}
+                        onCopy={copyToClipboard}
+                      />
+
+                      {/* Facebook Ads */}
+                      <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Facebook size={16} className="text-blue-400" />
+                          <h3 className="text-white font-medium">Facebook Ads</h3>
+                        </div>
+                        <div className="space-y-3">
+                          {marketingKit.content.facebook_ads?.short && (
+                            <ContentBlock title="Kort ad" text={marketingKit.content.facebook_ads.short} field="fb_short" copiedField={copiedField} onCopy={copyToClipboard} compact />
+                          )}
+                          {marketingKit.content.facebook_ads?.long && (
+                            <ContentBlock title="Lang ad (storytelling)" text={marketingKit.content.facebook_ads.long} field="fb_long" copiedField={copiedField} onCopy={copyToClipboard} compact />
+                          )}
+                          {marketingKit.content.facebook_ads?.emotional && (
+                            <ContentBlock title="Emosjonell ad" text={marketingKit.content.facebook_ads.emotional} field="fb_emotional" copiedField={copiedField} onCopy={copyToClipboard} compact />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Instagram */}
+                      {marketingKit.content.instagram && (
+                        <ContentBlock
+                          title="Instagram"
+                          icon={<Instagram size={16} className="text-pink-400" />}
+                          text={marketingKit.content.instagram}
+                          field="instagram"
+                          copiedField={copiedField}
+                          onCopy={copyToClipboard}
+                        />
+                      )}
+
+                      {/* LinkedIn */}
+                      {marketingKit.content.linkedin && (
+                        <ContentBlock
+                          title="LinkedIn"
+                          icon={<Linkedin size={16} className="text-blue-300" />}
+                          text={marketingKit.content.linkedin}
+                          field="linkedin"
+                          copiedField={copiedField}
+                          onCopy={copyToClipboard}
+                        />
+                      )}
+
+                      {/* Website Description */}
+                      {marketingKit.content.website_description && (
+                        <ContentBlock
+                          title="Nettside-beskrivelse"
+                          icon={<Globe size={16} className="text-emerald-400" />}
+                          text={marketingKit.content.website_description}
+                          field="website"
+                          copiedField={copiedField}
+                          onCopy={copyToClipboard}
+                        />
+                      )}
+
+                      {/* Email */}
+                      <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Mail size={16} className="text-amber-400" />
+                          <h3 className="text-white font-medium">E-post nyhetsbrev</h3>
+                        </div>
+                        {marketingKit.content.email_subject && (
+                          <ContentBlock title="Emnelinje" text={marketingKit.content.email_subject} field="email_subject" copiedField={copiedField} onCopy={copyToClipboard} compact />
+                        )}
+                        {marketingKit.content.email_body && (
+                          <ContentBlock title="E-posttekst" text={marketingKit.content.email_body} field="email_body" copiedField={copiedField} onCopy={copyToClipboard} compact />
+                        )}
+                      </div>
+
+                      {/* SMS */}
+                      {marketingKit.content.sms && (
+                        <ContentBlock
+                          title="SMS (maks 160 tegn)"
+                          icon={<MessageSquare size={16} className="text-green-400" />}
+                          text={marketingKit.content.sms}
+                          field="sms"
+                          copiedField={copiedField}
+                          onCopy={copyToClipboard}
+                        />
+                      )}
+
+                      {/* Hashtags */}
+                      {marketingKit.content.suggested_hashtags?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-white font-medium text-sm">Hashtags</h3>
+                            <button onClick={() => copyToClipboard(marketingKit.content.suggested_hashtags.join(' '), 'hashtags')}
+                              className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
+                              {copiedField === 'hashtags' ? <CheckCircle2 size={12} className="text-green-400" /> : <Copy size={12} />}
+                              {copiedField === 'hashtags' ? 'Kopiert!' : 'Kopier alle'}
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {marketingKit.content.suggested_hashtags.map((tag: string, i: number) => (
+                              <span key={i} className="text-sm text-purple-300 bg-purple-500/10 px-2 py-1 rounded">{tag}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ─── STRATEGY TAB ─── */}
+                  {kitTab === "strategy" && marketingKit.strategy && (
+                    <div className="space-y-4">
+                      {/* Publishing Schedule */}
+                      {marketingKit.strategy.publishing_schedule?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                            <Calendar size={16} className="text-purple-400" />
+                            Publiseringsplan
+                          </h3>
+                          <div className="space-y-2">
+                            {marketingKit.strategy.publishing_schedule.map((item: { platform: string; day: string; time: string; content_type: string; reason: string }, i: number) => (
+                              <div key={i} className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                                <div className="w-20 text-center">
+                                  <p className="text-xs text-slate-400">{item.day}</p>
+                                  <p className="text-sm font-medium text-white">{item.time}</p>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm text-white font-medium">{item.platform} — {item.content_type}</p>
+                                  <p className="text-xs text-slate-400">{item.reason}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Budget */}
+                      {marketingKit.strategy.budget_suggestion && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                            <DollarSign size={16} className="text-emerald-400" />
+                            Budsjettforslag ({marketingKit.strategy.budget_suggestion.total_weekly} {marketingKit.strategy.budget_suggestion.currency || 'NOK'}/uke)
+                          </h3>
+                          <div className="space-y-2">
+                            {marketingKit.strategy.budget_suggestion.breakdown?.map((item: { platform: string; amount: number; target: string }, i: number) => (
+                              <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
+                                <div>
+                                  <p className="text-sm text-white">{item.platform}</p>
+                                  <p className="text-xs text-slate-400">{item.target}</p>
+                                </div>
+                                <p className="text-sm font-semibold text-emerald-400">{item.amount} {marketingKit.strategy.budget_suggestion.currency || 'NOK'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Campaign Duration */}
+                      {marketingKit.strategy.campaign_duration_days && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4 flex items-center gap-3">
+                          <Clock size={16} className="text-amber-400" />
+                          <div>
+                            <p className="text-sm text-white font-medium">Kampanjevarighet</p>
+                            <p className="text-xs text-slate-400">{marketingKit.strategy.campaign_duration_days} dager anbefalt</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* A/B Tests */}
+                      {marketingKit.strategy.ab_test_suggestions?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-3">A/B Test-forslag</h3>
+                          <div className="space-y-2">
+                            {marketingKit.strategy.ab_test_suggestions.map((test: { variable: string; variant_a: string; variant_b: string }, i: number) => (
+                              <div key={i} className="bg-slate-800/50 rounded-lg p-3">
+                                <p className="text-sm text-white font-medium mb-1">{test.variable}</p>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="bg-blue-500/10 text-blue-300 p-2 rounded">A: {test.variant_a}</div>
+                                  <div className="bg-pink-500/10 text-pink-300 p-2 rounded">B: {test.variant_b}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* KPIs */}
+                      {marketingKit.strategy.kpis?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-3">KPIer</h3>
+                          <div className="space-y-2">
+                            {marketingKit.strategy.kpis.map((kpi: { metric: string; target: string; measurement: string }, i: number) => (
+                              <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
+                                <div>
+                                  <p className="text-sm text-white">{kpi.metric}</p>
+                                  <p className="text-xs text-slate-400">{kpi.measurement}</p>
+                                </div>
+                                <span className="text-sm font-medium text-cyan-400">{kpi.target}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Retargeting */}
+                      {marketingKit.strategy.retargeting_strategy && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-2">Retargeting-strategi</h3>
+                          <p className="text-sm text-slate-300">{marketingKit.strategy.retargeting_strategy}</p>
+                        </div>
+                      )}
+
+                      {/* Follow-up */}
+                      {marketingKit.strategy.follow_up_actions?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-2">Oppfølgingshandlinger</h3>
+                          <ul className="space-y-1">
+                            {marketingKit.strategy.follow_up_actions.map((action: string, i: number) => (
+                              <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                                <CheckCircle2 size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                                {action}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ─── ANALYSIS TAB ─── */}
+                  {kitTab === "analysis" && marketingKit.analysis && (
+                    <div className="space-y-4">
+                      {/* Property Vibe */}
+                      {marketingKit.analysis.property_vibe && (
+                        <div className="bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-lg border border-purple-500/20 p-4">
+                          <h3 className="text-white font-medium mb-1">Eiendomsprofil</h3>
+                          <p className="text-sm text-slate-300">{marketingKit.analysis.property_vibe}</p>
+                        </div>
+                      )}
+
+                      {/* Target Audiences */}
+                      {marketingKit.analysis.target_audiences?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                            <Target size={16} className="text-cyan-400" />
+                            Målgrupper
+                          </h3>
+                          <div className="space-y-3">
+                            {marketingKit.analysis.target_audiences.map((audience: { segment: string; description: string; age_range: string; nationality: string }, i: number) => (
+                              <div key={i} className="bg-slate-800/50 rounded-lg p-3">
+                                <div className="flex items-center justify-between mb-1">
+                                  <p className="text-sm font-medium text-white">{audience.segment}</p>
+                                  <div className="flex gap-2">
+                                    <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{audience.age_range}</span>
+                                    <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{audience.nationality}</span>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-slate-400">{audience.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Key Selling Points */}
+                      {marketingKit.analysis.key_selling_points?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-2">Salgsargumenter</h3>
+                          <ul className="space-y-1">
+                            {marketingKit.analysis.key_selling_points.map((point: string, i: number) => (
+                              <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                                <CheckCircle2 size={14} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Emotional Hooks */}
+                      {marketingKit.analysis.emotional_hooks?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-2">Emosjonelle kroker</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {marketingKit.analysis.emotional_hooks.map((hook: string, i: number) => (
+                              <span key={i} className="text-sm bg-pink-500/10 text-pink-300 px-3 py-1.5 rounded-lg">{hook}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Price Positioning */}
+                      {marketingKit.analysis.price_positioning && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-1 flex items-center gap-2">
+                            <DollarSign size={16} className="text-emerald-400" />
+                            Prisposisjonering
+                          </h3>
+                          <p className="text-sm text-slate-300">{marketingKit.analysis.price_positioning}</p>
+                        </div>
+                      )}
+
+                      {/* Best Platforms */}
+                      {marketingKit.analysis.best_platforms?.length > 0 && (
+                        <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                          <h3 className="text-white font-medium mb-2">Anbefalte plattformer</h3>
+                          <div className="flex gap-2">
+                            {marketingKit.analysis.best_platforms.map((platform: string, i: number) => (
+                              <span key={i} className="text-sm bg-purple-500/10 text-purple-300 px-3 py-1.5 rounded-lg font-medium">{platform}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ContentBlock helper component ─────────────────────────────────
+function ContentBlock({ title, icon, text, field, copiedField, onCopy, compact }: {
+  title: string;
+  icon?: React.ReactNode;
+  text: string;
+  field: string;
+  copiedField: string | null;
+  onCopy: (text: string, field: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "border-l-2 border-slate-600 pl-3" : "bg-slate-900/50 rounded-lg border border-slate-700 p-4"}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className={`text-white font-medium ${compact ? 'text-xs' : 'text-sm'}`}>{title}</h3>
+        </div>
+        <button
+          onClick={() => onCopy(text, field)}
+          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+        >
+          {copiedField === field ? (
+            <><CheckCircle2 size={12} className="text-green-400" />Kopiert!</>
+          ) : (
+            <><Copy size={12} />Kopier</>
+          )}
+        </button>
+      </div>
+      <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{text}</p>
     </div>
   );
 }
