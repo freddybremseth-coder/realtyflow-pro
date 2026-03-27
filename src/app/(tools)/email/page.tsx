@@ -306,16 +306,33 @@ export default function EmailInboxPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {selectedBrand && (
-            <button
-              onClick={() => triggerImapFetch(selectedBrand)}
-              disabled={fetching}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/15 text-cyan-300 text-sm hover:bg-cyan-500/25 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={fetching ? "animate-spin" : ""} />
-              {fetching ? "Henter..." : "Hent e-post"}
-            </button>
-          )}
+          <button
+            onClick={async () => {
+              setFetching(true);
+              try {
+                const brandsToFetch = selectedBrand
+                  ? [selectedBrand]
+                  : ["pinosoecolife", "zeneco", "chatgenius", "freddyb"];
+                for (const bid of brandsToFetch) {
+                  await fetch("/api/email/inbox", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ brand_id: bid }),
+                  });
+                }
+                await fetchEmails();
+              } catch (err) {
+                console.error("Failed to fetch emails:", err);
+              } finally {
+                setFetching(false);
+              }
+            }}
+            disabled={fetching}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-500/15 text-cyan-300 text-sm hover:bg-cyan-500/25 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={fetching ? "animate-spin" : ""} />
+            {fetching ? "Henter..." : selectedBrand ? "Hent e-post" : "Hent alle e-poster"}
+          </button>
         </div>
       </div>
 

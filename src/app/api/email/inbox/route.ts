@@ -91,45 +91,19 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServerClient();
 
-    // Get brand email config
-    const { data: config, error: configError } = await supabase
+    // Get all brand email configs (may have multiple accounts per brand)
+    const { data: configs, error: configError } = await supabase
       .from("brand_email_configs")
       .select("*")
       .eq("brand_id", brand_id)
-      .eq("is_active", true)
-      .single();
+      .eq("is_active", true);
 
-    if (configError || !config) {
+    if (configError || !configs || configs.length === 0) {
       return NextResponse.json(
         { error: "No active email config found for this brand" },
         { status: 404 }
       );
     }
-
-    // Decrypt password
-    const password = decryptPassword(config.encrypted_password, config.encryption_iv);
-
-    const imapConfig: ImapConfig = {
-      host: config.imap_host,
-      port: config.imap_port,
-      secure: config.imap_secure,
-      email: config.email_address,
-      password,
-    };
-
-    // Determine fetch window
-    const sinceDays = config.last_fetched_at
-      ? Math.max(
-          1,
-          Math.ceil(
-            (Date.now() - new Date(config.last_fetched_at).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
-        )
-      : 7;
-
-    // Fetch from IMAP
-    const fetchedEmails = await fetchRecentEmails(imapConfig, 100, sinceDays);
 
     // Get existing message IDs to avoid duplicates
     const { data: existingMessages } = await supabase
@@ -141,47 +115,90 @@ export async function POST(req: NextRequest) {
       (existingMessages || []).map((m) => m.message_id)
     );
 
-    // Filter new emails
-    const newEmails = fetchedEmails.filter(
-      (e) => e.messageId && !existingIds.has(e.messageId)
-    );
+    let totalFetched = 0;
+    let totalInserted = 0;
+    const accountResults: { email: string; fetched: number; new_messages: number; error?: string }[] = [];
 
-    // Insert new emails
-    let insertedCount = 0;
-    for (const email of newEmails) {
-      const { error: insertError } = await supabase
-        .from("email_messages")
-        .insert({
-          brand_id,
-          message_id: email.messageId,
-          thread_id: email.threadId || email.messageId,
-          direction: "inbound",
-          from_address: email.from.address,
-          from_name: email.from.name || null,
-          to_addresses: email.to.map((t) => t.address),
-          cc_addresses: email.cc?.map((c) => c.address) || null,
-          subject: email.subject,
-          body_text: email.bodyText || null,
-          body_html: email.bodyHtml || null,
-          received_at: email.date.toISOString(),
-        });
+    // Process each email account for this brand
+    for (const config of configs) {
+      try {
+        // Decrypt password
+        const password = decryptPassword(config.encrypted_password, config.encryption_iv);
 
-      if (!insertError) {
-        insertedCount++;
+        const imapConfig: ImapConfig = {
+          host: config.imap_host,
+          port: config.imap_port,
+          secure: config.imap_secure,
+          email: config.email_address,
+          password,
+        };
+
+        // Determine fetch window
+        const sinceDays = config.last_fetched_at
+          ? Math.max(
+              1,
+              Math.ceil(
+                (Date.now() - new Date(config.last_fetched_at).getTime()) /
+                  (1000 * 60 * 60 * 24)
+              )
+            )
+          : 7;
+
+        // Fetch from IMAP
+        const fetchedEmails = await fetchRecentEmails(imapConfig, 100, sinceDays);
+
+        // Filter new emails
+        const newEmails = fetchedEmails.filter(
+          (e) => e.messageId && !existingIds.has(e.messageId)
+        );
+
+        // Insert new emails
+        let insertedCount = 0;
+        for (const email of newEmails) {
+          const { error: insertError } = await supabase
+            .from("email_messages")
+            .insert({
+              brand_id,
+              message_id: email.messageId,
+              thread_id: email.threadId || email.messageId,
+              direction: "inbound",
+              from_address: email.from.address,
+              from_name: email.from.name || null,
+              to_addresses: email.to.map((t) => t.address),
+              cc_addresses: email.cc?.map((c) => c.address) || null,
+              subject: email.subject,
+              body_text: email.bodyText || null,
+              body_html: email.bodyHtml || null,
+              received_at: email.date.toISOString(),
+            });
+
+          if (!insertError) {
+            insertedCount++;
+            existingIds.add(email.messageId); // prevent cross-account duplicates
+          }
+        }
+
+        // Update last_fetched_at
+        await supabase
+          .from("brand_email_configs")
+          .update({ last_fetched_at: new Date().toISOString() })
+          .eq("id", config.id);
+
+        totalFetched += fetchedEmails.length;
+        totalInserted += insertedCount;
+        accountResults.push({ email: config.email_address, fetched: fetchedEmails.length, new_messages: insertedCount });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[Email Inbox] Failed to fetch ${config.email_address}:`, msg);
+        accountResults.push({ email: config.email_address, fetched: 0, new_messages: 0, error: msg });
       }
     }
 
-    // Update last_fetched_at
-    await supabase
-      .from("brand_email_configs")
-      .update({ last_fetched_at: new Date().toISOString() })
-      .eq("id", config.id);
-
     return NextResponse.json({
       success: true,
-      fetched: fetchedEmails.length,
-      new_messages: insertedCount,
-      already_exists: fetchedEmails.length - newEmails.length,
+      fetched: totalFetched,
+      new_messages: totalInserted,
+      accounts: accountResults,
     });
   } catch (error) {
     console.error("[Email Inbox POST]", error);
