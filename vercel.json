@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/property-scanner",
       "schedule": "0 8 * * 0"
+    },
+    {
+      "path": "/api/cron/property-marketing",
+      "schedule": "0 9 * * *"
     }
   ]
 }

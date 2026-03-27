@@ -12,7 +12,7 @@ import {
   Euro, Pencil, Trash2, ExternalLink, RefreshCw,
   Sparkles, Copy, CheckCircle2, Target, Calendar,
   DollarSign, BarChart3, Instagram, Linkedin,
-  Facebook, Mail, MessageSquare, Clock,
+  Facebook, Mail, MessageSquare, Clock, Send,
 } from "lucide-react";
 
 interface Property {
@@ -449,6 +449,8 @@ export default function InventoryPage() {
   const [generatingKit, setGeneratingKit] = useState(false);
   const [kitTab, setKitTab] = useState<"content" | "strategy" | "analysis">("content");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [publishingDrafts, setPublishingDrafts] = useState(false);
+  const [draftsCreated, setDraftsCreated] = useState(false);
 
   // Import state
   const [importTab, setImportTab] = useState<"redsp" | "xml" | "csv">("redsp");
@@ -485,6 +487,72 @@ export default function InventoryPage() {
       setMarketingKit({ error: 'Nettverksfeil ved generering' });
     } finally {
       setGeneratingKit(false);
+    }
+  };
+
+  const createDraftsFromKit = async () => {
+    if (!marketingKit?.content || !showDetailModal) return;
+    setPublishingDrafts(true);
+    setDraftsCreated(false);
+    try {
+      const kit = marketingKit;
+      const property = showDetailModal;
+      const drafts = [];
+
+      // Facebook draft (use long ad)
+      if (kit.content.facebook_ads?.long) {
+        drafts.push({
+          brand_id: 'soleada',
+          title: kit.content.headline || property.title,
+          description: kit.content.facebook_ads.long,
+          tags: kit.content.suggested_hashtags || [],
+          content_type: 'marketing_post',
+          status: 'draft',
+          metadata: { platform: 'facebook', property_id: property.id, property_title: property.title, kit_generated_at: kit.generated_at },
+        });
+      }
+
+      // Instagram draft
+      if (kit.content.instagram) {
+        drafts.push({
+          brand_id: 'soleada',
+          title: kit.content.headline || property.title,
+          description: kit.content.instagram,
+          tags: kit.content.suggested_hashtags || [],
+          content_type: 'marketing_post',
+          status: 'draft',
+          metadata: { platform: 'instagram', property_id: property.id, property_title: property.title, kit_generated_at: kit.generated_at },
+        });
+      }
+
+      // LinkedIn draft
+      if (kit.content.linkedin) {
+        drafts.push({
+          brand_id: 'soleada',
+          title: kit.content.headline || property.title,
+          description: kit.content.linkedin,
+          tags: kit.content.suggested_hashtags || [],
+          content_type: 'marketing_post',
+          status: 'draft',
+          metadata: { platform: 'linkedin', property_id: property.id, property_title: property.title, kit_generated_at: kit.generated_at },
+        });
+      }
+
+      // Save all drafts via API
+      const res = await fetch('/api/marketing-kit/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drafts, property_id: property.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDraftsCreated(true);
+        setTimeout(() => setDraftsCreated(false), 5000);
+      }
+    } catch (err) {
+      console.error('Failed to create drafts:', err);
+    } finally {
+      setPublishingDrafts(false);
     }
   };
 
@@ -1392,6 +1460,31 @@ export default function InventoryPage() {
                           </div>
                         </div>
                       )}
+                      {/* Create Drafts Button */}
+                      <div className="bg-gradient-to-r from-emerald-900/30 to-cyan-900/30 rounded-lg border border-emerald-500/20 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-white font-medium text-sm">Opprett som utkast i Content Hub</h3>
+                            <p className="text-xs text-slate-400 mt-0.5">Oppretter utkast for Facebook, Instagram og LinkedIn</p>
+                          </div>
+                          <Button
+                            onClick={createDraftsFromKit}
+                            disabled={publishingDrafts || draftsCreated}
+                            className={draftsCreated
+                              ? "bg-emerald-600 hover:bg-emerald-600 text-white"
+                              : "bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white"
+                            }
+                          >
+                            {publishingDrafts ? (
+                              <><Loader2 size={14} className="mr-1.5 animate-spin" />Oppretter...</>
+                            ) : draftsCreated ? (
+                              <><CheckCircle2 size={14} className="mr-1.5" />3 utkast opprettet!</>
+                            ) : (
+                              <><Send size={14} className="mr-1.5" />Opprett utkast</>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
