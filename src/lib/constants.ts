@@ -113,6 +113,7 @@ export const SIDEBAR_NAV = {
   ],
   content: [
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
+    { label: "Content Hub", href: "/content-hub", icon: "FileText" },
     { label: "Neural Beat", href: "/neural-beat", icon: "Music" },
   ],
   business: [

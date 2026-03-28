@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,10 @@ import {
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
   TrendingUp, Zap, Bot, Layout, Eye, ThumbsUp, MessageSquare,
   Share2, Clock, CheckCircle, Loader2, Upload, Music, PieChart,
-  Palette, ChevronDown, ChevronRight, Play, Pause, X,
+  Palette, ChevronDown, ChevronRight, Play, Pause, X, Inbox, Trash2, Edit3,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+import { createClient } from "@supabase/supabase-js";
 
 // --- Types ---
 interface PublishProgress {
@@ -54,6 +55,25 @@ interface StrategyMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+}
+
+interface DraftItem {
+  id: string;
+  brand_id: string;
+  content_type: string;
+  title: string;
+  description: string;
+  tags: string[];
+  ai_generated: boolean;
+  status: string;
+  created_at: string;
+}
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 // --- Constants ---
@@ -181,6 +201,55 @@ export default function ContentHubPage() {
     },
   ]);
   const [strategyLoading, setStrategyLoading] = useState(false);
+
+  // Drafts state
+  const [drafts, setDrafts] = useState<DraftItem[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [editingDraft, setEditingDraft] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+
+  const fetchDrafts = useCallback(async () => {
+    setDraftsLoading(true);
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return;
+      const { data } = await supabase
+        .from("content_publications")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, status, created_at")
+        .in("status", ["draft", "scheduled"])
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (data) setDrafts(data);
+    } catch (err) {
+      console.error("Failed to fetch drafts:", err);
+    } finally {
+      setDraftsLoading(false);
+    }
+  }, []);
+
+  const updateDraftStatus = useCallback(async (id: string, status: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase.from("content_publications").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+  }, []);
+
+  const saveDraftEdit = useCallback(async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase.from("content_publications").update({
+      title: editTitle,
+      description: editDescription,
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, title: editTitle, description: editDescription } : d));
+    setEditingDraft(null);
+  }, [editTitle, editDescription]);
+
+  useEffect(() => {
+    fetchDrafts();
+  }, [fetchDrafts]);
 
   // Handlers
   const togglePlatform = useCallback((platformId: string) => {
@@ -491,8 +560,11 @@ export default function ContentHubPage() {
       </div>
 
       {/* Main Tabs */}
-      <Tabs defaultValue="publiser">
+      <Tabs defaultValue="utkast">
         <TabsList className="flex flex-wrap gap-1">
+          <TabsTrigger value="utkast" className="flex items-center gap-2">
+            <Inbox size={14} /> Utkast {drafts.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{drafts.length}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="publiser" className="flex items-center gap-2">
             <Send size={14} /> Publiser
           </TabsTrigger>
@@ -509,6 +581,141 @@ export default function ContentHubPage() {
             <Bot size={14} /> AI Strategi
           </TabsTrigger>
         </TabsList>
+
+        {/* TAB 0: UTKAST (AI-genererte drafts) */}
+        <TabsContent value="utkast">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">AI-genererte utkast</h3>
+                <p className="text-sm text-zinc-400">Utkast fra Markedsføringskit og AI-agenter. Rediger og publiser.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchDrafts} disabled={draftsLoading}>
+                {draftsLoading ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                Oppdater
+              </Button>
+            </div>
+
+            {draftsLoading && drafts.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={24} className="animate-spin text-zinc-400" />
+              </div>
+            ) : drafts.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <Inbox size={48} className="text-zinc-600 mb-4" />
+                  <h4 className="text-lg font-medium mb-2">Ingen utkast ennå</h4>
+                  <p className="text-sm text-zinc-400 max-w-md">
+                    Gå til Eiendommer → velg en eiendom → klikk &quot;Generer Markedsføringskit&quot; for å opprette AI-utkast som vises her.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {drafts.map((draft) => {
+                  const brand = BRANDS.find((b) => b.id === draft.brand_id);
+                  const isEditing = editingDraft === draft.id;
+                  return (
+                    <Card key={draft.id} className="border-zinc-800">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand?.color || "#888" }} />
+                              <span className="text-xs text-zinc-400">{brand?.name || draft.brand_id}</span>
+                              <Badge variant="outline" className="text-xs">{draft.content_type}</Badge>
+                              {draft.ai_generated && (
+                                <Badge className="bg-purple-500/20 text-purple-300 text-xs">
+                                  <Sparkles size={10} className="mr-1" /> AI
+                                </Badge>
+                              )}
+                              <span className="text-xs text-zinc-500 ml-auto">
+                                {new Date(draft.created_at).toLocaleDateString("nb-NO")}
+                              </span>
+                            </div>
+
+                            {isEditing ? (
+                              <div className="space-y-2">
+                                <Input
+                                  value={editTitle}
+                                  onChange={(e) => setEditTitle(e.target.value)}
+                                  className="text-sm"
+                                  placeholder="Tittel"
+                                />
+                                <textarea
+                                  value={editDescription}
+                                  onChange={(e) => setEditDescription(e.target.value)}
+                                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md p-2 text-sm min-h-[80px] resize-y"
+                                  placeholder="Beskrivelse"
+                                />
+                                <div className="flex gap-2">
+                                  <Button size="sm" onClick={() => saveDraftEdit(draft.id)}>
+                                    <CheckCircle size={14} className="mr-1" /> Lagre
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => setEditingDraft(null)}>
+                                    Avbryt
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <h4 className="font-medium text-sm mb-1 truncate">{draft.title || "Uten tittel"}</h4>
+                                <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
+                                  {draft.description || "Ingen beskrivelse"}
+                                </p>
+                                {draft.tags && draft.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {draft.tags.slice(0, 5).map((tag) => (
+                                      <span key={tag} className="text-xs bg-zinc-800 px-2 py-0.5 rounded">
+                                        #{tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+
+                          {!isEditing && (
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => {
+                                  setEditingDraft(draft.id);
+                                  setEditTitle(draft.title || "");
+                                  setEditDescription(draft.description || "");
+                                }}
+                              >
+                                <Edit3 size={12} className="mr-1" /> Rediger
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="text-xs bg-green-600 hover:bg-green-700"
+                                onClick={() => updateDraftStatus(draft.id, "published")}
+                              >
+                                <Send size={12} className="mr-1" /> Publiser
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs text-zinc-500"
+                                onClick={() => updateDraftStatus(draft.id, "failed")}
+                              >
+                                <Trash2 size={12} className="mr-1" /> Forkast
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
         {/* TAB 1: PUBLISER */}
         <TabsContent value="publiser">
