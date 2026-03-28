@@ -209,6 +209,13 @@ export default function ContentHubPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
 
+  // Publish modal state
+  const [publishDraft, setPublishDraft] = useState<DraftItem | null>(null);
+  const [publishPlatforms, setPublishPlatforms] = useState<string[]>([]);
+  const [publishing, setPublishing] = useState(false);
+  const [publishResults, setPublishResults] = useState<{platform: string; success: boolean; postUrl?: string; error?: string}[]>([]);
+  const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string}[]>([]);
+
   const fetchDrafts = useCallback(async () => {
     setDraftsLoading(true);
     try {
@@ -247,9 +254,61 @@ export default function ContentHubPage() {
     setEditingDraft(null);
   }, [editTitle, editDescription]);
 
+  const fetchConnectedAccounts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/social-accounts");
+      const data = await res.json();
+      if (data.accounts) setConnectedAccounts(data.accounts);
+    } catch {}
+  }, []);
+
+  const openPublishModal = useCallback((draft: DraftItem) => {
+    setPublishDraft(draft);
+    setPublishPlatforms([]);
+    setPublishResults([]);
+    setPublishing(false);
+    // Pre-select platforms that have accounts for this brand
+    const brandAccounts = connectedAccounts
+      .filter((a) => a.brand === draft.brand_id)
+      .map((a) => a.platform);
+    setPublishPlatforms(Array.from(new Set(brandAccounts)));
+  }, [connectedAccounts]);
+
+  const executePublish = useCallback(async () => {
+    if (!publishDraft || publishPlatforms.length === 0) return;
+    setPublishing(true);
+    setPublishResults([]);
+
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft_id: publishDraft.id,
+          platforms: publishPlatforms,
+          content: publishDraft.description || "",
+          title: publishDraft.title || "",
+          brand_id: publishDraft.brand_id,
+        }),
+      });
+      const data = await res.json();
+      setPublishResults(data.results || []);
+
+      if (data.success) {
+        // Remove from drafts list
+        setDrafts((prev) => prev.filter((d) => d.id !== publishDraft.id));
+      }
+    } catch (err) {
+      setPublishResults([{ platform: "system", success: false, error: "Nettverksfeil" }]);
+    } finally {
+      setPublishing(false);
+    }
+  }, [publishDraft, publishPlatforms]);
+
   useEffect(() => {
     fetchDrafts();
-  }, [fetchDrafts]);
+    fetchConnectedAccounts();
+  }, [fetchDrafts, fetchConnectedAccounts]);
 
   // Handlers
   const togglePlatform = useCallback((platformId: string) => {
@@ -693,7 +752,7 @@ export default function ContentHubPage() {
                               <Button
                                 size="sm"
                                 className="text-xs bg-green-600 hover:bg-green-700"
-                                onClick={() => updateDraftStatus(draft.id, "published")}
+                                onClick={() => openPublishModal(draft)}
                               >
                                 <Send size={12} className="mr-1" /> Publiser
                               </Button>
@@ -714,6 +773,140 @@ export default function ContentHubPage() {
                 })}
               </div>
             )}
+          {/* Publish Modal */}
+          {publishDraft && (
+            <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !publishing && setPublishDraft(null)}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Publiser til sosiale medier</h3>
+                  {!publishing && (
+                    <button onClick={() => setPublishDraft(null)} className="text-zinc-400 hover:text-white">
+                      <X size={20} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="bg-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-medium truncate">{publishDraft.title || "Uten tittel"}</p>
+                  <p className="text-xs text-zinc-400 line-clamp-2 mt-1">{publishDraft.description?.substring(0, 120)}...</p>
+                </div>
+
+                {/* Platform selection */}
+                <div>
+                  <p className="text-sm font-medium mb-2">Velg plattformer:</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "facebook", name: "Facebook", icon: Globe, color: "text-blue-400", bg: "bg-blue-500/20" },
+                      { id: "instagram", name: "Instagram", icon: Camera, color: "text-pink-400", bg: "bg-pink-500/20" },
+                      { id: "linkedin", name: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500/20" },
+                    ].map((p) => {
+                      const isConnected = connectedAccounts.some(
+                        (a) => a.platform === p.id && a.brand === publishDraft.brand_id
+                      );
+                      const isSelected = publishPlatforms.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            if (!isConnected) return;
+                            setPublishPlatforms((prev) =>
+                              prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]
+                            );
+                          }}
+                          disabled={!isConnected || publishing}
+                          className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-all ${
+                            isSelected
+                              ? "border-green-500 bg-green-500/10"
+                              : isConnected
+                                ? "border-zinc-700 hover:border-zinc-500"
+                                : "border-zinc-800 opacity-40 cursor-not-allowed"
+                          }`}
+                        >
+                          <p.icon size={20} className={isSelected ? "text-green-400" : p.color} />
+                          <span className="text-xs">{p.name}</span>
+                          {!isConnected && (
+                            <span className="text-[10px] text-red-400">Ikke koblet</span>
+                          )}
+                          {isConnected && (
+                            <span className="text-[10px] text-green-400">Tilkoblet</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {connectedAccounts.filter((a) => a.brand === publishDraft.brand_id).length === 0 && (
+                    <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                      <p className="text-xs text-yellow-300">
+                        Ingen kontoer koblet til for dette brandet. Gå til{" "}
+                        <a href="/settings" className="underline font-medium">Innstillinger → Sosiale Medier</a>{" "}
+                        og koble til Facebook/Instagram/LinkedIn via OAuth.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Results */}
+                {publishResults.length > 0 && (
+                  <div className="space-y-2">
+                    {publishResults.map((r, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 p-2 rounded-lg text-sm ${
+                          r.success ? "bg-green-500/10 text-green-300" : "bg-red-500/10 text-red-300"
+                        }`}
+                      >
+                        {r.success ? <CheckCircle size={16} /> : <X size={16} />}
+                        <span className="capitalize font-medium">{r.platform}</span>
+                        {r.success ? (
+                          r.postUrl ? (
+                            <a href={r.postUrl} target="_blank" rel="noopener" className="ml-auto text-xs underline">
+                              Se post →
+                            </a>
+                          ) : (
+                            <span className="ml-auto text-xs">Publisert!</span>
+                          )
+                        ) : (
+                          <span className="ml-auto text-xs">{r.error}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-2">
+                  {publishResults.length > 0 ? (
+                    <Button className="w-full" onClick={() => setPublishDraft(null)}>
+                      Lukk
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setPublishDraft(null)}
+                        disabled={publishing}
+                      >
+                        Avbryt
+                      </Button>
+                      <Button
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={executePublish}
+                        disabled={publishing || publishPlatforms.length === 0}
+                      >
+                        {publishing ? (
+                          <><Loader2 size={14} className="animate-spin mr-2" /> Publiserer...</>
+                        ) : (
+                          <><Send size={14} className="mr-1" /> Publiser til {publishPlatforms.length} plattform{publishPlatforms.length > 1 ? "er" : ""}</>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           </div>
         </TabsContent>
 
