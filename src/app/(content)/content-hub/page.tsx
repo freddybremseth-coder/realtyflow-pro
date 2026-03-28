@@ -217,6 +217,11 @@ export default function ContentHubPage() {
   const [publishResults, setPublishResults] = useState<{platform: string; success: boolean; postUrl?: string; error?: string}[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string}[]>([]);
 
+  // Image picker state
+  const [imagePickerDraft, setImagePickerDraft] = useState<string | null>(null);
+  const [availableImages, setAvailableImages] = useState<DraftItem[]>([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+
   const fetchDrafts = useCallback(async () => {
     setDraftsLoading(true);
     try {
@@ -263,6 +268,38 @@ export default function ContentHubPage() {
   const brandMatches = useCallback((accountBrand: string, draftBrand: string) => {
     return normalizeBrand(accountBrand) === normalizeBrand(draftBrand);
   }, [normalizeBrand]);
+
+  const fetchAvailableImages = useCallback(async () => {
+    setLoadingImages(true);
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return;
+      const { data } = await supabase
+        .from("content_publications")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at")
+        .not("ai_image_url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (data) setAvailableImages(data);
+    } catch (err) {
+      console.error("Failed to fetch images:", err);
+    } finally {
+      setLoadingImages(false);
+    }
+  }, []);
+
+  const attachImageToDraft = useCallback(async (draftId: string, imageUrl: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase
+      .from("content_publications")
+      .update({ ai_image_url: imageUrl, updated_at: new Date().toISOString() })
+      .eq("id", draftId);
+    setDrafts((prev) =>
+      prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl } : d)
+    );
+    setImagePickerDraft(null);
+  }, []);
 
   const fetchConnectedAccounts = useCallback(async () => {
     try {
@@ -771,6 +808,17 @@ export default function ContentHubPage() {
                               </Button>
                               <Button
                                 size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => {
+                                  setImagePickerDraft(draft.id);
+                                  fetchAvailableImages();
+                                }}
+                              >
+                                <Image size={12} className="mr-1" /> {draft.ai_image_url ? "Bytt bilde" : "Velg bilde"}
+                              </Button>
+                              <Button
+                                size="sm"
                                 className="text-xs bg-green-600 hover:bg-green-700"
                                 onClick={() => openPublishModal(draft)}
                               >
@@ -793,6 +841,60 @@ export default function ContentHubPage() {
                 })}
               </div>
             )}
+          {/* Image Picker Modal */}
+          {imagePickerDraft && (
+            <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setImagePickerDraft(null)}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-3xl w-full max-h-[80vh] p-6 space-y-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Image size={18} className="text-purple-400" />
+                    Velg bilde fra arkivet
+                  </h3>
+                  <button onClick={() => setImagePickerDraft(null)} className="text-zinc-400 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {loadingImages ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 size={24} className="animate-spin text-zinc-400" />
+                  </div>
+                ) : availableImages.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Image size={48} className="text-zinc-600 mx-auto mb-4" />
+                    <p className="text-sm text-zinc-400">Ingen genererte bilder funnet.</p>
+                    <p className="text-xs text-zinc-500 mt-1">Gå til Bilde Studio for å generere bilder først.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto max-h-[55vh] pr-1">
+                    {availableImages.map((img) => (
+                      <button
+                        key={img.id}
+                        onClick={() => img.ai_image_url && attachImageToDraft(imagePickerDraft, img.ai_image_url)}
+                        className="group relative rounded-lg overflow-hidden border border-zinc-700 hover:border-purple-500 transition-all bg-zinc-800"
+                      >
+                        <img
+                          src={img.ai_image_url!}
+                          alt={img.title || "AI-bilde"}
+                          className="w-full aspect-square object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
+                          <span className="text-white text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-purple-600 px-3 py-1.5 rounded-lg">
+                            Velg dette
+                          </span>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
+                          <p className="text-xs text-white truncate">{img.title || "Uten tittel"}</p>
+                          <p className="text-[10px] text-zinc-400">{new Date(img.created_at).toLocaleDateString("nb-NO")}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Publish Modal */}
           {publishDraft && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !publishing && setPublishDraft(null)}>

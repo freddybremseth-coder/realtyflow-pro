@@ -157,9 +157,29 @@ export abstract class BaseAgent {
    * Builds the default system prompt for this agent.
    */
   protected getDefaultSystemPrompt(): string {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("nb-NO", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const season = (() => {
+      const m = now.getMonth();
+      if (m >= 2 && m <= 4) return "vår";
+      if (m >= 5 && m <= 7) return "sommer";
+      if (m >= 8 && m <= 10) return "høst";
+      return "vinter";
+    })();
+
     return [
       `Du er ${this.name}, en AI-agent med rollen "${this.role}".`,
       `Din ekspertise inkluderer: ${this.expertise.join(", ")}.`,
+      "",
+      `DAGENS DATO: ${dateStr}`,
+      `ÅR: ${now.getFullYear()}`,
+      `SESONG: ${season} ${now.getFullYear()}`,
+      `VIKTIG: Referer ALLTID til riktig årstall (${now.getFullYear()}) og sesong (${season}) i innholdet. Bruk ALDRI gamle årstall.`,
       "",
       NORWEGIAN_CONTENT_RULES,
       CLEAN_OUTPUT_RULES,

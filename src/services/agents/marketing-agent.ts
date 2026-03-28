@@ -60,7 +60,27 @@ export class MarketingAgent extends BaseAgent {
   }
 
   private getSystemPrompt(): string {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("nb-NO", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const season = (() => {
+      const m = now.getMonth();
+      if (m >= 2 && m <= 4) return "vår";
+      if (m >= 5 && m <= 7) return "sommer";
+      if (m >= 8 && m <= 10) return "høst";
+      return "vinter";
+    })();
+
     return `Du er ${this.name}, en elite AI-markedsføringsagent med rollen "${this.role}".
+
+DAGENS DATO: ${dateStr}
+ÅR: ${now.getFullYear()}
+SESONG: ${season} ${now.getFullYear()}
+VIKTIG: Referer ALLTID til riktig årstall (${now.getFullYear()}) og sesong (${season}) når du nevner tid. Bruk ALDRI gamle eller feil årstall.
 
 DINE KJERNEKOMPETANSER:
 - Viral innholdsstrategi og innholdsproduksjon
