@@ -138,7 +138,7 @@ const brandDataMap: Record<string, BrandData> = {
       "Visning med nederlandsk familie gjennomført",
       "Samarbeid med lokal øko-gård etablert",
     ],
-    aiSummary: "Pinosos Ecolife er i tidlig fase men med lovende nisjeposisjonering. Målgruppen verdsetter autentisitet og bærekraft. Anbefaler mer video-innhold fra eiendommene og community-bygging rundt rural lifestyle.",
+    aiSummary: "Pinoso Ecolife er i tidlig fase men med lovende nisjeposisjonering. Målgruppen verdsetter autentisitet og bærekraft. Anbefaler mer video-innhold fra eiendommene og community-bygging rundt rural lifestyle.",
     kpis: [
       { label: "Aktive leads", value: "6", trend: "up" },
       { label: "Eiendommer", value: "9", trend: "up" },

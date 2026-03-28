@@ -58,7 +58,7 @@ export const BRANDS: Brand[] = [
   },
   {
     id: "pinosoecolife",
-    name: "Pinosos Ecolife",
+    name: "Pinoso Ecolife",
     type: "real_estate",
     description: "Sustainable rural living in Pinosos, Alicante - eco-friendly country homes",
     color: "#84cc16",

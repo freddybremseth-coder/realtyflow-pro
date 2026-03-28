@@ -1,43 +1,91 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2, Users, TrendingUp, FileText,
   Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
+  Loader2,
 } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
 
-const realtyStats = [
-  { label: "Aktive Leads", value: "47", change: "+12%", icon: Users, color: "text-primary-400" },
-  { label: "Eiendommer", value: "124", change: "+3", icon: Building2, color: "text-emerald-400" },
-  { label: "Pipeline Verdi", value: "\u20AC2.4M", change: "+8%", icon: TrendingUp, color: "text-amber-400" },
-  { label: "Closing Rate", value: "23%", change: "+2%", icon: BarChart3, color: "text-blue-400" },
-];
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
-const contentStats = [
-  { label: "Publiserte Innlegg", value: "156", change: "+24", icon: FileText, color: "text-purple-400" },
-  { label: "Total Rekkevidde", value: "45.2K", change: "+18%", icon: Eye, color: "text-pink-400" },
-  { label: "Viralitetsscore", value: "8.4", change: "+0.6", icon: Zap, color: "text-amber-400" },
-  { label: "AI Agenter Aktive", value: "8", change: "Online", icon: Bot, color: "text-emerald-400" },
-];
-
-const saasStats = [
-  { label: "Live Apper", value: "3", change: "+1", icon: Globe, color: "text-violet-400" },
-  { label: "SaaS Brukere", value: "0", change: "Launch", icon: Users, color: "text-blue-400" },
-  { label: "MRR", value: "$0", change: "Pre-revenue", icon: DollarSign, color: "text-emerald-400" },
-  { label: "Konvertering", value: "--", change: "Snart", icon: Target, color: "text-amber-400" },
-];
-
-const recentActivity = [
-  { type: "saas", text: "Astro AI: Ny brukerregistrering fra LinkedIn", time: "8m siden" },
-  { type: "lead", text: "Ny lead: Erik Hansen - Villa i Altea", time: "12m siden" },
-  { type: "content", text: "AI genererte 3 innlegg for Soleada.no", time: "28m siden" },
-  { type: "youtube", text: "Neural Beat: 'Midnight Pulse' lastet opp", time: "1t siden" },
-  { type: "lead", text: "Lead oppgradert: Maria S. \u2192 VIEWING", time: "2t siden" },
-  { type: "content", text: "Instagram-post publisert for Dona Anna", time: "3t siden" },
-];
+interface DashboardStats {
+  activeLeads: number;
+  properties: number;
+  pipelineValue: string;
+  publishedPosts: number;
+  scheduledPosts: number;
+  totalDrafts: number;
+  aiAgents: number;
+  recentActivity: { type: string; text: string; time: string }[];
+}
 
 export default function Dashboard() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchStats() {
+      const supabase = getSupabase();
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Fetch real data in parallel
+        const [leadsRes, propertiesRes, pubsRes, scheduledRes, draftsRes, recentPubsRes] = await Promise.all([
+          supabase.from("leads").select("id", { count: "exact", head: true }),
+          supabase.from("properties").select("id", { count: "exact", head: true }),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
+          supabase.from("content_publications")
+            .select("title, status, brand_id, created_at, published_at, scheduled_at")
+            .order("created_at", { ascending: false })
+            .limit(6),
+        ]);
+
+        // Build recent activity from real data
+        const recentActivity = (recentPubsRes.data || []).map((pub) => {
+          const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at));
+          if (pub.status === "published") {
+            return { type: "content", text: `Publisert: ${pub.title}`, time: timeAgo };
+          } else if (pub.status === "scheduled") {
+            return { type: "scheduled", text: `Planlagt: ${pub.title}`, time: timeAgo };
+          } else {
+            return { type: "draft", text: `Utkast: ${pub.title}`, time: timeAgo };
+          }
+        });
+
+        setStats({
+          activeLeads: leadsRes.count || 0,
+          properties: propertiesRes.count || 0,
+          pipelineValue: "–",
+          publishedPosts: pubsRes.count || 0,
+          scheduledPosts: scheduledRes.count || 0,
+          totalDrafts: draftsRes.count || 0,
+          aiAgents: 8,
+          recentActivity,
+        });
+      } catch (err) {
+        console.error("Dashboard fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStats();
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -48,141 +96,143 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Realty KPIs */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Eiendom
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {realtyStats.map((stat) => (
-            <Card key={stat.label}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-slate-400">{stat.label}</p>
-                    <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
-                    <Badge variant="success" className="mt-2 text-[10px]">
-                      {stat.change}
-                    </Badge>
-                  </div>
-                  <stat.icon className={`${stat.color} opacity-60`} size={28} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="animate-spin text-slate-400" size={32} />
         </div>
-      </div>
-
-      {/* Content & Marketing KPIs */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Innhold & Marketing
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {contentStats.map((stat) => (
-            <Card key={stat.label}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-slate-400">{stat.label}</p>
-                    <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
-                    <Badge variant="default" className="mt-2 text-[10px]">
-                      {stat.change}
-                    </Badge>
-                  </div>
-                  <stat.icon className={`${stat.color} opacity-60`} size={28} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* SaaS KPIs */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          ChatGenius SaaS
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {saasStats.map((stat) => (
-            <Card key={stat.label}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-slate-400">{stat.label}</p>
-                    <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
-                    <Badge variant="default" className="mt-2 text-[10px]">
-                      {stat.change}
-                    </Badge>
-                  </div>
-                  <stat.icon className={`${stat.color} opacity-60`} size={28} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent Activity & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Siste Aktivitet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {recentActivity.map((item, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm">
-                  <div
-                    className={`w-2 h-2 rounded-full mt-1.5 ${
-                      item.type === "lead"
-                        ? "bg-primary-400"
-                        : item.type === "saas"
-                        ? "bg-violet-400"
-                        : item.type === "content"
-                        ? "bg-purple-400"
-                        : "bg-pink-400"
-                    }`}
-                  />
-                  <div className="flex-1">
-                    <p className="text-slate-200">{item.text}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{item.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Hurtighandlinger</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
+      ) : (
+        <>
+          {/* Realty KPIs */}
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Eiendom
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: "Content Hub", href: "/content-hub", icon: Target, color: "bg-pink-500/20 text-pink-300" },
-                { label: "Generer Innhold", href: "/content-studio", icon: Zap, color: "bg-purple-500/20 text-purple-300" },
-                { label: "ChatGenius SaaS", href: "/saas", icon: Globe, color: "bg-violet-500/20 text-violet-300" },
-                { label: "Ny Lead", href: "/pipeline", icon: Users, color: "bg-primary-500/20 text-primary-300" },
-                { label: "Se Eiendommer", href: "/inventory", icon: Building2, color: "bg-emerald-500/20 text-emerald-300" },
-                { label: "AI Agenter", href: "/agents", icon: Bot, color: "bg-amber-500/20 text-amber-300" },
-              ].map((action) => (
-                <a
-                  key={action.label}
-                  href={action.href}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/30 hover:border-slate-600 transition-colors"
-                >
-                  <div className={`w-9 h-9 rounded-lg ${action.color} flex items-center justify-center`}>
-                    <action.icon size={16} />
-                  </div>
-                  <span className="text-sm text-slate-200">{action.label}</span>
-                </a>
+                { label: "Aktive Leads", value: String(stats?.activeLeads || 0), icon: Users, color: "text-primary-400" },
+                { label: "Eiendommer", value: String(stats?.properties || 0), icon: Building2, color: "text-emerald-400" },
+                { label: "Pipeline Verdi", value: stats?.pipelineValue || "–", icon: TrendingUp, color: "text-amber-400" },
+                { label: "Publiserte Poster", value: String(stats?.publishedPosts || 0), icon: BarChart3, color: "text-blue-400" },
+              ].map((stat) => (
+                <Card key={stat.label}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-slate-400">{stat.label}</p>
+                        <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                      </div>
+                      <stat.icon className={`${stat.color} opacity-60`} size={28} />
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+
+          {/* Content & Marketing KPIs */}
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Innhold & Marketing
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: "Publiserte Innlegg", value: String(stats?.publishedPosts || 0), icon: FileText, color: "text-purple-400" },
+                { label: "Planlagte Poster", value: String(stats?.scheduledPosts || 0), icon: Eye, color: "text-pink-400" },
+                { label: "Utkast", value: String(stats?.totalDrafts || 0), icon: Zap, color: "text-amber-400" },
+                { label: "AI Agenter Aktive", value: String(stats?.aiAgents || 0), icon: Bot, color: "text-emerald-400" },
+              ].map((stat) => (
+                <Card key={stat.label}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-slate-400">{stat.label}</p>
+                        <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                      </div>
+                      <stat.icon className={`${stat.color} opacity-60`} size={28} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent Activity & Quick Actions */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Siste Aktivitet</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {(stats?.recentActivity?.length || 0) > 0 ? (
+                    stats!.recentActivity.map((item, i) => (
+                      <div key={i} className="flex items-start gap-3 text-sm">
+                        <div
+                          className={`w-2 h-2 rounded-full mt-1.5 ${
+                            item.type === "content"
+                              ? "bg-emerald-400"
+                              : item.type === "scheduled"
+                              ? "bg-amber-400"
+                              : "bg-slate-400"
+                          }`}
+                        />
+                        <div className="flex-1">
+                          <p className="text-slate-200">{item.text}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{item.time}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500">Ingen aktivitet ennå</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Hurtighandlinger</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: "Content Hub", href: "/content-hub", icon: Target, color: "bg-pink-500/20 text-pink-300" },
+                    { label: "Generer Innhold", href: "/content-studio", icon: Zap, color: "bg-purple-500/20 text-purple-300" },
+                    { label: "Ny Lead", href: "/pipeline", icon: Users, color: "bg-primary-500/20 text-primary-300" },
+                    { label: "Se Eiendommer", href: "/inventory", icon: Building2, color: "bg-emerald-500/20 text-emerald-300" },
+                    { label: "Brands", href: "/brands", icon: Globe, color: "bg-violet-500/20 text-violet-300" },
+                    { label: "AI Agenter", href: "/agents", icon: Bot, color: "bg-amber-500/20 text-amber-300" },
+                  ].map((action) => (
+                    <a
+                      key={action.label}
+                      href={action.href}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 border border-slate-700/30 hover:border-slate-600 transition-colors"
+                    >
+                      <div className={`w-9 h-9 rounded-lg ${action.color} flex items-center justify-center`}>
+                        <action.icon size={16} />
+                      </div>
+                      <span className="text-sm text-slate-200">{action.label}</span>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+function getTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Nå";
+  if (diffMin < 60) return `${diffMin}m siden`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}t siden`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return `${diffDays}d siden`;
+  return date.toLocaleDateString("nb-NO", { day: "numeric", month: "short" });
 }

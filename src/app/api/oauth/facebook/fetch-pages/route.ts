@@ -156,18 +156,25 @@ export async function POST(req: NextRequest) {
 
       savedPages.push({ id: page.id, name: page.name });
 
-      // Also check for Instagram Business Account
+      // Check for Instagram Business Account linked to this page
       try {
+        const pageToken = page.access_token || userToken;
         const igRes = await fetch(
-          `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token || userToken}`
+          `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`
         );
         const igData = await igRes.json();
+        console.log(`[Fetch Pages] Instagram check for ${page.name} (${page.id}):`, JSON.stringify(igData).substring(0, 300));
+
         if (igData.instagram_business_account?.id) {
           const igId = igData.instagram_business_account.id;
+          // Fetch Instagram username and profile info
           const igInfoRes = await fetch(
-            `https://graph.facebook.com/v19.0/${igId}?fields=username&access_token=${page.access_token || userToken}`
+            `https://graph.facebook.com/v19.0/${igId}?fields=username,name,profile_picture_url,followers_count&access_token=${pageToken}`
           );
           const igInfo = await igInfoRes.json();
+          console.log(`[Fetch Pages] Instagram account ${igId}:`, JSON.stringify(igInfo).substring(0, 300));
+
+          const igName = igInfo.username || igInfo.name || `IG-${page.name}`;
 
           const { data: existingIg } = await supabase
             .from("social_accounts")
@@ -178,8 +185,8 @@ export async function POST(req: NextRequest) {
 
           if (existingIg) {
             await supabase.from("social_accounts").update({
-              access_token: page.access_token || userToken,
-              account_name: igInfo.username || `IG-${page.name}`,
+              access_token: pageToken,
+              account_name: igName,
               brand,
               is_active: true,
             }).eq("id", existingIg.id);
@@ -187,16 +194,18 @@ export async function POST(req: NextRequest) {
             await supabase.from("social_accounts").insert({
               platform: "instagram",
               account_id: igId,
-              account_name: igInfo.username || `IG-${page.name}`,
-              access_token: page.access_token || userToken,
+              account_name: igName,
+              access_token: pageToken,
               brand,
               is_active: true,
             });
           }
-          savedPages.push({ id: igId, name: igInfo.username || `IG-${page.name}`, platform: "instagram" });
+          savedPages.push({ id: igId, name: igName, platform: "instagram" });
+        } else {
+          console.log(`[Fetch Pages] No Instagram Business Account linked to page ${page.name}`);
         }
       } catch (igError) {
-        console.error("[Fetch Pages] Instagram check failed:", igError);
+        console.error("[Fetch Pages] Instagram check failed for", page.name, ":", igError);
       }
     }
 

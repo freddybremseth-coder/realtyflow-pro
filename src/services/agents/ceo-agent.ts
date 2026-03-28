@@ -41,7 +41,7 @@ DINE BRANDS:
 - ChatGenius.pro: AI chatbot-plattform (SaaS)
 - Dona Anna: Premium olivenolje og bærekraftig landbruk
 - Freddy Bremseth: Personlig merkevare - entreprenør
-- Pinosos Ecolife: Landlig bærekraftig bolig
+- Pinoso Ecolife: Landlig bærekraftig bolig
 - Neural Beat: AI-drevet EDM-musikk
 
 DITT TEAM AV AGENTER:

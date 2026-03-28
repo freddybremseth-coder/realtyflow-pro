@@ -20,12 +20,43 @@ export async function GET() {
   return NextResponse.json({ settings });
 }
 
-// POST - save brand settings
+// POST - save brand settings (or rename brand)
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 
-  const { brand_id, settings } = await request.json();
+  const body = await request.json();
+  const { brand_id, settings, action, new_name } = body;
+
+  // Rename brand action
+  if (action === 'rename' && brand_id && new_name) {
+    const { error } = await supabase.from('brand_settings').upsert(
+      {
+        brand_id,
+        settings: { ...(settings || {}), custom_name: new_name },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'brand_id' }
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, message: `Brand renamed to ${new_name}` });
+  }
+
+  // Delete brand action
+  if (action === 'delete' && brand_id) {
+    const { error } = await supabase.from('brand_settings').upsert(
+      {
+        brand_id,
+        settings: { ...(settings || {}), deleted: true },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'brand_id' }
+    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, message: 'Brand marked as deleted' });
+  }
+
+  // Normal settings save
   const { error } = await supabase.from('brand_settings').upsert(
     { brand_id, settings, updated_at: new Date().toISOString() },
     { onConflict: 'brand_id' }

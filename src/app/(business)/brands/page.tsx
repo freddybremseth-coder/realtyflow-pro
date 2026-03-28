@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
 import {
   Palette, Globe, Mail, Phone, Youtube, Instagram, Linkedin,
-  Settings, Plus, X,
+  Settings, Plus, X, Pencil, Trash2, Check,
 } from "lucide-react";
 
 interface BrandSettings {
@@ -76,6 +76,9 @@ export default function BrandsPage() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [renamingBrand, setRenamingBrand] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deletingBrand, setDeletingBrand] = useState<string | null>(null);
   const [newBrand, setNewBrand] = useState({
     name: "",
     type: "real_estate",
@@ -88,24 +91,6 @@ export default function BrandsPage() {
   });
 
   const selectedBrand = brands.find((b) => b.id === selectedId) || null;
-
-  // Load saved brand settings from Supabase on mount
-  useEffect(() => {
-    fetch("/api/brands/settings")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.settings && Object.keys(data.settings).length > 0) {
-          setBrands((prev) =>
-            prev.map((b) =>
-              data.settings[b.id]
-                ? { ...b, settings: { ...emptySettings, ...data.settings[b.id] } }
-                : b
-            )
-          );
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const saveSettings = useCallback(async (brandId: string) => {
     const brand = brands.find((b) => b.id === brandId);
@@ -172,6 +157,63 @@ export default function BrandsPage() {
     });
     setShowNewModal(false);
   };
+
+  const renameBrand = async (brandId: string) => {
+    if (!renameValue.trim()) return;
+    try {
+      const res = await fetch("/api/brands/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand_id: brandId, action: "rename", new_name: renameValue.trim() }),
+      });
+      if (res.ok) {
+        setBrands((prev) => prev.map((b) => b.id === brandId ? { ...b, name: renameValue.trim() } : b));
+        setRenamingBrand(null);
+        setSavedToast(true);
+        setTimeout(() => setSavedToast(false), 2000);
+      }
+    } catch { /* silent */ }
+  };
+
+  const deleteBrand = async (brandId: string) => {
+    try {
+      const res = await fetch("/api/brands/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand_id: brandId, action: "delete" }),
+      });
+      if (res.ok) {
+        setBrands((prev) => prev.filter((b) => b.id !== brandId));
+        if (selectedId === brandId) setSelectedId(null);
+        setDeletingBrand(null);
+      }
+    } catch { /* silent */ }
+  };
+
+  // Apply custom names from brand_settings
+  useEffect(() => {
+    fetch("/api/brands/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.settings && Object.keys(data.settings).length > 0) {
+          setBrands((prev) =>
+            prev
+              .filter((b) => !data.settings[b.id]?.deleted)
+              .map((b) => {
+                const s = data.settings[b.id];
+                return s
+                  ? {
+                      ...b,
+                      name: s.custom_name || b.name,
+                      settings: { ...emptySettings, ...s },
+                    }
+                  : b;
+              })
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -432,6 +474,59 @@ export default function BrandsPage() {
                     {s}
                   </Badge>
                 ))}
+              </div>
+
+              {/* Rename / Delete actions */}
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/30" onClick={(e) => e.stopPropagation()}>
+                {renamingBrand === brand.id ? (
+                  <div className="flex items-center gap-1 flex-1">
+                    <Input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      placeholder="Nytt navn"
+                      className="h-7 text-xs"
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && renameBrand(brand.id)}
+                    />
+                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => renameBrand(brand.id)}>
+                      <Check size={12} className="text-emerald-400" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setRenamingBrand(null)}>
+                      <X size={12} />
+                    </Button>
+                  </div>
+                ) : deletingBrand === brand.id ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="text-xs text-red-400">Slett {brand.name}?</span>
+                    <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => deleteBrand(brand.id)}>
+                      Ja, slett
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDeletingBrand(null)}>
+                      Avbryt
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-slate-400 hover:text-white"
+                      onClick={() => { setRenamingBrand(brand.id); setRenameValue(brand.name); }}
+                    >
+                      <Pencil size={12} className="mr-1" />
+                      Endre navn
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-red-400/60 hover:text-red-400"
+                      onClick={() => setDeletingBrand(brand.id)}
+                    >
+                      <Trash2 size={12} className="mr-1" />
+                      Slett
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>

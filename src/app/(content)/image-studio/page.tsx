@@ -32,7 +32,7 @@ const styles = [
 
 const brands = [
   "Soleada.no", "Zen Eco Homes", "ChatGenius.pro",
-  "Dona Anna", "Freddy Bremseth", "Pinosos Ecolife", "Neural Beat",
+  "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat",
 ];
 
 const ASPECT_RATIOS = [

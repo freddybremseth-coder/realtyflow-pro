@@ -107,7 +107,7 @@ export default function PostsPage() {
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Brand</label>
                   <select value={newPost.brand} onChange={(e) => setNewPost((p) => ({ ...p, brand: e.target.value }))} className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
-                    <option>Soleada.no</option><option>Zen Eco Homes</option><option>ChatGenius.pro</option><option>Dona Anna</option><option>Freddy Bremseth</option><option>Pinosos Ecolife</option><option>Neural Beat</option>
+                    <option>Soleada.no</option><option>Zen Eco Homes</option><option>ChatGenius.pro</option><option>Dona Anna</option><option>Freddy Bremseth</option><option>Pinoso Ecolife</option><option>Neural Beat</option>
                   </select>
                 </div>
                 <Button onClick={addPost} className="w-full" disabled={!newPost.content}><Plus size={16} className="mr-1" />Opprett som kladd</Button>

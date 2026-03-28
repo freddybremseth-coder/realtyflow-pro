@@ -359,7 +359,7 @@ For hver mulighet, angi:
 
     const platforms = platform.split(",").map((p: string) => p.trim());
 
-    const prompt = `Lag ${contentType}-innhold for følgende plattformer: ${platforms.join(", ")}
+    const prompt = `Lag ${contentType}-innhold for plattformen: ${platforms[0]}
 
 TEMA/PROMPT:
 ${topic}
@@ -369,14 +369,14 @@ ${brand ? `MERKEVARE: ${brand}` : ""}
 TONE: ${tone}
 SPRÅK: ${language === "no" ? "Norsk" : "Engelsk"}
 
-Lag engasjerende, publiseringsklart innhold. For hver plattform, tilpass formatet:
-${platforms.includes("instagram") ? "- Instagram: Kort, visuell tekst med emojier og hashtags. Maks 2200 tegn." : ""}
-${platforms.includes("facebook") ? "- Facebook: Litt lengre, konverserende tone. Inkluder call-to-action." : ""}
-${platforms.includes("linkedin") ? "- LinkedIn: Profesjonell tone, innsiktsfull vinkling. Inkluder relevante hashtags." : ""}
-${platforms.includes("tiktok") ? "- TikTok: Kort, fengende hook. Trendy språk." : ""}
+Lag engasjerende, publiseringsklart innhold tilpasset plattformen:
+${platforms[0] === "instagram" ? "Instagram: Kort, visuell tekst med emojier og hashtags. Maks 2200 tegn." : ""}
+${platforms[0] === "facebook" ? "Facebook: Litt lengre, konverserende tone. Inkluder call-to-action." : ""}
+${platforms[0] === "linkedin" ? "LinkedIn: Profesjonell tone, innsiktsfull vinkling. Inkluder relevante hashtags." : ""}
+${platforms[0] === "tiktok" ? "TikTok: Kort, fengende hook. Trendy språk." : ""}
+${platforms[0] === "youtube" ? "YouTube: Engasjerende beskrivelse med keywords og call-to-action." : ""}
 
-Formater svaret tydelig med overskrift per plattform.
-Skriv innholdet direkte - ikke legg til meta-kommentarer eller forklaringer.`;
+VIKTIG: Skriv KUN selve innholdet som skal publiseres. IKKE inkluder overskrifter som "Instagram:", "Facebook:" osv. IKKE inkluder meta-kommentarer, forklaringer eller innledninger. Start direkte med selve posten.`;
 
     return this.callAI(prompt, this.getSystemPrompt());
   }

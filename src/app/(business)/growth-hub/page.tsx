@@ -221,11 +221,29 @@ export default function GrowthHubPage() {
   const fetchStrategies = useCallback(async () => {
     setLoadingStrategies(true);
     try {
-      const res = await fetch("/api/growth/engine");
-      if (res.ok) {
-        const data = await res.json();
-        setStrategies(data.strategies || data || []);
+      // Fetch strategy for each brand
+      const results: BrandStrategy[] = [];
+      for (const brand of BRANDS) {
+        try {
+          const res = await fetch(`/api/growth/engine?brand=${brand.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.strategy && typeof data.strategy === "object" && data.strategy.brand_id) {
+              results.push({
+                brand_id: data.strategy.brand_id || brand.id,
+                followers: data.strategy.followers || 0,
+                target_followers: data.strategy.target_followers || 1000,
+                focus_areas: data.strategy.focus_areas || [],
+                weekly_actions: data.strategy.weekly_actions || [],
+                performance_score: data.strategy.performance_score || 0,
+              });
+            }
+          }
+        } catch {
+          // skip this brand
+        }
       }
+      setStrategies(results);
     } catch {
       // silently handle
     } finally {

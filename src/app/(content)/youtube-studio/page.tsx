@@ -134,7 +134,7 @@ const initialVideos: Video[] = [
   },
 ];
 
-const brandOptions = ["Soleada.no", "Zen Eco Homes", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinosos Ecolife", "Neural Beat"];
+const brandOptions = ["Soleada.no", "Zen Eco Homes", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat"];
 
 const statusConfig = {
   published: { label: "Publisert", variant: "success" as const },

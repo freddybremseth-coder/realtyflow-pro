@@ -112,7 +112,7 @@ Brands du styrer:
 3. ChatGenius.pro - AI-drevet chatplattform (SaaS)
 4. Dona Anna - Premium olivenolje og bærekraftig landbruk
 5. Freddy Bremseth - Personlig merkevare, gründer og eiendomsekspert
-6. Pinosos Ecolife - Bærekraftig landliv i Pinosos, Alicante
+6. Pinoso Ecolife - Bærekraftig landliv i Pinosos, Alicante
 7. Neural Beat - AI-drevet EDM og elektronisk musikkproduksjon
 
 Svar ALLTID i gyldig JSON-format.`;

@@ -61,6 +61,7 @@ export default function ContentStudioPage() {
   const [audience, setAudience] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState("");
+  const [generatedPerPlatform, setGeneratedPerPlatform] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -79,53 +80,58 @@ export default function ContentStudioPage() {
     if (!prompt.trim()) return;
     setIsGenerating(true);
     setGeneratedContent("");
+    setGeneratedPerPlatform({});
 
-    const platformNames = selectedPlatforms.map(
-      (pid) => platforms.find((p) => p.id === pid)?.name ?? pid
-    );
+    const results: Record<string, string> = {};
 
-    let content = "";
-
-    try {
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agent: "marketing",
-          tasks: [
-            {
-              type: "create_content",
-              parameters: {
-                brand: selectedBrand,
-                platform: selectedPlatforms.join(","),
-                content_type: selectedContentType,
-                tone: selectedTone,
-                audience: audience || undefined,
-                topic: prompt,
-                language: "no",
+    // Generate content for each platform separately
+    for (const platformId of selectedPlatforms) {
+      const platformName = platforms.find((p) => p.id === platformId)?.name ?? platformId;
+      try {
+        const res = await fetch("/api/agents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent: "marketing",
+            tasks: [
+              {
+                type: "create_content",
+                parameters: {
+                  brand: selectedBrand,
+                  platform: platformId,
+                  content_type: selectedContentType,
+                  tone: selectedTone,
+                  audience: audience || undefined,
+                  topic: prompt,
+                  language: "no",
+                },
               },
-            },
-          ],
-        }),
-      });
+            ],
+          }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        const output =
-          data.results?.[0]?.output ||
-          data.results?.[0]?.result ||
-          "Ingen innhold generert";
-        content = typeof output === "string" ? output : JSON.stringify(output, null, 2);
-      } else {
-        console.error("API returned error status:", res.status);
-        content = `[Feil fra API - status ${res.status}] Kunne ikke generere innhold. Prøv igjen.`;
+        if (res.ok) {
+          const data = await res.json();
+          const output =
+            data.results?.[0]?.output ||
+            data.results?.[0]?.result ||
+            "Ingen innhold generert";
+          results[platformId] = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+        } else {
+          results[platformId] = `[Feil fra API - status ${res.status}]`;
+        }
+      } catch (err) {
+        console.error(`AI generation failed for ${platformName}:`, err);
+        results[platformId] = `[Feil] Kunne ikke generere innhold for ${platformName}.`;
       }
-    } catch (err) {
-      console.error("AI generation failed:", err);
-      content = `[Feil] Kunne ikke nå AI-tjenesten. Sjekk at serveren kjører og prøv igjen.`;
     }
 
-    setGeneratedContent(content);
+    setGeneratedPerPlatform(results);
+    // Show combined view for copying
+    const combined = Object.entries(results)
+      .map(([pid, text]) => text)
+      .join("\n\n---\n\n");
+    setGeneratedContent(combined);
 
     const entry: HistoryEntry = {
       id: `h-${Date.now()}`,
@@ -134,7 +140,7 @@ export default function ContentStudioPage() {
       contentType: selectedContentType,
       tone: selectedTone,
       prompt,
-      content,
+      content: combined,
       createdAt: new Date(),
     };
     setHistory((prev) => [entry, ...prev].slice(0, 20));
@@ -152,21 +158,33 @@ export default function ContentStudioPage() {
     setSavingToHub(true);
     setSavedToHub(false);
     try {
-      const platformNames = selectedPlatforms.map(
-        (pid) => platforms.find((p) => p.id === pid)?.name ?? pid
-      );
+      // Create one draft per platform with only that platform's content
+      const drafts = Object.entries(generatedPerPlatform).map(([pid, content]) => {
+        const platformName = platforms.find((p) => p.id === pid)?.name ?? pid;
+        return {
+          brand_id: selectedBrand,
+          content_type: selectedContentType,
+          title: `${currentBrand.name} – ${selectedContentType} (${platformName})`,
+          description: content,
+          tags: [pid],
+        };
+      });
+
+      // Fallback: if generatedPerPlatform is empty, save as single draft
+      if (drafts.length === 0) {
+        drafts.push({
+          brand_id: selectedBrand,
+          content_type: selectedContentType,
+          title: `${currentBrand.name} – ${selectedContentType}`,
+          description: generatedContent,
+          tags: selectedPlatforms,
+        });
+      }
+
       const res = await fetch("/api/marketing-kit/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          drafts: [{
-            brand_id: selectedBrand,
-            content_type: selectedContentType,
-            title: `${currentBrand.name} – ${selectedContentType} (${platformNames.join(", ")})`,
-            description: generatedContent,
-            tags: selectedPlatforms,
-          }],
-        }),
+        body: JSON.stringify({ drafts }),
       });
       if (res.ok) {
         setSavedToHub(true);
@@ -517,11 +535,36 @@ export default function ContentStudioPage() {
                     </Badge>
                   </div>
 
-                  <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
-                    <pre className="text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
-                      {generatedContent}
-                    </pre>
-                  </div>
+                  {Object.keys(generatedPerPlatform).length > 1 ? (
+                    <div className="space-y-3">
+                      {Object.entries(generatedPerPlatform).map(([pid, content]) => {
+                        const platform = platforms.find((p) => p.id === pid);
+                        return (
+                          <div key={pid} className="p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
+                            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700/30">
+                              {platform && <platform.icon size={14} className={platform.color} />}
+                              <span className="text-xs font-medium text-slate-300">{platform?.name || pid}</span>
+                              <button
+                                onClick={() => { navigator.clipboard.writeText(content); }}
+                                className="ml-auto text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+                              >
+                                Kopier
+                              </button>
+                            </div>
+                            <pre className="text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
+                              {content}
+                            </pre>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
+                      <pre className="text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
+                        {generatedContent}
+                      </pre>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <CheckCircle2 size={12} className="text-emerald-400" />

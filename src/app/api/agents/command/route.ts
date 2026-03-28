@@ -85,7 +85,7 @@ Dine tilgjengelige systemer:
 - Neural Beat: Musikkpublisering på YouTube
 - Analytics: Sporing og statistikk
 
-Brands: Soleada.no (eiendom), Zen Eco Homes (øko-eiendom), ChatGenius.pro (SaaS), Dona Anna (oliveolje), Freddy Bremseth (personlig), Pinosos Ecolife (rural eiendom), Neural Beat (AI-musikk)
+Brands: Soleada.no (eiendom), Zen Eco Homes (øko-eiendom), ChatGenius.pro (SaaS), Dona Anna (oliveolje), Freddy Bremseth (personlig), Pinoso Ecolife (rural eiendom), Neural Beat (AI-musikk)
 
 Når Freddy forteller deg hva han ønsker:
 1. FORSTÅ: Gjenta hva du forstår at han vil

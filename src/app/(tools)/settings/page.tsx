@@ -55,8 +55,8 @@ const HOSTINGER_DEFAULTS = {
 };
 
 const EMAIL_ACCOUNTS_PRESET: Omit<EmailConfig, 'id'>[] = [
-  { brand_id: "pinosoecolife", email_address: "freddy@pinosoecolife.com", display_name: "Freddy - Pinosos Ecolife", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
-  { brand_id: "pinosoecolife", email_address: "post@pinosoecolife.com", display_name: "Pinosos Ecolife", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
+  { brand_id: "pinosoecolife", email_address: "freddy@pinosoecolife.com", display_name: "Freddy - Pinoso Ecolife", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
+  { brand_id: "pinosoecolife", email_address: "post@pinosoecolife.com", display_name: "Pinoso Ecolife", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
   { brand_id: "zeneco", email_address: "freddy@zenecohomes.com", display_name: "Freddy - Zen Eco Homes", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
   { brand_id: "chatgenius", email_address: "freddy@chatgenius.pro", display_name: "Freddy - ChatGenius", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },
   { brand_id: "freddyb", email_address: "post@freddybremseth.com", display_name: "Freddy Bremseth", ...HOSTINGER_DEFAULTS, auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true },

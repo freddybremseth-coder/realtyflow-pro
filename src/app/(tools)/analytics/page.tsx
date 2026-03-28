@@ -1,54 +1,147 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, TrendingUp, Users, Eye, Heart, DollarSign } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Eye, Heart, DollarSign, Loader2, FileText, Calendar } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts";
+import { createClient } from "@supabase/supabase-js";
 
-const leadData = [
-  { month: "Okt", leads: 18, conversions: 3 },
-  { month: "Nov", leads: 24, conversions: 5 },
-  { month: "Des", leads: 20, conversions: 4 },
-  { month: "Jan", leads: 32, conversions: 6 },
-  { month: "Feb", leads: 38, conversions: 8 },
-  { month: "Mar", leads: 47, conversions: 11 },
-];
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
-const platformData = [
-  { platform: "Instagram", engagement: 4200, reach: 18500 },
-  { platform: "Facebook", engagement: 2800, reach: 12000 },
-  { platform: "LinkedIn", engagement: 1500, reach: 8200 },
-  { platform: "YouTube", engagement: 3100, reach: 15800 },
-  { platform: "TikTok", engagement: 1900, reach: 6500 },
-];
-
-const channelROI = [
-  { name: "Facebook Ads", value: 35, color: "#3b82f6" },
-  { name: "Google Ads", value: 25, color: "#ef4444" },
-  { name: "Instagram", value: 20, color: "#ec4899" },
-  { name: "Organisk", value: 12, color: "#10b981" },
-  { name: "Henvisning", value: 8, color: "#f59e0b" },
-];
-
-const realtyMetrics = [
-  { label: "Totale Leads", value: "47", change: "+12%", icon: Users },
-  { label: "Visninger", value: "23", change: "+5", icon: Eye },
-  { label: "Closing Rate", value: "23%", change: "+2%", icon: TrendingUp },
-  { label: "Pipeline Verdi", value: "€2.4M", change: "+€180K", icon: DollarSign },
-];
-
-const contentMetrics = [
-  { label: "Publiserte Innlegg", value: "156", change: "+24", icon: Heart },
-  { label: "Total Rekkevidde", value: "45.2K", change: "+18%", icon: Eye },
-  { label: "Engasjement", value: "3.2%", change: "+0.4%", icon: Heart },
-  { label: "Konverteringer", value: "34", change: "+8", icon: TrendingUp },
-];
+const CHART_COLORS = ["#06b6d4", "#8b5cf6", "#ec4899", "#10b981", "#f59e0b"];
 
 export default function AnalyticsPage() {
+  const [loading, setLoading] = useState(true);
+  const [realtyMetrics, setRealtyMetrics] = useState([
+    { label: "Totale Leads", value: "0", change: "–", icon: Users },
+    { label: "Eiendommer", value: "0", change: "–", icon: Eye },
+    { label: "Publisert", value: "0", change: "–", icon: TrendingUp },
+    { label: "Planlagt", value: "0", change: "–", icon: Calendar },
+  ]);
+  const [contentMetrics, setContentMetrics] = useState([
+    { label: "Publiserte Innlegg", value: "0", change: "–", icon: Heart },
+    { label: "Utkast", value: "0", change: "–", icon: FileText },
+    { label: "Planlagte", value: "0", change: "–", icon: Calendar },
+    { label: "Totalt innhold", value: "0", change: "–", icon: TrendingUp },
+  ]);
+  const [platformData, setPlatformData] = useState<{ platform: string; count: number }[]>([]);
+  const [monthlyData, setMonthlyData] = useState<{ month: string; published: number; drafts: number }[]>([]);
+  const [brandData, setBrandData] = useState<{ name: string; value: number; color: string }[]>([]);
+
+  useEffect(() => {
+    async function fetchAnalytics() {
+      const supabase = getSupabase();
+      if (!supabase) { setLoading(false); return; }
+
+      try {
+        const [leadsRes, propsRes, pubsRes, draftsRes, scheduledRes, allPubsRes] = await Promise.all([
+          supabase.from("leads").select("id", { count: "exact", head: true }),
+          supabase.from("properties").select("id", { count: "exact", head: true }),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
+          supabase.from("content_publications").select("id, brand_id, tags, status, created_at, published_at").limit(500),
+        ]);
+
+        const leads = leadsRes.count || 0;
+        const props = propsRes.count || 0;
+        const published = pubsRes.count || 0;
+        const draftCount = draftsRes.count || 0;
+        const scheduled = scheduledRes.count || 0;
+        const total = published + draftCount + scheduled;
+        const allPubs = allPubsRes.data || [];
+
+        setRealtyMetrics([
+          { label: "Totale Leads", value: String(leads), change: "–", icon: Users },
+          { label: "Eiendommer", value: String(props), change: "–", icon: Eye },
+          { label: "Publisert", value: String(published), change: "–", icon: TrendingUp },
+          { label: "Planlagt", value: String(scheduled), change: "–", icon: Calendar },
+        ]);
+
+        setContentMetrics([
+          { label: "Publiserte Innlegg", value: String(published), change: "–", icon: Heart },
+          { label: "Utkast", value: String(draftCount), change: "–", icon: FileText },
+          { label: "Planlagte", value: String(scheduled), change: "–", icon: Calendar },
+          { label: "Totalt innhold", value: String(total), change: "–", icon: TrendingUp },
+        ]);
+
+        // Platform distribution from tags
+        const platformCounts: Record<string, number> = {};
+        for (const pub of allPubs) {
+          const tags = pub.tags || [];
+          for (const tag of tags) {
+            const t = tag.toLowerCase();
+            if (["instagram", "facebook", "linkedin", "youtube", "tiktok", "pinterest"].includes(t)) {
+              platformCounts[t] = (platformCounts[t] || 0) + 1;
+            }
+          }
+        }
+        setPlatformData(
+          Object.entries(platformCounts)
+            .map(([platform, count]) => ({ platform: platform.charAt(0).toUpperCase() + platform.slice(1), count }))
+            .sort((a, b) => b.count - a.count)
+        );
+
+        // Monthly data - last 6 months
+        const months: { month: string; published: number; drafts: number }[] = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date();
+          d.setMonth(d.getMonth() - i);
+          const monthStr = d.toLocaleDateString("nb-NO", { month: "short" });
+          const year = d.getFullYear();
+          const month = d.getMonth();
+          const pubCount = allPubs.filter((p) => {
+            const pd = new Date(p.published_at || p.created_at);
+            return pd.getFullYear() === year && pd.getMonth() === month && p.status === "published";
+          }).length;
+          const draftC = allPubs.filter((p) => {
+            const pd = new Date(p.created_at);
+            return pd.getFullYear() === year && pd.getMonth() === month && p.status === "draft";
+          }).length;
+          months.push({ month: monthStr, published: pubCount, drafts: draftC });
+        }
+        setMonthlyData(months);
+
+        // Brand distribution
+        const brandCounts: Record<string, number> = {};
+        for (const pub of allPubs) {
+          if (pub.brand_id) {
+            brandCounts[pub.brand_id] = (brandCounts[pub.brand_id] || 0) + 1;
+          }
+        }
+        setBrandData(
+          Object.entries(brandCounts)
+            .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
+            .sort((a, b) => b.value - a.value)
+        );
+      } catch (err) {
+        console.error("Analytics fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAnalytics();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-slate-400" size={32} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -63,7 +156,7 @@ export default function AnalyticsPage() {
         <TabsList>
           <TabsTrigger value="realty">Eiendom</TabsTrigger>
           <TabsTrigger value="content">Innhold & SoMe</TabsTrigger>
-          <TabsTrigger value="cross">Cross-Channel ROI</TabsTrigger>
+          <TabsTrigger value="cross">Innhold per Brand</TabsTrigger>
         </TabsList>
 
         <TabsContent value="realty">
@@ -71,24 +164,28 @@ export default function AnalyticsPage() {
             {realtyMetrics.map((m) => (
               <Card key={m.label}><CardContent className="p-4 flex items-center gap-3">
                 <m.icon size={24} className="text-primary-400 opacity-60" />
-                <div><p className="text-2xl font-bold text-white">{m.value}</p><p className="text-xs text-slate-400">{m.label}</p><Badge variant="success" className="text-[10px] mt-1">{m.change}</Badge></div>
+                <div><p className="text-2xl font-bold text-white">{m.value}</p><p className="text-xs text-slate-400">{m.label}</p></div>
               </CardContent></Card>
             ))}
           </div>
           <Card>
-            <CardHeader><CardTitle>Lead Konvertering - Siste 6 Maneder</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Innhold - Siste 6 Maneder</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={leadData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
-                  <YAxis stroke="#94a3b8" fontSize={12} />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
-                  <Legend />
-                  <Area type="monotone" dataKey="leads" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.15} name="Leads" />
-                  <Area type="monotone" dataKey="conversions" stroke="#10b981" fill="#10b981" fillOpacity={0.15} name="Konverteringer" />
-                </AreaChart>
-              </ResponsiveContainer>
+              {monthlyData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
+                    <YAxis stroke="#94a3b8" fontSize={12} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
+                    <Legend />
+                    <Area type="monotone" dataKey="published" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.15} name="Publisert" />
+                    <Area type="monotone" dataKey="drafts" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.15} name="Utkast" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-sm text-slate-500 text-center py-12">Ingen data ennå</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -98,24 +195,26 @@ export default function AnalyticsPage() {
             {contentMetrics.map((m) => (
               <Card key={m.label}><CardContent className="p-4 flex items-center gap-3">
                 <m.icon size={24} className="text-purple-400 opacity-60" />
-                <div><p className="text-2xl font-bold text-white">{m.value}</p><p className="text-xs text-slate-400">{m.label}</p><Badge variant="default" className="text-[10px] mt-1">{m.change}</Badge></div>
+                <div><p className="text-2xl font-bold text-white">{m.value}</p><p className="text-xs text-slate-400">{m.label}</p></div>
               </CardContent></Card>
             ))}
           </div>
           <Card>
-            <CardHeader><CardTitle>Engasjement per Plattform</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Innhold per Plattform</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={platformData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="platform" stroke="#94a3b8" fontSize={12} />
-                  <YAxis stroke="#94a3b8" fontSize={12} />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
-                  <Legend />
-                  <Bar dataKey="engagement" fill="#8b5cf6" name="Engasjement" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="reach" fill="#06b6d4" name="Rekkevidde" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {platformData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={platformData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="platform" stroke="#94a3b8" fontSize={12} />
+                    <YAxis stroke="#94a3b8" fontSize={12} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
+                    <Bar dataKey="count" fill="#8b5cf6" name="Antall innlegg" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-sm text-slate-500 text-center py-12">Ingen plattformdata ennå. Tag innlegg med plattformer i Content Studio.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -123,38 +222,46 @@ export default function AnalyticsPage() {
         <TabsContent value="cross">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle>Lead-kilder (ROI-fordeling)</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Innhold per Brand</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={channelROI} cx="50%" cy="50%" outerRadius={100} dataKey="value" nameKey="name" label={({ name, value }) => `${name}: ${value}%`} labelLine={false}>
-                      {channelROI.map((entry) => (<Cell key={entry.name} fill={entry.color} />))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                {brandData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={brandData} cx="50%" cy="50%" outerRadius={100} dataKey="value" nameKey="name" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
+                        {brandData.map((entry) => (<Cell key={entry.name} fill={entry.color} />))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-12">Ingen data ennå</p>
+                )}
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle>Kanal-ytelse</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Brand-fordeling</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {channelROI.map((ch) => (
-                    <div key={ch.name}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-slate-300">{ch.name}</span>
-                        <span className="text-white font-medium">{ch.value}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${ch.value}%`, backgroundColor: ch.color }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-6 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                  <p className="text-sm text-emerald-300 font-medium">Beste kanal: Facebook Ads</p>
-                  <p className="text-xs text-slate-400 mt-1">35% av alle konverteringer kommer fra Facebook Ads med en gjennomsnittlig CPA pa €45</p>
-                </div>
+                {brandData.length > 0 ? (
+                  <div className="space-y-4">
+                    {brandData.map((ch) => {
+                      const maxVal = Math.max(...brandData.map((b) => b.value));
+                      const pct = maxVal > 0 ? Math.round((ch.value / maxVal) * 100) : 0;
+                      return (
+                        <div key={ch.name}>
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="text-slate-300">{ch.name}</span>
+                            <span className="text-white font-medium">{ch.value} innlegg</span>
+                          </div>
+                          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: ch.color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-12">Ingen data ennå</p>
+                )}
               </CardContent>
             </Card>
           </div>

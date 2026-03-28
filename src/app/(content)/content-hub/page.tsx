@@ -104,42 +104,7 @@ const IMAGE_STYLES = [
   "Moderne arkitektur", "Natur og landskap", "Infografikk", "Abstrakt",
 ];
 
-// --- Mock Data ---
-const MOCK_CAMPAIGNS: CampaignItem[] = [
-  {
-    id: "1", name: "Varkampanje Costa Blanca", brand: "Soleada.no", brandColor: "#06b6d4",
-    platforms: ["youtube", "instagram", "facebook"], status: "aktiv",
-    startDate: "2026-03-01", endDate: "2026-04-30", posts: 24, reach: 45200, engagement: 3.8,
-  },
-  {
-    id: "2", name: "ChatGenius Lansering v3", brand: "ChatGenius.pro", brandColor: "#8b5cf6",
-    platforms: ["linkedin", "youtube", "tiktok"], status: "planlagt",
-    startDate: "2026-04-01", endDate: "2026-04-15", posts: 12, reach: 0, engagement: 0,
-  },
-  {
-    id: "3", name: "Neural Beat Album Release", brand: "Neural Beat", brandColor: "#ec4899",
-    platforms: ["youtube", "instagram", "tiktok"], status: "aktiv",
-    startDate: "2026-03-10", endDate: "2026-03-31", posts: 18, reach: 32100, engagement: 5.2,
-  },
-  {
-    id: "4", name: "Olivenolje Sesong", brand: "Dona Anna", brandColor: "#f59e0b",
-    platforms: ["instagram", "facebook", "pinterest"], status: "fullfort",
-    startDate: "2026-01-15", endDate: "2026-02-28", posts: 30, reach: 18900, engagement: 4.1,
-  },
-];
-
-const MOCK_CALENDAR: CalendarEvent[] = [
-  { id: "1", title: "Villa Costa Blanca Tour", brand: "Soleada.no", brandColor: "#06b6d4", platform: "youtube", date: "2026-03-22", time: "10:00", status: "planlagt" },
-  { id: "2", title: "Ny eiendom - Pinosos", brand: "Pinosos Ecolife", brandColor: "#84cc16", platform: "instagram", date: "2026-03-22", time: "14:00", status: "planlagt" },
-  { id: "3", title: "AI Chatbot Tips", brand: "ChatGenius.pro", brandColor: "#8b5cf6", platform: "linkedin", date: "2026-03-23", time: "09:00", status: "utkast" },
-  { id: "4", title: "Sunset Beat - Musikkvideo", brand: "Neural Beat", brandColor: "#ec4899", platform: "youtube", date: "2026-03-23", time: "18:00", status: "planlagt" },
-  { id: "5", title: "Behind the scenes oliven", brand: "Dona Anna", brandColor: "#f59e0b", platform: "instagram", date: "2026-03-24", time: "12:00", status: "planlagt" },
-  { id: "6", title: "Drommehus i Spania", brand: "Soleada.no", brandColor: "#06b6d4", platform: "facebook", date: "2026-03-24", time: "16:00", status: "planlagt" },
-  { id: "7", title: "Eiendomstrender 2026", brand: "Freddy Bremseth", brandColor: "#3b82f6", platform: "linkedin", date: "2026-03-25", time: "08:00", status: "utkast" },
-  { id: "8", title: "Eco Home Showcase", brand: "Zen Eco Homes", brandColor: "#10b981", platform: "youtube", date: "2026-03-25", time: "15:00", status: "planlagt" },
-  { id: "9", title: "Quick villa reel", brand: "Soleada.no", brandColor: "#06b6d4", platform: "tiktok", date: "2026-03-26", time: "11:00", status: "planlagt" },
-  { id: "10", title: "Oppskrift - Oliventapenade", brand: "Dona Anna", brandColor: "#f59e0b", platform: "pinterest", date: "2026-03-26", time: "13:00", status: "planlagt" },
-];
+// Campaigns and calendar are now loaded from database (no mock data)
 
 const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
 
@@ -162,7 +127,7 @@ const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
    Neural Beat clips, matlagingsvideoer (Dona Anna).
 
 \u2705 Pinterest - ANBEFALT for eiendom og livsstil. H\u00f8y kj\u00f8psintensjon.
-   Pinosos Ecolife (dr\u00f8mmeboliger), Dona Anna (oppskrifter),
+   Pinoso Ecolife (dr\u00f8mmeboliger), Dona Anna (oppskrifter),
    Soleada.no (dr\u00f8mmehus i Spania). Evigr\u00f8nt innhold.
 
 \u23f3 Twitter/X - Lavere prioritet. Nyttig for ChatGenius.pro (tech),
@@ -191,8 +156,9 @@ export default function ContentHubPage() {
   const [campaignPlatforms, setCampaignPlatforms] = useState<string[]>([]);
   const [campaignDuration, setCampaignDuration] = useState("30");
 
-  // Calendar state
+  // Calendar state - loaded from database (scheduled posts)
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
   // Strategy state
   const [strategyInput, setStrategyInput] = useState("");
@@ -429,10 +395,45 @@ export default function ContentHubPage() {
     }
   }, [publishDraft, publishPlatforms, scheduleMode, scheduledAt, aiRecommendation]);
 
+  const fetchCalendarEvents = useCallback(async () => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return;
+      // Load scheduled and published posts for calendar
+      const { data } = await supabase
+        .from("content_publications")
+        .select("id, title, brand_id, tags, scheduled_at, published_at, status")
+        .in("status", ["scheduled", "published"])
+        .order("scheduled_at", { ascending: true })
+        .limit(50);
+      if (data) {
+        const events: CalendarEvent[] = data.map((p) => {
+          const date = p.scheduled_at || p.published_at || "";
+          const d = new Date(date);
+          const brand = BRANDS.find((b) => b.id === p.brand_id);
+          return {
+            id: p.id,
+            title: p.title || "Uten tittel",
+            brand: brand?.name || p.brand_id,
+            brandColor: brand?.color || "#64748b",
+            platform: (p.tags && p.tags[0]) || "post",
+            date: d.toISOString().split("T")[0],
+            time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
+            status: p.status === "published" ? "publisert" : "planlagt",
+          };
+        });
+        setCalendarEvents(events);
+      }
+    } catch (err) {
+      console.error("Failed to fetch calendar events:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDrafts();
     fetchConnectedAccounts();
-  }, [fetchDrafts, fetchConnectedAccounts]);
+    fetchCalendarEvents();
+  }, [fetchDrafts, fetchConnectedAccounts, fetchCalendarEvents]);
 
   // Handlers
   const togglePlatform = useCallback((platformId: string) => {
@@ -678,10 +679,10 @@ export default function ContentHubPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400">Total rekkevidde</p>
-                <p className="text-2xl font-bold text-white">127.4K</p>
-                <p className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
-                  <TrendingUp size={12} /> +18% denne maneden
+                <p className="text-xs text-slate-400">Totalt innhold</p>
+                <p className="text-2xl font-bold text-white">{drafts.length + calendarEvents.filter((e) => e.status === "publisert").length}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {drafts.length} utkast
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-primary-500/20">
@@ -694,10 +695,10 @@ export default function ContentHubPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400">Engasjement</p>
-                <p className="text-2xl font-bold text-white">4.2%</p>
+                <p className="text-xs text-slate-400">Publisert</p>
+                <p className="text-2xl font-bold text-white">{calendarEvents.filter((e) => e.status === "publisert").length}</p>
                 <p className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
-                  <TrendingUp size={12} /> +0.8% fra snitt
+                  <TrendingUp size={12} /> Totalt publisert
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-pink-500/20">
@@ -710,10 +711,10 @@ export default function ContentHubPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400">Publisert denne uka</p>
-                <p className="text-2xl font-bold text-white">12</p>
+                <p className="text-xs text-slate-400">Utkast klare</p>
+                <p className="text-2xl font-bold text-white">{drafts.filter((d) => d.status === "draft").length}</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  av 18 planlagt
+                  Klare til publisering
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-emerald-500/20">
@@ -726,12 +727,12 @@ export default function ContentHubPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-400">Aktive kampanjer</p>
+                <p className="text-xs text-slate-400">Planlagte poster</p>
                 <p className="text-2xl font-bold text-white">
-                  {MOCK_CAMPAIGNS.filter((c) => c.status === "aktiv").length}
+                  {calendarEvents.filter((e) => e.status === "planlagt").length}
                 </p>
                 <p className="text-xs text-amber-400 mt-1">
-                  {MOCK_CAMPAIGNS.filter((c) => c.status === "planlagt").length} planlagt
+                  {calendarEvents.filter((e) => e.status === "publisert").length} publisert
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-amber-500/20">
@@ -1669,55 +1670,14 @@ export default function ContentHubPage() {
               </Card>
             )}
 
-            {/* Campaign Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {MOCK_CAMPAIGNS.map((campaign) => (
-                <Card key={campaign.id} className="hover:border-slate-600/80 transition-colors cursor-pointer">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-white mb-1">{campaign.name}</h3>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: campaign.brandColor }}
-                          />
-                          <span className="text-xs text-slate-400">{campaign.brand}</span>
-                        </div>
-                      </div>
-                      {statusBadge(campaign.status)}
-                    </div>
-                    <div className="flex items-center gap-2 mb-3">
-                      {campaign.platforms.map((pid) => (
-                        <span key={pid}>{getPlatformIcon(pid)}</span>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      <div className="bg-slate-900/50 rounded-lg p-2">
-                        <p className="text-lg font-bold text-white">{campaign.posts}</p>
-                        <p className="text-[10px] text-slate-500">Innlegg</p>
-                      </div>
-                      <div className="bg-slate-900/50 rounded-lg p-2">
-                        <p className="text-lg font-bold text-white">
-                          {campaign.reach > 0 ? `${(campaign.reach / 1000).toFixed(1)}K` : "-"}
-                        </p>
-                        <p className="text-[10px] text-slate-500">Rekkevidde</p>
-                      </div>
-                      <div className="bg-slate-900/50 rounded-lg p-2">
-                        <p className="text-lg font-bold text-white">
-                          {campaign.engagement > 0 ? `${campaign.engagement}%` : "-"}
-                        </p>
-                        <p className="text-[10px] text-slate-500">Engasjement</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
-                      <span>{campaign.startDate} - {campaign.endDate}</span>
-                      <ChevronRight size={14} />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {/* Campaign Cards - placeholder until campaigns feature is built */}
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Target size={32} className="mx-auto text-slate-600 mb-3" />
+                <p className="text-slate-400">Ingen kampanjer opprettet ennå</p>
+                <p className="text-xs text-slate-500 mt-1">Bruk knappen over for å opprette din første kampanje</p>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
@@ -1748,7 +1708,7 @@ export default function ContentHubPage() {
               <div className="grid grid-cols-7 gap-2">
                 {weekDays.map((day, i) => {
                   const dateStr = day.toISOString().split("T")[0];
-                  const dayEvents = MOCK_CALENDAR.filter((e) => e.date === dateStr);
+                  const dayEvents = calendarEvents.filter((e) => e.date === dateStr);
                   const isToday = dateStr === new Date().toISOString().split("T")[0];
                   return (
                     <div key={i} className="space-y-2">
@@ -1785,7 +1745,7 @@ export default function ContentHubPage() {
                     <Calendar size={48} className="mx-auto text-slate-600 mb-3" />
                     <p className="text-slate-400">Manedsvisning</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Viser {MOCK_CALENDAR.length} planlagte innlegg denne maneden
+                      Viser {calendarEvents.length} planlagte innlegg denne maneden
                     </p>
                     <div className="mt-6 grid grid-cols-7 gap-1">
                       {dayNames.map((d) => (
@@ -1793,7 +1753,7 @@ export default function ContentHubPage() {
                       ))}
                       {Array.from({ length: 31 }, (_, i) => {
                         const dayDate = `2026-03-${String(i + 1).padStart(2, "0")}`;
-                        const hasEvents = MOCK_CALENDAR.some((e) => e.date === dayDate);
+                        const hasEvents = calendarEvents.some((e) => e.date === dayDate);
                         const isToday = i + 1 === new Date().getDate();
                         return (
                           <div
@@ -1826,7 +1786,7 @@ export default function ContentHubPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {MOCK_CALENDAR.filter((e) => e.status === "planlagt").slice(0, 5).map((event) => (
+                  {calendarEvents.filter((e) => e.status === "planlagt").slice(0, 5).map((event) => (
                     <div key={event.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors cursor-pointer">
                       <div className="flex items-center gap-3">
                         <div
