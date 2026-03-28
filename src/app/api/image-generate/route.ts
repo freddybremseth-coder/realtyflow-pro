@@ -54,75 +54,69 @@ export async function POST(req: NextRequest) {
 
     const enhancedPrompt = `${prompt}. ${styleHint}. ${ratioHint}. ${brandHint} No text or watermarks in the image.`.trim();
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    // Use Imagen 3 via REST API directly
+    const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
 
-    // Use Gemini 2.0 Flash with image generation
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
-      generationConfig: {
-        // @ts-expect-error - responseModalities is supported but not yet in types
-        responseModalities: ["TEXT", "IMAGE"],
-      },
+    const imagenRes = await fetch(imagenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt: enhancedPrompt }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: aspectRatio === "16:9" ? "16:9" : aspectRatio === "9:16" ? "9:16" : aspectRatio === "4:5" ? "3:4" : "1:1",
+        },
+      }),
     });
 
-    const result = await model.generateContent(
-      `Generate a high-quality image: ${enhancedPrompt}`
-    );
+    if (!imagenRes.ok) {
+      const errData = await imagenRes.json().catch(() => ({}));
+      console.error("[Image Generate] Imagen error:", errData);
 
-    const response = result.response;
-    const parts = response.candidates?.[0]?.content?.parts || [];
+      // Fallback: try Gemini 2.0 Flash
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+      let textResponse = "";
 
-    let imageBase64 = "";
-    let mimeType = "image/png";
-    let textResponse = "";
-
-    for (const part of parts) {
-      if (part.inlineData) {
-        imageBase64 = part.inlineData.data;
-        mimeType = part.inlineData.mimeType || "image/png";
-      }
-      if (part.text) {
-        textResponse = part.text;
-      }
-    }
-
-    if (!imageBase64) {
-      // Fallback: try Imagen 3 model directly
-      try {
-        const imagenModel = genAI.getGenerativeModel({
-          model: "imagen-3.0-generate-002",
-        });
-
-        const imagenResult = await imagenModel.generateContent(enhancedPrompt);
-        const imagenParts = imagenResult.response.candidates?.[0]?.content?.parts || [];
-
-        for (const part of imagenParts) {
-          if (part.inlineData) {
-            imageBase64 = part.inlineData.data;
-            mimeType = part.inlineData.mimeType || "image/png";
-          }
+      for (const modelName of models) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent(
+            `Describe in vivid detail what this image would look like (do NOT generate an image, just describe it visually): ${enhancedPrompt}`
+          );
+          textResponse = result.response.text();
+          break;
+        } catch (e) {
+          console.error(`[Image Generate] ${modelName} failed:`, e);
         }
-      } catch (imagenError) {
-        console.error("[Image Generate] Imagen fallback failed:", imagenError);
       }
-    }
 
-    if (!imageBase64) {
       return NextResponse.json(
         {
-          error: "Could not generate image. The model may not support image generation with your current API plan.",
+          error: `Bildegenerering feilet: ${((errData as Record<string, unknown>)?.error as Record<string, unknown>)?.message || "Imagen 3 ikke tilgjengelig"}. Prøv med en annen prompt.`,
           textResponse,
         },
         { status: 422 }
       );
     }
 
+    const imagenData = await imagenRes.json();
+    const predictions = imagenData.predictions || [];
+
+    if (!predictions.length || !predictions[0].bytesBase64Encoded) {
+      return NextResponse.json(
+        { error: "Ingen bilde generert. Prøv med en annen prompt." },
+        { status: 422 }
+      );
+    }
+
+    const imageBase64 = predictions[0].bytesBase64Encoded;
+    const mimeType = predictions[0].mimeType || "image/png";
     const imageUrl = `data:${mimeType};base64,${imageBase64}`;
 
     return NextResponse.json({
       imageUrl,
       revisedPrompt: enhancedPrompt,
-      textResponse,
     });
   } catch (error) {
     console.error("[Image Generate] Error:", error);
