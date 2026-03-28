@@ -299,6 +299,7 @@ export default function ContentHubPage() {
           content: publishDraft.description || "",
           title: publishDraft.title || "",
           brand_id: publishDraft.brand_id,
+          image_url: publishDraft.ai_image_url || undefined,
         }),
       });
       const data = await res.json();

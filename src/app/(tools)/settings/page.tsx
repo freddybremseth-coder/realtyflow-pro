@@ -74,6 +74,8 @@ export default function SettingsPage() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [newChannel, setNewChannel] = useState({ name: "", handle: "", channel_id: "", api_key: "", brand: "soleada", content_types: [] as string[] });
   const [newAccount, setNewAccount] = useState({ platform: "instagram", account_name: "", account_id: "", access_token: "", brand: "soleada" });
+  const [fetchingPages, setFetchingPages] = useState(false);
+  const [fetchPagesResult, setFetchPagesResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Email config state
   const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
@@ -158,7 +160,7 @@ export default function SettingsPage() {
               <label className="text-xs text-slate-400">Merkevare:</label>
               <select value={newAccount.brand} onChange={e=>setNewAccount(p=>({...p,brand:e.target.value}))} className="h-8 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">{BRANDS.map(b=><option key={b} value={b}>{b}</option>)}</select>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <a href={`/api/oauth/facebook?brand=${newAccount.brand}`} className="flex items-center gap-3 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 transition-all">
                 <Globe size={24} className="text-blue-400" />
                 <div>
@@ -173,6 +175,54 @@ export default function SettingsPage() {
                   <p className="text-xs text-slate-400">Personlig profil eller bedriftsside</p>
                 </div>
               </a>
+              <button
+                onClick={async () => {
+                  setFetchingPages(true);
+                  setFetchPagesResult(null);
+                  try {
+                    const res = await fetch("/api/oauth/facebook/fetch-pages", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ brand: newAccount.brand }),
+                    });
+                    const data = await res.json();
+                    setFetchPagesResult({ success: data.success, message: data.message || data.error || "Ukjent resultat" });
+                    if (data.success) {
+                      // Refresh accounts list
+                      const accRes = await fetch("/api/social-accounts");
+                      const accData = await accRes.json();
+                      if (accData.accounts) setAccounts(accData.accounts);
+                    }
+                  } catch {
+                    setFetchPagesResult({ success: false, message: "Nettverksfeil" });
+                  } finally {
+                    setFetchingPages(false);
+                  }
+                }}
+                disabled={fetchingPages}
+                className="flex items-center gap-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left"
+              >
+                {fetchingPages ? <Loader2 size={24} className="text-emerald-400 animate-spin" /> : <RefreshCw size={24} className="text-emerald-400" />}
+                <div>
+                  <p className="text-sm font-medium text-white">Hent sider</p>
+                  <p className="text-xs text-slate-400">Oppdater Pages fra eksisterende token</p>
+                </div>
+              </button>
+            </div>
+            {fetchPagesResult && (
+              <div className={`mt-3 p-3 rounded-lg text-sm ${fetchPagesResult.success ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300" : "bg-red-500/10 border border-red-500/30 text-red-300"}`}>
+                {fetchPagesResult.success ? <CheckCircle2 size={14} className="inline mr-2" /> : <AlertCircle size={14} className="inline mr-2" />}
+                {fetchPagesResult.message}
+              </div>
+            )}
+            <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+              <p className="text-xs text-amber-300 font-medium mb-1">💡 Hvis "Hent sider" ikke finner sidene dine:</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Gå til <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Graph API Explorer</a></li>
+                <li>Velg appen din og generer en User Access Token med <code className="text-amber-300">pages_show_list</code>, <code className="text-amber-300">pages_manage_posts</code></li>
+                <li>Kjør: <code className="text-amber-300">GET /me/accounts</code> for å finne Page ID og Page Access Token</li>
+                <li>Legg inn Page ID og Page Access Token manuelt nedenfor</li>
+              </ol>
             </div>
           </CardContent>
         </Card>

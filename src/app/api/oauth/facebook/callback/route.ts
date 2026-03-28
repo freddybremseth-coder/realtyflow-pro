@@ -60,12 +60,13 @@ export async function GET(req: NextRequest) {
     const longLivedToken = longData.access_token || shortLivedToken;
     console.log("[OAuth Facebook] Long-lived token obtained:", !!longLivedToken);
 
-    // 3. Get user's Pages
+    // 3. Get user's Pages (with explicit fields to maximize response)
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedToken}`
+      `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,category,tasks&limit=100&access_token=${longLivedToken}`
     );
     const pagesData = await pagesRes.json();
     const pages = pagesData.data || [];
+    console.log("[OAuth Facebook] /me/accounts full response:", JSON.stringify(pagesData).substring(0, 1000));
     console.log("[OAuth Facebook] Pages found:", pages.length, pages.map((p: { name: string; id: string }) => `${p.name} (${p.id})`));
 
     // If no pages found via /me/accounts, try to get user info and save as personal account

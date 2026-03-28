@@ -16,6 +16,59 @@ interface PublishResult {
   error?: string;
 }
 
+// ─── Helper: Upload base64 image to Supabase Storage and get public URL ───
+async function uploadBase64ToStorage(base64DataUrl: string): Promise<string | null> {
+  try {
+    // Check if it's a base64 data URL
+    if (!base64DataUrl.startsWith("data:")) {
+      return base64DataUrl; // Already a regular URL
+    }
+
+    const supabase = getSupabase();
+    const match = base64DataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!match) return null;
+
+    const ext = match[1] === "jpeg" ? "jpg" : match[1];
+    const base64Data = match[2];
+    const buffer = Buffer.from(base64Data, "base64");
+    const fileName = `publish/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from("assets")
+      .upload(fileName, buffer, {
+        contentType: `image/${match[1]}`,
+        upsert: true,
+      });
+
+    if (error) {
+      console.error("[Upload] Storage upload failed:", error.message);
+      // Try creating the bucket if it doesn't exist
+      if (error.message?.includes("not found") || error.message?.includes("Bucket")) {
+        await supabase.storage.createBucket("assets", { public: true });
+        const { error: retryError } = await supabase.storage
+          .from("assets")
+          .upload(fileName, buffer, {
+            contentType: `image/${match[1]}`,
+            upsert: true,
+          });
+        if (retryError) {
+          console.error("[Upload] Retry failed:", retryError.message);
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+
+    const { data: urlData } = supabase.storage.from("assets").getPublicUrl(fileName);
+    console.log("[Upload] Public URL:", urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error("[Upload] Error:", err);
+    return null;
+  }
+}
+
 // ─── Platform Publishers ─────────────────────────────────────────
 
 async function publishToFacebook(
@@ -24,31 +77,65 @@ async function publishToFacebook(
   message: string,
   imageUrl?: string
 ): Promise<PublishResult> {
-  const endpoint = imageUrl
-    ? `https://graph.facebook.com/v19.0/${pageId}/photos`
-    : `https://graph.facebook.com/v19.0/${pageId}/feed`;
+  console.log(`[Publish Facebook] pageId=${pageId}, hasImage=${!!imageUrl}, messageLength=${message.length}`);
 
-  const params: Record<string, string> = { access_token: accessToken, message };
-  if (imageUrl) params.url = imageUrl;
+  // Facebook Graph API prefers form-urlencoded for posting
+  if (imageUrl) {
+    // Photo post
+    const endpoint = `https://graph.facebook.com/v19.0/${pageId}/photos`;
+    const params = new URLSearchParams({
+      access_token: accessToken,
+      message,
+      url: imageUrl,
+    });
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || JSON.stringify(err));
+    if (!res.ok) {
+      const err = await res.json();
+      console.error("[Publish Facebook] Photo error:", JSON.stringify(err));
+      throw new Error(err.error?.message || JSON.stringify(err));
+    }
+
+    const { id: postId } = await res.json();
+    return {
+      platform: "facebook",
+      success: true,
+      postId,
+      postUrl: `https://www.facebook.com/${postId}`,
+    };
+  } else {
+    // Text-only post
+    const endpoint = `https://graph.facebook.com/v19.0/${pageId}/feed`;
+    const params = new URLSearchParams({
+      access_token: accessToken,
+      message,
+    });
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error("[Publish Facebook] Feed error:", JSON.stringify(err));
+      throw new Error(err.error?.message || JSON.stringify(err));
+    }
+
+    const { id: postId } = await res.json();
+    return {
+      platform: "facebook",
+      success: true,
+      postId,
+      postUrl: `https://www.facebook.com/${postId}`,
+    };
   }
-
-  const { id: postId } = await res.json();
-  return {
-    platform: "facebook",
-    success: true,
-    postId,
-    postUrl: `https://www.facebook.com/${postId}`,
-  };
 }
 
 async function publishToInstagram(
@@ -58,20 +145,29 @@ async function publishToInstagram(
   imageUrl?: string
 ): Promise<PublishResult> {
   if (!imageUrl) {
-    return { platform: "instagram", success: false, error: "Instagram krever et bilde-URL" };
+    return { platform: "instagram", success: false, error: "Instagram krever et bilde-URL (ikke base64)" };
   }
 
+  // Instagram requires a publicly accessible URL
+  if (imageUrl.startsWith("data:")) {
+    return { platform: "instagram", success: false, error: "Instagram støtter ikke base64-bilder. Bildet må lastes opp til en server først." };
+  }
+
+  console.log(`[Publish Instagram] igAccountId=${igAccountId}, imageUrl=${imageUrl.substring(0, 80)}...`);
+
   // Step 1: Create media container
+  const createParams = new URLSearchParams({
+    image_url: imageUrl,
+    caption,
+    access_token: accessToken,
+  });
+
   const createRes = await fetch(
     `https://graph.facebook.com/v19.0/${igAccountId}/media`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        caption,
-        access_token: accessToken,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: createParams.toString(),
     }
   );
 
@@ -82,13 +178,21 @@ async function publishToInstagram(
 
   const { id: creationId } = await createRes.json();
 
-  // Step 2: Publish container
+  // Step 2: Wait a moment for processing
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
+  // Step 3: Publish container
+  const publishParams = new URLSearchParams({
+    creation_id: creationId,
+    access_token: accessToken,
+  });
+
   const publishRes = await fetch(
     `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creation_id: creationId, access_token: accessToken }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: publishParams.toString(),
     }
   );
 
@@ -187,7 +291,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log(`[Publish API] draft_id=${draft_id}, platforms=${platforms.join(",")}, brand=${brand_id}, hasImage=${!!image_url}, contentPreview=${content.substring(0, 100)}...`);
+
     const supabase = getSupabase();
+
+    // If we have a base64 image, upload it to get a public URL
+    let publicImageUrl: string | undefined;
+    if (image_url) {
+      const uploaded = await uploadBase64ToStorage(image_url);
+      if (uploaded) {
+        publicImageUrl = uploaded;
+        console.log("[Publish API] Image uploaded to:", publicImageUrl);
+      } else {
+        console.warn("[Publish API] Failed to upload image, continuing without image");
+      }
+    }
 
     // Get social accounts - fetch all active, then match by brand flexibly
     const { data: allAccounts, error: accError } = await supabase
@@ -203,6 +321,12 @@ export async function POST(req: NextRequest) {
     if (accError) {
       return NextResponse.json({ error: accError.message }, { status: 500 });
     }
+
+    console.log(`[Publish API] Found ${accounts.length} accounts for brand "${brand_id}":`,
+      accounts.map((a: { platform: string; account_name: string; account_id: string }) =>
+        `${a.platform}:${a.account_name}(${a.account_id})`
+      )
+    );
 
     const results: PublishResult[] = [];
 
@@ -227,7 +351,7 @@ export async function POST(req: NextRequest) {
               account.account_id,
               account.access_token,
               content,
-              image_url
+              publicImageUrl
             );
             break;
 
@@ -236,7 +360,7 @@ export async function POST(req: NextRequest) {
               account.account_id,
               account.access_token,
               content,
-              image_url
+              publicImageUrl
             );
             break;
 
@@ -245,7 +369,7 @@ export async function POST(req: NextRequest) {
               account.access_token,
               account.account_id,
               content,
-              image_url
+              publicImageUrl
             );
             break;
 
@@ -268,6 +392,7 @@ export async function POST(req: NextRequest) {
             .eq("id", draft_id);
         }
       } catch (err) {
+        console.error(`[Publish API] ${platform} error:`, err);
         results.push({
           platform,
           success: false,
