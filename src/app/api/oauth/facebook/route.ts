@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("scope", scope);
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("auth_type", "rerequest");
 
   return NextResponse.redirect(authUrl.toString());
 }
