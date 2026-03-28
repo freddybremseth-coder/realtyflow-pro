@@ -41,10 +41,12 @@ export async function GET(req: NextRequest) {
     const tokenData = await tokenRes.json();
 
     if (tokenData.error) {
+      console.error("[OAuth Facebook] Token exchange error:", tokenData.error);
       throw new Error(tokenData.error.message);
     }
 
     const shortLivedToken = tokenData.access_token;
+    console.log("[OAuth Facebook] Got short-lived token, exchanging for long-lived...");
 
     // 2. Exchange for long-lived token (60 days)
     const longUrl = new URL("https://graph.facebook.com/v19.0/oauth/access_token");
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
     const longRes = await fetch(longUrl.toString());
     const longData = await longRes.json();
     const longLivedToken = longData.access_token || shortLivedToken;
+    console.log("[OAuth Facebook] Long-lived token obtained:", !!longLivedToken);
 
     // 3. Get user's Pages
     const pagesRes = await fetch(
@@ -63,6 +66,22 @@ export async function GET(req: NextRequest) {
     );
     const pagesData = await pagesRes.json();
     const pages = pagesData.data || [];
+    console.log("[OAuth Facebook] Pages found:", pages.length, pages.map((p: { name: string; id: string }) => `${p.name} (${p.id})`));
+
+    // If no pages found via /me/accounts, try to get user info and save as personal account
+    if (pages.length === 0) {
+      console.log("[OAuth Facebook] No pages found, saving user account directly...");
+      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${longLivedToken}`);
+      const meData = await meRes.json();
+      if (meData.id) {
+        pages.push({
+          id: meData.id,
+          name: meData.name || "Facebook User",
+          access_token: longLivedToken,
+        });
+        console.log("[OAuth Facebook] Added user as fallback page:", meData.name);
+      }
+    }
 
     const supabase = getSupabase();
 
