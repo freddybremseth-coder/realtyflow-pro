@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// ─── Image Generation API using Gemini Imagen ─────────────────────
+// ─── Image Generation API using Pollinations.ai (free, no API key) ──
 // POST /api/image-generate
 // Body: { prompt, style?, aspectRatio?, brand? }
-// Returns: { imageUrl: string (base64 data URL), revisedPrompt: string }
+// Returns: { imageUrl: string, revisedPrompt: string }
 
 const STYLE_PROMPTS: Record<string, string> = {
-  photo: "Photorealistic, high-quality DSLR photography, natural lighting, sharp details",
+  photo: "Photorealistic, high-quality DSLR photography, natural lighting, sharp details, 8k",
   illustration: "Digital illustration, clean lines, vibrant colors, modern graphic design",
   "3d": "3D rendered, cinematic lighting, realistic materials, octane render quality",
   watercolor: "Watercolor painting style, soft edges, artistic brushstrokes, delicate colors",
@@ -15,23 +14,15 @@ const STYLE_PROMPTS: Record<string, string> = {
   luxury: "Luxury premium aesthetic, elegant, gold accents, sophisticated composition, high-end",
 };
 
-const ASPECT_RATIO_HINTS: Record<string, string> = {
-  "1:1": "square composition",
-  "16:9": "wide landscape composition, cinematic",
-  "9:16": "tall vertical composition, portrait orientation for mobile/stories",
-  "4:5": "slightly tall composition, ideal for Instagram feed",
+const ASPECT_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1344, height: 768 },
+  "9:16": { width: 768, height: 1344 },
+  "4:5": { width: 896, height: 1120 },
 };
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
     const {
       prompt,
@@ -49,70 +40,30 @@ export async function POST(req: NextRequest) {
 
     // Build enhanced prompt
     const styleHint = STYLE_PROMPTS[style] || STYLE_PROMPTS.photo;
-    const ratioHint = ASPECT_RATIO_HINTS[aspectRatio] || "";
     const brandHint = brand ? `For the brand "${brand}".` : "";
+    const enhancedPrompt = `${prompt}. ${styleHint}. ${brandHint} No text, letters, words, or watermarks in the image.`.trim();
 
-    const enhancedPrompt = `${prompt}. ${styleHint}. ${ratioHint}. ${brandHint} No text or watermarks in the image.`.trim();
+    const dims = ASPECT_DIMENSIONS[aspectRatio] || ASPECT_DIMENSIONS["1:1"];
 
-    // Use Imagen 3 via REST API directly
-    const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+    // Use Pollinations.ai - free image generation API
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=${dims.width}&height=${dims.height}&seed=${Date.now()}&nologo=true&enhance=true`;
 
-    const imagenRes = await fetch(imagenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        instances: [{ prompt: enhancedPrompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: aspectRatio === "16:9" ? "16:9" : aspectRatio === "9:16" ? "9:16" : aspectRatio === "4:5" ? "3:4" : "1:1",
-        },
-      }),
+    // Fetch the image and convert to base64
+    const imageRes = await fetch(pollinationsUrl, {
+      signal: AbortSignal.timeout(60000), // 60s timeout
     });
 
-    if (!imagenRes.ok) {
-      const errData = await imagenRes.json().catch(() => ({}));
-      console.error("[Image Generate] Imagen error:", errData);
-
-      // Fallback: try Gemini 2.0 Flash
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
-      let textResponse = "";
-
-      for (const modelName of models) {
-        try {
-          const model = genAI.getGenerativeModel({ model: modelName });
-          const result = await model.generateContent(
-            `Describe in vivid detail what this image would look like (do NOT generate an image, just describe it visually): ${enhancedPrompt}`
-          );
-          textResponse = result.response.text();
-          break;
-        } catch (e) {
-          console.error(`[Image Generate] ${modelName} failed:`, e);
-        }
-      }
-
+    if (!imageRes.ok) {
       return NextResponse.json(
-        {
-          error: `Bildegenerering feilet: ${((errData as Record<string, unknown>)?.error as Record<string, unknown>)?.message || "Imagen 3 ikke tilgjengelig"}. Prøv med en annen prompt.`,
-          textResponse,
-        },
+        { error: `Bildegenerering feilet (status ${imageRes.status}). Prøv igjen.` },
         { status: 422 }
       );
     }
 
-    const imagenData = await imagenRes.json();
-    const predictions = imagenData.predictions || [];
-
-    if (!predictions.length || !predictions[0].bytesBase64Encoded) {
-      return NextResponse.json(
-        { error: "Ingen bilde generert. Prøv med en annen prompt." },
-        { status: 422 }
-      );
-    }
-
-    const imageBase64 = predictions[0].bytesBase64Encoded;
-    const mimeType = predictions[0].mimeType || "image/png";
-    const imageUrl = `data:${mimeType};base64,${imageBase64}`;
+    const imageBuffer = await imageRes.arrayBuffer();
+    const base64 = Buffer.from(imageBuffer).toString("base64");
+    const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+    const imageUrl = `data:${contentType};base64,${base64}`;
 
     return NextResponse.json({
       imageUrl,
@@ -120,9 +71,17 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("[Image Generate] Error:", error);
+
+    if (error instanceof Error && error.name === "TimeoutError") {
+      return NextResponse.json(
+        { error: "Bildegenerering tok for lang tid. Prøv igjen med en enklere prompt." },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to generate image",
+        error: error instanceof Error ? error.message : "Kunne ikke generere bilde",
       },
       { status: 500 }
     );
