@@ -55,6 +55,7 @@ export class MarketingAgent extends BaseAgent {
       "create_campaign_strategy",
       "optimize_content_mix",
       "identify_opportunities",
+      "create_content",
     ];
   }
 
@@ -105,6 +106,9 @@ Når du gir svar, strukturer dem tydelig med handlingsbare punkter og konkrete f
             break;
           case "identify_opportunities":
             output = await this.identifyOpportunities(task.parameters ?? {});
+            break;
+          case "create_content":
+            output = await this.createContent(task.parameters ?? {});
             break;
           default:
             throw new Error(`Unknown task: ${task.name}`);
@@ -318,6 +322,41 @@ For hver mulighet, angi:
 - Implementeringskompleksitet (lav/middels/høy)
 - Estimert tid til resultater
 - Nødvendige ressurser`;
+
+    return this.callAI(prompt, this.getSystemPrompt());
+  }
+
+  private async createContent(
+    params: Record<string, unknown>
+  ): Promise<string> {
+    const topic = (params.topic as string) ?? "";
+    const platform = (params.platform as string) ?? "instagram,facebook";
+    const contentType = (params.content_type as string) ?? "post";
+    const tone = (params.tone as string) ?? "profesjonell";
+    const audience = (params.audience as string) ?? "";
+    const brand = (params.brand as string) ?? "";
+    const language = (params.language as string) ?? "no";
+
+    const platforms = platform.split(",").map((p: string) => p.trim());
+
+    const prompt = `Lag ${contentType}-innhold for følgende plattformer: ${platforms.join(", ")}
+
+TEMA/PROMPT:
+${topic}
+
+${audience ? `MÅLGRUPPE: ${audience}` : ""}
+${brand ? `MERKEVARE: ${brand}` : ""}
+TONE: ${tone}
+SPRÅK: ${language === "no" ? "Norsk" : "Engelsk"}
+
+Lag engasjerende, publiseringsklart innhold. For hver plattform, tilpass formatet:
+${platforms.includes("instagram") ? "- Instagram: Kort, visuell tekst med emojier og hashtags. Maks 2200 tegn." : ""}
+${platforms.includes("facebook") ? "- Facebook: Litt lengre, konverserende tone. Inkluder call-to-action." : ""}
+${platforms.includes("linkedin") ? "- LinkedIn: Profesjonell tone, innsiktsfull vinkling. Inkluder relevante hashtags." : ""}
+${platforms.includes("tiktok") ? "- TikTok: Kort, fengende hook. Trendy språk." : ""}
+
+Formater svaret tydelig med overskrift per plattform.
+Skriv innholdet direkte - ikke legg til meta-kommentarer eller forklaringer.`;
 
     return this.callAI(prompt, this.getSystemPrompt());
   }

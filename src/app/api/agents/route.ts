@@ -11,11 +11,34 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { agent, command, multiAgent, agents: agentNames } = body;
+    const { agent, command, tasks, multiAgent, agents: agentNames } = body;
 
     if (multiAgent && agentNames) {
       const result = await orchestrator.runMultiAgentTask(command, agentNames);
       return NextResponse.json(result);
+    }
+
+    // Support tasks array format (used by Content Studio)
+    if (agent && tasks && Array.isArray(tasks)) {
+      const agentInstance = orchestrator.getAgent(agent);
+      if (!agentInstance) {
+        return NextResponse.json(
+          { error: `Agent "${agent}" not found` },
+          { status: 400 }
+        );
+      }
+
+      const agentTasks = tasks.map((t: { type: string; parameters?: Record<string, unknown> }) => ({
+        id: crypto.randomUUID(),
+        name: t.type,
+        description: t.type,
+        priority: "medium" as const,
+        parameters: t.parameters || {},
+        status: "pending" as const,
+      }));
+
+      const results = await agentInstance.executeTasks(agentTasks);
+      return NextResponse.json({ results });
     }
 
     if (!agent || !command) {
