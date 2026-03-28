@@ -255,6 +255,15 @@ export default function ContentHubPage() {
     setEditingDraft(null);
   }, [editTitle, editDescription]);
 
+  // Normalize brand IDs for matching (zen-eco, zeneco, zen-eco-homes → zeneco)
+  const normalizeBrand = useCallback((b: string) => {
+    return b.toLowerCase().replace(/[-_.\s]/g, "").replace(/homes$/, "").replace(/pro$/, "");
+  }, []);
+
+  const brandMatches = useCallback((accountBrand: string, draftBrand: string) => {
+    return normalizeBrand(accountBrand) === normalizeBrand(draftBrand);
+  }, [normalizeBrand]);
+
   const fetchConnectedAccounts = useCallback(async () => {
     try {
       const res = await fetch("/api/social-accounts");
@@ -270,7 +279,7 @@ export default function ContentHubPage() {
     setPublishing(false);
     // Pre-select platforms that have accounts for this brand
     const brandAccounts = connectedAccounts
-      .filter((a) => a.brand === draft.brand_id)
+      .filter((a) => brandMatches(a.brand, draft.brand_id))
       .map((a) => a.platform);
     setPublishPlatforms(Array.from(new Set(brandAccounts)));
   }, [connectedAccounts]);
@@ -811,7 +820,7 @@ export default function ContentHubPage() {
                       { id: "linkedin", name: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500/20" },
                     ].map((p) => {
                       const isConnected = connectedAccounts.some(
-                        (a) => a.platform === p.id && a.brand === publishDraft.brand_id
+                        (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id)
                       );
                       const isSelected = publishPlatforms.includes(p.id);
                       return (
@@ -845,7 +854,7 @@ export default function ContentHubPage() {
                     })}
                   </div>
 
-                  {connectedAccounts.filter((a) => a.brand === publishDraft.brand_id).length === 0 && (
+                  {connectedAccounts.filter((a) => brandMatches(a.brand, publishDraft.brand_id)).length === 0 && (
                     <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                       <p className="text-xs text-yellow-300">
                         Ingen kontoer koblet til for dette brandet. Gå til{" "}

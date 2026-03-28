@@ -189,12 +189,16 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase();
 
-    // Get social accounts for this brand
-    const { data: accounts, error: accError } = await supabase
+    // Get social accounts - fetch all active, then match by brand flexibly
+    const { data: allAccounts, error: accError } = await supabase
       .from("social_accounts")
       .select("*")
-      .eq("brand", brand_id)
       .eq("is_active", true);
+
+    const normBrand = (b: string) => b.toLowerCase().replace(/[-_.\s]/g, "").replace(/homes$/, "").replace(/pro$/, "");
+    const accounts = (allAccounts || []).filter(
+      (a: { brand: string }) => normBrand(a.brand) === normBrand(brand_id)
+    );
 
     if (accError) {
       return NextResponse.json({ error: accError.message }, { status: 500 });
