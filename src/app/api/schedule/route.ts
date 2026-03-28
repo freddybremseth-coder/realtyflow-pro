@@ -1,0 +1,101 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
+/**
+ * POST /api/schedule - Schedule a draft for future publishing
+ * Body: { draft_id, platforms, scheduled_at, ai_recommended_time?, ai_timing_reasoning? }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { draft_id, platforms, scheduled_at, ai_recommended_time, ai_timing_reasoning } = body as {
+      draft_id: string;
+      platforms: string[];
+      scheduled_at: string;
+      ai_recommended_time?: string;
+      ai_timing_reasoning?: string;
+    };
+
+    if (!draft_id || !platforms?.length || !scheduled_at) {
+      return NextResponse.json(
+        { error: "Mangler draft_id, platforms eller scheduled_at" },
+        { status: 400 }
+      );
+    }
+
+    // Validate scheduled_at is in the future
+    const scheduledDate = new Date(scheduled_at);
+    if (scheduledDate <= new Date()) {
+      return NextResponse.json(
+        { error: "scheduled_at må være i fremtiden" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabase();
+
+    const { error } = await supabase
+      .from("content_publications")
+      .update({
+        status: "scheduled",
+        scheduled_at: scheduledDate.toISOString(),
+        scheduled_platforms: platforms,
+        ai_recommended_time: ai_recommended_time || null,
+        ai_timing_reasoning: ai_timing_reasoning || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", draft_id);
+
+    if (error) {
+      console.error("[Schedule API] Error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    console.log(`[Schedule API] Scheduled draft ${draft_id} for ${scheduledDate.toISOString()} on ${platforms.join(", ")}`);
+
+    return NextResponse.json({
+      success: true,
+      scheduled_at: scheduledDate.toISOString(),
+      platforms,
+    });
+  } catch (err) {
+    console.error("[Schedule API] Error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Planlegging feilet" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET /api/schedule - Get all scheduled posts
+ */
+export async function GET() {
+  try {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+      .from("content_publications")
+      .select("id, brand_id, title, description, content_type, ai_image_url, scheduled_at, scheduled_platforms, ai_timing_reasoning, status")
+      .eq("status", "scheduled")
+      .order("scheduled_at", { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ scheduled: data || [] });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Feil" },
+      { status: 500 }
+    );
+  }
+}

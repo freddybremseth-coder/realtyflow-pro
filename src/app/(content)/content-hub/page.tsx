@@ -68,6 +68,9 @@ interface DraftItem {
   ai_image_url: string | null;
   status: string;
   created_at: string;
+  scheduled_at?: string;
+  scheduled_platforms?: string[];
+  ai_timing_reasoning?: string;
 }
 
 function getSupabase() {
@@ -222,6 +225,15 @@ export default function ContentHubPage() {
   const [availableImages, setAvailableImages] = useState<DraftItem[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
 
+  // Scheduling state
+  const [scheduleMode, setScheduleMode] = useState<"now" | "schedule">("now");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [aiRecommendation, setAiRecommendation] = useState<{
+    recommendations?: { platform: string; recommended_datetime: string; confidence: number; reasoning: string }[];
+    general_advice?: string;
+  } | null>(null);
+  const [loadingAiTime, setLoadingAiTime] = useState(false);
+
   const fetchDrafts = useCallback(async () => {
     setDraftsLoading(true);
     try {
@@ -229,7 +241,7 @@ export default function ContentHubPage() {
       if (!supabase) return;
       const { data } = await supabase
         .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at, scheduled_platforms, ai_timing_reasoning")
         .in("status", ["draft", "scheduled"])
         .order("created_at", { ascending: false })
         .limit(50);
@@ -314,12 +326,47 @@ export default function ContentHubPage() {
     setPublishPlatforms([]);
     setPublishResults([]);
     setPublishing(false);
+    setScheduleMode("now");
+    setScheduledAt("");
+    setAiRecommendation(null);
     // Pre-select platforms that have accounts for this brand
     const brandAccounts = connectedAccounts
       .filter((a) => brandMatches(a.brand, draft.brand_id))
       .map((a) => a.platform);
     setPublishPlatforms(Array.from(new Set(brandAccounts)));
-  }, [connectedAccounts]);
+  }, [connectedAccounts, brandMatches]);
+
+  const fetchAiRecommendation = useCallback(async () => {
+    if (!publishDraft || publishPlatforms.length === 0) return;
+    setLoadingAiTime(true);
+    try {
+      const res = await fetch("/api/ai/recommend-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platforms: publishPlatforms,
+          brand_id: publishDraft.brand_id,
+          content_type: publishDraft.content_type,
+          content_preview: publishDraft.description?.substring(0, 200) || "",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiRecommendation(data);
+        // Auto-fill the first recommendation's time
+        if (data.recommendations?.[0]?.recommended_datetime) {
+          const dt = new Date(data.recommendations[0].recommended_datetime);
+          // Format for datetime-local input
+          const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+          setScheduledAt(local);
+        }
+      }
+    } catch (err) {
+      console.error("AI recommendation failed:", err);
+    } finally {
+      setLoadingAiTime(false);
+    }
+  }, [publishDraft, publishPlatforms]);
 
   const executePublish = useCallback(async () => {
     if (!publishDraft || publishPlatforms.length === 0) return;
@@ -327,31 +374,60 @@ export default function ContentHubPage() {
     setPublishResults([]);
 
     try {
-      const res = await fetch("/api/publish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draft_id: publishDraft.id,
-          platforms: publishPlatforms,
-          content: publishDraft.description || "",
-          title: publishDraft.title || "",
-          brand_id: publishDraft.brand_id,
-          image_url: publishDraft.ai_image_url || undefined,
-        }),
-      });
-      const data = await res.json();
-      setPublishResults(data.results || []);
+      if (scheduleMode === "schedule" && scheduledAt) {
+        // Schedule for future
+        const res = await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            draft_id: publishDraft.id,
+            platforms: publishPlatforms,
+            scheduled_at: new Date(scheduledAt).toISOString(),
+            ai_timing_reasoning: aiRecommendation?.recommendations?.[0]?.reasoning || null,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setPublishResults([{
+            platform: "system",
+            success: true,
+            postUrl: undefined,
+            error: undefined,
+          }]);
+          // Update draft in local state to show as scheduled
+          setDrafts((prev) => prev.map((d) =>
+            d.id === publishDraft.id ? { ...d, status: "scheduled" } : d
+          ));
+        } else {
+          setPublishResults([{ platform: "system", success: false, error: data.error }]);
+        }
+      } else {
+        // Publish now
+        const res = await fetch("/api/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            draft_id: publishDraft.id,
+            platforms: publishPlatforms,
+            content: publishDraft.description || "",
+            title: publishDraft.title || "",
+            brand_id: publishDraft.brand_id,
+            image_url: publishDraft.ai_image_url || undefined,
+          }),
+        });
+        const data = await res.json();
+        setPublishResults(data.results || []);
 
-      if (data.success) {
-        // Remove from drafts list
-        setDrafts((prev) => prev.filter((d) => d.id !== publishDraft.id));
+        if (data.success) {
+          setDrafts((prev) => prev.filter((d) => d.id !== publishDraft.id));
+        }
       }
     } catch (err) {
       setPublishResults([{ platform: "system", success: false, error: "Nettverksfeil" }]);
     } finally {
       setPublishing(false);
     }
-  }, [publishDraft, publishPlatforms]);
+  }, [publishDraft, publishPlatforms, scheduleMode, scheduledAt, aiRecommendation]);
 
   useEffect(() => {
     fetchDrafts();
@@ -736,6 +812,11 @@ export default function ContentHubPage() {
                                   <Sparkles size={10} className="mr-1" /> AI
                                 </Badge>
                               )}
+                              {draft.status === "scheduled" && (
+                                <Badge className="bg-purple-500/20 text-purple-300 text-xs">
+                                  <Clock size={10} className="mr-1" /> Planlagt
+                                </Badge>
+                              )}
                               <span className="text-xs text-zinc-500 ml-auto">
                                 {new Date(draft.created_at).toLocaleDateString("nb-NO")}
                               </span>
@@ -968,6 +1049,101 @@ export default function ContentHubPage() {
                   )}
                 </div>
 
+                {/* Schedule Mode Toggle */}
+                <div>
+                  <p className="text-sm font-medium mb-2">Tidspunkt:</p>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <button
+                      onClick={() => setScheduleMode("now")}
+                      className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                        scheduleMode === "now"
+                          ? "border-green-500 bg-green-500/10 text-green-300"
+                          : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                    >
+                      <Send size={16} className="mx-auto mb-1" />
+                      Publiser nå
+                    </button>
+                    <button
+                      onClick={() => setScheduleMode("schedule")}
+                      className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                        scheduleMode === "schedule"
+                          ? "border-purple-500 bg-purple-500/10 text-purple-300"
+                          : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                      }`}
+                    >
+                      <Clock size={16} className="mx-auto mb-1" />
+                      Planlegg
+                    </button>
+                  </div>
+
+                  {scheduleMode === "schedule" && (
+                    <div className="space-y-3 p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                      <div>
+                        <label className="text-xs text-zinc-400 mb-1 block">Velg dato og tid</label>
+                        <input
+                          type="datetime-local"
+                          value={scheduledAt}
+                          onChange={(e) => setScheduledAt(e.target.value)}
+                          min={new Date().toISOString().slice(0, 16)}
+                          className="w-full h-10 rounded-lg border border-zinc-600 bg-zinc-900 px-3 text-sm text-zinc-100"
+                        />
+                      </div>
+
+                      <button
+                        onClick={fetchAiRecommendation}
+                        disabled={loadingAiTime || publishPlatforms.length === 0}
+                        className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-sm font-medium transition-all disabled:opacity-50"
+                      >
+                        {loadingAiTime ? (
+                          <><Loader2 size={14} className="animate-spin" /> AI analyserer...</>
+                        ) : (
+                          <><Sparkles size={14} /> La AI velge beste tidspunkt</>
+                        )}
+                      </button>
+
+                      {aiRecommendation?.recommendations && (
+                        <div className="space-y-2">
+                          {aiRecommendation.recommendations.map((rec, i) => (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                const dt = new Date(rec.recommended_datetime);
+                                const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                                setScheduledAt(local);
+                              }}
+                              className="w-full text-left p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/20 hover:border-purple-500/40 transition-all"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-purple-300 capitalize">{rec.platform}</span>
+                                <span className="text-xs text-zinc-400">
+                                  {new Date(rec.recommended_datetime).toLocaleString("nb-NO", {
+                                    weekday: "short", day: "numeric", month: "short",
+                                    hour: "2-digit", minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-zinc-400 mt-1">{rec.reasoning}</p>
+                              <div className="flex items-center gap-1 mt-1">
+                                <div className="h-1.5 rounded-full bg-purple-500/30 flex-1">
+                                  <div
+                                    className="h-full rounded-full bg-purple-400"
+                                    style={{ width: `${(rec.confidence || 0.5) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-zinc-500">{Math.round((rec.confidence || 0.5) * 100)}%</span>
+                              </div>
+                            </button>
+                          ))}
+                          {aiRecommendation.general_advice && (
+                            <p className="text-xs text-zinc-500 italic">{aiRecommendation.general_advice}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Results */}
                 {publishResults.length > 0 && (
                   <div className="space-y-2">
@@ -979,14 +1155,18 @@ export default function ContentHubPage() {
                         }`}
                       >
                         {r.success ? <CheckCircle size={16} /> : <X size={16} />}
-                        <span className="capitalize font-medium">{r.platform}</span>
+                        <span className="capitalize font-medium">{r.platform === "system" ? (scheduleMode === "schedule" ? "Planlegging" : "System") : r.platform}</span>
                         {r.success ? (
                           r.postUrl ? (
                             <a href={r.postUrl} target="_blank" rel="noopener" className="ml-auto text-xs underline">
                               Se post →
                             </a>
                           ) : (
-                            <span className="ml-auto text-xs">Publisert!</span>
+                            <span className="ml-auto text-xs">
+                              {scheduleMode === "schedule"
+                                ? `Planlagt: ${scheduledAt ? new Date(scheduledAt).toLocaleString("nb-NO", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "OK"}`
+                                : "Publisert!"}
+                            </span>
                           )
                         ) : (
                           <span className="ml-auto text-xs">{r.error}</span>
@@ -1013,12 +1193,14 @@ export default function ContentHubPage() {
                         Avbryt
                       </Button>
                       <Button
-                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        className={`flex-1 ${scheduleMode === "schedule" ? "bg-purple-600 hover:bg-purple-700" : "bg-green-600 hover:bg-green-700"}`}
                         onClick={executePublish}
-                        disabled={publishing || publishPlatforms.length === 0}
+                        disabled={publishing || publishPlatforms.length === 0 || (scheduleMode === "schedule" && !scheduledAt)}
                       >
                         {publishing ? (
-                          <><Loader2 size={14} className="animate-spin mr-2" /> Publiserer...</>
+                          <><Loader2 size={14} className="animate-spin mr-2" /> {scheduleMode === "schedule" ? "Planlegger..." : "Publiserer..."}</>
+                        ) : scheduleMode === "schedule" ? (
+                          <><Clock size={14} className="mr-1" /> Planlegg til {publishPlatforms.length} plattform{publishPlatforms.length > 1 ? "er" : ""}</>
                         ) : (
                           <><Send size={14} className="mr-1" /> Publiser til {publishPlatforms.length} plattform{publishPlatforms.length > 1 ? "er" : ""}</>
                         )}

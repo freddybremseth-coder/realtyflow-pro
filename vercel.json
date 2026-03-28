@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/property-marketing",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/auto-publish",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/engagement-tracker",
+      "schedule": "0 12 * * *"
     }
   ]
 }
