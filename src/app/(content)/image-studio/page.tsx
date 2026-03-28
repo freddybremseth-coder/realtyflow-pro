@@ -4,8 +4,10 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2, Clock, Star, RefreshCw } from "lucide-react";
+import {
+  Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2,
+  Clock, Star, RefreshCw, AlertCircle,
+} from "lucide-react";
 
 interface GeneratedImage {
   id: string;
@@ -13,7 +15,8 @@ interface GeneratedImage {
   aspectRatio: string;
   style: string;
   brand: string;
-  result: string;
+  imageUrl: string | null;
+  textDescription: string;
   timestamp: string;
   starred: boolean;
 }
@@ -27,51 +30,87 @@ const styles = [
   { id: "luxury", label: "Luksus/Premium" },
 ];
 
-const brands = ["Soleada.no", "Zen Eco Homes", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinosos Ecolife", "Neural Beat"];
+const brands = [
+  "Soleada.no", "Zen Eco Homes", "ChatGenius.pro",
+  "Dona Anna", "Freddy Bremseth", "Pinosos Ecolife", "Neural Beat",
+];
 
-const mockResults = [
-  "En vakker villa med uendelighetsbasseng som speiler solnedgangen over Middelhavet. Hvite vegger, oliventrær i forgrunnen, og en blåaktig himmel med rosa skyer. Perfekt for Instagram-post med luksusfølelse.",
-  "Moderne kjøkken i åpen planløsning med marmorbenkeplater, integrerte hvitevarer fra Siemens, og store vinduer med utsikt til hagen. Varmt lys fra pendellamper over kjøkkenøya.",
-  "Drone-bilde over en eco-vennlig boligutvikling i Pinosos med solcellepaneler på takene, grønne hager, og fjellene i bakgrunnen. Bærekraftig og naturlig følelse.",
-  "Nærbilde av premium olivenolje som helles fra en designflaske med Dona Anna-etiketten. Rustikt trebord, friske oliven og urter rundt. Myk, gylden belysning.",
-  "Abstrakt EDM-inspirert bakgrunn med neonfarger, geometriske former og lysbølger. Futuristisk, energisk stemning for Neural Beat musikkvideo-thumbnail.",
+const ASPECT_RATIOS = [
+  { id: "1:1", label: "1:1", desc: "Instagram" },
+  { id: "16:9", label: "16:9", desc: "Facebook/LinkedIn" },
+  { id: "9:16", label: "9:16", desc: "Stories/Reels" },
+  { id: "4:5", label: "4:5", desc: "Instagram Feed" },
 ];
 
 export default function ImageStudioPage() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [style, setStyle] = useState("photo");
   const [brand, setBrand] = useState("Soleada.no");
-  const [history, setHistory] = useState<GeneratedImage[]>([
-    { id: "1", prompt: "Luxury villa with infinity pool overlooking Mediterranean sea at sunset", aspectRatio: "16:9", style: "photo", brand: "Soleada.no", result: mockResults[0], timestamp: "2026-03-20 09:15", starred: true },
-    { id: "2", prompt: "Modern open-plan kitchen with marble countertops", aspectRatio: "1:1", style: "photo", brand: "Zen Eco Homes", result: mockResults[1], timestamp: "2026-03-19 14:30", starred: false },
-    { id: "3", prompt: "Aerial view of eco-friendly housing development in Pinosos", aspectRatio: "16:9", style: "photo", brand: "Pinosos Ecolife", result: mockResults[2], timestamp: "2026-03-18 11:00", starred: true },
-  ]);
+  const [history, setHistory] = useState<GeneratedImage[]>([]);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!prompt.trim()) return;
     setLoading(true);
-    setTimeout(() => {
-      const result = mockResults[Math.floor(Math.random() * mockResults.length)];
+    setError("");
+
+    try {
+      const res = await fetch("/api/image-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, style, aspectRatio, brand }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Kunne ikke generere bilde");
+        // Still save as text-only result if we got a text response
+        if (data.textResponse) {
+          const newImage: GeneratedImage = {
+            id: `img-${Date.now()}`,
+            prompt,
+            aspectRatio,
+            style,
+            brand,
+            imageUrl: null,
+            textDescription: data.textResponse,
+            timestamp: new Date().toLocaleString("nb-NO"),
+            starred: false,
+          };
+          setHistory((prev) => [newImage, ...prev]);
+        }
+        return;
+      }
+
       const newImage: GeneratedImage = {
         id: `img-${Date.now()}`,
         prompt,
         aspectRatio,
         style,
         brand,
-        result,
-        timestamp: new Date().toLocaleString("no-NO"),
+        imageUrl: data.imageUrl,
+        textDescription: data.textResponse || data.revisedPrompt || "",
+        timestamp: new Date().toLocaleString("nb-NO"),
         starred: false,
       };
+
       setHistory((prev) => [newImage, ...prev]);
       setPrompt("");
+    } catch (err) {
+      console.error("Image generation failed:", err);
+      setError("Kunne ikke nå bildegenereringstjenesten. Prøv igjen.");
+    } finally {
       setLoading(false);
-    }, 2000);
+    }
   };
 
   const toggleStar = (id: string) => {
-    setHistory((prev) => prev.map((img) => (img.id === id ? { ...img, starred: !img.starred } : img)));
+    setHistory((prev) =>
+      prev.map((img) => (img.id === id ? { ...img, starred: !img.starred } : img))
+    );
   };
 
   const deleteImage = (id: string) => {
@@ -82,11 +121,13 @@ export default function ImageStudioPage() {
     navigator.clipboard.writeText(text);
   };
 
-  const aspectRatioSizes: Record<string, string> = {
-    "1:1": "aspect-square",
-    "16:9": "aspect-video",
-    "9:16": "aspect-[9/16]",
-    "4:5": "aspect-[4/5]",
+  const downloadImage = (imageUrl: string, filename: string) => {
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -96,7 +137,9 @@ export default function ImageStudioPage() {
           <ImageIcon className="text-primary-400" size={28} />
           Bilde Studio
         </h1>
-        <p className="text-sm text-slate-400 mt-1">AI-drevet bildegenerering for markedsføring og innhold</p>
+        <p className="text-sm text-slate-400 mt-1">
+          AI-drevet bildegenerering for markedsføring og sosiale medier
+        </p>
       </div>
 
       {/* Stats */}
@@ -104,7 +147,7 @@ export default function ImageStudioPage() {
         {[
           { label: "Totalt generert", value: history.length, color: "text-primary-400" },
           { label: "Favoritter", value: history.filter((i) => i.starred).length, color: "text-amber-400" },
-          { label: "Denne uken", value: history.filter((i) => i.timestamp.includes("2026-03-")).length, color: "text-emerald-400" },
+          { label: "Med bilde", value: history.filter((i) => i.imageUrl).length, color: "text-emerald-400" },
           { label: "Brands brukt", value: new Set(history.map((i) => i.brand)).size, color: "text-purple-400" },
         ].map((stat) => (
           <Card key={stat.label}>
@@ -126,12 +169,14 @@ export default function ImageStudioPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-slate-300 mb-1.5 block">Beskriv bildet</label>
+            <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+              Beskriv bildet du vil generere
+            </label>
             <textarea
-              placeholder="Beskriv bildet du vil generere... F.eks. 'Luksus villa med havutsikt, solnedgang, moderne arkitektur'"
+              placeholder="F.eks. 'Luksus villa med infinity pool, solnedgang over Middelhavet, moderne arkitektur, drone-perspektiv'"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none"
+              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
             />
           </div>
 
@@ -139,20 +184,24 @@ export default function ImageStudioPage() {
             <div>
               <label className="text-xs font-medium text-slate-300 mb-1.5 block">Format</label>
               <div className="flex flex-wrap gap-2">
-                {["1:1", "16:9", "9:16", "4:5"].map((ratio) => (
+                {ASPECT_RATIOS.map((ratio) => (
                   <button
-                    key={ratio}
-                    onClick={() => setAspectRatio(ratio)}
+                    key={ratio.id}
+                    onClick={() => setAspectRatio(ratio.id)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      aspectRatio === ratio
+                      aspectRatio === ratio.id
                         ? "bg-primary-500/20 text-primary-300 border border-primary-500/30"
-                        : "bg-slate-700/50 text-slate-400 border border-slate-600"
+                        : "bg-slate-700/50 text-slate-400 border border-slate-600 hover:border-slate-500"
                     }`}
+                    title={ratio.desc}
                   >
-                    {ratio}
+                    {ratio.label}
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {ASPECT_RATIOS.find((r) => r.id === aspectRatio)?.desc}
+              </p>
             </div>
 
             <div>
@@ -182,74 +231,133 @@ export default function ImageStudioPage() {
             </div>
           </div>
 
-          <Button onClick={handleGenerate} disabled={loading || !prompt.trim()} className="w-full sm:w-auto">
+          {error && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+              <AlertCircle size={16} className="text-red-400 shrink-0" />
+              <p className="text-sm text-red-300">{error}</p>
+            </div>
+          )}
+
+          <Button
+            onClick={handleGenerate}
+            disabled={loading || !prompt.trim()}
+            className="w-full sm:w-auto bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+          >
             {loading ? (
               <Loader2 size={16} className="mr-2 animate-spin" />
             ) : (
               <Wand2 size={16} className="mr-2" />
             )}
-            {loading ? "Genererer..." : "Generer bilde"}
+            {loading ? "Genererer bilde..." : "Generer bilde"}
           </Button>
+
+          {loading && (
+            <p className="text-xs text-slate-500">
+              Bildegenerering kan ta 10-30 sekunder...
+            </p>
+          )}
         </CardContent>
       </Card>
 
       {/* History */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Clock size={18} className="text-slate-400" />
-          Genereringshistorikk ({history.length})
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {history.map((img) => (
-            <Card key={img.id}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="outline">{img.brand}</Badge>
-                    <Badge variant="secondary" className="text-[10px]">{img.aspectRatio}</Badge>
-                    <Badge variant="secondary" className="text-[10px] capitalize">
-                      {styles.find((s) => s.id === img.style)?.label || img.style}
-                    </Badge>
+      {history.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Clock size={18} className="text-slate-400" />
+            Genererte bilder ({history.length})
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {history.map((img) => (
+              <Card key={img.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline">{img.brand}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{img.aspectRatio}</Badge>
+                      <Badge variant="secondary" className="text-[10px] capitalize">
+                        {styles.find((s) => s.id === img.style)?.label || img.style}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => toggleStar(img.id)} className="p-1 hover:bg-slate-700 rounded">
+                        <Star size={14} className={img.starred ? "text-amber-400 fill-amber-400" : "text-slate-500"} />
+                      </button>
+                      <button onClick={() => deleteImage(img.id)} className="p-1 hover:bg-slate-700 rounded">
+                        <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => toggleStar(img.id)} className="p-1 hover:bg-slate-700 rounded">
-                      <Star size={14} className={img.starred ? "text-amber-400 fill-amber-400" : "text-slate-500"} />
-                    </button>
-                    <button onClick={() => deleteImage(img.id)} className="p-1 hover:bg-slate-700 rounded">
-                      <Trash2 size={14} className="text-slate-500 hover:text-red-400" />
-                    </button>
-                  </div>
-                </div>
 
-                {/* Mock image placeholder */}
-                <div className={`bg-gradient-to-br from-slate-700 to-slate-800 rounded-lg mb-3 flex items-center justify-center ${
-                  img.aspectRatio === "16:9" ? "aspect-video" : img.aspectRatio === "9:16" ? "aspect-[9/16] max-h-48" : img.aspectRatio === "4:5" ? "aspect-[4/5] max-h-48" : "aspect-square max-h-48"
-                }`}>
-                  <div className="text-center p-4">
-                    <ImageIcon size={32} className="text-slate-500 mx-auto mb-2" />
-                    <p className="text-[10px] text-slate-500">AI-generert bilde</p>
-                  </div>
-                </div>
+                  {/* Image or placeholder */}
+                  {img.imageUrl ? (
+                    <div className="rounded-lg overflow-hidden mb-3 bg-slate-800">
+                      <img
+                        src={img.imageUrl}
+                        alt={img.prompt}
+                        className="w-full h-auto object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className={`bg-gradient-to-br from-slate-700 to-slate-800 rounded-lg mb-3 flex items-center justify-center ${
+                      img.aspectRatio === "16:9" ? "aspect-video" :
+                      img.aspectRatio === "9:16" ? "aspect-[9/16] max-h-48" :
+                      img.aspectRatio === "4:5" ? "aspect-[4/5] max-h-48" :
+                      "aspect-square max-h-48"
+                    }`}>
+                      <div className="text-center p-4">
+                        <ImageIcon size={32} className="text-slate-500 mx-auto mb-2" />
+                        <p className="text-[10px] text-slate-500">Bilde ikke tilgjengelig</p>
+                      </div>
+                    </div>
+                  )}
 
-                <p className="text-xs text-slate-400 mb-2"><span className="text-slate-500">Prompt:</span> {img.prompt}</p>
-                <p className="text-sm text-slate-200 mb-3">{img.result}</p>
+                  <p className="text-xs text-slate-400 mb-2">
+                    <span className="text-slate-500">Prompt:</span> {img.prompt}
+                  </p>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-500">{img.timestamp}</span>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => copyToClipboard(img.result)}>
-                      <Copy size={12} className="mr-1" /> Kopier
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setPrompt(img.prompt)}>
-                      <RefreshCw size={12} className="mr-1" /> Gjenbruk
-                    </Button>
+                  {img.textDescription && (
+                    <p className="text-sm text-slate-300 mb-3">{img.textDescription}</p>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500">{img.timestamp}</span>
+                    <div className="flex gap-2">
+                      {img.imageUrl && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => downloadImage(img.imageUrl!, `${img.brand}-${img.id}.png`)}
+                        >
+                          <Download size={12} className="mr-1" /> Last ned
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(img.prompt)}>
+                        <Copy size={12} className="mr-1" /> Kopier
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setPrompt(img.prompt)}>
+                        <RefreshCw size={12} className="mr-1" /> Gjenbruk
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {history.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <ImageIcon size={48} className="text-slate-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-slate-300 mb-2">Ingen bilder generert ennå</h3>
+            <p className="text-sm text-slate-500 max-w-md mx-auto">
+              Beskriv bildet du vil lage ovenfor, velg stil og format, og klikk &quot;Generer bilde&quot;.
+              Perfekt for Instagram, Facebook, LinkedIn og mer.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
