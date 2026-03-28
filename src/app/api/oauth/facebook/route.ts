@@ -19,9 +19,7 @@ export async function GET(req: NextRequest) {
     "pages_show_list",
     "pages_read_engagement",
     "pages_manage_posts",
-    "instagram_basic",
-    "instagram_content_publish",
-    "instagram_manage_comments",
+    "pages_read_user_content",
     "business_management",
   ].join(",");
 
