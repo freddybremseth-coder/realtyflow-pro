@@ -15,13 +15,10 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/api/oauth/facebook/callback`;
 
-  // Request permissions for pages + instagram
-  // Note: Advanced permissions (pages_manage_posts, instagram_content_publish, etc.)
-  // must be added in Meta Developer Dashboard → App Review → Permissions and Features
-  // before they can be requested in the OAuth flow.
   const scope = [
     "pages_show_list",
     "pages_read_engagement",
+    "pages_manage_posts",
   ].join(",");
 
   const state = JSON.stringify({ brand });
