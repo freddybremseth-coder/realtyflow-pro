@@ -65,6 +65,7 @@ interface DraftItem {
   description: string;
   tags: string[];
   ai_generated: boolean;
+  ai_image_url: string | null;
   status: string;
   created_at: string;
 }
@@ -223,7 +224,7 @@ export default function ContentHubPage() {
       if (!supabase) return;
       const { data } = await supabase
         .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, status, created_at")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at")
         .in("status", ["draft", "scheduled"])
         .order("created_at", { ascending: false })
         .limit(50);
@@ -719,6 +720,15 @@ export default function ContentHubPage() {
                             ) : (
                               <>
                                 <h4 className="font-medium text-sm mb-1 truncate">{draft.title || "Uten tittel"}</h4>
+                                {draft.ai_image_url && (
+                                  <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
+                                    <img
+                                      src={draft.ai_image_url}
+                                      alt={draft.title || "AI-generert bilde"}
+                                      className="w-full h-auto object-cover max-h-48"
+                                    />
+                                  </div>
+                                )}
                                 <p className="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
                                   {draft.description || "Ingen beskrivelse"}
                                 </p>

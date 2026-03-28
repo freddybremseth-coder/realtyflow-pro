@@ -64,6 +64,8 @@ export default function ContentStudioPage() {
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [savingToHub, setSavingToHub] = useState(false);
+  const [savedToHub, setSavedToHub] = useState(false);
 
   const currentBrand = BRANDS.find((b) => b.id === selectedBrand) ?? BRANDS[0];
 
@@ -145,13 +147,36 @@ export default function ContentStudioPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCreateAsPost = () => {
-    const params = new URLSearchParams({
-      content: generatedContent,
-      brand: currentBrand.name,
-      platforms: selectedPlatforms.join(","),
-    });
-    window.location.href = `/posts?${params.toString()}`;
+  const handleSaveToHub = async () => {
+    if (!generatedContent) return;
+    setSavingToHub(true);
+    setSavedToHub(false);
+    try {
+      const platformNames = selectedPlatforms.map(
+        (pid) => platforms.find((p) => p.id === pid)?.name ?? pid
+      );
+      const res = await fetch("/api/marketing-kit/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drafts: [{
+            brand_id: selectedBrand,
+            content_type: selectedContentType,
+            title: `${currentBrand.name} – ${selectedContentType} (${platformNames.join(", ")})`,
+            description: generatedContent,
+            tags: selectedPlatforms,
+          }],
+        }),
+      });
+      if (res.ok) {
+        setSavedToHub(true);
+        setTimeout(() => setSavedToHub(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to save to Content Hub:", err);
+    } finally {
+      setSavingToHub(false);
+    }
   };
 
   const loadFromHistory = (entry: HistoryEntry) => {
@@ -432,9 +457,19 @@ export default function ContentStudioPage() {
                         </>
                       )}
                     </Button>
-                    <Button size="sm" onClick={handleCreateAsPost} className="text-xs">
-                      <Send size={12} className="mr-1" />
-                      Opprett som innlegg
+                    <Button
+                      size="sm"
+                      onClick={handleSaveToHub}
+                      disabled={savingToHub}
+                      className={`text-xs ${savedToHub ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                    >
+                      {savingToHub ? (
+                        <><Loader2 size={12} className="mr-1 animate-spin" /> Lagrer...</>
+                      ) : savedToHub ? (
+                        <><CheckCircle2 size={12} className="mr-1" /> Sendt til Hub!</>
+                      ) : (
+                        <><Send size={12} className="mr-1" /> Send til Content Hub</>
+                      )}
                     </Button>
                   </div>
                 )}

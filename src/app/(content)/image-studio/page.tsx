@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2,
-  Clock, Star, RefreshCw, AlertCircle,
+  Clock, Star, RefreshCw, AlertCircle, Send, CheckCircle,
 } from "lucide-react";
 
 interface GeneratedImage {
@@ -50,6 +50,38 @@ export default function ImageStudioPage() {
   const [style, setStyle] = useState("photo");
   const [brand, setBrand] = useState("Soleada.no");
   const [history, setHistory] = useState<GeneratedImage[]>([]);
+  const [sendingToHub, setSendingToHub] = useState<string | null>(null);
+  const [sentToHub, setSentToHub] = useState<Set<string>>(new Set());
+
+  const sendToContentHub = async (img: GeneratedImage) => {
+    setSendingToHub(img.id);
+    try {
+      const brandId = brands.indexOf(img.brand) >= 0
+        ? img.brand.toLowerCase().replace(/[.\s]/g, "-")
+        : "soleada";
+      const res = await fetch("/api/marketing-kit/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drafts: [{
+            brand_id: brandId,
+            content_type: "image_post",
+            title: `AI-bilde: ${img.prompt.substring(0, 80)}`,
+            description: img.prompt,
+            tags: [img.style, img.aspectRatio],
+            ai_image_url: img.imageUrl,
+          }],
+        }),
+      });
+      if (res.ok) {
+        setSentToHub((prev) => new Set(prev).add(img.id));
+      }
+    } catch (err) {
+      console.error("Failed to send to Content Hub:", err);
+    } finally {
+      setSendingToHub(null);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -319,17 +351,33 @@ export default function ImageStudioPage() {
                     <p className="text-sm text-slate-300 mb-3">{img.textDescription}</p>
                   )}
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-[10px] text-slate-500">{img.timestamp}</span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {img.imageUrl && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => downloadImage(img.imageUrl!, `${img.brand}-${img.id}.png`)}
-                        >
-                          <Download size={12} className="mr-1" /> Last ned
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => downloadImage(img.imageUrl!, `${img.brand}-${img.id}.png`)}
+                          >
+                            <Download size={12} className="mr-1" /> Last ned
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={sendingToHub === img.id || sentToHub.has(img.id)}
+                            className={`text-xs ${sentToHub.has(img.id) ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                            onClick={() => sendToContentHub(img)}
+                          >
+                            {sendingToHub === img.id ? (
+                              <><Loader2 size={12} className="mr-1 animate-spin" /> Lagrer...</>
+                            ) : sentToHub.has(img.id) ? (
+                              <><CheckCircle size={12} className="mr-1" /> I Hub</>
+                            ) : (
+                              <><Send size={12} className="mr-1" /> Til Content Hub</>
+                            )}
+                          </Button>
+                        </>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => copyToClipboard(img.prompt)}>
                         <Copy size={12} className="mr-1" /> Kopier
