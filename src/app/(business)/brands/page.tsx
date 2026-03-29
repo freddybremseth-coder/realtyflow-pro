@@ -18,6 +18,7 @@ interface BrandSettings {
   facebook: string;
   linkedin: string;
   email: string;
+  emails: string[];
   imapServer: string;
   imapPort: string;
   apiKey: string;
@@ -45,6 +46,7 @@ const emptySettings: BrandSettings = {
   facebook: "",
   linkedin: "",
   email: "",
+  emails: [],
   imapServer: "",
   imapPort: "",
   apiKey: "",
@@ -90,6 +92,8 @@ export default function BrandsPage() {
     specialties: "",
   });
 
+  const [newEmailInput, setNewEmailInput] = useState("");
+
   const selectedBrand = brands.find((b) => b.id === selectedId) || null;
 
   const saveSettings = useCallback(async (brandId: string) => {
@@ -100,7 +104,18 @@ export default function BrandsPage() {
       const res = await fetch("/api/brands/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand_id: brandId, settings: brand.settings }),
+        body: JSON.stringify({
+          brand_id: brandId,
+          settings: {
+            ...brand.settings,
+            custom_name: brand.name,
+            website: brand.website,
+            description: brand.description,
+            tone: brand.tone,
+            target_audience: brand.target_audience,
+            specialties: brand.specialties,
+          },
+        }),
       });
       if (res.ok) {
         setSavedToast(true);
@@ -119,6 +134,38 @@ export default function BrandsPage() {
       prev.map((b) =>
         b.id === selectedId
           ? { ...b, settings: { ...b.settings, [field]: value } }
+          : b
+      )
+    );
+  };
+
+  const updateBrandField = (field: keyof BrandEntry, value: string | string[]) => {
+    if (!selectedId) return;
+    setBrands((prev) =>
+      prev.map((b) =>
+        b.id === selectedId ? { ...b, [field]: value } : b
+      )
+    );
+  };
+
+  const addEmail = () => {
+    if (!selectedId || !newEmailInput.trim()) return;
+    setBrands((prev) =>
+      prev.map((b) =>
+        b.id === selectedId
+          ? { ...b, settings: { ...b.settings, emails: [...(b.settings.emails || []), newEmailInput.trim()] } }
+          : b
+      )
+    );
+    setNewEmailInput("");
+  };
+
+  const removeEmail = (index: number) => {
+    if (!selectedId) return;
+    setBrands((prev) =>
+      prev.map((b) =>
+        b.id === selectedId
+          ? { ...b, settings: { ...b.settings, emails: (b.settings.emails || []).filter((_, i) => i !== index) } }
           : b
       )
     );
@@ -205,6 +252,11 @@ export default function BrandsPage() {
                   ? {
                       ...b,
                       name: s.custom_name || b.name,
+                      website: s.website || b.website,
+                      description: s.description || b.description,
+                      tone: s.tone || b.tone,
+                      target_audience: s.target_audience || b.target_audience,
+                      specialties: s.specialties || b.specialties,
                       settings: { ...emptySettings, ...s },
                     }
                   : b;
@@ -584,34 +636,90 @@ export default function BrandsPage() {
                 </Button>
               </div>
 
-              {/* Brand Info */}
-              <div className="mb-6 p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
-                <p className="text-sm text-slate-300 mb-2">
-                  {selectedBrand.description}
-                </p>
-                {selectedBrand.website && (
-                  <a
-                    href={selectedBrand.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 mb-1.5"
-                  >
-                    <Globe size={12} />
-                    {selectedBrand.website}
-                  </a>
-                )}
-                <p className="text-xs text-slate-400">
-                  Tone: {selectedBrand.tone}
-                </p>
-                <p className="text-xs text-slate-400">
-                  Målgruppe: {selectedBrand.target_audience}
-                </p>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {(selectedBrand.specialties || []).map((s) => (
-                    <Badge key={s} variant="outline" className="text-[10px]">
-                      {s}
-                    </Badge>
-                  ))}
+              {/* Brand Info - Editable */}
+              <div className="mb-6 p-4 rounded-lg bg-slate-900/50 border border-slate-700/30 space-y-3">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+                  <Palette size={16} className="text-primary-400" />
+                  Merkevareinformasjon
+                </h3>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Nettside</label>
+                  <Input
+                    value={selectedBrand.website || ""}
+                    onChange={(e) => updateBrandField("website", e.target.value)}
+                    placeholder="https://example.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Beskrivelse</label>
+                  <textarea
+                    value={selectedBrand.description || ""}
+                    onChange={(e) => updateBrandField("description", e.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 resize-none focus:border-primary-500 focus:outline-none h-16"
+                    placeholder="Kort beskrivelse av merkevaren"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Tone</label>
+                  <Input
+                    value={selectedBrand.tone || ""}
+                    onChange={(e) => updateBrandField("tone", e.target.value)}
+                    placeholder="profesjonell, varm, innovativ"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Målgruppe</label>
+                  <Input
+                    value={selectedBrand.target_audience || ""}
+                    onChange={(e) => updateBrandField("target_audience", e.target.value)}
+                    placeholder="Hvem er målgruppen?"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Spesialiteter (kommaseparert)</label>
+                  <Input
+                    value={(selectedBrand.specialties || []).join(", ")}
+                    onChange={(e) => updateBrandField("specialties", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
+                    placeholder="eiendom, luksus, costa blanca"
+                  />
+                </div>
+
+                {/* Emails */}
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">E-postadresser</label>
+                  <div className="space-y-1.5 mb-2">
+                    {(selectedBrand.settings.emails || []).map((email, i) => (
+                      <div key={i} className="flex items-center gap-2 p-1.5 rounded-md bg-slate-800 border border-slate-700">
+                        <Mail size={12} className="text-slate-500 shrink-0" />
+                        <span className="text-xs text-slate-300 flex-1 truncate">{email}</span>
+                        <button
+                          onClick={() => removeEmail(i)}
+                          className="text-red-400/60 hover:text-red-400 shrink-0"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newEmailInput}
+                      onChange={(e) => setNewEmailInput(e.target.value)}
+                      placeholder="ny@epost.no"
+                      className="flex-1"
+                      onKeyDown={(e) => e.key === "Enter" && addEmail()}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={addEmail}
+                      disabled={!newEmailInput.trim()}
+                    >
+                      <Plus size={14} className="mr-1" />
+                      Legg til
+                    </Button>
+                  </div>
                 </div>
               </div>
 

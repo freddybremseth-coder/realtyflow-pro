@@ -35,7 +35,7 @@ const initialVideos: Video[] = [
     title: "Villa med havutsikt i Altea - Virtuell tur | Soleada Eiendom",
     description: "Oppdag denne fantastiske villaen med panoramisk havutsikt i Altea, Costa Blanca.",
     channel: "Soleada",
-    brand: "Soleada.no",
+    brand: "Zen Eco Homes",
     views: 12450,
     likes: 342,
     comments: 56,
@@ -134,7 +134,7 @@ const initialVideos: Video[] = [
   },
 ];
 
-const brandOptions = ["Soleada.no", "Zen Eco Homes", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat"];
+const brandOptions = ["Zen Eco Homes", "Soleada.no", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat"];
 
 const statusConfig = {
   published: { label: "Publisert", variant: "success" as const },
@@ -151,7 +151,7 @@ export default function YouTubeStudioPage() {
     title: "",
     description: "",
     tags: "",
-    brand: "Soleada.no",
+    brand: "Zen Eco Homes",
     visibility: "public" as "public" | "unlisted" | "private",
   });
 
@@ -195,7 +195,7 @@ export default function YouTubeStudioPage() {
       visibility: newVideo.visibility,
     };
     setVideos((prev) => [video, ...prev]);
-    setNewVideo({ title: "", description: "", tags: "", brand: "Soleada.no", visibility: "public" });
+    setNewVideo({ title: "", description: "", tags: "", brand: "Zen Eco Homes", visibility: "public" });
     setShowUpload(false);
   };
 

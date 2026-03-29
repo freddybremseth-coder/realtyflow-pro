@@ -40,7 +40,7 @@ export const BRANDS: Brand[] = [
     type: "agriculture",
     description: "Premium olive oil and sustainable agriculture",
     color: "#f59e0b",
-    website: "https://donaanna.es",
+    website: "https://donaanna.com",
     tone: "authentic, artisanal, Mediterranean",
     target_audience: "Gourmet food enthusiasts and health-conscious consumers",
     specialties: ["extra virgin olive oil", "organic farming", "farm-to-table"],

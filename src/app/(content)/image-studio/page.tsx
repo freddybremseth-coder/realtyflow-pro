@@ -31,7 +31,7 @@ const styles = [
 ];
 
 const brands = [
-  "Soleada.no", "Zen Eco Homes", "ChatGenius.pro",
+  "Zen Eco Homes", "Soleada.no", "ChatGenius.pro",
   "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat",
 ];
 

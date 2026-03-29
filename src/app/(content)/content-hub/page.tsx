@@ -250,17 +250,21 @@ export default function ContentHubPage() {
     return normalizeBrand(accountBrand) === normalizeBrand(draftBrand);
   }, [normalizeBrand]);
 
-  const fetchAvailableImages = useCallback(async () => {
+  const fetchAvailableImages = useCallback(async (brandId?: string) => {
     setLoadingImages(true);
     try {
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data } = await supabase
+      let query = supabase
         .from("content_publications")
         .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at")
         .not("ai_image_url", "is", null)
         .order("created_at", { ascending: false })
         .limit(50);
+      if (brandId) {
+        query = query.eq("brand_id", brandId);
+      }
+      const { data } = await query;
       if (data) setAvailableImages(data);
     } catch (err) {
       console.error("Failed to fetch images:", err);
@@ -430,6 +434,11 @@ export default function ContentHubPage() {
   // Stats counters (from all statuses)
   const [statsCount, setStatsCount] = useState({ total: 0, published: 0, failed: 0, scheduled: 0 });
 
+  // Analytics state - real data from Supabase
+  const [brandPostCounts, setBrandPostCounts] = useState<Record<string, number>>({});
+  const [topContent, setTopContent] = useState<{title: string; brand: string; platform: string; status: string; created_at: string}[]>([]);
+  const [platformPostCounts, setPlatformPostCounts] = useState<Record<string, number>>({});
+
   const fetchCalendarEvents = useCallback(async () => {
     try {
       const supabase = getSupabase();
@@ -483,6 +492,45 @@ export default function ContentHubPage() {
         failed: failedCount || 0,
         scheduled: scheduledCount || 0,
       });
+
+      // Fetch per-brand post counts
+      const { data: allPubs } = await supabase
+        .from("content_publications")
+        .select("brand_id, tags, status");
+      if (allPubs) {
+        const brandCounts: Record<string, number> = {};
+        const platCounts: Record<string, number> = {};
+        for (const pub of allPubs) {
+          brandCounts[pub.brand_id] = (brandCounts[pub.brand_id] || 0) + 1;
+          if (pub.tags && Array.isArray(pub.tags)) {
+            for (const tag of pub.tags) {
+              const t = tag.toLowerCase();
+              if (["youtube","instagram","facebook","linkedin","tiktok","pinterest"].includes(t)) {
+                platCounts[t] = (platCounts[t] || 0) + 1;
+              }
+            }
+          }
+        }
+        setBrandPostCounts(brandCounts);
+        setPlatformPostCounts(platCounts);
+      }
+
+      // Fetch top content (most recent published)
+      const { data: topPubs } = await supabase
+        .from("content_publications")
+        .select("title, brand_id, tags, status, created_at")
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (topPubs) {
+        setTopContent(topPubs.map((p) => ({
+          title: p.title || "Uten tittel",
+          brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id,
+          platform: (p.tags && p.tags[0]) || "post",
+          status: p.status,
+          created_at: p.created_at,
+        })));
+      }
     } catch (err) {
       console.error("Failed to fetch calendar events:", err);
     }
@@ -951,7 +999,7 @@ export default function ContentHubPage() {
                                     className="text-xs"
                                     onClick={() => {
                                       setImagePickerDraft(draft.id);
-                                      fetchAvailableImages();
+                                      fetchAvailableImages(draft.brand_id);
                                     }}
                                   >
                                     <Image size={12} className="mr-1" /> {draft.ai_image_url ? "Bytt bilde" : "Velg bilde"}
@@ -993,6 +1041,30 @@ export default function ContentHubPage() {
                                     onClick={() => updateDraftStatus(draft.id, "archived")}
                                   >
                                     <Trash2 size={12} className="mr-1" /> Forkast
+                                  </Button>
+                                </>
+                              )}
+                              {draft.status === "scheduled" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => {
+                                      setEditingDraft(draft.id);
+                                      setEditTitle(draft.title || "");
+                                      setEditDescription(draft.description || "");
+                                    }}
+                                  >
+                                    <Edit3 size={12} className="mr-1" /> Rediger
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-xs text-red-400 hover:text-red-300"
+                                    onClick={() => updateDraftStatus(draft.id, "archived")}
+                                  >
+                                    <Trash2 size={12} className="mr-1" /> Slett
                                   </Button>
                                 </>
                               )}
@@ -1130,6 +1202,9 @@ export default function ContentHubPage() {
                       { id: "facebook", name: "Facebook", icon: Globe, color: "text-blue-400", bg: "bg-blue-500/20" },
                       { id: "instagram", name: "Instagram", icon: Camera, color: "text-pink-400", bg: "bg-pink-500/20" },
                       { id: "linkedin", name: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500/20" },
+                      { id: "youtube", name: "YouTube", icon: Youtube, color: "text-red-400", bg: "bg-red-500/20" },
+                      { id: "pinterest", name: "Pinterest", icon: Target, color: "text-rose-400", bg: "bg-rose-500/20" },
+                      { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500/20" },
                     ].map((p) => {
                       const isConnected = connectedAccounts.some(
                         (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id)
@@ -1942,58 +2017,61 @@ export default function ContentHubPage() {
           <div className="space-y-6">
             <h2 className="text-lg font-semibold text-white">Ytelsesdashboard</h2>
 
-            {/* Overall Stats */}
+            {/* Overall Stats - real data */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-4 text-center">
                   <Eye size={20} className="mx-auto text-primary-400 mb-2" />
-                  <p className="text-2xl font-bold text-white">312.8K</p>
-                  <p className="text-xs text-slate-400">Total rekkevidde</p>
-                  <p className="text-xs text-emerald-400 mt-1">+24% siste 30 dager</p>
+                  <p className="text-2xl font-bold text-white">{statsCount.total}</p>
+                  <p className="text-xs text-slate-400">Totalt innhold</p>
+                  <p className="text-xs text-slate-500 mt-1">Alle statuser</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
                   <ThumbsUp size={20} className="mx-auto text-pink-400 mb-2" />
-                  <p className="text-2xl font-bold text-white">18.4K</p>
-                  <p className="text-xs text-slate-400">Totalt engasjement</p>
-                  <p className="text-xs text-emerald-400 mt-1">+15% siste 30 dager</p>
+                  <p className="text-2xl font-bold text-white">{statsCount.published}</p>
+                  <p className="text-xs text-slate-400">Publisert</p>
+                  <p className="text-xs text-emerald-400 mt-1">Totalt publisert</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
                   <Share2 size={20} className="mx-auto text-sky-400 mb-2" />
-                  <p className="text-2xl font-bold text-white">2.1K</p>
-                  <p className="text-xs text-slate-400">Delinger</p>
-                  <p className="text-xs text-emerald-400 mt-1">+31% siste 30 dager</p>
+                  <p className="text-2xl font-bold text-white">{statsCount.scheduled}</p>
+                  <p className="text-xs text-slate-400">Planlagt</p>
+                  <p className="text-xs text-amber-400 mt-1">Venter pa publisering</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
                   <TrendingUp size={20} className="mx-auto text-emerald-400 mb-2" />
-                  <p className="text-2xl font-bold text-white">87</p>
-                  <p className="text-xs text-slate-400">Konverteringer</p>
-                  <p className="text-xs text-emerald-400 mt-1">+42% siste 30 dager</p>
+                  <p className="text-2xl font-bold text-white">{drafts.filter((d) => d.status === "draft").length}</p>
+                  <p className="text-xs text-slate-400">Utkast</p>
+                  <p className="text-xs text-slate-500 mt-1">Klare til publisering</p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Per Platform Breakdown */}
+            {/* Per Platform Breakdown - real counts */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Ytelse per plattform</CardTitle>
+                <CardTitle className="text-base">Innlegg per plattform</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {[
-                    { platform: "YouTube", icon: Youtube, color: "text-red-400", bg: "bg-red-500", reach: "128.2K", engagement: "4.8%", growth: "+22%", width: 85 },
-                    { platform: "Instagram", icon: Camera, color: "text-pink-400", bg: "bg-pink-500", reach: "89.4K", engagement: "5.1%", growth: "+18%", width: 60 },
-                    { platform: "Facebook", icon: Globe, color: "text-blue-400", bg: "bg-blue-500", reach: "52.1K", engagement: "3.2%", growth: "+12%", width: 35 },
-                    { platform: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500", reach: "28.7K", engagement: "6.3%", growth: "+35%", width: 20 },
-                    { platform: "TikTok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500", reach: "12.1K", engagement: "8.7%", growth: "+156%", width: 10 },
-                    { platform: "Pinterest", icon: Target, color: "text-rose-400", bg: "bg-rose-500", reach: "2.3K", engagement: "3.9%", growth: "+45%", width: 3 },
+                    { platform: "YouTube", key: "youtube", icon: Youtube, color: "text-red-400", bg: "bg-red-500" },
+                    { platform: "Instagram", key: "instagram", icon: Camera, color: "text-pink-400", bg: "bg-pink-500" },
+                    { platform: "Facebook", key: "facebook", icon: Globe, color: "text-blue-400", bg: "bg-blue-500" },
+                    { platform: "LinkedIn", key: "linkedin", icon: Link, color: "text-sky-400", bg: "bg-sky-500" },
+                    { platform: "TikTok", key: "tiktok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500" },
+                    { platform: "Pinterest", key: "pinterest", icon: Target, color: "text-rose-400", bg: "bg-rose-500" },
                   ].map((item) => {
                     const Icon = item.icon;
+                    const count = platformPostCounts[item.key] || 0;
+                    const maxCount = Math.max(1, ...Object.values(platformPostCounts));
+                    const width = maxCount > 0 ? Math.max(2, (count / maxCount) * 100) : 2;
                     return (
                       <div key={item.platform} className="flex items-center gap-4">
                         <div className="flex items-center gap-2 w-28">
@@ -2002,12 +2080,10 @@ export default function ContentHubPage() {
                         </div>
                         <div className="flex-1">
                           <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
-                            <div className={`h-full rounded-full ${item.bg}`} style={{ width: `${item.width}%` }} />
+                            <div className={`h-full rounded-full ${item.bg}`} style={{ width: `${count > 0 ? width : 0}%` }} />
                           </div>
                         </div>
-                        <span className="text-sm text-slate-200 w-16 text-right">{item.reach}</span>
-                        <span className="text-xs text-slate-400 w-12 text-right">{item.engagement}</span>
-                        <span className="text-xs text-emerald-400 w-14 text-right">{item.growth}</span>
+                        <span className="text-sm text-slate-200 w-16 text-right">{count} innlegg</span>
                       </div>
                     );
                   })}
@@ -2015,35 +2091,25 @@ export default function ContentHubPage() {
               </CardContent>
             </Card>
 
-            {/* Per Brand Breakdown */}
+            {/* Per Brand Breakdown - real data */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Ytelse per merkevare</CardTitle>
+                <CardTitle className="text-base">Innlegg per merkevare</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {BRANDS.map((brand) => {
-                    const mockReach = Math.floor(Math.random() * 50000 + 5000);
-                    const mockEng = (Math.random() * 5 + 2).toFixed(1);
-                    const mockPosts = Math.floor(Math.random() * 20 + 5);
+                    const postCount = brandPostCounts[brand.id] || 0;
                     return (
                       <div key={brand.id} className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/30">
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: brand.color }} />
                           <span className="text-sm font-medium text-slate-200">{brand.name}</span>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="grid grid-cols-1 gap-2 text-center">
                           <div>
-                            <p className="text-sm font-bold text-white">{(mockReach / 1000).toFixed(1)}K</p>
-                            <p className="text-[10px] text-slate-500">Rekkevidde</p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-white">{mockEng}%</p>
-                            <p className="text-[10px] text-slate-500">Engasjement</p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-white">{mockPosts}</p>
-                            <p className="text-[10px] text-slate-500">Innlegg</p>
+                            <p className="text-sm font-bold text-white">{postCount}</p>
+                            <p className="text-[10px] text-slate-500">Totalt innlegg</p>
                           </div>
                         </div>
                       </div>
@@ -2053,37 +2119,36 @@ export default function ContentHubPage() {
               </CardContent>
             </Card>
 
-            {/* Top Performing Content */}
+            {/* Top Content - real from database */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Topp-innhold</CardTitle>
+                <CardTitle className="text-base">Sist publisert innhold</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {[
-                    { title: "Villa Tour - Luxury Costa Blanca", brand: "Soleada.no", platform: "youtube", views: "12.3K", engagement: "6.2%" },
-                    { title: "AI Chatbot Demo - Kundeservice", brand: "ChatGenius.pro", platform: "linkedin", views: "8.7K", engagement: "7.8%" },
-                    { title: "Sunset Beats Vol. 3", brand: "Neural Beat", platform: "youtube", views: "7.2K", engagement: "5.4%" },
-                    { title: "Eco Home Showcase - Solar Living", brand: "Zen Eco Homes", platform: "instagram", views: "5.8K", engagement: "4.9%" },
-                    { title: "Olivenhosting Behind the Scenes", brand: "Dona Anna", platform: "instagram", views: "4.1K", engagement: "8.1%" },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-bold text-slate-600 w-6">{i + 1}</span>
-                        <div>
-                          <p className="text-sm text-slate-200">{item.title}</p>
-                          <p className="text-xs text-slate-500">{item.brand}</p>
+                  {topContent.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-6">Ingen publisert innhold enna.</p>
+                  ) : (
+                    topContent.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-bold text-slate-600 w-6">{i + 1}</span>
+                          <div>
+                            <p className="text-sm text-slate-200">{item.title}</p>
+                            <p className="text-xs text-slate-500">{item.brand}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {getPlatformIcon(item.platform)}
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400">
+                              {new Date(item.created_at).toLocaleDateString("nb-NO")}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        {getPlatformIcon(item.platform)}
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-white">{item.views}</p>
-                          <p className="text-xs text-emerald-400">{item.engagement} eng.</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>

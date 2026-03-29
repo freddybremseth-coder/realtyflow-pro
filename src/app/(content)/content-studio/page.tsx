@@ -10,7 +10,7 @@ import {
   Instagram, Facebook, Linkedin, Twitter, Youtube,
   Wand2, Palette, Target, MessageSquare,
   Music, RefreshCw, Send, Clock, FileText, Video,
-  BookOpen, Clapperboard, History,
+  BookOpen, Clapperboard, History, Upload, Image,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -21,6 +21,7 @@ const platforms = [
   { id: "twitter", name: "Twitter/X", icon: Twitter, color: "text-slate-300" },
   { id: "youtube", name: "YouTube", icon: Youtube, color: "text-red-400" },
   { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400" },
+  { id: "pinterest", name: "Pinterest", icon: Target, color: "text-rose-400" },
 ];
 
 const contentTypes = [
@@ -67,6 +68,7 @@ export default function ContentStudioPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [savingToHub, setSavingToHub] = useState(false);
   const [savedToHub, setSavedToHub] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   const currentBrand = BRANDS.find((b) => b.id === selectedBrand) ?? BRANDS[0];
 
@@ -116,7 +118,10 @@ export default function ContentStudioPage() {
             data.results?.[0]?.output ||
             data.results?.[0]?.result ||
             "Ingen innhold generert";
-          results[platformId] = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+          let cleanOutput = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+          // Remove platform headers like "Facebook:", "Instagram:", "LinkedIn:", etc.
+          cleanOutput = cleanOutput.replace(/^(Facebook|Instagram|LinkedIn|Twitter|YouTube|TikTok|Pinterest|X)\s*:\s*/gim, "").trim();
+          results[platformId] = cleanOutput;
         } else {
           results[platformId] = `[Feil fra API - status ${res.status}]`;
         }
@@ -386,6 +391,91 @@ export default function ContentStudioPage() {
                   onChange={(e) => setAudience(e.target.value)}
                 />
               </div>
+
+              {/* File Upload */}
+              <div>
+                <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                  Last opp bilder / video (valgfritt)
+                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.multiple = true;
+                      input.accept = "image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm";
+                      input.onchange = (e) => {
+                        const files = (e.target as HTMLInputElement).files;
+                        if (files) {
+                          setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
+                        }
+                      };
+                      input.click();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-slate-600 bg-slate-800/50 text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-colors text-sm"
+                  >
+                    <Upload size={16} />
+                    Velg filer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/jpeg,image/png,image/webp";
+                      input.onchange = (e) => {
+                        const files = (e.target as HTMLInputElement).files;
+                        if (files) {
+                          setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
+                        }
+                      };
+                      input.click();
+                    }}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-600 hover:text-slate-300 transition-colors text-xs"
+                  >
+                    <Image size={14} />
+                    Bilde
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "video/mp4,video/quicktime,video/webm";
+                      input.onchange = (e) => {
+                        const files = (e.target as HTMLInputElement).files;
+                        if (files) {
+                          setUploadedFiles((prev) => [...prev, ...Array.from(files)]);
+                        }
+                      };
+                      input.click();
+                    }}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-600 hover:text-slate-300 transition-colors text-xs"
+                  >
+                    <Video size={14} />
+                    Video
+                  </button>
+                </div>
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {uploadedFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs text-slate-400 bg-slate-800/50 rounded px-2 py-1">
+                        {file.type.startsWith("video/") ? <Video size={12} /> : <Image size={12} />}
+                        <span className="flex-1 truncate">{file.name}</span>
+                        <span className="text-slate-600">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <button
+                          onClick={() => setUploadedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-slate-500 hover:text-red-400"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <Button
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt.trim()}

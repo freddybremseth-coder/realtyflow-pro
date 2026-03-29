@@ -38,7 +38,7 @@ const allPlatforms = ["instagram", "facebook", "linkedin", "twitter", "youtube",
 export default function PostsPage() {
   const [posts, setPosts] = useState<Post[]>(initialPosts);
   const [showNew, setShowNew] = useState(false);
-  const [newPost, setNewPost] = useState({ content: "", platforms: ["instagram"] as string[], brand: "Soleada.no" });
+  const [newPost, setNewPost] = useState({ content: "", platforms: ["instagram"] as string[], brand: "Zen Eco Homes" });
   const [activeTab, setActiveTab] = useState("all");
 
   const filteredPosts = activeTab === "all" ? posts : posts.filter((p) => p.status === activeTab);
@@ -56,7 +56,7 @@ export default function PostsPage() {
       { id: `p${Date.now()}`, content: newPost.content, platforms: newPost.platforms, status: "draft", brand: newPost.brand },
       ...prev,
     ]);
-    setNewPost({ content: "", platforms: ["instagram"], brand: "Soleada.no" });
+    setNewPost({ content: "", platforms: ["instagram"], brand: "Zen Eco Homes" });
     setShowNew(false);
   };
 
@@ -107,7 +107,7 @@ export default function PostsPage() {
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Brand</label>
                   <select value={newPost.brand} onChange={(e) => setNewPost((p) => ({ ...p, brand: e.target.value }))} className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
-                    <option>Soleada.no</option><option>Zen Eco Homes</option><option>ChatGenius.pro</option><option>Dona Anna</option><option>Freddy Bremseth</option><option>Pinoso Ecolife</option><option>Neural Beat</option>
+                    <option>Zen Eco Homes</option><option>Soleada.no</option><option>ChatGenius.pro</option><option>Dona Anna</option><option>Freddy Bremseth</option><option>Pinoso Ecolife</option><option>Neural Beat</option>
                   </select>
                 </div>
                 <Button onClick={addPost} className="w-full" disabled={!newPost.content}><Plus size={16} className="mr-1" />Opprett som kladd</Button>

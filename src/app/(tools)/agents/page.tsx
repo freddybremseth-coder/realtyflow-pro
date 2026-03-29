@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,14 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 // --- Types ---
 
@@ -152,12 +160,7 @@ const suggestedCommands = [
   "Vis meg status p\u00e5 alle brands",
 ];
 
-const recentActions = [
-  { label: "Kampanje sendt til 12 VIEWING-leads", time: "14:32", status: "done" as const },
-  { label: "Innhold generert for Soleada Instagram", time: "13:15", status: "done" as const },
-  { label: "Lead magnet publisert for Zen Eco Homes", time: "11:48", status: "done" as const },
-  { label: "SEO-rapport generert for RealtyFlow", time: "10:20", status: "done" as const },
-];
+// recentActions is now loaded dynamically from Supabase (see state in component)
 
 // --- Helper Components ---
 
@@ -308,21 +311,75 @@ export default function AgentsCommandCenter() {
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [agentStatuses, setAgentStatuses] = useState<AgentInfo[]>(agents);
   const [mobilePanel, setMobilePanel] = useState(false);
+  const [recentActions, setRecentActions] = useState<{label: string; time: string; status: "done" | "error"}[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const executionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch real recent actions from Supabase
+  const fetchRecentActions = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      // Fetch recent command executions
+      const { data: executions } = await supabase
+        .from("command_executions")
+        .select("plan_title, status, summary, created_at")
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      // Fetch recent content publications as fallback/supplement
+      const { data: publications } = await supabase
+        .from("content_publications")
+        .select("title, status, created_at")
+        .in("status", ["published", "scheduled", "failed"])
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      const actions: {label: string; time: string; status: "done" | "error"}[] = [];
+
+      if (executions && executions.length > 0) {
+        for (const exec of executions) {
+          const d = new Date(exec.created_at);
+          actions.push({
+            label: exec.plan_title || exec.summary || "Plan utfort",
+            time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
+            status: exec.status === "completed" ? "done" : "error",
+          });
+        }
+      }
+
+      if (publications && publications.length > 0) {
+        for (const pub of publications) {
+          if (actions.length >= 6) break;
+          const d = new Date(pub.created_at);
+          actions.push({
+            label: `${pub.status === "published" ? "Publisert" : pub.status === "scheduled" ? "Planlagt" : "Feilet"}: ${pub.title || "Uten tittel"}`,
+            time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
+            status: pub.status === "failed" ? "error" : "done",
+          });
+        }
+      }
+
+      // Sort by time descending and take top 6
+      setRecentActions(actions.slice(0, 6));
+    } catch (err) {
+      console.error("Failed to fetch recent actions:", err);
+    }
+  }, []);
 
   // Auto-scroll on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  // Cleanup timer on unmount
+  // Cleanup timer on unmount + fetch recent actions
   useEffect(() => {
+    fetchRecentActions();
     return () => {
       if (executionTimerRef.current) clearInterval(executionTimerRef.current);
     };
-  }, []);
+  }, [fetchRecentActions]);
 
   const handleSend = async (overrideMessage?: string) => {
     const userMsg = (overrideMessage || input).trim();
@@ -335,9 +392,9 @@ export default function AgentsCommandCenter() {
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setThinking(true);
 
-    // Check if this is an execution command
-    const isExecuteCommand =
-      /^(start|kj\u00f8r|sett i gang|utf\u00f8r|gj\u00f8r det|ja\s*,?\s*(kj\u00f8r|start)|bekreft)/i.test(userMsg);
+    // Check if this is an execution command (user confirms to run the plan)
+    const isExecuteCommand = activePlan != null &&
+      /^(start|kjør|kj[oø]r|sett i gang|utfør|utf[oø]r|gjør det|gj[oø]r det|ja\s*,?\s*(kjør|kj[oø]r|start|utfør)|bekreft|ok|greit|jada|ja takk|ja!?$)/i.test(userMsg);
 
     try {
       const res = await fetch("/api/agents/command", {
@@ -363,10 +420,81 @@ export default function AgentsCommandCenter() {
         },
       ]);
 
-      if (data.plan) setActivePlan(data.plan);
+      if (data.plan) {
+        // Map API status values to client-side status values and ensure id exists
+        const mapStepStatus = (st: string): PlanStep["status"] => {
+          if (st === "completed") return "done";
+          if (st === "failed") return "error";
+          if (st === "running" || st === "done" || st === "error" || st === "pending") return st;
+          return "pending";
+        };
+        const mapPlanStatus = (st: string): Plan["status"] => {
+          if (st === "completed") return "done";
+          if (st === "failed") return "error";
+          if (st === "executing") return "executing";
+          if (st === "confirmed" || st === "draft" || st === "done" || st === "error") return st;
+          return "draft";
+        };
+        const mappedPlan: Plan = {
+          id: data.plan.id || `plan-${Date.now()}`,
+          title: data.plan.title || "Plan",
+          status: mapPlanStatus(data.plan.status || "draft"),
+          steps: (data.plan.steps || []).map((s: { id?: number; description: string; agent: string; system: string; status?: string; result?: string }, idx: number) => ({
+            ...s,
+            id: s.id || idx + 1,
+            status: mapStepStatus(s.status || "pending"),
+          })),
+        };
+        setActivePlan(mappedPlan);
+      }
       if (data.execution) {
-        setExecuting(true);
-        pollExecution(data.execution.id);
+        // The execution is already complete (synchronous API). Map statuses and show results.
+        const mapStepStatusExec = (st: string): PlanStep["status"] => {
+          if (st === "completed") return "done";
+          if (st === "failed") return "error";
+          if (st === "running" || st === "done" || st === "error" || st === "pending") return st;
+          return "pending";
+        };
+        const mappedSteps = (data.execution.steps || []).map((s: { id?: number; description: string; agent: string; system: string; status?: string; result?: string }) => ({
+          ...s,
+          status: mapStepStatusExec(s.status || "pending"),
+        }));
+        const completedCount = mappedSteps.filter((s: { status: string }) => s.status === "done").length;
+
+        // Update the active plan with execution results
+        if (activePlan) {
+          setActivePlan({
+            ...activePlan,
+            status: data.execution.status === "completed" ? "done" : data.execution.status === "partial" ? "done" : "error",
+            steps: mappedSteps,
+          });
+        }
+
+        // Show execution as complete
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].execution) {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              execution: {
+                ...updated[lastIdx].execution!,
+                completedSteps: completedCount,
+                totalSteps: mappedSteps.length,
+                elapsedSeconds: 0,
+              },
+              plan: activePlan ? {
+                ...activePlan,
+                status: "done",
+                steps: mappedSteps,
+              } : undefined,
+            };
+          }
+          return updated;
+        });
+
+        // Refresh recent actions after execution
+        fetchRecentActions();
       }
     } catch {
       setMessages((prev) => [
@@ -769,15 +897,23 @@ export default function AgentsCommandCenter() {
                 </span>
               </div>
               <div className="space-y-2">
-                {recentActions.map((action, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <CheckCircle size={12} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-slate-300 leading-snug">{action.label}</p>
-                      <p className="text-[10px] text-slate-600">{action.time}</p>
+                {recentActions.length === 0 ? (
+                  <p className="text-xs text-slate-500">Ingen handlinger enna.</p>
+                ) : (
+                  recentActions.map((action, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      {action.status === "done" ? (
+                        <CheckCircle size={12} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-300 leading-snug">{action.label}</p>
+                        <p className="text-[10px] text-slate-600">{action.time}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

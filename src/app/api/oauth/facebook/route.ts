@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // ─── Step 1: Redirect user to Facebook OAuth ─────────────────────
-// GET /api/oauth/facebook?brand=soleada
+// GET /api/oauth/facebook?brand=zeneco
 export async function GET(req: NextRequest) {
   const brand = req.nextUrl.searchParams.get("brand") || "zen-eco";
   const appId = process.env.FACEBOOK_APP_ID;
