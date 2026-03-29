@@ -82,22 +82,61 @@ export default function SettingsPage() {
   const [emailPasswords, setEmailPasswords] = useState<Record<string, string>>({});
   const [savingEmail, setSavingEmail] = useState<string | null>(null);
   const [emailStatus, setEmailStatus] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [newEmailForm, setNewEmailForm] = useState({ brand_id: "zeneco", email_address: "", display_name: "" });
+  const [showNewEmail, setShowNewEmail] = useState(false);
+
   useEffect(() => {
     Promise.all([
       fetch("/api/settings").then(r => r.json()),
       fetch("/api/youtube-channels").then(r => r.json()),
       fetch("/api/social-accounts").then(r => r.json()),
       fetch("/api/email/config").then(r => r.json()).catch(() => ({ configs: [] })),
-    ]).then(([s, c, a, e]) => {
+      fetch("/api/brands/settings").then(r => r.json()).catch(() => ({ settings: {} })),
+    ]).then(([s, c, a, e, brandSettings]) => {
       setSettings(s.settings ?? []);
       setChannels(c.channels ?? []);
       setAccounts(a.accounts ?? []);
-      // Merge saved configs with presets
+      // Merge saved configs with presets AND brand emails
       const saved = (e.configs ?? []) as EmailConfig[];
       const savedEmails = new Set(saved.map((cfg: EmailConfig) => cfg.email_address));
+
+      // Build additional email configs from brand settings
+      const brandEmails: Omit<EmailConfig, 'id'>[] = [];
+      const bs = brandSettings.settings || {};
+      for (const [brandId, data] of Object.entries(bs)) {
+        const d = data as Record<string, unknown>;
+        // Single email field
+        if (d.email && typeof d.email === "string" && !savedEmails.has(d.email as string)) {
+          brandEmails.push({
+            brand_id: brandId,
+            email_address: d.email as string,
+            display_name: `${(d.custom_name as string) || brandId}`,
+            ...HOSTINGER_DEFAULTS,
+            auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true,
+          });
+          savedEmails.add(d.email as string);
+        }
+        // Multiple emails array
+        if (Array.isArray(d.emails)) {
+          for (const email of d.emails as string[]) {
+            if (email && !savedEmails.has(email)) {
+              brandEmails.push({
+                brand_id: brandId,
+                email_address: email,
+                display_name: `${(d.custom_name as string) || brandId}`,
+                ...HOSTINGER_DEFAULTS,
+                auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true,
+              });
+              savedEmails.add(email);
+            }
+          }
+        }
+      }
+
       const merged = [
         ...saved,
         ...EMAIL_ACCOUNTS_PRESET.filter(p => !savedEmails.has(p.email_address)),
+        ...brandEmails,
       ];
       setEmailConfigs(merged);
     }).catch(() => setError("Klarte ikkje laste innstillingar")).finally(() => setLoading(false));
@@ -335,6 +374,69 @@ export default function SettingsPage() {
                 )}
               </div>
             ))}
+
+            {/* Add new email account */}
+            {showNewEmail ? (
+              <div className="p-4 rounded-lg border border-primary-500/30 bg-primary-500/5 space-y-3">
+                <p className="text-sm font-medium text-white">Legg til ny e-postkonto</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-400 mb-1 block">Brand</label>
+                    <select
+                      value={newEmailForm.brand_id}
+                      onChange={e => setNewEmailForm(p => ({ ...p, brand_id: e.target.value }))}
+                      className="w-full h-9 rounded-lg border border-slate-600 bg-slate-800 px-2 text-sm text-slate-100"
+                    >
+                      {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 mb-1 block">E-postadresse</label>
+                    <Input
+                      value={newEmailForm.email_address}
+                      onChange={e => setNewEmailForm(p => ({ ...p, email_address: e.target.value }))}
+                      placeholder="post@eksempel.com"
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 mb-1 block">Visningsnavn</label>
+                    <Input
+                      value={newEmailForm.display_name}
+                      onChange={e => setNewEmailForm(p => ({ ...p, display_name: e.target.value }))}
+                      placeholder="Freddy - Brand"
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!newEmailForm.email_address}
+                    onClick={() => {
+                      const exists = emailConfigs.some(c => c.email_address === newEmailForm.email_address);
+                      if (exists) return;
+                      setEmailConfigs(prev => [...prev, {
+                        brand_id: newEmailForm.brand_id,
+                        email_address: newEmailForm.email_address,
+                        display_name: newEmailForm.display_name || newEmailForm.brand_id,
+                        ...HOSTINGER_DEFAULTS,
+                        auto_fetch: true, fetch_interval_minutes: 5, ai_auto_draft: true, signature: "", is_active: true,
+                      }]);
+                      setNewEmailForm({ brand_id: "zeneco", email_address: "", display_name: "" });
+                      setShowNewEmail(false);
+                    }}
+                  >
+                    <Plus size={14} className="mr-1" /> Legg til
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowNewEmail(false)}>Avbryt</Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="outline" className="w-full border-dashed" onClick={() => setShowNewEmail(true)}>
+                <Plus size={14} className="mr-1.5" /> Legg til ny e-postkonto
+              </Button>
+            )}
 
             <div className="p-4 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
               <p className="text-sm text-cyan-300 font-medium mb-2">Slik fungerer e-postsystemet:</p>
