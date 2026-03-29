@@ -191,6 +191,9 @@ export default function ContentHubPage() {
   const [availableImages, setAvailableImages] = useState<DraftItem[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
 
+  // Image upload state
+  const [uploadingImage, setUploadingImage] = useState<string | null>(null);
+
   // Scheduling state
   const [scheduleMode, setScheduleMode] = useState<"now" | "schedule">("now");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -277,6 +280,35 @@ export default function ContentHubPage() {
       prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl } : d)
     );
     setImagePickerDraft(null);
+  }, []);
+
+  const handleImageUpload = useCallback(async (draftId: string, file: File) => {
+    setUploadingImage(draftId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("draft_id", draftId);
+
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.url) {
+        setDrafts((prev) =>
+          prev.map((d) => d.id === draftId ? { ...d, ai_image_url: data.url } : d)
+        );
+        setImagePickerDraft(null);
+      } else {
+        console.error("Upload failed:", data.error);
+        alert(data.error || "Opplasting feilet");
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Opplasting feilet");
+    } finally {
+      setUploadingImage(null);
+    }
   }, []);
 
   const fetchConnectedAccounts = useCallback(async () => {
@@ -926,6 +958,29 @@ export default function ContentHubPage() {
                                   </Button>
                                   <Button
                                     size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    disabled={uploadingImage === draft.id}
+                                    onClick={() => {
+                                      const input = document.createElement("input");
+                                      input.type = "file";
+                                      input.accept = "image/jpeg,image/png,image/webp";
+                                      input.onchange = (e) => {
+                                        const f = (e.target as HTMLInputElement).files?.[0];
+                                        if (f) handleImageUpload(draft.id, f);
+                                      };
+                                      input.click();
+                                    }}
+                                  >
+                                    {uploadingImage === draft.id ? (
+                                      <Loader2 size={12} className="mr-1 animate-spin" />
+                                    ) : (
+                                      <Upload size={12} className="mr-1" />
+                                    )}
+                                    Last opp bilde
+                                  </Button>
+                                  <Button
+                                    size="sm"
                                     className="text-xs bg-green-600 hover:bg-green-700"
                                     onClick={() => openPublishModal(draft)}
                                   >
@@ -971,6 +1026,42 @@ export default function ContentHubPage() {
                   <button onClick={() => setImagePickerDraft(null)} className="text-zinc-400 hover:text-white">
                     <X size={20} />
                   </button>
+                </div>
+
+                {/* Upload from computer */}
+                <div className="flex items-center gap-3 p-3 bg-zinc-800 rounded-lg border border-zinc-700">
+                  <Upload size={18} className="text-cyan-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">Last opp fra datamaskinen</p>
+                    <p className="text-xs text-zinc-500">JPG, PNG eller WebP (maks 10MB)</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs"
+                    disabled={uploadingImage === imagePickerDraft}
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/jpeg,image/png,image/webp";
+                      input.onchange = (e) => {
+                        const f = (e.target as HTMLInputElement).files?.[0];
+                        if (f && imagePickerDraft) handleImageUpload(imagePickerDraft, f);
+                      };
+                      input.click();
+                    }}
+                  >
+                    {uploadingImage === imagePickerDraft ? (
+                      <Loader2 size={12} className="mr-1 animate-spin" />
+                    ) : (
+                      <Upload size={12} className="mr-1" />
+                    )}
+                    Last opp bilde
+                  </Button>
+                </div>
+
+                <div className="border-t border-zinc-700 pt-3">
+                  <p className="text-xs text-zinc-500 mb-3">Eller velg fra arkivet:</p>
                 </div>
 
                 {loadingImages ? (

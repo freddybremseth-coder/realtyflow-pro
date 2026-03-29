@@ -452,6 +452,10 @@ export default function InventoryPage() {
   const [publishingDrafts, setPublishingDrafts] = useState(false);
   const [draftsCreated, setDraftsCreated] = useState(false);
 
+  // SoMe post state
+  const [generatingSoMe, setGeneratingSoMe] = useState<string | null>(null);
+  const [someSuccess, setSomeSuccess] = useState<string | null>(null);
+
   // Import state
   const [importTab, setImportTab] = useState<"redsp" | "xml" | "csv">("redsp");
   const [redspUrl, setRedspUrl] = useState("https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml");
@@ -553,6 +557,79 @@ export default function InventoryPage() {
       console.error('Failed to create drafts:', err);
     } finally {
       setPublishingDrafts(false);
+    }
+  };
+
+  const generateSoMePost = async (property: Property) => {
+    setGeneratingSoMe(property.id);
+    setSomeSuccess(null);
+    try {
+      // Use the agent command API to generate a SoMe post
+      const prompt = `Lag en engasjerende SoMe-post (sosiale medier) for denne eiendommen. Skriv på norsk.
+
+EIENDOM:
+- Tittel: ${property.title}
+- Type: ${property.type}
+- Beliggenhet: ${property.location}
+- Pris: €${property.price.toLocaleString("nb-NO")}
+- Soverom: ${property.bedrooms}
+- Bad: ${property.bathrooms}
+- Areal: ${property.area} m²
+- Tomt: ${property.plotArea || 0} m²
+- Basseng: ${property.pool ? "Ja" : "Nei"}
+- Garasje: ${property.garage ? "Ja" : "Nei"}
+- Beskrivelse: ${property.description || "Ingen"}
+
+Skriv en kort, engasjerende post som passer for Instagram/Facebook. Inkluder relevante emojis og hashtags. Maks 300 ord.`;
+
+      const agentRes = await fetch("/api/agents/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: prompt }),
+      });
+      const agentData = await agentRes.json();
+
+      const postContent = typeof agentData.response === "string"
+        ? agentData.response
+        : agentData.plan?.steps?.[0]?.result || `${property.title}\n\n${property.description}\n\n📍 ${property.location}\n💰 €${property.price.toLocaleString("nb-NO")}\n🛏️ ${property.bedrooms} soverom | 🛁 ${property.bathrooms} bad | 📐 ${property.area} m²`;
+
+      // Create draft(s) in content_publications with property image
+      const drafts = [
+        {
+          brand_id: "soleada",
+          title: `SoMe: ${property.title}`,
+          description: postContent,
+          tags: ["eiendom", property.type.toLowerCase(), property.location.split(",")[0].trim().toLowerCase()],
+          content_type: "marketing_post",
+          status: "draft",
+          ai_image_url: property.imageUrl || null,
+          metadata: {
+            platform: "instagram",
+            property_id: property.id,
+            property_title: property.title,
+            property_image: property.imageUrl || null,
+          },
+        },
+      ];
+
+      const draftRes = await fetch("/api/marketing-kit/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drafts, property_id: property.id }),
+      });
+      const draftData = await draftRes.json();
+
+      if (draftData.success) {
+        setSomeSuccess(property.id);
+        setTimeout(() => setSomeSuccess(null), 4000);
+      } else {
+        alert("Kunne ikke opprette utkast: " + (draftData.error || "Ukjent feil"));
+      }
+    } catch (err) {
+      console.error("SoMe generation failed:", err);
+      alert("Feil ved generering av SoMe-post");
+    } finally {
+      setGeneratingSoMe(null);
     }
   };
 
@@ -857,6 +934,25 @@ export default function InventoryPage() {
                     <div className="flex items-center gap-1"><Maximize size={14} className="text-slate-400" /><span>{property.area} m²</span></div>
                     <Badge variant="outline" className="text-[10px] ml-auto">{property.type}</Badge>
                   </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-3 text-xs border-purple-500/30 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200"
+                    disabled={generatingSoMe === property.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      generateSoMePost(property);
+                    }}
+                  >
+                    {generatingSoMe === property.id ? (
+                      <Loader2 size={12} className="mr-1.5 animate-spin" />
+                    ) : someSuccess === property.id ? (
+                      <CheckCircle2 size={12} className="mr-1.5 text-emerald-400" />
+                    ) : (
+                      <Instagram size={12} className="mr-1.5" />
+                    )}
+                    {generatingSoMe === property.id ? "Genererer..." : someSuccess === property.id ? "Opprettet i Content Hub!" : "Lag SoMe-post"}
+                  </Button>
                 </CardContent>
               </>
             ) : (
@@ -880,6 +976,20 @@ export default function InventoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    title="Lag SoMe-post"
+                    disabled={generatingSoMe === property.id}
+                    onClick={(e) => { e.stopPropagation(); generateSoMePost(property); }}
+                    className="text-purple-400 hover:text-purple-300 disabled:opacity-50"
+                  >
+                    {generatingSoMe === property.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : someSuccess === property.id ? (
+                      <CheckCircle2 size={14} className="text-emerald-400" />
+                    ) : (
+                      <Instagram size={14} />
+                    )}
+                  </button>
                   <button onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}>
                     <Heart size={16} className={favorites.has(property.id) ? "text-red-400 fill-red-400" : "text-slate-500 hover:text-red-400"} />
                   </button>
@@ -1168,6 +1278,22 @@ export default function InventoryPage() {
               >
                 <Sparkles size={16} className="mr-2" />
                 Generer Markedsføringskit
+              </Button>
+
+              {/* SoMe Post Button */}
+              <Button
+                className="w-full mb-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400 text-white font-medium"
+                disabled={generatingSoMe === showDetailModal.id}
+                onClick={() => generateSoMePost(showDetailModal)}
+              >
+                {generatingSoMe === showDetailModal.id ? (
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                ) : someSuccess === showDetailModal.id ? (
+                  <CheckCircle2 size={16} className="mr-2" />
+                ) : (
+                  <Instagram size={16} className="mr-2" />
+                )}
+                {generatingSoMe === showDetailModal.id ? "Genererer SoMe-innlegg..." : someSuccess === showDetailModal.id ? "Opprettet i Content Hub!" : "Lag SoMe-post"}
               </Button>
 
               <div className="flex items-center gap-2">
