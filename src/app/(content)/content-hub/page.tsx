@@ -12,7 +12,7 @@ import {
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
   TrendingUp, Zap, Bot, Layout, Eye, ThumbsUp, MessageSquare,
   Share2, Clock, CheckCircle, Loader2, Upload, Music, PieChart,
-  Palette, ChevronDown, ChevronRight, Play, Pause, X, Inbox, Trash2, Edit3,
+  Palette, ChevronDown, ChevronRight, Play, Pause, X, Inbox, Trash2, Edit3, RefreshCw,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 import { createClient } from "@supabase/supabase-js";
@@ -208,9 +208,9 @@ export default function ContentHubPage() {
       const { data } = await supabase
         .from("content_publications")
         .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at, scheduled_platforms, ai_timing_reasoning")
-        .in("status", ["draft", "scheduled"])
+        .in("status", ["draft", "scheduled", "published", "failed"])
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(100);
       if (data) setDrafts(data);
     } catch (err) {
       console.error("Failed to fetch drafts:", err);
@@ -395,23 +395,28 @@ export default function ContentHubPage() {
     }
   }, [publishDraft, publishPlatforms, scheduleMode, scheduledAt, aiRecommendation]);
 
+  // Stats counters (from all statuses)
+  const [statsCount, setStatsCount] = useState({ total: 0, published: 0, failed: 0, scheduled: 0 });
+
   const fetchCalendarEvents = useCallback(async () => {
     try {
       const supabase = getSupabase();
       if (!supabase) return;
-      // Load scheduled and published posts for calendar
+      // Load scheduled and published posts for calendar + stats
       const { data } = await supabase
         .from("content_publications")
-        .select("id, title, brand_id, tags, scheduled_at, published_at, status")
+        .select("id, title, brand_id, tags, scheduled_at, published_at, status, created_at")
         .in("status", ["scheduled", "published"])
-        .order("scheduled_at", { ascending: true })
-        .limit(50);
+        .order("created_at", { ascending: false })
+        .limit(100);
       if (data) {
-        const events: CalendarEvent[] = data.map((p) => {
-          const date = p.scheduled_at || p.published_at || "";
-          const d = new Date(date);
+        const events: CalendarEvent[] = [];
+        for (const p of data) {
+          const dateStr = p.scheduled_at || p.published_at || p.created_at || "";
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) continue;
           const brand = BRANDS.find((b) => b.id === p.brand_id);
-          return {
+          events.push({
             id: p.id,
             title: p.title || "Uten tittel",
             brand: brand?.name || p.brand_id,
@@ -420,10 +425,32 @@ export default function ContentHubPage() {
             date: d.toISOString().split("T")[0],
             time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
             status: p.status === "published" ? "publisert" : "planlagt",
-          };
-        });
+          });
+        }
         setCalendarEvents(events);
       }
+      // Fetch total counts for stats
+      const { count: totalCount } = await supabase
+        .from("content_publications")
+        .select("id", { count: "exact", head: true });
+      const { count: publishedCount } = await supabase
+        .from("content_publications")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "published");
+      const { count: failedCount } = await supabase
+        .from("content_publications")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "failed");
+      const { count: scheduledCount } = await supabase
+        .from("content_publications")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "scheduled");
+      setStatsCount({
+        total: totalCount || 0,
+        published: publishedCount || 0,
+        failed: failedCount || 0,
+        scheduled: scheduledCount || 0,
+      });
     } catch (err) {
       console.error("Failed to fetch calendar events:", err);
     }
@@ -614,12 +641,12 @@ export default function ContentHubPage() {
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case "aktiv": return <Badge variant="success">Aktiv</Badge>;
-      case "planlagt": return <Badge variant="default">Planlagt</Badge>;
-      case "fullfort": return <Badge variant="secondary">Fullfort</Badge>;
-      case "pauset": return <Badge variant="warning">Pauset</Badge>;
-      case "publisert": return <Badge variant="success">Publisert</Badge>;
-      case "utkast": return <Badge variant="outline">Utkast</Badge>;
+      case "aktiv": case "published": case "publisert": return <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">Publisert</Badge>;
+      case "planlagt": case "scheduled": return <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30">Planlagt</Badge>;
+      case "fullfort": return <Badge variant="secondary">Fullført</Badge>;
+      case "pauset": return <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30">Pauset</Badge>;
+      case "draft": case "utkast": return <Badge variant="outline">Utkast</Badge>;
+      case "failed": return <Badge className="bg-red-500/20 text-red-300 border-red-500/30">Feilet</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
   };
@@ -680,9 +707,9 @@ export default function ContentHubPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-400">Totalt innhold</p>
-                <p className="text-2xl font-bold text-white">{drafts.length + calendarEvents.filter((e) => e.status === "publisert").length}</p>
+                <p className="text-2xl font-bold text-white">{statsCount.total}</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  {drafts.length} utkast
+                  {statsCount.published} publisert, {drafts.length} utkast
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-primary-500/20">
@@ -696,9 +723,9 @@ export default function ContentHubPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-400">Publisert</p>
-                <p className="text-2xl font-bold text-white">{calendarEvents.filter((e) => e.status === "publisert").length}</p>
+                <p className="text-2xl font-bold text-white">{statsCount.published}</p>
                 <p className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
-                  <TrendingUp size={12} /> Totalt publisert
+                  <TrendingUp size={12} /> {statsCount.failed > 0 ? `${statsCount.failed} feilet` : "Totalt publisert"}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-pink-500/20">
@@ -729,10 +756,10 @@ export default function ContentHubPage() {
               <div>
                 <p className="text-xs text-slate-400">Planlagte poster</p>
                 <p className="text-2xl font-bold text-white">
-                  {calendarEvents.filter((e) => e.status === "planlagt").length}
+                  {statsCount.scheduled}
                 </p>
                 <p className="text-xs text-amber-400 mt-1">
-                  {calendarEvents.filter((e) => e.status === "publisert").length} publisert
+                  Venter på publisering
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-amber-500/20">
@@ -747,7 +774,7 @@ export default function ContentHubPage() {
       <Tabs defaultValue="utkast">
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="utkast" className="flex items-center gap-2">
-            <Inbox size={14} /> Utkast {drafts.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{drafts.length}</Badge>}
+            <Inbox size={14} /> Innhold {drafts.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{drafts.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="publiser" className="flex items-center gap-2">
             <Send size={14} /> Publiser
@@ -813,11 +840,7 @@ export default function ContentHubPage() {
                                   <Sparkles size={10} className="mr-1" /> AI
                                 </Badge>
                               )}
-                              {draft.status === "scheduled" && (
-                                <Badge className="bg-purple-500/20 text-purple-300 text-xs">
-                                  <Clock size={10} className="mr-1" /> Planlagt
-                                </Badge>
-                              )}
+                              {statusBadge(draft.status)}
                               <span className="text-xs text-zinc-500 ml-auto">
                                 {new Date(draft.created_at).toLocaleDateString("nb-NO")}
                               </span>
@@ -876,44 +899,57 @@ export default function ContentHubPage() {
 
                           {!isEditing && (
                             <div className="flex flex-col gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs"
-                                onClick={() => {
-                                  setEditingDraft(draft.id);
-                                  setEditTitle(draft.title || "");
-                                  setEditDescription(draft.description || "");
-                                }}
-                              >
-                                <Edit3 size={12} className="mr-1" /> Rediger
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs"
-                                onClick={() => {
-                                  setImagePickerDraft(draft.id);
-                                  fetchAvailableImages();
-                                }}
-                              >
-                                <Image size={12} className="mr-1" /> {draft.ai_image_url ? "Bytt bilde" : "Velg bilde"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="text-xs bg-green-600 hover:bg-green-700"
-                                onClick={() => openPublishModal(draft)}
-                              >
-                                <Send size={12} className="mr-1" /> Publiser
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-xs text-zinc-500"
-                                onClick={() => updateDraftStatus(draft.id, "failed")}
-                              >
-                                <Trash2 size={12} className="mr-1" /> Forkast
-                              </Button>
+                              {draft.status === "draft" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => {
+                                      setEditingDraft(draft.id);
+                                      setEditTitle(draft.title || "");
+                                      setEditDescription(draft.description || "");
+                                    }}
+                                  >
+                                    <Edit3 size={12} className="mr-1" /> Rediger
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => {
+                                      setImagePickerDraft(draft.id);
+                                      fetchAvailableImages();
+                                    }}
+                                  >
+                                    <Image size={12} className="mr-1" /> {draft.ai_image_url ? "Bytt bilde" : "Velg bilde"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="text-xs bg-green-600 hover:bg-green-700"
+                                    onClick={() => openPublishModal(draft)}
+                                  >
+                                    <Send size={12} className="mr-1" /> Publiser
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-xs text-zinc-500"
+                                    onClick={() => updateDraftStatus(draft.id, "archived")}
+                                  >
+                                    <Trash2 size={12} className="mr-1" /> Forkast
+                                  </Button>
+                                </>
+                              )}
+                              {draft.status === "failed" && (
+                                <Button
+                                  size="sm"
+                                  className="text-xs bg-amber-600 hover:bg-amber-700"
+                                  onClick={() => updateDraftStatus(draft.id, "draft")}
+                                >
+                                  <RefreshCw size={12} className="mr-1" /> Prøv igjen
+                                </Button>
+                              )}
                             </div>
                           )}
                         </div>
