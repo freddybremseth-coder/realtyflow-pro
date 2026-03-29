@@ -2,17 +2,6 @@ import type { Brand } from "@/types";
 
 export const BRANDS: Brand[] = [
   {
-    id: "soleada",
-    name: "Soleada.no",
-    type: "real_estate",
-    description: "Premium Spanish real estate for Scandinavian buyers",
-    color: "#06b6d4",
-    website: "https://soleada.no",
-    tone: "professional, warm, luxurious",
-    target_audience: "Norwegian property buyers in Spain",
-    specialties: ["Costa Blanca", "Costa Cálida", "luxury villas"],
-  },
-  {
     id: "zeneco",
     name: "Zen Eco Homes",
     type: "real_estate",
@@ -22,6 +11,17 @@ export const BRANDS: Brand[] = [
     tone: "eco-conscious, modern, innovative",
     target_audience: "Environmentally conscious international buyers",
     specialties: ["sustainable homes", "solar energy", "green building"],
+  },
+  {
+    id: "soleada",
+    name: "Soleada.no",
+    type: "real_estate",
+    description: "Premium Spanish real estate for Scandinavian buyers",
+    color: "#06b6d4",
+    website: "https://soleada.no",
+    tone: "professional, warm, luxurious",
+    target_audience: "Norwegian property buyers in Spain",
+    specialties: ["Costa Blanca", "Costa Cálida", "luxury villas"],
   },
   {
     id: "chatgenius",

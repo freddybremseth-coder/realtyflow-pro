@@ -14,6 +14,7 @@ import {
   DollarSign, BarChart3, Instagram, Linkedin,
   Facebook, Mail, MessageSquare, Clock, Send,
 } from "lucide-react";
+import { BRANDS } from "@/lib/constants";
 
 interface Property {
   id: string;
@@ -449,6 +450,7 @@ export default function InventoryPage() {
   const [generatingKit, setGeneratingKit] = useState(false);
   const [kitTab, setKitTab] = useState<"content" | "strategy" | "analysis">("content");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [selectedBrand, setSelectedBrand] = useState(BRANDS[0].id);
   const [publishingDrafts, setPublishingDrafts] = useState(false);
   const [draftsCreated, setDraftsCreated] = useState(false);
 
@@ -506,7 +508,7 @@ export default function InventoryPage() {
       // Facebook draft (use long ad)
       if (kit.content.facebook_ads?.long) {
         drafts.push({
-          brand_id: 'soleada',
+          brand_id: selectedBrand,
           title: kit.content.headline || property.title,
           description: kit.content.facebook_ads.long,
           tags: kit.content.suggested_hashtags || [],
@@ -519,7 +521,7 @@ export default function InventoryPage() {
       // Instagram draft
       if (kit.content.instagram) {
         drafts.push({
-          brand_id: 'soleada',
+          brand_id: selectedBrand,
           title: kit.content.headline || property.title,
           description: kit.content.instagram,
           tags: kit.content.suggested_hashtags || [],
@@ -532,7 +534,7 @@ export default function InventoryPage() {
       // LinkedIn draft
       if (kit.content.linkedin) {
         drafts.push({
-          brand_id: 'soleada',
+          brand_id: selectedBrand,
           title: kit.content.headline || property.title,
           description: kit.content.linkedin,
           tags: kit.content.suggested_hashtags || [],
@@ -596,7 +598,7 @@ Skriv en kort, engasjerende post som passer for Instagram/Facebook. Inkluder rel
       // Create draft(s) in content_publications with property image
       const drafts = [
         {
-          brand_id: "soleada",
+          brand_id: selectedBrand,
           title: `SoMe: ${property.title}`,
           description: postContent,
           tags: ["eiendom", property.type.toLowerCase(), property.location.split(",")[0].trim().toLowerCase()],
@@ -1269,6 +1271,20 @@ Skriv en kort, engasjerende post som passer for Instagram/Facebook. Inkluder rel
                 {showDetailModal.energyRating && <Badge variant="outline">Energi: {showDetailModal.energyRating}</Badge>}
                 {showDetailModal.pool && <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-500/30">Basseng</Badge>}
                 {showDetailModal.garage && <Badge className="bg-slate-500/20 text-slate-300 border-slate-500/30">Garasje</Badge>}
+              </div>
+
+              {/* Brand Selector */}
+              <div className="mb-3">
+                <label className="text-xs text-zinc-400 mb-1 block">Merkevare for innhold:</label>
+                <select
+                  value={selectedBrand}
+                  onChange={(e) => setSelectedBrand(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  {BRANDS.filter(b => b.type === "real_estate").map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Marketing Kit Button */}

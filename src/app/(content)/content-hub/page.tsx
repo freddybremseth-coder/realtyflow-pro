@@ -210,7 +210,7 @@ export default function ContentHubPage() {
       if (!supabase) return;
       const { data } = await supabase
         .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at, scheduled_platforms, ai_timing_reasoning")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at")
         .in("status", ["draft", "scheduled", "published", "failed"])
         .order("created_at", { ascending: false })
         .limit(100);

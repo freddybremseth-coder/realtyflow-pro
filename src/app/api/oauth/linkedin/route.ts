@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // GET /api/oauth/linkedin?brand=soleada
 export async function GET(req: NextRequest) {
-  const brand = req.nextUrl.searchParams.get("brand") || "soleada";
+  const brand = req.nextUrl.searchParams.get("brand") || "zen-eco";
   const clientId = process.env.LINKEDIN_CLIENT_ID;
 
   if (!clientId) {

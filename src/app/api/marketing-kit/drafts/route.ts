@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       const { data, error } = await supabase
         .from('content_publications')
         .insert({
-          brand_id: draft.brand_id || 'soleada',
+          brand_id: draft.brand_id || 'zeneco',
           content_type: draft.content_type || 'marketing_post',
           title: draft.title,
           description: draft.description,

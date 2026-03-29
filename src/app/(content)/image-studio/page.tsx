@@ -48,7 +48,7 @@ export default function ImageStudioPage() {
   const [error, setError] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [style, setStyle] = useState("photo");
-  const [brand, setBrand] = useState("Soleada.no");
+  const [brand, setBrand] = useState("Zen Eco Homes");
   const [history, setHistory] = useState<GeneratedImage[]>([]);
   const [sendingToHub, setSendingToHub] = useState<string | null>(null);
   const [sentToHub, setSentToHub] = useState<Set<string>>(new Set());
@@ -58,7 +58,7 @@ export default function ImageStudioPage() {
     try {
       const brandId = brands.indexOf(img.brand) >= 0
         ? img.brand.toLowerCase().replace(/[.\s]/g, "-")
-        : "soleada";
+        : "zeneco";
       const res = await fetch("/api/marketing-kit/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

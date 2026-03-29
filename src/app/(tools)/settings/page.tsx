@@ -16,7 +16,7 @@ interface Setting { key: string; value: string; category: string; description: s
 interface YoutubeChannel { id: string; name: string; handle: string; channel_id: string; api_key: string; brand: string; content_types: string[]; is_active: boolean; }
 interface SocialAccount { id: string; platform: string; account_name: string; account_id: string; access_token: string; brand: string; is_active: boolean; }
 
-const BRANDS = ["soleada", "zen-eco", "chatgenius", "dona-anna", "freddy-bremseth", "neural-beat"];
+const BRANDS = ["zen-eco", "soleada", "chatgenius", "dona-anna", "freddy-bremseth", "neural-beat", "pinoso-ecolife"];
 const PLATFORMS = [
   { id: "facebook",  label: "Facebook",  icon: Facebook,  color: "text-blue-400" },
   { id: "instagram", label: "Instagram", icon: Instagram, color: "text-pink-400" },
@@ -72,8 +72,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
-  const [newChannel, setNewChannel] = useState({ name: "", handle: "", channel_id: "", api_key: "", brand: "soleada", content_types: [] as string[] });
-  const [newAccount, setNewAccount] = useState({ platform: "instagram", account_name: "", account_id: "", access_token: "", brand: "soleada" });
+  const [newChannel, setNewChannel] = useState({ name: "", handle: "", channel_id: "", api_key: "", brand: "zen-eco", content_types: [] as string[] });
+  const [newAccount, setNewAccount] = useState({ platform: "instagram", account_name: "", account_id: "", access_token: "", brand: "zen-eco" });
   const [fetchingPages, setFetchingPages] = useState(false);
   const [fetchPagesResult, setFetchPagesResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -120,14 +120,14 @@ export default function SettingsPage() {
     if (!newChannel.name) return;
     const res = await fetch("/api/youtube-channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newChannel) });
     const data = await res.json();
-    if (data.channel) { setChannels(prev => [...prev, data.channel]); setNewChannel({ name: "", handle: "", channel_id: "", api_key: "", brand: "soleada", content_types: [] }); }
+    if (data.channel) { setChannels(prev => [...prev, data.channel]); setNewChannel({ name: "", handle: "", channel_id: "", api_key: "", brand: "zen-eco", content_types: [] }); }
   };
   const deleteChannel = async (id: string) => { await fetch(`/api/youtube-channels?id=${id}`, { method: "DELETE" }); setChannels(prev => prev.filter(c => c.id !== id)); };
   const addAccount = async () => {
     if (!newAccount.account_name) return;
     const res = await fetch("/api/social-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newAccount) });
     const data = await res.json();
-    if (data.account) { setAccounts(prev => [...prev, data.account]); setNewAccount({ platform: "instagram", account_name: "", account_id: "", access_token: "", brand: "soleada" }); }
+    if (data.account) { setAccounts(prev => [...prev, data.account]); setNewAccount({ platform: "instagram", account_name: "", account_id: "", access_token: "", brand: "zen-eco" }); }
   };
   const deleteAccount = async (id: string) => { await fetch(`/api/social-accounts?id=${id}`, { method: "DELETE" }); setAccounts(prev => prev.filter(a => a.id !== id)); };
   if (loading) return (<div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-slate-400" size={32} /></div>);

@@ -41,16 +41,18 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase();
 
-    const { error } = await supabase
-      .from("content_publications")
-      .update({
+    const updateData: Record<string, unknown> = {
         status: "scheduled",
         scheduled_at: scheduledDate.toISOString(),
-        scheduled_platforms: platforms,
-        ai_recommended_time: ai_recommended_time || null,
-        ai_timing_reasoning: ai_timing_reasoning || null,
         updated_at: new Date().toISOString(),
-      })
+      };
+    // Only set optional columns if they exist (migration may not have run)
+    if (ai_timing_reasoning) updateData.ai_timing_reasoning = ai_timing_reasoning;
+    if (ai_recommended_time) updateData.ai_recommended_time = ai_recommended_time;
+
+    const { error } = await supabase
+      .from("content_publications")
+      .update(updateData)
       .eq("id", draft_id);
 
     if (error) {
@@ -83,7 +85,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("content_publications")
-      .select("id, brand_id, title, description, content_type, ai_image_url, scheduled_at, scheduled_platforms, ai_timing_reasoning, status")
+      .select("id, brand_id, title, description, content_type, ai_image_url, scheduled_at, status")
       .eq("status", "scheduled")
       .order("scheduled_at", { ascending: true });
 

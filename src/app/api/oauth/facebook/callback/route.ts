@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let brand = "soleada";
+  let brand = "zen-eco";
   try {
     const state = JSON.parse(stateStr || "{}");
-    brand = state.brand || "soleada";
+    brand = state.brand || "zen-eco";
   } catch {}
 
   const appId = process.env.FACEBOOK_APP_ID!;
