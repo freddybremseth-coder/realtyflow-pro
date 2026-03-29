@@ -4,72 +4,26 @@ import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { Readable } from 'stream';
 
 let youtubeClient: youtube_v3.Youtube | null = null;
-let cachedRefreshToken: string | null = null;
 
-async function getRefreshToken(): Promise<string> {
-  // First try env var
-  const envToken = process.env.YOUTUBE_REFRESH_TOKEN;
-  if (envToken) {
-    // Verify it works
-    try {
-      const testRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: process.env.YOUTUBE_CLIENT_ID!,
-          client_secret: process.env.YOUTUBE_CLIENT_SECRET!,
-          refresh_token: envToken,
-          grant_type: "refresh_token",
-        }),
-      });
-      const data = await testRes.json();
-      if (data.access_token) return envToken; // Env token works
-    } catch {}
-  }
-
-  // Fallback: check Supabase for a newer token
-  try {
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data } = await supabase
-      .from("brand_settings")
-      .select("settings")
-      .eq("brand_id", "_system")
-      .single();
-    if (data?.settings?.youtube_refresh_token) {
-      console.log("[YouTube] Using refresh token from Supabase");
-      return data.settings.youtube_refresh_token;
-    }
-  } catch {}
-
-  if (envToken) return envToken; // Return env token even if validation failed
-  throw new Error("YouTube refresh token not found in env or database");
-}
-
-async function getOAuth2Client() {
+function getOAuth2Client() {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
 
-  if (!clientId || !clientSecret) {
-    throw new Error('YouTube OAuth2 credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET)');
-  }
-
-  if (!cachedRefreshToken) {
-    cachedRefreshToken = await getRefreshToken();
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('YouTube OAuth2 credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)');
   }
 
   const oauth2Client = new OAuth2Client(clientId, clientSecret);
-  oauth2Client.setCredentials({ refresh_token: cachedRefreshToken });
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
   return oauth2Client;
 }
 
-async function getClient(): Promise<youtube_v3.Youtube> {
-  // Always get fresh client to pick up new tokens
-  const auth = await getOAuth2Client();
-  youtubeClient = youtube({ version: 'v3', auth });
+function getClient(): youtube_v3.Youtube {
+  if (!youtubeClient) {
+    const auth = getOAuth2Client();
+    youtubeClient = youtube({ version: 'v3', auth });
+  }
   return youtubeClient;
 }
 
@@ -80,7 +34,7 @@ export async function uploadVideo(
   videoBuffer: Buffer,
   metadata: YouTubeVideoMetadata
 ): Promise<YouTubeUploadResult> {
-  const youtube = await getClient();
+  const youtube = getClient();
 
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
@@ -155,7 +109,7 @@ export async function setThumbnail(
   videoId: string,
   thumbnailBuffer: Buffer
 ): Promise<void> {
-  const youtube = await getClient();
+  const youtube = getClient();
   await youtube.thumbnails.set({
     videoId,
     media: {
@@ -176,7 +130,7 @@ export async function getChannelInfo(): Promise<{
   viewCount: number;
   thumbnailUrl: string;
 }> {
-  const youtube = await getClient();
+  const youtube = getClient();
   const res = await youtube.channels.list({
     part: ['snippet', 'statistics'],
     mine: true,
@@ -208,7 +162,7 @@ export async function listVideos(maxResults = 20): Promise<Array<{
   likeCount: number;
   commentCount: number;
 }>> {
-  const youtube = await getClient();
+  const youtube = getClient();
 
   // First get the uploads playlist
   const channelRes = await youtube.channels.list({
@@ -255,7 +209,7 @@ export async function updateVideoMetadata(
   videoId: string,
   metadata: Partial<YouTubeVideoMetadata>
 ): Promise<void> {
-  const youtube = await getClient();
+  const youtube = getClient();
   const updateData: any = { id: videoId };
 
   if (metadata.title || metadata.description || metadata.tags) {
@@ -301,7 +255,7 @@ export function extractVideoId(url: string): string | null {
  * Delete a video from YouTube.
  */
 export async function deleteVideo(videoId: string): Promise<void> {
-  const youtube = await getClient();
+  const youtube = getClient();
   await youtube.videos.delete({ id: videoId });
   console.log(`[YouTube] Deleted video: ${videoId}`);
 }
