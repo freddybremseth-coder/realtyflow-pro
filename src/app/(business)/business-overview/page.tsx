@@ -1,179 +1,121 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
-import { PieChart, BarChart, TrendingUp, DollarSign, Users } from "lucide-react";
+import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2 } from "lucide-react";
 
 interface BrandData {
   brandId: string;
   revenue: string;
-  revenueChange: string;
   customers: number;
-  customerChange: string;
-  growth: string;
-  recentActivity: string[];
-  aiSummary: string;
-  kpis: { label: string; value: string; trend: "up" | "down" | "neutral" }[];
-  chartData: { month: string; value: number }[];
+  totalPosts: number;
+  publishedPosts: number;
+  connectedAccounts: number;
+  pipelineLeads: number;
+  crmContacts: number;
+  growthActions: number;
 }
-
-const brandDataMap: Record<string, BrandData> = {
-  soleada: {
-    brandId: "soleada",
-    revenue: "€245.000",
-    revenueChange: "+18%",
-    customers: 42,
-    customerChange: "+7",
-    growth: "+22%",
-    recentActivity: [
-      "Ny lead fra Instagram-kampanje - Villa Altea",
-      "Visning gjennomført: Penthouse Benidorm",
-      "Kontrakt signert: Rekkehus Moraira - €215K",
-    ],
-    aiSummary: "Soleada viser sterk vekst i Q1 2026. Instagram-kampanjer driver 45% av nye leads. Anbefaler å øke budsjettet for Costa Blanca-annonser med 20%. Moraira-segmentet har høyest konverteringsrate på 34%.",
-    kpis: [
-      { label: "Aktive leads", value: "18", trend: "up" },
-      { label: "Visninger/mnd", value: "12", trend: "up" },
-      { label: "Snittpris salg", value: "€380K", trend: "neutral" },
-      { label: "Dager til salg", value: "45", trend: "down" },
-    ],
-    chartData: [{ month: "Jan", value: 65 }, { month: "Feb", value: 78 }, { month: "Mar", value: 92 }],
-  },
-  zeneco: {
-    brandId: "zeneco",
-    revenue: "€180.000",
-    revenueChange: "+12%",
-    customers: 28,
-    customerChange: "+4",
-    growth: "+15%",
-    recentActivity: [
-      "Ny henvendelse om øko-villa med solceller",
-      "Bloggartikkel publisert: Bærekraftig bygging",
-      "Samarbeid med lokal arkitekt inngått",
-    ],
-    aiSummary: "Zen Eco Homes har økende interesse fra svenske kjøpere. Bærekraft-trenden driver etterspørsel. Fokuser på energimerking og solcelle-ROI i markedsføringen. Konverteringsraten kan forbedres med virtuelle omvisninger.",
-    kpis: [
-      { label: "Aktive leads", value: "12", trend: "up" },
-      { label: "Øko-score snitt", value: "A+", trend: "up" },
-      { label: "Snittpris", value: "€295K", trend: "up" },
-      { label: "Henvendelser/uke", value: "8", trend: "neutral" },
-    ],
-    chartData: [{ month: "Jan", value: 45 }, { month: "Feb", value: 52 }, { month: "Mar", value: 68 }],
-  },
-  chatgenius: {
-    brandId: "chatgenius",
-    revenue: "$12.400 MRR",
-    revenueChange: "+28%",
-    customers: 156,
-    customerChange: "+23",
-    growth: "+35%",
-    recentActivity: [
-      "Enterprise-kunde onboardet: NordTech AS",
-      "Ny funksjon lansert: Multi-språk chatbot",
-      "Churn redusert til 3.2% fra 4.8%",
-    ],
-    aiSummary: "ChatGenius viser eksponentiell SaaS-vekst. MRR har økt 28% siste kvartal. Enterprise-segmentet er mest lønnsomt med 3x høyere LTV. Anbefaler å investere i customer success for å holde churn under 3%.",
-    kpis: [
-      { label: "MRR", value: "$12.4K", trend: "up" },
-      { label: "Aktive brukere", value: "156", trend: "up" },
-      { label: "Churn", value: "3.2%", trend: "down" },
-      { label: "LTV", value: "$2,400", trend: "up" },
-    ],
-    chartData: [{ month: "Jan", value: 82 }, { month: "Feb", value: 95 }, { month: "Mar", value: 120 }],
-  },
-  donaanna: {
-    brandId: "donaanna",
-    revenue: "€4.200",
-    revenueChange: "+8%",
-    customers: 89,
-    customerChange: "+12",
-    growth: "+10%",
-    recentActivity: [
-      "Ny distribusjon: Meny Norge - 15 butikker",
-      "Høstinnhøsting startet - estimert 2.000L",
-      "Matfestival Alicante: 340 smaksprøver utdelt",
-    ],
-    aiSummary: "Dona Anna har stabil vekst med sterk merkevarelojalitet. Distribusjonsavtalen med Meny er et gjennombrudd. Sesongbasert salg topper i november-desember. Vurder abonnementsmodell for å jevne ut inntektsstrømmen.",
-    kpis: [
-      { label: "Enheter solgt", value: "890", trend: "up" },
-      { label: "Distribusjonspartnere", value: "8", trend: "up" },
-      { label: "Gjenkjøpsrate", value: "67%", trend: "up" },
-      { label: "Margin", value: "45%", trend: "neutral" },
-    ],
-    chartData: [{ month: "Jan", value: 30 }, { month: "Feb", value: 35 }, { month: "Mar", value: 42 }],
-  },
-  freddyb: {
-    brandId: "freddyb",
-    revenue: "€8.500",
-    revenueChange: "+45%",
-    customers: 3200,
-    customerChange: "+450",
-    growth: "+52%",
-    recentActivity: [
-      "LinkedIn-artikkel fikk 12K visninger",
-      "Podcast-gjesting: 'Utflytter i Spania'",
-      "Ny YouTube-video: 8.5K visninger første uke",
-    ],
-    aiSummary: "Personlig merkevare vokser raskt med 52% følgervekst. LinkedIn er sterkeste kanal med høyest engasjement. YouTube-veksten akselererer. Anbefaler konsistent publisering 3x/uke og mer samarbeid med andre expat-skapere.",
-    kpis: [
-      { label: "Følgere totalt", value: "3,200", trend: "up" },
-      { label: "Engasjement", value: "4.8%", trend: "up" },
-      { label: "Foredrag/mnd", value: "2", trend: "neutral" },
-      { label: "Henvendelser", value: "15/uke", trend: "up" },
-    ],
-    chartData: [{ month: "Jan", value: 55 }, { month: "Feb", value: 72 }, { month: "Mar", value: 95 }],
-  },
-  pinosoecolife: {
-    brandId: "pinosoecolife",
-    revenue: "€92.000",
-    revenueChange: "+5%",
-    customers: 14,
-    customerChange: "+2",
-    growth: "+8%",
-    recentActivity: [
-      "Ny eiendom lagt til: Finca med 5.000m² tomt",
-      "Visning med nederlandsk familie gjennomført",
-      "Samarbeid med lokal øko-gård etablert",
-    ],
-    aiSummary: "Pinoso Ecolife er i tidlig fase men med lovende nisjeposisjonering. Målgruppen verdsetter autentisitet og bærekraft. Anbefaler mer video-innhold fra eiendommene og community-bygging rundt rural lifestyle.",
-    kpis: [
-      { label: "Aktive leads", value: "6", trend: "up" },
-      { label: "Eiendommer", value: "9", trend: "up" },
-      { label: "Snittpris", value: "€210K", trend: "neutral" },
-      { label: "Visninger/mnd", value: "4", trend: "up" },
-    ],
-    chartData: [{ month: "Jan", value: 20 }, { month: "Feb", value: 25 }, { month: "Mar", value: 32 }],
-  },
-  neuralbeat: {
-    brandId: "neuralbeat",
-    revenue: "€420",
-    revenueChange: "+120%",
-    customers: 1850,
-    customerChange: "+380",
-    growth: "+85%",
-    recentActivity: [
-      "Ny track 'Midnight Pulse' - 4.2K streams første uke",
-      "Spotify-playliste akseptert: Electronic Rising",
-      "Airtable synk: 12 nye spor importert",
-    ],
-    aiSummary: "Neural Beat viser eksplosiv vekst i lyttertall. AI-generert musikk treffer EDM-målgruppen godt. Spotify-algoritmene favoriserer konsistent publisering. Anbefaler å øke til 2 utgivelser per uke og fokusere på Shorts-innhold.",
-    kpis: [
-      { label: "Månedlige lyttere", value: "1,850", trend: "up" },
-      { label: "Totale streams", value: "24K", trend: "up" },
-      { label: "Spor publisert", value: "42", trend: "up" },
-      { label: "Playlist-plasseringer", value: "7", trend: "up" },
-    ],
-    chartData: [{ month: "Jan", value: 40 }, { month: "Feb", value: 65 }, { month: "Mar", value: 95 }],
-  },
-};
 
 export default function BusinessOverviewPage() {
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
+  const [brandDataMap, setBrandDataMap] = useState<Record<string, BrandData>>({});
+  const [loading, setLoading] = useState(true);
+  const [totals, setTotals] = useState({
+    totalPosts: 0,
+    publishedPosts: 0,
+    connectedAccounts: 0,
+    totalBrands: BRANDS.length,
+    pipelineLeads: 0,
+    crmContacts: 0,
+  });
+
+  const fetchOverviewData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch all data sources in parallel
+      const [contentRes, accountsRes, pipelineRes, crmRes, actionsRes] = await Promise.allSettled([
+        fetch("/api/content").then(r => r.json()).catch(() => ({ publications: [] })),
+        fetch("/api/social-accounts").then(r => r.json()).catch(() => ({ accounts: [] })),
+        fetch("/api/contacts?view=pipeline").then(r => r.json()).catch(() => ({ contacts: [] })),
+        fetch("/api/contacts?view=crm").then(r => r.json()).catch(() => ({ contacts: [] })),
+        fetch("/api/growth/actions").then(r => r.json()).catch(() => ({ actions: [] })),
+      ]);
+
+      const publications = contentRes.status === "fulfilled" ? (contentRes.value.publications || []) : [];
+      const socialAccounts = accountsRes.status === "fulfilled" ? (accountsRes.value.accounts || []) : [];
+      const pipelineContacts = pipelineRes.status === "fulfilled" ? (pipelineRes.value.contacts || []) : [];
+      const crmContacts = crmRes.status === "fulfilled" ? (crmRes.value.contacts || []) : [];
+      const growthActions = actionsRes.status === "fulfilled" ? (actionsRes.value.actions || []) : [];
+
+      // Build per-brand data
+      const newBrandData: Record<string, BrandData> = {};
+
+      for (const brand of BRANDS) {
+        const brandPosts = publications.filter((p: Record<string, unknown>) =>
+          p.brand_id === brand.id || p.brand === brand.id
+        );
+        const brandPublished = brandPosts.filter((p: Record<string, unknown>) =>
+          p.status === "published"
+        );
+        const brandAccounts = socialAccounts.filter((a: Record<string, unknown>) =>
+          a.brand === brand.id || a.brand_id === brand.id
+        );
+        const brandPipeline = pipelineContacts.filter((c: Record<string, unknown>) =>
+          c.brand_id === brand.id
+        );
+        const brandCrm = crmContacts.filter((c: Record<string, unknown>) =>
+          c.brand_id === brand.id
+        );
+        const brandActions = growthActions.filter((a: Record<string, unknown>) =>
+          a.brand === brand.id || a.brand_id === brand.id
+        );
+
+        newBrandData[brand.id] = {
+          brandId: brand.id,
+          revenue: "Ikke tilgjengelig",
+          customers: brandCrm.length,
+          totalPosts: brandPosts.length,
+          publishedPosts: brandPublished.length,
+          connectedAccounts: brandAccounts.length,
+          pipelineLeads: brandPipeline.length,
+          crmContacts: brandCrm.length,
+          growthActions: brandActions.length,
+        };
+      }
+
+      setBrandDataMap(newBrandData);
+
+      setTotals({
+        totalPosts: publications.length,
+        publishedPosts: publications.filter((p: Record<string, unknown>) => p.status === "published").length,
+        connectedAccounts: socialAccounts.length,
+        totalBrands: BRANDS.length,
+        pipelineLeads: pipelineContacts.length,
+        crmContacts: crmContacts.length,
+      });
+    } catch {
+      // If all fetches fail, leave everything at 0
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOverviewData();
+  }, [fetchOverviewData]);
 
   const brandsToShow = selectedBrand === "all" ? BRANDS : BRANDS.filter((b) => b.id === selectedBrand);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="animate-spin text-slate-400" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -182,7 +124,47 @@ export default function BusinessOverviewPage() {
           <PieChart className="text-primary-400" size={28} />
           Business Oversikt
         </h1>
-        <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand</p>
+        <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand (sanntidsdata)</p>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-white">{totals.totalBrands}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Brands</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-white">{totals.totalPosts}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Totalt innlegg</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-emerald-400">{totals.publishedPosts}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Publisert</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-blue-400">{totals.connectedAccounts}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Sosiale kontoer</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-amber-400">{totals.pipelineLeads}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Pipeline leads</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-purple-400">{totals.crmContacts}</p>
+            <p className="text-[10px] text-slate-500 uppercase">CRM kunder</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Brand Selector */}
@@ -209,7 +191,7 @@ export default function BusinessOverviewPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart size={18} />
-              Sammenlignende oversikt
+              Sammenlignende oversikt - Innlegg per brand
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -217,9 +199,8 @@ export default function BusinessOverviewPage() {
               {BRANDS.map((brand) => {
                 const data = brandDataMap[brand.id];
                 if (!data) return null;
-                const maxValue = 120;
-                const currentValue = data.chartData[data.chartData.length - 1]?.value || 0;
-                const barWidth = (currentValue / maxValue) * 100;
+                const maxPosts = Math.max(...BRANDS.map(b => brandDataMap[b.id]?.totalPosts || 0), 1);
+                const barWidth = (data.totalPosts / maxPosts) * 100;
                 return (
                   <div key={brand.id} className="flex items-center gap-3">
                     <div className="w-32 shrink-0">
@@ -228,12 +209,12 @@ export default function BusinessOverviewPage() {
                     <div className="flex-1 bg-slate-800 rounded-full h-6 overflow-hidden">
                       <div
                         className="h-full rounded-full flex items-center justify-end pr-2 text-[10px] font-medium text-white transition-all"
-                        style={{ width: `${barWidth}%`, backgroundColor: brand.color }}
+                        style={{ width: `${Math.max(barWidth, 5)}%`, backgroundColor: brand.color }}
                       >
-                        {data.revenue}
+                        {data.totalPosts} innlegg
                       </div>
                     </div>
-                    <Badge variant="success" className="text-[10px] shrink-0">{data.growth}</Badge>
+                    <Badge variant="secondary" className="text-[10px] shrink-0">{data.publishedPosts} pub.</Badge>
                   </div>
                 );
               })}
@@ -271,81 +252,37 @@ export default function BusinessOverviewPage() {
                     <DollarSign size={16} className="mx-auto text-emerald-400 mb-1" />
                     <p className="text-lg font-bold text-white">{data.revenue}</p>
                     <p className="text-[10px] text-slate-500">Omsetning</p>
-                    <Badge variant="success" className="text-[10px] mt-1">{data.revenueChange}</Badge>
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <Users size={16} className="mx-auto text-blue-400 mb-1" />
-                    <p className="text-lg font-bold text-white">{data.customers}</p>
-                    <p className="text-[10px] text-slate-500">Kunder</p>
-                    <Badge variant="success" className="text-[10px] mt-1">{data.customerChange}</Badge>
+                    <p className="text-lg font-bold text-white">{data.crmContacts}</p>
+                    <p className="text-[10px] text-slate-500">Kunder (CRM)</p>
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <TrendingUp size={16} className="mx-auto text-amber-400 mb-1" />
-                    <p className="text-lg font-bold text-white">{data.growth}</p>
-                    <p className="text-[10px] text-slate-500">Vekst</p>
+                    <p className="text-lg font-bold text-white">{data.pipelineLeads}</p>
+                    <p className="text-[10px] text-slate-500">Pipeline leads</p>
                   </div>
-                  {data.kpis[0] && (
-                    <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                      <PieChart size={16} className="mx-auto text-purple-400 mb-1" />
-                      <p className="text-lg font-bold text-white">{data.kpis[0].value}</p>
-                      <p className="text-[10px] text-slate-500">{data.kpis[0].label}</p>
-                    </div>
-                  )}
+                  <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                    <PieChart size={16} className="mx-auto text-purple-400 mb-1" />
+                    <p className="text-lg font-bold text-white">{data.connectedAccounts}</p>
+                    <p className="text-[10px] text-slate-500">Sosiale kontoer</p>
+                  </div>
                 </div>
 
                 {/* Additional KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {data.kpis.slice(1).map((kpi) => (
-                    <div key={kpi.label} className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
-                      <span className="text-xs text-slate-400">{kpi.label}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm font-medium text-white">{kpi.value}</span>
-                        {kpi.trend === "up" && <TrendingUp size={10} className="text-emerald-400" />}
-                        {kpi.trend === "down" && <TrendingUp size={10} className="text-emerald-400 rotate-180" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Recent Activity */}
-                  <div>
-                    <h4 className="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Siste aktivitet</h4>
-                    <div className="space-y-2">
-                      {data.recentActivity.map((activity, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs">
-                          <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: brand.color }} />
-                          <span className="text-slate-400">{activity}</span>
-                        </div>
-                      ))}
-                    </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                    <span className="text-xs text-slate-400">Totalt innlegg</span>
+                    <span className="text-sm font-medium text-white">{data.totalPosts}</span>
                   </div>
-
-                  {/* AI Summary */}
-                  <div>
-                    <h4 className="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">AI-analyse</h4>
-                    <div className="bg-slate-800/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-300 leading-relaxed">{data.aiSummary}</p>
-                    </div>
+                  <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                    <span className="text-xs text-slate-400">Publiserte innlegg</span>
+                    <span className="text-sm font-medium text-emerald-400">{data.publishedPosts}</span>
                   </div>
-                </div>
-
-                {/* Mini Chart */}
-                <div>
-                  <h4 className="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Utvikling Q1 2026</h4>
-                  <div className="flex items-end gap-2 h-16">
-                    {data.chartData.map((point) => {
-                      const height = (point.value / 120) * 100;
-                      return (
-                        <div key={point.month} className="flex-1 flex flex-col items-center gap-1">
-                          <div
-                            className="w-full rounded-t transition-all"
-                            style={{ height: `${height}%`, backgroundColor: brand.color + "aa" }}
-                          />
-                          <span className="text-[10px] text-slate-500">{point.month}</span>
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                    <span className="text-xs text-slate-400">Veksthandlinger</span>
+                    <span className="text-sm font-medium text-cyan-400">{data.growthActions}</span>
                   </div>
                 </div>
               </CardContent>

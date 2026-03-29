@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, TrendingUp, Users, Eye, Heart, DollarSign, Loader2, FileText, Calendar } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Eye, Heart, DollarSign, Loader2, FileText, Calendar, ThumbsUp, MessageSquare, Share2 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
@@ -37,6 +37,12 @@ export default function AnalyticsPage() {
   const [platformData, setPlatformData] = useState<{ platform: string; count: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; published: number; drafts: number }[]>([]);
   const [brandData, setBrandData] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [engagementTotals, setEngagementTotals] = useState({ likes: 0, comments: 0, shares: 0, views: 0, reach: 0, impressions: 0 });
+  const [engagementPosts, setEngagementPosts] = useState<{
+    id: string; title: string; brand: string; platform: string; published_at: string;
+    likes: number; comments: number; shares: number; views: number; reach: number;
+  }[]>([]);
+  const [platformEngagement, setPlatformEngagement] = useState<{ platform: string; likes: number; comments: number; shares: number; views: number }[]>([]);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -124,6 +130,79 @@ export default function AnalyticsPage() {
             .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
             .sort((a, b) => b.value - a.value)
         );
+
+        // Fetch real SoMe engagement data
+        const { data: pubsWithEngagement } = await supabase
+          .from("content_publications")
+          .select("id, title, brand_id, tags, published_at, total_likes, total_comments, total_shares, total_views")
+          .eq("status", "published")
+          .order("published_at", { ascending: false })
+          .limit(50);
+
+        const { data: snapshots } = await supabase
+          .from("engagement_snapshots")
+          .select("publication_id, platform, likes, comments, shares, reach, impressions")
+          .order("snapshot_at", { ascending: false })
+          .limit(500);
+
+        // Aggregate snapshots by publication
+        const snapByPub = new Map<string, { likes: number; comments: number; shares: number; reach: number; impressions: number }>();
+        if (snapshots) {
+          for (const snap of snapshots) {
+            const existing = snapByPub.get(snap.publication_id);
+            if (existing) {
+              existing.likes += snap.likes || 0;
+              existing.comments += snap.comments || 0;
+              existing.shares += snap.shares || 0;
+              existing.reach += snap.reach || 0;
+              existing.impressions += snap.impressions || 0;
+            } else {
+              snapByPub.set(snap.publication_id, {
+                likes: snap.likes || 0, comments: snap.comments || 0,
+                shares: snap.shares || 0, reach: snap.reach || 0, impressions: snap.impressions || 0,
+              });
+            }
+          }
+        }
+
+        if (pubsWithEngagement) {
+          let tLikes = 0, tComments = 0, tShares = 0, tViews = 0, tReach = 0, tImpressions = 0;
+          const platEng: Record<string, { likes: number; comments: number; shares: number; views: number }> = {};
+
+          const posts = pubsWithEngagement.map((p) => {
+            const snapData = snapByPub.get(p.id);
+            const likes = (p.total_likes || 0) + (snapData?.likes || 0);
+            const comments = (p.total_comments || 0) + (snapData?.comments || 0);
+            const shares = (p.total_shares || 0) + (snapData?.shares || 0);
+            const views = p.total_views || 0;
+            const reach = snapData?.reach || 0;
+            tLikes += likes; tComments += comments; tShares += shares; tViews += views; tReach += reach; tImpressions += (snapData?.impressions || 0);
+
+            // Per-platform aggregation
+            const platform = (p.tags && p.tags[0]?.toLowerCase()) || "annet";
+            if (!platEng[platform]) platEng[platform] = { likes: 0, comments: 0, shares: 0, views: 0 };
+            platEng[platform].likes += likes;
+            platEng[platform].comments += comments;
+            platEng[platform].shares += shares;
+            platEng[platform].views += views;
+
+            return {
+              id: p.id,
+              title: p.title || "Uten tittel",
+              brand: p.brand_id,
+              platform: (p.tags && p.tags[0]) || "-",
+              published_at: p.published_at || "",
+              likes, comments, shares, views, reach,
+            };
+          });
+          setEngagementPosts(posts);
+          setEngagementTotals({ likes: tLikes, comments: tComments, shares: tShares, views: tViews, reach: tReach, impressions: tImpressions });
+          setPlatformEngagement(
+            Object.entries(platEng)
+              .map(([platform, data]) => ({ platform: platform.charAt(0).toUpperCase() + platform.slice(1), ...data }))
+              .sort((a, b) => (b.likes + b.comments + b.shares) - (a.likes + a.comments + a.shares))
+          );
+        }
       } catch (err) {
         console.error("Analytics fetch error:", err);
       } finally {
@@ -156,6 +235,7 @@ export default function AnalyticsPage() {
         <TabsList>
           <TabsTrigger value="realty">Eiendom</TabsTrigger>
           <TabsTrigger value="content">Innhold & SoMe</TabsTrigger>
+          <TabsTrigger value="engagement">SoMe Engasjement</TabsTrigger>
           <TabsTrigger value="cross">Innhold per Brand</TabsTrigger>
         </TabsList>
 
@@ -217,6 +297,104 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="engagement">
+          <div className="space-y-6">
+            {/* Engagement totals */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {[
+                { label: "Visninger", value: engagementTotals.views, icon: Eye, color: "text-primary-400" },
+                { label: "Likes", value: engagementTotals.likes, icon: ThumbsUp, color: "text-pink-400" },
+                { label: "Kommentarer", value: engagementTotals.comments, icon: MessageSquare, color: "text-sky-400" },
+                { label: "Delinger", value: engagementTotals.shares, icon: Share2, color: "text-emerald-400" },
+                { label: "Rekkevidde", value: engagementTotals.reach, icon: TrendingUp, color: "text-amber-400" },
+                { label: "Visningsrekkevidde", value: engagementTotals.impressions, icon: Eye, color: "text-purple-400" },
+              ].map((m) => {
+                const Icon = m.icon;
+                return (
+                  <Card key={m.label}>
+                    <CardContent className="p-4 text-center">
+                      <Icon size={20} className={`mx-auto ${m.color} mb-2`} />
+                      <p className="text-2xl font-bold text-white">{m.value.toLocaleString("nb-NO")}</p>
+                      <p className="text-xs text-slate-400">{m.label}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Per-platform engagement breakdown */}
+            <Card>
+              <CardHeader><CardTitle>Engasjement per plattform</CardTitle></CardHeader>
+              <CardContent>
+                {platformEngagement.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={platformEngagement}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="platform" stroke="#94a3b8" fontSize={12} />
+                      <YAxis stroke="#94a3b8" fontSize={12} />
+                      <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }} />
+                      <Legend />
+                      <Bar dataKey="likes" fill="#ec4899" name="Likes" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="comments" fill="#06b6d4" name="Kommentarer" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="shares" fill="#10b981" name="Delinger" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-12">Ingen engasjementsdata enna. Publiser innlegg for a se data her.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Engagement per post table */}
+            <Card>
+              <CardHeader><CardTitle>Engasjement per publisert innlegg</CardTitle></CardHeader>
+              <CardContent>
+                {engagementPosts.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">Ingen publiserte innlegg med engasjementsdata enna.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Tittel</th>
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Plattform</th>
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Publisert</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Visninger</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Likes</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Kommentarer</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Delinger</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Rekkevidde</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {engagementPosts.map((post) => (
+                          <tr key={post.id} className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+                            <td className="py-2.5 px-2">
+                              <p className="text-slate-200 truncate max-w-[200px]">{post.title}</p>
+                              <p className="text-xs text-slate-500">{post.brand}</p>
+                            </td>
+                            <td className="py-2.5 px-2">
+                              <Badge variant="outline" className="text-xs capitalize">{post.platform}</Badge>
+                            </td>
+                            <td className="py-2.5 px-2 text-slate-400 text-xs whitespace-nowrap">
+                              {post.published_at ? new Date(post.published_at).toLocaleDateString("nb-NO") : "-"}
+                            </td>
+                            <td className="py-2.5 px-2 text-right text-slate-200">{post.views.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-pink-400">{post.likes.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-sky-400">{post.comments.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-emerald-400">{post.shares.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-amber-400">{post.reach.toLocaleString("nb-NO")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="cross">

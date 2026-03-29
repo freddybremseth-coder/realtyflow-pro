@@ -439,6 +439,13 @@ export default function ContentHubPage() {
   const [topContent, setTopContent] = useState<{title: string; brand: string; platform: string; status: string; created_at: string}[]>([]);
   const [platformPostCounts, setPlatformPostCounts] = useState<Record<string, number>>({});
 
+  // Engagement state - real SoMe data
+  const [engagementTotals, setEngagementTotals] = useState({ likes: 0, comments: 0, shares: 0, views: 0, reach: 0, impressions: 0 });
+  const [engagementPosts, setEngagementPosts] = useState<{
+    id: string; title: string; brand: string; platform: string; published_at: string;
+    likes: number; comments: number; shares: number; views: number; reach: number; impressions: number;
+  }[]>([]);
+
   const fetchCalendarEvents = useCallback(async () => {
     try {
       const supabase = getSupabase();
@@ -530,6 +537,72 @@ export default function ContentHubPage() {
           status: p.status,
           created_at: p.created_at,
         })));
+      }
+
+      // Fetch real engagement data from content_publications + engagement_snapshots
+      const { data: pubsWithEngagement } = await supabase
+        .from("content_publications")
+        .select("id, title, brand_id, tags, published_at, total_likes, total_comments, total_shares, total_views")
+        .eq("status", "published")
+        .order("published_at", { ascending: false })
+        .limit(50);
+
+      const { data: snapshots } = await supabase
+        .from("engagement_snapshots")
+        .select("publication_id, platform, likes, comments, shares, reach, impressions")
+        .order("snapshot_at", { ascending: false })
+        .limit(500);
+
+      // Build per-post engagement from snapshots (latest per publication+platform)
+      const snapByPub = new Map<string, { likes: number; comments: number; shares: number; reach: number; impressions: number }>();
+      if (snapshots) {
+        for (const snap of snapshots) {
+          const existing = snapByPub.get(snap.publication_id);
+          if (existing) {
+            existing.likes += snap.likes || 0;
+            existing.comments += snap.comments || 0;
+            existing.shares += snap.shares || 0;
+            existing.reach += snap.reach || 0;
+            existing.impressions += snap.impressions || 0;
+          } else {
+            snapByPub.set(snap.publication_id, {
+              likes: snap.likes || 0,
+              comments: snap.comments || 0,
+              shares: snap.shares || 0,
+              reach: snap.reach || 0,
+              impressions: snap.impressions || 0,
+            });
+          }
+        }
+      }
+
+      if (pubsWithEngagement) {
+        let totalLikes = 0, totalComments = 0, totalShares = 0, totalViews = 0, totalReach = 0, totalImpressions = 0;
+        const posts = pubsWithEngagement.map((p) => {
+          const snapData = snapByPub.get(p.id);
+          const likes = (p.total_likes || 0) + (snapData?.likes || 0);
+          const comments = (p.total_comments || 0) + (snapData?.comments || 0);
+          const shares = (p.total_shares || 0) + (snapData?.shares || 0);
+          const views = p.total_views || 0;
+          const reach = snapData?.reach || 0;
+          const impressions = snapData?.impressions || 0;
+          totalLikes += likes;
+          totalComments += comments;
+          totalShares += shares;
+          totalViews += views;
+          totalReach += reach;
+          totalImpressions += impressions;
+          return {
+            id: p.id,
+            title: p.title || "Uten tittel",
+            brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id,
+            platform: (p.tags && p.tags[0]) || "–",
+            published_at: p.published_at || "",
+            likes, comments, shares, views, reach, impressions,
+          };
+        });
+        setEngagementPosts(posts);
+        setEngagementTotals({ likes: totalLikes, comments: totalComments, shares: totalShares, views: totalViews, reach: totalReach, impressions: totalImpressions });
       }
     } catch (err) {
       console.error("Failed to fetch calendar events:", err);
@@ -2017,41 +2090,114 @@ export default function ContentHubPage() {
           <div className="space-y-6">
             <h2 className="text-lg font-semibold text-white">Ytelsesdashboard</h2>
 
-            {/* Overall Stats - real data */}
+            {/* Aggregate engagement totals */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {[
+                { label: "Visninger", value: engagementTotals.views, icon: Eye, color: "text-primary-400" },
+                { label: "Likes", value: engagementTotals.likes, icon: ThumbsUp, color: "text-pink-400" },
+                { label: "Kommentarer", value: engagementTotals.comments, icon: MessageSquare, color: "text-sky-400" },
+                { label: "Delinger", value: engagementTotals.shares, icon: Share2, color: "text-emerald-400" },
+                { label: "Rekkevidde", value: engagementTotals.reach, icon: TrendingUp, color: "text-amber-400" },
+                { label: "Visningsrekkevidde", value: engagementTotals.impressions, icon: Eye, color: "text-purple-400" },
+              ].map((m) => {
+                const Icon = m.icon;
+                return (
+                  <Card key={m.label}>
+                    <CardContent className="p-4 text-center">
+                      <Icon size={20} className={`mx-auto ${m.color} mb-2`} />
+                      <p className="text-2xl font-bold text-white">{m.value.toLocaleString("nb-NO")}</p>
+                      <p className="text-xs text-slate-400">{m.label}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Content counts row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-4 text-center">
                   <Eye size={20} className="mx-auto text-primary-400 mb-2" />
                   <p className="text-2xl font-bold text-white">{statsCount.total}</p>
                   <p className="text-xs text-slate-400">Totalt innhold</p>
-                  <p className="text-xs text-slate-500 mt-1">Alle statuser</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <ThumbsUp size={20} className="mx-auto text-pink-400 mb-2" />
+                  <CheckCircle size={20} className="mx-auto text-emerald-400 mb-2" />
                   <p className="text-2xl font-bold text-white">{statsCount.published}</p>
                   <p className="text-xs text-slate-400">Publisert</p>
-                  <p className="text-xs text-emerald-400 mt-1">Totalt publisert</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Share2 size={20} className="mx-auto text-sky-400 mb-2" />
+                  <Clock size={20} className="mx-auto text-amber-400 mb-2" />
                   <p className="text-2xl font-bold text-white">{statsCount.scheduled}</p>
                   <p className="text-xs text-slate-400">Planlagt</p>
-                  <p className="text-xs text-amber-400 mt-1">Venter pa publisering</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <TrendingUp size={20} className="mx-auto text-emerald-400 mb-2" />
+                  <FileText size={20} className="mx-auto text-slate-400 mb-2" />
                   <p className="text-2xl font-bold text-white">{drafts.filter((d) => d.status === "draft").length}</p>
                   <p className="text-xs text-slate-400">Utkast</p>
-                  <p className="text-xs text-slate-500 mt-1">Klare til publisering</p>
                 </CardContent>
               </Card>
             </div>
+
+            {/* Published posts engagement table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 size={16} className="text-primary-400" />
+                  SoMe Engasjement per Innlegg
+                </CardTitle>
+                <CardDescription>Ekte data fra publiserte innlegg</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {engagementPosts.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">Ingen publiserte innlegg med engasjementsdata enna.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Tittel</th>
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Plattform</th>
+                          <th className="text-left py-2 px-2 text-slate-400 font-medium">Publisert</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Visninger</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Likes</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Kommentarer</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Delinger</th>
+                          <th className="text-right py-2 px-2 text-slate-400 font-medium">Rekkevidde</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {engagementPosts.map((post) => (
+                          <tr key={post.id} className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+                            <td className="py-2.5 px-2">
+                              <p className="text-slate-200 truncate max-w-[200px]">{post.title}</p>
+                              <p className="text-xs text-slate-500">{post.brand}</p>
+                            </td>
+                            <td className="py-2.5 px-2">
+                              <Badge variant="outline" className="text-xs capitalize">{post.platform}</Badge>
+                            </td>
+                            <td className="py-2.5 px-2 text-slate-400 text-xs whitespace-nowrap">
+                              {post.published_at ? new Date(post.published_at).toLocaleDateString("nb-NO") : "–"}
+                            </td>
+                            <td className="py-2.5 px-2 text-right text-slate-200">{post.views.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-pink-400">{post.likes.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-sky-400">{post.comments.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-emerald-400">{post.shares.toLocaleString("nb-NO")}</td>
+                            <td className="py-2.5 px-2 text-right text-amber-400">{post.reach.toLocaleString("nb-NO")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Per Platform Breakdown - real counts */}
             <Card>
@@ -2149,26 +2295,6 @@ export default function ContentHubPage() {
                       </div>
                     ))
                   )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Growth Trends Placeholder */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <PieChart size={16} className="text-primary-400" />
-                  Veksttrender
-                </CardTitle>
-                <CardDescription>Siste 6 maneder</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-48 flex items-center justify-center border border-dashed border-slate-700 rounded-lg">
-                  <div className="text-center">
-                    <BarChart3 size={32} className="mx-auto text-slate-600 mb-2" />
-                    <p className="text-sm text-slate-500">Graf-visning kommer snart</p>
-                    <p className="text-xs text-slate-600 mt-1">Integrasjon med analytics-data pagar</p>
-                  </div>
                 </div>
               </CardContent>
             </Card>

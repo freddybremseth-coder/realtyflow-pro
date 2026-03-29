@@ -275,17 +275,53 @@ export default function PipelinePage() {
     reader.readAsText(file);
   };
 
-  const importCSVLeads = () => {
+  const importCSVLeads = async () => {
     if (csvData.length === 0) return;
+    setSaving(true);
     const maxId = leads.length;
     const withIds = csvData.map((l, i) => ({
       ...l,
       id: `L${String(maxId + i + 1).padStart(3, "0")}`,
     }));
-    setLeads((prev) => [...withIds, ...prev]);
+
+    // Save each lead to Supabase
+    const savedLeads: Lead[] = [];
+    for (const lead of withIds) {
+      try {
+        const now = new Date().toISOString();
+        const res = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: lead.name,
+            email: lead.email,
+            phone: lead.phone,
+            budget: lead.budget,
+            source: lead.source,
+            sentiment: lead.sentiment,
+            pipeline_status: 'NEW',
+            interested_in: lead.property || null,
+            notes: lead.notes || null,
+            created_at: now,
+            updated_at: now,
+          }),
+        });
+        const data = await res.json();
+        savedLeads.push({
+          ...lead,
+          id: data.contact?.id || lead.id,
+        });
+      } catch {
+        // Fallback: add with local id
+        savedLeads.push(lead);
+      }
+    }
+
+    setLeads((prev) => [...savedLeads, ...prev]);
     setCsvData([]);
     setCsvRaw("");
     setShowCSVUpload(false);
+    setSaving(false);
   };
 
   return (

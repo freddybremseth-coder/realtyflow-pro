@@ -291,6 +291,7 @@ export default function GrowthHubPage() {
 
   const publishAction = async (actionId: string) => {
     try {
+      // 1. Update status in growth_actions
       const res = await fetch(`/api/growth/actions?id=${actionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -298,7 +299,30 @@ export default function GrowthHubPage() {
       });
       if (res.ok) {
         setActions((prev) => prev.map((a) => a.id === actionId ? { ...a, status: "published" as const } : a));
-        addToast("Handling publisert!", "success");
+
+        // 2. Also create a draft in content_publications
+        const action = actions.find((a) => a.id === actionId);
+        if (action) {
+          try {
+            await fetch("/api/marketing-kit/drafts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                drafts: [{
+                  brand_id: action.brand_id,
+                  content_type: action.action_type || "social_post",
+                  title: `${action.platform} - ${action.action_type}`,
+                  description: action.content,
+                  tags: [action.platform, action.action_type, "growth-engine"].filter(Boolean),
+                }],
+              }),
+            });
+          } catch {
+            // Content publication creation is secondary; don't fail the main action
+          }
+        }
+
+        addToast("Handling publisert og utkast opprettet!", "success");
       }
     } catch {
       addToast("Kunne ikke publisere.", "error");
