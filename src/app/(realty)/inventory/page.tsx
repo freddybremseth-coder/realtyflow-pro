@@ -567,7 +567,10 @@ export default function InventoryPage() {
     setSomeSuccess(null);
     try {
       // Use the agent command API to generate a SoMe post
-      const prompt = `Lag en engasjerende SoMe-post (sosiale medier) for denne eiendommen. Skriv på norsk.
+      const brandObj = BRANDS.find(b => b.id === selectedBrand) || BRANDS[0];
+      const prompt = `VIKTIG: Returner KUN selve SoMe-posten. INGEN innledning, INGEN forklaring, INGEN "Her er posten:" eller lignende. Start direkte med postteksten.
+
+Du er en profesjonell eiendomsmarkedsfører for ${brandObj.name}. Skriv en selgende, engasjerende SoMe-post på norsk for denne eiendommen.
 
 EIENDOM:
 - Tittel: ${property.title}
@@ -582,7 +585,15 @@ EIENDOM:
 - Garasje: ${property.garage ? "Ja" : "Nei"}
 - Beskrivelse: ${property.description || "Ingen"}
 
-Skriv en kort, engasjerende post som passer for Instagram/Facebook. Inkluder relevante emojis og hashtags. Maks 300 ord.`;
+REGLER:
+- Skriv BARE selve posten, ingenting annet
+- Kort, selgende tekst som skaper drømmer og lyst
+- Inkluder relevante emojis
+- Inkluder 5-8 relevante hashtags på slutten
+- Maks 200 ord
+- Ikke skriv "Her er posten" eller noe lignende
+- Ikke forklar hva du gjør
+- Start rett på den selgende teksten`;
 
       const agentRes = await fetch("/api/agents/command", {
         method: "POST",

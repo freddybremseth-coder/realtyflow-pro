@@ -38,13 +38,13 @@ export async function POST(req: NextRequest) {
 
     const { data: scheduledPosts } = await supabase
       .from("content_publications")
-      .select("scheduled_at, scheduled_platforms, title")
+      .select("scheduled_at, title")
       .eq("status", "scheduled")
       .gte("scheduled_at", new Date().toISOString())
       .lte("scheduled_at", weekFromNow.toISOString());
 
     const existingSchedule = scheduledPosts?.length
-      ? scheduledPosts.map((p) => `- ${p.title}: ${p.scheduled_at} (${(p.scheduled_platforms || []).join(", ")})`).join("\n")
+      ? scheduledPosts.map((p) => `- ${p.title}: ${p.scheduled_at}`).join("\n")
       : "Ingen planlagte poster denne uken";
 
     // Get engagement history from scheduling_insights
