@@ -18,11 +18,11 @@ export async function GET(request: NextRequest) {
   let query = supabase.from('contacts').select('*').order('updated_at', { ascending: false });
 
   if (view === 'pipeline') {
-    // Pipeline shows all contacts that are NOT yet customers (status is pipeline stage)
-    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'ON_HOLD']);
+    // Pipeline shows ALL contacts across all stages (full kanban)
+    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST', 'ON_HOLD']);
   } else if (view === 'crm') {
-    // CRM shows contacts that reached customer status or were manually added as customers
-    query = query.in('pipeline_status', ['WON', 'CUSTOMER', 'VIP', 'LOST']);
+    // CRM shows contacts that have progressed beyond NEW (table view)
+    query = query.in('pipeline_status', ['CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'CUSTOMER', 'VIP', 'LOST']);
   }
 
   const { data, error } = await query;
