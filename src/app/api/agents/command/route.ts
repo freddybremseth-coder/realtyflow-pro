@@ -48,10 +48,11 @@ interface StepResult {
 export async function POST(request: NextRequest) {
   const { message, conversation, execute, currentPlan } = (await request.json()) as CommandRequest;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const { askClaude, isConfigured } = await import('@/services/ai/claude-client');
+  if (!isConfigured()) {
     return NextResponse.json({
       response:
-        'ANTHROPIC_API_KEY er ikke konfigurert. Legg til nøkkelen i Vercel for å aktivere AI-kommandosenteret.',
+        'Ingen AI-nøkler konfigurert. Legg til ANTHROPIC_API_KEY, GEMINI_API_KEY eller OPENAI_API_KEY.',
     });
   }
 

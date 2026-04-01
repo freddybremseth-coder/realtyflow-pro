@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { askClaude } from "@/services/ai/claude-client";
 
 // ─── Norwegian Content Rules ──────────────────────────────────────────
 export const NORWEGIAN_CONTENT_RULES = `
@@ -87,25 +88,15 @@ export abstract class BaseAgent {
    * Returns the text content from the response.
    */
   protected async callAI(prompt: string, systemPrompt?: string): Promise<string> {
+    const system = systemPrompt ?? this.getDefaultSystemPrompt();
+
+    // Use askClaude which has built-in fallback to Gemini/OpenAI
     try {
-      const message = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 4096,
-        system: systemPrompt ?? this.getDefaultSystemPrompt(),
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+      return await askClaude(prompt, {
+        systemPrompt: system,
+        maxTokens: 4096,
+        model: 'sonnet',
       });
-
-      const textBlock = message.content.find((block) => block.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        throw new Error("No text content in AI response");
-      }
-
-      return textBlock.text;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error during AI call";

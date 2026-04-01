@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { askClaude, isConfigured } from '@/services/ai/claude-client';
 
 export async function POST(request: NextRequest) {
   const { contact, context, language = 'no' } = await request.json();
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!isConfigured()) {
     return NextResponse.json({
       draft: `Hei ${contact.name},\n\nTakk for din interesse for eiendommer i Spania. Vi har spennende muligheter som kan passe for deg.\n\nVennlig hilsen,\nFreddy Bremseth\nSoleada.no`,
     });
   }
-
-  const Anthropic = (await import('@anthropic-ai/sdk')).default;
-  const client = new Anthropic();
 
   const systemPrompt = `Du er Freddy Bremseth, eiendomsmegler i Spania med fokus på norske og skandinaviske kjøpere.
 Skriv en personlig, varm og profesjonell e-post på ${language === 'no' ? 'norsk' : 'engelsk'}.
@@ -32,14 +30,17 @@ Kontekst: ${context || 'Generell oppfølging'}
 
 Skriv e-posten med subject line og body.`;
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
-
-  const draft = response.content[0].type === 'text' ? response.content[0].text : '';
-
-  return NextResponse.json({ draft });
+  try {
+    const draft = await askClaude(userPrompt, {
+      systemPrompt,
+      maxTokens: 1000,
+      model: 'sonnet',
+    });
+    return NextResponse.json({ draft });
+  } catch (err: any) {
+    console.error('[email-draft] All AI providers failed:', err?.message);
+    return NextResponse.json({
+      draft: `Hei ${contact.name},\n\nTakk for din interesse for eiendommer i Spania. Vi har spennende muligheter som kan passe for deg.\n\nJeg vil gjerne følge opp og høre mer om dine ønsker og behov.\n\nVennlig hilsen,\nFreddy Bremseth\nSoleada.no`,
+    });
+  }
 }
