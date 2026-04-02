@@ -1,61 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getSongsWithoutYouTube,
-  getRecord,
+  getSongById,
   isConfigured,
 } from '@/services/integrations/airtable-client';
 import { NeuralBeatPipeline } from '@/services/pipelines/neural-beat-pipeline';
-import type { AirtableSongRecord } from '@/lib/types';
 
 // ─── Vercel serverless: allow up to 5 minutes for batch processing ──
 export const maxDuration = 300;
-
-// Field mapping for the "Make.com Songs" Airtable table
-const SONG_FIELD_MAP = {
-  trackName: 'Track Name',
-  audioFile: 'Audio File',
-  youtubeUrl: 'YouTube URL',
-  aiMetadata: 'AI Metadata',
-  generatedImage: 'Generated Image',
-  lastModifiedTime: 'Last Modified Time',
-  created: 'Created',
-} as const;
-
-function extractAttachmentUrl(field: any): string | undefined {
-  if (!field) return undefined;
-  if (typeof field === 'string') return field;
-  if (Array.isArray(field) && field.length > 0) return field[0].url || undefined;
-  return undefined;
-}
-
-function mapRawRecordToSong(record: { id: string; fields: Record<string, any> }): AirtableSongRecord {
-  const f = record.fields;
-  let metadata: Record<string, any> | undefined;
-  const rawMeta = f[SONG_FIELD_MAP.aiMetadata];
-  if (rawMeta) {
-    if (typeof rawMeta === 'string') {
-      try { metadata = JSON.parse(rawMeta); } catch { metadata = { raw: rawMeta }; }
-    } else {
-      metadata = rawMeta;
-    }
-  }
-
-  return {
-    id: record.id,
-    title: f[SONG_FIELD_MAP.trackName] || '',
-    artist: 'Neural Beat',
-    audioUrl: extractAttachmentUrl(f[SONG_FIELD_MAP.audioFile]),
-    status: undefined,
-    genre: metadata?.genre,
-    mood: metadata?.mood,
-    bpm: metadata?.bpm,
-    imageUrl: extractAttachmentUrl(f[SONG_FIELD_MAP.generatedImage]),
-    youtubeUrl: f[SONG_FIELD_MAP.youtubeUrl] || undefined,
-    metadata,
-    lastModifiedTime: f[SONG_FIELD_MAP.lastModifiedTime],
-    createdTime: f[SONG_FIELD_MAP.created],
-  };
-}
 
 /**
  * GET /api/neural-beat/cron
@@ -64,15 +16,11 @@ function mapRawRecordToSong(record: { id: string; fields: Record<string, any> })
  * Designed for Vercel Cron Jobs — runs once per day.
  *
  * Security: requires CRON_SECRET in Authorization header.
- *
- * Each song is processed sequentially (not parallel) to stay within
- * Vercel's 1024 MB memory limit. Tracks elapsed time and stops
- * before hitting the 5-minute function timeout.
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
   const MAX_SONGS = 3;
-  const SAFETY_MARGIN_MS = 30_000; // Stop 30s before timeout to allow cleanup
+  const SAFETY_MARGIN_MS = 30_000;
   const MAX_TIME_MS = (maxDuration * 1000) - SAFETY_MARGIN_MS;
 
   // ── Auth check ──
@@ -86,7 +34,7 @@ export async function GET(request: NextRequest) {
   // ── Config check ──
   if (!isConfigured()) {
     return NextResponse.json(
-      { error: 'Airtable is not configured' },
+      { error: 'Supabase is not configured' },
       { status: 503 }
     );
   }
@@ -119,8 +67,6 @@ export async function GET(request: NextRequest) {
   }> = [];
 
   // ── Process songs sequentially ──
-  const songsTable = process.env.AIRTABLE_SONGS_TABLE || 'Songs';
-
   for (let i = 0; i < toProcess.length; i++) {
     const song = toProcess[i];
     const songStartTime = Date.now();
@@ -142,9 +88,8 @@ export async function GET(request: NextRequest) {
     console.log(`[Cron] Processing song ${i + 1}/${toProcess.length}: "${song.title}" (${song.id})`);
 
     try {
-      // Fetch fresh record from Airtable
-      const rawRecord = await getRecord(songsTable, song.id);
-      const songRecord = mapRawRecordToSong(rawRecord);
+      // Fetch fresh record
+      const songRecord = await getSongById(song.id);
 
       // Execute pipeline
       const pipeline = new NeuralBeatPipeline();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { askClaude, isConfigured } from '@/services/ai/claude-client';
 
 export const maxDuration = 120;
 
@@ -48,7 +49,6 @@ interface StepResult {
 export async function POST(request: NextRequest) {
   const { message, conversation, execute, currentPlan } = (await request.json()) as CommandRequest;
 
-  const { askClaude, isConfigured } = await import('@/services/ai/claude-client');
   if (!isConfigured()) {
     return NextResponse.json({
       response:
@@ -56,13 +56,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const Anthropic = (await import('@anthropic-ai/sdk')).default;
-  const client = new Anthropic();
   const supabase = getSupabase();
 
   // If this is an execution command and we have a plan
   if (execute && currentPlan) {
-    return executePlan(currentPlan, supabase, client);
+    return executePlan(currentPlan, supabase);
   }
 
   // Otherwise, this is a planning conversation
@@ -118,31 +116,22 @@ Hvis Freddy bare chatter eller spør om noe uten å be om en oppgave, svar uten 
 
 Vær konkret, datadrevet, og vis at du kjenner alle systemene. Ikke vær generisk.`;
 
-  // Build conversation history for Claude
-  const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-  // Add previous conversation
+  // Build conversation as single prompt for askClaude
+  let fullPrompt = '';
   if (conversation && conversation.length > 0) {
     for (const msg of conversation) {
-      claudeMessages.push({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-      });
+      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      fullPrompt += `${msg.role === 'user' ? 'Freddy' : 'Victoria'}: ${content}\n\n`;
     }
   }
-
-  // Add current message
-  claudeMessages.push({ role: 'user', content: message });
+  fullPrompt += `Freddy: ${message}`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      system: systemPrompt,
-      messages: claudeMessages,
+    const text = await askClaude(fullPrompt, {
+      systemPrompt,
+      maxTokens: 2000,
+      model: 'sonnet',
     });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
 
     // Try to parse as JSON
     try {
@@ -159,9 +148,7 @@ Vær konkret, datadrevet, og vis at du kjenner alle systemene. Ikke vær generis
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Ukjent feil';
     return NextResponse.json(
-      {
-        response: `Feil ved kontakt med AI: ${errorMessage}`,
-      },
+      { response: `Feil ved kontakt med AI: ${errorMessage}` },
       { status: 500 }
     );
   }
@@ -170,7 +157,6 @@ Vær konkret, datadrevet, og vis at du kjenner alle systemene. Ikke vær generis
 async function executePlan(
   plan: Plan,
   supabase: SupabaseClient | null,
-  anthropicClient: InstanceType<typeof import('@anthropic-ai/sdk').default>
 ) {
   const results: PlanStep[] = [...plan.steps];
   const executionLog: string[] = [];
@@ -180,7 +166,7 @@ async function executePlan(
     results[i] = { ...step, status: 'running' };
 
     try {
-      const result = await executeStep(step, supabase, anthropicClient);
+      const result = await executeStep(step, supabase);
       results[i] = { ...step, status: 'completed', result: result.summary, data: result.data };
       executionLog.push(`Steg ${step.id}: ${result.summary}`);
     } catch (err: unknown) {
@@ -193,7 +179,6 @@ async function executePlan(
   const completedCount = results.filter((r) => r.status === 'completed').length;
   const summary = `Utfort ${completedCount}/${results.length} steg.`;
 
-  // Save execution to Supabase
   if (supabase) {
     try {
       await supabase
@@ -223,18 +208,14 @@ async function executePlan(
 async function executeStep(
   step: PlanStep,
   supabase: SupabaseClient | null,
-  anthropicClient: InstanceType<typeof import('@anthropic-ai/sdk').default>
 ): Promise<StepResult> {
   switch (step.system) {
     case 'crm': {
       if (!supabase) throw new Error('Database ikke tilgjengelig');
-
-      // Determine what CRM operation is needed from the step description
       if (
         step.description.toLowerCase().includes('hent') ||
         step.description.toLowerCase().includes('finn')
       ) {
-        // Fetch contacts based on description context
         const statusMatch = step.description.match(
           /(NEW|CONTACT|QUALIFIED|VIEWING|NEGOTIATION|WON|CUSTOMER|VIP|LOST)/i
         );
@@ -250,32 +231,26 @@ async function executeStep(
     }
 
     case 'email': {
-      // Generate emails using the email system
-      if (!supabase) throw new Error('Database ikke tilgjengelig');
-
-      const response = await anthropicClient.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        system:
-          'Du er Freddy Bremseth, eiendomsmegler i Spania. Skriv en kort, personlig oppfolgings-e-post pa norsk. Returner JSON: { "subject": "...", "body": "..." }',
-        messages: [
-          { role: 'user' as const, content: `Lag e-post basert pa denne oppgaven: ${step.description}` },
-        ],
-      });
-      const emailText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const emailText = await askClaude(
+        `Lag e-post basert pa denne oppgaven: ${step.description}`,
+        {
+          systemPrompt: 'Du er Freddy Bremseth, eiendomsmegler i Spania. Skriv en kort, personlig oppfolgings-e-post pa norsk. Returner JSON: { "subject": "...", "body": "..." }',
+          maxTokens: 1500,
+          model: 'sonnet',
+        }
+      );
       return { summary: 'E-post generert og klar for utsending', data: { email: emailText } };
     }
 
     case 'content-studio': {
-      // Generate content using marketing agent
-      const response = await anthropicClient.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        system:
-          'Du er en kreativ innholdsprodusent for Freddy Bremseths brands. Skriv engasjerende innhold pa norsk. Returner JSON med: { "headline": "...", "body": "...", "hashtags": [...], "cta": "..." }',
-        messages: [{ role: 'user' as const, content: `Lag innhold: ${step.description}` }],
-      });
-      const contentText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const contentText = await askClaude(
+        `Lag innhold: ${step.description}`,
+        {
+          systemPrompt: 'Du er en kreativ innholdsprodusent for Freddy Bremseths brands. Skriv engasjerende innhold pa norsk. Returner JSON med: { "headline": "...", "body": "...", "hashtags": [...], "cta": "..." }',
+          maxTokens: 1500,
+          model: 'sonnet',
+        }
+      );
       return { summary: 'Innhold generert', data: { content: contentText } };
     }
 
@@ -285,7 +260,6 @@ async function executeStep(
 
     case 'analytics': {
       if (!supabase) throw new Error('Database ikke tilgjengelig');
-      // Gather analytics data
       const [contacts, actions, reports] = await Promise.all([
         supabase.from('contacts').select('pipeline_status', { count: 'exact' }),
         supabase
@@ -301,11 +275,7 @@ async function executeStep(
       ]);
       return {
         summary: `Hentet analytics: ${contacts.count || 0} kontakter, ${(actions.data || []).length} veksthandlinger`,
-        data: {
-          contacts: contacts.count,
-          actions: actions.data,
-          reports: reports.data,
-        },
+        data: { contacts: contacts.count, actions: actions.data, reports: reports.data },
       };
     }
 

@@ -2,83 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getSongs,
   getSongsWithoutYouTube,
-  isConfigured,
-  getRecord,
-  createRecord,
+  getSongById,
+  createSong,
   clearSongFields,
+  isConfigured,
 } from '@/services/integrations/airtable-client';
 import { deleteVideo, extractVideoId } from '@/services/integrations/youtube-client';
 import { NeuralBeatPipeline } from '@/services/pipelines/neural-beat-pipeline';
-import type { AirtableSongRecord, PipelineRun } from '@/lib/types';
+import type { SongRecord, PipelineRun } from '@/lib/types';
 
 // ─── Vercel serverless: allow up to 5 minutes for pipeline execution ──
 export const maxDuration = 300;
 
-// Field mapping for the "Make.com Songs" Airtable table
-const SONG_FIELD_MAP = {
-  trackName: 'Track Name',
-  audioFile: 'Audio File',
-  youtubeUrl: 'YouTube URL',
-  aiMetadata: 'AI Metadata',
-  generatedImage: 'Generated Image',
-  lastModifiedTime: 'Last Modified Time',
-  created: 'Created',
-} as const;
-
-function extractAttachmentUrl(field: any): string | undefined {
-  if (!field) return undefined;
-  if (typeof field === 'string') return field;
-  if (Array.isArray(field) && field.length > 0) return field[0].url || undefined;
-  return undefined;
-}
-
-function mapRawRecordToSong(record: { id: string; fields: Record<string, any> }): AirtableSongRecord {
-  const f = record.fields;
-
-  let metadata: Record<string, any> | undefined;
-  const rawMeta = f[SONG_FIELD_MAP.aiMetadata];
-  if (rawMeta) {
-    if (typeof rawMeta === 'string') {
-      try { metadata = JSON.parse(rawMeta); } catch { metadata = { raw: rawMeta }; }
-    } else {
-      metadata = rawMeta;
-    }
-  }
-
-  return {
-    id: record.id,
-    title: f[SONG_FIELD_MAP.trackName] || '',
-    artist: 'Neural Beat',
-    audioUrl: extractAttachmentUrl(f[SONG_FIELD_MAP.audioFile]),
-    status: undefined,
-    genre: metadata?.genre,
-    mood: metadata?.mood,
-    bpm: metadata?.bpm,
-    imageUrl: extractAttachmentUrl(f[SONG_FIELD_MAP.generatedImage]),
-    youtubeUrl: f[SONG_FIELD_MAP.youtubeUrl] || undefined,
-    metadata,
-    lastModifiedTime: f[SONG_FIELD_MAP.lastModifiedTime],
-    createdTime: f[SONG_FIELD_MAP.created],
-  };
-}
-
 export async function GET(request: NextRequest) {
-  // List all songs (pipeline status is now streamed via POST SSE)
   try {
-    if (isConfigured()) {
-      const songs = await getSongs();
+    if (!isConfigured()) {
       return NextResponse.json({
-        songs,
-        total: songs.length,
-        source: 'airtable',
+        songs: [],
+        total: 0,
+        source: 'not-configured',
+        message: 'Supabase not configured.',
       });
     }
 
+    const songs = await getSongs();
     return NextResponse.json({
-      songs: [],
-      total: 0,
-      source: 'not-configured',
-      message: 'Airtable not configured. Set AIRTABLE_API_KEY and AIRTABLE_BASE_ID for live data.',
+      songs,
+      total: songs.length,
+      source: 'supabase',
     });
   } catch (error) {
     return NextResponse.json(
@@ -86,7 +37,7 @@ export async function GET(request: NextRequest) {
         songs: [],
         total: 0,
         source: 'error',
-        message: error instanceof Error ? error.message : 'Airtable error',
+        message: error instanceof Error ? error.message : 'Database error',
       },
       { status: 500 }
     );
@@ -95,9 +46,8 @@ export async function GET(request: NextRequest) {
 
 /**
  * PUT /api/neural-beat
- * Register a new song after MP3 has been uploaded to Supabase Storage from the client.
+ * Register a new song after MP3 has been uploaded to Supabase Storage.
  * Accepts JSON: { title, artist, audioUrl }
- * Creates an Airtable record with the audio URL.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -107,30 +57,20 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'audioUrl is required' }, { status: 400 });
     }
 
-    // Create Airtable record if configured
-    let recordId: string | undefined;
-    if (isConfigured()) {
-      const songsTable = process.env.AIRTABLE_SONGS_TABLE || 'Songs';
-      try {
-        const record = await createRecord(songsTable, {
-          [SONG_FIELD_MAP.trackName]: title || 'Untitled',
-          [SONG_FIELD_MAP.audioFile]: [{ url: audioUrl }],
-        });
-        recordId = record.id;
-      } catch (airtableErr) {
-        console.warn('[NeuralBeat] Airtable create failed:', airtableErr);
-      }
+    if (!isConfigured()) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
     }
+
+    const song = await createSong({
+      title: title || 'Untitled',
+      artist: artist || 'Neural Beat',
+      audioUrl,
+    });
 
     return NextResponse.json({
       success: true,
-      song: {
-        id: recordId || `local-${Date.now()}`,
-        title,
-        artist,
-        audioUrl,
-      },
-      message: `MP3 lastet opp${recordId ? ' og Airtable-post opprettet' : ''}`,
+      song,
+      message: 'MP3 lastet opp og sang registrert i databasen',
     });
   } catch (error) {
     return NextResponse.json(
@@ -145,6 +85,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     let { recordId } = body;
     const { auto } = body;
+
+    if (!isConfigured()) {
+      return NextResponse.json(
+        { error: 'Supabase not configured.' },
+        { status: 503 }
+      );
+    }
 
     // Auto-mode: pick the next unpublished song automatically
     if (auto && !recordId) {
@@ -166,23 +113,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isConfigured()) {
-      return NextResponse.json(
-        { error: 'Airtable is not configured. Set AIRTABLE_API_KEY and AIRTABLE_BASE_ID.' },
-        { status: 503 }
-      );
-    }
-
-    // Fetch the song record from Airtable
-    const songsTable = process.env.AIRTABLE_SONGS_TABLE || 'Songs';
-    const rawRecord = await getRecord(songsTable, recordId);
-    const songRecord = mapRawRecordToSong(rawRecord);
-
+    // Fetch the song record from Supabase
+    const songRecord = await getSongById(recordId);
     const pipelineId = `${Date.now()}_${recordId}`;
 
     // ─── SSE Streaming Response ──────────────────────────────────────
-    // Stream pipeline progress as Server-Sent Events with keep-alive
-    // heartbeats every 15s to prevent proxy/CDN timeout during long steps.
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -194,9 +129,6 @@ export async function POST(request: NextRequest) {
           }
         };
 
-        // Keep-alive heartbeat: send actual data events every 10s to prevent
-        // Vercel CDN/proxy from closing idle connections. Using real data: events
-        // (not SSE comments) because CDN may buffer/ignore comment-only frames.
         const heartbeat = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'heartbeat' })}\n\n`));
@@ -205,10 +137,8 @@ export async function POST(request: NextRequest) {
           }
         }, 10000);
 
-        // Send initial status
         send({ id: pipelineId, recordId, status: 'running', steps: [] });
 
-        // Create pipeline with progress streaming
         const pipeline = new NeuralBeatPipeline();
         pipeline.onProgress = (run) => {
           send({
@@ -225,7 +155,6 @@ export async function POST(request: NextRequest) {
 
         try {
           const pipelineRun = await pipeline.execute(songRecord);
-          // Send final state
           send({
             id: pipelineId,
             recordId,
@@ -267,7 +196,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * DELETE /api/neural-beat
- * Delete a video from YouTube and clear Airtable fields.
+ * Delete a video from YouTube and clear database fields.
  * Body: { recordId: string, youtubeUrl: string }
  */
 export async function DELETE(request: NextRequest) {
@@ -282,7 +211,6 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // 1. Extract video ID from YouTube URL
     const videoId = extractVideoId(youtubeUrl);
     if (!videoId) {
       return NextResponse.json(
@@ -291,24 +219,23 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // 2. Delete from YouTube
+    // Delete from YouTube
     try {
       await deleteVideo(videoId);
     } catch (ytError) {
       const msg = ytError instanceof Error ? ytError.message : String(ytError);
-      // If video already deleted (404), continue to clear Airtable
       if (!msg.includes('404') && !msg.includes('videoNotFound')) {
         throw new Error(`YouTube delete failed: ${msg}`);
       }
-      console.warn(`[NeuralBeat] Video ${videoId} already deleted or not found, clearing Airtable anyway`);
+      console.warn(`[NeuralBeat] Video ${videoId} already deleted or not found, clearing DB anyway`);
     }
 
-    // 3. Clear Airtable fields (YouTube URL, AI Metadata, Generated Image)
+    // Clear database fields
     await clearSongFields(recordId);
 
     return NextResponse.json({
       success: true,
-      message: `Video ${videoId} deleted from YouTube and Airtable fields cleared.`,
+      message: `Video ${videoId} deleted from YouTube and database fields cleared.`,
     });
   } catch (error) {
     return NextResponse.json(

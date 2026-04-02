@@ -60,8 +60,8 @@ interface YouTubeVideo {
 type SongStatus = 'ready' | 'processing' | 'done' | 'error' | 'no-audio';
 
 const PIPELINE_STEPS = [
-  { name: 'Oppdater Airtable', desc: 'Marker som prosesserer' },
-  { name: 'Last ned lyd', desc: 'Hent lydfil fra Airtable' },
+  { name: 'Oppdater status', desc: 'Marker som prosesserer' },
+  { name: 'Last ned lyd', desc: 'Hent lydfil fra lagring' },
   { name: 'AI-analyse', desc: 'Gemini analyserer sjanger, stemning, stil' },
   { name: 'YouTube SEO', desc: 'Gemini genererer tittel, beskrivelse, tagger' },
   { name: 'Generer og hent bilder', desc: 'AI-genererte + sjangerbilder fra database' },
@@ -176,7 +176,7 @@ export default function NeuralBeatPage() {
 
       const audioUrl = publicUrl;
 
-      // 2. Tell API to create Airtable record with the audio URL
+      // 2. Register the song in the database
       const res = await fetch('/api/neural-beat', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -197,8 +197,8 @@ export default function NeuralBeatPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
         setTimeout(fetchSongs, 1500);
       } else {
-        // File is uploaded to storage even if Airtable fails
-        window.alert('MP3 lastet opp til lagring, men Airtable-feil: ' + (data.error || 'Ukjent'));
+        // File is uploaded to storage even if DB registration fails
+        window.alert('MP3 lastet opp til lagring, men databasefeil: ' + (data.error || 'Ukjent'));
         setTimeout(fetchSongs, 1500);
       }
     } catch (err) {
@@ -534,7 +534,7 @@ export default function NeuralBeatPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-white">Neural Beat</h1>
-              <p className="text-slate-400">AI-drevet musikkproduksjon &bull; Airtable &rarr; YouTube</p>
+              <p className="text-slate-400">AI-drevet musikkproduksjon &bull; Supabase &rarr; YouTube</p>
             </div>
           </div>
           {readySongs.length > 0 && (
@@ -567,7 +567,7 @@ export default function NeuralBeatPage() {
             >
               <Music className="h-8 w-8 mx-auto mb-2 text-slate-500" />
               <p className="text-sm text-slate-400">Klikk for a velge en MP3-fil</p>
-              <p className="text-xs text-slate-500 mt-1">Filen lastes opp som ny sang til Airtable</p>
+              <p className="text-xs text-slate-500 mt-1">Filen lastes opp som ny sang til databasen</p>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -700,7 +700,7 @@ export default function NeuralBeatPage() {
                 <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500/30" />
                 <h3 className="text-lg font-semibold text-white mb-2">Alle sanger er publisert!</h3>
                 <p className="text-slate-400 text-sm">
-                  Last opp nye MP3-filer ovenfor, eller legg til sanger i Airtable.
+                  Last opp nye MP3-filer ovenfor for å legge til nye sanger.
                 </p>
               </CardContent>
             </Card>
@@ -1097,7 +1097,7 @@ export default function NeuralBeatPage() {
           <Card className="bg-slate-800/50 border-slate-700/50">
             <CardHeader>
               <CardTitle className="text-white">Neural Beat Pipeline &mdash; 8 steg</CardTitle>
-              <CardDescription>Helautomatisert arbeidsflyt fra Airtable til YouTube</CardDescription>
+              <CardDescription>Helautomatisert arbeidsflyt fra opplasting til YouTube</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -1115,7 +1115,7 @@ export default function NeuralBeatPage() {
               </div>
               <div className="mt-6 p-4 rounded-lg bg-pink-500/10 border border-pink-500/20">
                 <p className="text-sm text-pink-200">
-                  <strong>Slik bruker du det:</strong> Legg til sanger med lydfiler i Airtable-tabellen &quot;Make.com Songs&quot;.
+                  <strong>Slik bruker du det:</strong> Last opp MP3-filer via opplastingsfeltet ovenfor.
                   Klikk deretter <strong>Prosesser</strong> pa et spor &mdash; eller <strong>Prosesser alle</strong> for a kjore hele pipelinen
                   pa alle sanger. AI-en vil analysere, lage kunstverk, rendre en video og laste opp til YouTube automatisk.
                 </p>

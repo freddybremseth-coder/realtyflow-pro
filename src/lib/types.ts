@@ -84,31 +84,36 @@ export interface YouTubeUploadResult {
   thumbnailUrl: string;
 }
 
-// ---- Airtable Types ----
+// ---- Song / Neural Beat Types ----
 
-export interface AirtableRecord {
-  id: string;
-  fields: Record<string, any>;
-  createdTime?: string;
-}
-
-export interface AirtableSongRecord {
+export interface SongRecord {
   id: string;
   title: string;
   artist: string;
   audioUrl?: string;
-  status?: 'Trigger' | 'Processing' | 'Done' | 'Error';
+  status?: 'ready' | 'processing' | 'published' | 'error';
   genre?: string;
   mood?: string;
+  style?: string;
+  energy?: string;
+  visualStyle?: string;
   bpm?: number;
   imageUrl?: string;
-  imagePrompt?: string;
-  videoUrl?: string;
+  thumbnailUrl?: string;
   youtubeUrl?: string;
   youtubeVideoId?: string;
   errorMessage?: string;
   metadata?: Record<string, any>;
-  lastModifiedTime?: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+/** @deprecated Use SongRecord instead */
+export type AirtableSongRecord = SongRecord;
+
+export interface AirtableRecord {
+  id: string;
+  fields: Record<string, any>;
   createdTime?: string;
 }
 
