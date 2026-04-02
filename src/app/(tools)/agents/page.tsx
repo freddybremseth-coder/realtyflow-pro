@@ -410,32 +410,25 @@ export default function AgentsCommandCenter() {
 
       const data = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: data.response,
-          plan: data.plan,
-          execution: data.execution,
-        },
-      ]);
+      // Map API status values to client-side status values
+      const mapStepStatus = (st: string): PlanStep["status"] => {
+        if (st === "completed") return "done";
+        if (st === "failed") return "error";
+        if (st === "running" || st === "done" || st === "error" || st === "pending") return st;
+        return "pending";
+      };
+      const mapPlanStatus = (st: string): Plan["status"] => {
+        if (st === "completed") return "done";
+        if (st === "failed") return "error";
+        if (st === "executing") return "executing";
+        if (st === "confirmed" || st === "draft" || st === "done" || st === "error") return st;
+        return "draft";
+      };
 
+      // Map the plan to correct client-side statuses BEFORE storing in message
+      let mappedPlan: Plan | undefined;
       if (data.plan) {
-        // Map API status values to client-side status values and ensure id exists
-        const mapStepStatus = (st: string): PlanStep["status"] => {
-          if (st === "completed") return "done";
-          if (st === "failed") return "error";
-          if (st === "running" || st === "done" || st === "error" || st === "pending") return st;
-          return "pending";
-        };
-        const mapPlanStatus = (st: string): Plan["status"] => {
-          if (st === "completed") return "done";
-          if (st === "failed") return "error";
-          if (st === "executing") return "executing";
-          if (st === "confirmed" || st === "draft" || st === "done" || st === "error") return st;
-          return "draft";
-        };
-        const mappedPlan: Plan = {
+        mappedPlan = {
           id: data.plan.id || `plan-${Date.now()}`,
           title: data.plan.title || "Plan",
           status: mapPlanStatus(data.plan.status || "draft"),
@@ -447,51 +440,63 @@ export default function AgentsCommandCenter() {
         };
         setActivePlan(mappedPlan);
       }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.response,
+          plan: mappedPlan,
+          execution: data.execution,
+        },
+      ]);
       if (data.execution) {
-        // The execution is already complete (synchronous API). Map statuses and show results.
-        const mapStepStatusExec = (st: string): PlanStep["status"] => {
-          if (st === "completed") return "done";
-          if (st === "failed") return "error";
-          if (st === "running" || st === "done" || st === "error" || st === "pending") return st;
-          return "pending";
-        };
-        const mappedSteps = (data.execution.steps || []).map((s: { id?: number; description: string; agent: string; system: string; status?: string; result?: string }) => ({
+        // Execution is already complete (synchronous API). Map statuses and show results.
+        const executionSteps = (data.execution.steps || []).map((s: { id?: number; description: string; agent: string; system: string; status?: string; result?: string }) => ({
           ...s,
-          status: mapStepStatusExec(s.status || "pending"),
+          status: mapStepStatus(s.status || "pending"),
         }));
-        const completedCount = mappedSteps.filter((s: { status: string }) => s.status === "done").length;
+        const completedCount = executionSteps.filter((s: { status: string }) => s.status === "done").length;
+        const executionPlanStatus: Plan["status"] =
+          data.execution.status === "completed" || data.execution.status === "partial" ? "done" : "error";
 
         // Update the active plan with execution results
-        if (activePlan) {
-          setActivePlan({
-            ...activePlan,
-            status: data.execution.status === "completed" ? "done" : data.execution.status === "partial" ? "done" : "error",
-            steps: mappedSteps,
-          });
-        }
+        const donePlan: Plan = {
+          ...(activePlan || { id: `plan-${Date.now()}`, title: "Plan" }),
+          status: executionPlanStatus,
+          steps: executionSteps,
+        };
+        setActivePlan(donePlan);
 
-        // Show execution as complete
+        // Update the last message to show completed plan with results
         setMessages((prev) => {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
-          if (lastIdx >= 0 && updated[lastIdx].execution) {
+          if (lastIdx >= 0) {
             updated[lastIdx] = {
               ...updated[lastIdx],
+              plan: donePlan,
               execution: {
-                ...updated[lastIdx].execution!,
+                id: data.execution.id || `exec-${Date.now()}`,
+                planId: donePlan.id,
+                startedAt: Date.now(),
                 completedSteps: completedCount,
-                totalSteps: mappedSteps.length,
+                totalSteps: executionSteps.length,
                 elapsedSeconds: 0,
               },
-              plan: activePlan ? {
-                ...activePlan,
-                status: "done",
-                steps: mappedSteps,
-              } : undefined,
             };
           }
           return updated;
         });
+
+        // Also mark the original plan message as "done" so button disappears
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.plan && m.plan.status === "draft"
+              ? { ...m, plan: { ...m.plan, status: "done" as const } }
+              : m
+          )
+        );
 
         // Refresh recent actions after execution
         fetchRecentActions();
