@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   Music, Loader2, Play, CheckCircle, XCircle, Clock, Zap, Youtube, Radio, Disc3,
   Waves, PlayCircle, AlertCircle, Trash2, Upload, BarChart3, Eye, ThumbsUp, MessageSquare,
+  TrendingUp, Target, Lightbulb, ListMusic, Flame, Sparkles, ArrowUpRight,
 } from 'lucide-react';
 
 interface Song {
@@ -55,6 +56,39 @@ interface YouTubeVideo {
   viewCount: number;
   likeCount: number;
   commentCount: number;
+  viewsPerDay?: number;
+}
+
+interface AIAnalysis {
+  overallScore: number;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  viralStrategy: {
+    titleFormulas: string[];
+    thumbnailTips: string[];
+    uploadSchedule: string;
+    contentGaps: string[];
+    trendingTopics: string[];
+  };
+  actionItems: Array<{ priority: string; action: string; expectedImpact: string }>;
+  benchmarks: {
+    currentGrowthRate: string;
+    targetGrowthRate: string;
+    estimatedTimeToMilestone: string;
+  };
+}
+
+interface MixPlaylist {
+  title: string;
+  emoji: string;
+  mood: string;
+  description: string;
+  targetAudience: string;
+  suggestedLength: string;
+  viralPotential: string;
+  searchKeywords: string[];
+  exampleSongs: string[];
 }
 
 type SongStatus = 'ready' | 'processing' | 'done' | 'error' | 'no-audio';
@@ -92,6 +126,15 @@ export default function NeuralBeatPage() {
   const [ytVideos, setYtVideos] = useState<YouTubeVideo[]>([]);
   const [ytLoading, setYtLoading] = useState(false);
 
+  // AI Analytics state
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
+  const [mixPlaylists, setMixPlaylists] = useState<MixPlaylist[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsMetrics, setAnalyticsMetrics] = useState<{
+    totalViews: number; avgViews: number; engagementRate: number;
+  } | null>(null);
+  const [fastestGrowing, setFastestGrowing] = useState<YouTubeVideo[]>([]);
+
   const fetchSongs = useCallback(() => {
     fetch('/api/neural-beat')
       .then((res) => res.json())
@@ -120,6 +163,24 @@ export default function NeuralBeatPage() {
       })
       .catch(() => {})
       .finally(() => setYtLoading(false));
+  }, []);
+
+  // Fetch AI-powered analytics
+  const fetchAIAnalytics = useCallback(() => {
+    setAnalyticsLoading(true);
+    fetch('/api/neural-beat/analytics')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) throw new Error(data.error);
+        if (data.channel) setYtChannel(data.channel);
+        if (data.topVideos) setYtVideos(data.topVideos);
+        if (data.analysis) setAiAnalysis(data.analysis);
+        if (data.mixes) setMixPlaylists(data.mixes);
+        if (data.metrics) setAnalyticsMetrics(data.metrics);
+        if (data.fastestGrowing) setFastestGrowing(data.fastestGrowing);
+      })
+      .catch((err) => console.error('Analytics error:', err))
+      .finally(() => setAnalyticsLoading(false));
   }, []);
 
   // Handle MP3 file selection
@@ -680,8 +741,8 @@ export default function NeuralBeatPage() {
           <TabsTrigger value="published">
             <Youtube className="mr-2 h-4 w-4" /> Publiserte ({stats.done})
           </TabsTrigger>
-          <TabsTrigger value="youtube-stats" onClick={() => { if (!ytChannel && !ytLoading) fetchYouTubeStats(); }}>
-            <BarChart3 className="mr-2 h-4 w-4" /> YouTube Statistikk
+          <TabsTrigger value="youtube-stats" onClick={() => { if (!aiAnalysis && !analyticsLoading) fetchAIAnalytics(); }}>
+            <BarChart3 className="mr-2 h-4 w-4" /> YouTube AI Analytikk
           </TabsTrigger>
           <TabsTrigger value="how-it-works">
             <Radio className="mr-2 h-4 w-4" /> Slik fungerer det
@@ -990,60 +1051,272 @@ export default function NeuralBeatPage() {
           )}
         </TabsContent>
 
-        {/* YouTube Statistikk Tab */}
+        {/* YouTube AI Analytikk Tab */}
         <TabsContent value="youtube-stats" className="space-y-4">
-          {ytLoading ? (
-            <div className="flex items-center justify-center py-20">
+          {(ytLoading || analyticsLoading) ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-red-500" />
+              <p className="text-sm text-slate-400">{analyticsLoading ? 'AI analyserer kanalen din...' : 'Henter data...'}</p>
             </div>
           ) : (
             <>
-              {/* Channel Stats */}
+              {/* Channel Stats + AI Score */}
               {ytChannel && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card className="bg-slate-800/50 border-slate-700/50">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-white flex items-center gap-2 text-base">
+                        <Youtube className="h-5 w-5 text-red-400" />
+                        {ytChannel.title}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <div className="text-xl font-bold text-white">{ytChannel.subscriberCount.toLocaleString('nb-NO')}</div>
+                          <div className="text-[10px] text-slate-400">Abonnenter</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xl font-bold text-white">{ytChannel.viewCount.toLocaleString('nb-NO')}</div>
+                          <div className="text-[10px] text-slate-400">Totale visninger</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xl font-bold text-white">{ytChannel.videoCount.toLocaleString('nb-NO')}</div>
+                          <div className="text-[10px] text-slate-400">Videoer</div>
+                        </div>
+                      </div>
+                      {analyticsMetrics && (
+                        <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-700">
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-cyan-400">{analyticsMetrics.avgViews.toLocaleString('nb-NO')}</div>
+                            <div className="text-[10px] text-slate-400">Snitt visninger</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-emerald-400">{analyticsMetrics.engagementRate}%</div>
+                            <div className="text-[10px] text-slate-400">Engasjement</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-amber-400">{analyticsMetrics.totalViews.toLocaleString('nb-NO')}</div>
+                            <div className="text-[10px] text-slate-400">Totalt (videoer)</div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* AI Score Card */}
+                  {aiAnalysis && (
+                    <Card className="bg-slate-800/50 border-slate-700/50">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-white flex items-center gap-2 text-base">
+                          <Sparkles className="h-5 w-5 text-amber-400" />
+                          AI Vurdering
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="relative w-20 h-20">
+                            <svg className="w-20 h-20 -rotate-90" viewBox="0 0 36 36">
+                              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#334155" strokeWidth="3" />
+                              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none"
+                                stroke={aiAnalysis.overallScore >= 70 ? '#10b981' : aiAnalysis.overallScore >= 40 ? '#f59e0b' : '#ef4444'}
+                                strokeWidth="3" strokeDasharray={`${aiAnalysis.overallScore}, 100`} strokeLinecap="round" />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xl font-bold text-white">{aiAnalysis.overallScore}</span>
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm text-slate-200">{aiAnalysis.summary}</p>
+                          </div>
+                        </div>
+                        {aiAnalysis.benchmarks && (
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between text-slate-400">
+                              <span>Nåværende vekst:</span>
+                              <span className="text-white">{aiAnalysis.benchmarks.currentGrowthRate}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-400">
+                              <span>Mål for 1M views:</span>
+                              <span className="text-cyan-400">{aiAnalysis.benchmarks.targetGrowthRate}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-400">
+                              <span>Neste milepæl:</span>
+                              <span className="text-emerald-400">{aiAnalysis.benchmarks.estimatedTimeToMilestone}</span>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {/* Viral Strategy */}
+              {aiAnalysis?.viralStrategy && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card className="bg-slate-800/50 border-slate-700/50">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-white flex items-center gap-2 text-sm">
+                        <Target className="h-4 w-4 text-red-400" />
+                        Viral Strategi
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-300 mb-1">Tittelformler</h4>
+                        {aiAnalysis.viralStrategy.titleFormulas.map((f, i) => (
+                          <p key={i} className="text-xs text-slate-400 pl-2 border-l-2 border-red-500/30 mb-1">{f}</p>
+                        ))}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-300 mb-1">Thumbnail-tips</h4>
+                        {aiAnalysis.viralStrategy.thumbnailTips.map((t, i) => (
+                          <p key={i} className="text-xs text-slate-400 pl-2 border-l-2 border-amber-500/30 mb-1">{t}</p>
+                        ))}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-300 mb-1">Opplastingsplan</h4>
+                        <p className="text-xs text-cyan-400">{aiAnalysis.viralStrategy.uploadSchedule}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-300 mb-1">Trending Topics</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {aiAnalysis.viralStrategy.trendingTopics.map((t, i) => (
+                            <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-slate-800/50 border-slate-700/50">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-white flex items-center gap-2 text-sm">
+                        <Lightbulb className="h-4 w-4 text-amber-400" />
+                        Handlingsplan
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <h4 className="text-xs font-semibold text-emerald-400 mb-1">Styrker</h4>
+                        {aiAnalysis.strengths?.map((s, i) => (
+                          <p key={i} className="text-xs text-slate-300 flex items-start gap-1.5 mb-1">
+                            <CheckCircle className="h-3 w-3 text-emerald-400 mt-0.5 shrink-0" />{s}
+                          </p>
+                        ))}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-red-400 mb-1">Svakheter</h4>
+                        {aiAnalysis.weaknesses?.map((w, i) => (
+                          <p key={i} className="text-xs text-slate-300 flex items-start gap-1.5 mb-1">
+                            <AlertCircle className="h-3 w-3 text-red-400 mt-0.5 shrink-0" />{w}
+                          </p>
+                        ))}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-300 mb-1">Prioriterte tiltak</h4>
+                        {aiAnalysis.actionItems?.map((item, i) => (
+                          <div key={i} className="flex items-start gap-2 mb-2 p-2 rounded bg-slate-700/30">
+                            <Badge variant={item.priority === 'high' ? 'destructive' : item.priority === 'medium' ? 'warning' : 'secondary'} className="text-[9px] mt-0.5 shrink-0">
+                              {item.priority === 'high' ? 'Høy' : item.priority === 'medium' ? 'Medium' : 'Lav'}
+                            </Badge>
+                            <div>
+                              <p className="text-xs text-white">{item.action}</p>
+                              <p className="text-[10px] text-slate-500">{item.expectedImpact}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Fastest Growing Videos */}
+              {fastestGrowing.length > 0 && (
                 <Card className="bg-slate-800/50 border-slate-700/50">
-                  <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
-                      <Youtube className="h-5 w-5 text-red-400" />
-                      {ytChannel.title}
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-white flex items-center gap-2 text-sm">
+                      <TrendingUp className="h-4 w-4 text-emerald-400" />
+                      Raskest Voksende Videoer
                     </CardTitle>
-                    <CardDescription>Kanalstatistikk</CardDescription>
+                    <CardDescription>Sortert etter visninger per dag</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-white">{ytChannel.subscriberCount.toLocaleString('nb-NO')}</div>
-                        <div className="text-xs text-slate-400">Abonnenter</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-white">{ytChannel.viewCount.toLocaleString('nb-NO')}</div>
-                        <div className="text-xs text-slate-400">Totale visninger</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-white">{ytChannel.videoCount.toLocaleString('nb-NO')}</div>
-                        <div className="text-xs text-slate-400">Videoer</div>
-                      </div>
+                    <div className="space-y-2">
+                      {fastestGrowing.map((video, i) => (
+                        <div key={video.id} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 transition-colors">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="text-sm font-bold text-slate-500 w-5">{i + 1}</span>
+                            {video.thumbnailUrl ? (
+                              <img src={video.thumbnailUrl} alt="" className="h-9 w-14 rounded object-cover shrink-0" />
+                            ) : (
+                              <div className="h-9 w-14 rounded bg-slate-700 flex items-center justify-center shrink-0">
+                                <Play className="h-3 w-3 text-slate-500" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-medium text-white truncate">{video.title}</h4>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs shrink-0 ml-4">
+                            <div className="flex items-center gap-1 text-emerald-400">
+                              <ArrowUpRight className="h-3 w-3" />
+                              <span className="font-semibold">{video.viewsPerDay?.toLocaleString('nb-NO') || '?'}/dag</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-slate-400">
+                              <Eye className="h-3 w-3" />
+                              <span>{video.viewCount.toLocaleString('nb-NO')}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {!ytChannel && !ytLoading && (
+              {/* Mix Playlists */}
+              {mixPlaylists.length > 0 && (
                 <Card className="bg-slate-800/50 border-slate-700/50">
-                  <CardContent className="p-12 text-center">
-                    <Youtube className="h-16 w-16 mx-auto mb-4 text-red-500/20" />
-                    <h3 className="text-lg font-semibold text-white mb-2">YouTube ikke konfigurert</h3>
-                    <p className="text-slate-400 text-sm">
-                      Konfigurer YouTube API-tilkobling for a se kanalstatistikk.
-                    </p>
-                    <Button onClick={fetchYouTubeStats} variant="outline" className="mt-4">
-                      <Loader2 className="mr-2 h-4 w-4" /> Last inn statistikk
-                    </Button>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-white flex items-center gap-2 text-sm">
+                      <ListMusic className="h-4 w-4 text-purple-400" />
+                      AI-foreslåtte Mix Spillelister
+                    </CardTitle>
+                    <CardDescription>Optimert for viral vekst og YouTube-søk</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {mixPlaylists.map((mix, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 transition-colors border border-slate-700/50">
+                          <div className="flex items-start gap-2 mb-2">
+                            <span className="text-xl">{mix.emoji}</span>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-semibold text-white">{mix.title}</h4>
+                              <p className="text-[10px] text-slate-400">{mix.targetAudience} · {mix.suggestedLength}</p>
+                            </div>
+                            <Badge variant={mix.viralPotential === 'high' ? 'destructive' : mix.viralPotential === 'medium' ? 'warning' : 'secondary'} className="text-[9px] shrink-0">
+                              <Flame className="h-2.5 w-2.5 mr-0.5" />
+                              {mix.viralPotential === 'high' ? 'Høy' : mix.viralPotential === 'medium' ? 'Medium' : 'Lav'}
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-slate-300 mb-2">{mix.description}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {mix.searchKeywords?.slice(0, 4).map((kw, j) => (
+                              <Badge key={j} variant="outline" className="text-[9px]">{kw}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Per-video analytics */}
-              {ytVideos.length > 0 && (
+              {/* Top Videos by Views */}
+              {ytVideos.length > 0 && !aiAnalysis && (
                 <Card className="bg-slate-800/50 border-slate-700/50">
                   <CardHeader>
                     <CardTitle className="text-white text-sm">Videoanalyse</CardTitle>
@@ -1063,30 +1336,42 @@ export default function NeuralBeatPage() {
                             )}
                             <div className="min-w-0">
                               <h4 className="text-sm font-medium text-white truncate">{video.title}</h4>
-                              <p className="text-[10px] text-slate-500">
-                                {new Date(video.publishedAt).toLocaleDateString('nb-NO')}
-                              </p>
+                              <p className="text-[10px] text-slate-500">{new Date(video.publishedAt).toLocaleDateString('nb-NO')}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4 text-xs text-slate-400 shrink-0 ml-4">
-                            <div className="flex items-center gap-1">
-                              <Eye className="h-3 w-3" />
-                              <span>{video.viewCount.toLocaleString('nb-NO')}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <ThumbsUp className="h-3 w-3" />
-                              <span>{video.likeCount.toLocaleString('nb-NO')}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" />
-                              <span>{video.commentCount.toLocaleString('nb-NO')}</span>
-                            </div>
+                            <div className="flex items-center gap-1"><Eye className="h-3 w-3" /><span>{video.viewCount.toLocaleString('nb-NO')}</span></div>
+                            <div className="flex items-center gap-1"><ThumbsUp className="h-3 w-3" /><span>{video.likeCount.toLocaleString('nb-NO')}</span></div>
+                            <div className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /><span>{video.commentCount.toLocaleString('nb-NO')}</span></div>
                           </div>
                         </div>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
+              )}
+
+              {!ytChannel && !ytLoading && !analyticsLoading && (
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardContent className="p-12 text-center">
+                    <Youtube className="h-16 w-16 mx-auto mb-4 text-red-500/20" />
+                    <h3 className="text-lg font-semibold text-white mb-2">YouTube ikke konfigurert</h3>
+                    <p className="text-slate-400 text-sm">
+                      Konfigurer YouTube API-tilkobling for AI-drevet kanalanalyse.
+                    </p>
+                    <Button onClick={fetchAIAnalytics} variant="outline" className="mt-4">
+                      <Sparkles className="mr-2 h-4 w-4" /> Start AI-analyse
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {ytChannel && !aiAnalysis && !analyticsLoading && (
+                <div className="flex justify-center">
+                  <Button onClick={fetchAIAnalytics} className="gap-2">
+                    <Sparkles className="h-4 w-4" /> Kjør AI-analyse av kanalen
+                  </Button>
+                </div>
               )}
             </>
           )}

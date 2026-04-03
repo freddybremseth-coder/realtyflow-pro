@@ -26,6 +26,9 @@ import {
   Rocket,
   ChevronDown,
   ChevronUp,
+  History,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -301,6 +304,16 @@ function ExecutionCard({ execution, plan }: { execution: Execution; plan?: Plan 
   );
 }
 
+// --- Types for persistence ---
+
+interface ConversationSummary {
+  id: string;
+  title: string;
+  status: "active" | "archived";
+  updated_at: string;
+  has_plan: boolean;
+}
+
 // --- Main Page ---
 
 export default function AgentsCommandCenter() {
@@ -312,9 +325,13 @@ export default function AgentsCommandCenter() {
   const [agentStatuses, setAgentStatuses] = useState<AgentInfo[]>(agents);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [recentActions, setRecentActions] = useState<{label: string; time: string; status: "done" | "error"}[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const executionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch real recent actions from Supabase
   const fetchRecentActions = useCallback(async () => {
@@ -368,18 +385,130 @@ export default function AgentsCommandCenter() {
     }
   }, []);
 
+  // ── Conversation persistence ──
+
+  const saveConversation = useCallback(async (msgs: ChatMessage[], plan: Plan | null, convId: string | null) => {
+    const supabase = getSupabase();
+    if (!supabase || msgs.length === 0) return convId;
+
+    // Derive title from first user message
+    const firstUserMsg = msgs.find((m) => m.role === "user");
+    const title = firstUserMsg?.content?.slice(0, 100) || "Ny samtale";
+
+    const payload = {
+      title,
+      messages: JSON.parse(JSON.stringify(msgs)),
+      active_plan: plan ? JSON.parse(JSON.stringify(plan)) : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      if (convId) {
+        await supabase.from("command_conversations").update(payload).eq("id", convId);
+        return convId;
+      } else {
+        const { data } = await supabase.from("command_conversations").insert({ ...payload, status: "active" }).select("id").single();
+        if (data?.id) {
+          setConversationId(data.id);
+          return data.id as string;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save conversation:", err);
+    }
+    return convId;
+  }, []);
+
+  const debouncedSave = useCallback((msgs: ChatMessage[], plan: Plan | null, convId: string | null) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveConversation(msgs, plan, convId);
+    }, 1000);
+  }, [saveConversation]);
+
+  const loadConversations = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      const { data } = await supabase
+        .from("command_conversations")
+        .select("id, title, status, updated_at, active_plan")
+        .order("updated_at", { ascending: false })
+        .limit(20);
+      if (data) {
+        setConversations(data.map((c: { id: string; title: string; status: string; updated_at: string; active_plan: unknown }) => ({
+          id: c.id,
+          title: c.title || "Uten tittel",
+          status: c.status as "active" | "archived",
+          updated_at: c.updated_at,
+          has_plan: !!c.active_plan,
+        })));
+      }
+    } catch (err) {
+      console.error("Failed to load conversations:", err);
+    }
+  }, []);
+
+  const loadConversation = useCallback(async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from("command_conversations").select("*").eq("id", id).single();
+      if (data) {
+        setConversationId(data.id);
+        setMessages(data.messages || []);
+        setActivePlan(data.active_plan || null);
+        setShowHistory(false);
+      }
+    } catch (err) {
+      console.error("Failed to load conversation:", err);
+    }
+  }, []);
+
+  const deleteConversation = useCallback(async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      await supabase.from("command_conversations").delete().eq("id", id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (conversationId === id) {
+        setConversationId(null);
+        setMessages([]);
+        setActivePlan(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+    }
+  }, [conversationId]);
+
+  const startNewConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+    setActivePlan(null);
+    setShowHistory(false);
+  }, []);
+
+  // Auto-save when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      debouncedSave(messages, activePlan, conversationId);
+    }
+  }, [messages, activePlan, conversationId, debouncedSave]);
+
   // Auto-scroll on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  // Cleanup timer on unmount + fetch recent actions
+  // Cleanup timer on unmount + fetch recent actions + load conversations
   useEffect(() => {
     fetchRecentActions();
+    loadConversations();
     return () => {
       if (executionTimerRef.current) clearInterval(executionTimerRef.current);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [fetchRecentActions]);
+  }, [fetchRecentActions, loadConversations]);
 
   const handleSend = async (overrideMessage?: string) => {
     const userMsg = (overrideMessage || input).trim();
@@ -498,8 +627,9 @@ export default function AgentsCommandCenter() {
           )
         );
 
-        // Refresh recent actions after execution
+        // Refresh recent actions and conversation list after execution
         fetchRecentActions();
+        loadConversations();
       }
     } catch {
       setMessages((prev) => [
@@ -633,15 +763,35 @@ export default function AgentsCommandCenter() {
             Snakk med Victoria - din strategiske AI-assistent
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="lg:hidden"
-          onClick={() => setMobilePanel(!mobilePanel)}
-        >
-          {mobilePanel ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-          <span className="ml-1.5">Agenter</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={startNewConversation}
+            className="gap-1.5"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">Ny samtale</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setShowHistory(!showHistory); loadConversations(); }}
+            className="gap-1.5"
+          >
+            <History size={14} />
+            <span className="hidden sm:inline">Historikk</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setMobilePanel(!mobilePanel)}
+          >
+            {mobilePanel ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            <span className="ml-1.5">Agenter</span>
+          </Button>
+        </div>
       </div>
 
       {/* Main Layout */}
@@ -887,6 +1037,61 @@ export default function AgentsCommandCenter() {
                       {activePlan.steps.length} steg
                     </span>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Conversation History */}
+          {showHistory && (
+            <Card className="border-slate-700 flex-shrink-0">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <History size={14} className="text-cyan-400" />
+                    <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                      Samtalehistorikk
+                    </span>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)} className="h-6 w-6 p-0">
+                    <X size={12} />
+                  </Button>
+                </div>
+                <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                  {conversations.length === 0 ? (
+                    <p className="text-xs text-slate-500">Ingen tidligere samtaler.</p>
+                  ) : (
+                    conversations.map((conv) => (
+                      <div
+                        key={conv.id}
+                        className={`flex items-start gap-2 py-2 px-2 rounded-md cursor-pointer transition-colors group ${
+                          conv.id === conversationId ? "bg-cyan-500/10 border border-cyan-500/30" : "hover:bg-slate-800/50"
+                        }`}
+                        onClick={() => loadConversation(conv.id)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-200 truncate">{conv.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-slate-500">
+                              {new Date(conv.updated_at).toLocaleDateString("nb-NO", { day: "numeric", month: "short" })}
+                            </span>
+                            {conv.has_plan && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5">
+                                <Rocket size={8} />
+                                Plan
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-400"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
