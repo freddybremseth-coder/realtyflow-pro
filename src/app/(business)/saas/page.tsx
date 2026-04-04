@@ -189,6 +189,23 @@ export default function SaaSPage() {
   const [buildResult, setBuildResult] = useState<{ repo_url?: string; vercel_url?: string; error?: string } | null>(null);
   const [buildReady, setBuildReady] = useState<boolean | null>(null);
 
+  // GTM & Venture Builder state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [gtmData, setGtmData] = useState<Record<string, any> | null>(null);
+  const [gtmLoading, setGtmLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [deepScore, setDeepScore] = useState<Record<string, any> | null>(null);
+  const [deepScoreLoading, setDeepScoreLoading] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState('');
+  const [cloneNiche, setCloneNiche] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [cloneResult, setCloneResult] = useState<Record<string, any> | null>(null);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [customerPlan, setCustomerPlan] = useState<Record<string, any> | null>(null);
+  const [customerPlanLoading, setCustomerPlanLoading] = useState(false);
+  const [oppDetailTab, setOppDetailTab] = useState<'details' | 'gtm' | 'scoring'>('details');
+
   // Form state
   const [formSlug, setFormSlug] = useState('');
   const [formName, setFormName] = useState('');
@@ -444,6 +461,89 @@ export default function SaaSPage() {
     }
   };
 
+  // ─── Venture Builder Handlers ──────────────────────────────────────────────
+
+  const generateGTM = async (opp: Opportunity) => {
+    setGtmLoading(true);
+    setGtmData(null);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'go_to_market', title: opp.title, description: opp.description,
+          target_audience: opp.target_audience, suggested_pricing: opp.suggested_pricing,
+          mvp_features: opp.mvp_features, differentiators: opp.differentiators,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGtmData(data.gtm);
+      }
+    } catch { /* ignore */ } finally { setGtmLoading(false); }
+  };
+
+  const generateDeepScore = async (opp: Opportunity) => {
+    setDeepScoreLoading(true);
+    setDeepScore(null);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'deep_score', title: opp.title, description: opp.description,
+          target_audience: opp.target_audience, competitor_count: opp.competitor_count,
+          build_complexity: opp.build_complexity, trend_momentum: opp.trend_momentum,
+          estimated_mrr_potential: opp.estimated_mrr_potential,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDeepScore(data.deep_score);
+      }
+    } catch { /* ignore */ } finally { setDeepScoreLoading(false); }
+  };
+
+  const runCloneCompetitor = async () => {
+    if (!cloneUrl) return;
+    setCloneLoading(true);
+    setCloneResult(null);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clone_competitor', url: cloneUrl, niche: cloneNiche }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCloneResult(data.clone);
+        // Refresh opportunities to show new one
+        fetchOpportunities();
+      }
+    } catch { /* ignore */ } finally { setCloneLoading(false); }
+  };
+
+  const generateCustomerPlan = async () => {
+    setCustomerPlanLoading(true);
+    setCustomerPlan(null);
+    try {
+      const res = await fetch('/api/saas/opportunities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'customer_plan',
+          brand: 'AI Property Advisor',
+          product_name: 'AI-drevet boligrådgivning for kjøpere i Spania',
+          target_market: 'Skandinaviske kjøpere av bolig i Spania',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCustomerPlan(data.customer_plan);
+      }
+    } catch { /* ignore */ } finally { setCustomerPlanLoading(false); }
+  };
+
   const liveApps = apps.filter(a => a.status === 'live');
   const devApps = apps.filter(a => a.status !== 'live' && a.status !== 'archived');
 
@@ -510,6 +610,8 @@ export default function SaaSPage() {
           <TabsTrigger value="pipeline">
             <Target className="mr-2 h-4 w-4" /> Pipeline {approvedCount > 0 && <Badge className="ml-2 bg-emerald-500/20 text-emerald-300 text-[10px]">{approvedCount}</Badge>}
           </TabsTrigger>
+          <TabsTrigger value="clone"><Zap className="mr-2 h-4 w-4" /> Clone Competitor</TabsTrigger>
+          <TabsTrigger value="customer-plan"><Target className="mr-2 h-4 w-4" /> Kundeplan</TabsTrigger>
           <TabsTrigger value="portfolio"><Layout className="mr-2 h-4 w-4" /> Mine Apper ({apps.length})</TabsTrigger>
           <TabsTrigger value="analytics"><BarChart3 className="mr-2 h-4 w-4" /> Analytics</TabsTrigger>
         </TabsList>
@@ -704,6 +806,266 @@ export default function SaaSPage() {
           )}
         </TabsContent>
 
+        {/* ─── Clone Competitor Tab ──────────────────────────────────────── */}
+        <TabsContent value="clone" className="space-y-6">
+          <Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Zap className="h-5 w-5 text-amber-400" /> Clone & Beat Competitor
+              </CardTitle>
+              <CardDescription>Skriv inn URL til en konkurrent-SaaS. AI analyserer svakheter og lager en bedre versjon.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Konkurrent URL</label>
+                  <input type="url" value={cloneUrl} onChange={e => setCloneUrl(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                    placeholder="https://competitor.com" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Nisje (valgfritt)</label>
+                  <input type="text" value={cloneNiche} onChange={e => setCloneNiche(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 focus:border-amber-500 focus:outline-none"
+                    placeholder="f.eks. AI CRM" />
+                </div>
+              </div>
+              <Button onClick={runCloneCompetitor} disabled={cloneLoading || !cloneUrl}
+                className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500">
+                {cloneLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyserer...</>
+                  : <><Search className="mr-2 h-4 w-4" /> Analyser &amp; Lag Bedre Versjon</>}
+              </Button>
+
+              {cloneResult && !cloneResult.error && (
+                <div className="space-y-4 mt-4">
+                  {/* Competitor Analysis */}
+                  {cloneResult.competitor_analysis && (
+                    <Card className="bg-red-500/5 border-red-500/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-red-300 flex items-center gap-2">
+                          <XCircle className="h-4 w-4" /> Konkurrentanalyse: {cloneResult.competitor_analysis.name}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm">
+                        <p className="text-slate-300">{cloneResult.competitor_analysis.description}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <h5 className="text-xs font-semibold text-slate-400 mb-1">Styrker</h5>
+                            {(cloneResult.competitor_analysis.strengths || []).map((s: string, i: number) => (
+                              <div key={i} className="text-xs text-green-300 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {s}</div>
+                            ))}
+                          </div>
+                          <div>
+                            <h5 className="text-xs font-semibold text-slate-400 mb-1">Svakheter</h5>
+                            {(cloneResult.competitor_analysis.weaknesses || []).map((w: string, i: number) => (
+                              <div key={i} className="text-xs text-red-300 flex items-center gap-1"><XCircle className="h-3 w-3" /> {w}</div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <h5 className="text-xs font-semibold text-slate-400 mb-1">Manglende features</h5>
+                          <div className="flex flex-wrap gap-1">
+                            {(cloneResult.competitor_analysis.missing_features || []).map((f: string, i: number) => (
+                              <Badge key={i} variant="outline" className="text-[10px] border-amber-500/30 text-amber-300">{f}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Better Version */}
+                  {cloneResult.better_version && (
+                    <Card className="bg-emerald-500/5 border-emerald-500/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm text-emerald-300 flex items-center gap-2">
+                          <Rocket className="h-4 w-4" /> Din Bedre Versjon: {cloneResult.better_version.title}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3 text-sm">
+                        <p className="text-slate-300">{cloneResult.better_version.description}</p>
+                        <div className="p-2 rounded bg-emerald-500/10">
+                          <span className="text-xs font-semibold text-emerald-400">USP: </span>
+                          <span className="text-xs text-slate-300">{cloneResult.better_version.usp}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="p-2 rounded bg-slate-700/30">
+                            <div className={`text-lg font-bold ${(cloneResult.better_version.opportunity_score || 0) >= 75 ? 'text-green-400' : 'text-amber-400'}`}>
+                              {cloneResult.better_version.opportunity_score}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Score</div>
+                          </div>
+                          <div className="p-2 rounded bg-slate-700/30">
+                            <div className="text-lg font-bold text-blue-400">{cloneResult.better_version.estimated_build_days}d</div>
+                            <div className="text-[10px] text-slate-500">Byggetid</div>
+                          </div>
+                          <div className="p-2 rounded bg-slate-700/30">
+                            <div className="text-sm font-bold text-emerald-400">{cloneResult.better_version.estimated_mrr_potential}</div>
+                            <div className="text-[10px] text-slate-500">MRR</div>
+                          </div>
+                        </div>
+                        <div>
+                          <h5 className="text-xs font-semibold text-slate-400 mb-1">MVP Features</h5>
+                          {(cloneResult.better_version.mvp_features || []).map((f: string, i: number) => (
+                            <div key={i} className="text-xs text-slate-300 flex items-center gap-1 mb-0.5">
+                              <ChevronRight className="h-3 w-3 text-emerald-400" /> {f}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-emerald-400/70">Lagt til som ny mulighet i SaaS Radar. Gå til Discovery for å godkjenne.</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {cloneResult?.error && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">{cloneResult.error}</div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── Customer Plan Tab ──────────────────────────────────────────── */}
+        <TabsContent value="customer-plan" className="space-y-6">
+          <Card className="bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Target className="h-5 w-5 text-green-400" /> 14-Dagers Kundeplan
+              </CardTitle>
+              <CardDescription>AI genererer en konkret dag-for-dag plan for å skaffe dine første 10 betalende kunder til AI Property Advisor.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={generateCustomerPlan} disabled={customerPlanLoading}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500">
+                {customerPlanLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Genererer plan...</>
+                  : <><Sparkles className="mr-2 h-4 w-4" /> Generer 14-dagers kundeplan</>}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {customerPlan && !customerPlan.error && (
+            <div className="space-y-4">
+              {/* Offer */}
+              {customerPlan.offer && (
+                <Card className="bg-emerald-500/5 border-emerald-500/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-emerald-300 flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" /> Tilbud: {customerPlan.offer.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <p className="text-slate-300">{customerPlan.offer.description}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2 rounded bg-slate-700/30 text-center">
+                        <div className="text-lg font-bold text-emerald-400">{customerPlan.offer.price}</div>
+                        <div className="text-[10px] text-slate-500">Entry-pris</div>
+                      </div>
+                      <div className="p-2 rounded bg-slate-700/30 text-center">
+                        <div className="text-sm font-bold text-amber-400">{customerPlan.offer.upsell}</div>
+                        <div className="text-[10px] text-slate-500">Upsell</div>
+                      </div>
+                      <div className="p-2 rounded bg-slate-700/30 text-center">
+                        <div className="text-sm font-bold text-purple-400">{customerPlan.offer.hook}</div>
+                        <div className="text-[10px] text-slate-500">Hook</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Daily Plan */}
+              {customerPlan.daily_plan && (
+                <Card className="border-slate-700/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-white">Dag-for-dag plan</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+                    {(customerPlan.daily_plan || []).map((day: { day: number; focus: string; tasks: { task: string; detail: string; expected_result: string }[] }) => (
+                      <div key={day.day} className="p-3 rounded-lg bg-slate-700/20 border border-slate-700/30">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge className="bg-green-500/20 text-green-300 text-[10px]">Dag {day.day}</Badge>
+                          <span className="text-sm font-medium text-white">{day.focus}</span>
+                        </div>
+                        {(day.tasks || []).map((t: { task: string; detail: string; expected_result: string }, i: number) => (
+                          <div key={i} className="ml-4 mb-1">
+                            <p className="text-xs text-slate-300 flex items-center gap-1">
+                              <ChevronRight className="h-3 w-3 text-green-400" /> <strong>{t.task}</strong>
+                            </p>
+                            <p className="text-[10px] text-slate-400 ml-4">{t.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Outreach Messages */}
+              {customerPlan.outreach_messages && (
+                <Card className="border-slate-700/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-white">Outreach-meldinger (kopier og bruk)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {Object.entries(customerPlan.outreach_messages).map(([key, val]) => {
+                      const msg = typeof val === 'string' ? val : (val as Record<string, string>)?.message || JSON.stringify(val);
+                      const subj = typeof val === 'object' && val !== null ? (val as Record<string, string>)?.subject : null;
+                      return (
+                        <div key={key} className="p-3 rounded-lg bg-slate-700/20">
+                          <h5 className="text-xs font-semibold text-slate-400 mb-1 capitalize">{key.replace(/_/g, ' ')}</h5>
+                          {subj && <p className="text-xs text-purple-300 mb-1">Emne: {subj}</p>}
+                          <p className="text-xs text-slate-300 whitespace-pre-wrap">{msg}</p>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Email Sequence */}
+              {customerPlan.email_sequence && (
+                <Card className="border-slate-700/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-white">E-post drip sekvens</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {(customerPlan.email_sequence || []).map((email: { day: number; subject: string; body: string; purpose: string }, i: number) => (
+                      <div key={i} className="p-3 rounded-lg bg-slate-700/20">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-300">Dag {email.day}</Badge>
+                          <span className="text-xs font-medium text-white">{email.subject}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 whitespace-pre-wrap">{email.body}</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Formål: {email.purpose}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* KPIs */}
+              {customerPlan.kpis && (
+                <Card className="border-slate-700/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-white">Forventede KPIer</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {Object.entries(customerPlan.kpis).map(([key, val]) => (
+                        <div key={key} className="p-2 rounded bg-slate-700/30 text-center">
+                          <div className="text-lg font-bold text-emerald-400">{String(val)}</div>
+                          <div className="text-[10px] text-slate-500 capitalize">{key.replace(/_/g, ' ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
         {/* ─── Portfolio Tab ───────────────────────────────────────────────── */}
         <TabsContent value="portfolio" className="space-y-6">
           {isLoading ? (
@@ -811,7 +1173,7 @@ export default function SaaSPage() {
 
       {/* ─── Opportunity Detail Modal ──────────────────────────────────────── */}
       {selectedOpp && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={() => { setSelectedOpp(null); setBuildPrompt(null); setUserFeedback(''); }}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={() => { setSelectedOpp(null); setBuildPrompt(null); setUserFeedback(''); setGtmData(null); setDeepScore(null); setOppDetailTab('details'); }}>
           <div className="bg-slate-800 border border-slate-700 rounded-t-xl sm:rounded-xl w-full sm:max-w-2xl sm:mx-4 max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="p-6">
@@ -858,6 +1220,218 @@ export default function SaaSPage() {
                 </div>
               </div>
 
+              {/* Detail tabs: Details | GTM | Scoring */}
+              <div className="flex gap-1 mb-4 bg-slate-700/30 rounded-lg p-1">
+                {[
+                  { key: 'details' as const, label: 'Detaljer', icon: FileText },
+                  { key: 'gtm' as const, label: 'Go-To-Market', icon: Rocket },
+                  { key: 'scoring' as const, label: 'Deep Scoring', icon: BarChart3 },
+                ].map(({ key, label, icon: Icon }) => (
+                  <button key={key} onClick={() => setOppDetailTab(key)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      oppDetailTab === key ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}>
+                    <Icon className="h-3 w-3" /> {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* GTM Tab Content */}
+              {oppDetailTab === 'gtm' && (
+                <div className="space-y-4 mb-6">
+                  {!gtmData && (
+                    <Button onClick={() => generateGTM(selectedOpp)} disabled={gtmLoading}
+                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500">
+                      {gtmLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Genererer GTM-strategi...</>
+                        : <><Rocket className="mr-2 h-4 w-4" /> Generer Go-To-Market Strategi</>}
+                    </Button>
+                  )}
+                  {gtmData && !gtmData.error && (
+                    <div className="space-y-3">
+                      {/* ICP */}
+                      {gtmData.icp && (
+                        <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                          <h4 className="text-xs font-semibold text-purple-400 mb-2 flex items-center gap-1"><Users className="h-3 w-3" /> Ideal Customer Profile</h4>
+                          <p className="text-sm text-slate-300 mb-2">{gtmData.icp.demographics}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <h5 className="text-[10px] text-slate-500 mb-1">Smertepunkter</h5>
+                              {(gtmData.icp.pain_points || []).map((p: string, i: number) => (
+                                <div key={i} className="text-xs text-red-300 mb-0.5">- {p}</div>
+                              ))}
+                            </div>
+                            <div>
+                              <h5 className="text-[10px] text-slate-500 mb-1">Kjøpstriggere</h5>
+                              {(gtmData.icp.buying_triggers || []).map((t: string, i: number) => (
+                                <div key={i} className="text-xs text-green-300 mb-0.5">- {t}</div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* First 100 Customers */}
+                      {gtmData.first_100_customers && (
+                        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                          <h4 className="text-xs font-semibold text-emerald-400 mb-2 flex items-center gap-1"><Target className="h-3 w-3" /> Første 100 Kunder</h4>
+                          <p className="text-sm text-slate-300 mb-2">{gtmData.first_100_customers.strategy}</p>
+                          <div className="space-y-1">
+                            {(gtmData.first_100_customers.tactics || []).map((t: { channel: string; action: string; expected_leads: number; timeline: string }, i: number) => (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-300 shrink-0">{t.channel}</Badge>
+                                <span className="text-slate-300 flex-1">{t.action}</span>
+                                <span className="text-emerald-400 shrink-0">{t.expected_leads} leads</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Outreach Templates */}
+                      {gtmData.outreach_templates && (
+                        <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                          <h4 className="text-xs font-semibold text-blue-400 mb-2 flex items-center gap-1"><FileText className="h-3 w-3" /> Outreach-maler</h4>
+                          {gtmData.outreach_templates.cold_email && (
+                            <div className="mb-2 p-2 rounded bg-slate-700/30">
+                              <p className="text-[10px] text-slate-500">Cold Email</p>
+                              <p className="text-xs text-purple-300">Emne: {gtmData.outreach_templates.cold_email.subject}</p>
+                              <p className="text-xs text-slate-300 whitespace-pre-wrap mt-1">{gtmData.outreach_templates.cold_email.body}</p>
+                            </div>
+                          )}
+                          {gtmData.outreach_templates.linkedin_dm && (
+                            <div className="mb-2 p-2 rounded bg-slate-700/30">
+                              <p className="text-[10px] text-slate-500">LinkedIn DM</p>
+                              <p className="text-xs text-slate-300">{gtmData.outreach_templates.linkedin_dm}</p>
+                            </div>
+                          )}
+                          {gtmData.outreach_templates.facebook_post && (
+                            <div className="p-2 rounded bg-slate-700/30">
+                              <p className="text-[10px] text-slate-500">Facebook-gruppe post</p>
+                              <p className="text-xs text-slate-300">{gtmData.outreach_templates.facebook_post}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Content Plan */}
+                      {gtmData.content_plan && (
+                        <div className="p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
+                          <h4 className="text-xs font-semibold text-pink-400 mb-2">Content Plan (7 dager)</h4>
+                          <div className="space-y-1">
+                            {(gtmData.content_plan || []).slice(0, 7).map((c: { day: number; platform: string; type: string; topic: string }, i: number) => (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <Badge className="bg-pink-500/20 text-pink-300 text-[10px] shrink-0">Dag {c.day}</Badge>
+                                <Badge variant="outline" className="text-[10px] border-slate-600 shrink-0">{c.platform}</Badge>
+                                <span className="text-slate-300">{c.topic}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SEO Keywords */}
+                      {gtmData.seo_keywords && (
+                        <div className="p-3 rounded-lg bg-slate-700/20">
+                          <h4 className="text-xs font-semibold text-slate-400 mb-2">SEO Keywords</h4>
+                          <div className="flex flex-wrap gap-1">
+                            {(gtmData.seo_keywords || []).map((k: string, i: number) => (
+                              <Badge key={i} variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-300">{k}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <Button variant="outline" onClick={() => { setGtmData(null); generateGTM(selectedOpp); }}
+                        className="text-xs border-slate-600">
+                        <RefreshCw className="mr-1 h-3 w-3" /> Generer på nytt
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Deep Scoring Tab Content */}
+              {oppDetailTab === 'scoring' && (
+                <div className="space-y-4 mb-6">
+                  {!deepScore && (
+                    <Button onClick={() => generateDeepScore(selectedOpp)} disabled={deepScoreLoading}
+                      className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500">
+                      {deepScoreLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyserer...</>
+                        : <><BarChart3 className="mr-2 h-4 w-4" /> Kjor Deep Score Analyse</>}
+                    </Button>
+                  )}
+                  {deepScore && !deepScore.error && (
+                    <div className="space-y-3">
+                      {/* Score Breakdown */}
+                      {deepScore.scores && (
+                        <div className="p-3 rounded-lg bg-slate-700/20">
+                          <h4 className="text-xs font-semibold text-slate-400 mb-3">Score Breakdown</h4>
+                          <div className="space-y-2">
+                            {Object.entries(deepScore.scores as Record<string, { score: number; reason: string }>).map(([key, val]) => (
+                              <div key={key}>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-xs text-slate-300 capitalize">{key.replace(/_/g, ' ')}</span>
+                                  <span className={`text-xs font-bold ${val.score >= 75 ? 'text-green-400' : val.score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{val.score}/100</span>
+                                </div>
+                                <div className="w-full bg-slate-700 rounded-full h-1.5 mb-0.5">
+                                  <div className={`h-1.5 rounded-full ${val.score >= 75 ? 'bg-green-500' : val.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                    style={{ width: `${val.score}%` }} />
+                                </div>
+                                <p className="text-[10px] text-slate-500">{val.reason}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Verdict */}
+                      {deepScore.verdict && (
+                        <div className={`p-3 rounded-lg border ${
+                          deepScore.verdict === 'BUILD' ? 'bg-green-500/10 border-green-500/20' :
+                          deepScore.verdict === 'VALIDATE' ? 'bg-amber-500/10 border-amber-500/20' :
+                          'bg-red-500/10 border-red-500/20'
+                        }`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            {deepScore.verdict === 'BUILD' ? <CheckCircle className="h-4 w-4 text-green-400" /> :
+                             deepScore.verdict === 'VALIDATE' ? <Eye className="h-4 w-4 text-amber-400" /> :
+                             <XCircle className="h-4 w-4 text-red-400" />}
+                            <span className={`text-sm font-bold ${
+                              deepScore.verdict === 'BUILD' ? 'text-green-400' :
+                              deepScore.verdict === 'VALIDATE' ? 'text-amber-400' : 'text-red-400'
+                            }`}>Verdict: {deepScore.verdict}</span>
+                          </div>
+                          <p className="text-xs text-slate-300">{deepScore.verdict_reason}</p>
+                        </div>
+                      )}
+
+                      {/* Risks & Opportunities */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+                          <h5 className="text-xs font-semibold text-red-400 mb-1">Risiko</h5>
+                          {(deepScore.risks || []).map((r: string, i: number) => (
+                            <div key={i} className="text-xs text-slate-300 mb-0.5">- {r}</div>
+                          ))}
+                        </div>
+                        <div className="p-3 rounded-lg bg-green-500/5 border border-green-500/20">
+                          <h5 className="text-xs font-semibold text-green-400 mb-1">Muligheter</h5>
+                          {(deepScore.opportunities || []).map((o: string, i: number) => (
+                            <div key={i} className="text-xs text-slate-300 mb-0.5">- {o}</div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Button variant="outline" onClick={() => { setDeepScore(null); generateDeepScore(selectedOpp); }}
+                        className="text-xs border-slate-600">
+                        <RefreshCw className="mr-1 h-3 w-3" /> Analyser på nytt
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Details Tab Content */}
+              {oppDetailTab === 'details' && (
+              <>
               {/* Details */}
               <div className="space-y-4 mb-6">
                 <div className="p-3 rounded-lg bg-slate-700/20">
@@ -927,6 +1501,8 @@ export default function SaaSPage() {
                   </div>
                 )}
               </div>
+              </>
+              )}
 
               {/* Feedback input */}
               <div className="mb-4">
