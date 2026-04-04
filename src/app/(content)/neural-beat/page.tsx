@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   Music, Loader2, Play, CheckCircle, XCircle, Clock, Zap, Youtube, Radio, Disc3,
   Waves, PlayCircle, AlertCircle, Trash2, Upload, BarChart3, Eye, ThumbsUp, MessageSquare,
-  TrendingUp, Target, Lightbulb, ListMusic, Flame, Sparkles, ArrowUpRight,
+  TrendingUp, Target, Lightbulb, ListMusic, Flame, Sparkles, ArrowUpRight, Rocket, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 interface Song {
@@ -91,6 +91,35 @@ interface MixPlaylist {
   exampleSongs: string[];
 }
 
+interface RecommendationAction {
+  type: 'update_metadata' | 'create_content' | 'strategy' | 'schedule';
+  videoId?: string;
+  currentTitle?: string;
+  newTitle?: string;
+  newDescription?: string;
+  newTags?: string[];
+  details?: string;
+}
+
+interface Recommendation {
+  id: string;
+  type: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  impact: string;
+  effort: 'easy' | 'medium' | 'hard';
+  action: RecommendationAction;
+  status?: 'pending' | 'executing' | 'done' | 'dismissed' | 'error';
+  result?: string;
+}
+
+interface ChannelHealth {
+  score: number;
+  trend: 'up' | 'down' | 'stable';
+  summary: string;
+}
+
 type SongStatus = 'ready' | 'processing' | 'done' | 'error' | 'no-audio';
 
 const PIPELINE_STEPS = [
@@ -134,6 +163,14 @@ export default function NeuralBeatPage() {
     totalViews: number; avgViews: number; engagementRate: number;
   } | null>(null);
   const [fastestGrowing, setFastestGrowing] = useState<YouTubeVideo[]>([]);
+
+  // Smart recommendations state
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [channelHealth, setChannelHealth] = useState<ChannelHealth | null>(null);
+  const [quickWins, setQuickWins] = useState<string[]>([]);
+  const [weeklyGoals, setWeeklyGoals] = useState<string[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsError, setRecsError] = useState<string | null>(null);
 
   const fetchSongs = useCallback(() => {
     fetch('/api/neural-beat')
@@ -182,6 +219,67 @@ export default function NeuralBeatPage() {
       .catch((err) => console.error('Analytics error:', err))
       .finally(() => setAnalyticsLoading(false));
   }, []);
+
+  // Fetch smart recommendations
+  const fetchRecommendations = useCallback(async () => {
+    setRecsLoading(true);
+    setRecsError(null);
+    try {
+      const res = await fetch('/api/neural-beat/recommendations');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const recs = (data.recommendations || []).map((r: Recommendation) => ({ ...r, status: 'pending' as const }));
+      setRecommendations(recs);
+      if (data.channelHealth) setChannelHealth(data.channelHealth);
+      if (data.quickWins) setQuickWins(data.quickWins);
+      if (data.weeklyGoals) setWeeklyGoals(data.weeklyGoals);
+      if (data.channel && !ytChannel) setYtChannel(data.channel);
+    } catch (err) {
+      setRecsError(err instanceof Error ? err.message : 'Kunne ikke hente anbefalinger');
+    }
+    setRecsLoading(false);
+  }, [ytChannel]);
+
+  // Execute a recommendation
+  const executeRecommendation = useCallback(async (recId: string) => {
+    const rec = recommendations.find((r) => r.id === recId);
+    if (!rec) return;
+
+    setRecommendations((prev) => prev.map((r) => r.id === recId ? { ...r, status: 'executing' as const } : r));
+
+    try {
+      const res = await fetch('/api/neural-beat/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: rec.action }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setRecommendations((prev) => prev.map((r) =>
+        r.id === recId ? { ...r, status: 'done' as const, result: data.message || 'Utført' } : r
+      ));
+    } catch (err) {
+      setRecommendations((prev) => prev.map((r) =>
+        r.id === recId ? { ...r, status: 'error' as const, result: err instanceof Error ? err.message : 'Feil' } : r
+      ));
+    }
+  }, [recommendations]);
+
+  // Dismiss a recommendation
+  const dismissRecommendation = useCallback((recId: string) => {
+    setRecommendations((prev) => prev.map((r) =>
+      r.id === recId ? { ...r, status: 'dismissed' as const } : r
+    ));
+  }, []);
+
+  // Execute all pending recommendations
+  const executeAllRecommendations = useCallback(async () => {
+    const pending = recommendations.filter((r) => r.status === 'pending');
+    for (const rec of pending) {
+      await executeRecommendation(rec.id);
+    }
+  }, [recommendations, executeRecommendation]);
 
   // Handle MP3 file selection
   const handleMp3Select = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -733,7 +831,10 @@ export default function NeuralBeatPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="pipeline" className="space-y-6" onValueChange={(val) => { if (val === 'youtube-stats' && !aiAnalysis && !analyticsLoading) fetchAIAnalytics(); }}>
+      <Tabs defaultValue="pipeline" className="space-y-6" onValueChange={(val) => {
+        if (val === 'youtube-stats' && !aiAnalysis && !analyticsLoading) fetchAIAnalytics();
+        if (val === 'ai-recommendations' && recommendations.length === 0 && !recsLoading) fetchRecommendations();
+      }}>
         <TabsList>
           <TabsTrigger value="pipeline">
             <Waves className="mr-2 h-4 w-4" /> Pipeline ({stats.ready + stats.processing + stats.errors})
@@ -743,6 +844,14 @@ export default function NeuralBeatPage() {
           </TabsTrigger>
           <TabsTrigger value="youtube-stats">
             <BarChart3 className="mr-2 h-4 w-4" /> YouTube AI Analytikk
+          </TabsTrigger>
+          <TabsTrigger value="ai-recommendations">
+            <Zap className="mr-2 h-4 w-4" /> AI Anbefalinger
+            {recommendations.filter((r) => r.status === 'pending').length > 0 && (
+              <Badge variant="destructive" className="ml-1.5 text-[9px] px-1.5 py-0">
+                {recommendations.filter((r) => r.status === 'pending').length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="how-it-works">
             <Radio className="mr-2 h-4 w-4" /> Slik fungerer det
@@ -1370,6 +1479,264 @@ export default function NeuralBeatPage() {
                 <div className="flex justify-center">
                   <Button onClick={fetchAIAnalytics} className="gap-2">
                     <Sparkles className="h-4 w-4" /> Kjør AI-analyse av kanalen
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* AI Anbefalinger Tab */}
+        <TabsContent value="ai-recommendations" className="space-y-4">
+          {recsLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+              <p className="text-sm text-slate-400">AI analyserer kanalen og lager konkrete anbefalinger...</p>
+            </div>
+          ) : recsError ? (
+            <Card className="bg-red-500/10 border-red-500/20">
+              <CardContent className="p-6 text-center">
+                <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-400" />
+                <p className="text-sm text-red-300">{recsError}</p>
+                <Button onClick={fetchRecommendations} variant="outline" className="mt-4" size="sm">Prøv igjen</Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Channel Health + Quick Wins */}
+              {channelHealth && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="bg-slate-800/50 border-slate-700/50">
+                    <CardContent className="p-5">
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-16 h-16">
+                          <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#334155" strokeWidth="3" />
+                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none"
+                              stroke={channelHealth.score >= 70 ? '#10b981' : channelHealth.score >= 40 ? '#f59e0b' : '#ef4444'}
+                              strokeWidth="3" strokeDasharray={`${channelHealth.score}, 100`} strokeLinecap="round" />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-lg font-bold text-white">{channelHealth.score}</span>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-sm font-semibold text-white">Kanalhelse</h3>
+                            <Badge variant={channelHealth.trend === 'up' ? 'success' : channelHealth.trend === 'down' ? 'destructive' : 'secondary'} className="text-[9px]">
+                              {channelHealth.trend === 'up' ? 'Vekst' : channelHealth.trend === 'down' ? 'Nedgang' : 'Stabil'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-400">{channelHealth.summary}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {quickWins.length > 0 && (
+                    <Card className="bg-slate-800/50 border-slate-700/50">
+                      <CardContent className="p-5">
+                        <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-1.5 mb-3">
+                          <Zap className="h-4 w-4" /> Raske gevinster
+                        </h3>
+                        <div className="space-y-1.5">
+                          {quickWins.map((win, i) => (
+                            <p key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                              <Sparkles className="h-3 w-3 text-amber-400 mt-0.5 shrink-0" />{win}
+                            </p>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {weeklyGoals.length > 0 && (
+                    <Card className="bg-slate-800/50 border-slate-700/50">
+                      <CardContent className="p-5">
+                        <h3 className="text-sm font-semibold text-cyan-400 flex items-center gap-1.5 mb-3">
+                          <Target className="h-4 w-4" /> Ukesmål
+                        </h3>
+                        <div className="space-y-1.5">
+                          {weeklyGoals.map((goal, i) => (
+                            <p key={i} className="text-xs text-slate-300 flex items-start gap-1.5">
+                              <CheckCircle className="h-3 w-3 text-cyan-400 mt-0.5 shrink-0" />{goal}
+                            </p>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {/* Action bar */}
+              {recommendations.filter((r) => r.status === 'pending').length > 0 && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/80 border border-slate-700/50">
+                  <div className="flex items-center gap-2 text-sm text-slate-300">
+                    <Rocket className="h-4 w-4 text-amber-400" />
+                    <span className="font-medium">{recommendations.filter((r) => r.status === 'pending').length} anbefalinger venter</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-500">{recommendations.filter((r) => r.status === 'done').length} utført</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setRecommendations((prev) => prev.map((r) => r.status === 'pending' ? { ...r, status: 'dismissed' as const } : r))}>
+                      Forkast alle
+                    </Button>
+                    <Button size="sm" onClick={executeAllRecommendations} className="gap-1.5">
+                      <Zap className="h-3.5 w-3.5" /> Kjør alle
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Recommendations list */}
+              {recommendations.length > 0 && (
+                <div className="space-y-3">
+                  {recommendations.map((rec) => (
+                    <Card key={rec.id} className={`bg-slate-800/50 border-slate-700/50 transition-all ${
+                      rec.status === 'done' ? 'opacity-60 border-emerald-500/30' :
+                      rec.status === 'dismissed' ? 'opacity-40' :
+                      rec.status === 'error' ? 'border-red-500/30' :
+                      rec.status === 'executing' ? 'border-amber-500/30 animate-pulse' : ''
+                    }`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          {/* Priority indicator */}
+                          <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+                            rec.priority === 'critical' ? 'bg-red-500' :
+                            rec.priority === 'high' ? 'bg-amber-500' :
+                            rec.priority === 'medium' ? 'bg-cyan-500' : 'bg-slate-500'
+                          }`} />
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h4 className="text-sm font-semibold text-white">{rec.title}</h4>
+                              <Badge variant={
+                                rec.priority === 'critical' ? 'destructive' :
+                                rec.priority === 'high' ? 'warning' :
+                                rec.priority === 'medium' ? 'default' : 'secondary'
+                              } className="text-[9px]">
+                                {rec.priority === 'critical' ? 'Kritisk' :
+                                 rec.priority === 'high' ? 'Høy' :
+                                 rec.priority === 'medium' ? 'Medium' : 'Lav'}
+                              </Badge>
+                              <Badge variant="outline" className="text-[9px]">
+                                {rec.effort === 'easy' ? 'Lett' : rec.effort === 'medium' ? 'Middels' : 'Krevende'}
+                              </Badge>
+                              <Badge variant="secondary" className="text-[9px]">
+                                {rec.type === 'optimize_title' ? 'Tittel' :
+                                 rec.type === 'optimize_description' ? 'Beskrivelse' :
+                                 rec.type === 'optimize_tags' ? 'Tags' :
+                                 rec.type === 'upload_schedule' ? 'Plan' :
+                                 rec.type === 'content_strategy' ? 'Strategi' :
+                                 rec.type === 'thumbnail' ? 'Thumbnail' :
+                                 rec.type === 'engagement' ? 'Engasjement' :
+                                 rec.type === 'shorts' ? 'Shorts' :
+                                 rec.type === 'playlist_strategy' ? 'Spilleliste' : rec.type}
+                              </Badge>
+                            </div>
+
+                            <p className="text-xs text-slate-400 mb-2">{rec.description}</p>
+
+                            {/* Show what will change */}
+                            {rec.action.type === 'update_metadata' && rec.action.currentTitle && rec.action.newTitle && (
+                              <div className="p-2 rounded bg-slate-700/50 mb-2 space-y-1">
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="text-red-400 line-through">{rec.action.currentTitle}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                  <ArrowUpRight className="h-3 w-3 text-emerald-400 shrink-0" />
+                                  <span className="text-emerald-400 font-medium">{rec.action.newTitle}</span>
+                                </div>
+                                {rec.action.newTags && rec.action.newTags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {rec.action.newTags.slice(0, 8).map((tag, i) => (
+                                      <Badge key={i} variant="outline" className="text-[8px] px-1">{tag}</Badge>
+                                    ))}
+                                    {rec.action.newTags.length > 8 && (
+                                      <span className="text-[8px] text-slate-500">+{rec.action.newTags.length - 8} mer</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {rec.action.type !== 'update_metadata' && rec.action.details && (
+                              <div className="p-2 rounded bg-slate-700/50 mb-2">
+                                <p className="text-[11px] text-slate-300">{rec.action.details}</p>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2">
+                              <Lightbulb className="h-3 w-3 text-amber-400 shrink-0" />
+                              <p className="text-[11px] text-amber-300">{rec.impact}</p>
+                            </div>
+
+                            {/* Result message */}
+                            {rec.result && (
+                              <div className={`mt-2 p-2 rounded text-xs ${
+                                rec.status === 'done' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' :
+                                'bg-red-500/10 text-red-300 border border-red-500/20'
+                              }`}>
+                                {rec.status === 'done' ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                                {rec.result}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex gap-1.5 shrink-0">
+                            {rec.status === 'pending' && (
+                              <>
+                                <Button size="sm" onClick={() => executeRecommendation(rec.id)} className="gap-1 text-xs h-8 px-3">
+                                  <Zap className="h-3 w-3" /> Kjør
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => dismissRecommendation(rec.id)} className="text-xs h-8 px-2 text-slate-500 hover:text-red-400">
+                                  <XCircle className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )}
+                            {rec.status === 'executing' && (
+                              <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
+                            )}
+                            {rec.status === 'done' && (
+                              <CheckCircle className="h-5 w-5 text-emerald-400" />
+                            )}
+                            {rec.status === 'error' && (
+                              <Button size="sm" variant="ghost" onClick={() => executeRecommendation(rec.id)} className="text-xs h-8 px-2 text-red-400">
+                                Prøv igjen
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* No recommendations yet */}
+              {recommendations.length === 0 && !recsLoading && (
+                <Card className="bg-slate-800/50 border-slate-700/50">
+                  <CardContent className="p-12 text-center">
+                    <Rocket className="h-16 w-16 mx-auto mb-4 text-amber-500/20" />
+                    <h3 className="text-lg font-semibold text-white mb-2">AI Anbefalinger</h3>
+                    <p className="text-slate-400 text-sm mb-4">
+                      AI analyserer kanalen din og genererer konkrete, kjørbare anbefalinger for å øke vekst og visninger.
+                    </p>
+                    <Button onClick={fetchRecommendations} className="gap-2">
+                      <Sparkles className="h-4 w-4" /> Generer anbefalinger
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Refresh button */}
+              {recommendations.length > 0 && (
+                <div className="flex justify-center">
+                  <Button onClick={fetchRecommendations} variant="outline" size="sm" className="gap-2" disabled={recsLoading}>
+                    {recsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    Generer nye anbefalinger
                   </Button>
                 </div>
               )}
