@@ -5,7 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
+import { createClient } from "@supabase/supabase-js";
 import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2 } from "lucide-react";
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
 
 interface BrandData {
   brandId: string;
@@ -36,8 +44,13 @@ export default function BusinessOverviewPage() {
     setLoading(true);
     try {
       // Fetch all data sources in parallel
+      const supabase = getSupabase();
+
       const [contentRes, accountsRes, pipelineRes, crmRes, actionsRes] = await Promise.allSettled([
-        fetch("/api/content").then(r => r.json()).catch(() => ({ publications: [] })),
+        // Fetch content_publications directly from Supabase (not /api/content which queries wrong table)
+        supabase
+          ? supabase.from("content_publications").select("id, brand_id, status, created_at").order("created_at", { ascending: false }).limit(500).then(r => ({ publications: r.data || [] }))
+          : Promise.resolve({ publications: [] }),
         fetch("/api/social-accounts").then(r => r.json()).catch(() => ({ accounts: [] })),
         fetch("/api/contacts?view=pipeline").then(r => r.json()).catch(() => ({ contacts: [] })),
         fetch("/api/contacts?view=crm").then(r => r.json()).catch(() => ({ contacts: [] })),

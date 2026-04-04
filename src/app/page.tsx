@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Building2, Users, TrendingUp, FileText,
   Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
-  Loader2,
+  Loader2, AlertTriangle, CheckCircle, XCircle,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -24,8 +24,10 @@ interface DashboardStats {
   publishedPosts: number;
   scheduledPosts: number;
   totalDrafts: number;
+  failedPosts: number;
   aiAgents: number;
   recentActivity: { type: string; text: string; time: string }[];
+  alerts: { type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
 }
 
 export default function Dashboard() {
@@ -42,20 +44,33 @@ export default function Dashboard() {
 
       try {
         // Fetch real data in parallel
-        const [leadsRes, propertiesRes, pubsRes, scheduledRes, draftsRes, recentPubsRes] = await Promise.all([
+        const [leadsRes, propertiesRes, pubsRes, scheduledRes, draftsRes, failedRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
           supabase.from("leads").select("id", { count: "exact", head: true }),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
+          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "failed"),
           supabase.from("content_publications")
             .select("title, status, brand_id, created_at, published_at, scheduled_at")
             .order("created_at", { ascending: false })
             .limit(6),
+          // Failed publications with error details
+          supabase.from("content_publications")
+            .select("id, title, brand_id, last_publish_error, publish_attempts, updated_at")
+            .eq("status", "failed")
+            .order("updated_at", { ascending: false })
+            .limit(5),
+          // Recent automation errors
+          supabase.from("automation_logs")
+            .select("id, action, agent_name, details, created_at")
+            .eq("status", "error")
+            .order("created_at", { ascending: false })
+            .limit(5),
         ]);
 
         // Build recent activity from real data
-        const recentActivity = (recentPubsRes.data || []).map((pub) => {
+        const recentActivity = (recentPubsRes.data || []).map((pub: Record<string, string>) => {
           const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at));
           if (pub.status === "published") {
             return { type: "content", text: `Publisert: ${pub.title}`, time: timeAgo };
@@ -66,6 +81,32 @@ export default function Dashboard() {
           }
         });
 
+        // Build alerts from failed publishes and automation errors
+        const alerts: DashboardStats["alerts"] = [];
+
+        const failedPubs = failedPubsRes.data || [];
+        for (const pub of failedPubs) {
+          alerts.push({
+            type: "error",
+            title: `Publisering feilet: ${pub.title || 'Ukjent'}`,
+            detail: pub.last_publish_error || `${pub.publish_attempts || 0} forsøk mislyktes`,
+            time: getTimeAgo(new Date(pub.updated_at)),
+            href: "/content-hub",
+          });
+        }
+
+        const autoErrors = automationErrorsRes.data || [];
+        for (const err of autoErrors) {
+          const details = err.details as Record<string, string> | null;
+          alerts.push({
+            type: "warning",
+            title: `${err.agent_name || 'System'}: ${err.action || 'Feil'}`,
+            detail: details?.error || details?.message || 'Automatisering feilet',
+            time: getTimeAgo(new Date(err.created_at)),
+            href: "/automation",
+          });
+        }
+
         setStats({
           activeLeads: leadsRes.count || 0,
           properties: propertiesRes.count || 0,
@@ -73,8 +114,10 @@ export default function Dashboard() {
           publishedPosts: pubsRes.count || 0,
           scheduledPosts: scheduledRes.count || 0,
           totalDrafts: draftsRes.count || 0,
+          failedPosts: failedRes.count || 0,
           aiAgents: 8,
           recentActivity,
+          alerts,
         });
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -155,6 +198,54 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
+
+          {/* Alerts & Notifications */}
+          {(stats?.alerts?.length || 0) > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <AlertTriangle size={14} />
+                Varsler ({stats!.alerts.length})
+              </h2>
+              <div className="space-y-2">
+                {stats!.alerts.map((alert, i) => (
+                  <a
+                    key={i}
+                    href={alert.href || "#"}
+                    className={`block p-3 rounded-lg border transition-colors ${
+                      alert.type === "error"
+                        ? "bg-red-500/10 border-red-500/30 hover:border-red-500/50"
+                        : "bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {alert.type === "error" ? (
+                        <XCircle size={16} className="text-red-400 mt-0.5 shrink-0" />
+                      ) : (
+                        <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-200">{alert.title}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">{alert.detail}</p>
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0">{alert.time}</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Failed Posts Counter in KPIs */}
+          {(stats?.failedPosts || 0) > 0 && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-3">
+              <XCircle size={20} className="text-red-400" />
+              <div>
+                <p className="text-sm font-medium text-red-300">{stats!.failedPosts} publisering{stats!.failedPosts > 1 ? 'er' : ''} har feilet</p>
+                <p className="text-xs text-slate-400">Sjekk Content Hub for detaljer og prøv på nytt</p>
+              </div>
+              <a href="/content-hub" className="ml-auto text-xs text-red-400 hover:text-red-300 underline">Se detaljer</a>
+            </div>
+          )}
 
           {/* Recent Activity & Quick Actions */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
