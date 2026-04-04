@@ -2,15 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "realtyflow-pro",
-      "runtimeExecutable": "/opt/homebrew/bin/npx",
-      "runtimeArgs": ["next", "dev"],
-      "port": 3000
-    },
-    {
-      "name": "hub-dev",
-      "runtimeExecutable": "/opt/homebrew/bin/npx",
-      "runtimeArgs": ["next", "dev"],
+      "name": "nextdev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 3000
     }
   ]

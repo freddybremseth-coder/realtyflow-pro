@@ -733,7 +733,7 @@ export default function NeuralBeatPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="pipeline" className="space-y-6">
+      <Tabs defaultValue="pipeline" className="space-y-6" onValueChange={(val) => { if (val === 'youtube-stats' && !aiAnalysis && !analyticsLoading) fetchAIAnalytics(); }}>
         <TabsList>
           <TabsTrigger value="pipeline">
             <Waves className="mr-2 h-4 w-4" /> Pipeline ({stats.ready + stats.processing + stats.errors})
@@ -741,7 +741,7 @@ export default function NeuralBeatPage() {
           <TabsTrigger value="published">
             <Youtube className="mr-2 h-4 w-4" /> Publiserte ({stats.done})
           </TabsTrigger>
-          <TabsTrigger value="youtube-stats" onClick={() => { if (!aiAnalysis && !analyticsLoading) fetchAIAnalytics(); }}>
+          <TabsTrigger value="youtube-stats">
             <BarChart3 className="mr-2 h-4 w-4" /> YouTube AI Analytikk
           </TabsTrigger>
           <TabsTrigger value="how-it-works">

@@ -163,9 +163,19 @@ export class NeuralBeatPipeline {
         if (!audioUrl) {
           throw new Error('No audio URL found in song record');
         }
+
+        // Check if this is an expired Airtable URL
+        const isAirtableUrl = audioUrl.includes('airtableusercontent.com');
+
         // Validate the audio URL is accessible
         const response = await fetch(audioUrl, { method: 'HEAD' });
         if (!response.ok) {
+          if (isAirtableUrl) {
+            throw new Error(
+              `Lydfilen er en utløpt Airtable-lenke (HTTP ${response.status}). ` +
+              `Last opp MP3-filen på nytt via Neural Beat-opplastingen for å lagre den i Supabase.`
+            );
+          }
           throw new Error(`Audio file not accessible: HTTP ${response.status}`);
         }
         stepCompleted(steps[currentStepIndex]);

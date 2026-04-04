@@ -106,12 +106,9 @@ export default function PipelinePage() {
 
   // Document/image import state
   const [showDocImport, setShowDocImport] = useState(false);
-  const [docFile, setDocFile] = useState<File | null>(null);
-  const [docPreview, setDocPreview] = useState<string | null>(null);
+  const [docFiles, setDocFiles] = useState<{ file: File; preview: string | null; status: "queued" | "analyzing" | "done" | "error"; leads: Lead[]; rawText: string; confidence: string; error?: string }[]>([]);
   const [docParsing, setDocParsing] = useState(false);
-  const [docLeads, setDocLeads] = useState<Lead[]>([]);
-  const [docRawText, setDocRawText] = useState("");
-  const [docConfidence, setDocConfidence] = useState("");
+  const [docAllLeads, setDocAllLeads] = useState<Lead[]>([]);
   const docFileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
@@ -407,72 +404,82 @@ export default function PipelinePage() {
 
   // ── Document/Image Import ─────────────────────────
 
-  const handleDocFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setDocFile(file);
-    // Create preview for images
-    if (file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file);
-      setDocPreview(url);
-    } else {
-      setDocPreview(null);
-    }
-    setDocLeads([]);
-    setDocRawText("");
-    setDocConfidence("");
+  const handleDocFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const newFiles = Array.from(files).map((file) => ({
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      status: "queued" as const,
+      leads: [] as Lead[],
+      rawText: "",
+      confidence: "",
+    }));
+    setDocFiles((prev) => [...prev, ...newFiles]);
+    // Reset file input so the same files can be re-selected
+    if (e.target) e.target.value = '';
   };
 
-  const analyzeDocument = async () => {
-    if (!docFile) return;
+  const analyzeDocQueue = async () => {
     setDocParsing(true);
-    setDocLeads([]);
-    setDocRawText("");
-    try {
-      const formData = new FormData();
-      formData.append('file', docFile);
-      const res = await fetch('/api/contacts/import-document', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+    const updated = [...docFiles];
+    const allLeads: Lead[] = [];
+    let leadCounter = 0;
 
-      setDocConfidence(data.confidence || '');
-      setDocRawText(data.rawText || '');
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].status !== "queued") continue;
+      updated[i] = { ...updated[i], status: "analyzing" };
+      setDocFiles([...updated]);
 
-      // Map AI-extracted leads to our Lead format
-      const mapped: Lead[] = (data.leads || []).map((l: any, i: number) => ({
-        id: `DOC${String(i + 1).padStart(3, '0')}`,
-        name: l.name || 'Ukjent',
-        email: l.email || '',
-        phone: l.phone || '',
-        budget: l.budget ? `€${l.budget.toLocaleString()}` : '€0',
-        source: l.source || 'Document Import',
-        property: l.property_interest || '',
-        notes: [
-          l.notes || '',
-          l.preferences?.features?.length ? `Ønsker: ${l.preferences.features.join(', ')}` : '',
-          l.preferences?.property_type ? `Type: ${l.preferences.property_type}` : '',
-          l.preferences?.location ? `Sted: ${l.preferences.location}` : '',
-        ].filter(Boolean).join('\n'),
-        sentiment: l.sentiment === 'hot' ? 90 : l.sentiment === 'warm' ? 70 : l.sentiment === 'cold' ? 20 : 50,
-        status: 'NEW' as LeadStatus,
-      }));
-      setDocLeads(mapped);
-    } catch (err) {
-      console.error('Document analysis failed:', err);
-      setDocRawText(`Feil: ${err instanceof Error ? err.message : 'Kunne ikke analysere dokumentet'}`);
-    } finally {
-      setDocParsing(false);
+      try {
+        const formData = new FormData();
+        formData.append('file', updated[i].file);
+        const res = await fetch('/api/contacts/import-document', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const mapped: Lead[] = (data.leads || []).map((l: any) => {
+          leadCounter++;
+          return {
+            id: `DOC${String(leadCounter).padStart(3, '0')}`,
+            name: l.name || 'Ukjent',
+            email: l.email || '',
+            phone: l.phone || '',
+            budget: l.budget ? `€${l.budget.toLocaleString()}` : '€0',
+            source: l.source || 'Document Import',
+            property: l.property_interest || '',
+            notes: [
+              l.notes || '',
+              l.preferences?.features?.length ? `Ønsker: ${l.preferences.features.join(', ')}` : '',
+              l.preferences?.property_type ? `Type: ${l.preferences.property_type}` : '',
+              l.preferences?.location ? `Sted: ${l.preferences.location}` : '',
+            ].filter(Boolean).join('\n'),
+            sentiment: l.sentiment === 'hot' ? 90 : l.sentiment === 'warm' ? 70 : l.sentiment === 'cold' ? 20 : 50,
+            status: 'NEW' as LeadStatus,
+            createdAt: new Date().toISOString().split('T')[0],
+            interactions: [],
+          };
+        });
+        updated[i] = { ...updated[i], status: "done", leads: mapped, rawText: data.rawText || '', confidence: data.confidence || '' };
+        allLeads.push(...mapped);
+      } catch (err) {
+        updated[i] = { ...updated[i], status: "error", error: err instanceof Error ? err.message : 'Analyse feilet' };
+      }
+      setDocFiles([...updated]);
     }
+    setDocAllLeads(allLeads);
+    setDocParsing(false);
   };
 
   const importDocLeads = async () => {
-    if (docLeads.length === 0) return;
+    const leadsToImport = docAllLeads.length > 0 ? docAllLeads : docFiles.flatMap((f) => f.leads);
+    if (leadsToImport.length === 0) return;
     setSaving(true);
     const savedLeads: Lead[] = [];
-    for (const lead of docLeads) {
+    for (const lead of leadsToImport) {
       try {
         const now = new Date().toISOString();
         const res = await fetch('/api/contacts', {
@@ -493,8 +500,7 @@ export default function PipelinePage() {
       }
     }
     setLeads((prev) => [...savedLeads, ...prev]);
-    setDocLeads([]); setDocFile(null); setDocPreview(null);
-    setDocRawText(""); setDocConfidence(""); setShowDocImport(false);
+    setDocFiles([]); setDocAllLeads([]); setShowDocImport(false);
     setSaving(false);
   };
 
@@ -638,133 +644,153 @@ export default function PipelinePage() {
 
       {/* ── Document/Image Import Modal ─────────────── */}
       {showDocImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowDocImport(false); setDocFile(null); setDocPreview(null); setDocLeads([]); setDocRawText(""); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowDocImport(false); setDocFiles([]); setDocAllLeads([]); }}>
           <Card className="w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <ScanLine size={20} className="text-cyan-400" />Importer fra dokument eller bilde
                 </h2>
-                <Button variant="ghost" size="icon" onClick={() => { setShowDocImport(false); setDocFile(null); setDocPreview(null); setDocLeads([]); setDocRawText(""); }}><X size={18} /></Button>
+                <Button variant="ghost" size="icon" onClick={() => { setShowDocImport(false); setDocFiles([]); setDocAllLeads([]); }}><X size={18} /></Button>
               </div>
 
               <div className="space-y-4">
-                {/* Upload area */}
-                {!docFile && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <input ref={docFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" onChange={handleDocFile} className="hidden" />
-                    <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleDocFile} className="hidden" />
+                {/* Upload area - always visible so user can add more files */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input ref={docFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" multiple onChange={handleDocFiles} className="hidden" />
+                  <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleDocFiles} className="hidden" />
 
-                    <button
-                      onClick={() => cameraRef.current?.click()}
-                      className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-cyan-500/40 text-center hover:bg-cyan-500/5 transition-colors"
-                    >
-                      <Camera size={32} className="mx-auto text-cyan-400 mb-2" />
-                      <p className="text-sm font-medium text-white">Ta bilde</p>
-                      <p className="text-[10px] text-slate-500 mt-1">Kamera / mobilkamera</p>
-                    </button>
+                  <button
+                    onClick={() => cameraRef.current?.click()}
+                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-cyan-500/40 text-center hover:bg-cyan-500/5 transition-colors"
+                  >
+                    <Camera size={32} className="mx-auto text-cyan-400 mb-2" />
+                    <p className="text-sm font-medium text-white">Ta bilde</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Kamera / mobilkamera</p>
+                  </button>
 
-                    <button
-                      onClick={() => { if (docFileRef.current) { docFileRef.current.accept = 'image/*'; docFileRef.current.click(); } }}
-                      className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-purple-500/40 text-center hover:bg-purple-500/5 transition-colors"
-                    >
-                      <Image size={32} className="mx-auto text-purple-400 mb-2" />
-                      <p className="text-sm font-medium text-white">Last opp bilde</p>
-                      <p className="text-[10px] text-slate-500 mt-1">JPG, PNG, WebP, HEIC</p>
-                    </button>
+                  <button
+                    onClick={() => { if (docFileRef.current) { docFileRef.current.accept = 'image/*,.pdf'; docFileRef.current.click(); } }}
+                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-purple-500/40 text-center hover:bg-purple-500/5 transition-colors"
+                  >
+                    <Image size={32} className="mx-auto text-purple-400 mb-2" />
+                    <p className="text-sm font-medium text-white">Velg filer</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Flere bilder / PDF-er</p>
+                  </button>
 
-                    <button
-                      onClick={() => { if (docFileRef.current) { docFileRef.current.accept = '.pdf'; docFileRef.current.click(); } }}
-                      className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-red-500/40 text-center hover:bg-red-500/5 transition-colors"
-                    >
-                      <FileText size={32} className="mx-auto text-red-400 mb-2" />
-                      <p className="text-sm font-medium text-white">Last opp PDF</p>
-                      <p className="text-[10px] text-slate-500 mt-1">PDF-dokumenter</p>
-                    </button>
-                  </div>
-                )}
+                  <button
+                    onClick={() => { if (docFileRef.current) { docFileRef.current.accept = '.pdf'; docFileRef.current.click(); } }}
+                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-red-500/40 text-center hover:bg-red-500/5 transition-colors"
+                  >
+                    <FileText size={32} className="mx-auto text-red-400 mb-2" />
+                    <p className="text-sm font-medium text-white">Last opp PDF</p>
+                    <p className="text-[10px] text-slate-500 mt-1">PDF-dokumenter</p>
+                  </button>
+                </div>
 
-                {/* File selected - preview & analyze */}
-                {docFile && !docParsing && docLeads.length === 0 && !docRawText && (
-                  <div className="space-y-3">
-                    <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-600">
-                      <div className="flex items-center gap-3">
-                        {docPreview ? (
-                          <img src={docPreview} alt="Preview" className="h-24 w-auto rounded border border-slate-600 object-contain" />
-                        ) : (
-                          <div className="h-24 w-20 rounded bg-slate-700 flex items-center justify-center">
-                            <FileText size={24} className="text-red-400" />
-                          </div>
-                        )}
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-white">{docFile.name}</p>
-                          <p className="text-xs text-slate-500">{(docFile.size / 1024).toFixed(0)} KB · {docFile.type}</p>
-                          <div className="flex gap-2 mt-2">
-                            <Button size="sm" onClick={analyzeDocument} className="gap-1.5">
-                              <Sparkles size={14} />AI Analyser
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => { setDocFile(null); setDocPreview(null); }}>
-                              Bytt fil
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                {/* File queue */}
+                {docFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-slate-300">{docFiles.length} fil{docFiles.length !== 1 ? 'er' : ''} i kø</p>
+                      {!docParsing && docFiles.some((f) => f.status === "queued") && (
+                        <Button size="sm" onClick={analyzeDocQueue} className="gap-1.5">
+                          <Sparkles size={14} />Analyser alle
+                        </Button>
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-500 text-center">
-                      AI leser dokumentet og trekker ut kontaktinfo, avkrysninger og notater automatisk
-                    </p>
+                    <div className="max-h-40 overflow-y-auto space-y-1.5">
+                      {docFiles.map((df, i) => (
+                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-slate-900/50 border border-slate-700">
+                          {df.preview ? (
+                            <img src={df.preview} alt="" className="h-10 w-10 rounded border border-slate-600 object-cover" />
+                          ) : (
+                            <div className="h-10 w-10 rounded bg-slate-700 flex items-center justify-center shrink-0">
+                              <FileText size={16} className="text-red-400" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-white truncate">{df.file.name}</p>
+                            <p className="text-[10px] text-slate-500">{(df.file.size / 1024).toFixed(0)} KB</p>
+                          </div>
+                          <div className="shrink-0">
+                            {df.status === "queued" && <Badge variant="outline" className="text-[10px]">Venter</Badge>}
+                            {df.status === "analyzing" && <Loader2 size={14} className="animate-spin text-cyan-400" />}
+                            {df.status === "done" && <Badge variant="default" className="text-[10px] bg-emerald-600">{df.leads.length} leads</Badge>}
+                            {df.status === "error" && <Badge variant="destructive" className="text-[10px]">Feil</Badge>}
+                          </div>
+                          {!docParsing && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDocFiles((prev) => prev.filter((_, idx) => idx !== i))}>
+                              <X size={12} />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
                 {/* Parsing indicator */}
                 {docParsing && (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-cyan-400" />
-                    <p className="text-sm text-slate-300">AI analyserer dokumentet...</p>
-                    <p className="text-xs text-slate-500">Leser tekst, avkrysninger og felter</p>
-                  </div>
-                )}
-
-                {/* Results */}
-                {docLeads.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-emerald-400 font-medium">
-                        {docLeads.length} lead{docLeads.length !== 1 ? 's' : ''} funnet
+                  <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                    <Loader2 className="h-5 w-5 animate-spin text-cyan-400 shrink-0" />
+                    <div>
+                      <p className="text-sm text-slate-300">AI analyserer filer...</p>
+                      <p className="text-xs text-slate-500">
+                        {docFiles.filter((f) => f.status === "done").length} av {docFiles.length} ferdig
                       </p>
-                      {docConfidence && (
-                        <Badge variant={docConfidence === 'high' ? 'success' : docConfidence === 'medium' ? 'warning' : 'destructive'} className="text-[10px]">
-                          Sikkerhet: {docConfidence === 'high' ? 'Høy' : docConfidence === 'medium' ? 'Medium' : 'Lav'}
-                        </Badge>
-                      )}
                     </div>
-                    <div className="max-h-60 overflow-y-auto space-y-2">
-                      {docLeads.map((l, i) => (
-                        <div key={i} className="p-3 rounded-lg bg-slate-900/50 border border-slate-700">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="text-sm font-medium text-white">{l.name}</span>
-                            <span className="text-xs text-slate-500">{l.email}</span>
-                            <span className="text-xs text-slate-500">{l.phone}</span>
-                            <span className="text-xs text-emerald-400 ml-auto">{l.budget}</span>
-                          </div>
-                          {l.notes && (
-                            <p className="text-[11px] text-slate-400 whitespace-pre-line mt-1 pl-2 border-l-2 border-slate-700">{l.notes}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <Button onClick={importDocLeads} className="w-full" disabled={saving}>
-                      {saving ? <Loader2 size={16} className="mr-1 animate-spin" /> : <ArrowRight size={16} className="mr-1" />}
-                      Importer {docLeads.length} leads til pipeline
-                    </Button>
                   </div>
                 )}
 
-                {/* Error or raw text fallback */}
-                {docRawText && docLeads.length === 0 && !docParsing && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                    <p className="text-sm text-red-300 whitespace-pre-wrap">{docRawText}</p>
+                {/* Errors */}
+                {docFiles.some((f) => f.status === "error") && (
+                  <div className="space-y-1">
+                    {docFiles.filter((f) => f.status === "error").map((f, i) => (
+                      <div key={i} className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <p className="text-xs text-red-300"><span className="font-medium">{f.file.name}:</span> {f.error}</p>
+                      </div>
+                    ))}
                   </div>
+                )}
+
+                {/* Results - all leads from all files */}
+                {(() => {
+                  const allLeads = docAllLeads.length > 0 ? docAllLeads : docFiles.flatMap((f) => f.leads);
+                  return allLeads.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-emerald-400 font-medium">
+                          {allLeads.length} lead{allLeads.length !== 1 ? 's' : ''} funnet totalt
+                        </p>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-2">
+                        {allLeads.map((l, i) => (
+                          <div key={i} className="p-3 rounded-lg bg-slate-900/50 border border-slate-700">
+                            <div className="flex items-center gap-3 mb-1">
+                              <span className="text-sm font-medium text-white">{l.name}</span>
+                              <span className="text-xs text-slate-500">{l.email}</span>
+                              <span className="text-xs text-slate-500">{l.phone}</span>
+                              <span className="text-xs text-emerald-400 ml-auto">{l.budget}</span>
+                            </div>
+                            {l.notes && (
+                              <p className="text-[11px] text-slate-400 whitespace-pre-line mt-1 pl-2 border-l-2 border-slate-700">{l.notes}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <Button onClick={importDocLeads} className="w-full" disabled={saving}>
+                        {saving ? <Loader2 size={16} className="mr-1 animate-spin" /> : <ArrowRight size={16} className="mr-1" />}
+                        Importer {allLeads.length} leads til pipeline
+                      </Button>
+                    </div>
+                  ) : null;
+                })()}
+
+                {docFiles.length === 0 && (
+                  <p className="text-[10px] text-slate-500 text-center">
+                    Velg flere filer samtidig - AI analyserer de i kø og trekker ut kontaktinfo, avkrysninger og notater
+                  </p>
                 )}
               </div>
             </CardContent>

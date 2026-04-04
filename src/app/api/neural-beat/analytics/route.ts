@@ -72,11 +72,16 @@ Recent 10 Videos:
 ${recentVideos.map((v, i) => `${i + 1}. "${v.title}" - Published: ${new Date(v.publishedAt).toLocaleDateString("en-US")} - ${v.viewCount} views`).join("\n")}
 `.trim();
 
-    const [analysisResult, mixResult] = await Promise.all([
-      askClaude(statsContext, {
-        maxTokens: 2000,
-        temperature: 0.6,
-        systemPrompt: `You are a YouTube growth strategist specializing in music channels going viral. Analyze the channel stats and provide actionable insights in JSON format.
+    // AI analysis - gracefully degrade if AI is unavailable
+    let analysis = null;
+    let mixes: any = { mixes: [] };
+
+    try {
+      const [analysisResult, mixResult] = await Promise.all([
+        askClaude(statsContext, {
+          maxTokens: 2000,
+          temperature: 0.6,
+          systemPrompt: `You are a YouTube growth strategist specializing in music channels going viral. Analyze the channel stats and provide actionable insights in JSON format.
 
 Return ONLY valid JSON with this structure:
 {
@@ -102,11 +107,11 @@ Return ONLY valid JSON with this structure:
 }
 
 Focus on music/beats channels. Study patterns from channels like ChilledCow (Lofi Girl), Trap Nation, MrSuicideSheep that went from small to millions. Be specific - not generic advice.`,
-      }),
-      askClaude(statsContext, {
-        maxTokens: 2000,
-        temperature: 0.7,
-        systemPrompt: `You are a music curator and YouTube playlist strategist. Based on the channel's content and what works in the music video space, suggest Mix playlists that would maximize watch time and attract new subscribers.
+        }),
+        askClaude(statsContext, {
+          maxTokens: 2000,
+          temperature: 0.7,
+          systemPrompt: `You are a music curator and YouTube playlist strategist. Based on the channel's content and what works in the music video space, suggest Mix playlists that would maximize watch time and attract new subscribers.
 
 Return ONLY valid JSON with this structure:
 {
@@ -136,23 +141,25 @@ Create 8-10 mixes covering these categories:
 - Ambient/Sleep
 - Road trip / Driving
 All titles and descriptions must be in English and optimized for viral YouTube search. Think about what people actually search for: "chill beats to study to", "gym workout music 2026", "late night drive playlist" etc.`,
-      }),
-    ]);
+        }),
+      ]);
 
-    // Parse AI responses
-    let analysis = null;
-    let mixes = null;
-    try {
-      const cleanAnalysis = analysisResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      analysis = JSON.parse(cleanAnalysis);
-    } catch {
-      analysis = { summary: analysisResult, overallScore: 0 };
-    }
-    try {
-      const cleanMixes = mixResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      mixes = JSON.parse(cleanMixes);
-    } catch {
-      mixes = { mixes: [] };
+      // Parse AI responses
+      try {
+        const cleanAnalysis = analysisResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        analysis = JSON.parse(cleanAnalysis);
+      } catch {
+        analysis = { summary: analysisResult, overallScore: 0 };
+      }
+      try {
+        const cleanMixes = mixResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        mixes = JSON.parse(cleanMixes);
+      } catch {
+        mixes = { mixes: [] };
+      }
+    } catch (aiError) {
+      console.warn("[Neural Beat Analytics] AI analysis unavailable:", aiError instanceof Error ? aiError.message : aiError);
+      // Continue without AI - stats are still valuable
     }
 
     return NextResponse.json({
