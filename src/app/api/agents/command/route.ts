@@ -117,9 +117,10 @@ Regler for planlegging:
 4. For e-post: inkluder mottakeradresse i description hvis kjent
 5. For CRM-endringer: spesifiser hvilke statuser som er involvert
 
-Svar ALLTID med JSON:
+Svarformat:
+- Hvis du har en PLAN med konkrete handlinger som skal utføres, svar med JSON:
 {
-  "response": "Din tekst til Freddy (norsk, personlig, profesjonell)",
+  "response": "Din tekst til Freddy (norsk, personlig, profesjonell) - forklar planen",
   "plan": {
     "title": "Kort tittel",
     "steps": [
@@ -134,10 +135,9 @@ Svar ALLTID med JSON:
   }
 }
 
-Uten oppgave:
-{
-  "response": "Din tekst her"
-}
+- Hvis du IKKE har en plan (bare samtale, svar på spørsmål, oppdatering), svar med REN TEKST på norsk. IKKE bruk JSON. IKKE bruk kodeblokker. Bare skriv naturlig tekst.
+
+VIKTIG: Aldri vis rå JSON til brukeren. Aldri vis tekniske detaljer som API-responser, objekter eller arrays. Skriv alltid naturlig, lesbar norsk tekst.
 
 Vær konkret og datadrevet. Ikke gi generiske råd.`;
 
@@ -158,17 +158,30 @@ Vær konkret og datadrevet. Ikke gi generiske råd.`;
       model: 'sonnet',
     });
 
-    // Try to parse as JSON
+    // Try to parse as JSON (only if it contains a plan)
     try {
       const parsed = extractJSON(text);
-      if (parsed) {
+      if (parsed && parsed.plan) {
+        // Has a plan — return structured response
         return NextResponse.json(parsed);
       }
+      if (parsed && parsed.response && typeof parsed.response === 'string') {
+        // JSON with only response field — extract the text
+        return NextResponse.json({ response: parsed.response });
+      }
     } catch {
-      // Not JSON, return as plain text
+      // Not JSON — good, return as plain text
     }
 
-    return NextResponse.json({ response: text });
+    // Clean up any remaining JSON artifacts or code blocks from the text
+    const cleanText = text
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*/g, '')
+      .replace(/^\s*\{[\s\S]*"response"\s*:\s*"/, '')
+      .replace(/"\s*\}\s*$/, '')
+      .trim();
+
+    return NextResponse.json({ response: cleanText || text });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Ukjent feil';
     return NextResponse.json(

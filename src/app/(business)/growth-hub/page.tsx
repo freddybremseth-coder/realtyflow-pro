@@ -292,10 +292,10 @@ export default function GrowthHubPage() {
   const publishAction = async (actionId: string) => {
     try {
       // 1. Update status in growth_actions
-      const res = await fetch(`/api/growth/actions?id=${actionId}`, {
+      const res = await fetch("/api/growth/actions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "published" }),
+        body: JSON.stringify({ id: actionId, status: "published" }),
       });
       if (res.ok) {
         setActions((prev) => prev.map((a) => a.id === actionId ? { ...a, status: "published" as const } : a));

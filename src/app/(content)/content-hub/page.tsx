@@ -208,13 +208,18 @@ export default function ContentHubPage() {
     try {
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("content_publications")
         .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at")
-        .in("status", ["draft", "scheduled", "published", "failed"])
         .order("created_at", { ascending: false })
-        .limit(100);
-      if (data) setDrafts(data);
+        .limit(200);
+      if (error) {
+        console.error("Supabase fetchDrafts error:", error.message);
+      }
+      if (data) {
+        console.log(`[Content Hub] Fetched ${data.length} publications`);
+        setDrafts(data);
+      }
     } catch (err) {
       console.error("Failed to fetch drafts:", err);
     } finally {

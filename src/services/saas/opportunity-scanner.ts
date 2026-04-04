@@ -1,4 +1,24 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { askClaude } from '@/services/ai/claude-client';
+
+/** Extract JSON from AI response */
+function extractJSON(text: string): unknown {
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+  // Try array
+  const firstBracket = text.indexOf("[");
+  const lastBracket = text.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    try { return JSON.parse(text.substring(firstBracket, lastBracket + 1)); } catch { /* continue */ }
+  }
+  // Try object
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+  throw new Error("Could not extract JSON");
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -40,26 +60,15 @@ export interface RefinedConcept {
 // ─── SaaS Opportunity Scanner ────────────────────────────────────────────────
 
 export class SaaSOpportunityScanner {
-  private client: Anthropic | null = null;
-
-  constructor() {
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    }
-  }
 
   /**
-   * Scans for SaaS opportunities using AI analysis of current trends
-   * Focuses on underserved niches where a solo dev can compete
+   * Scans for SaaS opportunities using AI analysis of current trends.
+   * Uses askClaude() with automatic fallback: Anthropic → Gemini → OpenAI
    */
   async discoverOpportunities(): Promise<{
     opportunities: SaaSOpportunity[];
     raw_analysis: string;
   }> {
-    if (!this.client) {
-      return { opportunities: this.getMockOpportunities(), raw_analysis: 'Mock data - no API key' };
-    }
-
     const systemPrompt = `Du er en elite SaaS-markedsanalytiker og seriegrunder. Du jobber for Freddy Bremseth som driver ChatGenius.pro - en SaaS-plattform med AI-drevne micro-SaaS apper.
 
 DITT MÅL: Finn 4-6 SaaS-muligheter som en solo-utvikler med Claude Code kan bygge på 1-5 dager og tjene penger på.
@@ -90,7 +99,7 @@ RETURFORMAT: JSON-array med objekter. Hvert objekt MÅ ha:
   "category": "ai|productivity|finance|health|education|ecommerce|developer-tools|real-estate|legal|marketing",
   "problem_statement": "Hvilket problem løser det?",
   "target_audience": "Hvem betaler for dette?",
-  "market_size": "Estimert marked (eks: '$500M TAM, 50k potential customers')",
+  "market_size": "Estimert marked",
   "competitor_count": 2,
   "competitors": ["Konkurrent 1", "Konkurrent 2"],
   "competitor_weakness": "Hva gjør konkurrentene dårlig?",
@@ -109,40 +118,21 @@ RETURFORMAT: JSON-array med objekter. Hvert objekt MÅ ha:
   "search_volume_trend": "Beskrivelse av søketrend"
 }
 
-opportunity_score beregnes slik:
-- Lav konkurranse (0-3 konkurrenter): +30
-- Klar betalingsvilje i målgruppen: +20
-- Kan bygges på <3 dager: +15
-- AI gir klar fordel: +15
-- Trend er stigende: +10
-- MRR-potensial >$5k: +10
-
 Returner KUN valid JSON-array, ingen annen tekst.`;
 
-    const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Dato: ${new Date().toISOString().split('T')[0]}. Analyser dagens SaaS-marked og finn 4-6 underserverte nisjer med lavt antall tilbydere der vi kan bygge en lønnsom micro-SaaS. Fokuser på hva som trender akkurat nå og hvor det finnes hull i markedet.`,
-        },
-      ],
-    });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-
     try {
-      // Extract JSON from response
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error('No JSON array found in response');
+      const text = await askClaude(
+        `Dato: ${new Date().toISOString().split('T')[0]}. Analyser dagens SaaS-marked og finn 4-6 underserverte nisjer med lavt antall tilbydere der vi kan bygge en lønnsom micro-SaaS. Fokuser på hva som trender akkurat nå og hvor det finnes hull i markedet.`,
+        { systemPrompt, maxTokens: 4000, model: 'sonnet' }
+      );
 
-      const opportunities: SaaSOpportunity[] = JSON.parse(jsonMatch[0]);
+      const parsed = extractJSON(text);
+      const opportunities: SaaSOpportunity[] = Array.isArray(parsed) ? parsed : [];
+      if (opportunities.length === 0) throw new Error('No opportunities parsed');
       return { opportunities, raw_analysis: text };
-    } catch {
-      console.error('[SaaSScanner] Failed to parse AI response');
-      return { opportunities: this.getMockOpportunities(), raw_analysis: text };
+    } catch (err) {
+      console.error('[SaaSScanner] AI scan failed, using mock data:', err);
+      return { opportunities: this.getMockOpportunities(), raw_analysis: 'Fallback to mock data' };
     }
   }
 
@@ -158,41 +148,13 @@ Returner KUN valid JSON-array, ingen annen tekst.`;
     mvp_features: string[];
     user_feedback?: string;
   }): Promise<RefinedConcept> {
-    if (!this.client) {
-      return {
-        business_plan: `# ${opportunity.title}\n\nBusiness plan placeholder - set ANTHROPIC_API_KEY for real analysis.`,
-        refinement_notes: 'Mock refinement',
-        updated_mvp_features: opportunity.mvp_features,
-        updated_differentiators: ['AI-powered', 'Simple UX', 'Fair pricing'],
-        updated_pricing: 'Free + $19/mo Pro',
-        build_plan: '1. Setup Next.js\n2. Build core features\n3. Add auth & billing\n4. Deploy',
-      };
-    }
-
     const userContext = opportunity.user_feedback
       ? `\n\nBRUKERENS TILBAKEMELDING/ØNSKER:\n${opportunity.user_feedback}`
       : '';
 
-    const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      system: `Du er en erfaren SaaS-rådgiver og teknisk arkitekt. Du skal lage en komplett, handlingsklar forretningsplan for en micro-SaaS.
-
-Returner et JSON-objekt med:
-{
-  "business_plan": "Komplett forretningsplan i Markdown med seksjoner: Sammendrag, Problem, Løsning, Målgruppe, Konkurranse, Go-to-Market, Prismodell, MVP-scope, Vekststrategi, Risiko",
-  "refinement_notes": "Kort oppsummering av forbedringer fra original idé",
-  "updated_mvp_features": ["Oppdatert liste med MVP-features, prioritert"],
-  "updated_differentiators": ["Hva gjør denne unik"],
-  "updated_pricing": "Detaljert prismodell med tiers",
-  "build_plan": "Steg-for-steg teknisk plan for å bygge med Claude Code, Next.js, Supabase, Stripe. Inkluder dag-for-dag plan."
-}
-
-Returner KUN valid JSON, ingen annen tekst.`,
-      messages: [
-        {
-          role: 'user',
-          content: `Forfin og lag komplett forretningsplan for denne SaaS-ideen:
+    try {
+      const text = await askClaude(
+        `Forfin og lag komplett forretningsplan for denne SaaS-ideen:
 
 TITTEL: ${opportunity.title}
 BESKRIVELSE: ${opportunity.description}
@@ -202,24 +164,42 @@ KONKURRENTER: ${opportunity.competitors.join(', ')}
 MVP-FEATURES: ${opportunity.mvp_features.join(', ')}${userContext}
 
 Lag en grundig, realistisk plan som en solo-utvikler kan følge for å bygge og lansere dette som en ChatGenius.pro subdomain-app.`,
-        },
-      ],
-    });
+        {
+          systemPrompt: `Du er en erfaren SaaS-rådgiver og teknisk arkitekt. Du skal lage en komplett, handlingsklar forretningsplan for en micro-SaaS.
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+Returner et JSON-objekt med:
+{
+  "business_plan": "Komplett forretningsplan i Markdown",
+  "refinement_notes": "Kort oppsummering av forbedringer fra original idé",
+  "updated_mvp_features": ["Oppdatert liste med MVP-features, prioritert"],
+  "updated_differentiators": ["Hva gjør denne unik"],
+  "updated_pricing": "Detaljert prismodell med tiers",
+  "build_plan": "Steg-for-steg teknisk plan for å bygge med Claude Code, Next.js, Supabase, Stripe."
+}
 
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-      return JSON.parse(jsonMatch[0]);
+Returner KUN valid JSON, ingen annen tekst.`,
+          maxTokens: 4000,
+          model: 'sonnet',
+        }
+      );
+
+      const parsed = extractJSON(text) as Record<string, unknown>;
+      return {
+        business_plan: (parsed.business_plan as string) || text,
+        refinement_notes: (parsed.refinement_notes as string) || '',
+        updated_mvp_features: (parsed.updated_mvp_features as string[]) || opportunity.mvp_features,
+        updated_differentiators: (parsed.updated_differentiators as string[]) || [],
+        updated_pricing: (parsed.updated_pricing as string) || '',
+        build_plan: (parsed.build_plan as string) || '',
+      };
     } catch {
       return {
-        business_plan: text,
-        refinement_notes: 'Could not parse structured response',
+        business_plan: `# ${opportunity.title}\n\nKunne ikke generere forretningsplan. Prøv igjen senere.`,
+        refinement_notes: 'AI-analyse feilet',
         updated_mvp_features: opportunity.mvp_features,
-        updated_differentiators: [],
-        updated_pricing: '',
-        build_plan: '',
+        updated_differentiators: ['AI-powered', 'Simple UX', 'Fair pricing'],
+        updated_pricing: 'Free + $19/mo Pro',
+        build_plan: '1. Setup Next.js\n2. Build core features\n3. Add auth & billing\n4. Deploy',
       };
     }
   }
@@ -236,31 +216,9 @@ Lag en grundig, realistisk plan som en solo-utvikler kan følge for å bygge og 
     business_plan?: string;
     suggested_pricing?: string;
   }): Promise<string> {
-    if (!this.client) {
-      return `Build ${opportunity.title} - set ANTHROPIC_API_KEY for detailed prompt.`;
-    }
-
-    const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 3000,
-      system: `Du er en ekspert på å skrive prompts for Claude Code (Anthropic's AI coding tool). Du skal lage en komplett, klar prompt som en utvikler kan gi til Claude Code for å bygge en hel SaaS-app fra scratch.
-
-Prompten skal inkludere:
-1. Prosjektnavn og beskrivelse
-2. Tech stack: Next.js 14 (App Router), Tailwind CSS, Supabase (auth + DB), Stripe (billing), Vercel (deploy)
-3. Komplett filstruktur
-4. Database schema (Supabase SQL)
-5. Alle sider og komponenter
-6. API routes
-7. Auth-flow
-8. Stripe-integrasjon med prismodell
-9. Deploy-instruksjoner
-
-Skriv prompten PÅ ENGELSK (Claude Code forstår det best), men i en steg-for-steg format som Claude Code kan følge autonomt.`,
-      messages: [
-        {
-          role: 'user',
-          content: `Lag en komplett Claude Code build-prompt for:
+    try {
+      return await askClaude(
+        `Lag en komplett Claude Code build-prompt for:
 
 APP: ${opportunity.title}
 SLUG: ${opportunity.slug} (subdomain: ${opportunity.slug}.chatgenius.pro)
@@ -271,11 +229,15 @@ PRICING: ${opportunity.suggested_pricing || 'Freemium + Pro tier'}
 ${opportunity.business_plan ? `\nBUSINESS PLAN:\n${opportunity.business_plan.substring(0, 2000)}` : ''}
 
 Prompten skal gjøre at Claude Code kan bygge hele appen autonomt.`,
-        },
-      ],
-    });
-
-    return response.content[0].type === 'text' ? response.content[0].text : '';
+        {
+          systemPrompt: `Du er en ekspert på å skrive prompts for Claude Code. Lag en komplett prompt som inkluderer: prosjektnavn, tech stack (Next.js 14 App Router, Tailwind, Supabase, Stripe, Vercel), filstruktur, database schema, sider, API routes, auth-flow, Stripe-integrasjon, og deploy-instruksjoner. Skriv PÅ ENGELSK.`,
+          maxTokens: 3000,
+          model: 'sonnet',
+        }
+      );
+    } catch {
+      return `Build ${opportunity.title} - AI generation failed. Try again later.`;
+    }
   }
 
   private getMockOpportunities(): SaaSOpportunity[] {

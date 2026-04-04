@@ -312,7 +312,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
   return {
     id: String(row.id || ""),
     title: String(row.title || row.title_no || ""),
-    description: String(row.description || row.description_no || ""),
+    description: String(row.description || row.description_no || "").replace(/&#13;/g, '\n').replace(/&#10;/g, '\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'),
     location: String(row.location || ""),
     price: Number(row.price) || 0,
     type: String(row.property_type || row.type || "Villa"),
@@ -1249,7 +1249,7 @@ REGLER:
               </div>
 
               {showDetailModal.description && (
-                <p className="text-sm text-slate-300 mb-4">{showDetailModal.description}</p>
+                <p className="text-sm text-slate-300 mb-4 whitespace-pre-line">{showDetailModal.description}</p>
               )}
 
               <div className="grid grid-cols-4 gap-4 mb-4">

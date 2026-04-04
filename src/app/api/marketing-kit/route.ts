@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { askClaude } from '@/services/ai/claude-client';
 
 export const maxDuration = 120;
+
+/** Extract JSON from AI response */
+function extractJSON(text: string): Record<string, unknown> {
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+  throw new Error("Could not extract JSON");
+}
 
 /**
  * POST /api/marketing-kit
@@ -8,6 +22,8 @@ export const maxDuration = 120;
  *   Agent 1 (Extractor): Analyzes property → defines target audience + vibe
  *   Agent 2 (Copywriter): Generates platform-specific content
  *   Agent 3 (Publisher):  Suggests timing, budget, and publishing strategy
+ *
+ * Uses askClaude() with automatic fallback: Anthropic → Gemini → OpenAI
  */
 export async function POST(req: NextRequest) {
   try {
@@ -16,15 +32,6 @@ export async function POST(req: NextRequest) {
     if (!property) {
       return NextResponse.json({ error: 'property is required' }, { status: 400 });
     }
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json({
-        error: 'ANTHROPIC_API_KEY er ikke konfigurert',
-      }, { status: 500 });
-    }
-
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const client = new Anthropic();
 
     // ─── AGENT 1: Data-analytikeren (The Extractor) ──────────────────
     const extractorPrompt = `Du er en eiendomsanalytiker. Analyser denne eiendommen og definer målgruppe og "vibe".
@@ -58,17 +65,10 @@ Returner JSON:
 
 Svar KUN med JSON, ingen annen tekst.`;
 
-    const extractorResult = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: extractorPrompt }],
-    });
-
-    const extractorText = extractorResult.content[0].type === 'text' ? extractorResult.content[0].text : '';
+    const extractorText = await askClaude(extractorPrompt, { maxTokens: 1500, model: 'sonnet' });
     let analysis;
     try {
-      const jsonMatch = extractorText.match(/\{[\s\S]*\}/);
-      analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+      analysis = extractJSON(extractorText);
     } catch {
       analysis = { target_audiences: [], property_vibe: 'Moderne bolig', key_selling_points: [], emotional_hooks: [], price_positioning: '', best_platforms: ['Facebook', 'Instagram'] };
     }
@@ -111,17 +111,10 @@ Generer ALLE disse tekstene. Skriv på NORSK med innslag av spansk stedsnavn der
 
 Svar KUN med JSON, ingen annen tekst.`;
 
-    const copywriterResult = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 3000,
-      messages: [{ role: 'user', content: copywriterPrompt }],
-    });
-
-    const copywriterText = copywriterResult.content[0].type === 'text' ? copywriterResult.content[0].text : '';
+    const copywriterText = await askClaude(copywriterPrompt, { maxTokens: 3000, model: 'sonnet' });
     let content;
     try {
-      const jsonMatch = copywriterText.match(/\{[\s\S]*\}/);
-      content = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+      content = extractJSON(copywriterText);
     } catch {
       content = { headline: property.title, facebook_ads: {}, instagram: '', linkedin: '', website_description: property.description };
     }
@@ -161,17 +154,10 @@ Lag en komplett publiseringsstrategi:
 
 Svar KUN med JSON, ingen annen tekst.`;
 
-    const publisherResult = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: publisherPrompt }],
-    });
-
-    const publisherText = publisherResult.content[0].type === 'text' ? publisherResult.content[0].text : '';
+    const publisherText = await askClaude(publisherPrompt, { maxTokens: 2000, model: 'sonnet' });
     let strategy;
     try {
-      const jsonMatch = publisherText.match(/\{[\s\S]*\}/);
-      strategy = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+      strategy = extractJSON(publisherText);
     } catch {
       strategy = { publishing_schedule: [], budget_suggestion: { total_weekly: 500 }, campaign_duration_days: 14 };
     }
