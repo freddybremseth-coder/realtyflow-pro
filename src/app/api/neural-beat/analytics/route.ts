@@ -6,6 +6,19 @@ import {
   isConfigured as ytConfigured,
 } from "@/services/integrations/youtube-client";
 
+/** Extract JSON from AI response that may contain markdown, preamble text, etc. */
+function extractJSON(text: string): Record<string, unknown> {
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+  throw new Error("Could not extract JSON from AI response");
+}
+
 /**
  * GET /api/neural-beat/analytics
  *
@@ -146,14 +159,12 @@ All titles and descriptions must be in English and optimized for viral YouTube s
 
       // Parse AI responses
       try {
-        const cleanAnalysis = analysisResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        analysis = JSON.parse(cleanAnalysis);
+        analysis = extractJSON(analysisResult);
       } catch {
         analysis = { summary: analysisResult, overallScore: 0 };
       }
       try {
-        const cleanMixes = mixResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        mixes = JSON.parse(cleanMixes);
+        mixes = extractJSON(mixResult);
       } catch {
         mixes = { mixes: [] };
       }

@@ -8,6 +8,25 @@ import {
 } from "@/services/integrations/youtube-client";
 import { createClient } from "@supabase/supabase-js";
 
+/** Extract JSON from AI response that may contain markdown, preamble text, etc. */
+function extractJSON(text: string): Record<string, unknown> {
+  // 1. Try direct parse
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+
+  // 2. Strip markdown code fences
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+
+  // 3. Find the outermost { ... } block
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+
+  throw new Error("Could not extract JSON from AI response");
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -123,15 +142,14 @@ RULES:
     });
 
     try {
-      const clean = aiResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(clean);
+      const parsed = extractJSON(aiResult);
       return NextResponse.json({
         ...parsed,
         channel,
         stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
       });
     } catch {
-      return NextResponse.json({ recommendations: [], channelHealth: { score: 0, summary: aiResult } });
+      return NextResponse.json({ recommendations: [], channelHealth: { score: 0, trend: 'stable', summary: 'Kunne ikke analysere kanaldata' } });
     }
   } catch (error) {
     console.error("[Neural Beat Recommendations] Error:", error);

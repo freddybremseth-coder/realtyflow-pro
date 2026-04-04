@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { askClaude, askClaudeWithImage } from "@/services/ai/claude-client";
 
+/** Extract JSON from AI response that may contain markdown, preamble text, etc. */
+function extractJSON(text: string): Record<string, unknown> {
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+  throw new Error("Could not extract JSON from AI response");
+}
+
 const EXTRACTION_PROMPT = `You are an expert at extracting contact/lead information from documents and forms. Analyze this content and extract all leads/contacts you can find.
 
 For handwritten or printed interest forms, pay attention to:
@@ -105,8 +118,7 @@ export async function POST(req: NextRequest) {
     // Parse AI response
     let result;
     try {
-      const clean = extractedText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      result = JSON.parse(clean);
+      result = extractJSON(extractedText);
     } catch {
       // If AI didn't return valid JSON, wrap the text response
       result = {

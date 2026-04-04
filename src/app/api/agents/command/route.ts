@@ -13,6 +13,19 @@ import { sendEmail } from '@/services/email/smtp-sender';
 
 export const maxDuration = 120;
 
+/** Extract JSON from AI response that may contain markdown, preamble text, etc. */
+function extractJSON(text: string): Record<string, unknown> {
+  try { return JSON.parse(text.trim()); } catch { /* continue */ }
+  const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
+  try { return JSON.parse(stripped); } catch { /* continue */ }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.substring(firstBrace, lastBrace + 1)); } catch { /* continue */ }
+  }
+  throw new Error("Could not extract JSON from AI response");
+}
+
 function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -147,9 +160,8 @@ Vær konkret og datadrevet. Ikke gi generiske råd.`;
 
     // Try to parse as JSON
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = extractJSON(text);
+      if (parsed) {
         return NextResponse.json(parsed);
       }
     } catch {
@@ -290,8 +302,7 @@ async function executeStep(
           { maxTokens: 500, model: 'sonnet', systemPrompt: 'Returner BARE valid JSON. Fyll inn tomme strenger for manglende felt.' }
         );
         try {
-          const clean = aiResult.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-          const contact = JSON.parse(clean);
+          const contact = extractJSON(aiResult);
           const now = new Date().toISOString();
           const { data, error } = await supabase.from('contacts').insert({
             ...contact, pipeline_status: 'NEW', created_at: now, updated_at: now,
@@ -321,8 +332,7 @@ async function executeStep(
 
       // Try to actually send the email if we have SMTP config
       try {
-        const clean = emailText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const emailData = JSON.parse(clean);
+        const emailData = extractJSON(emailText) as Record<string, string>;
         const smtpHost = process.env.SMTP_HOST;
         const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
         const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
