@@ -22,6 +22,7 @@ const STEP_NAMES = [
   'Render Video with FFmpeg',
   'Upload to YouTube',
   'Save Results to Database',
+  'Generate & Upload YouTube Short',
 ] as const;
 
 function createStep(name: string, _index: number): PipelineStep {
@@ -466,6 +467,89 @@ export class NeuralBeatPipeline {
         const message = error instanceof Error ? error.message : String(error);
         stepFailed(steps[currentStepIndex], message);
         throw new Error(`Step 8 failed: ${message}`);
+      }
+
+      // Step 9: Generate & Upload YouTube Short (non-fatal)
+      currentStepIndex = 8;
+      stepRunning(steps[currentStepIndex]);
+      try {
+        if (videoBuffer && youtubeMetadata && audioUrl) {
+          // Use FFmpeg to create a 30-45 second vertical Short from the video
+          const shortsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neural-short-'));
+          const inputVideoPath = path.join(shortsDir, 'input.mp4');
+          const shortsVideoPath = path.join(shortsDir, 'short.mp4');
+          await fs.writeFile(inputVideoPath, videoBuffer);
+
+          // Get audio duration to find the best clip section (aim for middle 30-45 seconds)
+          const { execSync } = require('child_process');
+          let duration = 120; // default 2min
+          try {
+            const probe = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${inputVideoPath}"`, { encoding: 'utf8' });
+            duration = parseFloat(probe.trim()) || 120;
+          } catch { /* use default */ }
+
+          // Take 30-45 seconds from the best part (typically 30-40% into the song)
+          const shortDuration = Math.min(45, Math.max(30, duration * 0.35));
+          const startTime = Math.max(0, Math.floor(duration * 0.3));
+
+          // Create vertical 9:16 crop from center of 16:9 video, with the audio
+          const ffmpegCmd = [
+            'ffmpeg', '-y',
+            '-ss', String(startTime),
+            '-i', `"${inputVideoPath}"`,
+            '-t', String(Math.floor(shortDuration)),
+            '-vf', '"crop=ih*9/16:ih,scale=1080:1920"',
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            `"${shortsVideoPath}"`,
+          ].join(' ');
+
+          execSync(ffmpegCmd, { timeout: 120000 });
+
+          const shortsBuffer = await fs.readFile(shortsVideoPath);
+
+          // Create Shorts-optimized title and description
+          const shortsTitle = `${youtubeMetadata.title.split('|')[0].trim()} #Shorts`.slice(0, 100);
+          const shortsDescription = `${youtubeMetadata.description.split('\n')[0]}\n\nFull version: ${youtubeUrl}\n\n#Shorts #AIMusic #NeuralBeat #ChillBeats #StudyMusic`;
+
+          const shortsResult = await uploadVideo(shortsBuffer, {
+            title: shortsTitle,
+            description: shortsDescription,
+            tags: [...youtubeMetadata.tags, 'Shorts', 'Short', 'YouTube Shorts'],
+            categoryId: youtubeMetadata.categoryId,
+            privacyStatus: 'public',
+          });
+
+          console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);
+
+          // Save shorts URL to database
+          await updateSongFields(songRecord.id, {
+            aiMetadata: {
+              youtubeTitle: youtubeMetadata.title,
+              youtubeDescription: youtubeMetadata.description,
+              tags: youtubeMetadata.tags,
+              renderer: 'ffmpeg',
+              processedAt: new Date().toISOString(),
+              shortsUrl: shortsResult.youtubeUrl,
+              shortsVideoId: shortsResult.videoId,
+            },
+          });
+
+          steps[currentStepIndex].result = `Short uploaded: ${shortsResult.youtubeUrl}`;
+
+          // Cleanup
+          try { await fs.rm(shortsDir, { recursive: true }); } catch { /* silent */ }
+        } else {
+          steps[currentStepIndex].result = 'Skipped - no video buffer available';
+        }
+        stepCompleted(steps[currentStepIndex]);
+      } catch (error) {
+        // Non-fatal: don't fail the pipeline if Shorts generation fails
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[NeuralBeatPipeline] Shorts generation failed (non-fatal): ${message}`);
+        steps[currentStepIndex].result = `Feilet (ikke-kritisk): ${message}`;
+        stepCompleted(steps[currentStepIndex]); // Mark completed even on failure since it's optional
       }
 
       // Pipeline completed successfully
