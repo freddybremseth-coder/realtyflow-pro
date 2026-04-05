@@ -171,6 +171,8 @@ export default function NeuralBeatPage() {
   const [weeklyGoals, setWeeklyGoals] = useState<string[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
+  const [autopilotRunning, setAutopilotRunning] = useState(false);
+  const [autopilotLog, setAutopilotLog] = useState<string[]>([]);
 
   const fetchSongs = useCallback(() => {
     fetch('/api/neural-beat')
@@ -280,6 +282,83 @@ export default function NeuralBeatPage() {
       await executeRecommendation(rec.id);
     }
   }, [recommendations, executeRecommendation]);
+
+  // AI Autopilot: fetch recommendations and auto-execute all update_metadata actions
+  const runAutopilot = useCallback(async () => {
+    setAutopilotRunning(true);
+    setAutopilotLog(['Henter AI-anbefalinger...']);
+    try {
+      const res = await fetch('/api/neural-beat/recommendations');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const recs = (data.recommendations || []).map((r: Recommendation) => ({ ...r, status: 'pending' as const }));
+      setRecommendations(recs);
+      if (data.channelHealth) setChannelHealth(data.channelHealth);
+      if (data.quickWins) setQuickWins(data.quickWins);
+      if (data.weeklyGoals) setWeeklyGoals(data.weeklyGoals);
+      if (data.channel && !ytChannel) setYtChannel(data.channel);
+
+      setAutopilotLog((prev) => [...prev, `${recs.length} anbefalinger funnet. Starter automatisk utførelse...`]);
+
+      // Execute all update_metadata recommendations automatically
+      const metadataRecs = recs.filter((r: Recommendation) => r.action?.type === 'update_metadata');
+      const strategyRecs = recs.filter((r: Recommendation) => r.action?.type !== 'update_metadata');
+
+      setAutopilotLog((prev) => [...prev, `${metadataRecs.length} YouTube-endringer utføres automatisk, ${strategyRecs.length} strategitiltak lagres.`]);
+
+      for (const rec of metadataRecs) {
+        try {
+          setRecommendations((prev) => prev.map((r) => r.id === rec.id ? { ...r, status: 'executing' as const } : r));
+          const execRes = await fetch('/api/neural-beat/recommendations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: rec.action }),
+          });
+          const execData = await execRes.json();
+          if (execData.error) throw new Error(execData.error);
+          setRecommendations((prev) => prev.map((r) =>
+            r.id === rec.id ? { ...r, status: 'done' as const, result: execData.message || 'Utført' } : r
+          ));
+          setAutopilotLog((prev) => [...prev, `✓ ${rec.title}`]);
+        } catch (err) {
+          setRecommendations((prev) => prev.map((r) =>
+            r.id === rec.id ? { ...r, status: 'error' as const, result: err instanceof Error ? err.message : 'Feil' } : r
+          ));
+          setAutopilotLog((prev) => [...prev, `✗ ${rec.title}: ${err instanceof Error ? err.message : 'Feil'}`]);
+        }
+      }
+
+      // Save strategy recommendations
+      for (const rec of strategyRecs) {
+        try {
+          setRecommendations((prev) => prev.map((r) => r.id === rec.id ? { ...r, status: 'executing' as const } : r));
+          const execRes = await fetch('/api/neural-beat/recommendations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: rec.action }),
+          });
+          const execData = await execRes.json();
+          if (execData.error) throw new Error(execData.error);
+          setRecommendations((prev) => prev.map((r) =>
+            r.id === rec.id ? { ...r, status: 'done' as const, result: execData.message || 'Lagret' } : r
+          ));
+          setAutopilotLog((prev) => [...prev, `✓ ${rec.title}`]);
+        } catch (err) {
+          setRecommendations((prev) => prev.map((r) =>
+            r.id === rec.id ? { ...r, status: 'error' as const, result: err instanceof Error ? err.message : 'Feil' } : r
+          ));
+          setAutopilotLog((prev) => [...prev, `✗ ${rec.title}: ${err instanceof Error ? err.message : 'Feil'}`]);
+        }
+      }
+
+      const doneCount = metadataRecs.length + strategyRecs.length;
+      setAutopilotLog((prev) => [...prev, `Autopilot ferdig! ${doneCount} tiltak behandlet.`]);
+    } catch (err) {
+      setAutopilotLog((prev) => [...prev, `Feil: ${err instanceof Error ? err.message : 'Kunne ikke kjøre autopilot'}`]);
+    }
+    setAutopilotRunning(false);
+  }, [ytChannel]);
 
   // Handle MP3 file selection
   const handleMp3Select = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1569,6 +1648,46 @@ export default function NeuralBeatPage() {
                 </div>
               )}
 
+              {/* Autopilot Card */}
+              <Card className="border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-cyan-500/5">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-lg bg-amber-500/20 border border-amber-500/30">
+                        <Rocket className="h-5 w-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">AI Autopilot</h3>
+                        <p className="text-[11px] text-slate-400">AI analyserer kanalen, optimaliserer titler, tags og metadata automatisk</p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={runAutopilot}
+                      disabled={autopilotRunning || recsLoading}
+                      className="gap-2 bg-gradient-to-r from-amber-600 to-cyan-600 hover:from-amber-500 hover:to-cyan-500 text-white font-semibold shadow-lg shadow-amber-500/20"
+                    >
+                      {autopilotRunning ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Kjører...</>
+                      ) : (
+                        <><Zap className="h-4 w-4" /> Kjør Autopilot</>
+                      )}
+                    </Button>
+                  </div>
+                  {autopilotLog.length > 0 && (
+                    <div className="mt-3 p-3 rounded-lg bg-slate-900/80 border border-slate-700/50 max-h-40 overflow-y-auto">
+                      {autopilotLog.map((log, i) => (
+                        <p key={i} className={`text-[11px] font-mono ${
+                          log.startsWith('✓') ? 'text-emerald-400' :
+                          log.startsWith('✗') ? 'text-red-400' :
+                          log.includes('ferdig') ? 'text-amber-300 font-semibold' :
+                          'text-slate-400'
+                        }`}>{log}</p>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Action bar */}
               {recommendations.filter((r) => r.status === 'pending').length > 0 && (
                 <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/80 border border-slate-700/50">
@@ -1583,7 +1702,7 @@ export default function NeuralBeatPage() {
                       Forkast alle
                     </Button>
                     <Button size="sm" onClick={executeAllRecommendations} className="gap-1.5">
-                      <Zap className="h-3.5 w-3.5" /> Kjør alle
+                      <Zap className="h-3.5 w-3.5" /> Kjør alle manuelt
                     </Button>
                   </div>
                 </div>
@@ -1716,7 +1835,7 @@ export default function NeuralBeatPage() {
               )}
 
               {/* No recommendations yet */}
-              {recommendations.length === 0 && !recsLoading && (
+              {recommendations.length === 0 && !recsLoading && !autopilotRunning && (
                 <Card className="bg-slate-800/50 border-slate-700/50">
                   <CardContent className="p-12 text-center">
                     <Rocket className="h-16 w-16 mx-auto mb-4 text-amber-500/20" />
@@ -1724,9 +1843,14 @@ export default function NeuralBeatPage() {
                     <p className="text-slate-400 text-sm mb-4">
                       AI analyserer kanalen din og genererer konkrete, kjørbare anbefalinger for å øke vekst og visninger.
                     </p>
-                    <Button onClick={fetchRecommendations} className="gap-2">
-                      <Sparkles className="h-4 w-4" /> Generer anbefalinger
-                    </Button>
+                    <div className="flex gap-3 justify-center">
+                      <Button onClick={fetchRecommendations} variant="outline" className="gap-2">
+                        <Sparkles className="h-4 w-4" /> Se anbefalinger
+                      </Button>
+                      <Button onClick={runAutopilot} className="gap-2 bg-gradient-to-r from-amber-600 to-cyan-600 hover:from-amber-500 hover:to-cyan-500">
+                        <Zap className="h-4 w-4" /> Kjør Autopilot
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}

@@ -150,30 +150,185 @@ RULES:
       (videos.length > 20 ? 20 : videos.length > 5 ? 10 : 5)
     ));
 
+    let parsed: Record<string, unknown> | null = null;
     try {
-      const parsed = extractJSON(aiResult);
+      parsed = extractJSON(aiResult);
       // Ensure channelHealth always has a valid score
       if (parsed.channelHealth) {
         const ch = parsed.channelHealth as Record<string, unknown>;
         if (!ch.score || ch.score === 0) ch.score = rawScore;
       }
+    } catch {
+      console.warn("[Neural Beat Recommendations] AI JSON parse failed, generating data-driven recommendations");
+    }
+
+    // If AI parsing succeeded and has recommendations, use them
+    const aiRecs = parsed?.recommendations as unknown[] | undefined;
+    if (aiRecs && Array.isArray(aiRecs) && aiRecs.length > 0) {
       return NextResponse.json({
         ...parsed,
         channel,
         stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
       });
-    } catch {
-      return NextResponse.json({
-        recommendations: [],
-        channelHealth: {
-          score: rawScore,
-          trend: avgViews > 50 ? 'up' : 'stable',
-          summary: `Kanalen har ${channel.subscriberCount} abonnenter, ${channel.videoCount} videoer og ${engagementRate}% engasjement. Generer anbefalinger på nytt for detaljert analyse.`,
+    }
+
+    // ── Data-driven fallback recommendations ──────────────────────────
+    const fallbackRecs: Record<string, unknown>[] = [];
+    let recCounter = 1;
+
+    // 1. Optimize underperforming video titles with SEO keywords
+    for (const v of lowPerformers.slice(0, 3)) {
+      const hasKeywords = /lofi|chill|beats|relaxing|study|ambient|trap|hip hop/i.test(v.title);
+      if (!hasKeywords) {
+        fallbackRecs.push({
+          id: `rec_${recCounter++}`,
+          type: 'optimize_title',
+          priority: 'critical',
+          title: `Optimaliser tittel: "${v.title}"`,
+          description: `Denne videoen har bare ${v.viewsPerDay} visninger/dag. Tittelen mangler søkbare nøkkelord som folk bruker på YouTube (lofi, chill, beats, study, etc).`,
+          impact: `Kan øke visninger med 200-500% ved å matche populære søkeord.`,
+          effort: 'easy',
+          action: {
+            type: 'update_metadata',
+            videoId: v.id,
+            currentTitle: v.title,
+            newTitle: `${v.title} | Chill Beats for Study & Relax 2026`,
+            newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 'neural beat', 'ai music', 'focus music'],
+            details: null,
+          },
+        });
+      }
+    }
+
+    // 2. Add tags to videos missing them
+    for (const v of videosWithStats.slice(0, 3)) {
+      const vid = v as any;
+      if (!vid.tags || vid.tags.length < 3) {
+        fallbackRecs.push({
+          id: `rec_${recCounter++}`,
+          type: 'optimize_tags',
+          priority: 'high',
+          title: `Legg til tags på "${v.title.slice(0, 40)}..."`,
+          description: `Videoen mangler tags som hjelper YouTube å forstå innholdet og anbefale det til seere.`,
+          impact: `Tags hjelper YouTube-algoritmen å plassere videoen i anbefalinger og søk.`,
+          effort: 'easy',
+          action: {
+            type: 'update_metadata',
+            videoId: v.id,
+            currentTitle: v.title,
+            newTitle: null,
+            newTags: ['ai music', 'neural beat', 'chill beats', 'lofi hip hop', 'study music', 'relaxing beats', 'ambient music', 'focus music', 'coding music', 'work music'],
+            details: null,
+          },
+        });
+      }
+    }
+
+    // 3. Strategy: analyze top performers and replicate
+    if (topPerformers.length > 0) {
+      const topTitles = topPerformers.slice(0, 3).map((v) => `"${v.title}"`).join(', ');
+      fallbackRecs.push({
+        id: `rec_${recCounter++}`,
+        type: 'content_strategy',
+        priority: 'high',
+        title: 'Lag mer innhold som toppvideoene dine',
+        description: `Dine best presterende videoer er ${topTitles}. Analyser hva de har til felles (tittelformat, lengde, stil) og lag lignende innhold.`,
+        impact: 'Konsistent innhold i topp-format kan doble gjennomsnittlige visninger.',
+        effort: 'medium',
+        action: {
+          type: 'create_content',
+          videoId: null,
+          details: `Lag 5 nye spor inspirert av stilen til de mest sette videoene: ${topTitles}. Fokuser på samme stemning, tempo og tittelformat.`,
         },
-        channel,
-        stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
       });
     }
+
+    // 4. Upload schedule
+    fallbackRecs.push({
+      id: `rec_${recCounter++}`,
+      type: 'upload_schedule',
+      priority: 'high',
+      title: 'Sett opp fast opplastingsplan: 3x per uke',
+      description: `Konsistens er nøkkelen til YouTube-vekst. Med ${channel.videoCount} videoer og ${channel.subscriberCount} abonnenter trenger kanalen regelmessig nytt innhold.`,
+      impact: 'Kanaler med fast plan vokser 3-5x raskere enn uregelmessige kanaler.',
+      effort: 'medium',
+      action: {
+        type: 'schedule',
+        videoId: null,
+        details: 'Last opp mandag, onsdag og fredag kl 18:00 CET. Bruk YouTube Studio planleggeren for å forhåndsplanlegge.',
+      },
+    });
+
+    // 5. Shorts strategy
+    fallbackRecs.push({
+      id: `rec_${recCounter++}`,
+      type: 'shorts',
+      priority: 'high',
+      title: 'Start med YouTube Shorts for rask vekst',
+      description: 'YouTube Shorts er den raskeste veien til nye abonnenter i 2026. Lag 30-60 sekunders klipp av dine beste beats med visuelt engasjerende bakgrunner.',
+      impact: 'Shorts kan gi 10-100x flere visninger enn vanlige videoer og driver abonnenter til hovedkanalen.',
+      effort: 'easy',
+      action: {
+        type: 'create_content',
+        videoId: null,
+        details: 'Lag 5 Shorts denne uken: ta de beste 30-sekundersklippene fra eksisterende spor, legg til visualizer/waveform-animasjon, og bruk trending hashtags som #shorts #lofi #chillbeats.',
+      },
+    });
+
+    // 6. Engagement
+    fallbackRecs.push({
+      id: `rec_${recCounter++}`,
+      type: 'engagement',
+      priority: 'medium',
+      title: 'Legg til CTA i alle videobeskrivelser',
+      description: `Engasjementsraten er ${engagementRate}%. Be seere like, abonnere og kommentere i beskrivelsen.`,
+      impact: 'CTAs øker likes/kommentarer med 20-40%, som øker algoritme-synlighet.',
+      effort: 'easy',
+      action: {
+        type: 'strategy',
+        videoId: null,
+        details: 'Oppdater alle videobeskrivelser med: "🎵 Liker du denne beaten? Trykk like og abonner for daglige chill beats! 💬 Kommenter hvilken stemning du vil høre neste!"',
+      },
+    });
+
+    // 7. Playlist strategy
+    fallbackRecs.push({
+      id: `rec_${recCounter++}`,
+      type: 'playlist_strategy',
+      priority: 'medium',
+      title: 'Organiser videoer i tematiske spillelister',
+      description: 'Spillelister øker seertid dramatisk. Grupper videoene etter stemning: Study, Sleep, Workout, Chill, Focus.',
+      impact: 'Spillelister kan øke gjennomsnittlig seertid med 40-80%.',
+      effort: 'easy',
+      action: {
+        type: 'strategy',
+        videoId: null,
+        details: 'Opprett spillelister: "🎓 Study & Focus Beats", "😴 Sleep & Relax", "💪 Workout Energy", "☕ Morning Chill", "🌙 Late Night Vibes"',
+      },
+    });
+
+    return NextResponse.json({
+      recommendations: fallbackRecs,
+      channelHealth: {
+        score: rawScore,
+        trend: avgViews > 50 ? 'up' : 'stable',
+        summary: `Kanalen har ${channel.subscriberCount} abonnenter, ${channel.videoCount} videoer og ${engagementRate}% engasjement. Anbefalingene er basert på dataanalyse av dine ${videos.length} videoer.`,
+      },
+      quickWins: [
+        `Optimaliser titler på de ${lowPerformers.length} svakeste videoene med søkbare nøkkelord`,
+        'Legg til tags (lofi, chill, study beats) på alle videoer som mangler dem',
+        'Lag din første YouTube Short fra et eksisterende spor',
+        'Opprett tematiske spillelister for å øke seertid',
+      ],
+      weeklyGoals: [
+        'Last opp 3 nye spor med SEO-optimaliserte titler',
+        'Publiser 5 YouTube Shorts med beste beats-klipp',
+        'Oppdater beskrivelsen på 5 eldre videoer med CTA',
+        `Nå ${channel.subscriberCount + 10} abonnenter`,
+      ],
+      channel,
+      stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
+    });
   } catch (error) {
     console.error("[Neural Beat Recommendations] Error:", error);
     return NextResponse.json(
