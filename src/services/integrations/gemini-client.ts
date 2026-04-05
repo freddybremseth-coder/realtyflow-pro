@@ -405,8 +405,7 @@ export async function generateYouTubeSEO(
   privacyStatus: string;
   imagePrompt: string;
 }> {
-  const prompt = `You are a YouTube SEO expert for music channels.
-Generate optimized YouTube metadata for this EDM/electronic track.
+  const prompt = `You are a YouTube SEO expert for music channels. Generate optimized YouTube metadata for this EDM/electronic track.
 
 Track: "${options.title}"
 Artist: ${options.artist || 'Neural Beat'}
@@ -414,17 +413,33 @@ Genre: ${options.genre}
 Style: ${options.style}
 Mood: ${options.mood}
 
+IMPORTANT: The description must be COMPREHENSIVE and SEO-optimized (1500-2500 chars). Structure it as:
+1. Song intro: name, artist, genre, mood, what makes it special (2-3 sentences in English)
+2. Detect the primary language of the track title. Add a call-to-action in THAT language:
+   - English: "Enjoying this beat? Hit like and subscribe for daily chill beats! Comment what vibe you want to hear next!"
+   - Spanish: "Te gusta este beat? Dale a like y suscribete para beats chill diarios! Comenta que tipo de vibra quieres escuchar la proxima vez!"
+   - German: "Gefallt dir dieser Beat? Like das Video und abonniere den Kanal fur tagliche Chill-Beats! Schreib in die Kommentare, welchen Vibe du als Nachstes horen willst!"
+   - Italian: "Ti piace questo beat? Metti like e iscriviti per beat chill quotidiani! Commenta quale vibe vorresti sentire nel prossimo video!"
+   - Russian: "Ponravilsya bit? Stavj lajk i podpisyvajsya na ezhednevnye chill-bity! Pishi v kommentariyah, kakoj vajb hochesh uslyshat sleduyushchim!"
+   - French: "Tu aimes ce beat? Like et abonne-toi pour des beats chill quotidiens! Dis-moi en commentaire quelle ambiance tu veux entendre la prochaine fois!"
+   - Norwegian: "Liker du denne beaten? Trykk like og abonner for daglige chill beats! Kommenter hvilken stemning du vil hore neste!"
+   If title language is unclear, use English.
+3. ALWAYS add English CTA as well for international reach
+4. Timestamps: 00:00 Start, plus 2-3 estimated section timestamps
+5. About section: "Neural Beat creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops!"
+6. Hashtags: #NeuralBeat #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific tags
+
 Respond with ONLY this JSON, no markdown:
 {
   "title": "YouTube video title (catchy, includes artist name, max 60 chars)",
-  "description": "YouTube description (500-800 chars, include genre tags, mood, artist info, relevant hashtags at the end)",
-  "tags": ["tag1", "tag2", "tag3", "...up to 15 relevant tags for YouTube SEO"],
+  "description": "FULL YouTube description as described above",
+  "tags": ["tag1", "tag2", "...up to 20 relevant tags"],
   "categoryId": "10",
   "privacyStatus": "public",
   "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)"
 }`;
 
-  const result = await askClaude(prompt, { temperature: 0.7, maxTokens: 800 });
+  const result = await askClaude(prompt, { temperature: 0.7, maxTokens: 2000 });
 
   try {
     const jsonMatch = result.match(/\{[\s\S]*\}/);
@@ -433,10 +448,29 @@ Respond with ONLY this JSON, no markdown:
     // fallback
   }
 
+  const fallbackDesc = `${options.title} by ${options.artist || 'Neural Beat'}
+
+A ${options.mood} ${options.genre} track with ${options.style} vibes. Let the music take you on a journey.
+
+Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!
+
+¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!
+
+⏱️ Timestamps
+00:00 Start
+00:30 Build-up
+01:30 Drop
+
+🎵 About Neural Beat
+Neural Beat creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops of chill beats, study music, and EDM bangers!
+
+🏷️ Tags
+#NeuralBeat #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
+
   return {
     title: `${options.artist || 'Neural Beat'} - ${options.title} [${options.genre}]`,
-    description: `${options.title} by ${options.artist || 'Neural Beat'}. Genre: ${options.genre}. Mood: ${options.mood}.\n\n#EDM #${options.genre.replace(/\s/g, '')} #ElectronicMusic #NeuralBeat`,
-    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Neural Beat', options.title],
+    description: fallbackDesc,
+    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Neural Beat', 'AI Music', 'Chill Beats', 'Study Music', options.title],
     categoryId: '10',
     privacyStatus: 'public',
     imagePrompt: `Abstract neon visualization for ${options.genre} music, ${options.mood} mood, vibrant colors, no text`,

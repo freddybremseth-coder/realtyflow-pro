@@ -6,6 +6,9 @@ import {
   getChannelInfo,
   listVideos,
   updateVideoMetadata,
+  listPlaylists,
+  createPlaylist,
+  addToPlaylist,
   isConfigured as ytConfigured,
 } from '@/services/integrations/youtube-client';
 import { publishToMultiplePlatforms } from '@/services/integrations/social-publisher';
@@ -154,8 +157,15 @@ Vær konkret og datadrevet. Ikke gi generiske råd.`;
     try {
       const parsed = extractJSON(text);
       if (parsed && parsed.plan) {
-        // Has a plan — return structured response
-        return NextResponse.json(parsed);
+        // Has a plan — ensure response field is clean text, not JSON
+        const resp = typeof parsed.response === 'string' ? parsed.response : '';
+        // Strip any accidental JSON/plan fragments from response text
+        const cleanResp = resp
+          .replace(/[{}\[\]]/g, '')
+          .replace(/"[^"]*":/g, '')
+          .replace(/,\s*$/g, '')
+          .trim();
+        return NextResponse.json({ response: cleanResp || 'Jeg har laget en plan for deg.', plan: parsed.plan });
       }
       if (parsed && parsed.response && typeof parsed.response === 'string') {
         // JSON with only response field — extract the text
@@ -166,12 +176,20 @@ Vær konkret og datadrevet. Ikke gi generiske råd.`;
     }
 
     // Clean up any remaining JSON artifacts or code blocks from the text
-    const cleanText = text
+    let cleanText = text
       .replace(/```json\s*/g, '')
       .replace(/```\s*/g, '')
-      .replace(/^\s*\{[\s\S]*"response"\s*:\s*"/, '')
-      .replace(/"\s*\}\s*$/, '')
       .trim();
+    // If it looks like a truncated JSON response, extract readable text before the JSON
+    if (cleanText.includes('{"') || cleanText.includes('", "plan"')) {
+      const jsonStart = cleanText.indexOf('{"');
+      if (jsonStart > 0) {
+        cleanText = cleanText.substring(0, jsonStart).trim();
+      }
+      if (!cleanText || cleanText.length < 10) {
+        cleanText = 'Jeg har behandlet forespørselen din, men klarte ikke å generere et fullstendig svar. Prøv igjen med en tydeligere instruksjon.';
+      }
+    }
 
     return NextResponse.json({ response: cleanText || text });
   } catch (err: unknown) {
@@ -464,9 +482,10 @@ async function executeStep(
     }
 
     case 'neural-beat': {
+      if (!ytConfigured()) return { summary: 'YouTube er ikke konfigurert. Legg til YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET og YOUTUBE_REFRESH_TOKEN.', data: {} };
+
       // YouTube music channel operations
-      if (desc.includes('statistikk') || desc.includes('analytics') || desc.includes('analyse')) {
-        if (!ytConfigured()) return { summary: 'YouTube er ikke konfigurert', data: {} };
+      if (desc.includes('statistikk') || desc.includes('analytics') || desc.includes('analyse') || desc.includes('analyser')) {
         const [channel, videos] = await Promise.all([getChannelInfo(), listVideos(50)]);
         const totalViews = videos.reduce((s, v) => s + v.viewCount, 0);
         const topVideos = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 10);
@@ -478,13 +497,100 @@ async function executeStep(
         return { summary: aiAnalysis, data: { channel, totalViews, topVideos: topVideos.slice(0, 5) } };
       }
 
-      // Video metadata optimization
-      if (desc.includes('optimaliser') || desc.includes('seo') || desc.includes('tittel')) {
-        const youtubeAgent = await orchestrator.executeCommand('youtube', step.description);
-        return { summary: youtubeAgent.output, data: {} };
+      // Playlist operations - ACTUAL YouTube API calls
+      if (desc.includes('spilleliste') || desc.includes('playlist')) {
+        const existingPlaylists = await listPlaylists();
+
+        if (desc.includes('opprett') || desc.includes('lag') || desc.includes('ny')) {
+          // Use AI to determine playlist details from description
+          const aiResult = await askClaude(
+            `Basert på denne oppgaven: "${step.description}"\n\nOg eksisterende spillelister: ${existingPlaylists.map(p => `"${p.title}" (${p.itemCount} videoer)`).join(', ') || 'ingen'}\n\nBestem hvilke nye spillelister som bør opprettes. Returner JSON array: [{"title": "...", "description": "..."}]\nIkke opprett spillelister som allerede finnes.`,
+            { maxTokens: 500, model: 'sonnet', systemPrompt: 'Returner BARE valid JSON array.' }
+          );
+          try {
+            let playlistsToCreate: Array<{ title: string; description: string }> = [];
+            try {
+              const parsed = JSON.parse(aiResult.trim());
+              playlistsToCreate = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+              const obj = extractJSON(aiResult);
+              playlistsToCreate = Array.isArray(obj) ? obj as any : [obj] as any;
+            }
+            const created: string[] = [];
+            for (const pl of playlistsToCreate) {
+              if (!pl.title) continue;
+              // Check if playlist already exists
+              if (existingPlaylists.some(ep => ep.title.toLowerCase() === pl.title.toLowerCase())) {
+                created.push(`"${pl.title}" finnes allerede`);
+                continue;
+              }
+              const result = await createPlaylist(pl.title, pl.description || '');
+              created.push(`"${result.title}" opprettet (${result.id})`);
+            }
+            // Optionally add videos to playlists
+            const videos = await listVideos(50);
+            if (videos.length > 0 && playlistsToCreate.length > 0) {
+              const allPlaylists = await listPlaylists();
+              const categorizeResult = await askClaude(
+                `Videoer:\n${videos.map(v => `${v.id}: "${v.title}"`).join('\n')}\n\nSpillelister:\n${allPlaylists.map(p => `${p.id}: "${p.title}"`).join('\n')}\n\nKategoriser videoene i passende spillelister basert på tittel/tema. Returner JSON: [{"playlistId": "...", "videoId": "..."}]`,
+                { maxTokens: 1500, model: 'sonnet', systemPrompt: 'Returner BARE valid JSON array. Hver video kan være i flere spillelister.' }
+              );
+              try {
+                const assignments = JSON.parse(categorizeResult.trim().replace(/```json?\n?/g, '').replace(/```/g, ''));
+                let addedCount = 0;
+                for (const a of (Array.isArray(assignments) ? assignments : [])) {
+                  try {
+                    await addToPlaylist(a.playlistId, a.videoId);
+                    addedCount++;
+                  } catch { /* Video may already be in playlist */ }
+                }
+                if (addedCount > 0) created.push(`${addedCount} videoer lagt til i spillelister`);
+              } catch { /* Categorization failed, skip */ }
+            }
+            return { summary: `Spillelister: ${created.join(', ')}`, data: { playlists: created, existing: existingPlaylists } };
+          } catch {
+            return { summary: 'Kunne ikke opprette spillelister fra AI-forslag', data: { existing: existingPlaylists } };
+          }
+        }
+        // Just list playlists
+        return { summary: `Eksisterende spillelister:\n${existingPlaylists.map(p => `- "${p.title}" (${p.itemCount} videoer)`).join('\n') || 'Ingen spillelister funnet'}`, data: { playlists: existingPlaylists } };
       }
 
-      // Delegate to YouTube agent for other tasks
+      // Video metadata optimization - ACTUALLY update YouTube
+      if (desc.includes('optimaliser') || desc.includes('seo') || desc.includes('tittel') || desc.includes('metadata') || desc.includes('oppdater')) {
+        const videos = await listVideos(20);
+        // Use AI to determine what to optimize
+        const aiResult = await askClaude(
+          `Her er Neural Beat sine siste videoer:\n${videos.map(v => `${v.id}: "${v.title}" (${v.viewCount} visninger, ${v.likeCount} likes)`).join('\n')}\n\nOppgave: ${step.description}\n\nForeslå metadata-oppdateringer for å forbedre SEO og viralitet. Returner JSON array: [{"videoId": "...", "title": "ny tittel (maks 100 tegn)", "description": "ny beskrivelse med CTA", "tags": ["tag1", "tag2"]}]\nBare inkluder videoer som trenger endringer.`,
+          { maxTokens: 2000, model: 'sonnet', systemPrompt: 'Du er YouTube SEO-ekspert. Returner BARE valid JSON array.' }
+        );
+        try {
+          const updates = JSON.parse(aiResult.trim().replace(/```json?\n?/g, '').replace(/```/g, ''));
+          let updatedCount = 0;
+          const details: string[] = [];
+          for (const u of (Array.isArray(updates) ? updates : [])) {
+            if (!u.videoId) continue;
+            try {
+              await updateVideoMetadata(u.videoId, {
+                title: u.title,
+                description: u.description,
+                tags: u.tags,
+              });
+              updatedCount++;
+              details.push(`"${u.title || 'oppdatert'}"`);
+            } catch (e) {
+              details.push(`Feilet for ${u.videoId}: ${e instanceof Error ? e.message : 'ukjent feil'}`);
+            }
+          }
+          return { summary: `Oppdaterte metadata for ${updatedCount} videoer: ${details.join(', ')}`, data: { updatedCount, details } };
+        } catch {
+          // Delegate to YouTube agent as fallback
+          const youtubeAgent = await orchestrator.executeCommand('youtube', step.description);
+          return { summary: youtubeAgent.output, data: {} };
+        }
+      }
+
+      // General YouTube operations
       const result = await orchestrator.executeCommand('youtube', step.description);
       return { summary: result.output, data: {} };
     }

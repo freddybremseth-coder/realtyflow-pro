@@ -197,6 +197,28 @@ RULES:
             details: null,
           },
         });
+      } else {
+        // Even if title has keywords, check if tags are missing
+        const vid = v as any;
+        if (!vid.tags || vid.tags.length < 5) {
+          fallbackRecs.push({
+            id: `rec_${recCounter++}`,
+            type: 'optimize_tags',
+            priority: 'high',
+            title: `Forbedre tags på "${v.title.slice(0, 40)}..."`,
+            description: `Tittelen er god, men videoen har ${vid.tags?.length || 0} tags. YouTube anbefaler 10-15 relevante tags for optimal synlighet.`,
+            impact: 'Flere relevante tags gjør at YouTube forstår innholdet bedre og viser det til riktig publikum.',
+            effort: 'easy',
+            action: {
+              type: 'update_metadata',
+              videoId: v.id,
+              currentTitle: v.title,
+              newTitle: null,
+              newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 'neural beat', 'ai music', 'focus music', 'coding music', 'concentration music'],
+              details: null,
+            },
+          });
+        }
       }
     }
 
@@ -275,21 +297,34 @@ RULES:
       },
     });
 
-    // 6. Engagement
-    fallbackRecs.push({
-      id: `rec_${recCounter++}`,
-      type: 'engagement',
-      priority: 'medium',
-      title: 'Legg til CTA i alle videobeskrivelser',
-      description: `Engasjementsraten er ${engagementRate}%. Be seere like, abonnere og kommentere i beskrivelsen.`,
-      impact: 'CTAs øker likes/kommentarer med 20-40%, som øker algoritme-synlighet.',
-      effort: 'easy',
-      action: {
-        type: 'strategy',
-        videoId: null,
-        details: 'Oppdater alle videobeskrivelser med: "🎵 Liker du denne beaten? Trykk like og abonner for daglige chill beats! 💬 Kommenter hvilken stemning du vil høre neste!"',
-      },
-    });
+    // 6. Engagement - Actually update descriptions on videos that have short descriptions
+    const ctaText = '\n\n🎵 Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!\n\n¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!\n\n🏷️ #NeuralBeat #AIMusic #ChillBeats #StudyMusic #LoFi #EDM #ElectronicMusic';
+    const shortDescVideos = videosWithStats.filter((v: any) => {
+      const desc = v.description || '';
+      return desc.length < 200 || !desc.includes('subscribe');
+    }).slice(0, 3);
+    for (const v of shortDescVideos) {
+      const vid = v as any;
+      const currentDesc = vid.description || v.title;
+      fallbackRecs.push({
+        id: `rec_${recCounter++}`,
+        type: 'engagement',
+        priority: 'medium',
+        title: `Legg til CTA i beskrivelsen: "${v.title.slice(0, 40)}..."`,
+        description: `Engasjementsraten er ${engagementRate}%. Denne videoen har en kort beskrivelse uten CTA.`,
+        impact: 'CTAs øker likes/kommentarer med 20-40%, som øker algoritme-synlighet.',
+        effort: 'easy',
+        action: {
+          type: 'update_metadata',
+          videoId: v.id,
+          currentTitle: v.title,
+          newTitle: null,
+          newDescription: `${currentDesc}${ctaText}`,
+          newTags: null,
+          details: null,
+        },
+      });
+    }
 
     // 7. Playlist strategy
     fallbackRecs.push({

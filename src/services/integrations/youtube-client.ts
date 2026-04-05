@@ -261,6 +261,53 @@ export async function deleteVideo(videoId: string): Promise<void> {
   console.log(`[YouTube] Deleted video: ${videoId}`);
 }
 
+export async function listPlaylists(): Promise<Array<{
+  id: string;
+  title: string;
+  description: string;
+  itemCount: number;
+}>> {
+  const yt = getClient();
+  const res = await yt.playlists.list({
+    part: ['snippet', 'contentDetails'],
+    mine: true,
+    maxResults: 50,
+  });
+  return (res.data.items || []).map((p) => ({
+    id: p.id || '',
+    title: p.snippet?.title || '',
+    description: p.snippet?.description || '',
+    itemCount: p.contentDetails?.itemCount || 0,
+  }));
+}
+
+export async function createPlaylist(title: string, description: string, privacyStatus: 'public' | 'unlisted' | 'private' = 'public'): Promise<{ id: string; title: string }> {
+  const yt = getClient();
+  const res = await yt.playlists.insert({
+    part: ['snippet', 'status'],
+    requestBody: {
+      snippet: { title, description },
+      status: { privacyStatus },
+    },
+  });
+  console.log(`[YouTube] Created playlist: ${res.data.snippet?.title} (${res.data.id})`);
+  return { id: res.data.id || '', title: res.data.snippet?.title || title };
+}
+
+export async function addToPlaylist(playlistId: string, videoId: string): Promise<void> {
+  const yt = getClient();
+  await yt.playlistItems.insert({
+    part: ['snippet'],
+    requestBody: {
+      snippet: {
+        playlistId,
+        resourceId: { kind: 'youtube#video', videoId },
+      },
+    },
+  });
+  console.log(`[YouTube] Added video ${videoId} to playlist ${playlistId}`);
+}
+
 export function isConfigured(): boolean {
   return !!(
     process.env.YOUTUBE_CLIENT_ID &&

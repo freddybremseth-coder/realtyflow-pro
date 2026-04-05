@@ -211,8 +211,9 @@ export default function ContentHubPage() {
       const { data, error } = await supabase
         .from("content_publications")
         .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at")
+        .in("status", ["draft", "scheduled", "published", "failed"])
         .order("created_at", { ascending: false })
-        .limit(200);
+        .limit(50);
       if (error) {
         console.error("Supabase fetchDrafts error:", error.message);
       }
