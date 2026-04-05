@@ -37,6 +37,7 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
 const PORT = 8976;
 const REDIRECT_URI = `https://social-media-hub-ai-agents.vercel.app/api/youtube/oauth-callback`;
 const SCOPES = [
+  'https://www.googleapis.com/auth/youtube',
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/youtube.force-ssl',

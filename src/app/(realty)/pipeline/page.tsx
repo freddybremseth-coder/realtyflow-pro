@@ -398,6 +398,7 @@ export default function PipelinePage() {
     }
     setNewLead(emptyLead);
     setShowNewLead(false);
+    setActiveTab("leads");
   };
 
   const parseCSV = (text: string) => {
@@ -468,7 +469,7 @@ export default function PipelinePage() {
       }
     }
     setLeads((prev) => [...savedLeads, ...prev]);
-    setCsvData([]); setCsvRaw(""); setShowCSVUpload(false); setSaving(false);
+    setCsvData([]); setCsvRaw(""); setShowCSVUpload(false); setSaving(false); setActiveTab("leads");
   };
 
   // ── Document/Image Import ─────────────────────────
@@ -570,7 +571,7 @@ export default function PipelinePage() {
     }
     setLeads((prev) => [...savedLeads, ...prev]);
     setDocFiles([]); setDocAllLeads([]); setShowDocImport(false);
-    setSaving(false);
+    setSaving(false); setActiveTab("leads");
   };
 
   // ── Select lead & open detail ──────────────────────

@@ -74,7 +74,7 @@ export async function GET() {
     const engagementRate = totalViews > 0 ? ((totalLikes / totalViews) * 100).toFixed(2) : "0";
 
     const statsContext = `
-Neural Beat YouTube Channel Analysis:
+Re-Master Freddy YouTube Channel Analysis:
 - Channel: ${channel.title}
 - Subscribers: ${channel.subscriberCount}
 - Total views: ${channel.viewCount}
@@ -193,7 +193,7 @@ RULES:
             videoId: v.id,
             currentTitle: v.title,
             newTitle: `${v.title} | Chill Beats for Study & Relax 2026`,
-            newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 'neural beat', 'ai music', 'focus music'],
+            newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 're-master freddy', 'ai music', 'focus music'],
             details: null,
           },
         });
@@ -214,7 +214,7 @@ RULES:
               videoId: v.id,
               currentTitle: v.title,
               newTitle: null,
-              newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 'neural beat', 'ai music', 'focus music', 'coding music', 'concentration music'],
+              newTags: ['lofi', 'chill beats', 'study music', 'relaxing music', 'ambient', 're-master freddy', 'ai music', 'focus music', 'coding music', 'concentration music'],
               details: null,
             },
           });
@@ -239,7 +239,7 @@ RULES:
             videoId: v.id,
             currentTitle: v.title,
             newTitle: null,
-            newTags: ['ai music', 'neural beat', 'chill beats', 'lofi hip hop', 'study music', 'relaxing beats', 'ambient music', 'focus music', 'coding music', 'work music'],
+            newTags: ['ai music', 're-master freddy', 'chill beats', 'lofi hip hop', 'study music', 'relaxing beats', 'ambient music', 'focus music', 'coding music', 'work music'],
             details: null,
           },
         });
@@ -298,7 +298,7 @@ RULES:
     });
 
     // 6. Engagement - Actually update descriptions on videos that have short descriptions
-    const ctaText = '\n\n🎵 Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!\n\n¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!\n\n🏷️ #NeuralBeat #AIMusic #ChillBeats #StudyMusic #LoFi #EDM #ElectronicMusic';
+    const ctaText = '\n\n🎵 Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!\n\n¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!\n\n🏷️ #ReMasterFreddy #AIMusic #ChillBeats #StudyMusic #LoFi #EDM #ElectronicMusic';
     const shortDescVideos = videosWithStats.filter((v: any) => {
       const desc = v.description || '';
       return desc.length < 200 || !desc.includes('subscribe');
@@ -430,7 +430,7 @@ export async function POST(req: NextRequest) {
           {
             maxTokens: 1500,
             model: "sonnet",
-            systemPrompt: "Du er en YouTube-innholdsstrateg for Neural Beat (AI-musikk). Lag en konkret, handlingsrettet plan på norsk.",
+            systemPrompt: "Du er en YouTube-innholdsstrateg for Re-Master Freddy (AI-musikk). Lag en konkret, handlingsrettet plan på norsk.",
           }
         );
 

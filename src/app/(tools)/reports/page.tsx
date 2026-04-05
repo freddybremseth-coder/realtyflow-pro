@@ -195,8 +195,8 @@ export default function ReportsPage() {
                           variant={snapshot.eur_nok_7d_change >= 0 ? "destructive" : "success"}
                           className="mt-2 text-[10px]"
                         >
-                          {snapshot.eur_nok_7d_change >= 0 ? "+" : ""}
-                          {snapshot.eur_nok_7d_change.toFixed(2)}% 7d
+                          {(snapshot.eur_nok_7d_change ?? 0) >= 0 ? "+" : ""}
+                          {(snapshot.eur_nok_7d_change ?? 0).toFixed(2)}% 7d
                         </Badge>
                       )}
                     </div>
@@ -560,10 +560,10 @@ export default function ReportsPage() {
                     <p className="text-xs text-slate-500">{rate.pair}</p>
                     <div className="flex items-end gap-2 mt-1">
                       <p className="text-xl font-bold text-white">{rate.value?.toFixed(4) || "--"}</p>
-                      {rate.change !== undefined && (
-                        <div className={`flex items-center text-xs mb-0.5 ${rate.change >= 0 ? "text-red-400" : "text-emerald-400"}`}>
-                          {rate.change >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                          {Math.abs(rate.change).toFixed(2)}%
+                      {rate.change != null && (
+                        <div className={`flex items-center text-xs mb-0.5 ${(rate.change ?? 0) >= 0 ? "text-red-400" : "text-emerald-400"}`}>
+                          {(rate.change ?? 0) >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                          {Math.abs(rate.change ?? 0).toFixed(2)}%
                         </div>
                       )}
                     </div>

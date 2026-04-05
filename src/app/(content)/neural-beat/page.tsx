@@ -146,7 +146,7 @@ export default function NeuralBeatPage() {
   // MP3 upload state
   const [mp3File, setMp3File] = useState<File | null>(null);
   const [mp3Title, setMp3Title] = useState('');
-  const [mp3Artist, setMp3Artist] = useState('Neural Beat');
+  const [mp3Artist, setMp3Artist] = useState('Re-Master Freddy');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -368,7 +368,7 @@ export default function NeuralBeatPage() {
       // Auto-extract title from filename (remove .mp3 extension)
       const name = file.name.replace(/\.mp3$/i, '').replace(/[-_]/g, ' ');
       setMp3Title(name);
-      setMp3Artist('Neural Beat');
+      setMp3Artist('Re-Master Freddy');
     }
   };
 
@@ -431,7 +431,7 @@ export default function NeuralBeatPage() {
         window.alert('Sang lastet opp! Klar for prosessering.');
         setMp3File(null);
         setMp3Title('');
-        setMp3Artist('Neural Beat');
+        setMp3Artist('Re-Master Freddy');
         if (fileInputRef.current) fileInputRef.current.value = '';
         setTimeout(fetchSongs, 1500);
       } else {
@@ -771,7 +771,7 @@ export default function NeuralBeatPage() {
               <Music className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white">Neural Beat</h1>
+              <h1 className="text-3xl font-bold text-white">Re-Master Freddy</h1>
               <p className="text-slate-400">AI-drevet musikkproduksjon &bull; Supabase &rarr; YouTube</p>
             </div>
           </div>
@@ -851,7 +851,7 @@ export default function NeuralBeatPage() {
                     value={mp3Artist}
                     onChange={(e) => setMp3Artist(e.target.value)}
                     className="w-full h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-pink-500 focus:outline-none"
-                    placeholder="Neural Beat"
+                    placeholder="Re-Master Freddy"
                   />
                 </div>
               </div>
@@ -1872,7 +1872,7 @@ export default function NeuralBeatPage() {
         <TabsContent value="how-it-works">
           <Card className="bg-slate-800/50 border-slate-700/50">
             <CardHeader>
-              <CardTitle className="text-white">Neural Beat Pipeline &mdash; 8 steg</CardTitle>
+              <CardTitle className="text-white">Re-Master Freddy Pipeline &mdash; 8 steg</CardTitle>
               <CardDescription>Helautomatisert arbeidsflyt fra opplasting til YouTube</CardDescription>
             </CardHeader>
             <CardContent>

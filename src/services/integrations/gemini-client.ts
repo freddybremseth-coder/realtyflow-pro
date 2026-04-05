@@ -408,7 +408,7 @@ export async function generateYouTubeSEO(
   const prompt = `You are a YouTube SEO expert for music channels. Generate optimized YouTube metadata for this EDM/electronic track.
 
 Track: "${options.title}"
-Artist: ${options.artist || 'Neural Beat'}
+Artist: ${options.artist || 'Re-Master Freddy'}
 Genre: ${options.genre}
 Style: ${options.style}
 Mood: ${options.mood}
@@ -426,8 +426,8 @@ IMPORTANT: The description must be COMPREHENSIVE and SEO-optimized (1500-2500 ch
    If title language is unclear, use English.
 3. ALWAYS add English CTA as well for international reach
 4. Timestamps: 00:00 Start, plus 2-3 estimated section timestamps
-5. About section: "Neural Beat creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops!"
-6. Hashtags: #NeuralBeat #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific tags
+5. About section: "Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops!"
+6. Hashtags: #ReMasterFreddy #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific tags
 
 Respond with ONLY this JSON, no markdown:
 {
@@ -448,7 +448,7 @@ Respond with ONLY this JSON, no markdown:
     // fallback
   }
 
-  const fallbackDesc = `${options.title} by ${options.artist || 'Neural Beat'}
+  const fallbackDesc = `${options.title} by ${options.artist || 'Re-Master Freddy'}
 
 A ${options.mood} ${options.genre} track with ${options.style} vibes. Let the music take you on a journey.
 
@@ -461,16 +461,16 @@ Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment w
 00:30 Build-up
 01:30 Drop
 
-🎵 About Neural Beat
-Neural Beat creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops of chill beats, study music, and EDM bangers!
+🎵 About Re-Master Freddy
+Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops of chill beats, study music, and EDM bangers!
 
 🏷️ Tags
-#NeuralBeat #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
+#ReMasterFreddy #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
 
   return {
-    title: `${options.artist || 'Neural Beat'} - ${options.title} [${options.genre}]`,
+    title: `${options.artist || 'Re-Master Freddy'} - ${options.title} [${options.genre}]`,
     description: fallbackDesc,
-    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Neural Beat', 'AI Music', 'Chill Beats', 'Study Music', options.title],
+    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', options.title],
     categoryId: '10',
     privacyStatus: 'public',
     imagePrompt: `Abstract neon visualization for ${options.genre} music, ${options.mood} mood, vibrant colors, no text`,

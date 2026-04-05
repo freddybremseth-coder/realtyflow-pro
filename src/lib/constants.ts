@@ -69,14 +69,14 @@ export const BRANDS: Brand[] = [
   },
   {
     id: "neuralbeat",
-    name: "Neural Beat",
+    name: "Re-Master Freddy",
     type: "music",
     description: "AI-driven EDM and electronic music production",
     color: "#ec4899",
-    website: "https://youtube.com/@neuralbeat",
+    website: "https://youtube.com/@remasterfreddy",
     tone: "energetic, futuristic, creative",
     target_audience: "EDM fans and electronic music listeners",
-    specialties: ["AI music", "EDM production", "music videos"],
+    specialties: ["AI music", "EDM production", "music videos", "remasters"],
   },
 ];
 
@@ -114,7 +114,7 @@ export const SIDEBAR_NAV = {
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
     { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
     { label: "Content Hub", href: "/content-hub", icon: "FileText" },
-    { label: "Neural Beat", href: "/neural-beat", icon: "Music" },
+    { label: "Re-Master Freddy", href: "/neural-beat", icon: "Music" },
   ],
   business: [
     { label: "Vekstmotor", href: "/growth-hub", icon: "Rocket" },

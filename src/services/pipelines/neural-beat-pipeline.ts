@@ -174,7 +174,7 @@ export class NeuralBeatPipeline {
           if (isAirtableUrl) {
             throw new Error(
               `Lydfilen er en utløpt Airtable-lenke (HTTP ${response.status}). ` +
-              `Last opp MP3-filen på nytt via Neural Beat-opplastingen for å lagre den i Supabase.`
+              `Last opp MP3-filen på nytt via Re-Master Freddy-opplastingen for å lagre den i Supabase.`
             );
           }
           throw new Error(`Audio file not accessible: HTTP ${response.status}`);
@@ -511,7 +511,7 @@ export class NeuralBeatPipeline {
 
           // Create Shorts-optimized title and description
           const shortsTitle = `${youtubeMetadata.title.split('|')[0].trim()} #Shorts`.slice(0, 100);
-          const shortsDescription = `${youtubeMetadata.description.split('\n')[0]}\n\nFull version: ${youtubeUrl}\n\n#Shorts #AIMusic #NeuralBeat #ChillBeats #StudyMusic`;
+          const shortsDescription = `${youtubeMetadata.description.split('\n')[0]}\n\nFull version: ${youtubeUrl}\n\n#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM`;
 
           const shortsResult = await uploadVideo(shortsBuffer, {
             title: shortsTitle,

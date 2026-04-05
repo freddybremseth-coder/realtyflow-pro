@@ -63,7 +63,7 @@ export async function PUT(request: NextRequest) {
 
     const song = await createSong({
       title: title || 'Untitled',
-      artist: artist || 'Neural Beat',
+      artist: artist || 'Re-Master Freddy',
       audioUrl,
     });
 
