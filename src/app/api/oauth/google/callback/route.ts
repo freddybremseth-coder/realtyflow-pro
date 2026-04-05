@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
 
   const clientId = process.env.YOUTUBE_CLIENT_ID!;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET!;
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/api/oauth/google/callback`;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).trim().replace(/\\n/g, '');
+  const redirectUri = `${appUrl}/api/oauth/google/callback`;
 
   try {
     // Exchange code for tokens

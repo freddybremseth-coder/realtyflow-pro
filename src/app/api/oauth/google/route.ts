@@ -10,8 +10,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "YOUTUBE_CLIENT_ID not configured" }, { status: 500 });
   }
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/api/oauth/google/callback`;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).trim().replace(/\\n/g, '');
+  const redirectUri = `${appUrl}/api/oauth/google/callback`;
 
+  console.log("[Google OAuth] redirect_uri:", redirectUri);
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
