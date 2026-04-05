@@ -191,12 +191,17 @@ export default function ContentStudioPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ drafts }),
       });
-      if (res.ok) {
+      const result = await res.json();
+      if (res.ok && result.drafts_created > 0) {
         setSavedToHub(true);
         setTimeout(() => setSavedToHub(false), 3000);
+      } else {
+        console.error("[Content Studio] Save failed:", result);
+        alert(`Kunne ikke lagre til Content Hub: ${result.error || result.results?.map((r: { error?: string }) => r.error).filter(Boolean).join(', ') || 'Ukjent feil'}`);
       }
     } catch (err) {
       console.error("Failed to save to Content Hub:", err);
+      alert(`Feil ved lagring: ${err instanceof Error ? err.message : 'Nettverksfeil'}`);
     } finally {
       setSavingToHub(false);
     }

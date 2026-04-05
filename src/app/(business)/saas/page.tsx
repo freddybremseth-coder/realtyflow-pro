@@ -476,11 +476,15 @@ export default function SaaSPage() {
           mvp_features: opp.mvp_features, differentiators: opp.differentiators,
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setGtmData(data.gtm);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`GTM feilet: ${data.error || 'Ukjent feil. Sjekk at AI API-nøkler er konfigurert.'}`);
+        return;
       }
-    } catch { /* ignore */ } finally { setGtmLoading(false); }
+      setGtmData(data.gtm);
+    } catch (err) {
+      alert(`GTM feilet: ${err instanceof Error ? err.message : 'Nettverksfeil'}`);
+    } finally { setGtmLoading(false); }
   };
 
   const generateDeepScore = async (opp: Opportunity) => {
@@ -497,11 +501,15 @@ export default function SaaSPage() {
           estimated_mrr_potential: opp.estimated_mrr_potential,
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setDeepScore(data.deep_score);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Deep Scoring feilet: ${data.error || 'Ukjent feil. Sjekk at AI API-nøkler er konfigurert.'}`);
+        return;
       }
-    } catch { /* ignore */ } finally { setDeepScoreLoading(false); }
+      setDeepScore(data.deep_score);
+    } catch (err) {
+      alert(`Deep Scoring feilet: ${err instanceof Error ? err.message : 'Nettverksfeil'}`);
+    } finally { setDeepScoreLoading(false); }
   };
 
   const runCloneCompetitor = async () => {
@@ -514,13 +522,16 @@ export default function SaaSPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'clone_competitor', url: cloneUrl, niche: cloneNiche }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setCloneResult(data.clone);
-        // Refresh opportunities to show new one
-        fetchOpportunities();
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Clone Competitor feilet: ${data.error || 'Ukjent feil'}`);
+        return;
       }
-    } catch { /* ignore */ } finally { setCloneLoading(false); }
+      setCloneResult(data.clone);
+      fetchOpportunities();
+    } catch (err) {
+      alert(`Clone Competitor feilet: ${err instanceof Error ? err.message : 'Nettverksfeil'}`);
+    } finally { setCloneLoading(false); }
   };
 
   const generateCustomerPlan = async () => {
@@ -537,11 +548,15 @@ export default function SaaSPage() {
           target_market: 'Skandinaviske kjøpere av bolig i Spania',
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setCustomerPlan(data.customer_plan);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Kundeplan feilet: ${data.error || 'Ukjent feil'}`);
+        return;
       }
-    } catch { /* ignore */ } finally { setCustomerPlanLoading(false); }
+      setCustomerPlan(data.customer_plan);
+    } catch (err) {
+      alert(`Kundeplan feilet: ${err instanceof Error ? err.message : 'Nettverksfeil'}`);
+    } finally { setCustomerPlanLoading(false); }
   };
 
   const liveApps = apps.filter(a => a.status === 'live');

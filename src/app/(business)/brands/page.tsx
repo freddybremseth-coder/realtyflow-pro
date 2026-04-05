@@ -60,6 +60,9 @@ const typeColors: Record<string, string> = {
   agriculture: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   personal: "bg-blue-500/20 text-blue-300 border-blue-500/30",
   music: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+  tourism: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  ecommerce: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  other: "bg-slate-500/20 text-slate-300 border-slate-500/30",
 };
 
 const typeLabels: Record<string, string> = {
@@ -68,6 +71,9 @@ const typeLabels: Record<string, string> = {
   agriculture: "Jordbruk",
   personal: "Personlig",
   music: "Musikk",
+  tourism: "Turisme",
+  ecommerce: "E-handel",
+  other: "Annet",
 };
 
 export default function BrandsPage() {
@@ -171,27 +177,48 @@ export default function BrandsPage() {
     );
   };
 
-  const addBrand = () => {
+  const addBrand = async () => {
     if (!newBrand.name) return;
     const id = newBrand.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    setBrands((prev) => [
-      ...prev,
-      {
-        id,
-        name: newBrand.name,
-        type: newBrand.type,
-        description: newBrand.description,
-        color: newBrand.color,
-        website: newBrand.website,
-        tone: newBrand.tone,
-        target_audience: newBrand.target_audience,
-        specialties: newBrand.specialties
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        settings: { ...emptySettings },
-      },
-    ]);
+    const specialtiesArr = newBrand.specialties.split(",").map((s) => s.trim()).filter(Boolean);
+    const brandEntry: BrandEntry = {
+      id,
+      name: newBrand.name,
+      type: newBrand.type,
+      description: newBrand.description,
+      color: newBrand.color,
+      website: newBrand.website,
+      tone: newBrand.tone,
+      target_audience: newBrand.target_audience,
+      specialties: specialtiesArr,
+      settings: { ...emptySettings },
+    };
+    setBrands((prev) => [...prev, brandEntry]);
+
+    // Persist to Supabase via brand_settings
+    try {
+      await fetch("/api/brands/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: id,
+          settings: {
+            custom_name: newBrand.name,
+            type: newBrand.type,
+            description: newBrand.description,
+            color: newBrand.color,
+            website: newBrand.website,
+            tone: newBrand.tone,
+            target_audience: newBrand.target_audience,
+            specialties: specialtiesArr,
+            is_custom_brand: true,
+          },
+        }),
+      });
+    } catch {
+      // Brand is at least in local state
+    }
+
     setNewBrand({
       name: "",
       type: "real_estate",
@@ -237,14 +264,16 @@ export default function BrandsPage() {
     } catch { /* silent */ }
   };
 
-  // Apply custom names from brand_settings
+  // Apply custom names from brand_settings + load custom brands
   useEffect(() => {
     fetch("/api/brands/settings")
       .then((res) => res.json())
       .then((data) => {
         if (data.settings && Object.keys(data.settings).length > 0) {
-          setBrands((prev) =>
-            prev
+          setBrands((prev) => {
+            const existingIds = new Set(prev.map((b) => b.id));
+            // Update existing brands with saved settings
+            let updated = prev
               .filter((b) => !data.settings[b.id]?.deleted)
               .map((b) => {
                 const s = data.settings[b.id];
@@ -252,16 +281,37 @@ export default function BrandsPage() {
                   ? {
                       ...b,
                       name: s.custom_name || b.name,
+                      type: s.type || b.type,
                       website: s.website || b.website,
                       description: s.description || b.description,
+                      color: s.color || b.color,
                       tone: s.tone || b.tone,
                       target_audience: s.target_audience || b.target_audience,
                       specialties: s.specialties || b.specialties,
                       settings: { ...emptySettings, ...s },
                     }
                   : b;
-              })
-          );
+              });
+            // Add custom brands that aren't in the hardcoded list
+            for (const [brandId, settings] of Object.entries(data.settings)) {
+              const s = settings as Record<string, unknown>;
+              if (!existingIds.has(brandId) && s.is_custom_brand && !s.deleted) {
+                updated.push({
+                  id: brandId,
+                  name: (s.custom_name as string) || brandId,
+                  type: (s.type as string) || 'other',
+                  description: (s.description as string) || '',
+                  color: (s.color as string) || '#3b82f6',
+                  website: (s.website as string) || '',
+                  tone: (s.tone as string) || '',
+                  target_audience: (s.target_audience as string) || '',
+                  specialties: (s.specialties as string[]) || [],
+                  settings: { ...emptySettings, ...(s as Record<string, string>) },
+                });
+              }
+            }
+            return updated;
+          });
         }
       })
       .catch(() => {});
@@ -336,6 +386,9 @@ export default function BrandsPage() {
                     <option value="agriculture">Jordbruk</option>
                     <option value="personal">Personlig</option>
                     <option value="music">Musikk</option>
+                    <option value="tourism">Turisme</option>
+                    <option value="ecommerce">E-handel</option>
+                    <option value="other">Annet</option>
                   </select>
                 </div>
                 <div>
