@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
 import { createClient } from "@supabase/supabase-js";
-import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2 } from "lucide-react";
+import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote } from "lucide-react";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,6 +18,11 @@ function getSupabase() {
 interface BrandData {
   brandId: string;
   revenue: string;
+  revenueAmount: number;
+  commissionTotal: number;
+  commissionPaid: number;
+  commissionPending: number;
+  wonDeals: number;
   customers: number;
   totalPosts: number;
   publishedPosts: number;
@@ -86,9 +91,26 @@ export default function BusinessOverviewPage() {
           a.brand === brand.id || a.brand_id === brand.id
         );
 
+        // Calculate commission income from WON contacts
+        const wonContacts = [...pipelineContacts, ...crmContacts].filter((c: Record<string, unknown>) =>
+          c.pipeline_status === "WON" && (c.brand_id === brand.id || c.brand === brand.id)
+        );
+        // Deduplicate by id
+        const wonMap = new Map<string, Record<string, unknown>>();
+        wonContacts.forEach((c: Record<string, unknown>) => { if (c.id) wonMap.set(String(c.id), c); });
+        const uniqueWon = Array.from(wonMap.values());
+        const commissionTotal = uniqueWon.reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
+        const commissionPaid = uniqueWon.filter((c) => c.commission_paid_date).reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
+        const saleTotal = uniqueWon.reduce((s, c) => s + (Number(c.sale_price) || 0), 0);
+
         newBrandData[brand.id] = {
           brandId: brand.id,
-          revenue: "Ikke tilgjengelig",
+          revenue: saleTotal > 0 ? `€${saleTotal.toLocaleString()}` : "Ikke tilgjengelig",
+          revenueAmount: saleTotal,
+          commissionTotal,
+          commissionPaid,
+          commissionPending: commissionTotal - commissionPaid,
+          wonDeals: uniqueWon.length,
           customers: brandCrm.length,
           totalPosts: brandPosts.length,
           publishedPosts: brandPublished.length,
@@ -139,6 +161,48 @@ export default function BusinessOverviewPage() {
         </h1>
         <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand (sanntidsdata)</p>
       </div>
+
+      {/* Commission Income Banner */}
+      {(() => {
+        const allCommission = Object.values(brandDataMap).reduce((s, d) => s + d.commissionTotal, 0);
+        const allPaid = Object.values(brandDataMap).reduce((s, d) => s + d.commissionPaid, 0);
+        const allPending = allCommission - allPaid;
+        const allRevenue = Object.values(brandDataMap).reduce((s, d) => s + d.revenueAmount, 0);
+        const totalWon = Object.values(brandDataMap).reduce((s, d) => s + d.wonDeals, 0);
+        if (allCommission <= 0 && totalWon <= 0) return null;
+        return (
+          <Card className="border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-emerald-500/10">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <Banknote size={22} className="text-amber-400" />
+                <h2 className="text-lg font-bold text-white">Inntektsoversikt</h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase mb-1">Total salgsverdi</p>
+                  <p className="text-xl font-bold text-white">€{allRevenue.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase mb-1">Total kommisjon</p>
+                  <p className="text-xl font-bold text-amber-400">€{allCommission.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase mb-1">Utbetalt</p>
+                  <p className="text-xl font-bold text-emerald-400">€{allPaid.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase mb-1">Ventende</p>
+                  <p className="text-xl font-bold text-orange-400">€{allPending.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase mb-1">Avsluttede salg</p>
+                  <p className="text-xl font-bold text-white">{totalWon}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -260,11 +324,19 @@ export default function BusinessOverviewPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <DollarSign size={16} className="mx-auto text-emerald-400 mb-1" />
                     <p className="text-lg font-bold text-white">{data.revenue}</p>
-                    <p className="text-[10px] text-slate-500">Omsetning</p>
+                    <p className="text-[10px] text-slate-500">Salgsverdi</p>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                    <Banknote size={16} className="mx-auto text-amber-400 mb-1" />
+                    <p className="text-lg font-bold text-amber-400">€{data.commissionTotal.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-500">Kommisjon</p>
+                    {data.commissionPending > 0 && (
+                      <p className="text-[9px] text-orange-400 mt-0.5">€{data.commissionPending.toLocaleString()} ventende</p>
+                    )}
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <Users size={16} className="mx-auto text-blue-400 mb-1" />
@@ -272,14 +344,14 @@ export default function BusinessOverviewPage() {
                     <p className="text-[10px] text-slate-500">Kunder (CRM)</p>
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                    <TrendingUp size={16} className="mx-auto text-amber-400 mb-1" />
+                    <TrendingUp size={16} className="mx-auto text-cyan-400 mb-1" />
                     <p className="text-lg font-bold text-white">{data.pipelineLeads}</p>
                     <p className="text-[10px] text-slate-500">Pipeline leads</p>
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <PieChart size={16} className="mx-auto text-purple-400 mb-1" />
-                    <p className="text-lg font-bold text-white">{data.connectedAccounts}</p>
-                    <p className="text-[10px] text-slate-500">Sosiale kontoer</p>
+                    <p className="text-lg font-bold text-white">{data.wonDeals}</p>
+                    <p className="text-[10px] text-slate-500">Avsluttede salg</p>
                   </div>
                 </div>
 

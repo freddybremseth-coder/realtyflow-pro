@@ -12,11 +12,14 @@ import {
   Crown, Trash2, Loader2, Calendar, Send, Bot,
   Clock, CheckCircle2, Sparkles, MessageSquare, ChevronDown,
   Save, Building2, Camera, FileText, Image, ScanLine,
+  Banknote, TrendingUp, UserCheck,
 } from "lucide-react";
+import { BRANDS } from "@/lib/constants";
 
 // ── Types ──────────────────────────────────────────────
 
 type LeadStatus = "NEW" | "CONTACT" | "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "WON" | "LOST";
+type CrmTab = "leads" | "pipeline" | "kunder";
 
 interface Interaction {
   id: string;
@@ -39,7 +42,18 @@ interface Lead {
   notes?: string;
   createdAt: string;
   interactions: Interaction[];
+  sale_price?: number;
+  commission_amount?: number;
+  commission_percent?: number;
+  commission_paid_date?: string;
+  brand_id?: string;
 }
+
+const TAB_COLUMNS: Record<CrmTab, LeadStatus[]> = {
+  leads: ["NEW"],
+  pipeline: ["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"],
+  kunder: ["WON", "LOST"],
+};
 
 const columns: { key: LeadStatus; label: string; color: string }[] = [
   { key: "NEW", label: "Ny", color: "bg-blue-500" },
@@ -98,6 +112,14 @@ export default function PipelinePage() {
   const [showNewLead, setShowNewLead] = useState(false);
   const [showCSVUpload, setShowCSVUpload] = useState(false);
   const [newLead, setNewLead] = useState(emptyLead);
+  const [activeTab, setActiveTab] = useState<CrmTab>("pipeline");
+
+  // Commission modal state
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
+  const [commissionLeadId, setCommissionLeadId] = useState<string | null>(null);
+  const [commissionData, setCommissionData] = useState({
+    sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "soleada",
+  });
   const [csvData, setCsvData] = useState<Lead[]>([]);
   const [csvRaw, setCsvRaw] = useState("");
   const [dbLoaded, setDbLoaded] = useState(false);
@@ -143,6 +165,11 @@ export default function PipelinePage() {
           notes: c.notes || undefined,
           createdAt: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
           interactions: c.interactions || [],
+          sale_price: c.sale_price || undefined,
+          commission_amount: c.commission_amount || undefined,
+          commission_percent: c.commission_percent || undefined,
+          commission_paid_date: c.commission_paid_date ? c.commission_paid_date.split('T')[0] : undefined,
+          brand_id: c.brand_id || c.brand || undefined,
         }));
         setLeads(mapped);
         setDbLoaded(true);
@@ -174,6 +201,12 @@ export default function PipelinePage() {
   const handleDragStart = (leadId: string) => setDraggedLead(leadId);
   const handleDrop = (newStatus: LeadStatus) => {
     if (!draggedLead) return;
+    if (newStatus === "WON") {
+      setCommissionLeadId(draggedLead);
+      setShowCommissionModal(true);
+      setDraggedLead(null);
+      return;
+    }
     setLeads((prev) => prev.map((l) => (l.id === draggedLead ? { ...l, status: newStatus } : l)));
     if (dbLoaded) {
       fetch('/api/contacts', {
@@ -188,6 +221,11 @@ export default function PipelinePage() {
   // ── CRUD operations ────────────────────────────────
 
   const changeStatus = async (leadId: string, newStatus: LeadStatus) => {
+    if (newStatus === "WON") {
+      setCommissionLeadId(leadId);
+      setShowCommissionModal(true);
+      return;
+    }
     setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l)));
     if (dbLoaded) {
       fetch('/api/contacts', {
@@ -196,6 +234,37 @@ export default function PipelinePage() {
         body: JSON.stringify({ id: leadId, pipeline_status: newStatus }),
       }).catch(() => {});
     }
+  };
+
+  const confirmCommission = async () => {
+    if (!commissionLeadId) return;
+    const salePrice = parseFloat(commissionData.sale_price) || 0;
+    const pct = parseFloat(commissionData.commission_percent) || 0;
+    const amount = commissionData.commission_amount ? parseFloat(commissionData.commission_amount) : salePrice * (pct / 100);
+    const updates = {
+      id: commissionLeadId,
+      pipeline_status: "WON",
+      sale_price: salePrice,
+      commission_amount: amount,
+      commission_percent: pct,
+      commission_paid_date: commissionData.commission_paid_date || null,
+      brand_id: commissionData.brand_id,
+    };
+    setLeads((prev) => prev.map((l) => l.id === commissionLeadId ? {
+      ...l, status: "WON" as LeadStatus, sale_price: salePrice, commission_amount: amount,
+      commission_percent: pct, commission_paid_date: commissionData.commission_paid_date || undefined,
+      brand_id: commissionData.brand_id,
+    } : l));
+    if (dbLoaded) {
+      fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      }).catch(() => {});
+    }
+    setShowCommissionModal(false);
+    setCommissionLeadId(null);
+    setCommissionData({ sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "soleada" });
   };
 
   const deleteLead = async (leadId: string) => {
@@ -518,9 +587,9 @@ export default function PipelinePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Lead Pipeline</h1>
+          <h1 className="text-2xl font-bold text-white">CRM</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Dra og slipp leads mellom kolonnene · Klikk for detaljer
+            Leads, pipeline og kunder samlet
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -530,6 +599,14 @@ export default function PipelinePage() {
               €{(totalValue / 1000).toFixed(0)}K
             </span>
           </div>
+          {leads.filter((l) => l.status === "WON" && l.commission_amount).length > 0 && (
+            <div className="text-sm text-slate-400">
+              Kommisjon:{" "}
+              <span className="text-amber-400 font-semibold">
+                €{leads.filter((l) => l.status === "WON").reduce((s, l) => s + (l.commission_amount || 0), 0).toLocaleString()}
+              </span>
+            </div>
+          )}
           <Button size="sm" variant="outline" onClick={() => setShowCSVUpload(true)}>
             <Upload size={16} className="mr-1" />CSV
           </Button>
@@ -540,6 +617,29 @@ export default function PipelinePage() {
             <Plus size={16} className="mr-1" />Ny Lead
           </Button>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-slate-900/50 rounded-lg p-1 w-fit">
+        {([
+          { key: "leads" as CrmTab, label: "Leads", icon: <UserPlus size={14} />, count: leads.filter((l) => l.status === "NEW").length },
+          { key: "pipeline" as CrmTab, label: "Pipeline", icon: <TrendingUp size={14} />, count: leads.filter((l) => ["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"].includes(l.status)).length },
+          { key: "kunder" as CrmTab, label: "Kunder", icon: <UserCheck size={14} />, count: leads.filter((l) => ["WON", "LOST"].includes(l.status)).length },
+        ]).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === tab.key
+                ? "bg-primary-600 text-white shadow-lg"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+            <Badge variant={activeTab === tab.key ? "default" : "secondary"} className="text-[10px] ml-1">{tab.count}</Badge>
+          </button>
+        ))}
       </div>
 
       {/* ── New Lead Modal ──────────────────────────── */}
@@ -863,6 +963,72 @@ export default function PipelinePage() {
         </div>
       )}
 
+      {/* ── Commission Modal (WON) ──────────────────── */}
+      {showCommissionModal && commissionLeadId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowCommissionModal(false); setCommissionLeadId(null); }}>
+          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Banknote size={20} className="text-amber-400" />Registrer salg
+                </h2>
+                <Button variant="ghost" size="icon" onClick={() => { setShowCommissionModal(false); setCommissionLeadId(null); }}><X size={18} /></Button>
+              </div>
+              <p className="text-sm text-slate-400 mb-4">
+                Kontakt: <span className="text-white font-medium">{leads.find((l) => l.id === commissionLeadId)?.name}</span>
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Salgspris (€)</label>
+                  <Input type="number" placeholder="350000" value={commissionData.sale_price}
+                    onChange={(e) => {
+                      const sp = e.target.value;
+                      const pct = parseFloat(commissionData.commission_percent) || 0;
+                      setCommissionData((p) => ({ ...p, sale_price: sp, commission_amount: sp ? String(Math.round(parseFloat(sp) * (pct / 100))) : "" }));
+                    }} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Kommisjon %</label>
+                    <Input type="number" step="0.5" placeholder="3" value={commissionData.commission_percent}
+                      onChange={(e) => {
+                        const pct = e.target.value;
+                        const sp = parseFloat(commissionData.sale_price) || 0;
+                        setCommissionData((p) => ({ ...p, commission_percent: pct, commission_amount: sp ? String(Math.round(sp * (parseFloat(pct) / 100))) : "" }));
+                      }} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Kommisjon (€)</label>
+                    <Input type="number" placeholder="10500" value={commissionData.commission_amount}
+                      onChange={(e) => setCommissionData((p) => ({ ...p, commission_amount: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Utbetalingsdato</label>
+                    <Input type="date" value={commissionData.commission_paid_date}
+                      onChange={(e) => setCommissionData((p) => ({ ...p, commission_paid_date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
+                    <select value={commissionData.brand_id}
+                      onChange={(e) => setCommissionData((p) => ({ ...p, brand_id: e.target.value }))}
+                      className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                      {BRANDS.filter((b) => b.type === "real_estate").map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <Button onClick={confirmCommission} className="w-full" disabled={!commissionData.sale_price}>
+                  <CheckCircle2 size={16} className="mr-1" />Registrer som solgt
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative max-w-md">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -874,7 +1040,7 @@ export default function PipelinePage() {
 
         {/* Kanban Board */}
         <div className={`flex gap-3 overflow-x-auto pb-4 transition-all ${selectedLead ? "flex-1 min-w-0" : "w-full"}`}>
-          {columns.map((col) => {
+          {columns.filter((col) => TAB_COLUMNS[activeTab].includes(col.key)).map((col) => {
             const colLeads = filteredLeads.filter((l) => l.status === col.key);
             return (
               <div key={col.key} className="min-w-[200px] flex-1" onDragOver={(e) => e.preventDefault()} onDrop={() => handleDrop(col.key)}>
@@ -908,12 +1074,34 @@ export default function PipelinePage() {
                           {lead.email && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Mail size={10} /><span className="truncate">{lead.email}</span></div>}
                           {lead.phone && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Phone size={10} /><span>{lead.phone}</span></div>}
                         </div>
-                        <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-700/50">
-                          <Badge variant="outline" className="text-[10px]"><Globe size={8} className="mr-1" />{lead.source}</Badge>
-                          {lead.interactions.length > 0 && (
-                            <Badge variant="secondary" className="text-[10px]"><MessageSquare size={8} className="mr-1" />{lead.interactions.length}</Badge>
-                          )}
-                        </div>
+                        {lead.status === "WON" && lead.commission_amount ? (
+                          <div className="mt-2 pt-1.5 border-t border-slate-700/50 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-500">Salg</span>
+                              <span className="text-xs text-emerald-400 font-medium">€{(lead.sale_price || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-500">Kommisjon</span>
+                              <span className="text-xs text-amber-400 font-semibold">€{lead.commission_amount.toLocaleString()}</span>
+                            </div>
+                            {lead.commission_paid_date && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-slate-500">Utbetalt</span>
+                                <span className="text-[10px] text-slate-400">{lead.commission_paid_date}</span>
+                              </div>
+                            )}
+                            {lead.brand_id && (
+                              <Badge variant="outline" className="text-[10px]">{BRANDS.find((b) => b.id === lead.brand_id)?.name || lead.brand_id}</Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-700/50">
+                            <Badge variant="outline" className="text-[10px]"><Globe size={8} className="mr-1" />{lead.source}</Badge>
+                            {lead.interactions.length > 0 && (
+                              <Badge variant="secondary" className="text-[10px]"><MessageSquare size={8} className="mr-1" />{lead.interactions.length}</Badge>
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -964,6 +1152,25 @@ export default function PipelinePage() {
                     <Globe size={14} className="text-slate-500" />{selectedLead.source}
                   </div>
                 </div>
+
+                {/* Commission info for WON */}
+                {selectedLead.status === "WON" && selectedLead.commission_amount && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                      <Banknote size={14} />Salgsdetaljer
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-slate-500 text-xs">Salgspris:</span> <span className="text-slate-200">€{(selectedLead.sale_price || 0).toLocaleString()}</span></div>
+                      <div><span className="text-slate-500 text-xs">Kommisjon:</span> <span className="text-amber-400 font-semibold">€{selectedLead.commission_amount.toLocaleString()}</span></div>
+                      {selectedLead.commission_paid_date && (
+                        <div><span className="text-slate-500 text-xs">Utbetalt:</span> <span className="text-slate-200">{selectedLead.commission_paid_date}</span></div>
+                      )}
+                      {selectedLead.brand_id && (
+                        <div><span className="text-slate-500 text-xs">Brand:</span> <span className="text-slate-200">{BRANDS.find((b) => b.id === selectedLead.brand_id)?.name || selectedLead.brand_id}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Status dropdown */}
                 <div>

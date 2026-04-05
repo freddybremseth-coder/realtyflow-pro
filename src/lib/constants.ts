@@ -105,10 +105,9 @@ export const SIDEBAR_NAV = {
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
   ],
   realty: [
-    { label: "Pipeline", href: "/pipeline", icon: "GitBranch" },
+    { label: "CRM", href: "/pipeline", icon: "Users" },
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
-    { label: "CRM", href: "/crm", icon: "Users" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
   ],
   content: [
