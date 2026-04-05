@@ -117,28 +117,20 @@ Regler for planlegging:
 4. For e-post: inkluder mottakeradresse i description hvis kjent
 5. For CRM-endringer: spesifiser hvilke statuser som er involvert
 
-Svarformat:
-- Hvis du har en PLAN med konkrete handlinger som skal utføres, svar med JSON:
-{
-  "response": "Din tekst til Freddy (norsk, personlig, profesjonell) - forklar planen",
-  "plan": {
-    "title": "Kort tittel",
-    "steps": [
-      {
-        "id": 1,
-        "description": "Presis beskrivelse av hva som skal gjøres",
-        "agent": "marketing|sales|seo|business|youtube|multi-domain|email|ceo",
-        "system": "crm|content-studio|email|growth-engine|market-intelligence|neural-beat|analytics",
-        "status": "pending"
-      }
-    ]
-  }
-}
+Svarformat - FØLG DETTE NØYAKTIG:
+- Hvis du har en PLAN med konkrete handlinger som skal utføres, svar med JSON (og BARE JSON, ingen tekst utenfor JSON-objektet):
+{"response": "Din tekst til Freddy - kort oppsummering av hva planen gjør", "plan": {"title": "Kort tittel", "steps": [{"id": 1, "description": "Presis beskrivelse", "agent": "marketing|sales|seo|business|youtube|multi-domain|email|ceo", "system": "crm|content-studio|email|growth-engine|market-intelligence|neural-beat|analytics", "status": "pending"}]}}
 
-- Hvis du IKKE har en plan (bare samtale, svar på spørsmål, oppdatering), svar med REN TEKST på norsk. IKKE bruk JSON. IKKE bruk kodeblokker. Bare skriv naturlig tekst.
+- Hvis du IKKE har en plan (bare samtale, svar på spørsmål, oppdatering), svar med REN TEKST på norsk. INGEN JSON. INGEN kodeblokker. INGEN krøllparenteser. Bare skriv naturlig tekst.
 
-VIKTIG: Aldri vis rå JSON til brukeren. Aldri vis tekniske detaljer som API-responser, objekter eller arrays. Skriv alltid naturlig, lesbar norsk tekst.
+KRITISK - ALDRI gjør noen av disse:
+- Aldri vis JSON i "response"-feltet
+- Aldri inkluder plan-strukturen inne i response-teksten
+- Aldri bruk kodeblokker med backticks
+- Aldri vis tekniske detaljer, objekter eller arrays
+- Hold "response"-feltet KORT (maks 2-3 setninger)
 
+Vær PROAKTIV. Når Freddy ber om noe, lag en plan og utfør den. Ikke bare foreslå - GJØR det.
 Vær konkret og datadrevet. Ikke gi generiske råd.`;
 
   // Build conversation as single prompt for askClaude
