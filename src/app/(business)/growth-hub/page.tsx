@@ -331,10 +331,11 @@ export default function GrowthHubPage() {
 
   const addMetrics = async (actionId: string) => {
     try {
-      const res = await fetch(`/api/growth/actions?id=${actionId}`, {
+      const res = await fetch("/api/growth/actions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: actionId,
           status: "completed",
           metrics: {
             views: parseInt(metricsInput.views) || 0,
@@ -406,7 +407,7 @@ export default function GrowthHubPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const newTest = data.test || data;
+        const newTest = data.ab_test || data.test || data;
         setABTests((prev) => [newTest, ...prev]);
         addToast("A/B test opprettet med AI-genererte varianter!", "success");
       }
@@ -441,7 +442,19 @@ export default function GrowthHubPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setInsights(data.insights || data || []);
+        const rawInsights = data.insights || [];
+        // Ensure each insight has the required fields
+        const normalized: Insight[] = (Array.isArray(rawInsights) ? rawInsights : []).map((item: Record<string, unknown>, i: number) => ({
+          id: String(item.id || `insight-${i}`),
+          type: String(item.type || 'recommendation') as Insight['type'],
+          title: String(item.title || item),
+          description: String(item.description || item),
+          brand_id: item.brand_id as string | undefined,
+          icon: String(item.icon || ''),
+          metric: item.metric as string | undefined,
+          change: item.change as number | undefined,
+        }));
+        setInsights(normalized);
         addToast("Analyse fullfort!", "success");
       }
     } catch {
@@ -832,6 +845,9 @@ export default function GrowthHubPage() {
                 <Plus size={16} className="mr-2" />Ny A/B Test
               </Button>
             </div>
+            <p className="text-xs text-slate-400">
+              AI genererer to innholdsvarianter (A og B) for valgt brand og innholdstype. Publiser begge, legg inn metrikker, og velg vinneren.
+            </p>
 
             {loadingABTest ? (
               <div className="flex items-center justify-center py-12"><Loader2 size={24} className="text-slate-400 animate-spin" /></div>

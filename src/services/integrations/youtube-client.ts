@@ -194,6 +194,7 @@ export async function listVideos(maxResults = 20): Promise<Array<{
     id: video.id || '',
     title: video.snippet?.title || '',
     description: video.snippet?.description || '',
+    tags: video.snippet?.tags || [],
     publishedAt: video.snippet?.publishedAt || '',
     thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
     viewCount: Number(video.statistics?.viewCount || 0),

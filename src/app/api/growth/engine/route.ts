@@ -116,7 +116,24 @@ export async function POST(request: NextRequest) {
 
       case 'analyze': {
         const analysis = await engine.analyzeAndLearn();
-        return NextResponse.json({ success: true, analysis });
+
+        // Transform string arrays into Insight objects for the frontend
+        const insights = [
+          ...(analysis.insights || []).map((text: string, i: number) => ({
+            id: `insight-${i}`,
+            type: i === 0 ? 'trend' : 'improvement',
+            title: text.split('.')[0] || text,
+            description: text,
+          })),
+          ...(analysis.recommendations || []).map((text: string, i: number) => ({
+            id: `rec-${i}`,
+            type: 'recommendation',
+            title: text.split('.')[0] || text,
+            description: text,
+          })),
+        ];
+
+        return NextResponse.json({ success: true, insights, analysis });
       }
 
       case 'ab_test': {

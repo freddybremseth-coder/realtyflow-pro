@@ -1236,7 +1236,7 @@ export default function NeuralBeatPage() {
                             </div>
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm text-slate-200">{aiAnalysis.summary}</p>
+                            <p className="text-sm text-slate-200">{typeof aiAnalysis.summary === 'string' ? aiAnalysis.summary.replace(/[{}\[\]"]/g, '').replace(/,\s*$/gm, '').trim() : 'AI-analyse utilgjengelig'}</p>
                           </div>
                         </div>
                         {aiAnalysis.benchmarks && (
@@ -1688,8 +1688,8 @@ export default function NeuralBeatPage() {
                           <div className="flex gap-1.5 shrink-0">
                             {rec.status === 'pending' && (
                               <>
-                                <Button size="sm" onClick={() => executeRecommendation(rec.id)} className="gap-1 text-xs h-8 px-3">
-                                  <Zap className="h-3 w-3" /> Kjør
+                                <Button size="sm" onClick={() => executeRecommendation(rec.id)} className="gap-1 text-xs h-8 px-3 bg-emerald-600 hover:bg-emerald-500">
+                                  <Zap className="h-3 w-3" /> {rec.action.type === 'update_metadata' ? 'Bruk endringer' : 'Kjør'}
                                 </Button>
                                 <Button size="sm" variant="ghost" onClick={() => dismissRecommendation(rec.id)} className="text-xs h-8 px-2 text-slate-500 hover:text-red-400">
                                   <XCircle className="h-3.5 w-3.5" />

@@ -161,7 +161,18 @@ All titles and descriptions must be in English and optimized for viral YouTube s
       try {
         analysis = extractJSON(analysisResult);
       } catch {
-        analysis = { summary: analysisResult, overallScore: 0 };
+        // Clean up raw AI text - remove JSON artifacts and code blocks
+        const cleanSummary = analysisResult
+          .replace(/```(?:json)?\s*/g, '')
+          .replace(/[{}\[\]"]/g, '')
+          .replace(/\s*:\s*/g, ': ')
+          .replace(/,\s*\n/g, '\n')
+          .trim()
+          .split('\n')
+          .filter((line: string) => line.trim().length > 10)
+          .slice(0, 3)
+          .join('. ');
+        analysis = { summary: cleanSummary || 'AI-analyse er utilgjengelig akkurat nå. Prøv igjen senere.', overallScore: 0 };
       }
       try {
         mixes = extractJSON(mixResult);

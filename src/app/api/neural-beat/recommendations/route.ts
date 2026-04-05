@@ -83,13 +83,13 @@ Neural Beat YouTube Channel Analysis:
 - Engagement rate: ${engagementRate}%
 
 Top performing videos (by views/day):
-${topPerformers.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewsPerDay} views/day, ${v.viewCount} total, ${v.likeCount} likes, published ${v.daysSince} days ago`).join("\n")}
+${topPerformers.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewsPerDay} views/day, ${v.viewCount} total, ${v.likeCount} likes, published ${v.daysSince} days ago, tags: [${(v as any).tags?.join(', ') || 'none'}]`).join("\n")}
 
 Underperforming videos (need optimization):
-${lowPerformers.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewsPerDay} views/day, ${v.viewCount} total, videoId: ${v.id}`).join("\n")}
+${lowPerformers.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewsPerDay} views/day, ${v.viewCount} total, videoId: ${v.id}, tags: [${(v as any).tags?.join(', ') || 'none'}]`).join("\n")}
 
 Recent uploads:
-${recentVideos.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewCount} views in ${v.daysSince} days, videoId: ${v.id}`).join("\n")}
+${recentVideos.map((v, i) => `${i + 1}. "${v.title}" - ${v.viewCount} views in ${v.daysSince} days, videoId: ${v.id}, tags: [${(v as any).tags?.join(', ') || 'none'}]`).join("\n")}
 
 All video titles: ${allTitles.join(" | ")}
 `.trim();
@@ -141,15 +141,38 @@ RULES:
 - Think like MrBeast's team but for a music channel`,
     });
 
+    // Calculate a basic health score from raw data as fallback
+    const subsCount = channel.subscriberCount || 0;
+    const rawScore = Math.min(100, Math.round(
+      (subsCount > 1000 ? 20 : subsCount > 100 ? 10 : 5) +
+      (parseFloat(engagementRate) > 5 ? 30 : parseFloat(engagementRate) > 2 ? 20 : 10) +
+      (avgViews > 500 ? 30 : avgViews > 100 ? 20 : avgViews > 10 ? 10 : 5) +
+      (videos.length > 20 ? 20 : videos.length > 5 ? 10 : 5)
+    ));
+
     try {
       const parsed = extractJSON(aiResult);
+      // Ensure channelHealth always has a valid score
+      if (parsed.channelHealth) {
+        const ch = parsed.channelHealth as Record<string, unknown>;
+        if (!ch.score || ch.score === 0) ch.score = rawScore;
+      }
       return NextResponse.json({
         ...parsed,
         channel,
         stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
       });
     } catch {
-      return NextResponse.json({ recommendations: [], channelHealth: { score: 0, trend: 'stable', summary: 'Kunne ikke analysere kanaldata' } });
+      return NextResponse.json({
+        recommendations: [],
+        channelHealth: {
+          score: rawScore,
+          trend: avgViews > 50 ? 'up' : 'stable',
+          summary: `Kanalen har ${channel.subscriberCount} abonnenter, ${channel.videoCount} videoer og ${engagementRate}% engasjement. Generer anbefalinger på nytt for detaljert analyse.`,
+        },
+        channel,
+        stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
+      });
     }
   } catch (error) {
     console.error("[Neural Beat Recommendations] Error:", error);
