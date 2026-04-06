@@ -4,24 +4,57 @@ import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { Readable } from 'stream';
 
 let youtubeClient: youtube_v3.Youtube | null = null;
+let cachedRefreshToken: string | null = null;
 
-function getOAuth2Client() {
+/**
+ * Try to fetch the refresh token stored in Supabase by the OAuth callback.
+ */
+async function getRefreshTokenFromSupabase(): Promise<string | null> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return null;
+    const supabase = createClient(url, key);
+    const { data } = await supabase
+      .from('brand_settings')
+      .select('settings')
+      .eq('brand_id', '_system')
+      .single();
+    return data?.settings?.youtube_refresh_token || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getOAuth2Client() {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
+  let refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
+
+  // Fallback: try Supabase if env var is missing or previously failed
+  if (!refreshToken) {
+    refreshToken = await getRefreshTokenFromSupabase() || undefined;
+  }
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error('YouTube OAuth2 credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)');
   }
+
+  // If token changed, invalidate cached client
+  if (cachedRefreshToken && cachedRefreshToken !== refreshToken) {
+    youtubeClient = null;
+  }
+  cachedRefreshToken = refreshToken;
 
   const oauth2Client = new OAuth2Client(clientId, clientSecret);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
   return oauth2Client;
 }
 
-function getClient(): youtube_v3.Youtube {
+async function getClient(): Promise<youtube_v3.Youtube> {
   if (!youtubeClient) {
-    const auth = getOAuth2Client();
+    const auth = await getOAuth2Client();
     youtubeClient = youtube({ version: 'v3', auth });
   }
   return youtubeClient;
@@ -34,7 +67,7 @@ export async function uploadVideo(
   videoBuffer: Buffer,
   metadata: YouTubeVideoMetadata
 ): Promise<YouTubeUploadResult> {
-  const youtube = getClient();
+  const youtube = await getClient();
 
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
@@ -109,7 +142,7 @@ export async function setThumbnail(
   videoId: string,
   thumbnailBuffer: Buffer
 ): Promise<void> {
-  const youtube = getClient();
+  const youtube = await getClient();
   await youtube.thumbnails.set({
     videoId,
     media: {
@@ -130,7 +163,7 @@ export async function getChannelInfo(): Promise<{
   viewCount: number;
   thumbnailUrl: string;
 }> {
-  const youtube = getClient();
+  const youtube = await getClient();
   const res = await youtube.channels.list({
     part: ['snippet', 'statistics'],
     mine: true,
@@ -162,7 +195,7 @@ export async function listVideos(maxResults = 20): Promise<Array<{
   likeCount: number;
   commentCount: number;
 }>> {
-  const youtube = getClient();
+  const youtube = await getClient();
 
   // First get the uploads playlist
   const channelRes = await youtube.channels.list({
@@ -210,7 +243,7 @@ export async function updateVideoMetadata(
   videoId: string,
   metadata: Partial<YouTubeVideoMetadata>
 ): Promise<void> {
-  const youtube = getClient();
+  const youtube = await getClient();
   const updateData: any = { id: videoId };
 
   if (metadata.title || metadata.description || metadata.tags) {
@@ -256,7 +289,7 @@ export function extractVideoId(url: string): string | null {
  * Delete a video from YouTube.
  */
 export async function deleteVideo(videoId: string): Promise<void> {
-  const youtube = getClient();
+  const youtube = await getClient();
   await youtube.videos.delete({ id: videoId });
   console.log(`[YouTube] Deleted video: ${videoId}`);
 }
@@ -267,7 +300,7 @@ export async function listPlaylists(): Promise<Array<{
   description: string;
   itemCount: number;
 }>> {
-  const yt = getClient();
+  const yt = await getClient();
   const res = await yt.playlists.list({
     part: ['snippet', 'contentDetails'],
     mine: true,
@@ -282,7 +315,7 @@ export async function listPlaylists(): Promise<Array<{
 }
 
 export async function createPlaylist(title: string, description: string, privacyStatus: 'public' | 'unlisted' | 'private' = 'public'): Promise<{ id: string; title: string }> {
-  const yt = getClient();
+  const yt = await getClient();
   const res = await yt.playlists.insert({
     part: ['snippet', 'status'],
     requestBody: {
@@ -295,7 +328,7 @@ export async function createPlaylist(title: string, description: string, privacy
 }
 
 export async function addToPlaylist(playlistId: string, videoId: string): Promise<void> {
-  const yt = getClient();
+  const yt = await getClient();
   await yt.playlistItems.insert({
     part: ['snippet'],
     requestBody: {
@@ -309,9 +342,10 @@ export async function addToPlaylist(playlistId: string, videoId: string): Promis
 }
 
 export function isConfigured(): boolean {
+  // Check env vars synchronously; Supabase token is checked lazily at runtime
   return !!(
     process.env.YOUTUBE_CLIENT_ID &&
     process.env.YOUTUBE_CLIENT_SECRET &&
-    process.env.YOUTUBE_REFRESH_TOKEN
+    (process.env.YOUTUBE_REFRESH_TOKEN || cachedRefreshToken)
   );
 }
