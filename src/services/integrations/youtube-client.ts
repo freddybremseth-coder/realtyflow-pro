@@ -30,11 +30,12 @@ async function getRefreshTokenFromSupabase(): Promise<string | null> {
 async function getOAuth2Client() {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  let refreshToken = process.env.YOUTUBE_REFRESH_TOKEN;
 
-  // Fallback: try Supabase if env var is missing or previously failed
+  // Always check Supabase first (has the latest token from OAuth callback)
+  // Fall back to env var if Supabase doesn't have one
+  let refreshToken = await getRefreshTokenFromSupabase();
   if (!refreshToken) {
-    refreshToken = await getRefreshTokenFromSupabase() || undefined;
+    refreshToken = process.env.YOUTUBE_REFRESH_TOKEN || null;
   }
 
   if (!clientId || !clientSecret || !refreshToken) {
