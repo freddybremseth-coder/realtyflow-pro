@@ -239,29 +239,62 @@ export async function listVideos(maxResults = 20): Promise<Array<{
 
 /**
  * Update video metadata.
+ *
+ * YouTube API requires that snippet updates ALWAYS include `title` and `categoryId`.
+ * This function fetches the current video data first, then merges the changes
+ * so required fields are never missing.
  */
 export async function updateVideoMetadata(
   videoId: string,
   metadata: Partial<YouTubeVideoMetadata>
 ): Promise<void> {
   const youtube = await getClient();
+
+  const wantsSnippet = !!(metadata.title || metadata.description || metadata.tags || metadata.categoryId);
+  const wantsStatus = !!metadata.privacyStatus;
+
+  if (!wantsSnippet && !wantsStatus) return;
+
   const updateData: any = { id: videoId };
-
-  if (metadata.title || metadata.description || metadata.tags) {
-    updateData.snippet = {};
-    if (metadata.title) updateData.snippet.title = metadata.title;
-    if (metadata.description) updateData.snippet.description = metadata.description;
-    if (metadata.tags) updateData.snippet.tags = metadata.tags;
-    if (metadata.categoryId) updateData.snippet.categoryId = metadata.categoryId;
-  }
-
-  if (metadata.privacyStatus) {
-    updateData.status = { privacyStatus: metadata.privacyStatus };
-  }
-
   const parts: string[] = [];
-  if (updateData.snippet) parts.push('snippet');
-  if (updateData.status) parts.push('status');
+
+  if (wantsSnippet) {
+    // Fetch current video data so we can supply required fields (title, categoryId)
+    const current = await youtube.videos.list({
+      part: ['snippet'],
+      id: [videoId],
+    });
+    const currentSnippet = current.data.items?.[0]?.snippet;
+    if (!currentSnippet) {
+      throw new Error(`Video ${videoId} not found on YouTube`);
+    }
+
+    updateData.snippet = {
+      // Always include title and categoryId (YouTube requires them)
+      title: metadata.title || currentSnippet.title || '',
+      categoryId: metadata.categoryId || currentSnippet.categoryId || '10',
+    };
+
+    // Merge optional fields
+    if (metadata.description !== undefined) {
+      updateData.snippet.description = metadata.description;
+    } else if (currentSnippet.description) {
+      updateData.snippet.description = currentSnippet.description;
+    }
+
+    if (metadata.tags) {
+      updateData.snippet.tags = metadata.tags;
+    } else if (currentSnippet.tags) {
+      updateData.snippet.tags = currentSnippet.tags;
+    }
+
+    parts.push('snippet');
+  }
+
+  if (wantsStatus) {
+    updateData.status = { privacyStatus: metadata.privacyStatus };
+    parts.push('status');
+  }
 
   await youtube.videos.update({
     part: parts,
