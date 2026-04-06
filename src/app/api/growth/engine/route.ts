@@ -146,7 +146,43 @@ export async function POST(request: NextRequest) {
 
         const contentType = body.content_type || 'social_post';
         const abTest = await engine.generateAbTest(brand, contentType);
-        return NextResponse.json({ success: true, ab_test: abTest });
+
+        // Save to Supabase so it persists and shows on reload
+        const abRecord = {
+          brand,
+          action_type: contentType,
+          platform: 'ab_test',
+          content: abTest.a,
+          content_b: abTest.b,
+          hypothesis: abTest.hypothesis,
+          status: 'planned',
+          priority: 3,
+        };
+
+        let savedId = `ab-${Date.now()}`;
+        if (supabase) {
+          const { data: saved, error: saveErr } = await supabase
+            .from('growth_actions')
+            .insert(abRecord)
+            .select('id')
+            .single();
+          if (saved?.id) savedId = saved.id;
+          if (saveErr) console.error('[GrowthEngine] A/B save error:', saveErr);
+        }
+
+        return NextResponse.json({
+          success: true,
+          ab_test: {
+            id: savedId,
+            brand_id: brand,
+            content_type: contentType,
+            variant_a: abTest.a,
+            variant_b: abTest.b,
+            hypothesis: abTest.hypothesis,
+            status: 'planned',
+            created_at: new Date().toISOString(),
+          },
+        });
       }
 
       case 'run_cycle':

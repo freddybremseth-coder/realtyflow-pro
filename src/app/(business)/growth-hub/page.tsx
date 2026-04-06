@@ -407,7 +407,17 @@ export default function GrowthHubPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const newTest = data.ab_test || data.test || data;
+        const raw = data.ab_test || data.test || data;
+        // Normalize: API may return a/b or variant_a/variant_b
+        const newTest: ABTest = {
+          id: raw.id || `ab-${Date.now()}`,
+          brand_id: raw.brand_id || raw.brand || abTestForm.brand_id,
+          content_type: raw.content_type || abTestForm.content_type,
+          variant_a: raw.variant_a || raw.a || "",
+          variant_b: raw.variant_b || raw.b || "",
+          status: raw.status || "running",
+          created_at: raw.created_at || new Date().toISOString(),
+        };
         setABTests((prev) => [newTest, ...prev]);
         addToast("A/B test opprettet med AI-genererte varianter!", "success");
       }

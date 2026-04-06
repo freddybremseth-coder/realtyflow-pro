@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       conversions: action.conversions_b || 0,
     },
     winner: action.ab_winner,
-    status: action.status,
+    status: action.content_b ? (action.ab_winner ? 'completed' : 'running') : action.status,
     created_at: action.created_at,
   }));
 
