@@ -193,7 +193,19 @@ export default function GrowthHubPage() {
       const res = await fetch("/api/growth/lead-magnets" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
       if (res.ok) {
         const data = await res.json();
-        const rawLM = (data.lead_magnets || data || []).map((lm: Record<string, unknown>) => ({ ...lm, brand_id: lm.brand_id || lm.brand }));
+        const rawLM = (data.lead_magnets || data || []).map((lm: Record<string, unknown>) => ({
+          ...lm,
+          brand_id: lm.brand_id || lm.brand,
+          landing_page_copy: lm.landing_page_copy || lm.landing_page_headline || "",
+          cta: lm.cta || lm.cta_text || "",
+          email_sequence: Array.isArray(lm.email_sequence)
+            ? (lm.email_sequence as unknown[]).map((e: unknown) =>
+                typeof e === "string" ? e : (e && typeof e === "object" && "subject" in (e as Record<string,unknown>))
+                  ? `${(e as Record<string,string>).subject}: ${(e as Record<string,string>).body || ""}`
+                  : String(e)
+              )
+            : [],
+        }));
         setLeadMagnets(rawLM);
       }
     } catch {
@@ -228,14 +240,32 @@ export default function GrowthHubPage() {
           const res = await fetch(`/api/growth/engine?brand=${brand.id}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.strategy && typeof data.strategy === "object" && data.strategy.brand_id) {
+            const s = data.strategy;
+            if (s && typeof s === "object") {
+              // Normalize: engine returns current_followers as object per platform
+              const totalFollowers = typeof s.followers === "number"
+                ? s.followers
+                : (s.current_followers && typeof s.current_followers === "object"
+                  ? Object.values(s.current_followers as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+                  : 0);
+              const totalTarget = typeof s.target_followers === "number"
+                ? s.target_followers
+                : (s.target_followers && typeof s.target_followers === "object"
+                  ? Object.values(s.target_followers as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+                  : 1000);
+              const focusAreas = s.focus_areas || s.recommended_focus || [];
+              const weeklyActions = s.weekly_actions
+                || (Array.isArray(s.weekly_action_plan)
+                  ? (s.weekly_action_plan as Array<Record<string, unknown>>).map((a: Record<string, unknown>) => String(a.content || a.action_type || a)).slice(0, 5)
+                  : []);
+
               results.push({
-                brand_id: data.strategy.brand_id || brand.id,
-                followers: data.strategy.followers || 0,
-                target_followers: data.strategy.target_followers || 1000,
-                focus_areas: data.strategy.focus_areas || [],
-                weekly_actions: data.strategy.weekly_actions || [],
-                performance_score: data.strategy.performance_score || 0,
+                brand_id: s.brand_id || s.brand || brand.id,
+                followers: totalFollowers,
+                target_followers: totalTarget,
+                focus_areas: Array.isArray(focusAreas) ? focusAreas.map(String) : [],
+                weekly_actions: Array.isArray(weeklyActions) ? weeklyActions.map(String) : [],
+                performance_score: s.performance_score || 0,
               });
             }
           }
@@ -370,7 +400,26 @@ export default function GrowthHubPage() {
       if (res.ok) {
         const data = await res.json();
         const raw = data.lead_magnet || data;
-        const newMagnet = { ...raw, brand_id: raw.brand_id || raw.brand };
+        // Normalize: engine returns different field names than frontend expects
+        const newMagnet: LeadMagnet = {
+          id: raw.id || `lm-${Date.now()}`,
+          brand_id: raw.brand_id || raw.brand || brandId,
+          title: raw.title || "",
+          type: raw.type || "guide",
+          description: raw.description || "",
+          landing_page_copy: raw.landing_page_copy || raw.landing_page_headline || "",
+          cta: raw.cta || raw.cta_text || "",
+          email_sequence: Array.isArray(raw.email_sequence)
+            ? raw.email_sequence.map((e: unknown) =>
+                typeof e === "string" ? e : (e && typeof e === "object" && "subject" in (e as Record<string,unknown>))
+                  ? `${(e as Record<string,string>).subject}: ${(e as Record<string,string>).body || ""}`
+                  : String(e)
+              )
+            : [],
+          status: raw.status || "draft",
+          conversion_rate: raw.conversion_rate,
+          created_at: raw.created_at || new Date().toISOString(),
+        };
         setLeadMagnets((prev) => [newMagnet, ...prev]);
         addToast("Lead magnet generert!", "success");
       }
@@ -476,15 +525,10 @@ export default function GrowthHubPage() {
 
   const updateStrategy = async (brandId: string) => {
     try {
-      const res = await fetch("/api/growth/engine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update_strategy", brand: brandId }),
-      });
-      if (res.ok) {
-        addToast("Strategi oppdatert!", "success");
-        fetchStrategies();
-      }
+      addToast(`Genererer strategi for ${getBrand(brandId)?.name || brandId}...`, "success");
+      // Strategy is generated via GET ?brand=X - refetch all strategies
+      await fetchStrategies();
+      addToast("Strategi oppdatert!", "success");
     } catch {
       addToast("Kunne ikke oppdatere strategi.", "error");
     }
