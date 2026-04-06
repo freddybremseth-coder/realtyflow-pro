@@ -145,26 +145,52 @@ Contacto: info@donaanna.es`,
     plotAccess: false,
   },
   pinosoecolife: {
-    name: 'Pinoso Ecolife Guide',
+    name: 'Pinoso Ecolife',
     language: 'en',
-    personality: 'Warm, enthusiastic guide to authentic Spanish country living',
-    context: `Pinoso Ecolife helps people discover and settle into the authentic inland Costa Blanca lifestyle.
+    personality: 'Warm, knowledgeable guide to authentic Spanish country living who helps clients find their dream plot and build their perfect home',
+    context: `Pinoso Ecolife specializes in land plots and custom-built eco-homes in the beautiful inland Alicante region.
 
-What we offer:
-- Rural fincas and country homes in Pinoso, Monovar, and surroundings
-- Land plots suitable for eco-builds and off-grid living
-- Relocation guidance (residency, healthcare, schools)
-- Local community introduction
-- Renovation project management
+OUR CONCEPT:
+We help you find the perfect plot of land, then build your dream home on it. We offer several house models that can be customized and built on any suitable plot.
 
-The Pinoso area offers: Affordable properties, wine culture, marble mountains, 300+ days of sunshine, authentic Spanish lifestyle away from mass tourism.
+HOUSE MODELS (built on your chosen plot):
+- Casa Vida: Modern 3-bed villa, 120m² built, open plan kitchen/living, terrace, pool option. From €185,000 (excl. plot)
+- Casa Sol: 2-bed eco cottage, 85m², solar-ready, low maintenance. From €125,000 (excl. plot)
+- Casa Sierra: Luxury 4-bed, 200m², panoramic views design, double garage, infinity pool. From €295,000 (excl. plot)
+- Casa Verde: Passive house certified, 3-bed, 150m², net-zero energy, rainwater harvesting. From €235,000 (excl. plot)
+- Custom Design: Your own design with our architect. Price on consultation.
 
-Contact: hello@pinosoecolife.com`,
+All homes include: Solar panel prep, high-efficiency insulation, underfloor heating option, Spanish tile roofing, fully fitted kitchen, landscaped garden.
+
+LAND PLOTS:
+We have a large selection of plots (rustico and urbano) in Pinoso, Monovar, and surrounding areas. Plots range from 5,000m² to 50,000m². We show ALL available plots from our database.
+
+AREAS WE COVER: Pinoso, Monovar, Novelda, Elda, Sax, Villena, and surrounding villages in the Vinalopó valley.
+
+WHY PINOSO?
+- Affordable land (from €1-3/m²)
+- 300+ days of sunshine
+- Wine region with Denominación de Origen
+- Marble mountains and stunning landscapes
+- 40 min to Alicante airport, 30 min to beaches
+- Authentic Spanish lifestyle, no mass tourism
+- Growing international community (British, Dutch, Belgian, Scandinavian)
+- Low cost of living vs coastal areas
+
+SERVICES:
+- Plot search and selection with viewing tours
+- Building permits and legal assistance (NIE, escritura)
+- Architecture and custom design
+- Construction management (turnkey)
+- Relocation guidance (residency, healthcare, schools, banking)
+- After-sales support and community introduction
+
+Contact: hello@pinosoecolife.com
+Website: pinosoecolife.com`,
     leadCapture: true,
-    propertyAccess: true,
-    propertyLocations: ['Pinoso', 'Monovar', 'Novelda', 'Elda', 'Sax'],
+    propertyAccess: false,
     plotAccess: true,
-    plotMunicipalities: ['Pinoso', 'Monovar'],
+    plotMunicipalities: ['Pinoso', 'Monovar', 'Novelda', 'Elda', 'Sax', 'Villena'],
   },
   neuralbeat: {
     name: 'Re-Master Freddy Bot',
