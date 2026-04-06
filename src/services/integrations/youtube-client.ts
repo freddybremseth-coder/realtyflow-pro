@@ -341,6 +341,97 @@ export async function addToPlaylist(playlistId: string, videoId: string): Promis
   console.log(`[YouTube] Added video ${videoId} to playlist ${playlistId}`);
 }
 
+/**
+ * List comment threads for a specific video.
+ */
+export async function listVideoComments(videoId: string, maxResults = 20): Promise<Array<{
+  id: string;
+  authorName: string;
+  authorProfileUrl: string;
+  text: string;
+  likeCount: number;
+  publishedAt: string;
+  totalReplyCount: number;
+}>> {
+  const yt = await getClient();
+  const res = await yt.commentThreads.list({
+    part: ['snippet'],
+    videoId,
+    maxResults,
+    order: 'time',
+  });
+  return (res.data.items || []).map((t) => ({
+    id: t.id || '',
+    authorName: t.snippet?.topLevelComment?.snippet?.authorDisplayName || '',
+    authorProfileUrl: t.snippet?.topLevelComment?.snippet?.authorProfileImageUrl || '',
+    text: t.snippet?.topLevelComment?.snippet?.textDisplay || '',
+    likeCount: t.snippet?.topLevelComment?.snippet?.likeCount || 0,
+    publishedAt: t.snippet?.topLevelComment?.snippet?.publishedAt || '',
+    totalReplyCount: t.snippet?.totalReplyCount || 0,
+  }));
+}
+
+/**
+ * List recent comments across all channel videos.
+ */
+export async function listAllComments(maxVideos = 10, commentsPerVideo = 5): Promise<Array<{
+  videoId: string;
+  videoTitle: string;
+  id: string;
+  authorName: string;
+  text: string;
+  likeCount: number;
+  publishedAt: string;
+  totalReplyCount: number;
+}>> {
+  const videos = await listVideos(maxVideos);
+  const allComments: Array<{
+    videoId: string;
+    videoTitle: string;
+    id: string;
+    authorName: string;
+    text: string;
+    likeCount: number;
+    publishedAt: string;
+    totalReplyCount: number;
+  }> = [];
+
+  for (const video of videos) {
+    if (video.commentCount === 0) continue;
+    try {
+      const comments = await listVideoComments(video.id, commentsPerVideo);
+      for (const c of comments) {
+        allComments.push({ videoId: video.id, videoTitle: video.title, ...c });
+      }
+    } catch {
+      // Some videos may have comments disabled
+    }
+  }
+  return allComments.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+}
+
+/**
+ * Reply to a comment thread.
+ */
+export async function replyToComment(commentId: string, text: string): Promise<{ id: string; text: string; publishedAt: string }> {
+  const yt = await getClient();
+  const res = await yt.comments.insert({
+    part: ['snippet'],
+    requestBody: {
+      snippet: {
+        parentId: commentId,
+        textOriginal: text,
+      },
+    },
+  });
+  console.log(`[YouTube] Replied to comment ${commentId}`);
+  return {
+    id: res.data.id || '',
+    text: res.data.snippet?.textDisplay || text,
+    publishedAt: res.data.snippet?.publishedAt || new Date().toISOString(),
+  };
+}
+
 export function isConfigured(): boolean {
   // Check env vars synchronously; Supabase token is checked lazily at runtime
   return !!(

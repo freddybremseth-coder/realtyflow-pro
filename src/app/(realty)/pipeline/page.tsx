@@ -142,6 +142,8 @@ export default function PipelinePage() {
   const [showCallLog, setShowCallLog] = useState(false);
   const [callNotes, setCallNotes] = useState("");
   const [showMeetingModal, setShowMeetingModal] = useState(false);
+  const [editingCommission, setEditingCommission] = useState(false);
+  const [editCommissionData, setEditCommissionData] = useState({ sale_price: "", commission_percent: "", commission_amount: "", commission_paid_date: "", brand_id: "" });
   const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
 
@@ -1154,22 +1156,139 @@ export default function PipelinePage() {
                   </div>
                 </div>
 
-                {/* Commission info for WON */}
-                {selectedLead.status === "WON" && selectedLead.commission_amount && (
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                      <Banknote size={14} />Salgsdetaljer
+                {/* Commission info for WON — editable */}
+                {selectedLead.status === "WON" && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                        <Banknote size={14} />Salgsdetaljer
+                      </div>
+                      <div className="flex gap-1">
+                        {!editingCommission ? (
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px] text-slate-400 hover:text-white" onClick={() => {
+                            setEditingCommission(true);
+                            setEditCommissionData({
+                              sale_price: String(selectedLead.sale_price || ""),
+                              commission_percent: String(selectedLead.commission_percent || "3"),
+                              commission_amount: String(selectedLead.commission_amount || ""),
+                              commission_paid_date: selectedLead.commission_paid_date || "",
+                              brand_id: selectedLead.brand_id || "soleada",
+                            });
+                          }}>Rediger</Button>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="ghost" className="h-6 text-[10px] text-slate-400" onClick={() => setEditingCommission(false)}>Avbryt</Button>
+                            <Button size="sm" className="h-6 text-[10px] bg-amber-600 hover:bg-amber-700" onClick={async () => {
+                              const sp = parseFloat(editCommissionData.sale_price) || 0;
+                              const pct = parseFloat(editCommissionData.commission_percent) || 0;
+                              const amt = editCommissionData.commission_amount ? parseFloat(editCommissionData.commission_amount) : sp * (pct / 100);
+                              await fetch("/api/contacts", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  id: selectedLead.id,
+                                  sale_price: sp || null,
+                                  commission_amount: amt || null,
+                                  commission_percent: pct || null,
+                                  commission_paid_date: editCommissionData.commission_paid_date || null,
+                                  brand_id: editCommissionData.brand_id || null,
+                                }),
+                              });
+                              setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? {
+                                ...l, sale_price: sp, commission_amount: amt, commission_percent: pct,
+                                commission_paid_date: editCommissionData.commission_paid_date || undefined,
+                                brand_id: editCommissionData.brand_id,
+                              } : l));
+                              setSelectedLead((prev) => prev ? {
+                                ...prev, sale_price: sp, commission_amount: amt, commission_percent: pct,
+                                commission_paid_date: editCommissionData.commission_paid_date || undefined,
+                                brand_id: editCommissionData.brand_id,
+                              } : prev);
+                              setEditingCommission(false);
+                            }}>Lagre</Button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="text-slate-500 text-xs">Salgspris:</span> <span className="text-slate-200">€{(selectedLead.sale_price || 0).toLocaleString()}</span></div>
-                      <div><span className="text-slate-500 text-xs">Kommisjon:</span> <span className="text-amber-400 font-semibold">€{selectedLead.commission_amount.toLocaleString()}</span></div>
-                      {selectedLead.commission_paid_date && (
-                        <div><span className="text-slate-500 text-xs">Utbetalt:</span> <span className="text-slate-200">{selectedLead.commission_paid_date}</span></div>
-                      )}
-                      {selectedLead.brand_id && (
-                        <div><span className="text-slate-500 text-xs">Brand:</span> <span className="text-slate-200">{BRANDS.find((b) => b.id === selectedLead.brand_id)?.name || selectedLead.brand_id}</span></div>
-                      )}
-                    </div>
+                    {editingCommission ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-500">Salgspris (€)</label>
+                          <Input type="number" className="h-7 text-xs" value={editCommissionData.sale_price}
+                            onChange={(e) => {
+                              const sp = e.target.value;
+                              const pct = parseFloat(editCommissionData.commission_percent) || 0;
+                              setEditCommissionData((p) => ({ ...p, sale_price: sp, commission_amount: sp ? String(Math.round(parseFloat(sp) * (pct / 100))) : "" }));
+                            }} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Kommisjon %</label>
+                          <Input type="number" step="0.5" className="h-7 text-xs" value={editCommissionData.commission_percent}
+                            onChange={(e) => {
+                              const pct = e.target.value;
+                              const sp = parseFloat(editCommissionData.sale_price) || 0;
+                              setEditCommissionData((p) => ({ ...p, commission_percent: pct, commission_amount: sp ? String(Math.round(sp * (parseFloat(pct) / 100))) : "" }));
+                            }} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Kommisjon (€)</label>
+                          <Input type="number" className="h-7 text-xs" value={editCommissionData.commission_amount}
+                            onChange={(e) => setEditCommissionData((p) => ({ ...p, commission_amount: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Utbetalingsdato</label>
+                          <Input type="date" className="h-7 text-xs" value={editCommissionData.commission_paid_date}
+                            onChange={(e) => setEditCommissionData((p) => ({ ...p, commission_paid_date: e.target.value }))} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-500">Brand</label>
+                          <select className="w-full h-7 rounded border border-slate-600 bg-slate-800 px-2 text-xs text-slate-100"
+                            value={editCommissionData.brand_id} onChange={(e) => setEditCommissionData((p) => ({ ...p, brand_id: e.target.value }))}>
+                            {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <Button size="sm" variant="destructive" className="h-6 text-[10px] w-full" onClick={async () => {
+                            if (!confirm("Fjerne salgsdata og sette tilbake til Forhandling?")) return;
+                            await fetch("/api/contacts", {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                id: selectedLead.id,
+                                pipeline_status: "NEGOTIATION",
+                                sale_price: null,
+                                commission_amount: null,
+                                commission_percent: null,
+                                commission_paid_date: null,
+                                brand_id: null,
+                              }),
+                            });
+                            setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? {
+                              ...l, status: "NEGOTIATION" as LeadStatus, sale_price: undefined, commission_amount: undefined,
+                              commission_percent: undefined, commission_paid_date: undefined, brand_id: undefined,
+                            } : l));
+                            setSelectedLead(null);
+                            setEditingCommission(false);
+                          }}>
+                            <Trash2 size={10} className="mr-1" />Fjern salg og sett tilbake til Forhandling
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div><span className="text-slate-500 text-xs">Salgspris:</span> <span className="text-slate-200">€{(selectedLead.sale_price || 0).toLocaleString()}</span></div>
+                        <div><span className="text-slate-500 text-xs">Kommisjon:</span> <span className="text-amber-400 font-semibold">€{(selectedLead.commission_amount || 0).toLocaleString()}</span></div>
+                        {selectedLead.commission_paid_date && (
+                          <div><span className="text-slate-500 text-xs">Utbetalt:</span> <span className="text-slate-200">{selectedLead.commission_paid_date}</span></div>
+                        )}
+                        {selectedLead.brand_id && (
+                          <div><span className="text-slate-500 text-xs">Brand:</span> <span className="text-slate-200">{BRANDS.find((b) => b.id === selectedLead.brand_id)?.name || selectedLead.brand_id}</span></div>
+                        )}
+                        {!selectedLead.commission_paid_date && selectedLead.commission_amount && (
+                          <div className="col-span-2"><Badge className="bg-orange-500/20 text-orange-400 text-[10px]">Venter på utbetaling</Badge></div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

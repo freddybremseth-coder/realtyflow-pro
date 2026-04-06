@@ -9,6 +9,8 @@ import {
   listPlaylists,
   createPlaylist,
   addToPlaylist,
+  listAllComments,
+  replyToComment,
   isConfigured as ytConfigured,
 } from '@/services/integrations/youtube-client';
 import { publishToMultiplePlatforms } from '@/services/integrations/social-publisher';
@@ -596,6 +598,66 @@ async function executeStep(
           const youtubeAgent = await orchestrator.executeCommand('youtube', step.description);
           return { summary: youtubeAgent.output, data: {} };
         }
+      }
+
+      // Comment management - list and auto-reply
+      if (desc.includes('kommentar') || desc.includes('comment') || desc.includes('svar') || desc.includes('reply')) {
+        const comments = await listAllComments(10, 10);
+        if (comments.length === 0) {
+          return { summary: 'Ingen kommentarer funnet på kanalens videoer.', data: {} };
+        }
+
+        // If auto-reply is requested
+        if (desc.includes('svar') || desc.includes('reply') || desc.includes('auto') || desc.includes('respond')) {
+          const unreplied = comments.filter((c) => c.totalReplyCount === 0);
+          if (unreplied.length === 0) {
+            return { summary: `Alle ${comments.length} kommentarer har allerede svar.`, data: { comments } };
+          }
+
+          // Use AI to generate replies
+          const aiReplies = await askClaude(
+            `Du er Re-Master Freddy, en AI-musikk artist på YouTube. Her er ubesvarte kommentarer:\n${unreplied.slice(0, 15).map((c, i) => `${i+1}. [${c.id}] "${c.authorName}" på "${c.videoTitle}": "${c.text}"`).join('\n')}\n\nGenerer vennlige, autentiske svar til hver kommentar. Vær takknemlig, engasjerende og oppmuntr til å abonnere. Match språket til kommentatoren.\nReturner JSON array: [{"commentId": "...", "reply": "..."}]`,
+            { maxTokens: 2000, model: 'sonnet', systemPrompt: 'Returner BARE valid JSON array. Svarene skal være korte (1-3 setninger), personlige og varme.' }
+          );
+
+          try {
+            const replies = JSON.parse(aiReplies.trim().replace(/```json?\n?/g, '').replace(/```/g, ''));
+            let repliedCount = 0;
+            const replyDetails: string[] = [];
+            for (const r of (Array.isArray(replies) ? replies : [])) {
+              if (!r.commentId || !r.reply) continue;
+              try {
+                await replyToComment(r.commentId, r.reply);
+                repliedCount++;
+                replyDetails.push(`Svarte "${r.reply.substring(0, 40)}..." til ${unreplied.find(c => c.id === r.commentId)?.authorName || 'ukjent'}`);
+              } catch (e) {
+                replyDetails.push(`Feilet: ${e instanceof Error ? e.message : 'ukjent feil'}`);
+              }
+            }
+            return { summary: `Svarte på ${repliedCount}/${unreplied.length} kommentarer:\n${replyDetails.join('\n')}`, data: { repliedCount, totalComments: comments.length } };
+          } catch {
+            return { summary: `Fant ${unreplied.length} ubesvarte kommentarer, men klarte ikke å generere svar automatisk.`, data: { comments: unreplied.slice(0, 10) } };
+          }
+        }
+
+        // Just list comments
+        const summary = comments.slice(0, 15).map((c) => `- "${c.authorName}" på "${c.videoTitle}": "${c.text.substring(0, 80)}" (${c.likeCount} likes, ${c.totalReplyCount} svar)`).join('\n');
+        return { summary: `${comments.length} kommentarer:\n${summary}`, data: { comments: comments.slice(0, 20) } };
+      }
+
+      // Bulk rename to Re-Master Freddy
+      if (desc.includes('re-master') || desc.includes('remaster') || desc.includes('rename') || desc.includes('omdøp') || desc.includes('endre navn')) {
+        const videos = await listVideos(50);
+        let updated = 0;
+        for (const video of videos) {
+          let newTitle = video.title.replace(/Neural\s*Beat/gi, 'Re-Master Freddy').replace(/Neuro\s*Beat/gi, 'Re-Master Freddy');
+          let newDesc = video.description.replace(/Neural\s*Beat/gi, 'Re-Master Freddy').replace(/#NeuralBeat/gi, '#ReMasterFreddy');
+          if (newTitle !== video.title || newDesc !== video.description) {
+            await updateVideoMetadata(video.id, { title: newTitle, description: newDesc });
+            updated++;
+          }
+        }
+        return { summary: `Oppdaterte ${updated}/${videos.length} videoer til "Re-Master Freddy" branding.`, data: { updated, total: videos.length } };
       }
 
       // General YouTube operations

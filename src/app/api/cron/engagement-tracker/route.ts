@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { listVideos, isConfigured as ytConfigured } from "@/services/integrations/youtube-client";
 
 // Runs daily to fetch engagement metrics for published posts
 export const maxDuration = 120;
@@ -137,6 +138,50 @@ export async function GET(request: NextRequest) {
             tracked++;
           }
         }
+      }
+    }
+
+    // ── YouTube engagement tracking ──────────────────────────
+    if (ytConfigured()) {
+      try {
+        const ytVideos = await listVideos(50);
+        for (const video of ytVideos) {
+          // Try to match with a content_publication by video URL
+          const { data: matchedPub } = await supabase
+            .from("content_publications")
+            .select("id")
+            .or(`external_url.ilike.%${video.id}%,content.ilike.%${video.id}%`)
+            .limit(1)
+            .single();
+
+          if (matchedPub) {
+            await supabase.from("engagement_snapshots").insert({
+              publication_id: matchedPub.id,
+              platform: "youtube",
+              post_id: video.id,
+              likes: video.likeCount,
+              comments: video.commentCount,
+              shares: 0,
+              reach: video.viewCount,
+              impressions: video.viewCount,
+              raw_data: { viewCount: video.viewCount, likeCount: video.likeCount, commentCount: video.commentCount },
+            });
+
+            await supabase
+              .from("content_publications")
+              .update({
+                total_views: video.viewCount,
+                total_likes: video.likeCount,
+                total_comments: video.commentCount,
+              })
+              .eq("id", matchedPub.id);
+
+            tracked++;
+          }
+        }
+        console.log(`[Engagement Tracker] YouTube: processed ${ytVideos.length} videos`);
+      } catch (ytErr) {
+        console.error("[Engagement Tracker] YouTube tracking error:", ytErr);
       }
     }
 
