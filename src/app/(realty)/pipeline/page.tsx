@@ -118,7 +118,7 @@ export default function PipelinePage() {
   const [showCommissionModal, setShowCommissionModal] = useState(false);
   const [commissionLeadId, setCommissionLeadId] = useState<string | null>(null);
   const [commissionData, setCommissionData] = useState({
-    sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "soleada",
+    sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "",
   });
   const [csvData, setCsvData] = useState<Lead[]>([]);
   const [csvRaw, setCsvRaw] = useState("");
@@ -266,7 +266,7 @@ export default function PipelinePage() {
     }
     setShowCommissionModal(false);
     setCommissionLeadId(null);
-    setCommissionData({ sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "soleada" });
+    setCommissionData({ sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "" });
   };
 
   const deleteLead = async (leadId: string) => {
@@ -1017,13 +1017,14 @@ export default function PipelinePage() {
                     <select value={commissionData.brand_id}
                       onChange={(e) => setCommissionData((p) => ({ ...p, brand_id: e.target.value }))}
                       className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
-                      {BRANDS.filter((b) => b.type === "real_estate").map((b) => (
+                      <option value="">Velg brand...</option>
+                      {BRANDS.map((b) => (
                         <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </select>
                   </div>
                 </div>
-                <Button onClick={confirmCommission} className="w-full" disabled={!commissionData.sale_price}>
+                <Button onClick={confirmCommission} className="w-full" disabled={!commissionData.sale_price || !commissionData.brand_id}>
                   <CheckCircle2 size={16} className="mr-1" />Registrer som solgt
                 </Button>
               </div>
