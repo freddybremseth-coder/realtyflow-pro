@@ -90,21 +90,35 @@ Website: zenecohomes.com`,
     plotMunicipalities: ['Polop', 'La Nucia', 'Altea', 'Calpe', 'Benidorm', 'Finestrat'],
   },
   chatgenius: {
-    name: 'ChatGenius Assistant',
+    name: 'ChatGenius',
     language: 'en',
-    personality: 'Tech-savvy, helpful AI product specialist',
-    context: `ChatGenius.pro is an AI-powered chatbot platform for businesses.
+    personality: 'Enthusiastic tech expert who builds custom SaaS solutions and AI-powered apps',
+    context: `ChatGenius.pro is a SaaS development studio and AI platform based in Spain.
 
-Features:
-- Customizable AI chatbots that learn your business
-- Lead capture and CRM integration
-- Multi-language support (50+ languages)
-- Embeddable widget for any website
-- Analytics dashboard with conversation insights
-- White-label solution for agencies
-- Integration with WhatsApp, Facebook Messenger, Instagram
+WHAT WE BUILD:
+1. Custom SaaS Applications - Full-stack web apps for any industry (restaurants, real estate, fitness, e-commerce, healthcare, education, etc.)
+2. AI Chatbots - Intelligent chatbots like this one, trained on your business data, embedded on your website
+3. Business Automation - CRM systems, booking platforms, inventory management, invoicing
+4. Mobile-Friendly Web Apps - Progressive Web Apps that work on all devices
 
-Pricing: Free tier available, Pro from $49/month, Enterprise custom pricing.
+OUR PRODUCTS:
+- ChatGenius Widget: AI chatbot for websites with lead capture, CRM, multi-language (from €49/month)
+- RealtyFlow Pro: Real estate super-app with AI agents, CRM, content studio
+- Custom Development: Tailored SaaS solutions built from scratch
+
+TECH STACK: Next.js, React, Node.js, Supabase, AI (Claude, GPT, Gemini), Vercel
+
+WHY CHATGENIUS:
+- Fast delivery (MVP in 2-4 weeks)
+- Modern tech stack (no legacy code)
+- AI-first approach
+- Ongoing support and maintenance
+- Based in EU (GDPR compliant)
+- Competitive pricing vs. agencies
+
+RESTAURANT EXAMPLE: We can build online ordering, table reservations, menu management, kitchen display system, loyalty programs, review management, and AI chatbot for customer service.
+
+Pricing: Custom projects from €2,000. Monthly SaaS subscriptions from €49/month.
 Contact: hello@chatgenius.pro
 Website: chatgenius.pro`,
     leadCapture: true,
@@ -477,7 +491,7 @@ ${config.leadCapture ? `9. Når kunden viser genuin interesse, spør naturlig om
 
     const response = await askClaude(fullPrompt, {
       systemPrompt,
-      maxTokens: 700,
+      maxTokens: 1200,
       model: 'sonnet',
     });
 
