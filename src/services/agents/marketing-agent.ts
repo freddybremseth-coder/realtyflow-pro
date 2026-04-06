@@ -359,7 +359,31 @@ For hver mulighet, angi:
 
     const platforms = platform.split(",").map((p: string) => p.trim());
 
-    const prompt = `Lag ${contentType}-innhold for plattformen: ${platforms[0]}
+    const isEmail = platforms[0] === "email" || contentType === "newsletter" || contentType === "email";
+
+    const prompt = isEmail
+      ? `Lag et profesjonelt nyhetsbrev/e-post.
+
+INNHOLD/INSTRUKS:
+${topic}
+
+${audience ? `MÅLGRUPPE: ${audience}` : ""}
+${brand ? `MERKEVARE: ${brand}` : ""}
+TONE: ${tone}
+SPRÅK: ${language === "no" ? "Norsk" : "Engelsk"}
+
+KRAV:
+- Skriv en komplett, profesjonell e-post med innledning, hoveddel og avslutning
+- Bruk ren HTML med inline CSS (ingen eksterne stylesheets)
+- Profesjonelt design: bruk farger, spacing, typografi
+- Inkluder en tydelig call-to-action (CTA) knapp
+- Lengde: 200-400 ord (ikke for kort!)
+- Struktur: overskrift, ingress, 2-3 avsnitt med innhold, CTA, signatur
+- Bruk <table> layout for e-postklienter (ikke flex/grid)
+- Start direkte med HTML, ingen forklaringer
+
+VIKTIG: Skriv et FULLSTENDIG nyhetsbrev med substans og verdi for leseren. IKKE skriv bare 2-3 linjer.`
+      : `Lag ${contentType}-innhold for plattformen: ${platforms[0]}
 
 TEMA/PROMPT:
 ${topic}
