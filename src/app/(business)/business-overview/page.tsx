@@ -51,22 +51,25 @@ export default function BusinessOverviewPage() {
       // Fetch all data sources in parallel
       const supabase = getSupabase();
 
-      const [contentRes, accountsRes, pipelineRes, crmRes, actionsRes] = await Promise.allSettled([
+      const [contentRes, accountsRes, allContactsRes, actionsRes] = await Promise.allSettled([
         // Fetch content_publications directly from Supabase (not /api/content which queries wrong table)
         supabase
           ? supabase.from("content_publications").select("id, brand_id, status, created_at").order("created_at", { ascending: false }).limit(500).then(r => ({ publications: r.data || [] }))
           : Promise.resolve({ publications: [] }),
         fetch("/api/social-accounts").then(r => r.json()).catch(() => ({ accounts: [] })),
+        // Fetch ALL contacts in a single call to avoid double-counting
         fetch("/api/contacts?view=pipeline").then(r => r.json()).catch(() => ({ contacts: [] })),
-        fetch("/api/contacts?view=crm").then(r => r.json()).catch(() => ({ contacts: [] })),
         fetch("/api/growth/actions").then(r => r.json()).catch(() => ({ actions: [] })),
       ]);
 
       const publications = contentRes.status === "fulfilled" ? (contentRes.value.publications || []) : [];
       const socialAccounts = accountsRes.status === "fulfilled" ? (accountsRes.value.accounts || []) : [];
-      const pipelineContacts = pipelineRes.status === "fulfilled" ? (pipelineRes.value.contacts || []) : [];
-      const crmContacts = crmRes.status === "fulfilled" ? (crmRes.value.contacts || []) : [];
+      const allContacts: Record<string, unknown>[] = allContactsRes.status === "fulfilled" ? (allContactsRes.value.contacts || []) : [];
       const growthActions = actionsRes.status === "fulfilled" ? (actionsRes.value.actions || []) : [];
+
+      // Derive pipeline and CRM views from single contacts list (no duplicates)
+      const pipelineContacts = allContacts;
+      const crmContacts = allContacts.filter((c) => c.pipeline_status !== "NEW");
 
       // Build per-brand data
       const newBrandData: Record<string, BrandData> = {};
@@ -91,14 +94,10 @@ export default function BusinessOverviewPage() {
           a.brand === brand.id || a.brand_id === brand.id
         );
 
-        // Calculate commission income from WON contacts
-        const wonContacts = [...pipelineContacts, ...crmContacts].filter((c: Record<string, unknown>) =>
-          c.pipeline_status === "WON" && (c.brand_id === brand.id || c.brand === brand.id)
+        // Calculate commission income from WON contacts (use allContacts directly, no duplicates)
+        const uniqueWon = allContacts.filter((c: Record<string, unknown>) =>
+          c.pipeline_status === "WON" && c.brand_id === brand.id
         );
-        // Deduplicate by id
-        const wonMap = new Map<string, Record<string, unknown>>();
-        wonContacts.forEach((c: Record<string, unknown>) => { if (c.id) wonMap.set(String(c.id), c); });
-        const uniqueWon = Array.from(wonMap.values());
         const commissionTotal = uniqueWon.reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
         const commissionPaid = uniqueWon.filter((c) => c.commission_paid_date).reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
         const saleTotal = uniqueWon.reduce((s, c) => s + (Number(c.sale_price) || 0), 0);
