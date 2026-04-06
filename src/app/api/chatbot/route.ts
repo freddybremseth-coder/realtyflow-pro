@@ -260,6 +260,19 @@ async function fetchRelevantProperties(
       }
     }
 
+    // Filter by budget if mentioned
+    const budgetMatch = message.match(/(\d[\d\s.,]*)\s*(?:€|euro|eur|budsjett|budget|maks|max|under)/i)
+      || message.match(/(?:€|euro|eur|budsjett|budget|maks|max|under)\s*(\d[\d\s.,]*)/i)
+      || message.match(/(\d{3,})\s*(?:000|k)/i);
+    if (budgetMatch) {
+      let budget = parseFloat(budgetMatch[1].replace(/[\s.,]/g, ''));
+      if (budget < 1000) budget *= 1000; // e.g. "300k" or "300 000"
+      const withinBudget = filtered.filter((p) => p.price && p.price <= budget * 1.1); // 10% flexibility
+      if (withinBudget.length > 0) {
+        filtered = withinBudget.sort((a, b) => (b.price || 0) - (a.price || 0)); // Show most expensive within budget first
+      }
+    }
+
     // Limit to top 5 most relevant
     const top = filtered.slice(0, 5);
 
@@ -376,10 +389,17 @@ export async function POST(request: NextRequest) {
       const isPropertyRelated = propertyKeywords.some((kw) => msgLower.includes(kw));
 
       if (isPropertyRelated && config.propertyAccess) {
+        // First try with brand locations, then fallback to all if no results
         propertyContext = await fetchRelevantProperties(supabase, message, config.propertyLocations);
+        if (!propertyContext && config.propertyLocations) {
+          propertyContext = await fetchRelevantProperties(supabase, message);
+        }
       }
       if (isPropertyRelated && config.plotAccess) {
         plotContext = await fetchRelevantPlots(supabase, message, config.plotMunicipalities);
+        if (!plotContext && config.plotMunicipalities) {
+          plotContext = await fetchRelevantPlots(supabase, message);
+        }
       }
     }
 
@@ -417,8 +437,9 @@ REGLER:
 7. Svar på ${config.language === 'no' ? 'norsk' : config.language === 'es' ? 'spansk' : 'engelsk'} som standard, men tilpass deg kundens språk.
 ${config.leadCapture ? `8. Når kunden viser genuin interesse, spør naturlig om kontaktinfo for oppfølging. F.eks: "Skal jeg be en rådgiver kontakte deg med mer info? Da trenger jeg bare navn og e-post/telefon."
 9. Når kunden gir kontaktinfo, inkluder SKJULT i svaret: [LEAD:{"name":"...","email":"...","phone":"...","interest":"kort beskrivelse av hva de er interessert i"}]` : ''}
-10. Ikke list opp alle eiendommer med en gang. Still først noen spørsmål for å forstå kundens behov (budsjett, beliggenhet, type, størrelse).
-11. Hvis kunden spør om noe du ikke vet, vær ærlig og tilby å sette dem i kontakt med en rådgiver.`;
+10. VIKTIG: Ikke anta hva kunden vil ha. Når de sier et sted og budsjett uten å spesifisere type, spør: "Flott! Leter du etter villa, leilighet, finca, eller tomt?" Still oppfølgingsspørsmål for å forstå behov (type, antall soverom, basseng, etc.).
+11. Presenter matchende eiendommer med konkrete detaljer. Hvis ingen matcher perfekt, vis de nærmeste alternativene og forklar.
+12. Hvis kunden spør om noe du ikke vet, vær ærlig og tilby å sette dem i kontakt med en rådgiver.`;
 
     const fullPrompt = history ? `${history}\n\nBesøkende: ${message}` : message;
 

@@ -27,12 +27,12 @@ export default function RootLayout({
           {children}
         </main>
         <ChatWidget
-          brandId="chatgenius"
+          brandId="soleada"
           title="Victoria AI"
-          subtitle="Din personlige assistent"
-          welcomeMessage="Hei Freddy! Jeg er Victoria, din AI-assistent. Hva kan jeg hjelpe deg med?"
+          subtitle="Eiendomsrådgiver"
+          welcomeMessage="Hei! Jeg er din AI-assistent. Jeg kan hjelpe deg med eiendommer i Spania, tomter, og mye mer. Hva leter du etter?"
           primaryColor="#8b5cf6"
-          placeholder="Spør meg om noe..."
+          placeholder="F.eks. villa med basseng i Altea..."
         />
       </body>
     </html>
