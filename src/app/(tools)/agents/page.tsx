@@ -29,6 +29,13 @@ import {
   History,
   Plus,
   Trash2,
+  Globe,
+  User,
+  Eye,
+  ArrowLeft,
+  ExternalLink,
+  Phone,
+  AtSign,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -314,6 +321,31 @@ interface ConversationSummary {
   has_plan: boolean;
 }
 
+// --- Chatbot types ---
+
+interface ChatbotSession {
+  id: string;
+  brand_id: string;
+  visitor_name: string;
+  visitor_email: string;
+  visitor_phone: string;
+  page_url: string;
+  message_count: number;
+  is_lead: boolean;
+  created_at: string;
+  updated_at: string;
+  messages?: { role: string; content: string }[];
+}
+
+const CHATBOT_BRANDS = [
+  { id: "all", label: "Alle", color: "#6b7280" },
+  { id: "pinosoecolife", label: "Pinoso Ecolife", color: "#84cc16", domain: "pinosoecolife.com" },
+  { id: "zeneco", label: "Zen Eco Homes", color: "#10b981", domain: "zenecohomes.com" },
+  { id: "chatgenius", label: "ChatGenius", color: "#8b5cf6", domain: "chatgenius.com" },
+  { id: "donaanna", label: "Dona Anna", color: "#f59e0b", domain: "donaanna.com" },
+  { id: "freddyb", label: "Freddy Bremseth", color: "#3b82f6", domain: "freddybremseth.com" },
+];
+
 // --- Main Page ---
 
 export default function AgentsCommandCenter() {
@@ -332,6 +364,14 @@ export default function AgentsCommandCenter() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const executionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Chatbot conversations state
+  const [activeView, setActiveView] = useState<"victoria" | "chatbot">("victoria");
+  const [chatbotSessions, setChatbotSessions] = useState<ChatbotSession[]>([]);
+  const [chatbotBrandFilter, setChatbotBrandFilter] = useState("all");
+  const [chatbotLoading, setChatbotLoading] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<ChatbotSession | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
 
   // Fetch real recent actions from Supabase
   const fetchRecentActions = useCallback(async () => {
@@ -487,6 +527,46 @@ export default function AgentsCommandCenter() {
     setActivePlan(null);
     setShowHistory(false);
   }, []);
+
+  // ── Chatbot session fetching ──
+
+  const fetchChatbotSessions = useCallback(async (brand?: string) => {
+    setChatbotLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "50" });
+      if (brand && brand !== "all") params.set("brand", brand);
+      const res = await fetch(`/api/chatbot/sessions?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setChatbotSessions(data.sessions || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch chatbot sessions:", err);
+    }
+    setChatbotLoading(false);
+  }, []);
+
+  const loadSessionDetail = useCallback(async (sessionId: string) => {
+    setSessionLoading(true);
+    try {
+      const res = await fetch(`/api/chatbot/sessions?session_id=${sessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session) {
+          setSelectedSession(data.session);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load session:", err);
+    }
+    setSessionLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "chatbot") {
+      fetchChatbotSessions(chatbotBrandFilter);
+    }
+  }, [activeView, chatbotBrandFilter, fetchChatbotSessions]);
 
   // Auto-save when messages change
   useEffect(() => {
@@ -759,29 +839,65 @@ export default function AgentsCommandCenter() {
             </div>
             AI Kommandosenter
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Snakk med Victoria - din strategiske AI-assistent
-          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => { setActiveView("victoria"); setSelectedSession(null); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                activeView === "victoria"
+                  ? "bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Crown size={12} className="inline mr-1" />
+              Victoria AI
+            </button>
+            <button
+              onClick={() => setActiveView("chatbot")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                activeView === "chatbot"
+                  ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Globe size={12} className="inline mr-1" />
+              Chatbot-samtaler
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={startNewConversation}
-            className="gap-1.5"
-          >
-            <Plus size={14} />
-            <span className="hidden sm:inline">Ny samtale</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { setShowHistory(!showHistory); loadConversations(); }}
-            className="gap-1.5"
-          >
-            <History size={14} />
-            <span className="hidden sm:inline">Historikk</span>
-          </Button>
+          {activeView === "victoria" && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={startNewConversation}
+                className="gap-1.5"
+              >
+                <Plus size={14} />
+                <span className="hidden sm:inline">Ny samtale</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setShowHistory(!showHistory); loadConversations(); }}
+                className="gap-1.5"
+              >
+                <History size={14} />
+                <span className="hidden sm:inline">Historikk</span>
+              </Button>
+            </>
+          )}
+          {activeView === "chatbot" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchChatbotSessions(chatbotBrandFilter)}
+              className="gap-1.5"
+            >
+              <History size={14} />
+              Oppdater
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -796,8 +912,180 @@ export default function AgentsCommandCenter() {
 
       {/* Main Layout */}
       <div className="flex-1 flex gap-4 min-h-0">
-        {/* Left: Chat */}
+        {/* Left: Chat or Chatbot Sessions */}
         <div className="flex-[3] flex flex-col min-w-0">
+
+          {/* ═══ CHATBOT CONVERSATIONS VIEW ═══ */}
+          {activeView === "chatbot" && (
+            <Card className="flex-1 flex flex-col min-h-0 border-slate-700">
+              <CardContent className="flex-1 overflow-y-auto p-4">
+                {/* Brand filters */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {CHATBOT_BRANDS.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => { setChatbotBrandFilter(b.id); setSelectedSession(null); }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        chatbotBrandFilter === b.id
+                          ? "text-white shadow-lg"
+                          : "text-slate-400 bg-slate-800 hover:bg-slate-700"
+                      }`}
+                      style={chatbotBrandFilter === b.id ? { backgroundColor: b.color } : {}}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Selected session detail */}
+                {selectedSession ? (
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => setSelectedSession(null)}
+                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                    >
+                      <ArrowLeft size={12} />
+                      Tilbake til oversikt
+                    </button>
+
+                    {/* Session header */}
+                    <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                            <User size={14} className="text-emerald-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-white">
+                              {selectedSession.visitor_name || "Anonym besøkende"}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {CHATBOT_BRANDS.find((b) => b.id === selectedSession.brand_id)?.domain || selectedSession.brand_id}
+                            </p>
+                          </div>
+                        </div>
+                        {selectedSession.is_lead && (
+                          <Badge variant="success" className="text-[10px]">Lead</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-400">
+                        {selectedSession.visitor_email && (
+                          <span className="flex items-center gap-1"><AtSign size={10} />{selectedSession.visitor_email}</span>
+                        )}
+                        {selectedSession.visitor_phone && (
+                          <span className="flex items-center gap-1"><Phone size={10} />{selectedSession.visitor_phone}</span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Clock size={10} />
+                          {new Date(selectedSession.created_at).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        {selectedSession.page_url && (
+                          <a href={selectedSession.page_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-slate-200">
+                            <ExternalLink size={10} />
+                            Side
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Messages */}
+                    {sessionLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 size={20} className="animate-spin text-slate-400" />
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {(selectedSession.messages || []).length === 0 ? (
+                          <p className="text-sm text-slate-500 text-center py-8">Ingen meldinger lagret for denne samtalen</p>
+                        ) : (
+                          (selectedSession.messages || []).map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "items-start gap-3"}`}>
+                              {msg.role !== "user" && (
+                                <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                  <Bot size={12} className="text-emerald-400" />
+                                </div>
+                              )}
+                              <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                                msg.role === "user"
+                                  ? "bg-slate-700 text-slate-100"
+                                  : "bg-slate-800/80 text-slate-200"
+                              }`}>
+                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Session list */
+                  <>
+                    {chatbotLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 size={20} className="animate-spin text-slate-400" />
+                      </div>
+                    ) : chatbotSessions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Globe size={32} className="text-slate-600 mb-3" />
+                        <p className="text-sm text-slate-400">Ingen chatbot-samtaler funnet</p>
+                        <p className="text-xs text-slate-500 mt-1">Samtaler fra nettsidene dine vises her</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {chatbotSessions.map((session) => {
+                          const brandInfo = CHATBOT_BRANDS.find((b) => b.id === session.brand_id);
+                          return (
+                            <button
+                              key={session.id}
+                              onClick={() => loadSessionDetail(session.id)}
+                              className="w-full text-left p-3 rounded-lg border border-slate-700 hover:border-slate-600 bg-slate-800/50 hover:bg-slate-800 transition-all"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: (brandInfo?.color || "#6b7280") + "20" }}>
+                                  <User size={14} style={{ color: brandInfo?.color || "#6b7280" }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-slate-200">
+                                      {session.visitor_name || "Anonym besøkende"}
+                                    </span>
+                                    {session.is_lead && (
+                                      <Badge variant="success" className="text-[9px] px-1.5">Lead</Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <Badge variant="outline" className="text-[9px] px-1.5" style={{ borderColor: brandInfo?.color, color: brandInfo?.color }}>
+                                      {brandInfo?.domain || session.brand_id}
+                                    </Badge>
+                                    <span className="text-[10px] text-slate-500">
+                                      {session.message_count || 0} meldinger
+                                    </span>
+                                    <span className="text-[10px] text-slate-600">
+                                      {new Date(session.updated_at || session.created_at).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  </div>
+                                  {session.visitor_email && (
+                                    <p className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                                      <AtSign size={8} />{session.visitor_email}
+                                    </p>
+                                  )}
+                                </div>
+                                <Eye size={14} className="text-slate-600 flex-shrink-0 mt-1" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ═══ VICTORIA AI VIEW ═══ */}
+          {activeView === "victoria" && (
           <Card className="flex-1 flex flex-col min-h-0 border-slate-700">
             {/* Chat Messages */}
             <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -905,6 +1193,7 @@ export default function AgentsCommandCenter() {
               </p>
             </div>
           </Card>
+          )}
         </div>
 
         {/* Right: Agent Status Panel */}
