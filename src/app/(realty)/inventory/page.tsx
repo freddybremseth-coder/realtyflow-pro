@@ -32,6 +32,7 @@ interface Property {
   views: number;
   imageColor: string;
   imageUrl?: string;
+  gallery?: string[];
   externalUrl?: string;
   source: "manual" | "csv" | "xml" | "redsp";
   yearBuilt?: number;
@@ -197,14 +198,23 @@ function parseRedSPPropertyNode(node: Element): Property | null {
   const ref = getDirectChild(node, "ref") || getDirectChild(node, "id") || "";
 
   // Images: <images><image>...<url>https://...</url></image>...</images>
+  // Extract ALL images, not just the first one
   const imagesContainer = node.querySelector(":scope > images");
   let imageUrl = "";
+  const galleryUrls: string[] = [];
   if (imagesContainer) {
-    const firstImage = imagesContainer.querySelector(":scope > image");
-    if (firstImage) {
-      const imgUrl = firstImage.querySelector(":scope > url");
-      imageUrl = imgUrl?.textContent?.trim() || firstImage.textContent?.trim() || "";
-    }
+    const imageNodes = imagesContainer.querySelectorAll(":scope > image");
+    imageNodes.forEach((imgNode, idx) => {
+      const imgUrl = imgNode.querySelector(":scope > url");
+      const url = imgUrl?.textContent?.trim() || imgNode.textContent?.trim() || "";
+      if (url) {
+        if (idx === 0) {
+          imageUrl = url;
+        } else {
+          galleryUrls.push(url);
+        }
+      }
+    });
   }
 
   // URL: <url><no>https://...</no></url> or <url>https://...</url>
@@ -254,6 +264,7 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     views: 0,
     imageColor: gradients[Math.floor(Math.random() * gradients.length)],
     imageUrl: imageUrl || undefined,
+    gallery: galleryUrls.length > 0 ? galleryUrls : undefined,
     externalUrl: externalUrl || undefined,
     source: "redsp",
     ref: ref || undefined,
@@ -325,6 +336,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     views: Number(row.views) || 0,
     imageColor: String(row.image_color || row.imageColor || gradients[Math.floor(Math.random() * gradients.length)]),
     imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined,
     externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
     source: (row.source as Property["source"]) || "manual",
     yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
@@ -352,6 +364,7 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.views !== undefined) row.views = p.views;
   if (p.imageColor !== undefined) row.image_color = p.imageColor;
   if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
+  if (p.gallery !== undefined) row.gallery = p.gallery;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;

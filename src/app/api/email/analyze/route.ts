@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         .limit(100),
       supabase
         .from("properties")
-        .select("id, ref, price, property_type, location, bedrooms, bathrooms, built_area, title_no, title_en, title_es")
+        .select("id, ref, price, property_type, location, bedrooms, bathrooms, built_area, plot_size, pool, title_no, title_en, title_es, primary_image, gallery")
         .limit(200),
     ]);
 
@@ -114,7 +114,11 @@ export async function POST(req: NextRequest) {
         bedrooms: p.bedrooms,
         bathrooms: p.bathrooms,
         area: p.built_area,
+        plot_size: p.plot_size,
+        pool: p.pool,
         title: p.title_no || p.title_en || p.title_es,
+        primary_image: p.primary_image,
+        gallery: p.gallery,
       })),
       signature: emailConfig?.signature || `Med vennlig hilsen\n${emailConfig?.display_name || brand?.name || ""}`,
     });

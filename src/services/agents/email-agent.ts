@@ -332,11 +332,15 @@ Returner KUN gyldig JSON:
 REGLER:
 - Svar på samme språk som original e-post
 - Bruk brandets tone og stil
-- Inkluder relevante eiendommer med pris hvis forespørsel
+- Inkluder relevante eiendommer med pris, beliggenhet, soverom, bad, areal
+- VIKTIG: Hvis eiendommer har bilder (primary_image/gallery), inkluder dem i body_html som <img> tagger
+  - Vis minst forsidebildet og opptil 3 galleribilder per eiendom
+  - Bruk format: <img src="BILDE_URL" alt="Eiendomsbilde" style="max-width:100%;border-radius:8px;margin:8px 0" />
+  - Grupper eiendomsinfo i en pen HTML-seksjon med bilde øverst
 - Avslutt med konkret neste steg eller call-to-action
 - Inkluder signaturen
 - Ikke bruk markdown i body_text
-- body_html skal ha enkel formatering med <p>, <br>, <strong>
+- body_html skal ha profesjonell formatering med bilder, <p>, <br>, <strong>, inline CSS
 - Confidence 0-1 der 1 er veldig trygg på at svaret er passende`;
 
     return this.callAI(prompt, this.getSystemPrompt());
