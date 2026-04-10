@@ -323,9 +323,10 @@ export class NeuralBeatPipeline {
 
         localImagePaths = allPaths;
 
-        // Use first AI image as YouTube thumbnail (most unique), fallback to Airtable
+        // Pick a RANDOM AI image as YouTube thumbnail for variety (not always the first one)
         if (aiResult.images.length > 0) {
-          thumbnailBuffer = Buffer.from(aiResult.images[0].base64, 'base64');
+          const thumbIdx = Math.floor(Math.random() * aiResult.images.length);
+          thumbnailBuffer = Buffer.from(aiResult.images[thumbIdx].base64, 'base64');
           genreImageUrl = genreImages.length > 0 ? genreImages[0].imageUrl : null;
         } else if (genreImages.length > 0) {
           try {

@@ -405,6 +405,16 @@ export async function generateYouTubeSEO(
   privacyStatus: string;
   imagePrompt: string;
 }> {
+  // Rotate title formulas for variety - don't always use "Artist - Title [Genre]"
+  const titleFormulas = [
+    `"${options.title}" by Re-Master Freddy - make it mood-first: e.g. "Dreamy Chill Vibes | ${options.title} [${options.genre}]"`,
+    `"${options.title}" by Re-Master Freddy - make it use-case first: e.g. "Best ${options.mood} Music for Study & Focus | ${options.title}"`,
+    `"${options.title}" by Re-Master Freddy - make it emotional: e.g. "${options.title} - Feel the ${options.mood} Energy | Re-Master Freddy"`,
+    `"${options.title}" by Re-Master Freddy - make it trending: e.g. "${options.genre} Mix 2026 | ${options.title} (Official Visualizer)"`,
+    `"${options.title}" by Re-Master Freddy - make it playlist-style: e.g. "Late Night ${options.genre} | ${options.title} | Chill Beats to Relax"`,
+  ];
+  const titleFormula = titleFormulas[Math.floor(Math.random() * titleFormulas.length)];
+
   const prompt = `You are a YouTube SEO expert for music channels. Generate optimized YouTube metadata for this EDM/electronic track.
 
 Track: "${options.title}"
@@ -413,27 +423,30 @@ Genre: ${options.genre}
 Style: ${options.style}
 Mood: ${options.mood}
 
-IMPORTANT: The description must be COMPREHENSIVE and SEO-optimized (1500-2500 chars). Structure it as:
-1. Song intro: name, artist, genre, mood, what makes it special (2-3 sentences in English)
-2. Detect the primary language of the track title. Add a call-to-action in THAT language:
-   - English: "Enjoying this beat? Hit like and subscribe for daily chill beats! Comment what vibe you want to hear next!"
-   - Spanish: "Te gusta este beat? Dale a like y suscribete para beats chill diarios! Comenta que tipo de vibra quieres escuchar la proxima vez!"
-   - German: "Gefallt dir dieser Beat? Like das Video und abonniere den Kanal fur tagliche Chill-Beats! Schreib in die Kommentare, welchen Vibe du als Nachstes horen willst!"
-   - Italian: "Ti piace questo beat? Metti like e iscriviti per beat chill quotidiani! Commenta quale vibe vorresti sentire nel prossimo video!"
-   - Russian: "Ponravilsya bit? Stavj lajk i podpisyvajsya na ezhednevnye chill-bity! Pishi v kommentariyah, kakoj vajb hochesh uslyshat sleduyushchim!"
-   - French: "Tu aimes ce beat? Like et abonne-toi pour des beats chill quotidiens! Dis-moi en commentaire quelle ambiance tu veux entendre la prochaine fois!"
-   - Norwegian: "Liker du denne beaten? Trykk like og abonner for daglige chill beats! Kommenter hvilken stemning du vil hore neste!"
-   If title language is unclear, use English.
-3. ALWAYS add English CTA as well for international reach
-4. Timestamps: 00:00 Start, plus 2-3 estimated section timestamps
-5. About section: "Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity. Subscribe for daily drops!"
-6. Hashtags: #ReMasterFreddy #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific tags
+TITLE RULES (CRITICAL for CTR):
+- Use this formula variation: ${titleFormula}
+- Max 60 characters
+- NEVER just do "Artist - Title [Genre]" - that's boring and gets low CTR
+- Include a hook: mood, use-case (study, sleep, workout), or emotional trigger
+- Use | as separator, NOT just dashes
+- Include "Re-Master Freddy" but it doesn't have to be first
+- Add 1 relevant emoji if it fits naturally
+
+DESCRIPTION (1500-2500 chars, SEO-optimized):
+1. Song intro: name, artist, genre, mood, what makes it special (2-3 engaging sentences)
+2. Strong CTA: "🔔 Subscribe for daily ${options.genre} drops! 👍 Like if you feel the vibe! 💬 Comment your mood!"
+3. Detect the primary language of the track title and add a CTA in THAT language too
+4. ALWAYS add English CTA for international reach
+5. Timestamps: 00:00 Start, plus 2-3 estimated section timestamps
+6. About section: "Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI with human creativity."
+7. Playlist suggestion: "Add this to your ${options.mood} playlist!"
+8. Hashtags: #ReMasterFreddy #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific
 
 Respond with ONLY this JSON, no markdown:
 {
-  "title": "YouTube video title (catchy, includes artist name, max 60 chars)",
+  "title": "YouTube video title following the formula above (max 60 chars)",
   "description": "FULL YouTube description as described above",
-  "tags": ["tag1", "tag2", "...up to 20 relevant tags"],
+  "tags": ["tag1", "tag2", "...up to 20 relevant tags including trending search terms"],
   "categoryId": "10",
   "privacyStatus": "public",
   "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)"
@@ -467,10 +480,20 @@ Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI 
 🏷️ Tags
 #ReMasterFreddy #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
 
+  // Rotate fallback titles too
+  const fallbackTitles = [
+    `${options.title} | ${options.mood} ${options.genre} | Re-Master Freddy`,
+    `${options.mood} ${options.genre} Mix | ${options.title} - Re-Master Freddy`,
+    `Re-Master Freddy - ${options.title} | Best ${options.genre} 2026`,
+    `${options.title} (${options.style}) | ${options.genre} Vibes`,
+    `Feel the ${options.mood} | ${options.title} - Re-Master Freddy`,
+  ];
+  const fallbackTitle = fallbackTitles[Math.floor(Math.random() * fallbackTitles.length)];
+
   return {
-    title: `${options.artist || 'Re-Master Freddy'} - ${options.title} [${options.genre}]`,
+    title: fallbackTitle.slice(0, 60),
     description: fallbackDesc,
-    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', options.title],
+    tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', 'Lo-Fi', options.title, `${options.genre} 2026`, `${options.mood} music`, 'focus music', 'relaxing beats'],
     categoryId: '10',
     privacyStatus: 'public',
     imagePrompt: `Abstract neon visualization for ${options.genre} music, ${options.mood} mood, vibrant colors, no text`,
