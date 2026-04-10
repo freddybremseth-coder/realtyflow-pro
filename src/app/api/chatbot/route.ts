@@ -529,16 +529,24 @@ ${config.leadCapture ? `7. Etter 2-3 meldinger, styr ALLTID mot kontaktinfo. Bru
       }
     }
 
-    // Log conversation to Supabase
+    // Log conversation to Supabase (including full message history)
     if (supabase && sessionId) {
       try {
+        // Build full messages array for storage
+        const fullMessages = [
+          ...conversation,
+          { role: 'user' as const, content: message },
+          { role: 'assistant' as const, content: cleanResponse },
+        ];
+
         await supabase.from('chatbot_sessions').upsert({
           session_id: sessionId,
           brand_id: brandId || 'general',
           visitor_name: visitorInfo?.name || null,
           visitor_email: visitorInfo?.email || null,
           last_message: message,
-          message_count: (conversation.length + 2),
+          message_count: fullMessages.length,
+          messages: fullMessages,
           last_page: visitorInfo?.page || null,
           lead_captured: leadCaptured,
           updated_at: new Date().toISOString(),

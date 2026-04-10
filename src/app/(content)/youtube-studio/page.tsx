@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Youtube, Upload, Eye, Heart, MessageCircle, TrendingUp, Play, Clock,
-  Plus, X, Users, BarChart3, MousePointerClick,
+  Plus, X, Users, BarChart3, MousePointerClick, Loader2, RefreshCw, AlertCircle,
 } from "lucide-react";
 
 interface Video {
@@ -24,115 +24,17 @@ interface Video {
   publishedAt: string;
   duration: string;
   status: "published" | "draft" | "processing";
+  thumbnailUrl: string;
   thumbnailColor: string;
   tags: string[];
   visibility: "public" | "unlisted" | "private";
 }
 
-const initialVideos: Video[] = [
-  {
-    id: "V001",
-    title: "Villa med havutsikt i Altea - Virtuell tur | Soleada Eiendom",
-    description: "Oppdag denne fantastiske villaen med panoramisk havutsikt i Altea, Costa Blanca.",
-    channel: "Soleada",
-    brand: "Zen Eco Homes",
-    views: 12450,
-    likes: 342,
-    comments: 56,
-    ctr: 6.8,
-    publishedAt: "2026-03-10",
-    duration: "8:24",
-    status: "published",
-    thumbnailColor: "bg-gradient-to-br from-blue-600/40 to-cyan-500/30",
-    tags: ["eiendom", "spania", "costa blanca"],
-    visibility: "public",
-  },
-  {
-    id: "V002",
-    title: "Midnight Pulse - Neural Beat | Official Visualizer",
-    description: "AI-generert EDM-track med futuristisk visualizer. Produsert av Neural Beat.",
-    channel: "Neural Beat",
-    brand: "Neural Beat",
-    views: 8920,
-    likes: 567,
-    comments: 89,
-    ctr: 9.2,
-    publishedAt: "2026-03-08",
-    duration: "3:45",
-    status: "published",
-    thumbnailColor: "bg-gradient-to-br from-purple-600/40 to-pink-500/30",
-    tags: ["edm", "ai music", "neural beat"],
-    visibility: "public",
-  },
-  {
-    id: "V003",
-    title: "5 tips for å kjøpe eiendom i Spania som nordmann",
-    description: "Alt du trenger å vite før du kjøper bolig i Spania. Juridiske tips og fallgruver.",
-    channel: "Freddy Bremseth",
-    brand: "Freddy Bremseth",
-    views: 5230,
-    likes: 198,
-    comments: 34,
-    ctr: 5.4,
-    publishedAt: "2026-03-05",
-    duration: "12:15",
-    status: "published",
-    thumbnailColor: "bg-gradient-to-br from-amber-600/40 to-orange-500/30",
-    tags: ["boligkjøp", "spania", "tips"],
-    visibility: "public",
-  },
-  {
-    id: "V004",
-    title: "Zen Eco Homes - Bærekraftig luksus på Costa Blanca",
-    description: "Se vårt nye bærekraftige boligprosjekt med solceller og grønn teknologi.",
-    channel: "Zen Eco Homes",
-    brand: "Zen Eco Homes",
-    views: 0,
-    likes: 0,
-    comments: 0,
-    ctr: 0,
-    publishedAt: "",
-    duration: "6:30",
-    status: "draft",
-    thumbnailColor: "bg-gradient-to-br from-emerald-600/40 to-teal-500/30",
-    tags: ["bærekraft", "eco homes"],
-    visibility: "private",
-  },
-  {
-    id: "V005",
-    title: "Synthwave Dreams - Neural Beat | AI Visualizer",
-    description: "Ny synthwave-track generert av Neural Beat AI-pipeline.",
-    channel: "Neural Beat",
-    brand: "Neural Beat",
-    views: 0,
-    likes: 0,
-    comments: 0,
-    ctr: 0,
-    publishedAt: "",
-    duration: "4:12",
-    status: "processing",
-    thumbnailColor: "bg-gradient-to-br from-indigo-600/40 to-violet-500/30",
-    tags: ["synthwave", "ai music"],
-    visibility: "unlisted",
-  },
-  {
-    id: "V006",
-    title: "ChatGenius Demo - AI Kundeservice på 5 minutter",
-    description: "Se hvor enkelt det er å sette opp AI-drevet kundeservice med ChatGenius.",
-    channel: "ChatGenius",
-    brand: "ChatGenius.pro",
-    views: 3100,
-    likes: 124,
-    comments: 18,
-    ctr: 7.1,
-    publishedAt: "2026-02-28",
-    duration: "5:02",
-    status: "published",
-    thumbnailColor: "bg-gradient-to-br from-violet-600/40 to-purple-500/30",
-    tags: ["ai", "kundeservice", "chatbot"],
-    visibility: "public",
-  },
-];
+interface ChannelStats {
+  subscriberCount: string;
+  viewCount: string;
+  videoCount: string;
+}
 
 const brandOptions = ["Zen Eco Homes", "Soleada.no", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat"];
 
@@ -142,8 +44,23 @@ const statusConfig = {
   processing: { label: "Behandles", variant: "warning" as const },
 };
 
+function parseDuration(iso: string): string {
+  if (!iso) return "0:00";
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return "0:00";
+  const h = parseInt(m[1] || "0");
+  const min = parseInt(m[2] || "0");
+  const sec = parseInt(m[3] || "0");
+  if (h > 0) return `${h}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
 export default function YouTubeStudioPage() {
-  const [videos, setVideos] = useState<Video[]>(initialVideos);
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [channelStats, setChannelStats] = useState<ChannelStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [configured, setConfigured] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [showUpload, setShowUpload] = useState(false);
   const [expandedVideo, setExpandedVideo] = useState<string | null>(null);
@@ -155,8 +72,64 @@ export default function YouTubeStudioPage() {
     visibility: "public" as "public" | "unlisted" | "private",
   });
 
+  const fetchYouTubeData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/youtube");
+      if (!res.ok) throw new Error("Kunne ikke hente YouTube-data");
+      const data = await res.json();
+
+      if (!data.configured) {
+        setConfigured(false);
+        setLoading(false);
+        return;
+      }
+
+      setConfigured(true);
+      if (data.channel) {
+        setChannelStats({
+          subscriberCount: String(data.channel.subscriberCount || 0),
+          viewCount: String(data.channel.viewCount || 0),
+          videoCount: String(data.channel.videoCount || 0),
+        });
+      }
+
+      if (data.videos && Array.isArray(data.videos)) {
+        const mapped: Video[] = data.videos.map((v: Record<string, unknown>) => ({
+          id: (v.id as string) || "",
+          title: (v.title as string) || "",
+          description: (v.description as string) || "",
+          channel: "",
+          brand: "",
+          views: Number(v.viewCount || 0),
+          likes: Number(v.likeCount || 0),
+          comments: Number(v.commentCount || 0),
+          ctr: 0,
+          publishedAt: v.publishedAt
+            ? new Date(v.publishedAt as string).toLocaleDateString("nb-NO")
+            : "",
+          duration: "",
+          status: "published" as const,
+          thumbnailUrl: (v.thumbnailUrl as string) || "",
+          thumbnailColor: "bg-gradient-to-br from-slate-600/40 to-slate-500/30",
+          tags: Array.isArray(v.tags) ? (v.tags as string[]).slice(0, 10) : [],
+          visibility: "public" as const,
+        }));
+        setVideos(mapped);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ukjent feil");
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchYouTubeData();
+  }, [fetchYouTubeData]);
+
   const publishedVideos = videos.filter((v) => v.status === "published");
-  const totalViews = publishedVideos.reduce((s, v) => s + v.views, 0);
+  const totalViews = channelStats ? parseInt(channelStats.viewCount, 10) : publishedVideos.reduce((s, v) => s + v.views, 0);
   const totalLikes = publishedVideos.reduce((s, v) => s + v.likes, 0);
   const avgEngagement = publishedVideos.length > 0
     ? ((totalLikes / Math.max(totalViews, 1)) * 100).toFixed(1)
@@ -171,12 +144,6 @@ export default function YouTubeStudioPage() {
 
   const addVideo = () => {
     if (!newVideo.title) return;
-    const colors = [
-      "bg-gradient-to-br from-rose-600/40 to-red-500/30",
-      "bg-gradient-to-br from-sky-600/40 to-blue-500/30",
-      "bg-gradient-to-br from-lime-600/40 to-green-500/30",
-      "bg-gradient-to-br from-fuchsia-600/40 to-pink-500/30",
-    ];
     const video: Video = {
       id: `V${Date.now()}`,
       title: newVideo.title,
@@ -190,7 +157,8 @@ export default function YouTubeStudioPage() {
       publishedAt: "",
       duration: "0:00",
       status: "draft",
-      thumbnailColor: colors[Math.floor(Math.random() * colors.length)],
+      thumbnailUrl: "",
+      thumbnailColor: "bg-gradient-to-br from-rose-600/40 to-red-500/30",
       tags: newVideo.tags.split(",").map((t) => t.trim()).filter(Boolean),
       visibility: newVideo.visibility,
     };
@@ -199,20 +167,35 @@ export default function YouTubeStudioPage() {
     setShowUpload(false);
   };
 
-  const publishVideo = (id: string) => {
-    setVideos((prev) =>
-      prev.map((v) =>
-        v.id === id
-          ? { ...v, status: "published" as const, publishedAt: new Date().toISOString().split("T")[0], visibility: "public" }
-          : v
-      )
-    );
-  };
-
   const deleteVideo = (id: string) => {
     setVideos((prev) => prev.filter((v) => v.id !== id));
     if (expandedVideo === id) setExpandedVideo(null);
   };
+
+  // Not configured state
+  if (!loading && !configured) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <Youtube className="text-red-400" size={28} />
+              YouTube Studio
+            </h1>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="p-12 text-center">
+            <AlertCircle size={48} className="mx-auto text-amber-400 mb-4" />
+            <h2 className="text-lg font-semibold text-white mb-2">YouTube er ikke konfigurert</h2>
+            <p className="text-sm text-slate-400 max-w-md mx-auto">
+              Gå til Innstillinger og legg inn YouTube API-nøkler og refresh token for å koble til YouTube-kanalen din.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -227,11 +210,27 @@ export default function YouTubeStudioPage() {
             Administrer videoer, analyser ytelse og last opp nytt innhold
           </p>
         </div>
-        <Button onClick={() => setShowUpload(true)}>
-          <Upload size={16} className="mr-2" />
-          Last opp video
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchYouTubeData} disabled={loading}>
+            <RefreshCw size={14} className={`mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Oppdater
+          </Button>
+          <Button onClick={() => setShowUpload(true)}>
+            <Upload size={16} className="mr-2" />
+            Last opp video
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <Card className="border-red-500/30">
+          <CardContent className="p-4 flex items-center gap-3">
+            <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-300">{error}</p>
+            <Button variant="ghost" size="sm" onClick={fetchYouTubeData} className="ml-auto">Prøv igjen</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Upload Modal */}
       {showUpload && (
@@ -316,175 +315,231 @@ export default function YouTubeStudioPage() {
       )}
 
       {/* Channel Overview Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Abonnenter", value: "1 240", icon: Users, color: "text-emerald-400" },
-          { label: "Totale visninger", value: totalViews.toLocaleString("nb-NO"), icon: Eye, color: "text-blue-400" },
-          { label: "Snitt engasjement", value: `${avgEngagement}%`, icon: TrendingUp, color: "text-amber-400" },
-          { label: "Videoer", value: videos.length.toString(), icon: Play, color: "text-red-400" },
-        ].map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">{stat.label}</p>
-                  <p className="text-xl font-bold text-white mt-0.5">{stat.value}</p>
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-3">
+                <div className="animate-pulse space-y-2">
+                  <div className="h-3 bg-slate-700 rounded w-16" />
+                  <div className="h-6 bg-slate-700 rounded w-12" />
                 </div>
-                <stat.icon size={20} className={`${stat.color} opacity-60`} />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: "Abonnenter",
+              value: channelStats ? parseInt(channelStats.subscriberCount).toLocaleString("nb-NO") : "—",
+              icon: Users,
+              color: "text-emerald-400",
+            },
+            {
+              label: "Totale visninger",
+              value: totalViews.toLocaleString("nb-NO"),
+              icon: Eye,
+              color: "text-blue-400",
+            },
+            {
+              label: "Snitt engasjement",
+              value: `${avgEngagement}%`,
+              icon: TrendingUp,
+              color: "text-amber-400",
+            },
+            {
+              label: "Videoer",
+              value: channelStats ? parseInt(channelStats.videoCount).toLocaleString("nb-NO") : videos.length.toString(),
+              icon: Play,
+              color: "text-red-400",
+            },
+          ].map((stat) => (
+            <Card key={stat.label}>
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">{stat.label}</p>
+                    <p className="text-xl font-bold text-white mt-0.5">{stat.value}</p>
+                  </div>
+                  <stat.icon size={20} className={`${stat.color} opacity-60`} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Tabs */}
-      <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="all">Alle videoer ({videos.length})</TabsTrigger>
-          <TabsTrigger value="published">Publiserte ({videos.filter((v) => v.status === "published").length})</TabsTrigger>
-          <TabsTrigger value="draft">Kladder ({videos.filter((v) => v.status === "draft").length})</TabsTrigger>
-        </TabsList>
+      {loading ? (
+        <Card>
+          <CardContent className="p-12 flex flex-col items-center justify-center">
+            <Loader2 size={32} className="text-red-400 animate-spin mb-3" />
+            <p className="text-sm text-slate-400">Henter videoer fra YouTube...</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="all">Alle videoer ({videos.length})</TabsTrigger>
+            <TabsTrigger value="published">Publiserte ({videos.filter((v) => v.status === "published").length})</TabsTrigger>
+            <TabsTrigger value="draft">Kladder ({videos.filter((v) => v.status === "draft").length})</TabsTrigger>
+          </TabsList>
 
-        {["all", "published", "draft"].map((tab) => (
-          <TabsContent key={tab} value={tab}>
-            <div className="space-y-3">
-              {filteredVideos.length === 0 ? (
-                <p className="text-slate-500 text-sm py-8 text-center">Ingen videoer i denne kategorien</p>
-              ) : (
-                filteredVideos.map((video) => {
-                  const config = statusConfig[video.status];
-                  const isExpanded = expandedVideo === video.id;
-                  return (
-                    <Card key={video.id} className="hover:border-slate-500 transition-all">
-                      <CardContent className="p-4">
-                        <div className="flex gap-4">
-                          {/* Thumbnail */}
-                          <div
-                            className={`w-40 h-24 rounded-lg ${video.thumbnailColor} flex-shrink-0 flex items-center justify-center relative cursor-pointer`}
-                            onClick={() => setExpandedVideo(isExpanded ? null : video.id)}
-                          >
-                            <Play size={24} className="text-white/40" />
-                            <span className="absolute bottom-1 right-1 text-[10px] bg-black/70 text-white px-1 rounded">
-                              {video.duration}
-                            </span>
+          {["all", "published", "draft"].map((tab) => (
+            <TabsContent key={tab} value={tab}>
+              <div className="space-y-3">
+                {filteredVideos.length === 0 ? (
+                  <p className="text-slate-500 text-sm py-8 text-center">Ingen videoer i denne kategorien</p>
+                ) : (
+                  filteredVideos.map((video) => {
+                    const config = statusConfig[video.status];
+                    const isExpanded = expandedVideo === video.id;
+                    return (
+                      <Card key={video.id} className="hover:border-slate-500 transition-all">
+                        <CardContent className="p-4">
+                          <div className="flex gap-4">
+                            {/* Thumbnail */}
+                            <div
+                              className="w-40 h-24 rounded-lg flex-shrink-0 relative cursor-pointer overflow-hidden bg-slate-800"
+                              onClick={() => setExpandedVideo(isExpanded ? null : video.id)}
+                            >
+                              {video.thumbnailUrl ? (
+                                <img
+                                  src={video.thumbnailUrl}
+                                  alt={video.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className={`w-full h-full ${video.thumbnailColor} flex items-center justify-center`}>
+                                  <Play size={24} className="text-white/40" />
+                                </div>
+                              )}
+                              <span className="absolute bottom-1 right-1 text-[10px] bg-black/80 text-white px-1 rounded">
+                                {video.duration}
+                              </span>
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <h3
+                                  className="text-sm font-semibold text-slate-100 line-clamp-2 cursor-pointer hover:text-white"
+                                  onClick={() => setExpandedVideo(isExpanded ? null : video.id)}
+                                >
+                                  {video.title}
+                                </h3>
+                                <Badge variant={config.variant} className="text-[10px] flex-shrink-0">
+                                  {config.label}
+                                </Badge>
+                              </div>
+
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-xs text-slate-500">{video.channel}</p>
+                                {video.tags.slice(0, 3).map((tag) => (
+                                  <Badge key={tag} variant="outline" className="text-[9px] px-1.5 py-0">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-4 mt-3 text-xs text-slate-400">
+                                <span className="flex items-center gap-1">
+                                  <Eye size={12} />
+                                  {video.views.toLocaleString("nb-NO")}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Heart size={12} />
+                                  {video.likes.toLocaleString("nb-NO")}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <MessageCircle size={12} />
+                                  {video.comments}
+                                </span>
+                                {video.publishedAt && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock size={12} />
+                                    {video.publishedAt}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-col gap-1.5 flex-shrink-0">
+                              <a
+                                href={`https://youtube.com/watch?v=${video.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center rounded-md text-xs h-8 px-3 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                              >
+                                <Youtube size={12} className="mr-1" />
+                                Se på YT
+                              </a>
+                              <Button size="sm" variant="ghost" className="text-xs" onClick={() => setExpandedVideo(isExpanded ? null : video.id)}>
+                                <BarChart3 size={12} className="mr-1" />
+                                Analyse
+                              </Button>
+                            </div>
                           </div>
 
-                          {/* Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2">
-                              <h3
-                                className="text-sm font-semibold text-slate-100 line-clamp-2 cursor-pointer hover:text-white"
-                                onClick={() => setExpandedVideo(isExpanded ? null : video.id)}
-                              >
-                                {video.title}
-                              </h3>
-                              <Badge variant={config.variant} className="text-[10px] flex-shrink-0">
-                                {config.label}
-                              </Badge>
-                            </div>
-
-                            <div className="flex items-center gap-2 mt-1">
-                              <p className="text-xs text-slate-500">{video.channel}</p>
-                              {video.tags.slice(0, 3).map((tag) => (
-                                <Badge key={tag} variant="outline" className="text-[9px] px-1.5 py-0">
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-
-                            <div className="flex items-center gap-4 mt-3 text-xs text-slate-400">
-                              <span className="flex items-center gap-1">
-                                <Eye size={12} />
-                                {video.views.toLocaleString("nb-NO")}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Heart size={12} />
-                                {video.likes.toLocaleString("nb-NO")}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <MessageCircle size={12} />
-                                {video.comments}
-                              </span>
-                              {video.publishedAt && (
-                                <span className="flex items-center gap-1">
-                                  <Clock size={12} />
-                                  {video.publishedAt}
-                                </span>
+                          {/* Expanded Analytics */}
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-slate-700/50">
+                              <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Videoanalyse</h4>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="rounded-lg bg-slate-800/60 p-3">
+                                  <div className="flex items-center gap-1.5 text-blue-400 mb-1">
+                                    <Eye size={14} />
+                                    <span className="text-[10px] uppercase tracking-wider">Visninger</span>
+                                  </div>
+                                  <p className="text-lg font-bold text-white">{video.views.toLocaleString("nb-NO")}</p>
+                                </div>
+                                <div className="rounded-lg bg-slate-800/60 p-3">
+                                  <div className="flex items-center gap-1.5 text-rose-400 mb-1">
+                                    <Heart size={14} />
+                                    <span className="text-[10px] uppercase tracking-wider">Likes</span>
+                                  </div>
+                                  <p className="text-lg font-bold text-white">{video.likes.toLocaleString("nb-NO")}</p>
+                                </div>
+                                <div className="rounded-lg bg-slate-800/60 p-3">
+                                  <div className="flex items-center gap-1.5 text-amber-400 mb-1">
+                                    <MessageCircle size={14} />
+                                    <span className="text-[10px] uppercase tracking-wider">Kommentarer</span>
+                                  </div>
+                                  <p className="text-lg font-bold text-white">{video.comments}</p>
+                                </div>
+                                <div className="rounded-lg bg-slate-800/60 p-3">
+                                  <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
+                                    <TrendingUp size={14} />
+                                    <span className="text-[10px] uppercase tracking-wider">Engasjement</span>
+                                  </div>
+                                  <p className="text-lg font-bold text-white">
+                                    {video.views > 0 ? ((video.likes / video.views) * 100).toFixed(1) : "0"}%
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-3 line-clamp-3">{video.description}</p>
+                              {video.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {video.tags.map((tag) => (
+                                    <Badge key={tag} variant="outline" className="text-[9px]">{tag}</Badge>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex flex-col gap-1.5 flex-shrink-0">
-                            {video.status === "draft" && (
-                              <Button size="sm" onClick={() => publishVideo(video.id)} className="text-xs">
-                                <Youtube size={12} className="mr-1" />
-                                Publiser
-                              </Button>
-                            )}
-                            {video.status === "processing" && (
-                              <Badge variant="warning" className="text-[10px] animate-pulse">
-                                <Clock size={10} className="mr-1" />
-                                Behandler...
-                              </Badge>
-                            )}
-                            <Button size="sm" variant="ghost" className="text-xs" onClick={() => setExpandedVideo(isExpanded ? null : video.id)}>
-                              <BarChart3 size={12} className="mr-1" />
-                              Analyse
-                            </Button>
-                            <Button size="sm" variant="ghost" className="text-xs text-red-400 hover:text-red-300" onClick={() => deleteVideo(video.id)}>
-                              <X size={12} className="mr-1" />
-                              Slett
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Expanded Analytics */}
-                        {isExpanded && (
-                          <div className="mt-4 pt-4 border-t border-slate-700/50">
-                            <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Videoanalyse</h4>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                              <div className="rounded-lg bg-slate-800/60 p-3">
-                                <div className="flex items-center gap-1.5 text-blue-400 mb-1">
-                                  <Eye size={14} />
-                                  <span className="text-[10px] uppercase tracking-wider">Visninger</span>
-                                </div>
-                                <p className="text-lg font-bold text-white">{video.views.toLocaleString("nb-NO")}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-800/60 p-3">
-                                <div className="flex items-center gap-1.5 text-rose-400 mb-1">
-                                  <Heart size={14} />
-                                  <span className="text-[10px] uppercase tracking-wider">Likes</span>
-                                </div>
-                                <p className="text-lg font-bold text-white">{video.likes.toLocaleString("nb-NO")}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-800/60 p-3">
-                                <div className="flex items-center gap-1.5 text-amber-400 mb-1">
-                                  <MessageCircle size={14} />
-                                  <span className="text-[10px] uppercase tracking-wider">Kommentarer</span>
-                                </div>
-                                <p className="text-lg font-bold text-white">{video.comments}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-800/60 p-3">
-                                <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
-                                  <MousePointerClick size={14} />
-                                  <span className="text-[10px] uppercase tracking-wider">CTR</span>
-                                </div>
-                                <p className="text-lg font-bold text-white">{video.ctr}%</p>
-                              </div>
-                            </div>
-                            <p className="text-xs text-slate-500 mt-3">{video.description}</p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-          </TabsContent>
-        ))}
-      </Tabs>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
     </div>
   );
 }

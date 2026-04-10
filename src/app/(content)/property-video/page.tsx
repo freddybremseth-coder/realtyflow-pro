@@ -1,0 +1,556 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Youtube, Upload, Eye, Home, MapPin, Bed, Bath, Maximize, Euro,
+  Loader2, Sparkles, ChevronLeft, ChevronRight, Play, Pause, Globe,
+  Image as ImageIcon, Copy, Check, ExternalLink, Tag,
+} from "lucide-react";
+import { BRANDS } from "@/lib/constants";
+import { createClient } from "@supabase/supabase-js";
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+interface Property {
+  id: string;
+  ref: string;
+  title: string;
+  description: string;
+  location: string;
+  town: string;
+  price: number;
+  property_type: string;
+  bedrooms: number;
+  bathrooms: number;
+  built_area: number;
+  plot_size: number;
+  pool: boolean;
+  garage: boolean;
+  year_built: number;
+  energy_rating: string;
+  primary_image: string;
+  gallery: string[];
+  status: string;
+}
+
+const realEstateBrands = BRANDS.filter((b) => b.type === "real_estate");
+
+export default function PropertyVideoPage() {
+  const [selectedBrand, setSelectedBrand] = useState(realEstateBrands[0]?.id || "");
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [loadingProperties, setLoadingProperties] = useState(false);
+
+  // SEO generation
+  const [seoTitle, setSeoTitle] = useState("");
+  const [seoDescription, setSeoDescription] = useState("");
+  const [seoTags, setSeoTags] = useState<string[]>([]);
+  const [seoLanguage, setSeoLanguage] = useState("en");
+  const [generatingSeo, setGeneratingSeo] = useState(false);
+
+  // Slideshow preview
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const slideTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Upload
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ videoId: string; url: string } | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const brand = BRANDS.find((b) => b.id === selectedBrand);
+
+  const fetchProperties = useCallback(async () => {
+    setLoadingProperties(true);
+    const supabase = getSupabase();
+    if (!supabase) { setLoadingProperties(false); return; }
+
+    try {
+      const { data } = await supabase
+        .from("properties")
+        .select("id, ref, title, description, location, town, price, property_type, bedrooms, bathrooms, built_area, plot_size, pool, garage, year_built, energy_rating, primary_image, gallery, status")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      setProperties((data || []) as Property[]);
+    } catch (err) {
+      console.error("Failed to fetch properties:", err);
+    }
+    setLoadingProperties(false);
+  }, []);
+
+  useEffect(() => {
+    fetchProperties();
+  }, [fetchProperties]);
+
+  const allImages = selectedProperty
+    ? [selectedProperty.primary_image, ...(selectedProperty.gallery || [])].filter(Boolean)
+    : [];
+
+  // Slideshow auto-play
+  useEffect(() => {
+    if (isPlaying && allImages.length > 1) {
+      slideTimer.current = setInterval(() => {
+        setCurrentSlide((prev) => (prev + 1) % allImages.length);
+      }, 3000);
+    }
+    return () => {
+      if (slideTimer.current) clearInterval(slideTimer.current);
+    };
+  }, [isPlaying, allImages.length]);
+
+  const generateSeo = async () => {
+    if (!selectedProperty || !brand) return;
+    setGeneratingSeo(true);
+    try {
+      const res = await fetch("/api/property-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_seo",
+          property: selectedProperty,
+          brand: { name: brand.name, website: brand.website },
+          language: seoLanguage,
+        }),
+      });
+      const data = await res.json();
+      if (data.title) setSeoTitle(data.title);
+      if (data.description) setSeoDescription(data.description);
+      if (data.tags) setSeoTags(data.tags);
+    } catch (err) {
+      console.error("Failed to generate SEO:", err);
+    }
+    setGeneratingSeo(false);
+  };
+
+  const uploadToYouTube = async () => {
+    if (!videoFile || !seoTitle) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", videoFile);
+      formData.append("title", seoTitle);
+      formData.append("description", seoDescription);
+      formData.append("tags", seoTags.join(","));
+      formData.append("categoryId", "22"); // People & Blogs / Real Estate
+      formData.append("privacyStatus", "private"); // Start as private so user can review
+
+      const res = await fetch("/api/youtube", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.videoId) {
+        setUploadResult({ videoId: data.videoId, url: data.youtubeUrl || `https://youtube.com/watch?v=${data.videoId}` });
+      }
+    } catch (err) {
+      console.error("Upload failed:", err);
+    }
+    setUploading(false);
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(field);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const selectProperty = (p: Property) => {
+    setSelectedProperty(p);
+    setCurrentSlide(0);
+    setIsPlaying(false);
+    setSeoTitle("");
+    setSeoDescription("");
+    setSeoTags([]);
+    setUploadResult(null);
+    setVideoFile(null);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-red-500/20 flex items-center justify-center">
+            <Youtube className="text-red-400" size={20} />
+          </div>
+          Eiendomsvideo for YouTube
+        </h1>
+        <p className="text-sm text-slate-400 mt-1">
+          Velg eiendom, generer SEO-innhold, og publiser på YouTube
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: Property selection */}
+        <div className="space-y-4">
+          {/* Brand filter */}
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Velg brand</p>
+              <div className="flex flex-wrap gap-2">
+                {realEstateBrands.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setSelectedBrand(b.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                      selectedBrand === b.id
+                        ? "text-white shadow-lg"
+                        : "text-slate-400 bg-slate-800 hover:bg-slate-700"
+                    }`}
+                    style={selectedBrand === b.id ? { backgroundColor: b.color } : {}}
+                  >
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Property list */}
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Velg eiendom ({properties.length})
+              </p>
+              {loadingProperties ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={20} className="animate-spin text-slate-400" />
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                  {properties.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4 text-center">Ingen eiendommer funnet</p>
+                  ) : (
+                    properties.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => selectProperty(p)}
+                        className={`w-full text-left p-3 rounded-lg border transition-all ${
+                          selectedProperty?.id === p.id
+                            ? "border-primary-400 bg-primary-400/5"
+                            : "border-slate-700 hover:border-slate-600 bg-slate-800/50"
+                        }`}
+                      >
+                        <div className="flex gap-3">
+                          {p.primary_image ? (
+                            <img src={p.primary_image} alt="" className="w-16 h-12 rounded object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-16 h-12 rounded bg-slate-700 flex items-center justify-center flex-shrink-0">
+                              <Home size={16} className="text-slate-500" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-200 truncate">{p.title || p.ref || "Eiendom"}</p>
+                            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                              <span className="flex items-center gap-0.5"><MapPin size={10} />{p.town || p.location}</span>
+                              <span>€{Number(p.price || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-600">
+                              {p.bedrooms > 0 && <span>{p.bedrooms} sov</span>}
+                              {p.built_area > 0 && <span>{p.built_area}m²</span>}
+                              {(p.gallery?.length || 0) > 0 && (
+                                <span className="flex items-center gap-0.5"><ImageIcon size={8} />{(p.gallery?.length || 0) + (p.primary_image ? 1 : 0)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Center: Preview + SEO */}
+        <div className="lg:col-span-2 space-y-4">
+          {!selectedProperty ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <Home size={48} className="mx-auto text-slate-600 mb-4" />
+                <h2 className="text-lg font-semibold text-slate-400">Velg en eiendom</h2>
+                <p className="text-sm text-slate-500 mt-1">Velg eiendom fra listen til venstre for å starte</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Image Slideshow Preview */}
+              <Card>
+                <CardContent className="p-0 relative">
+                  <div className="aspect-video bg-black rounded-t-lg overflow-hidden relative">
+                    {allImages.length > 0 ? (
+                      <>
+                        <img
+                          src={allImages[currentSlide]}
+                          alt={`Slide ${currentSlide + 1}`}
+                          className="w-full h-full object-cover transition-opacity duration-500"
+                        />
+                        {/* Text overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30">
+                          {/* Top: Brand */}
+                          <div className="absolute top-4 left-4 flex items-center gap-2">
+                            <div className="px-3 py-1 rounded-full text-xs font-bold text-white" style={{ backgroundColor: brand?.color || "#06b6d4" }}>
+                              {brand?.name}
+                            </div>
+                          </div>
+                          {/* Top right: website */}
+                          <div className="absolute top-4 right-4">
+                            <div className="flex items-center gap-1 text-xs text-white/80 bg-black/40 px-2 py-1 rounded">
+                              <Globe size={10} />
+                              {brand?.website?.replace("https://", "")}
+                            </div>
+                          </div>
+                          {/* Bottom: Property info */}
+                          <div className="absolute bottom-0 left-0 right-0 p-4">
+                            <h3 className="text-lg font-bold text-white mb-2 drop-shadow-lg">
+                              {selectedProperty.title || `${selectedProperty.property_type} in ${selectedProperty.town}`}
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-3 text-sm text-white/90">
+                              <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded">
+                                <Euro size={14} className="text-emerald-400" />
+                                {Number(selectedProperty.price || 0).toLocaleString()}
+                              </span>
+                              {selectedProperty.bedrooms > 0 && (
+                                <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded">
+                                  <Bed size={14} className="text-blue-400" />
+                                  {selectedProperty.bedrooms}
+                                </span>
+                              )}
+                              {selectedProperty.bathrooms > 0 && (
+                                <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded">
+                                  <Bath size={14} className="text-cyan-400" />
+                                  {selectedProperty.bathrooms}
+                                </span>
+                              )}
+                              {selectedProperty.built_area > 0 && (
+                                <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded">
+                                  <Maximize size={14} className="text-amber-400" />
+                                  {selectedProperty.built_area}m²
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded">
+                                <MapPin size={14} className="text-red-400" />
+                                {selectedProperty.town || selectedProperty.location}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center">
+                          <ImageIcon size={48} className="mx-auto text-slate-600 mb-2" />
+                          <p className="text-sm text-slate-500">Ingen bilder tilgjengelig</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Slideshow controls */}
+                  {allImages.length > 1 && (
+                    <div className="flex items-center justify-between px-4 py-2 bg-slate-900/50">
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setCurrentSlide((prev) => (prev - 1 + allImages.length) % allImages.length)}>
+                          <ChevronLeft size={14} />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setIsPlaying(!isPlaying)}>
+                          {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setCurrentSlide((prev) => (prev + 1) % allImages.length)}>
+                          <ChevronRight size={14} />
+                        </Button>
+                      </div>
+                      <span className="text-xs text-slate-400">{currentSlide + 1} / {allImages.length} bilder</span>
+                      {/* Slide indicators */}
+                      <div className="flex gap-1">
+                        {allImages.slice(0, 10).map((_, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setCurrentSlide(idx)}
+                            className={`w-2 h-2 rounded-full transition-colors ${currentSlide === idx ? "bg-primary-400" : "bg-slate-600"}`}
+                          />
+                        ))}
+                        {allImages.length > 10 && <span className="text-[10px] text-slate-500">+{allImages.length - 10}</span>}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* SEO Generation */}
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Sparkles size={14} className="text-amber-400" />
+                      YouTube SEO & Metadata
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={seoLanguage}
+                        onChange={(e) => setSeoLanguage(e.target.value)}
+                        className="h-8 rounded-md border border-slate-600 bg-slate-800 px-2 text-xs text-slate-100"
+                      >
+                        <option value="en">English</option>
+                        <option value="no">Norsk</option>
+                        <option value="es">Español</option>
+                        <option value="de">Deutsch</option>
+                      </select>
+                      <Button size="sm" onClick={generateSeo} disabled={generatingSeo}>
+                        {generatingSeo ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Sparkles size={14} className="mr-1" />}
+                        Generer SEO
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-400">Tittel</label>
+                      {seoTitle && (
+                        <button onClick={() => copyToClipboard(seoTitle, "title")} className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                          {copied === "title" ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                          Kopier
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      value={seoTitle}
+                      onChange={(e) => setSeoTitle(e.target.value)}
+                      placeholder="Klikk 'Generer SEO' for å lage tittel..."
+                      className="text-sm"
+                    />
+                    <p className="text-[10px] text-slate-600 mt-0.5">{seoTitle.length}/70 tegn</p>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-400">Beskrivelse</label>
+                      {seoDescription && (
+                        <button onClick={() => copyToClipboard(seoDescription, "desc")} className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                          {copied === "desc" ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                          Kopier
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={seoDescription}
+                      onChange={(e) => setSeoDescription(e.target.value)}
+                      placeholder="AI-generert beskrivelse med CTA..."
+                      className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-40 resize-none"
+                    />
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-400">Tags</label>
+                      {seoTags.length > 0 && (
+                        <button onClick={() => copyToClipboard(seoTags.join(", "), "tags")} className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                          {copied === "tags" ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                          Kopier
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 rounded-lg border border-slate-600 bg-slate-800/50">
+                      {seoTags.length > 0 ? (
+                        seoTags.map((tag, i) => (
+                          <Badge key={i} variant="outline" className="text-[10px] gap-1">
+                            <Tag size={8} />
+                            {tag}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-600">AI-genererte tags vises her...</span>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Upload to YouTube */}
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Upload size={14} className="text-red-400" />
+                    Last opp til YouTube
+                  </h3>
+
+                  {/* Video file selector */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Videofil</label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                      <div className="w-full h-20 rounded-lg border-2 border-dashed border-slate-600 bg-slate-800/50 flex items-center justify-center hover:border-slate-500 transition-colors">
+                        {videoFile ? (
+                          <div className="text-center">
+                            <Play size={16} className="mx-auto text-emerald-400 mb-1" />
+                            <p className="text-xs text-slate-300">{videoFile.name}</p>
+                            <p className="text-[10px] text-slate-500">{(videoFile.size / (1024 * 1024)).toFixed(1)} MB</p>
+                          </div>
+                        ) : (
+                          <div className="text-center">
+                            <Upload size={20} className="mx-auto text-slate-500 mb-1" />
+                            <p className="text-xs text-slate-500">Velg MP4-fil eller dra og slipp</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-600">
+                    Videoen lastes opp som privat. Du kan endre synlighet i YouTube Studio etterpå.
+                  </p>
+
+                  <Button
+                    onClick={uploadToYouTube}
+                    disabled={!videoFile || !seoTitle || uploading}
+                    className="w-full bg-red-600 hover:bg-red-700"
+                  >
+                    {uploading ? (
+                      <><Loader2 size={16} className="mr-2 animate-spin" />Laster opp...</>
+                    ) : (
+                      <><Youtube size={16} className="mr-2" />Last opp til YouTube</>
+                    )}
+                  </Button>
+
+                  {uploadResult && (
+                    <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      <p className="text-sm text-emerald-400 font-medium">Video lastet opp!</p>
+                      <a
+                        href={uploadResult.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-300 hover:underline flex items-center gap-1 mt-1"
+                      >
+                        <ExternalLink size={10} />
+                        {uploadResult.url}
+                      </a>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
