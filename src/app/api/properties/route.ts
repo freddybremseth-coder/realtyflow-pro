@@ -33,10 +33,26 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const supabase = getSupabase();
   const body = await req.json();
-  const items = Array.isArray(body) ? body : [body];
+  const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+
+  // Deduplicate: delete existing properties with matching ref before inserting
+  const refs = items
+    .map((item) => item.ref as string | undefined)
+    .filter((r): r is string => Boolean(r && r.trim()));
+
+  let deletedCount = 0;
+  if (refs.length > 0) {
+    const { data: deleted } = await supabase
+      .from("properties")
+      .delete()
+      .in("ref", refs)
+      .select("id");
+    deletedCount = deleted?.length || 0;
+  }
+
   const { data, error } = await supabase.from("properties").insert(items).select();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json({ data, deduplicated: deletedCount });
 }
 
 export async function PATCH(req: NextRequest) {

@@ -410,15 +410,21 @@ async function apiDeleteProperty(id: string) {
   }
 }
 
-async function apiSaveProperties(properties: Property[]) {
+async function apiSaveProperties(properties: Property[]): Promise<{ inserted: number; deduplicated: number }> {
   try {
-    await fetch('/api/properties', {
+    const res = await fetch('/api/properties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(properties.map(propertyToDbRow)),
     });
+    const result = await res.json();
+    return {
+      inserted: Array.isArray(result.data) ? result.data.length : (Array.isArray(result) ? result.length : 0),
+      deduplicated: result.deduplicated || 0,
+    };
   } catch (err) {
     console.error('Failed to save properties to DB:', err);
+    return { inserted: 0, deduplicated: 0 };
   }
 }
 
@@ -475,7 +481,7 @@ export default function InventoryPage() {
   const [importTab, setImportTab] = useState<"redsp" | "xml" | "csv">("redsp");
   const [redspUrl, setRedspUrl] = useState("https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml");
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{ count: number; error?: string } | null>(null);
+  const [importResult, setImportResult] = useState<{ count: number; deduplicated?: number; error?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Add form
@@ -733,9 +739,12 @@ REGLER:
 
       const imported = parseRedSPXml(text);
       if (imported.length === 0) throw new Error("Ingen eiendommer funnet i XML-feeden");
-      setProperties(prev => [...imported, ...prev]);
-      apiSaveProperties(imported);
-      setImportResult({ count: imported.length });
+      const saveResult = await apiSaveProperties(imported);
+      // Reload from DB to get clean state without duplicates
+      const freshRes = await fetch('/api/properties');
+      const freshData = await freshRes.json();
+      if (Array.isArray(freshData)) setProperties(freshData.map(dbRowToProperty));
+      setImportResult({ count: imported.length, deduplicated: saveResult.deduplicated });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ukjent feil";
       setImportResult({ count: 0, error: msg });
@@ -749,15 +758,17 @@ REGLER:
     setImporting(true);
     setImportResult(null);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const xmlText = e.target?.result as string;
         const imported = parseRedSPXml(xmlText);
         if (imported.length === 0) throw new Error("Ingen eiendommer funnet i XML-filen");
         imported.forEach(p => p.source = "xml");
-        setProperties(prev => [...imported, ...prev]);
-        apiSaveProperties(imported);
-        setImportResult({ count: imported.length });
+        const saveResult = await apiSaveProperties(imported);
+        const freshRes = await fetch('/api/properties');
+        const freshData = await freshRes.json();
+        if (Array.isArray(freshData)) setProperties(freshData.map(dbRowToProperty));
+        setImportResult({ count: imported.length, deduplicated: saveResult.deduplicated });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Ukjent feil";
         setImportResult({ count: 0, error: msg });
@@ -773,14 +784,16 @@ REGLER:
     setImporting(true);
     setImportResult(null);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const csvText = e.target?.result as string;
         const imported = parseCsvProperties(csvText);
         if (imported.length === 0) throw new Error("Ingen eiendommer funnet i CSV-filen");
-        setProperties(prev => [...imported, ...prev]);
-        apiSaveProperties(imported);
-        setImportResult({ count: imported.length });
+        const saveResult = await apiSaveProperties(imported);
+        const freshRes = await fetch('/api/properties');
+        const freshData = await freshRes.json();
+        if (Array.isArray(freshData)) setProperties(freshData.map(dbRowToProperty));
+        setImportResult({ count: imported.length, deduplicated: saveResult.deduplicated });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Ukjent feil";
         setImportResult({ count: 0, error: msg });
@@ -1238,7 +1251,10 @@ REGLER:
                   {importResult.error ? (
                     <p className="text-sm">Feil: {importResult.error}</p>
                   ) : (
-                    <p className="text-sm">Importerte {importResult.count} eiendommer!</p>
+                    <p className="text-sm">
+                      Importerte {importResult.count} eiendommer!
+                      {importResult.deduplicated ? ` (${importResult.deduplicated} duplikater erstattet basert på ref.nr.)` : ""}
+                    </p>
                   )}
                 </div>
               )}
