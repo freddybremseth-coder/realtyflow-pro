@@ -248,6 +248,10 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     });
   }
 
+  // Skip empty/invalid property nodes (no ref, no title, no price)
+  const hasTitle = title && title !== "Eiendom uten tittel";
+  if (!ref && !hasTitle && !price) return null;
+
   return {
     id: `REDSP-${ref || Math.random().toString(36).substr(2, 8)}`,
     title,

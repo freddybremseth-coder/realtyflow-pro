@@ -21,13 +21,23 @@ export async function GET(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data);
   }
-  const { data, error } = await supabase
-    .from("properties")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(5000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data || []);
+  // Supabase/PostgREST default limit is 1000 rows - paginate to get all
+  const allData: Record<string, unknown>[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return NextResponse.json(allData);
 }
 
 export async function POST(req: NextRequest) {
@@ -50,9 +60,16 @@ export async function POST(req: NextRequest) {
     deletedCount = deleted?.length || 0;
   }
 
-  const { data, error } = await supabase.from("properties").insert(items).select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data, deduplicated: deletedCount });
+  // Batch insert in chunks of 500 to avoid Supabase/PostgREST limits
+  const chunkSize = 500;
+  const allInserted: Record<string, unknown>[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const { data, error } = await supabase.from("properties").insert(chunk).select();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (data) allInserted.push(...data);
+  }
+  return NextResponse.json({ data: allInserted, deduplicated: deletedCount });
 }
 
 export async function PATCH(req: NextRequest) {
