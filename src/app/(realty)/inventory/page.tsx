@@ -13,6 +13,7 @@ import {
   Sparkles, Copy, CheckCircle2, Target, Calendar,
   DollarSign, BarChart3, Instagram, Linkedin,
   Facebook, Mail, MessageSquare, Clock, Send, Youtube,
+  ChevronLeft, ChevronRight, Image as ImageIcon,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -498,6 +499,7 @@ export default function InventoryPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<Property | null>(null);
+  const [detailSlide, setDetailSlide] = useState(0);
   const [showEditModal, setShowEditModal] = useState<Property | null>(null);
 
   // Marketing Kit state
@@ -967,7 +969,7 @@ REGLER:
       <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" : "space-y-3"}>
         {filtered.map((property) => (
           <Card key={property.id} className="overflow-hidden hover:border-slate-500 transition-all group cursor-pointer"
-            onClick={() => setShowDetailModal(property)}>
+            onClick={() => { setDetailSlide(0); setShowDetailModal(property); }}>
             {viewMode === "grid" ? (
               <>
                 <div className={`relative h-48 bg-gradient-to-br ${property.imageColor} flex items-center justify-center`}>
@@ -1309,22 +1311,57 @@ REGLER:
       {showDetailModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowDetailModal(null)}>
           <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className={`relative h-56 bg-gradient-to-br ${showDetailModal.imageColor} flex items-center justify-center`}>
-              {showDetailModal.imageUrl ? (
-                <img src={showDetailModal.imageUrl} alt={showDetailModal.title} className="w-full h-full object-cover" />
-              ) : (
-                <Building2 size={64} className="text-slate-400/20" />
-              )}
-              <button onClick={() => setShowDetailModal(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900/60 flex items-center justify-center text-white hover:bg-slate-900/80">
-                <X size={18} />
-              </button>
-              <Badge variant={statusVariant(showDetailModal.status)} className="absolute top-4 left-4">{showDetailModal.status}</Badge>
-              {showDetailModal.source !== "manual" && (
-                <Badge variant="outline" className="absolute bottom-4 left-4 bg-slate-900/60 border-slate-500/50 text-white">
-                  Kilde: {sourceLabel(showDetailModal.source)}
-                </Badge>
-              )}
-            </div>
+            {(() => {
+              const allImgs = [showDetailModal.imageUrl, ...(showDetailModal.gallery || [])].filter(Boolean) as string[];
+              return (
+                <div className={`relative h-64 bg-gradient-to-br ${showDetailModal.imageColor} flex items-center justify-center`}>
+                  {allImgs.length > 0 ? (
+                    <img src={allImgs[detailSlide % allImgs.length]} alt={showDetailModal.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <Building2 size={64} className="text-slate-400/20" />
+                  )}
+                  {allImgs.length > 1 && (
+                    <>
+                      <button onClick={(e) => { e.stopPropagation(); setDetailSlide(s => (s - 1 + allImgs.length) % allImgs.length); }}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-900/60 flex items-center justify-center text-white hover:bg-slate-900/80">
+                        <ChevronLeft size={18} />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setDetailSlide(s => (s + 1) % allImgs.length); }}
+                        className="absolute right-12 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-900/60 flex items-center justify-center text-white hover:bg-slate-900/80">
+                        <ChevronRight size={18} />
+                      </button>
+                      <span className="absolute bottom-4 right-4 bg-slate-900/70 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                        <ImageIcon size={12} /> {detailSlide % allImgs.length + 1} / {allImgs.length}
+                      </span>
+                    </>
+                  )}
+                  <button onClick={() => setShowDetailModal(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-900/60 flex items-center justify-center text-white hover:bg-slate-900/80">
+                    <X size={18} />
+                  </button>
+                  <Badge variant={statusVariant(showDetailModal.status)} className="absolute top-4 left-4">{showDetailModal.status}</Badge>
+                  {showDetailModal.source !== "manual" && (
+                    <Badge variant="outline" className="absolute bottom-4 left-4 bg-slate-900/60 border-slate-500/50 text-white">
+                      Kilde: {sourceLabel(showDetailModal.source)}
+                    </Badge>
+                  )}
+                </div>
+              );
+            })()}
+            {/* Thumbnail strip */}
+            {(() => {
+              const allImgs = [showDetailModal.imageUrl, ...(showDetailModal.gallery || [])].filter(Boolean) as string[];
+              if (allImgs.length <= 1) return null;
+              return (
+                <div className="flex gap-1 p-2 bg-slate-900/50 overflow-x-auto">
+                  {allImgs.map((img, idx) => (
+                    <button key={idx} onClick={() => setDetailSlide(idx)}
+                      className={`shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-all ${idx === detailSlide % allImgs.length ? "border-cyan-400" : "border-transparent opacity-60 hover:opacity-100"}`}>
+                      <img src={img} alt={`${idx + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div>

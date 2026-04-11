@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   Youtube, Upload, Eye, Home, MapPin, Bed, Bath, Maximize, Euro,
   Loader2, Sparkles, ChevronLeft, ChevronRight, Play, Pause, Globe,
-  Image as ImageIcon, Copy, Check, ExternalLink, Tag,
+  Image as ImageIcon, Copy, Check, ExternalLink, Tag, X,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -51,6 +51,7 @@ function PropertyVideoContent() {
   const [seoTags, setSeoTags] = useState<string[]>([]);
   const [seoLanguage, setSeoLanguage] = useState("en");
   const [generatingSeo, setGeneratingSeo] = useState(false);
+  const [seoError, setSeoError] = useState<string | null>(null);
 
   // Slideshow preview
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -138,6 +139,7 @@ function PropertyVideoContent() {
   const generateSeo = async () => {
     if (!selectedProperty) return;
     setGeneratingSeo(true);
+    setSeoError(null);
     try {
       const brandPayload = brand
         ? { name: brand.name, website: brand.website }
@@ -153,20 +155,20 @@ function PropertyVideoContent() {
         }),
       });
       if (!res.ok) {
-        console.error("SEO API error:", res.status, await res.text());
+        const errText = await res.text();
+        setSeoError(`API feil (${res.status}): ${errText}`);
         setGeneratingSeo(false);
         return;
       }
       const data = await res.json();
-      console.log("SEO response:", data);
+      if (data.error) {
+        setSeoError(data.error);
+      }
       if (data.title) setSeoTitle(data.title);
       if (data.description) setSeoDescription(data.description);
       if (data.tags) setSeoTags(data.tags);
-      if (data.error) {
-        console.error("SEO generation error:", data.error);
-      }
     } catch (err) {
-      console.error("Failed to generate SEO:", err);
+      setSeoError(err instanceof Error ? err.message : "Nettverksfeil");
     }
     setGeneratingSeo(false);
   };
@@ -583,6 +585,14 @@ function PropertyVideoContent() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* SEO Error */}
+                  {seoError && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2">
+                      <X size={14} className="text-red-400 mt-0.5 shrink-0" />
+                      <p className="text-xs text-red-300">{seoError}</p>
+                    </div>
+                  )}
 
                   {/* Title */}
                   <div>
