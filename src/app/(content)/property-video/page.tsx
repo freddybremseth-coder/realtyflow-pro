@@ -95,7 +95,7 @@ function PropertyVideoContent() {
             year_built: Number(row.year_built || 0),
             energy_rating: String(row.energy_rating || ""),
             primary_image: String(row.primary_image || ""),
-            gallery: Array.isArray(row.gallery) ? row.gallery : [],
+            gallery: Array.isArray(row.images) ? row.images : (Array.isArray(row.gallery) ? row.gallery : []),
             status: String(row.status || ""),
           }))
         );
@@ -484,6 +484,76 @@ function PropertyVideoContent() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Image Gallery Thumbnails */}
+              {allImages.length > 1 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                        <ImageIcon size={14} className="text-blue-400" />
+                        Bildegalleri ({allImages.length} bilder)
+                      </h3>
+                      <span className="text-xs text-slate-400">Klikk for å velge startbilde</span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 max-h-[240px] overflow-y-auto">
+                      {allImages.map((img, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setCurrentSlide(idx)}
+                          className={`relative aspect-video rounded-md overflow-hidden border-2 transition-all ${
+                            currentSlide === idx ? "border-primary-400 ring-1 ring-primary-400/50" : "border-slate-700 hover:border-slate-500"
+                          }`}
+                        >
+                          <img src={img} alt={`Bilde ${idx + 1}`} className="w-full h-full object-cover" />
+                          <span className="absolute bottom-0 right-0 bg-black/70 text-[9px] text-white px-1 rounded-tl">{idx + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Floor Plans Tab */}
+              {selectedProperty && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+                      <Maximize size={14} className="text-green-400" />
+                      Plantegninger
+                    </h3>
+                    {(() => {
+                      // Floor plans: check for images with "plano" or "plan" in URL
+                      const floorPlanImages = allImages.filter(img =>
+                        /plan[oe]|floor.?plan|plantegning/i.test(img)
+                      );
+                      if (floorPlanImages.length > 0) {
+                        return (
+                          <div className="grid grid-cols-2 gap-3">
+                            {floorPlanImages.map((img, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => {
+                                  const slideIdx = allImages.indexOf(img);
+                                  if (slideIdx >= 0) setCurrentSlide(slideIdx);
+                                }}
+                                className="aspect-video rounded-lg overflow-hidden border border-slate-700 hover:border-green-500/50 transition-all"
+                              >
+                                <img src={img} alt={`Plantegning ${idx + 1}`} className="w-full h-full object-contain bg-white" />
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return (
+                        <p className="text-xs text-slate-500 py-4 text-center">
+                          Ingen plantegninger funnet. Plantegninger vises automatisk hvis de er inkludert i bildegalleriet.
+                        </p>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* SEO Generation */}
               <Card>

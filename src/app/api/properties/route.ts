@@ -45,69 +45,45 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
 
-  // Split items: those with ref get upserted (dedup), those without get inserted
-  const withRef: Record<string, unknown>[] = [];
-  const withoutRef: Record<string, unknown>[] = [];
-  for (const item of items) {
-    const ref = item.ref as string | undefined;
-    if (ref && ref.trim()) {
-      withRef.push(item);
-    } else {
-      withoutRef.push(item);
-    }
-  }
-
-  const chunkSize = 200;
-  const allInserted: Record<string, unknown>[] = [];
+  // For each item with a ref, delete the old one then insert new - atomically per small batch
+  const batchSize = 50;
   let deduplicated = 0;
+  let inserted = 0;
   const errors: string[] = [];
 
-  // Upsert items with ref - delete matching first, then insert in chunks
-  if (withRef.length > 0) {
-    // Delete in batches to avoid URL length limits
-    for (let i = 0; i < withRef.length; i += chunkSize) {
-      const chunkRefs = withRef.slice(i, i + chunkSize).map((item) => item.ref as string);
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+
+    // Delete existing with matching refs in this batch
+    const batchRefs = batch
+      .map((item) => item.ref as string | undefined)
+      .filter((r): r is string => Boolean(r && r.trim()));
+
+    if (batchRefs.length > 0) {
       const { data: deleted } = await supabase
         .from("properties")
         .delete()
-        .in("ref", chunkRefs)
+        .in("ref", batchRefs)
         .select("id");
       deduplicated += deleted?.length || 0;
     }
 
-    // Insert in chunks
-    for (let i = 0; i < withRef.length; i += chunkSize) {
-      const chunk = withRef.slice(i, i + chunkSize);
-      const { data, error } = await supabase.from("properties").insert(chunk).select();
-      if (error) {
-        errors.push(`Chunk ${i / chunkSize + 1}: ${error.message}`);
-        continue; // Don't abort - try remaining chunks
-      }
-      if (data) allInserted.push(...data);
+    // Insert this batch
+    const { data, error } = await supabase.from("properties").insert(batch).select("id");
+    if (error) {
+      errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error.message}`);
+      continue;
     }
+    inserted += data?.length || 0;
   }
 
-  // Insert items without ref
-  if (withoutRef.length > 0) {
-    for (let i = 0; i < withoutRef.length; i += chunkSize) {
-      const chunk = withoutRef.slice(i, i + chunkSize);
-      const { data, error } = await supabase.from("properties").insert(chunk).select();
-      if (error) {
-        errors.push(`No-ref chunk ${i / chunkSize + 1}: ${error.message}`);
-        continue;
-      }
-      if (data) allInserted.push(...data);
-    }
-  }
-
-  if (errors.length > 0 && allInserted.length === 0) {
+  if (errors.length > 0 && inserted === 0) {
     return NextResponse.json({ error: errors.join("; ") }, { status: 500 });
   }
 
   return NextResponse.json({
-    data: allInserted,
+    inserted,
     deduplicated,
-    inserted: allInserted.length,
     errors: errors.length > 0 ? errors : undefined,
   });
 }

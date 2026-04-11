@@ -340,7 +340,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     views: Number(row.views) || 0,
     imageColor: String(row.image_color || row.imageColor || gradients[Math.floor(Math.random() * gradients.length)]),
     imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
-    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined,
+    gallery: Array.isArray(row.images) ? (row.images as string[]) : (Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined),
     externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
     source: (row.source as Property["source"]) || "manual",
     yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
@@ -368,7 +368,7 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.views !== undefined) row.views = p.views;
   if (p.imageColor !== undefined) row.image_color = p.imageColor;
   if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
-  if (p.gallery !== undefined) row.gallery = p.gallery;
+  if (p.gallery !== undefined) row.images = p.gallery;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
@@ -420,8 +420,8 @@ async function apiSaveProperties(properties: Property[]): Promise<{ inserted: nu
     const bodyStr = JSON.stringify(dbRows);
     console.log(`[Import] Sending ${dbRows.length} properties (${(bodyStr.length / 1024).toFixed(0)} KB) to API...`);
 
-    // Chunk on frontend to avoid request size limits
-    const chunkSize = 100;
+    // Chunk on frontend to avoid request size limits and Vercel timeouts
+    const chunkSize = 50;
     let totalInserted = 0;
     let totalDeduplicated = 0;
 
@@ -439,10 +439,9 @@ async function apiSaveProperties(properties: Property[]): Promise<{ inserted: nu
         continue;
       }
       const result = await res.json();
-      const chunkInserted = Array.isArray(result.data) ? result.data.length : 0;
-      totalInserted += chunkInserted;
+      totalInserted += result.inserted || 0;
       totalDeduplicated += result.deduplicated || 0;
-      console.log(`[Import] Chunk done: ${chunkInserted} inserted, ${result.deduplicated || 0} deduplicated`);
+      console.log(`[Import] Chunk done: ${result.inserted || 0} inserted, ${result.deduplicated || 0} deduplicated`);
     }
 
     console.log(`[Import] Total: ${totalInserted} inserted, ${totalDeduplicated} deduplicated`);

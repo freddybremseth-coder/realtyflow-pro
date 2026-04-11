@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Search, Plus, Mail, Phone, User, Building2,
-  MessageSquare, Calendar, Eye,
+  MessageSquare, Calendar, Eye, Pencil,
   Users, Filter, ArrowUpDown, X, Send,
   ArrowRight, Bot, Clock, CheckCircle2,
   Sparkles, Loader2, Undo2,
@@ -147,6 +147,8 @@ export default function CRMPage() {
   const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
   const [dbLoaded, setDbLoaded] = useState(false);
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", budget: "", preferredLocation: "", notes: "", status: "ACTIVE" as CustomerStatus, type: "BUYER" as CustomerType });
 
   // Load customers from database
   const loadCustomers = useCallback(async () => {
@@ -228,6 +230,56 @@ export default function CRMPage() {
     }
     setCustomers((prev) => prev.filter((c) => c.id !== customerId));
     if (selectedCustomer?.id === customerId) setSelectedCustomer(null);
+  };
+
+  const openEditModal = () => {
+    if (!selectedCustomer) return;
+    setEditForm({
+      name: selectedCustomer.name,
+      email: selectedCustomer.email,
+      phone: selectedCustomer.phone,
+      budget: selectedCustomer.budget || "",
+      preferredLocation: selectedCustomer.preferredLocation,
+      notes: selectedCustomer.notes,
+      status: selectedCustomer.status,
+      type: selectedCustomer.type,
+    });
+    setShowEditModal(true);
+  };
+
+  const saveEditedCustomer = async () => {
+    if (!selectedCustomer || !editForm.name) return;
+    const updated: Customer = {
+      ...selectedCustomer,
+      name: editForm.name,
+      email: editForm.email,
+      phone: editForm.phone,
+      budget: editForm.budget || undefined,
+      preferredLocation: editForm.preferredLocation,
+      notes: editForm.notes,
+      status: editForm.status,
+      type: editForm.type,
+      avatar: editForm.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2),
+    };
+    setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+    setSelectedCustomer(updated);
+    setShowEditModal(false);
+    if (dbLoaded) {
+      await fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: updated.id,
+          name: updated.name,
+          email: updated.email,
+          phone: updated.phone,
+          budget: updated.budget,
+          preferred_location: updated.preferredLocation,
+          notes: updated.notes,
+          type: updated.type.toLowerCase(),
+        }),
+      }).catch(() => {});
+    }
   };
 
   const filtered = customers.filter((c) => {
@@ -439,6 +491,51 @@ export default function CRMPage() {
         </div>
       )}
 
+      {/* Edit Customer Modal */}
+      {showEditModal && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowEditModal(false)}>
+          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Rediger {selectedCustomer.name}</h2>
+                <Button variant="ghost" size="icon" onClick={() => setShowEditModal(false)}><X size={18} /></Button>
+              </div>
+              <div className="space-y-3">
+                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Navn</label><Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">E-post</label><Input type="email" value={editForm.email} onChange={(e) => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
+                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Telefon</label><Input value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Budsjett</label><Input placeholder="€200K - €400K" value={editForm.budget} onChange={(e) => setEditForm(f => ({ ...f, budget: e.target.value }))} /></div>
+                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Foretrukket lokasjon</label><Input value={editForm.preferredLocation} onChange={(e) => setEditForm(f => ({ ...f, preferredLocation: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Status</label>
+                    <select value={editForm.status} onChange={(e) => setEditForm(f => ({ ...f, status: e.target.value as CustomerStatus }))} className="w-full h-10 rounded-md border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                      <option value="ACTIVE">Aktiv</option>
+                      <option value="VIP">VIP</option>
+                      <option value="INACTIVE">Inaktiv</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Type</label>
+                    <select value={editForm.type} onChange={(e) => setEditForm(f => ({ ...f, type: e.target.value as CustomerType }))} className="w-full h-10 rounded-md border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                      <option value="BUYER">Kjøper</option>
+                      <option value="SELLER">Selger</option>
+                      <option value="INVESTOR">Investor</option>
+                    </select>
+                  </div>
+                </div>
+                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Notater</label><textarea value={editForm.notes} onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))} className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none" /></div>
+                <Button onClick={saveEditedCustomer} className="w-full" disabled={!editForm.name}><CheckCircle2 size={16} className="mr-1" />Lagre endringer</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
@@ -529,10 +626,13 @@ export default function CRMPage() {
                       <Calendar size={12} className="mr-1" />Møte
                     </Button>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <Button variant="outline" size="sm" className="text-xs" onClick={generateAiDraft} disabled={aiDraftLoading}>
                       {aiDraftLoading ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Sparkles size={12} className="mr-1" />}
                       AI Utkast
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-xs text-blue-400 hover:text-blue-300" onClick={openEditModal}>
+                      <Pencil size={12} className="mr-1" />Rediger
                     </Button>
                     <Button variant="outline" size="sm" className="text-xs text-amber-400 hover:text-amber-300" onClick={() => selectedCustomer && sendToPipeline(selectedCustomer.id)}>
                       <Undo2 size={12} className="mr-1" />Pipeline
