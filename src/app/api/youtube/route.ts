@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     const categoryId = (formData.get("categoryId") as string) || "10";
     const privacyStatus =
       (formData.get("privacyStatus") as "public" | "unlisted" | "private") ||
-      "private";
+      "public";
 
     const buffer = Buffer.from(await file.arrayBuffer());
 

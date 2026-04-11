@@ -138,7 +138,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
     }
 
     if (action === "render_and_upload") {
-      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "private" } = body;
+      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public" } = body;
 
       if (!imageUrls || imageUrls.length === 0) {
         return NextResponse.json({ error: "imageUrls required" }, { status: 400 });

@@ -184,7 +184,7 @@ function PropertyVideoContent() {
       formData.append("description", seoDescription);
       formData.append("tags", seoTags.join(","));
       formData.append("categoryId", "22"); // People & Blogs / Real Estate
-      formData.append("privacyStatus", "private"); // Start as private so user can review
+      formData.append("privacyStatus", "public");
 
       const res = await fetch("/api/youtube", {
         method: "POST",
@@ -217,7 +217,7 @@ function PropertyVideoContent() {
           title: seoTitle,
           description: seoDescription,
           tags: seoTags,
-          privacyStatus: "private",
+          privacyStatus: "public",
         }),
       });
 

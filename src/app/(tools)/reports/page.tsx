@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   BarChart3, TrendingUp, Globe, FileText, Send, RefreshCw,
   Calendar, Clock, ChevronRight, Eye, Mail, Zap, DollarSign,
-  Users, Building2, Newspaper, ArrowUpRight, ArrowDownRight,
+  Users, Building2, Newspaper, ArrowUpRight, ArrowDownRight, Loader2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -61,6 +62,12 @@ export default function ReportsPage() {
   const [sending, setSending] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [activeTab, setActiveTab] = useState<"oversikt" | "rapporter" | "markedsdata" | "mottakere">("oversikt");
+
+  // Manual market intelligence input
+  const [manualInsightTopic, setManualInsightTopic] = useState("Costa Blanca eiendomsmarked");
+  const [manualInsightText, setManualInsightText] = useState("");
+  const [savingInsight, setSavingInsight] = useState(false);
+  const [savedInsights, setSavedInsights] = useState<{ topic: string; summary: string; details: string; date: string }[]>([]);
 
   // Fetch reports and latest snapshot
   const fetchData = useCallback(async () => {
@@ -127,6 +134,42 @@ export default function ReportsPage() {
     }
     setSending(null);
   };
+
+  // Save manual market intelligence
+  const saveManualInsight = async () => {
+    if (!manualInsightText.trim()) return;
+    setSavingInsight(true);
+    try {
+      const insight = {
+        topic: manualInsightTopic,
+        summary: manualInsightText.split('\n\n')[0]?.substring(0, 300) || manualInsightText.substring(0, 300),
+        details: manualInsightText,
+        sources: ['Manuell input'],
+        date: new Date().toISOString(),
+      };
+
+      const res = await fetch("/api/reports/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(insight),
+      });
+
+      if (res.ok) {
+        setSavedInsights(prev => [insight, ...prev]);
+        setManualInsightText("");
+      }
+    } catch (err) {
+      console.error("Failed to save insight:", err);
+    }
+    setSavingInsight(false);
+  };
+
+  // Load saved insights on mount
+  useEffect(() => {
+    fetch("/api/reports/insights").then(r => r.ok ? r.json() : { insights: [] }).then(d => {
+      setSavedInsights(d.insights || []);
+    }).catch(() => {});
+  }, []);
 
   // Format date
   const formatDate = (d: string) => {
@@ -662,38 +705,62 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* Perplexity Market Intelligence */}
+          {/* Manual Market Intelligence Input */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Globe size={16} className="text-purple-400" />
-                Markedsintelligens (Perplexity AI)
+                Markedsintelligens
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {(snapshot?.perplexity_insights || snapshot?.raw_data?.perplexityInsights || []).length > 0 ? (
-                <div className="space-y-4">
-                  {(snapshot?.perplexity_insights || snapshot?.raw_data?.perplexityInsights || []).map((insight: { topic: string; summary: string; details: string; sources?: string[] }, i: number) => (
-                    <div key={i} className="p-4 rounded-lg bg-slate-800/50 border border-purple-500/20">
-                      <h4 className="text-sm font-semibold text-purple-300 mb-2">{insight.topic}</h4>
-                      <p className="text-xs text-slate-300 whitespace-pre-line">{insight.summary}</p>
-                      {insight.sources && insight.sources.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {insight.sources.map((src: string, si: number) => (
-                            <a key={si} href={src} target="_blank" rel="noopener noreferrer"
-                              className="text-[10px] text-cyan-400/70 hover:text-cyan-300 underline truncate max-w-[200px]">
-                              {new URL(src).hostname}
-                            </a>
-                          ))}
-                        </div>
-                      )}
+            <CardContent className="space-y-4">
+              {/* Input form */}
+              <div className="p-4 rounded-lg bg-slate-800/50 border border-purple-500/20 space-y-3">
+                <p className="text-xs text-slate-400">
+                  Lim inn markedsdata fra Perplexity Pro, Gemini, eller andre kilder. Dataen brukes av AI-rapporten.
+                </p>
+                <select
+                  value={manualInsightTopic}
+                  onChange={(e) => setManualInsightTopic(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="Costa Blanca eiendomsmarked">Costa Blanca eiendomsmarked</option>
+                  <option value="Spansk boligmarked nasjonalt">Spansk boligmarked nasjonalt</option>
+                  <option value="Europeisk økonomi og renter">Europeisk økonomi og renter</option>
+                  <option value="Nybygg og utviklingsprosjekter">Nybygg og utviklingsprosjekter</option>
+                  <option value="Utenlandske kjøpere og trender">Utenlandske kjøpere og trender</option>
+                  <option value="Annet">Annet</option>
+                </select>
+                <textarea
+                  value={manualInsightText}
+                  onChange={(e) => setManualInsightText(e.target.value)}
+                  placeholder="Lim inn markedsrapport, analyse eller statistikk her..."
+                  rows={8}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 resize-y"
+                />
+                <Button
+                  onClick={saveManualInsight}
+                  disabled={savingInsight || !manualInsightText.trim()}
+                  className="bg-purple-600 hover:bg-purple-500"
+                >
+                  {savingInsight ? <><Loader2 size={14} className="mr-2 animate-spin" /> Lagrer...</> : "Lagre markedsdata"}
+                </Button>
+              </div>
+
+              {/* Saved insights */}
+              {savedInsights.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase">Lagrede analyser ({savedInsights.length})</h4>
+                  {savedInsights.map((insight, i) => (
+                    <div key={i} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <Badge className="bg-purple-500/20 text-purple-300 text-[10px]">{insight.topic}</Badge>
+                        <span className="text-[10px] text-slate-500">{new Date(insight.date).toLocaleDateString("nb-NO")}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 line-clamp-3 whitespace-pre-line">{insight.summary}</p>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-sm text-slate-500 text-center py-4">
-                  Ingen markedsintelligens ennå. Sett PERPLEXITY_API_KEY i Vercel for å aktivere.
-                </p>
               )}
             </CardContent>
           </Card>
