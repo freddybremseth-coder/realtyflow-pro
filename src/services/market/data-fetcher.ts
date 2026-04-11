@@ -1,9 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+export interface PerplexityInsight {
+  topic: string;
+  summary: string;
+  details: string;
+  sources: string[];
+  date: string;
+}
+
 export interface MarketData {
   exchangeRates: { pair: string; rate: number; date: string; change7d: number }[];
   ecbRate: { rate: number; date: string; previousRate: number };
   idealistaNews: { title: string; link: string; date: string; summary: string }[];
+  perplexityInsights: PerplexityInsight[];
   internalMetrics: {
     totalLeads: number;
     newLeadsWeek: number;
@@ -346,17 +355,98 @@ export class MarketDataFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Combined Fetch
+  // 5. Perplexity API - Real-time Market Intelligence
+  // ---------------------------------------------------------------------------
+
+  async fetchPerplexityInsights(): Promise<PerplexityInsight[]> {
+    const apiKey = process.env.PERPLEXITY_API_KEY;
+    if (!apiKey) {
+      console.log('[MarketDataFetcher] No PERPLEXITY_API_KEY, skipping market insights');
+      return [];
+    }
+
+    const queries = [
+      {
+        topic: 'Costa Blanca eiendomsmarked',
+        query: `What are the latest property market trends in Costa Blanca, Alicante province, Spain? Include current average prices per square meter for apartments and villas, year-over-year price changes, foreign buyer statistics (especially Norwegian, British, Swedish), new construction activity, and any recent regulatory changes affecting property purchases. Focus on data from the last 3 months.`,
+      },
+      {
+        topic: 'Spansk boligmarked nasjonalt',
+        query: `What are the latest Spanish real estate market statistics? Include national average property prices, transaction volumes, mortgage interest rates from Spanish banks (Sabadell, CaixaBank, BBVA), Golden Visa changes, and housing supply data. Include any expert forecasts for the next 6-12 months. Focus on the most recent data available.`,
+      },
+      {
+        topic: 'Europeisk økonomi og renter',
+        query: `What are the latest ECB interest rate decisions and European economic outlook? Include inflation data for Spain and the Eurozone, ECB rate forecasts, impact on mortgage rates in Spain, EUR/NOK and EUR/SEK exchange rate trends, and any relevant fiscal policy changes affecting property investment in Southern Europe.`,
+      },
+    ];
+
+    const insights: PerplexityInsight[] = [];
+
+    for (const q of queries) {
+      try {
+        console.log(`[MarketDataFetcher] Perplexity: querying "${q.topic}"...`);
+        const res = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'sonar',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a real estate market analyst specializing in the Spanish property market. Provide factual, data-driven insights with specific numbers, percentages, and sources. Always include the date/period the data refers to. Respond in English.',
+              },
+              { role: 'user', content: q.query },
+            ],
+            max_tokens: 1500,
+            return_citations: true,
+          }),
+        });
+
+        if (!res.ok) {
+          console.error(`[MarketDataFetcher] Perplexity API error for "${q.topic}": ${res.status}`);
+          continue;
+        }
+
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const citations: string[] = data.citations || [];
+
+        if (content) {
+          // Split into summary (first paragraph) and details (rest)
+          const paragraphs = content.split('\n\n').filter((p: string) => p.trim());
+          insights.push({
+            topic: q.topic,
+            summary: paragraphs[0] || content.substring(0, 300),
+            details: content,
+            sources: citations.slice(0, 5),
+            date: new Date().toISOString(),
+          });
+          console.log(`[MarketDataFetcher] Perplexity: got ${content.length} chars for "${q.topic}"`);
+        }
+      } catch (err) {
+        console.error(`[MarketDataFetcher] Perplexity error for "${q.topic}":`, (err as Error).message);
+      }
+    }
+
+    return insights;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Combined Fetch
   // ---------------------------------------------------------------------------
 
   async fetchAll(supabase: SupabaseClient): Promise<MarketData> {
     console.log('[MarketDataFetcher] Starting full market data fetch...');
 
-    const [exchangeRatesRaw, ecbRateRaw, idealistaNews, internalMetrics] =
+    const [exchangeRatesRaw, ecbRateRaw, idealistaNews, perplexityInsights, internalMetrics] =
       await Promise.all([
         this.fetchExchangeRates(),
         this.fetchECBInterestRate(),
         this.fetchIdealistaNews(),
+        this.fetchPerplexityInsights(),
         this.fetchInternalMetrics(supabase),
       ]);
 
@@ -375,6 +465,7 @@ export class MarketDataFetcher {
       exchangeRates,
       ecbRate,
       idealistaNews,
+      perplexityInsights,
       internalMetrics,
       fetchedAt: new Date().toISOString(),
     };

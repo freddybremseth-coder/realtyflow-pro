@@ -34,7 +34,7 @@ const FFMPEG_DOWNLOAD_URL = `https://github.com/eugeneware/ffmpeg-static/release
 
 let _ffmpegPath: string | null = null;
 
-async function ensureFFmpeg(): Promise<string> {
+export async function ensureFFmpeg(): Promise<string> {
   if (_ffmpegPath) return _ffmpegPath;
 
   if (process.env.FFMPEG_PATH) {

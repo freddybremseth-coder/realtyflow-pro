@@ -4,7 +4,7 @@ import { MarketDataFetcher } from '@/services/market/data-fetcher';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/market-data", "schedule": "0 3 * * *" }]
 
-export const maxDuration = 60;
+export const maxDuration = 120; // Perplexity queries take extra time
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -38,8 +38,8 @@ export async function GET(request: NextRequest) {
     const eurSek = marketData.exchangeRates.find(r => r.pair === 'EUR/SEK');
     const eurGbp = marketData.exchangeRates.find(r => r.pair === 'EUR/GBP');
 
-    // Save snapshot
-    const { error } = await supabase.from('market_data_snapshots').insert({
+    // Save snapshot (try with perplexity_insights, fallback without if column doesn't exist yet)
+    const snapshotData: Record<string, unknown> = {
       eur_nok: eurNok?.rate || null,
       eur_nok_7d_change: eurNok?.change7d || null,
       eur_sek: eurSek?.rate || null,
@@ -47,11 +47,21 @@ export async function GET(request: NextRequest) {
       ecb_rate: marketData.ecbRate.rate || null,
       ecb_rate_previous: marketData.ecbRate.previousRate || null,
       idealista_news: marketData.idealistaNews,
+      perplexity_insights: marketData.perplexityInsights,
       internal_metrics: marketData.internalMetrics,
       raw_data: marketData,
-      sources: ['ecb', 'idealista', 'supabase'],
+      sources: ['ecb', 'idealista', 'perplexity', 'supabase'].filter(s =>
+        s === 'perplexity' ? marketData.perplexityInsights.length > 0 : true
+      ),
       fetched_at: marketData.fetchedAt,
-    });
+    };
+
+    let { error } = await supabase.from('market_data_snapshots').insert(snapshotData);
+    // If perplexity_insights column doesn't exist yet, retry without it
+    if (error?.message?.includes('perplexity_insights')) {
+      delete snapshotData.perplexity_insights;
+      ({ error } = await supabase.from('market_data_snapshots').insert(snapshotData));
+    }
 
     if (error) throw error;
 

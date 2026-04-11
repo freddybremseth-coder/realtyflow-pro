@@ -37,7 +37,9 @@ interface MarketSnapshot {
   ecb_rate?: number;
   ecb_rate_previous?: number;
   idealista_news?: { title: string; link: string; date: string; summary: string }[];
+  perplexity_insights?: { topic: string; summary: string; details: string; sources?: string[] }[];
   internal_metrics?: Record<string, number>;
+  raw_data?: { perplexityInsights?: { topic: string; summary: string; details: string; sources?: string[] }[] };
   fetched_at?: string;
 }
 
@@ -252,6 +254,23 @@ export default function ReportsPage() {
                       </Badge>
                     </div>
                     <Newspaper className="text-amber-400 opacity-60" size={28} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-slate-400">Markedsintelligens</p>
+                      <p className="text-2xl font-bold text-white mt-1">
+                        {(snapshot?.perplexity_insights || snapshot?.raw_data?.perplexityInsights || []).length || 0}
+                      </p>
+                      <Badge variant="default" className="mt-2 text-[10px] bg-purple-500/20 text-purple-300">
+                        Perplexity AI
+                      </Badge>
+                    </div>
+                    <Globe className="text-purple-400 opacity-60" size={28} />
                   </div>
                 </CardContent>
               </Card>
@@ -638,6 +657,42 @@ export default function ReportsPage() {
               ) : (
                 <p className="text-sm text-slate-500 text-center py-4">
                   Ingen nyheter lastet ennå
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Perplexity Market Intelligence */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe size={16} className="text-purple-400" />
+                Markedsintelligens (Perplexity AI)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(snapshot?.perplexity_insights || snapshot?.raw_data?.perplexityInsights || []).length > 0 ? (
+                <div className="space-y-4">
+                  {(snapshot?.perplexity_insights || snapshot?.raw_data?.perplexityInsights || []).map((insight: { topic: string; summary: string; details: string; sources?: string[] }, i: number) => (
+                    <div key={i} className="p-4 rounded-lg bg-slate-800/50 border border-purple-500/20">
+                      <h4 className="text-sm font-semibold text-purple-300 mb-2">{insight.topic}</h4>
+                      <p className="text-xs text-slate-300 whitespace-pre-line">{insight.summary}</p>
+                      {insight.sources && insight.sources.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {insight.sources.map((src: string, si: number) => (
+                            <a key={si} href={src} target="_blank" rel="noopener noreferrer"
+                              className="text-[10px] text-cyan-400/70 hover:text-cyan-300 underline truncate max-w-[200px]">
+                              {new URL(src).hostname}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 text-center py-4">
+                  Ingen markedsintelligens ennå. Sett PERPLEXITY_API_KEY i Vercel for å aktivere.
                 </p>
               )}
             </CardContent>

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { renderVideo, cleanupRender } from "@/services/integrations/ffmpeg-renderer";
+import { renderVideo, cleanupRender, ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
 import { uploadVideo, setThumbnail } from "@/services/integrations/youtube-client";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+export const maxDuration = 300; // 5 min for video rendering
 
 function getAnthropicClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -186,25 +192,20 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
             }
 
             // Step 3: Generate silent audio track (property videos have no music)
-            send({ step: 3, total: 5, message: "Genererer lydspor..." });
+            send({ step: 3, total: 5, message: "Klargjør FFmpeg..." });
             const silentAudioPath = path.join(imgDir, "silent.mp3");
-            // Create a 5-second-per-image silent audio using FFmpeg
             const totalDuration = imagePaths.length * 5;
 
-            // We'll use renderVideo with a silent audio — generate one
-            const { execSync } = require("child_process");
+            // Use ensureFFmpeg() - same approach as Neural Beat (handles Vercel serverless)
+            const ffmpegBin = await ensureFFmpeg();
+            send({ step: 3, total: 5, message: "Genererer lydspor..." });
             try {
-              // Try local ffmpeg first
-              const ffmpegBin = require("path").join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg");
-              execSync(`"${ffmpegBin}" -f lavfi -i anullsrc=r=44100:cl=stereo -t ${totalDuration} -q:a 9 -y "${silentAudioPath}"`, { timeout: 30000 });
+              await execFileAsync(ffmpegBin, [
+                "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                "-t", String(totalDuration), "-q:a", "9", "-y", silentAudioPath,
+              ], { timeout: 30000 });
             } catch {
-              try {
-                execSync(`ffmpeg -f lavfi -i anullsrc=r=44100:cl=stereo -t ${totalDuration} -q:a 9 -y "${silentAudioPath}"`, { timeout: 30000 });
-              } catch {
-                // Last resort: create minimal MP3 — use audio file from URL is not possible here
-                // Render without audio
-                send({ step: 3, total: 5, message: "Lydspor hoppet over" });
-              }
+              send({ step: 3, total: 5, message: "Lydspor hoppet over" });
             }
 
             // Step 4: Render video

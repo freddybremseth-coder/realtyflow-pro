@@ -305,12 +305,17 @@ export class ReportGenerator {
           : 'Uendret',
       });
     }
-    if (marketData.internalMetrics) {
+    if (marketData.perplexityInsights?.length) {
       report.key_metrics.push(
-        { label: 'Pipeline', value: `\u20AC${(marketData.internalMetrics.pipelineValue || 0).toLocaleString()}` },
-        { label: 'Nye Leads', value: `${marketData.internalMetrics.newLeadsWeek || 0}` },
+        { label: 'Markedskilder', value: `${marketData.perplexityInsights.length} analyser` },
       );
     }
+    report.data_sources = [
+      ...(marketData.exchangeRates?.length ? ['ECB Exchange Rates'] : []),
+      ...(marketData.ecbRate ? ['ECB Interest Rate'] : []),
+      ...(marketData.idealistaNews?.length ? ['Idealista News'] : []),
+      ...(marketData.perplexityInsights?.length ? ['Perplexity AI (sanntid)'] : []),
+    ];
 
     return report;
   }
@@ -380,15 +385,26 @@ export class ReportGenerator {
       context += '\n';
     }
 
-    // Internal metrics
+    // Perplexity real-time market intelligence
+    if (marketData.perplexityInsights?.length) {
+      context += 'MARKEDSINTELLIGENS (sanntidsdata fra internett):\n\n';
+      for (const insight of marketData.perplexityInsights) {
+        context += `--- ${insight.topic.toUpperCase()} ---\n`;
+        context += `${insight.details}\n`;
+        if (insight.sources?.length) {
+          context += `Kilder: ${insight.sources.join(', ')}\n`;
+        }
+        context += '\n';
+      }
+      context += '\n';
+    }
+
+    // Internal metrics (kun for intern bruk, ikke del med omverden)
     if (marketData.internalMetrics) {
       const m = marketData.internalMetrics;
-      context += 'INTERNE TALL:\n';
+      context += 'INTERNE TALL (kun for kontekst, IKKE inkluder i ekstern rapport):\n';
       context += `- Totalt leads: ${m.totalLeads ?? 'Ukjent'}\n`;
-      context += `- Nye leads siste 7 dager: ${m.newLeadsWeek ?? 'Ukjent'}\n`;
-      context += `- Pipeline-verdi: ${m.pipelineValue !== undefined ? m.pipelineValue + ' EUR' : 'Ukjent'}\n`;
       context += `- Totalt eiendommer: ${m.totalProperties ?? 'Ukjent'}\n`;
-      context += `- Nye oppforinger siste uke: ${m.newListingsWeek ?? 'Ukjent'}\n`;
       context += '\n';
     }
 
@@ -402,15 +418,18 @@ export class ReportGenerator {
     const base = `Du er Freddy Bremseth, eiendomsekspert i Spania med dyp kunnskap om det spanske boligmarkedet, spesielt langs kysten. Du skriver markedsrapporter for RealtyFlow Pro.
 
 Regler:
-- Skriv alltid p\u00e5 norsk (bokm\u00e5l).
-- V\u00e6r analytisk og innsiktsfull, aldri robotisk.
-- Bruk konkrete tall og eksempler.
+- Skriv alltid på norsk (bokmål).
+- Vær analytisk og innsiktsfull, aldri robotisk.
+- Bruk konkrete tall og eksempler fra MARKEDSINTELLIGENS-dataene (Perplexity-analyser).
+- Fokuser på EKSTERN markedsdata: prisutvikling, transaksjonsvolum, rentetrender, utenlandske kjøpere, nye prosjekter.
+- IKKE inkluder interne CRM-tall (leads, pipeline) i rapporten - disse er kun for kontekst.
 - Varier skrivestilen: noen ganger narrativt, andre ganger datadrevet.
-- Inkluder handlingsrettede innsikter.
+- Inkluder handlingsrettede innsikter og ekspertanalyse.
 - Gjenta aldri samme struktur to ganger.
 - Svar med ren JSON i formatet beskrevet i brukerens melding.
+- Oppgi kilder når du refererer til spesifikke tall eller statistikk.
 
-STRENG REGEL: Du skal ALDRI skrive noe som motsier tallene du far. Hvis EUR/NOK har falt (NOK styrket seg), skal du IKKE skrive at kronen svekker seg. Bruk alltid de eksakte tallene som er oppgitt. Hvis du er usikker pa en trend, si det eksplisitt i stedet for a gjette.`;
+STRENG REGEL: Du skal ALDRI skrive noe som motsier tallene du får. Bruk alltid de eksakte tallene som er oppgitt. Hvis du er usikker på en trend, si det eksplisitt i stedet for å gjette.`;
 
     switch (templateId) {
       case REPORT_TEMPLATES.B.id:
