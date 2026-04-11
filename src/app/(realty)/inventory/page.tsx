@@ -416,16 +416,37 @@ async function apiDeleteProperty(id: string) {
 
 async function apiSaveProperties(properties: Property[]): Promise<{ inserted: number; deduplicated: number }> {
   try {
-    const res = await fetch('/api/properties', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(properties.map(propertyToDbRow)),
-    });
-    const result = await res.json();
-    return {
-      inserted: Array.isArray(result.data) ? result.data.length : (Array.isArray(result) ? result.length : 0),
-      deduplicated: result.deduplicated || 0,
-    };
+    const dbRows = properties.map(propertyToDbRow);
+    const bodyStr = JSON.stringify(dbRows);
+    console.log(`[Import] Sending ${dbRows.length} properties (${(bodyStr.length / 1024).toFixed(0)} KB) to API...`);
+
+    // Chunk on frontend to avoid request size limits
+    const chunkSize = 100;
+    let totalInserted = 0;
+    let totalDeduplicated = 0;
+
+    for (let i = 0; i < dbRows.length; i += chunkSize) {
+      const chunk = dbRows.slice(i, i + chunkSize);
+      console.log(`[Import] Chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(dbRows.length / chunkSize)}: ${chunk.length} properties`);
+      const res = await fetch('/api/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chunk),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Import] Chunk failed (${res.status}):`, errText);
+        continue;
+      }
+      const result = await res.json();
+      const chunkInserted = Array.isArray(result.data) ? result.data.length : 0;
+      totalInserted += chunkInserted;
+      totalDeduplicated += result.deduplicated || 0;
+      console.log(`[Import] Chunk done: ${chunkInserted} inserted, ${result.deduplicated || 0} deduplicated`);
+    }
+
+    console.log(`[Import] Total: ${totalInserted} inserted, ${totalDeduplicated} deduplicated`);
+    return { inserted: totalInserted, deduplicated: totalDeduplicated };
   } catch (err) {
     console.error('Failed to save properties to DB:', err);
     return { inserted: 0, deduplicated: 0 };
