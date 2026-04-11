@@ -95,7 +95,8 @@ function PropertyVideoContent() {
             year_built: Number(row.year_built || 0),
             energy_rating: String(row.energy_rating || ""),
             primary_image: String(row.primary_image || ""),
-            gallery: Array.isArray(row.images) ? row.images : (Array.isArray(row.gallery) ? row.gallery : []),
+            gallery: Array.isArray(row.gallery) ? row.gallery : [],
+            floorplans: Array.isArray(row.floorplans) ? row.floorplans : [],
             status: String(row.status || ""),
           }))
         );
@@ -523,10 +524,12 @@ function PropertyVideoContent() {
                       Plantegninger
                     </h3>
                     {(() => {
-                      // Floor plans: check for images with "plano" or "plan" in URL
-                      const floorPlanImages = allImages.filter(img =>
+                      // Floor plans: use dedicated floorplans field, fallback to URL pattern in gallery
+                      const dedicatedPlans = selectedProperty?.floorplans || [];
+                      const galleryPlans = allImages.filter(img =>
                         /plan[oe]|floor.?plan|plantegning/i.test(img)
                       );
+                      const floorPlanImages = dedicatedPlans.length > 0 ? dedicatedPlans : galleryPlans;
                       if (floorPlanImages.length > 0) {
                         return (
                           <div className="grid grid-cols-2 gap-3">

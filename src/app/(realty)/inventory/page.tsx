@@ -33,6 +33,7 @@ interface Property {
   imageColor: string;
   imageUrl?: string;
   gallery?: string[];
+  floorplans?: string[];
   externalUrl?: string;
   source: "manual" | "csv" | "xml" | "redsp";
   yearBuilt?: number;
@@ -217,6 +218,16 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     });
   }
 
+  // Floor plans: <plans><plan><url>https://...</url></plan>...</plans> or <floorplans>...</floorplans>
+  const floorplanUrls: string[] = [];
+  const plansContainer = node.querySelector(":scope > plans") || node.querySelector(":scope > floorplans");
+  if (plansContainer) {
+    plansContainer.querySelectorAll(":scope > plan, :scope > floorplan, :scope > image").forEach(planNode => {
+      const url = planNode.querySelector(":scope > url")?.textContent?.trim() || planNode.textContent?.trim() || "";
+      if (url && url.startsWith("http")) floorplanUrls.push(url);
+    });
+  }
+
   // URL: <url><no>https://...</no></url> or <url>https://...</url>
   let externalUrl = getMultilangText(node, "url", "no") || getDirectChild(node, "url") || "";
 
@@ -269,6 +280,7 @@ function parseRedSPPropertyNode(node: Element): Property | null {
     imageColor: gradients[Math.floor(Math.random() * gradients.length)],
     imageUrl: imageUrl || undefined,
     gallery: galleryUrls.length > 0 ? galleryUrls : undefined,
+    floorplans: floorplanUrls.length > 0 ? floorplanUrls : undefined,
     externalUrl: externalUrl || undefined,
     source: "redsp",
     ref: ref || undefined,
@@ -340,7 +352,8 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     views: Number(row.views) || 0,
     imageColor: String(row.image_color || row.imageColor || gradients[Math.floor(Math.random() * gradients.length)]),
     imageUrl: (row.primary_image || row.imageUrl || undefined) as string | undefined,
-    gallery: Array.isArray(row.images) ? (row.images as string[]) : (Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined),
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : undefined,
+    floorplans: Array.isArray(row.floorplans) ? (row.floorplans as string[]) : undefined,
     externalUrl: (row.external_url || row.externalUrl || undefined) as string | undefined,
     source: (row.source as Property["source"]) || "manual",
     yearBuilt: row.year_built != null ? Number(row.year_built) : (row.yearBuilt != null ? Number(row.yearBuilt) : undefined),
@@ -368,7 +381,8 @@ function propertyToDbRow(p: Partial<Property> & { id?: string }) {
   if (p.views !== undefined) row.views = p.views;
   if (p.imageColor !== undefined) row.image_color = p.imageColor;
   if (p.imageUrl !== undefined) row.primary_image = p.imageUrl;
-  if (p.gallery !== undefined) row.images = p.gallery;
+  if (p.gallery !== undefined) row.gallery = p.gallery;
+  if (p.floorplans !== undefined) row.floorplans = p.floorplans;
   if (p.externalUrl !== undefined) row.external_url = p.externalUrl;
   if (p.source !== undefined) row.source = p.source;
   if (p.yearBuilt !== undefined) row.year_built = p.yearBuilt;
