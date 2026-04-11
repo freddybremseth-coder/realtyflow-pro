@@ -32,6 +32,7 @@ interface Property {
   energy_rating: string;
   primary_image: string;
   gallery: string[];
+  floorplans: string[];
   status: string;
 }
 
@@ -535,7 +536,7 @@ function PropertyVideoContent() {
                       if (floorPlanImages.length > 0) {
                         return (
                           <div className="grid grid-cols-2 gap-3">
-                            {floorPlanImages.map((img, idx) => (
+                            {floorPlanImages.map((img: string, idx: number) => (
                               <button
                                 key={idx}
                                 onClick={() => {

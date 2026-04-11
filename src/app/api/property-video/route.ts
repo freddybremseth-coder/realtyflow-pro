@@ -97,27 +97,38 @@ Generate:
 
 Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
 
-      const res = await client.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        messages: [{ role: "user", content: prompt }],
-      });
+      try {
+        const res = await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1500,
+          messages: [{ role: "user", content: prompt }],
+        });
 
-      const text = res.content.find((c) => c.type === "text")?.text || "";
-      console.log("[Property Video API] AI response text:", text.substring(0, 200));
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          console.log("[Property Video API] Parsed SEO:", JSON.stringify(parsed).substring(0, 200));
-          return NextResponse.json(parsed);
-        } catch (parseErr) {
-          console.error("[Property Video API] JSON parse error:", parseErr);
+        const text = res.content.find((c) => c.type === "text")?.text || "";
+        console.log("[Property Video API] AI response text:", text.substring(0, 200));
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return NextResponse.json(parsed);
+          } catch (parseErr) {
+            console.error("[Property Video API] JSON parse error:", parseErr);
+          }
         }
+        console.error("[Property Video API] Failed to parse AI response, raw:", text);
+      } catch (aiErr) {
+        console.error("[Property Video API] Anthropic API error, using fallback:", aiErr instanceof Error ? aiErr.message : aiErr);
       }
 
-      console.error("[Property Video API] Failed to parse AI response, raw:", text);
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 });
+      // Fallback: generate template-based SEO (used when AI fails or key is invalid)
+      const fallbackTitle = `${property.property_type || property.type || "Property"} for Sale in ${property.location || property.town || "Spain"} | ${property.bedrooms || 0} Bed, €${Number(property.price || 0).toLocaleString()}`;
+      const loc = property.location || property.town || "Spain";
+      const fallbackDesc = `${property.property_type || property.type || "Property"} for sale in ${loc}. ${property.bedrooms || 0} bedrooms, ${property.bathrooms || 0} bathrooms, ${property.area || property.built_area || 0}m² built area. Price: €${Number(property.price || 0).toLocaleString()}. ${property.pool ? "Private pool. " : ""}${property.garage ? "Garage. " : ""}${brand?.name ? `Contact ${brand.name}` : ""}${brand?.website ? ` - ${brand.website}` : ""}`;
+      return NextResponse.json({
+        title: fallbackTitle.substring(0, 70),
+        description: fallbackDesc,
+        tags: ["property", "real estate", "spain", loc, property.property_type || property.type || "", brand?.name || ""].filter(Boolean),
+      });
     }
 
     if (action === "render_and_upload") {
