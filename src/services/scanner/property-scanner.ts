@@ -166,8 +166,9 @@ export class PropertyScanner {
       bySource['AI Market Discovery'] = properties.length;
       console.log(`[PropertyScanner] AI Discovery found ${properties.length} properties`);
     } catch (err) {
-      errors.push(`AI Discovery: ${err instanceof Error ? err.message : 'Failed'}`);
-      console.error('[PropertyScanner] AI Discovery failed:', err);
+      const errMsg = err instanceof Error ? `${err.message} | ${err.stack?.split('\n')[1]?.trim() || ''}` : String(err);
+      errors.push(`AI Discovery: ${errMsg}`);
+      console.error('[PropertyScanner] AI Discovery failed:', errMsg);
     }
 
     // SUPPLEMENTARY: Try to fetch from portal sources (many will be blocked by anti-bot)
@@ -209,8 +210,12 @@ export class PropertyScanner {
    * Uses Claude's knowledge to identify current new build projects and land opportunities
    */
   private async aiMarketDiscovery(): Promise<ScannedProperty[]> {
-    if (!this.client) return [];
+    if (!this.client) {
+      console.error('[PropertyScanner] aiMarketDiscovery: no Anthropic client (ANTHROPIC_API_KEY missing)');
+      return [];
+    }
 
+    console.log('[PropertyScanner] aiMarketDiscovery: calling Claude Haiku API...');
     const response = await this.client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 6000,
@@ -285,18 +290,24 @@ Bruk virkelige prosjektnavn der du kjenner dem. Returner minst 15 eiendommer.`,
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    console.log(`[PropertyScanner] AI Discovery response length: ${text.length} chars, stop_reason: ${response.stop_reason}`);
 
     try {
       const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) return [];
+      if (!jsonMatch) {
+        console.error('[PropertyScanner] AI Discovery: no JSON array found in response. First 500 chars:', text.substring(0, 500));
+        return [];
+      }
       const properties: ScannedProperty[] = JSON.parse(jsonMatch[0]).map((p: ScannedProperty) => ({
         ...p,
         source_url: this.sanitizeSourceUrl(p.source_url, p.municipality, p.type),
         scraped_at: new Date().toISOString(),
       }));
+      console.log(`[PropertyScanner] AI Discovery parsed ${properties.length} properties successfully`);
       return properties;
-    } catch {
-      console.error('[PropertyScanner] Failed to parse AI discovery response');
+    } catch (parseErr) {
+      console.error('[PropertyScanner] Failed to parse AI discovery response:', parseErr instanceof Error ? parseErr.message : parseErr);
+      console.error('[PropertyScanner] Response first 500 chars:', text.substring(0, 500));
       return [];
     }
   }

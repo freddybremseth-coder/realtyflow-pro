@@ -152,16 +152,19 @@ export default function ScannerPage() {
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
+  const [scanError, setScanError] = useState<string | null>(null);
+
   const runWeeklyScan = async () => {
     setScanning(true);
+    setScanError(null);
     try {
       const res = await fetch("/api/scanner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "weekly_scan" }),
       });
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         const newProps = (data.properties || []).map((p: ScannedProperty, i: number) => ({
           ...p,
           id: p.id || `scan-${Date.now()}-${i}`,
@@ -169,9 +172,14 @@ export default function ScannerPage() {
         }));
         setProperties((prev) => [...newProps, ...prev]);
         setLatestScan({ created_at: new Date().toISOString(), properties_found: data.total_found || 0 });
+        if (data.errors?.length > 0) {
+          setScanError(`Fant ${data.total_found || 0} eiendommer, men med feil: ${data.errors.join("; ")}`);
+        }
+      } else {
+        setScanError(data.error || `Skanning feilet (HTTP ${res.status})`);
       }
-    } catch {
-      // silently handle
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Nettverksfeil ved skanning");
     } finally {
       setScanning(false);
     }
@@ -307,6 +315,17 @@ export default function ScannerPage() {
             : <><Search className="mr-2 h-4 w-4" /> Skann na</>}
         </Button>
       </div>
+
+      {/* Scan Error */}
+      {scanError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2">
+          <X size={16} className="text-red-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm text-red-300">{scanError}</p>
+            <button onClick={() => setScanError(null)} className="text-xs text-red-400/60 hover:text-red-300 mt-1">Lukk</button>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
