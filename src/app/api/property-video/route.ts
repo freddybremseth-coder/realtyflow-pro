@@ -44,13 +44,16 @@ export async function POST(req: NextRequest) {
 
       const client = getAnthropicClient();
       if (!client) {
+        console.log("[Property Video API] No Anthropic key, using fallback SEO");
         // Fallback without AI
-        const title = `${property.type || "Property"} for Sale in ${property.location || "Spain"} - ${property.bedrooms || 0} Bed, €${Number(property.price || 0).toLocaleString()}`;
-        return NextResponse.json({
+        const title = `${property.property_type || property.type || "Property"} for Sale in ${property.location || "Spain"} - ${property.bedrooms || 0} Bed, €${Number(property.price || 0).toLocaleString()}`;
+        const result = {
           title,
-          description: `Beautiful ${property.type} in ${property.location}. ${property.bedrooms} bedrooms, ${property.bathrooms} bathrooms, ${property.area || property.built_area}m². Price: €${Number(property.price || 0).toLocaleString()}`,
-          tags: ["property", "spain", "real estate", property.location || "", property.type || ""].filter(Boolean),
-        });
+          description: `Beautiful ${property.property_type || property.type || "property"} in ${property.location}. ${property.bedrooms} bedrooms, ${property.bathrooms} bathrooms, ${property.built_area || property.area}m². Price: €${Number(property.price || 0).toLocaleString()}`,
+          tags: ["property", "spain", "real estate", property.location || "", property.property_type || property.type || ""].filter(Boolean),
+        };
+        console.log("[Property Video API] Fallback result:", JSON.stringify(result));
+        return NextResponse.json(result);
       }
 
       const langMap: Record<string, string> = {
@@ -101,12 +104,19 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
       });
 
       const text = res.content.find((c) => c.type === "text")?.text || "";
+      console.log("[Property Video API] AI response text:", text.substring(0, 200));
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return NextResponse.json(parsed);
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          console.log("[Property Video API] Parsed SEO:", JSON.stringify(parsed).substring(0, 200));
+          return NextResponse.json(parsed);
+        } catch (parseErr) {
+          console.error("[Property Video API] JSON parse error:", parseErr);
+        }
       }
 
+      console.error("[Property Video API] Failed to parse AI response, raw:", text);
       return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 });
     }
 

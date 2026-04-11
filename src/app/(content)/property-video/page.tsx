@@ -135,23 +135,35 @@ function PropertyVideoContent() {
   }, [isPlaying, allImages.length]);
 
   const generateSeo = async () => {
-    if (!selectedProperty || !brand) return;
+    if (!selectedProperty) return;
     setGeneratingSeo(true);
     try {
+      const brandPayload = brand
+        ? { name: brand.name, website: brand.website }
+        : { name: "Real Estate Agency", website: "" };
       const res = await fetch("/api/property-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generate_seo",
           property: selectedProperty,
-          brand: { name: brand.name, website: brand.website },
+          brand: brandPayload,
           language: seoLanguage,
         }),
       });
+      if (!res.ok) {
+        console.error("SEO API error:", res.status, await res.text());
+        setGeneratingSeo(false);
+        return;
+      }
       const data = await res.json();
+      console.log("SEO response:", data);
       if (data.title) setSeoTitle(data.title);
       if (data.description) setSeoDescription(data.description);
       if (data.tags) setSeoTags(data.tags);
+      if (data.error) {
+        console.error("SEO generation error:", data.error);
+      }
     } catch (err) {
       console.error("Failed to generate SEO:", err);
     }
