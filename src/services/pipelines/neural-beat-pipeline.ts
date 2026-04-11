@@ -1,7 +1,7 @@
 import { updateSongStatus, updateSongFields, getGenreImages, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
-import { uploadVideo, setThumbnail } from '@/services/integrations/youtube-client';
+import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
   PipelineRun,
@@ -79,6 +79,103 @@ async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promis
   return publicData.publicUrl;
 }
 
+// ─── Playlist Mapping ──────────────────────────────────────────────
+// Maps AI-detected mood/energy/genre to YouTube playlist names.
+// If a playlist doesn't exist, it gets created automatically.
+
+const PLAYLIST_RULES: Array<{
+  name: string;
+  description: string;
+  match: (mood: string, energy: string, genre: string) => boolean;
+}> = [
+  {
+    name: '🏋️ Treningsmusikk | Workout Beats',
+    description: 'High-energy tracks perfect for workouts and training. AI-curated by Re-Master Freddy.',
+    match: (mood, energy) =>
+      energy === 'high' || mood.includes('energetic') || mood.includes('aggressive') || mood.includes('intense') || mood.includes('power'),
+  },
+  {
+    name: '📚 Studere & Fokus | Study & Focus',
+    description: 'Calm, focused beats for studying and deep work. AI-curated by Re-Master Freddy.',
+    match: (mood, energy, genre) =>
+      (mood.includes('focus') || mood.includes('ambient') || genre.includes('lo-fi') || genre.includes('lofi')) && energy !== 'high',
+  },
+  {
+    name: '🌅 Morgenchill | Morning Vibes',
+    description: 'Gentle, uplifting tracks to start your day. AI-curated by Re-Master Freddy.',
+    match: (mood) =>
+      mood.includes('uplifting') || mood.includes('cheerful') || mood.includes('happy') || mood.includes('sunrise') || mood.includes('morning'),
+  },
+  {
+    name: '🌙 Kveldschill | Evening Relaxation',
+    description: 'Relaxing tracks for winding down in the evening. AI-curated by Re-Master Freddy.',
+    match: (mood, energy) =>
+      (mood.includes('chill') || mood.includes('relax') || mood.includes('calm') || mood.includes('peaceful')) && energy === 'low',
+  },
+  {
+    name: '💜 Deep & Dreamy | Atmospheric',
+    description: 'Deep, atmospheric, and dreamy soundscapes. AI-curated by Re-Master Freddy.',
+    match: (mood, _energy, genre) =>
+      mood.includes('dream') || mood.includes('ethereal') || mood.includes('atmospheric') || genre.includes('ambient') || genre.includes('downtempo'),
+  },
+  {
+    name: '🔥 Dance & Party | EDM Hits',
+    description: 'Upbeat dance tracks and EDM bangers. AI-curated by Re-Master Freddy.',
+    match: (mood, energy, genre) =>
+      genre.includes('dance') || genre.includes('edm') || genre.includes('house') || genre.includes('techno') || (energy === 'high' && mood.includes('euphori')),
+  },
+  {
+    name: '❤️ Romantic & Sensual | Love Vibes',
+    description: 'Romantic and sensual music for intimate moments. AI-curated by Re-Master Freddy.',
+    match: (mood) =>
+      mood.includes('romantic') || mood.includes('sensual') || mood.includes('love') || mood.includes('passion'),
+  },
+  {
+    name: '🎵 Re-Master Freddy | Alle spor',
+    description: 'Complete collection of all Re-Master Freddy tracks. AI-generated music.',
+    match: () => true, // Catch-all: every song goes here
+  },
+];
+
+function getPlaylistForSong(mood: string, energy: string, genre: string): typeof PLAYLIST_RULES[0] {
+  const moodLower = mood.toLowerCase();
+  const genreLower = genre.toLowerCase();
+  return PLAYLIST_RULES.find((r) => r.match(moodLower, energy, genreLower)) || PLAYLIST_RULES[PLAYLIST_RULES.length - 1];
+}
+
+async function ensurePlaylistAndAdd(videoId: string, mood: string, energy: string, genre: string): Promise<string> {
+  const target = getPlaylistForSong(mood, energy, genre);
+  const catchAll = PLAYLIST_RULES[PLAYLIST_RULES.length - 1];
+
+  // Fetch existing playlists
+  const existing = await listPlaylists();
+
+  // Helper: find or create playlist
+  const findOrCreate = async (rule: typeof PLAYLIST_RULES[0]): Promise<string> => {
+    const found = existing.find((p) => p.title === rule.name);
+    if (found) return found.id;
+    const created = await createPlaylist(rule.name, rule.description, 'public');
+    return created.id;
+  };
+
+  // Add to the matched playlist
+  const playlistId = await findOrCreate(target);
+  await addToPlaylist(playlistId, videoId);
+
+  // Also add to catch-all "Alle spor" if it's not already the catch-all
+  if (target.name !== catchAll.name) {
+    try {
+      const catchAllId = await findOrCreate(catchAll);
+      await addToPlaylist(catchAllId, videoId);
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  console.log(`[NeuralBeatPipeline] Added to playlist: "${target.name}"`);
+  return target.name;
+}
+
 export class NeuralBeatPipeline {
   /** The live PipelineRun, mutated in place so callers can poll progress. */
   public currentRun: PipelineRun | null = null;
@@ -136,6 +233,8 @@ export class NeuralBeatPipeline {
     let videoRenderPath: string | null = null;
     let videoBuffer: Buffer | null = null;
     let youtubeUrl: string | null = null;
+    let youtubeVideoId: string | null = null;
+    let playlistName: string | null = null;
     let genreImageUrl: string | null = null;
     let aiImageLocalPaths: string[] = [];  // Track AI-generated image paths for saving back to Airtable
     let usedImageGenre: string = '';        // Genre used for this song's images
@@ -449,6 +548,7 @@ export class NeuralBeatPipeline {
           privacyStatus: (youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public',
         });
         youtubeUrl = uploadResult.youtubeUrl;
+        youtubeVideoId = uploadResult.videoId;
 
         // Try to set custom thumbnail (requires channel verification)
         if (thumbnailBuffer) {
@@ -457,6 +557,24 @@ export class NeuralBeatPipeline {
             console.log('[NeuralBeatPipeline] Custom thumbnail set successfully');
           } catch (e) {
             console.warn('[NeuralBeatPipeline] Could not set custom thumbnail (non-fatal):', e);
+          }
+        }
+
+        // Add video to auto-detected playlist based on mood/energy/genre
+        if (songAnalysis && youtubeVideoId) {
+          try {
+            steps[currentStepIndex].result = 'Legger til i spilleliste...';
+            notify();
+            playlistName = await ensurePlaylistAndAdd(
+              youtubeVideoId,
+              songAnalysis.mood,
+              songAnalysis.energy,
+              songAnalysis.genre
+            );
+            steps[currentStepIndex].result = `Lagt til i "${playlistName}"`;
+            notify();
+          } catch (e) {
+            console.warn('[NeuralBeatPipeline] Playlist assignment failed (non-fatal):', e);
           }
         }
 
@@ -486,6 +604,7 @@ export class NeuralBeatPipeline {
             tags: youtubeMetadata!.tags,
             renderer: 'ffmpeg',
             processedAt: new Date().toISOString(),
+            playlist: playlistName || undefined,
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });
@@ -621,6 +740,7 @@ export class NeuralBeatPipeline {
         youtubeMetadata,
         localImagePaths,
         genreImageUrl,
+        playlistName,
       };
       notify();
     } catch (error) {
