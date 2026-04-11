@@ -12,14 +12,6 @@ import {
   Image as ImageIcon, Copy, Check, ExternalLink, Tag,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
-import { createClient } from "@supabase/supabase-js";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
 
 interface Property {
   id: string;
@@ -80,17 +72,34 @@ function PropertyVideoContent() {
 
   const fetchProperties = useCallback(async () => {
     setLoadingProperties(true);
-    const supabase = getSupabase();
-    if (!supabase) { setLoadingProperties(false); return; }
-
     try {
-      const { data } = await supabase
-        .from("properties")
-        .select("id, ref, title, description, location, town, price, property_type, bedrooms, bathrooms, built_area, plot_size, pool, garage, year_built, energy_rating, primary_image, gallery, status")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      setProperties((data || []) as Property[]);
+      const res = await fetch("/api/properties");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setProperties(
+          data.map((row: Record<string, unknown>) => ({
+            id: String(row.id || ""),
+            ref: String(row.ref || ""),
+            title: String(row.title || row.title_no || row.title_en || row.title_es || ""),
+            description: String(row.description || row.description_no || row.description_en || ""),
+            location: String(row.location || ""),
+            town: String(row.town || ""),
+            price: Number(row.price || 0),
+            property_type: String(row.property_type || ""),
+            bedrooms: Number(row.bedrooms || 0),
+            bathrooms: Number(row.bathrooms || 0),
+            built_area: Number(row.built_area || 0),
+            plot_size: Number(row.plot_size || 0),
+            pool: Boolean(row.pool),
+            garage: Boolean(row.garage),
+            year_built: Number(row.year_built || 0),
+            energy_rating: String(row.energy_rating || ""),
+            primary_image: String(row.primary_image || ""),
+            gallery: Array.isArray(row.gallery) ? row.gallery : [],
+            status: String(row.status || ""),
+          }))
+        );
+      }
     } catch (err) {
       console.error("Failed to fetch properties:", err);
     }
