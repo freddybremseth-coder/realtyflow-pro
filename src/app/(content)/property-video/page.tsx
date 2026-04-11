@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +45,9 @@ interface Property {
 
 const realEstateBrands = BRANDS.filter((b) => b.type === "real_estate");
 
-export default function PropertyVideoPage() {
+function PropertyVideoContent() {
+  const searchParams = useSearchParams();
+  const preselectedId = searchParams.get("id");
   const [selectedBrand, setSelectedBrand] = useState(realEstateBrands[0]?.id || "");
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -67,6 +70,11 @@ export default function PropertyVideoPage() {
   const [uploadResult, setUploadResult] = useState<{ videoId: string; url: string } | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Auto-render pipeline
+  const [rendering, setRendering] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<string>("");
+  const [renderStep, setRenderStep] = useState(0);
 
   const brand = BRANDS.find((b) => b.id === selectedBrand);
 
@@ -92,6 +100,14 @@ export default function PropertyVideoPage() {
   useEffect(() => {
     fetchProperties();
   }, [fetchProperties]);
+
+  // Auto-select property from URL query param
+  useEffect(() => {
+    if (preselectedId && properties.length > 0 && !selectedProperty) {
+      const match = properties.find((p) => p.id === preselectedId);
+      if (match) selectProperty(match);
+    }
+  }, [preselectedId, properties, selectedProperty]);
 
   const allImages = selectedProperty
     ? [selectedProperty.primary_image, ...(selectedProperty.gallery || [])].filter(Boolean)
@@ -157,6 +173,66 @@ export default function PropertyVideoPage() {
       console.error("Upload failed:", err);
     }
     setUploading(false);
+  };
+
+  const renderAndUpload = async () => {
+    if (!selectedProperty || !seoTitle || allImages.length === 0) return;
+    setRendering(true);
+    setRenderProgress("Starter...");
+    setRenderStep(0);
+    setUploadResult(null);
+
+    try {
+      const res = await fetch("/api/property-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "render_and_upload",
+          imageUrls: allImages,
+          title: seoTitle,
+          description: seoDescription,
+          tags: seoTags,
+          privacyStatus: "private",
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error("Kunne ikke starte rendering");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "heartbeat") continue;
+            if (data.message) setRenderProgress(data.message);
+            if (data.step) setRenderStep(data.step);
+            if (data.completed && data.youtubeUrl) {
+              setUploadResult({ videoId: data.videoId, url: data.youtubeUrl });
+            }
+            if (data.error) {
+              setRenderProgress(`Feil: ${data.error}`);
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      setRenderProgress(`Feil: ${err instanceof Error ? err.message : "Ukjent feil"}`);
+    } finally {
+      setRendering(false);
+    }
   };
 
   const copyToClipboard = (text: string, field: string) => {
@@ -480,12 +556,68 @@ export default function PropertyVideoPage() {
                 </CardContent>
               </Card>
 
-              {/* Upload to YouTube */}
+              {/* Auto Render & Upload */}
+              <Card>
+                <CardContent className="p-4 space-y-4">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Sparkles size={14} className="text-amber-400" />
+                    Auto-render &amp; YouTube-opplasting
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Lag automatisk en slideshow-video fra eiendomsbildene og last opp til YouTube.
+                    Generer SEO-innhold f&oslash;rst.
+                  </p>
+
+                  {rendering && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-slate-300">
+                        <Loader2 size={14} className="animate-spin text-amber-400" />
+                        {renderProgress}
+                      </div>
+                      <div className="w-full bg-slate-700 rounded-full h-2">
+                        <div
+                          className="bg-gradient-to-r from-amber-500 to-red-500 h-2 rounded-full transition-all"
+                          style={{ width: `${(renderStep / 5) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={renderAndUpload}
+                    disabled={!seoTitle || allImages.length === 0 || rendering}
+                    className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500"
+                  >
+                    {rendering ? (
+                      <><Loader2 size={16} className="mr-2 animate-spin" />Rendrer &amp; laster opp...</>
+                    ) : (
+                      <><Youtube size={16} className="mr-2" />Render video &amp; last opp til YouTube</>
+                    )}
+                  </Button>
+
+                  {uploadResult && (
+                    <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      <p className="text-sm text-emerald-400 font-medium">Video publisert!</p>
+                      <a
+                        href={uploadResult.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-300 hover:underline flex items-center gap-1 mt-1"
+                      >
+                        <ExternalLink size={10} />
+                        {uploadResult.url}
+                      </a>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Upload to YouTube (manual) */}
               <Card>
                 <CardContent className="p-4 space-y-4">
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                     <Upload size={14} className="text-red-400" />
-                    Last opp til YouTube
+                    Manuell opplasting
                   </h3>
 
                   {/* Video file selector */}
@@ -552,5 +684,13 @@ export default function PropertyVideoPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PropertyVideoPage() {
+  return (
+    <Suspense>
+      <PropertyVideoContent />
+    </Suspense>
   );
 }

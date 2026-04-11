@@ -12,7 +12,7 @@ import {
   Euro, Pencil, Trash2, ExternalLink, RefreshCw,
   Sparkles, Copy, CheckCircle2, Target, Calendar,
   DollarSign, BarChart3, Instagram, Linkedin,
-  Facebook, Mail, MessageSquare, Clock, Send,
+  Facebook, Mail, MessageSquare, Clock, Send, Youtube,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -960,25 +960,39 @@ REGLER:
                     <div className="flex items-center gap-1"><Maximize size={14} className="text-slate-400" /><span>{property.area} m²</span></div>
                     <Badge variant="outline" className="text-[10px] ml-auto">{property.type}</Badge>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full mt-3 text-xs border-purple-500/30 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200"
-                    disabled={generatingSoMe === property.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      generateSoMePost(property);
-                    }}
-                  >
-                    {generatingSoMe === property.id ? (
-                      <Loader2 size={12} className="mr-1.5 animate-spin" />
-                    ) : someSuccess === property.id ? (
-                      <CheckCircle2 size={12} className="mr-1.5 text-emerald-400" />
-                    ) : (
-                      <Instagram size={12} className="mr-1.5" />
-                    )}
-                    {generatingSoMe === property.id ? "Genererer..." : someSuccess === property.id ? "Opprettet i Content Hub!" : "Lag SoMe-post"}
-                  </Button>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs border-purple-500/30 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200"
+                      disabled={generatingSoMe === property.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        generateSoMePost(property);
+                      }}
+                    >
+                      {generatingSoMe === property.id ? (
+                        <Loader2 size={12} className="mr-1.5 animate-spin" />
+                      ) : someSuccess === property.id ? (
+                        <CheckCircle2 size={12} className="mr-1.5 text-emerald-400" />
+                      ) : (
+                        <Instagram size={12} className="mr-1.5" />
+                      )}
+                      {generatingSoMe === property.id ? "Genererer..." : someSuccess === property.id ? "Opprettet!" : "SoMe"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs border-red-500/30 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.location.href = `/property-video?id=${property.id}`;
+                      }}
+                    >
+                      <Youtube size={12} className="mr-1.5" />
+                      YouTube
+                    </Button>
+                  </div>
                 </CardContent>
               </>
             ) : (
@@ -1015,6 +1029,13 @@ REGLER:
                     ) : (
                       <Instagram size={14} />
                     )}
+                  </button>
+                  <button
+                    title="Lag YouTube-video"
+                    onClick={(e) => { e.stopPropagation(); window.location.href = `/property-video?id=${property.id}`; }}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    <Youtube size={14} />
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); toggleFavorite(property.id); }}>
                     <Heart size={16} className={favorites.has(property.id) ? "text-red-400 fill-red-400" : "text-slate-500 hover:text-red-400"} />

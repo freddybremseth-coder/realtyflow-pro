@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
 import { createClient } from "@supabase/supabase-js";
-import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote } from "lucide-react";
+import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf } from "lucide-react";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -32,10 +32,27 @@ interface BrandData {
   growthActions: number;
 }
 
+interface OliviaData {
+  farmName: string;
+  currency: string;
+  parcels: { count: number; totalArea: number; totalTrees: number };
+  financials: {
+    totalRevenue: number;
+    totalExpenses: number;
+    totalSubsidies: number;
+    netProfit: number;
+    totalHarvestKg: number;
+    harvestCount: number;
+  };
+  expensesByCategory: Record<string, number>;
+  harvestsBySeason: Record<string, { kg: number; revenue: number }>;
+}
+
 export default function BusinessOverviewPage() {
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [brandDataMap, setBrandDataMap] = useState<Record<string, BrandData>>({});
   const [loading, setLoading] = useState(true);
+  const [oliviaData, setOliviaData] = useState<OliviaData | null>(null);
   const [totals, setTotals] = useState({
     totalPosts: 0,
     publishedPosts: 0,
@@ -51,7 +68,7 @@ export default function BusinessOverviewPage() {
       // Fetch all data sources in parallel
       const supabase = getSupabase();
 
-      const [contentRes, accountsRes, allContactsRes, actionsRes] = await Promise.allSettled([
+      const [contentRes, accountsRes, allContactsRes, actionsRes, oliviaRes] = await Promise.allSettled([
         // Fetch content_publications directly from Supabase (not /api/content which queries wrong table)
         supabase
           ? supabase.from("content_publications").select("id, brand_id, status, created_at").order("created_at", { ascending: false }).limit(500).then(r => ({ publications: r.data || [] }))
@@ -60,12 +77,19 @@ export default function BusinessOverviewPage() {
         // Fetch ALL contacts in a single call to avoid double-counting
         fetch("/api/contacts?view=pipeline").then(r => r.json()).catch(() => ({ contacts: [] })),
         fetch("/api/growth/actions").then(r => r.json()).catch(() => ({ actions: [] })),
+        fetch("/api/olivia").then(r => r.json()).catch(() => null),
       ]);
 
       const publications = contentRes.status === "fulfilled" ? (contentRes.value.publications || []) : [];
       const socialAccounts = accountsRes.status === "fulfilled" ? (accountsRes.value.accounts || []) : [];
       const allContacts: Record<string, unknown>[] = allContactsRes.status === "fulfilled" ? (allContactsRes.value.contacts || []) : [];
       const growthActions = actionsRes.status === "fulfilled" ? (actionsRes.value.actions || []) : [];
+
+      // Olivia farm data
+      const olivia = oliviaRes.status === "fulfilled" && oliviaRes.value && !oliviaRes.value.error
+        ? oliviaRes.value as OliviaData
+        : null;
+      setOliviaData(olivia);
 
       // Derive pipeline and CRM views from single contacts list (no duplicates)
       const pipelineContacts = allContacts;
@@ -202,6 +226,66 @@ export default function BusinessOverviewPage() {
           </Card>
         );
       })()}
+
+      {/* Olivia / DonaAnna Farm Overview */}
+      {oliviaData && (
+        <Card className="border-green-500/30 bg-gradient-to-r from-green-500/10 to-amber-500/10">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <Leaf size={22} className="text-green-400" />
+              <h2 className="text-lg font-bold text-white">{oliviaData.farmName} — Gårdsdrift</h2>
+              <Badge variant="secondary" className="text-[10px] ml-auto">Olivia</Badge>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Høstinntekter</p>
+                <p className="text-xl font-bold text-emerald-400">€{oliviaData.financials.totalRevenue.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Subsidier</p>
+                <p className="text-xl font-bold text-blue-400">€{oliviaData.financials.totalSubsidies.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Utgifter</p>
+                <p className="text-xl font-bold text-red-400">€{oliviaData.financials.totalExpenses.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Netto resultat</p>
+                <p className={`text-xl font-bold ${oliviaData.financials.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  €{oliviaData.financials.netProfit.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Parseller / Trær</p>
+                <p className="text-xl font-bold text-white">
+                  {oliviaData.parcels.count} <span className="text-sm text-slate-400">/ {oliviaData.parcels.totalTrees}</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Total høst (kg)</p>
+                <p className="text-xl font-bold text-amber-400">{oliviaData.financials.totalHarvestKg.toLocaleString()}</p>
+              </div>
+            </div>
+            {/* Expense breakdown */}
+            {Object.keys(oliviaData.expensesByCategory).length > 0 && (
+              <div className="mt-4 pt-3 border-t border-slate-700/50">
+                <p className="text-[10px] text-slate-500 uppercase mb-2">Utgifter per kategori</p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(oliviaData.expensesByCategory)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 6)
+                    .map(([cat, amount]) => (
+                      <div key={cat} className="bg-slate-800/50 rounded-lg px-3 py-1.5">
+                        <span className="text-xs text-slate-300">{cat}</span>
+                        <span className="text-xs text-slate-400 ml-2">€{amount.toLocaleString()}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">

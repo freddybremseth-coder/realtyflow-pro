@@ -89,6 +89,7 @@ export interface FFmpegRenderOptions {
   title?: string;
   subtitle?: string;
   duration?: number;
+  logoPath?: string;
   onSegmentProgress?: (current: number, total: number) => void;
 }
 
@@ -131,6 +132,15 @@ async function getAudioDuration(audioPath: string): Promise<number> {
 }
 
 async function downloadFile(url: string, destPath: string): Promise<void> {
+  // Support local file paths (copy instead of download)
+  if (url.startsWith('/') || url.startsWith('file://')) {
+    const localPath = url.replace('file://', '');
+    console.log(`[FFmpeg] Copying local file: ${localPath}`);
+    await fs.copyFile(localPath, destPath);
+    const stat = await fs.stat(destPath);
+    console.log(`[FFmpeg] Copied: ${(stat.size / 1024 / 1024).toFixed(1)} MB`);
+    return;
+  }
   console.log(`[FFmpeg] Downloading: ${url.substring(0, 80)}...`);
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Download failed: ${response.status} ${url}`);
@@ -206,16 +216,29 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       console.log(`[FFmpeg] Encoding segment ${i + 1}/${imageCount}...`);
       options.onSegmentProgress?.(i + 1, imageCount);
 
-      // ── Pre-scale image to target resolution (one-time, fast) ──
+      // ── Pre-scale image to target resolution + optional logo overlay ──
       // Avoids scaling every frame during encoding (huge speedup for large images)
       const scaledPath = path.join(tempDir, `scaled-${i}.jpg`);
-      await runFFmpeg([
-        '-i', options.imagePaths[i],
-        '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`,
-        '-q:v', '2',
-        '-y',
-        scaledPath,
-      ]);
+      if (options.logoPath && fsSync.existsSync(options.logoPath)) {
+        // Scale image, then overlay logo in bottom-right corner (120px wide, 16px padding)
+        await runFFmpeg([
+          '-i', options.imagePaths[i],
+          '-i', options.logoPath,
+          '-filter_complex',
+          `[0]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}[bg];[1]scale=120:-1[logo];[bg][logo]overlay=W-w-16:H-h-16`,
+          '-q:v', '2',
+          '-y',
+          scaledPath,
+        ]);
+      } else {
+        await runFFmpeg([
+          '-i', options.imagePaths[i],
+          '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`,
+          '-q:v', '2',
+          '-y',
+          scaledPath,
+        ]);
+      }
 
       // ── Encode pre-scaled image → video clip ──
       // Optimized for speed on serverless (Vercel throttles CPU on long tasks):

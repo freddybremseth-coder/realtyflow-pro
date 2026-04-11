@@ -150,6 +150,14 @@ export default function NeuralBeatPage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Logo & custom images state
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [customImageFiles, setCustomImageFiles] = useState<File[]>([]);
+  const [customImageUrls, setCustomImageUrls] = useState<string[]>([]);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const customImagesInputRef = useRef<HTMLInputElement>(null);
+
   // YouTube stats state
   const [ytChannel, setYtChannel] = useState<YouTubeChannel | null>(null);
   const [ytVideos, setYtVideos] = useState<YouTubeVideo[]>([]);
@@ -446,6 +454,50 @@ export default function NeuralBeatPage() {
     }
   };
 
+  // Upload an image file to Supabase Storage via the same upload route
+  const uploadImageToStorage = async (file: File, prefix: string): Promise<string> => {
+    const signRes = await fetch('/api/neural-beat/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: `${prefix}-${file.name}` }),
+    });
+    if (!signRes.ok) throw new Error('Kunne ikke opprette opplastings-URL');
+    const { uploadUrl, token, publicUrl, method: uploadMethod } = await signRes.json();
+    const headers: Record<string, string> = { 'Content-Type': file.type || 'image/png' };
+    if (uploadMethod === 'direct') {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-upsert'] = 'true';
+    }
+    const uploadRes = await fetch(uploadUrl, { method: 'PUT', headers, body: file });
+    if (!uploadRes.ok) throw new Error('Bildeopplasting feilet');
+    return publicUrl;
+  };
+
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    try {
+      const url = await uploadImageToStorage(file, 'logo');
+      setLogoUrl(url);
+    } catch {
+      window.alert('Kunne ikke laste opp logo');
+      setLogoFile(null);
+    }
+  };
+
+  const handleCustomImagesSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setCustomImageFiles((prev) => [...prev, ...files]);
+    try {
+      const urls = await Promise.all(files.map((f) => uploadImageToStorage(f, 'custom')));
+      setCustomImageUrls((prev) => [...prev, ...urls]);
+    } catch {
+      window.alert('Kunne ikke laste opp noen bilder');
+    }
+  };
+
   /**
    * Recovery mode: when SSE connection drops, poll the songs API to check
    * if the pipeline actually completed (Vercel function keeps running even
@@ -550,7 +602,11 @@ export default function NeuralBeatPage() {
       const res = await fetch('/api/neural-beat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId }),
+        body: JSON.stringify({
+          recordId,
+          customImageUrls: customImageUrls.length > 0 ? customImageUrls : undefined,
+          logoUrl: logoUrl || undefined,
+        }),
         signal: controller.signal,
       });
 
@@ -868,6 +924,116 @@ export default function NeuralBeatPage() {
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Logo & Custom Images Section */}
+      <Card className="bg-slate-800/50 border-slate-700/50 mb-6">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Sparkles className="h-5 w-5 text-pink-400" />
+            <h3 className="text-sm font-medium text-white">Branding — Logo &amp; egne bilder</h3>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Logo vises på hvert bilde i videoen. Egne bilder settes inn som bilde nr. 5, 9, 17 osv.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Logo */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 mb-1.5 block">Logo (watermark)</label>
+              {!logoFile ? (
+                <div
+                  className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center cursor-pointer hover:border-pink-500/50 transition-colors"
+                  onClick={() => logoInputRef.current?.click()}
+                >
+                  <Upload className="h-5 w-5 mx-auto mb-1 text-slate-500" />
+                  <p className="text-xs text-slate-400">Klikk for å velge logo (PNG)</p>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpg,image/jpeg,image/webp"
+                    onChange={handleLogoSelect}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-700/50">
+                  {logoUrl && (
+                    <img src={logoUrl} alt="Logo" className="h-10 w-10 object-contain rounded" />
+                  )}
+                  <span className="text-sm text-white flex-1 truncate">{logoFile.name}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setLogoFile(null);
+                      setLogoUrl(null);
+                      if (logoInputRef.current) logoInputRef.current.value = '';
+                    }}
+                    className="h-7 w-7 p-0 text-slate-500 hover:text-red-400"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Custom Images */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                Egne bilder ({customImageFiles.length} valgt)
+              </label>
+              <div
+                className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center cursor-pointer hover:border-pink-500/50 transition-colors"
+                onClick={() => customImagesInputRef.current?.click()}
+              >
+                <Upload className="h-5 w-5 mx-auto mb-1 text-slate-500" />
+                <p className="text-xs text-slate-400">Klikk for å legge til bilder</p>
+                <input
+                  ref={customImagesInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleCustomImagesSelect}
+                  className="hidden"
+                />
+              </div>
+              {customImageFiles.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex flex-wrap gap-2">
+                    {customImageFiles.map((f, i) => (
+                      <div key={i} className="relative group">
+                        {customImageUrls[i] && (
+                          <img src={customImageUrls[i]} alt={f.name} className="h-12 w-12 object-cover rounded" />
+                        )}
+                        <button
+                          onClick={() => {
+                            setCustomImageFiles((prev) => prev.filter((_, idx) => idx !== i));
+                            setCustomImageUrls((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-500 rounded-full w-4 h-4 flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setCustomImageFiles([]);
+                      setCustomImageUrls([]);
+                      if (customImagesInputRef.current) customImagesInputRef.current.value = '';
+                    }}
+                    className="text-xs text-slate-400 hover:text-red-400 p-0 h-auto"
+                  >
+                    Fjern alle
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

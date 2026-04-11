@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     let { recordId } = body;
-    const { auto } = body;
+    const { auto, customImageUrls, logoUrl } = body;
 
     if (!isConfigured()) {
       return NextResponse.json(
@@ -154,7 +154,10 @@ export async function POST(request: NextRequest) {
         };
 
         try {
-          const pipelineRun = await pipeline.execute(songRecord);
+          const pipelineRun = await pipeline.execute(songRecord, {
+            customImageUrls: customImageUrls || [],
+            logoUrl: logoUrl || undefined,
+          });
           send({
             id: pipelineId,
             recordId,

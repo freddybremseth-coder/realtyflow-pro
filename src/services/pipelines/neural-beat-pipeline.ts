@@ -86,7 +86,10 @@ export class NeuralBeatPipeline {
   /** Called after each step update — used by SSE streaming to push progress to client. */
   public onProgress?: (run: PipelineRun) => void;
 
-  async execute(songRecord: SongRecord): Promise<PipelineRun> {
+  async execute(songRecord: SongRecord, options?: {
+    customImageUrls?: string[];
+    logoUrl?: string;
+  }): Promise<PipelineRun> {
     // Pre-check: verify FFmpeg is available before starting the pipeline
     const ffmpegOk = await isFFmpegAvailable();
     if (!ffmpegOk) {
@@ -298,6 +301,25 @@ export class NeuralBeatPipeline {
           throw new Error(`No images available from AI generation or Airtable genre "${imageGenre}". Cannot create video.`);
         }
 
+        // Download custom images (user-uploaded branding images)
+        const customImagePaths: string[] = [];
+        if (options?.customImageUrls && options.customImageUrls.length > 0) {
+          console.log(`[NeuralBeatPipeline] Downloading ${options.customImageUrls.length} custom images...`);
+          for (let i = 0; i < options.customImageUrls.length; i++) {
+            try {
+              const imgPath = path.join(imgTempDir, `custom-${i}.jpg`);
+              const response = await fetch(options.customImageUrls[i]);
+              if (response.ok) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                await fs.writeFile(imgPath, buffer);
+                customImagePaths.push(imgPath);
+              }
+            } catch {
+              console.warn(`[NeuralBeatPipeline] Custom image ${i} download failed (non-fatal)`);
+            }
+          }
+        }
+
         // Interleave: spread AI images evenly among Airtable images for visual variety
         // Pattern example with 5 AI + 15 Airtable = 20 total:
         //   [AI, AT, AT, AT, AI, AT, AT, AT, AI, AT, AT, AT, AI, AT, AT, AT, AI, AT, AT, AT]
@@ -320,6 +342,19 @@ export class NeuralBeatPipeline {
         // Add any remaining images
         while (aiIdx < aiImagePaths.length) allPaths.push(aiImagePaths[aiIdx++]);
         while (atIdx < genreImagePaths.length) allPaths.push(genreImagePaths[atIdx++]);
+
+        // Insert custom images at fixed positions (5, 9, 17, etc.)
+        // These are branding/personal images that should appear throughout the video
+        if (customImagePaths.length > 0) {
+          const insertPositions = [4, 8, 16]; // 0-indexed: positions 5, 9, 17
+          for (let i = 0; i < customImagePaths.length; i++) {
+            const pos = i < insertPositions.length
+              ? Math.min(insertPositions[i], allPaths.length)
+              : allPaths.length; // append extras at end
+            allPaths.splice(pos, 0, customImagePaths[i]);
+          }
+          console.log(`[NeuralBeatPipeline] Inserted ${customImagePaths.length} custom images at positions`);
+        }
 
         localImagePaths = allPaths;
 
@@ -357,17 +392,41 @@ export class NeuralBeatPipeline {
       stepRunning(steps[currentStepIndex]);
       try {
         console.log('[NeuralBeatPipeline] Starting FFmpeg render (local, zero cost)...');
+
+        // Download logo to temp file if provided
+        let logoPath: string | undefined;
+        if (options?.logoUrl) {
+          try {
+            const logoTempPath = path.join(os.tmpdir(), `nb-logo-${Date.now()}.png`);
+            const logoRes = await fetch(options.logoUrl);
+            if (logoRes.ok) {
+              const logoBuf = Buffer.from(await logoRes.arrayBuffer());
+              await fs.writeFile(logoTempPath, logoBuf);
+              logoPath = logoTempPath;
+              console.log('[NeuralBeatPipeline] Logo downloaded for watermark overlay');
+            }
+          } catch {
+            console.warn('[NeuralBeatPipeline] Logo download failed (non-fatal)');
+          }
+        }
+
         const renderResult = await renderVideo({
           audioUrl: audioUrl!,
           imagePaths: localImagePaths,
           title: songRecord.title,
           subtitle: songRecord.artist,
+          logoPath,
           onSegmentProgress: (current, total) => {
             // Update step result with segment progress to keep SSE alive
             steps[currentStepIndex].result = `Encoding segment ${current}/${total}`;
             notify();
           },
         });
+
+        // Cleanup logo temp file
+        if (logoPath) {
+          try { await fs.unlink(logoPath); } catch {}
+        }
         videoRenderPath = renderResult.videoPath;
         videoBuffer = renderResult.videoBuffer;
         console.log(`[NeuralBeatPipeline] Video rendered: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB`);
