@@ -10,6 +10,26 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
+/** Brand contact emails — used in YouTube descriptions and CTA */
+const BRAND_EMAILS: Record<string, string> = {
+  zeneco: "freddy@zenecohomes.com",
+  soleada: "freddy@soleada.no",
+  chatgenius: "freddy@chatgenius.pro",
+  freddyb: "post@freddybremseth.com",
+  pinosoecolife: "freddy@pinosoecolife.com",
+  donaanna: "freddy@zenecohomes.com",
+  neuralbeat: "freddy@chatgenius.pro",
+  remasterfreddy: "freddy@chatgenius.pro",
+};
+
+/** Royalty-free background music URLs for property videos */
+const MUSIC_URLS = [
+  // Calm ambient tracks from Pixabay (royalty-free, no attribution needed)
+  "https://cdn.pixabay.com/audio/2024/11/29/audio_a0fdd0f7db.mp3", // "Peaceful Ambient"
+  "https://cdn.pixabay.com/audio/2023/10/30/audio_961efa6fc4.mp3", // "Inspirational Background"
+  "https://cdn.pixabay.com/audio/2024/02/14/audio_8e153fe920.mp3", // "Soft Corporate"
+];
+
 export const maxDuration = 300; // 5 min for video rendering
 
 function getAnthropicClient(): Anthropic | null {
@@ -111,6 +131,7 @@ export async function POST(req: NextRequest) {
         de: "German",
       };
 
+      const brandEmail = BRAND_EMAILS[body.brandId || "zeneco"] || "freddy@zenecohomes.com";
       const prompt = `Generate YouTube SEO-optimized content for a real estate property video.
 
 Property details:
@@ -130,6 +151,7 @@ Property details:
 
 Brand: ${brand?.name || "Real Estate Agency"}
 Website: ${brand?.website || ""}
+Contact Email: ${brandEmail}
 
 Language: ${langMap[language] || "English"}
 
@@ -139,8 +161,10 @@ Generate:
    - Engaging intro paragraph
    - Property details in readable format
    - Location highlights
-   - CTA: Contact info, website link, "Like & Subscribe"
+   - CTA with EXACT email: ${brandEmail} and website: ${brand?.website || ""}
+   - "Like & Subscribe" call to action
    - Relevant hashtags at the bottom
+   IMPORTANT: Use ONLY this contact email: ${brandEmail} — do NOT use inquiry@ or info@ or any other email.
 3. tags: Array of 15-20 relevant YouTube SEO tags
 
 Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
@@ -233,21 +257,46 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
               if (logoOk) logoPath = logoTmpPath;
             }
 
-            // Step 3: Generate silent audio track (property videos have no music)
+            // Step 3: Download background music (or generate silent fallback)
             send({ step: 3, total: 5, message: "Klargjør FFmpeg..." });
-            const silentAudioPath = path.join(imgDir, "silent.mp3");
+            const audioPath = path.join(imgDir, "music.mp3");
             const totalDuration = imagePaths.length * 5;
 
             // Use ensureFFmpeg() - same approach as Neural Beat (handles Vercel serverless)
             const ffmpegBin = await ensureFFmpeg();
-            send({ step: 3, total: 5, message: "Genererer lydspor..." });
-            try {
-              await execFileAsync(ffmpegBin, [
-                "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-                "-t", String(totalDuration), "-q:a", "9", "-y", silentAudioPath,
-              ], { timeout: 30000 });
-            } catch {
-              send({ step: 3, total: 5, message: "Lydspor hoppet over" });
+
+            // Try to download royalty-free background music
+            let musicDownloaded = false;
+            send({ step: 3, total: 5, message: "Laster ned bakgrunnsmusikk..." });
+            for (const musicUrl of MUSIC_URLS) {
+              try {
+                const musicRes = await fetch(musicUrl, { redirect: "follow" });
+                if (musicRes.ok) {
+                  const musicBuf = Buffer.from(await musicRes.arrayBuffer());
+                  if (musicBuf.length > 10000) { // Minimum 10KB to be valid
+                    await fs.writeFile(audioPath, musicBuf);
+                    console.log(`[Property Video] Music downloaded: ${(musicBuf.length / 1024 / 1024).toFixed(1)} MB from ${musicUrl.substring(0, 60)}`);
+                    musicDownloaded = true;
+                    send({ step: 3, total: 5, message: `Bakgrunnsmusikk lastet ned (${(musicBuf.length / 1024 / 1024).toFixed(1)} MB)` });
+                    break;
+                  }
+                }
+              } catch (musicErr) {
+                console.warn(`[Property Video] Music download failed:`, musicErr instanceof Error ? musicErr.message : musicErr);
+              }
+            }
+
+            // Fallback to silent audio if music download fails
+            if (!musicDownloaded) {
+              send({ step: 3, total: 5, message: "Genererer stille lydspor (musikk utilgjengelig)..." });
+              try {
+                await execFileAsync(ffmpegBin, [
+                  "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                  "-t", String(totalDuration), "-q:a", "9", "-y", audioPath,
+                ], { timeout: 30000 });
+              } catch {
+                send({ step: 3, total: 5, message: "Lydspor hoppet over" });
+              }
             }
 
             // Step 4: Render video
@@ -259,7 +308,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
               : undefined;
 
             const renderResult = await renderVideo({
-              audioUrl: silentAudioPath.startsWith("/") ? `file://${silentAudioPath}` : silentAudioPath,
+              audioUrl: audioPath.startsWith("/") ? `file://${audioPath}` : audioPath,
               imagePaths,
               logoPath,
               textSlides,

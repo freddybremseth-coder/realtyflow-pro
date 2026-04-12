@@ -152,6 +152,7 @@ function PropertyVideoContent() {
           action: "generate_seo",
           property: selectedProperty,
           brand: brandPayload,
+          brandId: selectedBrand || undefined,
           language: seoLanguage,
         }),
       });
