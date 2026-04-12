@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { renderVideo, cleanupRender, ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
+import { renderVideo, cleanupRender, ensureFFmpeg, type TextSlide } from "@/services/integrations/ffmpeg-renderer";
 import { uploadVideo, setThumbnail } from "@/services/integrations/youtube-client";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -16,6 +16,43 @@ function getAnthropicClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   return new Anthropic({ apiKey: key });
+}
+
+/** Build cycling text slides for a property video (price, size, location, CTA) */
+function buildPropertyTextSlides(property: Record<string, unknown>, brand: { name?: string; website?: string }): TextSlide[] {
+  const brandName = brand?.name || "Real Estate";
+  const website = (brand?.website || "").replace(/^https?:\/\//, "");
+  const ctaLine = website || brandName;
+
+  const price = property?.price
+    ? `EUR ${Number(property.price).toLocaleString("no-NO")}`
+    : "";
+
+  const rooms = [
+    Number(property?.bedrooms) > 0 ? `${property.bedrooms} sov` : null,
+    Number(property?.bathrooms) > 0 ? `${property.bathrooms} bad` : null,
+    Number(property?.built_area) > 0 ? `${property.built_area} m2` : null,
+  ].filter(Boolean).join("  ·  ");
+
+  const location = String(property?.town || property?.location || "Spania");
+  const region = "Costa Blanca  ·  Spania";
+
+  const features = [
+    property?.pool ? "Privat basseng" : null,
+    property?.garage ? "Garasje" : null,
+    Number(property?.plot_size) > 0 ? `Tomt ${property.plot_size}m2` : null,
+  ].filter(Boolean).join("  ·  ") || location;
+
+  return [
+    // Slide 0 – Price focus
+    { topText: brandName, mainText: price, subText: rooms || location, ctaText: ctaLine },
+    // Slide 1 – Rooms + Size
+    { topText: brandName, mainText: rooms || price, subText: price || location, ctaText: ctaLine },
+    // Slide 2 – Location
+    { topText: brandName, mainText: location, subText: region, ctaText: ctaLine },
+    // Slide 3 – Features + CTA
+    { topText: brandName, mainText: features, subText: price, ctaText: `Ta kontakt: ${ctaLine}` },
+  ];
 }
 
 async function downloadImage(url: string, destPath: string): Promise<boolean> {
@@ -138,7 +175,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
     }
 
     if (action === "render_and_upload") {
-      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public" } = body;
+      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand } = body;
 
       if (!imageUrls || imageUrls.length === 0) {
         return NextResponse.json({ error: "imageUrls required" }, { status: 400 });
@@ -210,10 +247,17 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
 
             // Step 4: Render video
             send({ step: 4, total: 5, message: "Rendrer video med FFmpeg..." });
+
+            // Build text slides from property data (cycling price/size/location/CTA overlays)
+            const textSlides: TextSlide[] | undefined = property
+              ? buildPropertyTextSlides(property as Record<string, unknown>, brand || {})
+              : undefined;
+
             const renderResult = await renderVideo({
               audioUrl: silentAudioPath.startsWith("/") ? `file://${silentAudioPath}` : silentAudioPath,
               imagePaths,
               logoPath,
+              textSlides,
               duration: totalDuration,
               onSegmentProgress: (current, total) => {
                 send({ step: 4, total: 5, message: `Rendrer bilde ${current}/${total}` });

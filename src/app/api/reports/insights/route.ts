@@ -8,6 +8,45 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+const CREATE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS market_insights (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  topic TEXT NOT NULL,
+  summary TEXT,
+  details TEXT NOT NULL,
+  sources TEXT[] DEFAULT '{}',
+  source_type TEXT DEFAULT 'manual',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE market_insights ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'market_insights' AND policyname = 'Service role full access'
+  ) THEN
+    CREATE POLICY "Service role full access" ON market_insights FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+`;
+
+async function ensureTable() {
+  // Try via raw REST with service role key
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    if (!url || !key) return;
+    await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sql: CREATE_TABLE_SQL }),
+    });
+  } catch {}
+}
+
 /**
  * GET /api/reports/insights - List saved market insights
  */
@@ -22,8 +61,11 @@ export async function GET() {
     .limit(20);
 
   if (error) {
-    // Table might not exist yet - return empty
-    console.log('[Insights API] Error:', error.message);
+    console.log('[Insights API] GET error:', error.message);
+    // Table might not exist yet
+    if (error.message?.includes('relation') || error.message?.includes('does not exist')) {
+      return NextResponse.json({ insights: [], tableNotReady: true });
+    }
     return NextResponse.json({ insights: [] });
   }
 
@@ -58,6 +100,32 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[Insights API] Insert error:', error.message);
+
+    // If table doesn't exist, try to create it then retry
+    if (error.message?.includes('relation') || error.message?.includes('does not exist')) {
+      await ensureTable();
+      // Retry once
+      const { data: retryData, error: retryErr } = await supabase
+        .from('market_insights')
+        .insert({
+          topic,
+          summary: summary || details.substring(0, 300),
+          details,
+          sources: sources || ['Manuell input'],
+          source_type: 'manual',
+        })
+        .select()
+        .single();
+
+      if (retryErr) {
+        return NextResponse.json(
+          { error: 'Tabellen "market_insights" mangler i Supabase. Kjør SQL-migrasjonen i Supabase Dashboard: supabase/migrations/20260412_market_insights.sql' },
+          { status: 503 }
+        );
+      }
+      return NextResponse.json({ insight: retryData });
+    }
+
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

@@ -218,6 +218,8 @@ function PropertyVideoContent() {
           description: seoDescription,
           tags: seoTags,
           privacyStatus: "public",
+          property: selectedProperty,
+          brand: brand ? { name: brand.name, website: brand.website } : undefined,
         }),
       });
 
@@ -490,16 +492,18 @@ function PropertyVideoContent() {
               </Card>
 
               {/* Image Gallery Thumbnails */}
-              {allImages.length > 1 && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                        <ImageIcon size={14} className="text-blue-400" />
-                        Bildegalleri ({allImages.length} bilder)
-                      </h3>
-                      <span className="text-xs text-slate-400">Klikk for å velge startbilde</span>
-                    </div>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <ImageIcon size={14} className="text-blue-400" />
+                      Bildegalleri ({allImages.length} {allImages.length === 1 ? "bilde" : "bilder"})
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      {allImages.length > 1 ? `${allImages.length} bilder i video` : "Klikk for å velge"}
+                    </span>
+                  </div>
+                  {allImages.length > 1 ? (
                     <div className="grid grid-cols-5 gap-2 max-h-[240px] overflow-y-auto">
                       {allImages.map((img, idx) => (
                         <button
@@ -514,9 +518,14 @@ function PropertyVideoContent() {
                         </button>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  ) : (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-300">
+                      Kun primærbilde tilgjengelig. For å få galleribilder i videoen, last opp bilder til eiendommen under{" "}
+                      <a href="/inventory" className="underline hover:text-amber-200">Eiendommer</a>.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Floor Plans Tab */}
               {selectedProperty && (

@@ -83,6 +83,17 @@ const OUTPUT_HEIGHT = 720;
 
 // ─── Types ──────────────────────────────────────────────────
 
+/**
+ * Text overlay for a single video segment.
+ * All fields optional - only non-empty fields are rendered.
+ */
+export interface TextSlide {
+  topText?: string;   // Brand name top-left
+  mainText?: string;  // Large price/feature text bottom-center
+  subText?: string;   // Smaller info below mainText
+  ctaText?: string;   // CTA bar at very bottom (website etc.)
+}
+
 export interface FFmpegRenderOptions {
   audioUrl: string;
   imagePaths: string[];
@@ -90,6 +101,8 @@ export interface FFmpegRenderOptions {
   subtitle?: string;
   duration?: number;
   logoPath?: string;
+  /** One TextSlide per image. Cycles if fewer slides than images. */
+  textSlides?: TextSlide[];
   onSegmentProgress?: (current: number, total: number) => void;
 }
 
@@ -147,6 +160,58 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   const buffer = Buffer.from(await response.arrayBuffer());
   await fs.writeFile(destPath, buffer);
   console.log(`[FFmpeg] Downloaded: ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
+}
+
+// ─── Text Overlay Helpers ────────────────────────────────────
+
+/** Escape special chars for FFmpeg drawtext option value */
+function escapeFfmpegText(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/:/g, '\\:')
+    .replace(/%/g, '\\%')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]');
+}
+
+/**
+ * Build a comma-chained FFmpeg vf filter string for text overlays.
+ * Uses drawbox (for semi-transparent bars) + drawtext.
+ * Falls back silently if drawtext is unavailable on target system.
+ */
+function buildDrawtextFilters(slide: TextSlide): string {
+  const parts: string[] = [];
+
+  // ── Top brand bar ──
+  if (slide.topText) {
+    parts.push(`drawbox=x=0:y=0:w=iw:h=56:color=black@0.65:t=fill`);
+    parts.push(`drawtext=fontsize=24:fontcolor=white:x=18:y=17:text='${escapeFfmpegText(slide.topText)}'`);
+  }
+
+  // ── Main large text + sub text background bar ──
+  if (slide.mainText || slide.subText) {
+    const barH = slide.subText ? 100 : 68;
+    parts.push(`drawbox=x=0:y=ih-${barH + (slide.ctaText ? 52 : 0)}:w=iw:h=${barH}:color=black@0.72:t=fill`);
+  }
+
+  if (slide.mainText) {
+    const yOffset = slide.ctaText ? 108 : 56;
+    parts.push(`drawtext=fontsize=52:fontcolor=white:x=(w-text_w)/2:y=ih-${yOffset + (slide.subText ? 36 : 0)}:text='${escapeFfmpegText(slide.mainText)}'`);
+  }
+
+  if (slide.subText) {
+    const yOffset = slide.ctaText ? 62 : 20;
+    parts.push(`drawtext=fontsize=26:fontcolor=white@0.88:x=(w-text_w)/2:y=ih-${yOffset}:text='${escapeFfmpegText(slide.subText)}'`);
+  }
+
+  // ── Bottom CTA bar ──
+  if (slide.ctaText) {
+    parts.push(`drawbox=x=0:y=ih-50:w=iw:h=50:color=black@0.88:t=fill`);
+    parts.push(`drawtext=fontsize=26:fontcolor=0x22d3ee:x=(w-text_w)/2:y=ih-35:text='${escapeFfmpegText(slide.ctaText)}'`);
+  }
+
+  return parts.join(',');
 }
 
 function runFFmpeg(args: string[]): Promise<string> {
@@ -240,6 +305,22 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
         ]);
       }
 
+      // ── Apply text overlay (drawtext) if textSlides provided ──
+      let segmentSourcePath = scaledPath;
+      if (options.textSlides && options.textSlides.length > 0) {
+        const slide = options.textSlides[i % options.textSlides.length];
+        const filterStr = buildDrawtextFilters(slide);
+        if (filterStr) {
+          const textPath = path.join(tempDir, `text-${i}.jpg`);
+          try {
+            await runFFmpeg(['-i', scaledPath, '-vf', filterStr, '-q:v', '2', '-y', textPath]);
+            segmentSourcePath = textPath;
+          } catch (textErr) {
+            console.warn(`[FFmpeg] Text overlay failed for seg ${i} (drawtext unavailable?), skipping:`, (textErr as Error).message.substring(0, 100));
+          }
+        }
+      }
+
       // ── Encode pre-scaled image → video clip ──
       // Optimized for speed on serverless (Vercel throttles CPU on long tasks):
       //   - 2fps: static images don't need more (7.5x less work vs 15fps)
@@ -249,7 +330,7 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       await runFFmpeg([
         '-loop', '1',
         '-framerate', '2',
-        '-i', scaledPath,
+        '-i', segmentSourcePath,
         '-t', segmentDuration.toFixed(2),
         '-vf', 'format=yuv420p',
         '-c:v', 'libx264',
@@ -291,12 +372,13 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
     const renderTime = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[FFmpeg] Concat complete in ${renderTime}s`);
 
-    // ── Clean up segment + scaled image files to save /tmp space ──
+    // ── Clean up segment + scaled + text image files to save /tmp space ──
     for (const segPath of segmentPaths) {
       try { await fs.unlink(segPath); } catch {}
     }
     for (let i = 0; i < imageCount; i++) {
       try { await fs.unlink(path.join(tempDir, `scaled-${i}.jpg`)); } catch {}
+      try { await fs.unlink(path.join(tempDir, `text-${i}.jpg`)); } catch {}
     }
 
     // ── Read output ──
