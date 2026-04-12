@@ -43,15 +43,20 @@ function buildPropertyTextSlides(property: Record<string, unknown>, brand: { nam
     Number(property?.plot_size) > 0 ? `Tomt ${property.plot_size}m2` : null,
   ].filter(Boolean).join("  ·  ") || location;
 
+  // Every slide gets the brand CTA bar at the bottom for maximum visibility
   return [
-    // Slide 0 – Price focus
-    { topText: brandName, mainText: price, subText: rooms || location, ctaText: ctaLine },
+    // Slide 0 – Price focus (hero slide)
+    { topText: brandName, mainText: price, subText: rooms || location, ctaText: `${ctaLine}  |  Ta kontakt i dag!` },
     // Slide 1 – Rooms + Size
-    { topText: brandName, mainText: rooms || price, subText: price || location, ctaText: ctaLine },
+    { topText: brandName, mainText: rooms || price, subText: `${location}  ·  ${price}`, ctaText: `Besok oss: ${ctaLine}` },
     // Slide 2 – Location
-    { topText: brandName, mainText: location, subText: region, ctaText: ctaLine },
-    // Slide 3 – Features + CTA
-    { topText: brandName, mainText: features, subText: price, ctaText: `Ta kontakt: ${ctaLine}` },
+    { topText: brandName, mainText: location, subText: region, ctaText: `${ctaLine}  |  Din bolig i Spania` },
+    // Slide 3 – Features + strong CTA
+    { topText: brandName, mainText: features, subText: price, ctaText: `Kontakt ${brandName}: ${ctaLine}` },
+    // Slide 4 – Repeat price with different CTA variation (for longer galleries)
+    { topText: brandName, mainText: price, subText: `${rooms}  ·  ${location}`, ctaText: `Se alle boliger: ${ctaLine}` },
+    // Slide 5 – Brand-focused
+    { topText: `${brandName}  ·  ${location}`, mainText: `Fra ${price}`, subText: features, ctaText: `${ctaLine}  |  Kontakt oss na!` },
   ];
 }
 
@@ -267,20 +272,36 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
             send({ step: 4, total: 5, message: `Video rendret: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB` });
 
             // Step 5: Upload to YouTube (uses brand-specific channel if configured)
-            send({ step: 5, total: 5, message: `Laster opp til YouTube${brandId ? ` (${brandId})` : ""}...` });
-            const uploadResult = await uploadVideo(renderResult.videoBuffer, {
-              title,
-              description: description || "",
-              tags: tags || [],
-              categoryId: "22",
-              privacyStatus: privacyStatus as "public" | "private" | "unlisted",
-            }, brandId || undefined);
+            send({ step: 5, total: 5, message: `Laster opp til YouTube${brandId ? ` (brand: ${brandId})` : " (standard kanal)"}...` });
+            console.log(`[Property Video] Uploading ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB to YouTube, brandId=${brandId || 'default'}`);
+
+            let uploadResult;
+            try {
+              uploadResult = await uploadVideo(renderResult.videoBuffer, {
+                title,
+                description: description || "",
+                tags: tags || [],
+                categoryId: "22",
+                privacyStatus: privacyStatus as "public" | "private" | "unlisted",
+              }, brandId || undefined);
+              console.log(`[Property Video] Upload success: ${uploadResult.videoId}`);
+            } catch (uploadErr) {
+              const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+              console.error(`[Property Video] YouTube upload FAILED:`, uploadMsg);
+              send({ step: 5, total: 5, error: `YouTube-opplasting feilet: ${uploadMsg}` });
+              clearInterval(heartbeat);
+              controller.close();
+              return;
+            }
 
             // Try to set thumbnail from first image
             try {
               const thumbBuffer = await fs.readFile(imagePaths[0]);
               await setThumbnail(uploadResult.videoId, thumbBuffer);
-            } catch {}
+              console.log(`[Property Video] Thumbnail set for ${uploadResult.videoId}`);
+            } catch (thumbErr) {
+              console.warn(`[Property Video] Thumbnail failed (non-critical):`, thumbErr instanceof Error ? thumbErr.message : thumbErr);
+            }
 
             send({
               step: 5,

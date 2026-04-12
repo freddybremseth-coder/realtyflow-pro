@@ -249,9 +249,12 @@ function PropertyVideoContent() {
             if (data.step) setRenderStep(data.step);
             if (data.completed && data.youtubeUrl) {
               setUploadResult({ videoId: data.videoId, url: data.youtubeUrl });
+              setRenderProgress("Video publisert på YouTube!");
             }
             if (data.error) {
+              console.error("[PropertyVideo] Server error:", data.error);
               setRenderProgress(`Feil: ${data.error}`);
+              setRenderStep(0);
             }
           } catch {}
         }
@@ -683,18 +686,29 @@ function PropertyVideoContent() {
                     Generer SEO-innhold f&oslash;rst.
                   </p>
 
-                  {rendering && (
+                  {(rendering || renderProgress) && (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-slate-300">
-                        <Loader2 size={14} className="animate-spin text-amber-400" />
+                      <div className={`flex items-center gap-2 text-sm ${renderProgress.startsWith("Feil") ? "text-red-400" : "text-slate-300"}`}>
+                        {rendering ? (
+                          <Loader2 size={14} className="animate-spin text-amber-400" />
+                        ) : renderProgress.startsWith("Feil") ? (
+                          <X size={14} className="text-red-400" />
+                        ) : null}
                         {renderProgress}
                       </div>
-                      <div className="w-full bg-slate-700 rounded-full h-2">
-                        <div
-                          className="bg-gradient-to-r from-amber-500 to-red-500 h-2 rounded-full transition-all"
-                          style={{ width: `${(renderStep / 5) * 100}%` }}
-                        />
-                      </div>
+                      {rendering && (
+                        <div className="w-full bg-slate-700 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-amber-500 to-red-500 h-2 rounded-full transition-all"
+                            style={{ width: `${(renderStep / 5) * 100}%` }}
+                          />
+                        </div>
+                      )}
+                      {renderProgress.startsWith("Feil") && !rendering && (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-xs text-red-300">
+                          {renderProgress}
+                        </div>
+                      )}
                     </div>
                   )}
 

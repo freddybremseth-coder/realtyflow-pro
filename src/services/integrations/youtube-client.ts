@@ -48,12 +48,24 @@ async function getOAuth2Client(brandId?: string) {
 
   // Check brand-specific token first, then _system, then env var
   let refreshToken = await getRefreshTokenFromSupabase(brandId);
+  let tokenSource = brandId ? `brand:${brandId}` : '_system';
+
   if (!refreshToken) {
     refreshToken = process.env.YOUTUBE_REFRESH_TOKEN || null;
+    tokenSource = 'env:YOUTUBE_REFRESH_TOKEN';
   }
 
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('YouTube OAuth2 credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)');
+  console.log(`[YouTube] OAuth2 client for ${brandId || 'default'}, token source: ${tokenSource}, hasToken: ${!!refreshToken}`);
+
+  if (!clientId || !clientSecret) {
+    throw new Error('YouTube OAuth2 credentials not configured: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are required');
+  }
+
+  if (!refreshToken) {
+    const hint = brandId
+      ? `No YouTube refresh token found for brand "${brandId}". Set it in brand settings or configure YOUTUBE_REFRESH_TOKEN env var.`
+      : 'No YouTube refresh token found. Set YOUTUBE_REFRESH_TOKEN env var or configure token in brand settings.';
+    throw new Error(hint);
   }
 
   const oauth2Client = new OAuth2Client(clientId, clientSecret);

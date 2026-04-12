@@ -162,6 +162,80 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   console.log(`[FFmpeg] Downloaded: ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
 }
 
+// ─── Font Management ────────────────────────────────────────
+
+const FONT_TMP_PATH = path.join(os.tmpdir(), 'render-font.ttf');
+const FONT_BOLD_TMP_PATH = path.join(os.tmpdir(), 'render-font-bold.ttf');
+// Google Fonts CDN – Inter (clean, modern, excellent for real estate)
+const FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf';
+const FONT_BOLD_URL = FONT_URL; // Variable font — same file, weight set via drawtext
+
+let _fontPath: string | null = null;
+
+/**
+ * Ensure a TTF font is available for drawtext.
+ * Checks macOS system fonts first, then downloads from Google Fonts to /tmp.
+ */
+async function ensureFont(): Promise<string> {
+  if (_fontPath) return _fontPath;
+
+  // 1. Check macOS system fonts (for local dev)
+  const macFonts = [
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+    '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+    '/System/Library/Fonts/Helvetica.ttc',
+    '/System/Library/Fonts/SFCompact.ttf',
+  ];
+  for (const f of macFonts) {
+    if (fsSync.existsSync(f)) {
+      console.log(`[FFmpeg] Using system font: ${f}`);
+      _fontPath = f;
+      return _fontPath;
+    }
+  }
+
+  // 2. Check Linux common paths (Vercel serverless)
+  const linuxFonts = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+  ];
+  for (const f of linuxFonts) {
+    if (fsSync.existsSync(f)) {
+      console.log(`[FFmpeg] Using system font: ${f}`);
+      _fontPath = f;
+      return _fontPath;
+    }
+  }
+
+  // 3. Check /tmp cache
+  if (fsSync.existsSync(FONT_TMP_PATH)) {
+    console.log(`[FFmpeg] Using cached font from /tmp`);
+    _fontPath = FONT_TMP_PATH;
+    return _fontPath;
+  }
+
+  // 4. Download font to /tmp
+  console.log(`[FFmpeg] Downloading font to /tmp...`);
+  try {
+    const res = await fetch(FONT_URL, { redirect: 'follow' });
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      fsSync.writeFileSync(FONT_TMP_PATH, buf);
+      console.log(`[FFmpeg] Font downloaded: ${(buf.length / 1024).toFixed(0)} KB`);
+      _fontPath = FONT_TMP_PATH;
+      return _fontPath;
+    }
+  } catch (err) {
+    console.warn(`[FFmpeg] Font download failed:`, err);
+  }
+
+  // 5. Last resort — return empty string (drawtext will try default)
+  console.warn(`[FFmpeg] No font found, drawtext may fail`);
+  _fontPath = '';
+  return _fontPath;
+}
+
 // ─── Text Overlay Helpers ────────────────────────────────────
 
 /** Escape special chars for FFmpeg drawtext option value */
@@ -177,38 +251,41 @@ function escapeFfmpegText(s: string): string {
 
 /**
  * Build a comma-chained FFmpeg vf filter string for text overlays.
- * Uses drawbox (for semi-transparent bars) + drawtext.
- * Falls back silently if drawtext is unavailable on target system.
+ * Uses drawbox (for semi-transparent bars) + drawtext with explicit fontfile.
  */
-function buildDrawtextFilters(slide: TextSlide): string {
+function buildDrawtextFilters(slide: TextSlide, fontPath: string): string {
   const parts: string[] = [];
+  // fontfile parameter — essential for drawtext to work on serverless
+  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
 
-  // ── Top brand bar ──
+  // ── Top brand bar (full width, prominent) ──
   if (slide.topText) {
-    parts.push(`drawbox=x=0:y=0:w=iw:h=56:color=black@0.65:t=fill`);
-    parts.push(`drawtext=fontsize=24:fontcolor=white:x=18:y=17:text='${escapeFfmpegText(slide.topText)}'`);
+    parts.push(`drawbox=x=0:y=0:w=iw:h=60:color=black@0.7:t=fill`);
+    parts.push(`drawtext=${ff}fontsize=26:fontcolor=white:x=20:y=18:text='${escapeFfmpegText(slide.topText)}'`);
   }
 
   // ── Main large text + sub text background bar ──
   if (slide.mainText || slide.subText) {
-    const barH = slide.subText ? 100 : 68;
-    parts.push(`drawbox=x=0:y=ih-${barH + (slide.ctaText ? 52 : 0)}:w=iw:h=${barH}:color=black@0.72:t=fill`);
+    const barH = slide.subText ? 120 : 80;
+    const barY = slide.ctaText ? barH + 60 : barH;
+    parts.push(`drawbox=x=0:y=ih-${barY}:w=iw:h=${barH}:color=black@0.75:t=fill`);
   }
 
   if (slide.mainText) {
-    const yOffset = slide.ctaText ? 108 : 56;
-    parts.push(`drawtext=fontsize=52:fontcolor=white:x=(w-text_w)/2:y=ih-${yOffset + (slide.subText ? 36 : 0)}:text='${escapeFfmpegText(slide.mainText)}'`);
+    const yOffset = slide.ctaText ? 130 : 70;
+    const subOffset = slide.subText ? 40 : 0;
+    parts.push(`drawtext=${ff}fontsize=56:fontcolor=white:x=(w-text_w)/2:y=ih-${yOffset + subOffset}:text='${escapeFfmpegText(slide.mainText)}'`);
   }
 
   if (slide.subText) {
-    const yOffset = slide.ctaText ? 62 : 20;
-    parts.push(`drawtext=fontsize=26:fontcolor=white@0.88:x=(w-text_w)/2:y=ih-${yOffset}:text='${escapeFfmpegText(slide.subText)}'`);
+    const yOffset = slide.ctaText ? 78 : 26;
+    parts.push(`drawtext=${ff}fontsize=28:fontcolor=white@0.9:x=(w-text_w)/2:y=ih-${yOffset}:text='${escapeFfmpegText(slide.subText)}'`);
   }
 
-  // ── Bottom CTA bar ──
+  // ── Bottom CTA bar (always prominent — brand color accent) ──
   if (slide.ctaText) {
-    parts.push(`drawbox=x=0:y=ih-50:w=iw:h=50:color=black@0.88:t=fill`);
-    parts.push(`drawtext=fontsize=26:fontcolor=0x22d3ee:x=(w-text_w)/2:y=ih-35:text='${escapeFfmpegText(slide.ctaText)}'`);
+    parts.push(`drawbox=x=0:y=ih-58:w=iw:h=58:color=0x0891b2@0.92:t=fill`);
+    parts.push(`drawtext=${ff}fontsize=30:fontcolor=white:x=(w-text_w)/2:y=ih-42:text='${escapeFfmpegText(slide.ctaText)}'`);
   }
 
   return parts.join(',');
@@ -271,6 +348,13 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
     const segmentDuration = audioDuration / imageCount;
     console.log(`[FFmpeg] ${imageCount} images × ${segmentDuration.toFixed(1)}s each`);
 
+    // ── Ensure font is available for text overlays ──
+    let fontPath = '';
+    if (options.textSlides && options.textSlides.length > 0) {
+      fontPath = await ensureFont();
+      console.log(`[FFmpeg] Font for text overlays: ${fontPath || '(none, will try default)'}`);
+    }
+
     // ── Step 1: Create individual video segments (one at a time = low memory) ──
     const segmentPaths: string[] = [];
 
@@ -309,14 +393,16 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       let segmentSourcePath = scaledPath;
       if (options.textSlides && options.textSlides.length > 0) {
         const slide = options.textSlides[i % options.textSlides.length];
-        const filterStr = buildDrawtextFilters(slide);
+        const filterStr = buildDrawtextFilters(slide, fontPath);
         if (filterStr) {
           const textPath = path.join(tempDir, `text-${i}.jpg`);
           try {
             await runFFmpeg(['-i', scaledPath, '-vf', filterStr, '-q:v', '2', '-y', textPath]);
             segmentSourcePath = textPath;
+            console.log(`[FFmpeg] Text overlay applied to seg ${i}`);
           } catch (textErr) {
-            console.warn(`[FFmpeg] Text overlay failed for seg ${i} (drawtext unavailable?), skipping:`, (textErr as Error).message.substring(0, 100));
+            console.error(`[FFmpeg] Text overlay FAILED for seg ${i}:`, (textErr as Error).message.substring(0, 200));
+            // Continue without text — better than crashing the whole render
           }
         }
       }
