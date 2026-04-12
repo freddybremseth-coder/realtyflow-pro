@@ -175,7 +175,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
     }
 
     if (action === "render_and_upload") {
-      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand } = body;
+      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand, brandId } = body;
 
       if (!imageUrls || imageUrls.length === 0) {
         return NextResponse.json({ error: "imageUrls required" }, { status: 400 });
@@ -266,15 +266,15 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
 
             send({ step: 4, total: 5, message: `Video rendret: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB` });
 
-            // Step 5: Upload to YouTube
-            send({ step: 5, total: 5, message: "Laster opp til YouTube..." });
+            // Step 5: Upload to YouTube (uses brand-specific channel if configured)
+            send({ step: 5, total: 5, message: `Laster opp til YouTube${brandId ? ` (${brandId})` : ""}...` });
             const uploadResult = await uploadVideo(renderResult.videoBuffer, {
               title,
               description: description || "",
               tags: tags || [],
               categoryId: "22",
               privacyStatus: privacyStatus as "public" | "private" | "unlisted",
-            });
+            }, brandId || undefined);
 
             // Try to set thumbnail from first image
             try {

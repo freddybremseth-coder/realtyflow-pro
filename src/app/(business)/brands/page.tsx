@@ -14,6 +14,7 @@ import {
 interface BrandSettings {
   youtubeChannel: string;
   youtubeChannelId: string;
+  youtube_refresh_token: string;
   instagram: string;
   facebook: string;
   linkedin: string;
@@ -42,6 +43,7 @@ interface BrandEntry {
 const emptySettings: BrandSettings = {
   youtubeChannel: "",
   youtubeChannelId: "",
+  youtube_refresh_token: "",
   instagram: "",
   facebook: "",
   linkedin: "",
@@ -809,6 +811,22 @@ export default function BrandsPage() {
                         placeholder="UC..."
                       />
                     </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="text-[11px] text-slate-400 mb-1 block">
+                      YouTube Refresh Token (for dedikert kanal)
+                    </label>
+                    <Input
+                      type="password"
+                      value={selectedBrand.settings.youtube_refresh_token}
+                      onChange={(e) =>
+                        updateSettings("youtube_refresh_token", e.target.value)
+                      }
+                      placeholder="1//0... (hentes fra Google OAuth)"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Hvis satt, lastes videoer opp til denne kanalens YouTube-konto i stedet for standard-kanalen.
+                    </p>
                   </div>
                 </div>
 

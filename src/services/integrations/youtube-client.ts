@@ -3,19 +3,34 @@ import { OAuth2Client } from 'google-auth-library';
 import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { Readable } from 'stream';
 
-let youtubeClient: youtube_v3.Youtube | null = null;
-let cachedRefreshToken: string | null = null;
+// Cache per brand: brandId → { client, refreshToken }
+const clientCache: Map<string, { client: youtube_v3.Youtube; refreshToken: string }> = new Map();
 
 /**
- * Try to fetch the refresh token stored in Supabase by the OAuth callback.
+ * Try to fetch the refresh token stored in Supabase.
+ * If brandId is provided, check brand_settings for that brand first.
+ * Falls back to _system token.
  */
-async function getRefreshTokenFromSupabase(): Promise<string | null> {
+async function getRefreshTokenFromSupabase(brandId?: string): Promise<string | null> {
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return null;
     const supabase = createClient(url, key);
+
+    // 1. Check brand-specific token
+    if (brandId && brandId !== '_system') {
+      const { data: brandData } = await supabase
+        .from('brand_settings')
+        .select('settings')
+        .eq('brand_id', brandId)
+        .single();
+      const brandToken = brandData?.settings?.youtube_refresh_token;
+      if (brandToken) return brandToken;
+    }
+
+    // 2. Fall back to _system token
     const { data } = await supabase
       .from('brand_settings')
       .select('settings')
@@ -27,13 +42,12 @@ async function getRefreshTokenFromSupabase(): Promise<string | null> {
   }
 }
 
-async function getOAuth2Client() {
+async function getOAuth2Client(brandId?: string) {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
 
-  // Always check Supabase first (has the latest token from OAuth callback)
-  // Fall back to env var if Supabase doesn't have one
-  let refreshToken = await getRefreshTokenFromSupabase();
+  // Check brand-specific token first, then _system, then env var
+  let refreshToken = await getRefreshTokenFromSupabase(brandId);
   if (!refreshToken) {
     refreshToken = process.env.YOUTUBE_REFRESH_TOKEN || null;
   }
@@ -42,23 +56,30 @@ async function getOAuth2Client() {
     throw new Error('YouTube OAuth2 credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN)');
   }
 
-  // If token changed, invalidate cached client
-  if (cachedRefreshToken && cachedRefreshToken !== refreshToken) {
-    youtubeClient = null;
-  }
-  cachedRefreshToken = refreshToken;
-
   const oauth2Client = new OAuth2Client(clientId, clientSecret);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
-  return oauth2Client;
+  return { oauth2Client, refreshToken };
 }
 
-async function getClient(): Promise<youtube_v3.Youtube> {
-  if (!youtubeClient) {
-    const auth = await getOAuth2Client();
-    youtubeClient = youtube({ version: 'v3', auth });
+/**
+ * Get a YouTube API client. If brandId is provided and that brand has its
+ * own youtube_refresh_token in brand_settings, a dedicated client for that
+ * channel is returned. Otherwise falls back to the default channel.
+ */
+async function getClient(brandId?: string): Promise<youtube_v3.Youtube> {
+  const cacheKey = brandId || '_default';
+  const cached = clientCache.get(cacheKey);
+
+  const { oauth2Client, refreshToken } = await getOAuth2Client(brandId);
+
+  // Return cached client if token hasn't changed
+  if (cached && cached.refreshToken === refreshToken) {
+    return cached.client;
   }
-  return youtubeClient;
+
+  const client = youtube({ version: 'v3', auth: oauth2Client });
+  clientCache.set(cacheKey, { client, refreshToken });
+  return client;
 }
 
 /**
@@ -66,9 +87,10 @@ async function getClient(): Promise<youtube_v3.Youtube> {
  */
 export async function uploadVideo(
   videoBuffer: Buffer,
-  metadata: YouTubeVideoMetadata
+  metadata: YouTubeVideoMetadata,
+  brandId?: string,
 ): Promise<YouTubeUploadResult> {
-  const youtube = await getClient();
+  const youtube = await getClient(brandId);
 
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
@@ -471,6 +493,6 @@ export function isConfigured(): boolean {
   return !!(
     process.env.YOUTUBE_CLIENT_ID &&
     process.env.YOUTUBE_CLIENT_SECRET &&
-    (process.env.YOUTUBE_REFRESH_TOKEN || cachedRefreshToken)
+    (process.env.YOUTUBE_REFRESH_TOKEN || clientCache.size > 0)
   );
 }

@@ -372,6 +372,63 @@ export default function ReportsPage() {
             </div>
           </div>
 
+          {/* Manual Market Intelligence Input */}
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Markedsintelligens (lim inn fra Perplexity / Gemini)
+            </h2>
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs text-slate-400">
+                  Lim inn markedsdata fra Perplexity Pro, Gemini, eller andre kilder. Dataen brukes av AI-rapporten.
+                </p>
+                <select
+                  value={manualInsightTopic}
+                  onChange={(e) => setManualInsightTopic(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="Costa Blanca eiendomsmarked">Costa Blanca eiendomsmarked</option>
+                  <option value="Spansk boligmarked nasjonalt">Spansk boligmarked nasjonalt</option>
+                  <option value="Europeisk økonomi og renter">Europeisk økonomi og renter</option>
+                  <option value="Nybygg og utviklingsprosjekter">Nybygg og utviklingsprosjekter</option>
+                  <option value="Utenlandske kjøpere og trender">Utenlandske kjøpere og trender</option>
+                  <option value="Annet">Annet</option>
+                </select>
+                <textarea
+                  value={manualInsightText}
+                  onChange={(e) => setManualInsightText(e.target.value)}
+                  placeholder="Lim inn markedsrapport, analyse eller statistikk her..."
+                  rows={6}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 resize-y"
+                />
+                <div className="flex items-center justify-between">
+                  <Button
+                    onClick={saveManualInsight}
+                    disabled={savingInsight || !manualInsightText.trim()}
+                    className="bg-purple-600 hover:bg-purple-500"
+                  >
+                    {savingInsight ? <><Loader2 size={14} className="mr-2 animate-spin" /> Lagrer...</> : "Lagre markedsdata"}
+                  </Button>
+                  {savedInsights.length > 0 && (
+                    <span className="text-xs text-slate-500">{savedInsights.length} lagrede analyser</span>
+                  )}
+                </div>
+                {/* Compact saved insights list */}
+                {savedInsights.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-700/50">
+                    {savedInsights.slice(0, 5).map((insight, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <Badge className="bg-purple-500/20 text-purple-300 text-[9px] shrink-0">{insight.topic}</Badge>
+                        <span className="text-slate-400 truncate">{insight.summary?.substring(0, 80)}...</span>
+                        <span className="text-slate-600 shrink-0">{new Date(insight.date).toLocaleDateString("nb-NO")}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Recent Reports */}
           <div>
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">

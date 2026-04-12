@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
       (formData.get("privacyStatus") as "public" | "unlisted" | "private") ||
       "public";
 
+    const brandId = (formData.get("brandId") as string) || undefined;
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const result = await uploadVideo(buffer, {
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
       tags,
       categoryId,
       privacyStatus,
-    });
+    }, brandId);
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

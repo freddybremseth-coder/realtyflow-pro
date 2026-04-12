@@ -220,6 +220,7 @@ function PropertyVideoContent() {
           privacyStatus: "public",
           property: selectedProperty,
           brand: brand ? { name: brand.name, website: brand.website } : undefined,
+          brandId: selectedBrand || undefined,
         }),
       });
 
