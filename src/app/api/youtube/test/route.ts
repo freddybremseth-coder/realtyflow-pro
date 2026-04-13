@@ -8,14 +8,25 @@ import { createClient } from "@supabase/supabase-js";
  * Tests YouTube OAuth2 token validity for a brand.
  * Returns token source, validity status, and channel info if valid.
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   const brandId = req.nextUrl.searchParams.get("brandId") || undefined;
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
 
+  const debugInfo = {
+    clientIdPresent: !!clientId,
+    clientIdStart: clientId ? clientId.substring(0, 20) + "..." : "MISSING",
+    clientSecretPresent: !!clientSecret,
+    clientSecretEnd: clientSecret ? "..." + clientSecret.slice(-8) : "MISSING",
+    nodeEnv: process.env.NODE_ENV,
+  };
+
   if (!clientId || !clientSecret) {
     return NextResponse.json({
       error: "YOUTUBE_CLIENT_ID or YOUTUBE_CLIENT_SECRET not set",
+      debug: debugInfo,
     }, { status: 500 });
   }
 
@@ -125,11 +136,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       brandId: brandId || "(default)",
       clientId: clientId.substring(0, 30) + "...",
+      clientSecretEnd: "..." + clientSecret.slice(-8),
       tokenSource,
       tokenFound: true,
       tokenPreview: refreshToken.substring(0, 10) + "...",
       valid: false,
       error: msg,
+      debug: debugInfo,
     });
   }
 }
