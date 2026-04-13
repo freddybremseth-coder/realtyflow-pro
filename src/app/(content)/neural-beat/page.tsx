@@ -831,6 +831,12 @@ export default function NeuralBeatPage() {
               <p className="text-slate-400">AI-drevet musikkproduksjon &bull; Supabase &rarr; YouTube</p>
             </div>
           </div>
+          <a
+            href="/neural-beat/shader-render"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500/20 border border-orange-500/30 text-orange-300 text-sm hover:bg-orange-500/30 transition-colors"
+          >
+            🌅 Solnedgang Music Video
+          </a>
           {readySongs.length > 0 && (
             <Button
               onClick={handleProcessAll}
