@@ -18,16 +18,6 @@ import { BRANDS } from "@/lib/constants";
 import { createClient } from "@supabase/supabase-js";
 import ContentCalendar from "@/components/ContentCalendar"
 
-export default function ContentHubPage() {
-  return (
-    <div style={{ padding: "20px" }}>
-      <h1>Content Hub</h1>
-
-      <ContentCalendar />
-    </div>
-  )
-}
-
 // --- Types ---
 interface PublishProgress {
   platform: string;
@@ -2097,6 +2087,20 @@ export default function ContentHubPage() {
                     </div>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Google Calendar drag & drop */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Calendar size={16} className="text-blue-400" />
+                  Google Kalender
+                </CardTitle>
+                <p className="text-xs text-slate-400">Dra og slipp hendelser for å endre dato. Klikk på ledig tid for å opprette ny hendelse. Krever GOOGLE_CALENDAR_REFRESH_TOKEN i env.</p>
+              </CardHeader>
+              <CardContent className="p-2">
+                <ContentCalendar />
               </CardContent>
             </Card>
           </div>

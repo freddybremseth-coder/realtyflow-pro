@@ -229,6 +229,15 @@ export async function executePublishForDraft(params: {
         case "linkedin":
           result = await publishToLinkedIn(account.access_token, account.account_id, content, publicImageUrl);
           break;
+        case "youtube":
+          // YouTube requires video — community posts need 500+ subscribers
+          // Log the draft as "pending video" and return informative message
+          result = {
+            platform: "youtube",
+            success: false,
+            error: "YouTube-innhold krever en video. Bruk 'Eiendomsvideo' eller 'Neural Beat' for å laste opp video til YouTube.",
+          };
+          break;
         default:
           result = { platform, success: false, error: `Plattform "${platform}" støttes ikke.` };
       }
