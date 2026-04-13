@@ -16,6 +16,17 @@ import {
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 import { createClient } from "@supabase/supabase-js";
+import ContentCalendar from "@/components/ContentCalendar"
+
+export default function ContentHubPage() {
+  return (
+    <div style={{ padding: "20px" }}>
+      <h1>Content Hub</h1>
+
+      <ContentCalendar />
+    </div>
+  )
+}
 
 // --- Types ---
 interface PublishProgress {
