@@ -124,6 +124,7 @@ export async function GET(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({
       brandId: brandId || "(default)",
+      clientId: clientId.substring(0, 30) + "...",
       tokenSource,
       tokenFound: true,
       tokenPreview: refreshToken.substring(0, 10) + "...",
