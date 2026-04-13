@@ -6,6 +6,8 @@ function getOAuth2Client() {
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
 
+
+
   if (!clientId || !clientSecret || !refreshToken) {
     return null;
   }
