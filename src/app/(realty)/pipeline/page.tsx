@@ -146,6 +146,10 @@ export default function PipelinePage() {
   const [editCommissionData, setEditCommissionData] = useState({ sale_price: "", commission_percent: "", commission_amount: "", commission_paid_date: "", brand_id: "" });
   const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [gmailSyncing, setGmailSyncing] = useState(false);
+  const [gmailInteractions, setGmailInteractions] = useState<Interaction[]>([]);
+  const [gmailError, setGmailError] = useState<string | null>(null);
+  const [showGmailMerged, setShowGmailMerged] = useState(false);
 
   // ── Load leads from database ───────────────────────
 
@@ -344,6 +348,48 @@ export default function PipelinePage() {
       setShowEmailModal(true);
     }
     setAiDraftLoading(false);
+  };
+
+  // ── Gmail sync ─────────────────────────────────────
+
+  const syncGmail = async () => {
+    if (!selectedLead?.email) return;
+    setGmailSyncing(true);
+    setGmailError(null);
+    setGmailInteractions([]);
+    try {
+      const res = await fetch(`/api/gmail/sync?contactEmail=${encodeURIComponent(selectedLead.email)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setGmailError(data.error || "Kunne ikke hente Gmail-tråder");
+      } else {
+        setGmailInteractions(data.interactions || []);
+        if ((data.interactions || []).length === 0) setGmailError("Ingen e-poster funnet for denne kontakten");
+      }
+    } catch {
+      setGmailError("Nettverksfeil. Prøv igjen.");
+    }
+    setGmailSyncing(false);
+  };
+
+  const saveGmailInteractions = async () => {
+    if (!selectedLead || gmailInteractions.length === 0) return;
+    // Merge gmail interactions (avoid duplicates by id)
+    const existingIds = new Set(selectedLead.interactions.map((i) => i.id));
+    const newOnes = gmailInteractions.filter((i) => !existingIds.has(i.id));
+    if (newOnes.length === 0) return;
+    const merged = [...newOnes, ...selectedLead.interactions];
+    setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? { ...l, interactions: merged } : l));
+    if (dbLoaded) {
+      fetch("/api/contacts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedLead.id, interactions: merged }),
+      }).catch(() => {});
+    }
+    setGmailInteractions([]);
+    setShowGmailMerged(true);
+    setTimeout(() => setShowGmailMerged(false), 3000);
   };
 
   // ── Add lead / CSV ─────────────────────────────────
@@ -1350,20 +1396,75 @@ export default function PipelinePage() {
             {/* Interaction History */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Clock size={14} className="text-slate-400" />
-                  Aktivitetslogg ({selectedLead.interactions.length})
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Clock size={14} className="text-slate-400" />
+                    Aktivitetslogg ({selectedLead.interactions.length})
+                  </CardTitle>
+                  {selectedLead.email && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] gap-1 text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+                      onClick={syncGmail}
+                      disabled={gmailSyncing}
+                    >
+                      {gmailSyncing ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
+                      {gmailSyncing ? "Henter…" : "Synk Gmail"}
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
-              <CardContent>
-                {selectedLead.interactions.length === 0 ? (
+              <CardContent className="space-y-3">
+                {/* Gmail sync results */}
+                {gmailError && (
+                  <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-xs text-slate-400">
+                    {gmailError}
+                    {gmailError.includes("Settings") && (
+                      <a href="/api/oauth/gmail" className="ml-1 text-blue-400 underline">Koble til nå →</a>
+                    )}
+                  </div>
+                )}
+                {showGmailMerged && (
+                  <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+                    ✓ Gmail-e-poster lagret i aktivitetsloggen
+                  </div>
+                )}
+                {gmailInteractions.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-blue-400 font-medium">{gmailInteractions.length} Gmail-tråder funnet:</p>
+                      <Button size="sm" className="h-5 text-[10px] bg-blue-600 hover:bg-blue-700" onClick={saveGmailInteractions}>
+                        Lagre alle
+                      </Button>
+                    </div>
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                      {gmailInteractions.map((i) => (
+                        <div key={i.id} className="flex gap-2 p-2 rounded bg-blue-500/5 border border-blue-500/10 text-xs">
+                          <Mail size={12} className="text-blue-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-slate-200 truncate">{i.content}</p>
+                            <span className="text-[10px] text-slate-500">{i.date} · {i.direction === "in" ? "Innkommende" : "Utgående"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing interactions */}
+                {selectedLead.interactions.length === 0 && gmailInteractions.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-4">
                     Ingen aktiviteter ennå. Bruk knappene over for å logge e-post, samtale eller møte.
                   </p>
                 ) : (
                   <div className="space-y-3 max-h-[300px] overflow-y-auto">
                     {selectedLead.interactions.map((interaction) => (
-                      <div key={interaction.id} className={`flex gap-3 p-3 rounded-lg ${interaction.type === "ai" ? "bg-amber-500/5 border border-amber-500/10" : "bg-slate-900/30"}`}>
+                      <div key={interaction.id} className={`flex gap-3 p-3 rounded-lg ${
+                        interaction.type === "ai" ? "bg-amber-500/5 border border-amber-500/10" :
+                        (interaction as any).source === "gmail" ? "bg-blue-500/5 border border-blue-500/10" :
+                        "bg-slate-900/30"
+                      }`}>
                         <div className="mt-0.5">{interactionIcon(interaction.type)}</div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-200 break-words">{interaction.content}</p>
@@ -1372,6 +1473,7 @@ export default function PipelinePage() {
                             {interaction.direction && (
                               <Badge variant="outline" className="text-[10px]">{interaction.direction === "in" ? "Innkommende" : "Utgående"}</Badge>
                             )}
+                            {(interaction as any).source === "gmail" && <Badge variant="outline" className="text-[10px] text-blue-400">Gmail</Badge>}
                             {interaction.type === "ai" && <Badge variant="warning" className="text-[10px]">AI</Badge>}
                           </div>
                         </div>
