@@ -6,6 +6,11 @@ import { generateShort, buildShortsTitle } from '@/services/integrations/shorts-
 import { buildChapters, injectChaptersIntoDescription } from '@/services/integrations/chapter-builder';
 import { getTopTrendingTags } from '@/services/integrations/trending-tags-store';
 import { pickBestPublishTime } from '@/services/integrations/publish-time-picker';
+import {
+  generateMultilingualIntro,
+  injectMultilingualIntro,
+  type TranslatedBlocks,
+} from '@/services/integrations/description-translator';
 import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
@@ -211,6 +216,11 @@ export class NeuralBeatPipeline {
     autoSchedule?: boolean;
     /** Explicit ISO datetime — overrides autoSchedule. */
     customPublishAt?: string;
+    /**
+     * Prepend a 3-language (NO/EN/ES) intro + CTA to the description. Off by
+     * default to preserve token budget on high-volume batches. Default: false.
+     */
+    multilingualDescription?: boolean;
   }): Promise<PipelineRun> {
     // Pre-check: verify FFmpeg is available before starting the pipeline
     const ffmpegOk = await isFFmpegAvailable();
@@ -261,6 +271,7 @@ export class NeuralBeatPipeline {
     let videoBuffer: Buffer | null = null;
     let renderedDurationSec: number | null = null;
     let chapterMarkers: Array<{ t: number; label: string }> = [];
+    let translatedIntro: TranslatedBlocks | null = null;
     let youtubeUrl: string | null = null;
     let youtubeVideoId: string | null = null;
     let playlistName: string | null = null;
@@ -364,6 +375,30 @@ export class NeuralBeatPipeline {
           }
         } catch (err) {
           console.warn('[NeuralBeatPipeline] Trending tag merge skipped:', err instanceof Error ? err.message : err);
+        }
+
+        // Optionally prepend a NO/EN/ES intro+CTA block so the description
+        // reaches all three audiences right at the fold.
+        if (options?.multilingualDescription) {
+          try {
+            steps[currentStepIndex].result = 'Oversetter beskrivelse (NO/EN/ES)...';
+            notify();
+            translatedIntro = await generateMultilingualIntro({
+              title: songRecord.title,
+              artist: songRecord.artist,
+              genre: songAnalysis!.genre,
+              mood: songAnalysis!.mood,
+            });
+            if (translatedIntro) {
+              youtubeMetadata.description = injectMultilingualIntro(
+                youtubeMetadata.description,
+                translatedIntro,
+              );
+              console.log('[NeuralBeatPipeline] Prepended 3-language intro to description');
+            }
+          } catch (err) {
+            console.warn('[NeuralBeatPipeline] Multilingual intro skipped:', err instanceof Error ? err.message : err);
+          }
         }
 
         stepCompleted(steps[currentStepIndex]);
@@ -785,6 +820,7 @@ export class NeuralBeatPipeline {
             customImageCount: options?.customImageUrls?.length || 0,
             scheduledPublishAt: publishAtIso || undefined,
             scheduledPublishReason: publishScheduleReason || undefined,
+            multilingualIntro: translatedIntro || undefined,
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });

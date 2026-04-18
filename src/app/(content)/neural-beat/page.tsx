@@ -167,6 +167,9 @@ export default function NeuralBeatPage() {
   const [autoSchedule, setAutoSchedule] = useState(false);
   const [customPublishAt, setCustomPublishAt] = useState<string>('');
 
+  // 3-language description (NO/EN/ES intro + CTA)
+  const [multilingualDescription, setMultilingualDescription] = useState(true);
+
   // Image bank (persistent saved images)
   interface ImageBankEntry {
     id: string;
@@ -705,6 +708,7 @@ export default function NeuralBeatPage() {
           customThumbnailUrl: customThumbnailUrl || undefined,
           autoSchedule: customPublishAt ? false : autoSchedule,
           customPublishAt: customPublishAt ? new Date(customPublishAt).toISOString() : undefined,
+          multilingualDescription,
         }),
         signal: controller.signal,
       });
@@ -1290,6 +1294,24 @@ export default function NeuralBeatPage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* 3-language description */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                Beskrivelse
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <input
+                  type="checkbox"
+                  checked={multilingualDescription}
+                  onChange={(e) => setMultilingualDescription(e.target.checked)}
+                  className="accent-pink-500"
+                />
+                <span>
+                  3-språks intro (🇳🇴 🇬🇧 🇪🇸) foran beskrivelsen — gir bredere rekkevidde
+                </span>
+              </label>
             </div>
 
             {/* Scheduled Publishing */}

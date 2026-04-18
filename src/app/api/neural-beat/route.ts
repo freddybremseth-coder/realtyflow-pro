@@ -84,7 +84,15 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     let { recordId } = body;
-    const { auto, customImageUrls, logoUrl, customThumbnailUrl, autoSchedule, customPublishAt } = body;
+    const {
+      auto,
+      customImageUrls,
+      logoUrl,
+      customThumbnailUrl,
+      autoSchedule,
+      customPublishAt,
+      multilingualDescription,
+    } = body;
 
     if (!isConfigured()) {
       return NextResponse.json(
@@ -160,6 +168,7 @@ export async function POST(request: NextRequest) {
             customThumbnailUrl: customThumbnailUrl || undefined,
             autoSchedule: !!autoSchedule,
             customPublishAt: customPublishAt || undefined,
+            multilingualDescription: !!multilingualDescription,
           });
           send({
             id: pipelineId,
