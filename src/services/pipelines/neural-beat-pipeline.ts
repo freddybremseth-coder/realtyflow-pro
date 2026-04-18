@@ -2,6 +2,7 @@ import { updateSongStatus, updateSongFields, getGenreImages, saveGeneratedImages
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
 import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
+import { generateShort, buildShortsTitle } from '@/services/integrations/shorts-generator';
 import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
@@ -709,60 +710,55 @@ export class NeuralBeatPipeline {
       }
 
       // Step 9: Generate & Upload YouTube Short (non-fatal)
+      // Uses drop-detect + burned hook + loopable cross-fade for virality.
       currentStepIndex = 8;
       stepRunning(steps[currentStepIndex]);
       try {
         if (videoBuffer && youtubeMetadata && audioUrl) {
-          // Use FFmpeg to create a 30-45 second vertical Short from the video
-          const shortsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neural-short-'));
-          const inputVideoPath = path.join(shortsDir, 'input.mp4');
-          const shortsVideoPath = path.join(shortsDir, 'short.mp4');
-          await fs.writeFile(inputVideoPath, videoBuffer);
+          steps[currentStepIndex].result = 'Analyserer drop og genererer Short...';
+          notify();
 
-          // Get audio duration to find the best clip section (aim for middle 30-45 seconds)
-          const { execSync } = require('child_process');
-          let duration = 120; // default 2min
-          try {
-            const probe = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${inputVideoPath}"`, { encoding: 'utf8' });
-            duration = parseFloat(probe.trim()) || 120;
-          } catch { /* use default */ }
+          // Pick a hook for the burned overlay — reuse the first thumbnail
+          // variant so the Short visually echoes the main video thumbnail.
+          const firstVariant = youtubeMetadata.thumbnailVariants?.[0];
+          const shortsHook = firstVariant?.hook || songAnalysis?.mood?.toUpperCase() || 'NEW DROP';
+          const shortsEndCard = 'FULL VERSION IN DESC 👇';
 
-          // Take 30-45 seconds from the best part (typically 30-40% into the song)
-          const shortDuration = Math.min(45, Math.max(30, duration * 0.35));
-          const startTime = Math.max(0, Math.floor(duration * 0.3));
+          const shortResult = await generateShort({
+            videoBuffer,
+            targetDuration: 35,
+            hook: shortsHook,
+            endCard: shortsEndCard,
+            accentColor: 'ff3366',
+            loopFade: 0.5,
+          });
 
-          // Create vertical 9:16 crop from center of 16:9 video, with the audio
-          const ffmpegCmd = [
-            'ffmpeg', '-y',
-            '-ss', String(startTime),
-            '-i', `"${inputVideoPath}"`,
-            '-t', String(Math.floor(shortDuration)),
-            '-vf', '"crop=ih*9/16:ih,scale=1080:1920"',
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-            '-c:a', 'aac', '-b:a', '128k',
-            '-movflags', '+faststart',
-            `"${shortsVideoPath}"`,
-          ].join(' ');
+          const shortsTitle = buildShortsTitle({
+            title: songRecord.title,
+            genre: songAnalysis?.genre || 'EDM',
+            mood: songAnalysis?.mood || 'energetic',
+            hook: shortsHook,
+          });
 
-          execSync(ffmpegCmd, { timeout: 120000 });
+          const shortsDescription = [
+            `${youtubeMetadata.description.split('\n')[0]}`,
+            '',
+            `🎧 Full version: ${youtubeUrl}`,
+            `🎵 Drop lands at ${Math.round(shortResult.dropStartSeconds + 3)}s in the full version`,
+            '',
+            '#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM',
+          ].join('\n');
 
-          const shortsBuffer = await fs.readFile(shortsVideoPath);
-
-          // Create Shorts-optimized title and description
-          const shortsTitle = `${youtubeMetadata.title.split('|')[0].trim()} #Shorts`.slice(0, 100);
-          const shortsDescription = `${youtubeMetadata.description.split('\n')[0]}\n\nFull version: ${youtubeUrl}\n\n#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM`;
-
-          const shortsResult = await uploadVideo(shortsBuffer, {
+          const shortsResult = await uploadVideo(shortResult.videoBuffer, {
             title: shortsTitle,
             description: shortsDescription,
-            tags: [...youtubeMetadata.tags, 'Shorts', 'Short', 'YouTube Shorts'],
+            tags: [...youtubeMetadata.tags.slice(0, 17), 'Shorts', 'YouTube Shorts', 'Short'],
             categoryId: youtubeMetadata.categoryId,
             privacyStatus: 'public',
           });
 
           console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);
 
-          // Save shorts URL to database
           await updateSongFields(songRecord.id, {
             aiMetadata: {
               youtubeTitle: youtubeMetadata.title,
@@ -772,13 +768,13 @@ export class NeuralBeatPipeline {
               processedAt: new Date().toISOString(),
               shortsUrl: shortsResult.youtubeUrl,
               shortsVideoId: shortsResult.videoId,
+              shortsHook,
+              shortsDropStartSeconds: shortResult.dropStartSeconds,
+              shortsDetectionMethod: shortResult.detectionMethod,
             },
           });
 
-          steps[currentStepIndex].result = `Short uploaded: ${shortsResult.youtubeUrl}`;
-
-          // Cleanup
-          try { await fs.rm(shortsDir, { recursive: true }); } catch { /* silent */ }
+          steps[currentStepIndex].result = `Short uploaded (${shortResult.detectionMethod}): ${shortsResult.youtubeUrl}`;
         } else {
           steps[currentStepIndex].result = 'Skipped - no video buffer available';
         }
