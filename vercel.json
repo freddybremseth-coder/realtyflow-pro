@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/engagement-tracker",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/trending-tags",
+      "schedule": "0 5 * * 1"
     }
   ]
 }

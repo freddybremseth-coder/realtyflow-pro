@@ -3,6 +3,8 @@ import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/servic
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
 import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
 import { generateShort, buildShortsTitle } from '@/services/integrations/shorts-generator';
+import { buildChapters, injectChaptersIntoDescription } from '@/services/integrations/chapter-builder';
+import { getTopTrendingTags } from '@/services/integrations/trending-tags-store';
 import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
@@ -241,6 +243,8 @@ export class NeuralBeatPipeline {
     let thumbnailVariantUrls: string[] = [];
     let videoRenderPath: string | null = null;
     let videoBuffer: Buffer | null = null;
+    let renderedDurationSec: number | null = null;
+    let chapterMarkers: Array<{ t: number; label: string }> = [];
     let youtubeUrl: string | null = null;
     let youtubeVideoId: string | null = null;
     let playlistName: string | null = null;
@@ -326,6 +330,26 @@ export class NeuralBeatPipeline {
           style: songAnalysis!.style,
           mood: songAnalysis!.mood,
         });
+
+        // Merge up to 3 currently-trending YouTube Music tags that the weekly
+        // cron has harvested. Non-fatal: no trending data yet → no change.
+        try {
+          const trending = await getTopTrendingTags(3, youtubeMetadata.tags);
+          if (trending.length > 0) {
+            // Keep tag list under YouTube's ~500-char budget (conservative).
+            const merged = [...youtubeMetadata.tags];
+            for (const t of trending) {
+              const joined = [...merged, t].join(',');
+              if (joined.length > 480) break;
+              merged.push(t);
+            }
+            youtubeMetadata.tags = merged;
+            console.log(`[NeuralBeatPipeline] Merged ${trending.length} trending tags: ${trending.join(', ')}`);
+          }
+        } catch (err) {
+          console.warn('[NeuralBeatPipeline] Trending tag merge skipped:', err instanceof Error ? err.message : err);
+        }
+
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -534,7 +558,29 @@ export class NeuralBeatPipeline {
         }
         videoRenderPath = renderResult.videoPath;
         videoBuffer = renderResult.videoBuffer;
-        console.log(`[NeuralBeatPipeline] Video rendered: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB`);
+        renderedDurationSec = renderResult.durationSeconds;
+        console.log(`[NeuralBeatPipeline] Video rendered: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB, ${renderedDurationSec.toFixed(1)}s`);
+
+        // Inject YouTube chapter markers into the description so the player
+        // auto-shows a progress-bar chapter strip. This materially boosts
+        // watch-time (viewers skim to their favorite section).
+        try {
+          const { block, markers } = buildChapters(renderedDurationSec, {
+            mood: songAnalysis?.mood,
+            genre: songAnalysis?.genre,
+          });
+          if (block && youtubeMetadata) {
+            youtubeMetadata.description = injectChaptersIntoDescription(
+              youtubeMetadata.description,
+              block,
+            );
+            chapterMarkers = markers;
+            console.log(`[NeuralBeatPipeline] Injected ${markers.length} chapter markers`);
+          }
+        } catch (err) {
+          console.warn('[NeuralBeatPipeline] Chapter injection skipped:', err instanceof Error ? err.message : err);
+        }
+
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -666,6 +712,8 @@ export class NeuralBeatPipeline {
             thumbnailVariantUrls,
             activeThumbnailIndex: thumbnailVariantUrls.length > 0 ? 0 : undefined,
             thumbnailHooks: (youtubeMetadata!.thumbnailVariants || []).map((v) => v.hook),
+            chapterMarkers: chapterMarkers.length > 0 ? chapterMarkers : undefined,
+            durationSeconds: renderedDurationSec ?? undefined,
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });
