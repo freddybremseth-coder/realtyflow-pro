@@ -387,6 +387,15 @@ Respond with ONLY this JSON structure, no markdown:
 }
 
 /**
+ * Thumbnail hook variant — text content for a single thumbnail A/B candidate.
+ */
+export interface ThumbnailHookVariant {
+  hook: string;        // 2-4 caps words (big text)
+  subtext: string;     // 1-4 words, smaller (accent color)
+  stamp?: string;      // optional top-right stamp like "NEW" or "🔥"
+}
+
+/**
  * Generate YouTube SEO metadata using Claude Haiku.
  */
 export async function generateYouTubeSEO(
@@ -404,6 +413,7 @@ export async function generateYouTubeSEO(
   categoryId: string;
   privacyStatus: string;
   imagePrompt: string;
+  thumbnailVariants: ThumbnailHookVariant[];
 }> {
   // Rotate title formulas for variety - don't always use "Artist - Title [Genre]"
   const titleFormulas = [
@@ -442,6 +452,15 @@ DESCRIPTION (1500-2500 chars, SEO-optimized):
 7. Playlist suggestion: "Add this to your ${options.mood} playlist!"
 8. Hashtags: #ReMasterFreddy #AIMusic #EDM #ChillBeats #StudyMusic #LoFi #ElectronicMusic plus genre-specific
 
+THUMBNAIL HOOKS (CRITICAL for CTR — this text is burned onto the thumbnail):
+- Generate exactly 3 DIFFERENT thumbnail hook variants for A/B testing
+- Each variant has a "hook" (2-4 CAPS WORDS, big emotional text — think "DEEP VIBES", "NIGHT DRIVE", "STUDY FLOW", "PURE ENERGY", "4AM MOOD")
+- Each variant has a "subtext" (1-4 words, smaller, often genre/use-case — e.g. "Lo-Fi Beats 2026", "Focus Music", "Workout Mix")
+- Optionally a "stamp" (short 3-4 char word like "NEW", "🔥", "HOT" — max one of the three variants)
+- Make each variant feel genuinely different: one emotional, one use-case, one mystery/curiosity
+- Avoid: full sentences, punctuation except emoji, long phrases
+- Must match the track mood (${options.mood}) and genre (${options.genre})
+
 Respond with ONLY this JSON, no markdown:
 {
   "title": "YouTube video title following the formula above (max 60 chars)",
@@ -449,14 +468,25 @@ Respond with ONLY this JSON, no markdown:
   "tags": ["tag1", "tag2", "...up to 20 relevant tags including trending search terms"],
   "categoryId": "10",
   "privacyStatus": "public",
-  "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)"
+  "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)",
+  "thumbnailVariants": [
+    { "hook": "HOOK TEXT A", "subtext": "subtext a", "stamp": "NEW" },
+    { "hook": "HOOK TEXT B", "subtext": "subtext b" },
+    { "hook": "HOOK TEXT C", "subtext": "subtext c" }
+  ]
 }`;
 
   const result = await askClaude(prompt, { temperature: 0.7, maxTokens: 2000 });
 
   try {
     const jsonMatch = result.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsed.thumbnailVariants) || parsed.thumbnailVariants.length < 3) {
+        parsed.thumbnailVariants = buildFallbackThumbnailVariants(options.genre, options.mood);
+      }
+      return parsed;
+    }
   } catch {
     // fallback
   }
@@ -497,7 +527,55 @@ Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI 
     categoryId: '10',
     privacyStatus: 'public',
     imagePrompt: `Abstract neon visualization for ${options.genre} music, ${options.mood} mood, vibrant colors, no text`,
+    thumbnailVariants: buildFallbackThumbnailVariants(options.genre, options.mood),
   };
+}
+
+// ─── Fallback thumbnail hooks — mood × genre heuristic ────────────────
+function buildFallbackThumbnailVariants(genre: string, mood: string): ThumbnailHookVariant[] {
+  const moodLower = mood.toLowerCase();
+  const genreLower = genre.toLowerCase();
+
+  const isChill = moodLower.includes('chill') || moodLower.includes('calm') || moodLower.includes('relax');
+  const isEnergetic = moodLower.includes('energetic') || moodLower.includes('power') || moodLower.includes('intense');
+  const isRomantic = moodLower.includes('romantic') || moodLower.includes('love');
+  const isDark = moodLower.includes('dark') || moodLower.includes('deep');
+  const isLofi = genreLower.includes('lofi') || genreLower.includes('lo-fi');
+  const isEDM = genreLower.includes('edm') || genreLower.includes('house') || genreLower.includes('techno');
+
+  let pool: ThumbnailHookVariant[];
+  if (isLofi || isChill) {
+    pool = [
+      { hook: 'STUDY FLOW', subtext: 'Lo-Fi Focus Beats', stamp: 'NEW' },
+      { hook: 'LATE NIGHT VIBES', subtext: 'Chill Beats 2026' },
+      { hook: '3AM MOOD', subtext: 'Relax & Unwind' },
+    ];
+  } else if (isEnergetic || isEDM) {
+    pool = [
+      { hook: 'PURE ENERGY', subtext: 'Workout Mix 2026', stamp: 'HOT' },
+      { hook: 'NIGHT DRIVE', subtext: `${genre} Vibes` },
+      { hook: 'FEEL THE DROP', subtext: 'Festival Mode' },
+    ];
+  } else if (isRomantic) {
+    pool = [
+      { hook: 'LOVE MODE', subtext: 'Sensual Beats', stamp: 'NEW' },
+      { hook: 'GOLDEN HOUR', subtext: 'Romantic Vibes' },
+      { hook: 'SLOW DANCE', subtext: `${genre}` },
+    ];
+  } else if (isDark) {
+    pool = [
+      { hook: 'DEEP VIBES', subtext: 'After Hours', stamp: 'HOT' },
+      { hook: 'SHADOW MODE', subtext: `Dark ${genre}` },
+      { hook: 'MIDNIGHT RUN', subtext: 'Atmospheric Beats' },
+    ];
+  } else {
+    pool = [
+      { hook: 'NEW DROP', subtext: `${genre} 2026`, stamp: 'NEW' },
+      { hook: 'FEEL IT', subtext: `${mood} Vibes` },
+      { hook: 'PRESS PLAY', subtext: 'Daily Beats' },
+    ];
+  }
+  return pool;
 }
 
 /**

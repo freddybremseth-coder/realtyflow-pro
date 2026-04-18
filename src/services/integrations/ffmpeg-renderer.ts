@@ -176,7 +176,7 @@ let _fontPath: string | null = null;
  * Ensure a TTF font is available for drawtext.
  * Checks macOS system fonts first, then downloads from Google Fonts to /tmp.
  */
-async function ensureFont(): Promise<string> {
+export async function ensureFont(): Promise<string> {
   if (_fontPath) return _fontPath;
 
   // 1. Check macOS system fonts (for local dev)

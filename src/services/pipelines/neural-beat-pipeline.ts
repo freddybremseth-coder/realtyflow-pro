@@ -1,6 +1,7 @@
 import { updateSongStatus, updateSongFields, getGenreImages, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
+import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
 import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
@@ -58,17 +59,22 @@ function markStepSkipped(step: PipelineStep): void {
 /**
  * Upload a file buffer to Supabase Storage and return the public URL.
  */
-async function uploadToSupabaseStorage(buffer: Buffer, filename: string): Promise<string> {
+async function uploadToSupabaseStorage(
+  buffer: Buffer,
+  filename: string,
+  folder = 'genre-library',
+  contentType = 'image/png',
+): Promise<string> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error('Supabase not configured for storage upload');
 
   const supabase = createClient(url, key);
-  const storagePath = `genre-library/${Date.now()}-${filename}`;
+  const storagePath = `${folder}/${Date.now()}-${filename}`;
 
   const { error } = await supabase.storage
     .from('neural-beat')
-    .upload(storagePath, buffer, { contentType: 'image/png', upsert: false });
+    .upload(storagePath, buffer, { contentType, upsert: false });
 
   if (error) throw new Error(`Supabase storage upload failed: ${error.message}`);
 
@@ -230,6 +236,8 @@ export class NeuralBeatPipeline {
     let youtubeMetadata: Awaited<ReturnType<typeof generateYouTubeSEO>> | null = null;
     let localImagePaths: string[] = [];
     let thumbnailBuffer: Buffer | null = null;
+    let thumbnailVariantBuffers: Buffer[] = [];
+    let thumbnailVariantUrls: string[] = [];
     let videoRenderPath: string | null = null;
     let videoBuffer: Buffer | null = null;
     let youtubeUrl: string | null = null;
@@ -237,6 +245,7 @@ export class NeuralBeatPipeline {
     let playlistName: string | null = null;
     let genreImageUrl: string | null = null;
     let aiImageLocalPaths: string[] = [];  // Track AI-generated image paths for saving back to Airtable
+    let aiImageBuffers: Buffer[] = [];  // Keep decoded buffers around for thumbnail composition
     let usedImageGenre: string = '';        // Genre used for this song's images
 
     try {
@@ -365,14 +374,18 @@ export class NeuralBeatPipeline {
         // Track genre for saving AI images back to Airtable later
         usedImageGenre = imageGenre;
 
-        // Save AI-generated images to temp files (from base64)
+        // Save AI-generated images to temp files (from base64) + keep buffers in
+        // memory so we can compose thumbnail variants without re-reading disk.
         const aiImagePaths: string[] = [];
+        aiImageBuffers = [];
         for (let i = 0; i < aiResult.images.length; i++) {
           const img = aiResult.images[i];
           const ext = img.mimeType.includes('png') ? 'png' : 'jpg';
           const imgPath = path.join(imgTempDir, `ai-${i}.${ext}`);
-          await fs.writeFile(imgPath, Buffer.from(img.base64, 'base64'));
+          const buf = Buffer.from(img.base64, 'base64');
+          await fs.writeFile(imgPath, buf);
           aiImagePaths.push(imgPath);
+          aiImageBuffers.push(buf);
         }
         // Save reference for step 8 (save back to genre library for reuse)
         aiImageLocalPaths = aiImagePaths;
@@ -457,22 +470,12 @@ export class NeuralBeatPipeline {
 
         localImagePaths = allPaths;
 
-        // Pick a RANDOM AI image as YouTube thumbnail for variety (not always the first one)
-        if (aiResult.images.length > 0) {
-          const thumbIdx = Math.floor(Math.random() * aiResult.images.length);
-          thumbnailBuffer = Buffer.from(aiResult.images[thumbIdx].base64, 'base64');
-          genreImageUrl = genreImages.length > 0 ? genreImages[0].imageUrl : null;
-        } else if (genreImages.length > 0) {
-          try {
-            const thumbResponse = await fetch(genreImages[0].imageUrl);
-            if (thumbResponse.ok) {
-              thumbnailBuffer = Buffer.from(await thumbResponse.arrayBuffer());
-            }
-          } catch {
-            console.warn('[NeuralBeatPipeline] Could not download thumbnail (non-fatal)');
-          }
+        // Remember one genre image URL as a fallback cover for the DB record.
+        if (genreImages.length > 0) {
           genreImageUrl = genreImages[0].imageUrl;
         }
+        // NOTE: thumbnail composition happens after this step (once we have
+        // youtubeMetadata + song analysis + logo buffer).
 
         console.log(`[NeuralBeatPipeline] ${localImagePaths.length} images ready (${aiImagePaths.length} AI + ${genreImagePaths.length} Airtable)`);
         steps[currentStepIndex].result = `${localImagePaths.length} images ready (${aiImagePaths.length} AI + ${genreImagePaths.length} Airtable)`;
@@ -484,6 +487,25 @@ export class NeuralBeatPipeline {
         throw new Error(`Step 5 failed: ${message}`);
       }
 
+      // Pre-load logo buffer once — reused for both video watermark and
+      // composed thumbnails so we only download it once.
+      let logoBuffer: Buffer | undefined;
+      let logoPath: string | undefined;
+      if (options?.logoUrl) {
+        try {
+          const logoRes = await fetch(options.logoUrl);
+          if (logoRes.ok) {
+            logoBuffer = Buffer.from(await logoRes.arrayBuffer());
+            const logoTempPath = path.join(os.tmpdir(), `nb-logo-${Date.now()}.png`);
+            await fs.writeFile(logoTempPath, logoBuffer);
+            logoPath = logoTempPath;
+            console.log('[NeuralBeatPipeline] Logo downloaded for watermark + thumbnail overlay');
+          }
+        } catch {
+          console.warn('[NeuralBeatPipeline] Logo download failed (non-fatal)');
+        }
+      }
+
       // Step 6: FFmpeg renders multi-scene slideshow video (local, $0 cost)
       // Free memory before render — imageSetResult held large base64 strings
       if (global.gc) { try { global.gc(); } catch {} }
@@ -491,23 +513,6 @@ export class NeuralBeatPipeline {
       stepRunning(steps[currentStepIndex]);
       try {
         console.log('[NeuralBeatPipeline] Starting FFmpeg render (local, zero cost)...');
-
-        // Download logo to temp file if provided
-        let logoPath: string | undefined;
-        if (options?.logoUrl) {
-          try {
-            const logoTempPath = path.join(os.tmpdir(), `nb-logo-${Date.now()}.png`);
-            const logoRes = await fetch(options.logoUrl);
-            if (logoRes.ok) {
-              const logoBuf = Buffer.from(await logoRes.arrayBuffer());
-              await fs.writeFile(logoTempPath, logoBuf);
-              logoPath = logoTempPath;
-              console.log('[NeuralBeatPipeline] Logo downloaded for watermark overlay');
-            }
-          } catch {
-            console.warn('[NeuralBeatPipeline] Logo download failed (non-fatal)');
-          }
-        }
 
         const renderResult = await renderVideo({
           audioUrl: audioUrl!,
@@ -534,6 +539,36 @@ export class NeuralBeatPipeline {
         const message = error instanceof Error ? error.message : String(error);
         stepFailed(steps[currentStepIndex], message);
         throw new Error(`Step 6 failed: ${message}`);
+      }
+
+      // Compose 3 A/B thumbnail variants with burned-in hook text + logo badge.
+      // Non-fatal: if all variants fail we fall back to raw AI image.
+      try {
+        const availableBackgrounds = aiImageBuffers.slice(0, 3);
+        const variants = (youtubeMetadata!.thumbnailVariants || []).slice(0, availableBackgrounds.length);
+        if (availableBackgrounds.length > 0 && variants.length > 0) {
+          steps[5].result = `Komponerer ${variants.length} thumbnail-varianter...`;
+          notify();
+          thumbnailVariantBuffers = await composeThumbnailVariants(
+            availableBackgrounds,
+            variants,
+            { brand: 'RE-MASTER FREDDY', logoBuffer },
+          );
+          if (thumbnailVariantBuffers.length > 0) {
+            thumbnailBuffer = thumbnailVariantBuffers[0];
+            console.log(`[NeuralBeatPipeline] ${thumbnailVariantBuffers.length} thumbnail variants composed`);
+          }
+        }
+        // Fallback: raw AI image if composition produced nothing
+        if (!thumbnailBuffer && aiImageBuffers.length > 0) {
+          thumbnailBuffer = aiImageBuffers[0];
+          console.log('[NeuralBeatPipeline] Thumbnail composition empty — using raw AI image as fallback');
+        }
+      } catch (err) {
+        console.warn('[NeuralBeatPipeline] Thumbnail composition failed (non-fatal):', err instanceof Error ? err.message : err);
+        if (!thumbnailBuffer && aiImageBuffers.length > 0) {
+          thumbnailBuffer = aiImageBuffers[0];
+        }
       }
 
       // Step 7: Upload video buffer directly to YouTube (no intermediate download)
@@ -589,6 +624,28 @@ export class NeuralBeatPipeline {
       currentStepIndex = 7;
       stepRunning(steps[currentStepIndex]);
       try {
+        // Persist all thumbnail variants so a later A/B rotation can swap them.
+        if (thumbnailVariantBuffers.length > 0 && youtubeVideoId) {
+          try {
+            const uploads = await Promise.all(
+              thumbnailVariantBuffers.map((buf, i) =>
+                uploadToSupabaseStorage(
+                  buf,
+                  `thumb-${youtubeVideoId}-v${i}.png`,
+                  'thumbnails',
+                ).catch((e) => {
+                  console.warn(`[NeuralBeatPipeline] Thumbnail variant ${i} upload failed:`, e);
+                  return null;
+                }),
+              ),
+            );
+            thumbnailVariantUrls = uploads.filter((u): u is string => !!u);
+            console.log(`[NeuralBeatPipeline] Saved ${thumbnailVariantUrls.length} thumbnail variants to storage`);
+          } catch (err) {
+            console.warn('[NeuralBeatPipeline] Thumbnail variant persistence failed (non-fatal):', err);
+          }
+        }
+
         await updateSongFields(songRecord.id, {
           youtubeUrl: youtubeUrl!,
           status: 'published',
@@ -605,6 +662,9 @@ export class NeuralBeatPipeline {
             renderer: 'ffmpeg',
             processedAt: new Date().toISOString(),
             playlist: playlistName || undefined,
+            thumbnailVariantUrls,
+            activeThumbnailIndex: thumbnailVariantUrls.length > 0 ? 0 : undefined,
+            thumbnailHooks: (youtubeMetadata!.thumbnailVariants || []).map((v) => v.hook),
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });
