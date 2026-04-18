@@ -5,6 +5,7 @@ import { composeThumbnailVariants } from '@/services/integrations/thumbnail-comp
 import { generateShort, buildShortsTitle } from '@/services/integrations/shorts-generator';
 import { buildChapters, injectChaptersIntoDescription } from '@/services/integrations/chapter-builder';
 import { getTopTrendingTags } from '@/services/integrations/trending-tags-store';
+import { pickBestPublishTime } from '@/services/integrations/publish-time-picker';
 import { uploadVideo, setThumbnail, listPlaylists, createPlaylist, addToPlaylist } from '@/services/integrations/youtube-client';
 import {
   SongRecord,
@@ -201,6 +202,15 @@ export class NeuralBeatPipeline {
      * by YouTube on upload).
      */
     customThumbnailUrl?: string;
+    /**
+     * When true (and customPublishAt is not set), auto-pick the best upcoming
+     * publish time based on the genre/mood + channel history. Upload goes out
+     * immediately as PRIVATE and YouTube flips it to PUBLIC at the scheduled
+     * time.
+     */
+    autoSchedule?: boolean;
+    /** Explicit ISO datetime — overrides autoSchedule. */
+    customPublishAt?: string;
   }): Promise<PipelineRun> {
     // Pre-check: verify FFmpeg is available before starting the pipeline
     const ffmpegOk = await isFFmpegAvailable();
@@ -647,13 +657,44 @@ export class NeuralBeatPipeline {
       // Step 7: Upload video buffer directly to YouTube (no intermediate download)
       currentStepIndex = 6;
       stepRunning(steps[currentStepIndex]);
+
+      // Resolve scheduled publish time (before upload so we can log it).
+      let publishAtIso: string | null = null;
+      let publishScheduleReason: string | null = null;
+      try {
+        if (options?.customPublishAt) {
+          const d = new Date(options.customPublishAt);
+          if (!isNaN(d.getTime()) && d.getTime() > Date.now() + 15 * 60 * 1000) {
+            publishAtIso = d.toISOString();
+            publishScheduleReason = 'user-specified publishAt';
+          } else {
+            console.warn('[NeuralBeatPipeline] customPublishAt rejected — too soon or invalid');
+          }
+        } else if (options?.autoSchedule) {
+          const picked = await pickBestPublishTime({
+            mood: songAnalysis?.mood,
+            genre: songAnalysis?.genre,
+          });
+          publishAtIso = picked.isoDate;
+          publishScheduleReason = picked.reason;
+          steps[currentStepIndex].result = `Planlagt ${picked.isoDate} (${picked.minutesFromNow} min frem)`;
+          notify();
+          console.log(`[NeuralBeatPipeline] Scheduled publish: ${picked.isoDate} — ${picked.reason}`);
+        }
+      } catch (err) {
+        console.warn('[NeuralBeatPipeline] Publish-time pick failed — uploading immediately:', err instanceof Error ? err.message : err);
+      }
+
       try {
         const uploadResult = await uploadVideo(videoBuffer!, {
           title: youtubeMetadata!.title,
           description: youtubeMetadata!.description,
           tags: youtubeMetadata!.tags,
           categoryId: youtubeMetadata!.categoryId,
-          privacyStatus: (youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public',
+          privacyStatus: publishAtIso
+            ? 'private'
+            : ((youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public'),
+          publishAt: publishAtIso || undefined,
         });
         youtubeUrl = uploadResult.youtubeUrl;
         youtubeVideoId = uploadResult.videoId;
@@ -742,6 +783,8 @@ export class NeuralBeatPipeline {
             durationSeconds: renderedDurationSec ?? undefined,
             customThumbnail: !!options?.customThumbnailUrl,
             customImageCount: options?.customImageUrls?.length || 0,
+            scheduledPublishAt: publishAtIso || undefined,
+            scheduledPublishReason: publishScheduleReason || undefined,
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });

@@ -104,6 +104,17 @@ export async function uploadVideo(
 ): Promise<YouTubeUploadResult> {
   const youtube = await getClient(brandId);
 
+  // When publishAt is set we must upload as PRIVATE — YouTube rejects scheduling
+  // on any other privacy status. Sanitize here so callers don't have to remember.
+  const willSchedule = !!metadata.publishAt;
+  const statusPayload: Record<string, unknown> = {
+    privacyStatus: willSchedule ? 'private' : (metadata.privacyStatus || 'private'),
+    selfDeclaredMadeForKids: false,
+  };
+  if (willSchedule) {
+    statusPayload.publishAt = metadata.publishAt;
+  }
+
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
     requestBody: {
@@ -114,10 +125,7 @@ export async function uploadVideo(
         categoryId: metadata.categoryId || '10', // Music category
         defaultLanguage: metadata.language || 'en',
       },
-      status: {
-        privacyStatus: metadata.privacyStatus || 'private',
-        selfDeclaredMadeForKids: false,
-      },
+      status: statusPayload,
     },
     media: {
       body: Readable.from(videoBuffer),

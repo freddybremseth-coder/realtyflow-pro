@@ -163,6 +163,10 @@ export default function NeuralBeatPage() {
   const [customThumbnailUrl, setCustomThumbnailUrl] = useState<string | null>(null);
   const customThumbnailInputRef = useRef<HTMLInputElement>(null);
 
+  // Scheduled publishing
+  const [autoSchedule, setAutoSchedule] = useState(false);
+  const [customPublishAt, setCustomPublishAt] = useState<string>('');
+
   // Image bank (persistent saved images)
   interface ImageBankEntry {
     id: string;
@@ -699,6 +703,8 @@ export default function NeuralBeatPage() {
           customImageUrls: customImageUrls.length > 0 ? customImageUrls : undefined,
           logoUrl: logoUrl || undefined,
           customThumbnailUrl: customThumbnailUrl || undefined,
+          autoSchedule: customPublishAt ? false : autoSchedule,
+          customPublishAt: customPublishAt ? new Date(customPublishAt).toISOString() : undefined,
         }),
         signal: controller.signal,
       });
@@ -1284,6 +1290,54 @@ export default function NeuralBeatPage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Scheduled Publishing */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                Planlagt publisering
+              </label>
+              <div className="space-y-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoSchedule}
+                    onChange={(e) => {
+                      setAutoSchedule(e.target.checked);
+                      if (e.target.checked) setCustomPublishAt('');
+                    }}
+                    className="accent-pink-500"
+                  />
+                  Auto-planlegg basert på sjanger + kanalhistorikk
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 w-16">Eller:</span>
+                  <input
+                    type="datetime-local"
+                    value={customPublishAt}
+                    onChange={(e) => {
+                      setCustomPublishAt(e.target.value);
+                      if (e.target.value) setAutoSchedule(false);
+                    }}
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white"
+                  />
+                  {customPublishAt && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setCustomPublishAt('')}
+                      className="h-7 w-7 p-0 text-slate-500 hover:text-red-400"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {(autoSchedule || customPublishAt) && (
+                  <p className="text-[10px] text-amber-400/80">
+                    Videoen lastes opp som privat og går automatisk live på det valgte tidspunktet.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>

@@ -73,6 +73,13 @@ export interface YouTubeVideoMetadata {
   playlistId?: string;
   language?: string;
   imagePrompt?: string;
+  /**
+   * ISO datetime string. When provided, YouTube uploads the video as PRIVATE
+   * and schedules it to go PUBLIC at this timestamp. YouTube requires
+   * privacyStatus to be 'private' for scheduling to work — the upload helper
+   * coerces this automatically.
+   */
+  publishAt?: string;
 }
 
 export interface YouTubeUploadResult {
