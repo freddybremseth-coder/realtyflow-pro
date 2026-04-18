@@ -158,6 +158,25 @@ export default function NeuralBeatPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const customImagesInputRef = useRef<HTMLInputElement>(null);
 
+  // Custom thumbnail upload (optional — overrides AI-composed thumbnail)
+  const [customThumbnailFile, setCustomThumbnailFile] = useState<File | null>(null);
+  const [customThumbnailUrl, setCustomThumbnailUrl] = useState<string | null>(null);
+  const customThumbnailInputRef = useRef<HTMLInputElement>(null);
+
+  // Image bank (persistent saved images)
+  interface ImageBankEntry {
+    id: string;
+    url: string;
+    name?: string | null;
+    kind: 'image' | 'logo' | 'thumbnail';
+    use_count?: number;
+    created_at?: string;
+  }
+  const [imageBank, setImageBank] = useState<ImageBankEntry[]>([]);
+  const [imageBankLoading, setImageBankLoading] = useState(false);
+  const [showImageBank, setShowImageBank] = useState(false);
+  const [imageBankKind, setImageBankKind] = useState<'image' | 'logo' | 'thumbnail'>('image');
+
   // YouTube stats state
   const [ytChannel, setYtChannel] = useState<YouTubeChannel | null>(null);
   const [ytVideos, setYtVideos] = useState<YouTubeVideo[]>([]);
@@ -498,6 +517,79 @@ export default function NeuralBeatPage() {
     }
   };
 
+  const handleCustomThumbnailSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCustomThumbnailFile(file);
+    try {
+      const url = await uploadImageToStorage(file, 'thumb');
+      setCustomThumbnailUrl(url);
+    } catch {
+      window.alert('Kunne ikke laste opp thumbnail');
+      setCustomThumbnailFile(null);
+    }
+  };
+
+  const loadImageBank = async (kind?: 'image' | 'logo' | 'thumbnail') => {
+    setImageBankLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (kind) params.set('kind', kind);
+      const res = await fetch(`/api/neural-beat/image-bank?${params.toString()}`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.images)) {
+        setImageBank(data.images);
+      }
+    } catch {
+      // Non-fatal
+    } finally {
+      setImageBankLoading(false);
+    }
+  };
+
+  const saveToImageBank = async (url: string, name: string, kind: 'image' | 'logo' | 'thumbnail') => {
+    try {
+      const res = await fetch('/api/neural-beat/image-bank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, name, kind }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (showImageBank) await loadImageBank(imageBankKind);
+      return true;
+    } catch {
+      window.alert('Kunne ikke lagre i bildebank');
+      return false;
+    }
+  };
+
+  const deleteFromImageBank = async (id: string) => {
+    try {
+      const res = await fetch(`/api/neural-beat/image-bank?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setImageBank((prev) => prev.filter((img) => img.id !== id));
+    } catch {
+      window.alert('Kunne ikke slette');
+    }
+  };
+
+  const selectFromImageBank = (entry: ImageBankEntry) => {
+    if (entry.kind === 'logo') {
+      setLogoUrl(entry.url);
+      setLogoFile(new File([], entry.name || 'logo.png'));
+    } else if (entry.kind === 'thumbnail') {
+      setCustomThumbnailUrl(entry.url);
+      setCustomThumbnailFile(new File([], entry.name || 'thumb.png'));
+    } else {
+      if (!customImageUrls.includes(entry.url)) {
+        setCustomImageUrls((prev) => [...prev, entry.url]);
+        setCustomImageFiles((prev) => [...prev, new File([], entry.name || `image-${prev.length}.png`)]);
+      }
+    }
+  };
+
   /**
    * Recovery mode: when SSE connection drops, poll the songs API to check
    * if the pipeline actually completed (Vercel function keeps running even
@@ -606,6 +698,7 @@ export default function NeuralBeatPage() {
           recordId,
           customImageUrls: customImageUrls.length > 0 ? customImageUrls : undefined,
           logoUrl: logoUrl || undefined,
+          customThumbnailUrl: customThumbnailUrl || undefined,
         }),
         signal: controller.signal,
       });
@@ -971,6 +1064,19 @@ export default function NeuralBeatPage() {
                   <Button
                     size="sm"
                     variant="ghost"
+                    onClick={async () => {
+                      if (logoUrl) {
+                        await saveToImageBank(logoUrl, logoFile.name || 'logo.png', 'logo');
+                        window.alert('Logo lagret i bildebank');
+                      }
+                    }}
+                    className="h-7 text-xs text-cyan-400 hover:text-cyan-300"
+                  >
+                    Lagre
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     onClick={() => {
                       setLogoFile(null);
                       setLogoUrl(null);
@@ -1024,18 +1130,158 @@ export default function NeuralBeatPage() {
                       </div>
                     ))}
                   </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setCustomImageFiles([]);
+                        setCustomImageUrls([]);
+                        if (customImagesInputRef.current) customImagesInputRef.current.value = '';
+                      }}
+                      className="text-xs text-slate-400 hover:text-red-400 p-0 h-auto"
+                    >
+                      Fjern alle
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        let saved = 0;
+                        for (let i = 0; i < customImageUrls.length; i++) {
+                          const ok = await saveToImageBank(customImageUrls[i], customImageFiles[i]?.name || `image-${i}`, 'image');
+                          if (ok) saved++;
+                        }
+                        if (saved > 0) window.alert(`${saved} bilde(r) lagret i bildebank`);
+                      }}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 p-0 h-auto"
+                    >
+                      Lagre i bildebank
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Custom Thumbnail (overrides AI) */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                Egen thumbnail (overstyrer AI)
+              </label>
+              {!customThumbnailFile ? (
+                <div
+                  className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center cursor-pointer hover:border-pink-500/50 transition-colors"
+                  onClick={() => customThumbnailInputRef.current?.click()}
+                >
+                  <Upload className="h-5 w-5 mx-auto mb-1 text-slate-500" />
+                  <p className="text-xs text-slate-400">Klikk for å laste opp thumbnail (1280×720 anbefalt)</p>
+                  <input
+                    ref={customThumbnailInputRef}
+                    type="file"
+                    accept="image/png,image/jpg,image/jpeg,image/webp"
+                    onChange={handleCustomThumbnailSelect}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-700/50">
+                  {customThumbnailUrl && (
+                    <img src={customThumbnailUrl} alt="Thumbnail" className="h-14 w-24 object-cover rounded" />
+                  )}
+                  <span className="text-sm text-white flex-1 truncate">{customThumbnailFile.name || 'Thumbnail'}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (customThumbnailUrl) {
+                        await saveToImageBank(customThumbnailUrl, customThumbnailFile.name || 'thumb.png', 'thumbnail');
+                        window.alert('Thumbnail lagret i bildebank');
+                      }
+                    }}
+                    className="h-7 text-xs text-cyan-400 hover:text-cyan-300"
+                  >
+                    Lagre
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      setCustomImageFiles([]);
-                      setCustomImageUrls([]);
-                      if (customImagesInputRef.current) customImagesInputRef.current.value = '';
+                      setCustomThumbnailFile(null);
+                      setCustomThumbnailUrl(null);
+                      if (customThumbnailInputRef.current) customThumbnailInputRef.current.value = '';
                     }}
-                    className="text-xs text-slate-400 hover:text-red-400 p-0 h-auto"
+                    className="h-7 w-7 p-0 text-slate-500 hover:text-red-400"
                   >
-                    Fjern alle
+                    <XCircle className="h-4 w-4" />
                   </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Image Bank */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-slate-300">
+                  Bildebank {imageBank.length > 0 && `(${imageBank.length})`}
+                </label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    const next = !showImageBank;
+                    setShowImageBank(next);
+                    if (next) loadImageBank(imageBankKind);
+                  }}
+                  className="h-6 px-2 text-xs text-cyan-400 hover:text-cyan-300"
+                >
+                  {showImageBank ? 'Skjul' : 'Vis'}
+                </Button>
+              </div>
+              {showImageBank && (
+                <div className="space-y-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <div className="flex gap-1">
+                    {(['image', 'logo', 'thumbnail'] as const).map((k) => (
+                      <button
+                        key={k}
+                        onClick={() => {
+                          setImageBankKind(k);
+                          loadImageBank(k);
+                        }}
+                        className={`text-xs px-2 py-1 rounded ${
+                          imageBankKind === k
+                            ? 'bg-pink-500/30 text-pink-200 border border-pink-500/50'
+                            : 'bg-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {k === 'image' ? 'Bilder' : k === 'logo' ? 'Logoer' : 'Thumbnails'}
+                      </button>
+                    ))}
+                  </div>
+                  {imageBankLoading ? (
+                    <p className="text-xs text-slate-500">Laster...</p>
+                  ) : imageBank.length === 0 ? (
+                    <p className="text-xs text-slate-500">Ingen lagrede bilder. Last opp et bilde og trykk "Lagre i bildebank".</p>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                      {imageBank.map((entry) => (
+                        <div key={entry.id} className="relative group">
+                          <img
+                            src={entry.url}
+                            alt={entry.name || ''}
+                            className="h-16 w-full object-cover rounded cursor-pointer border border-transparent hover:border-pink-500"
+                            onClick={() => selectFromImageBank(entry)}
+                            title={entry.name || ''}
+                          />
+                          <button
+                            onClick={() => deleteFromImageBank(entry.id)}
+                            className="absolute -top-1 -right-1 bg-red-500 rounded-full w-4 h-4 flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            x
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

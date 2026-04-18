@@ -195,6 +195,12 @@ export class NeuralBeatPipeline {
   async execute(songRecord: SongRecord, options?: {
     customImageUrls?: string[];
     logoUrl?: string;
+    /**
+     * Optional user-uploaded thumbnail. If provided, skips AI thumbnail
+     * composition entirely and uses this image verbatim (resized to 1280×720
+     * by YouTube on upload).
+     */
+    customThumbnailUrl?: string;
   }): Promise<PipelineRun> {
     // Pre-check: verify FFmpeg is available before starting the pipeline
     const ffmpegOk = await isFFmpegAvailable();
@@ -588,12 +594,32 @@ export class NeuralBeatPipeline {
         throw new Error(`Step 6 failed: ${message}`);
       }
 
+      // User-supplied custom thumbnail short-circuits everything else — fetch
+      // it once and bypass the AI composition step entirely.
+      if (options?.customThumbnailUrl) {
+        try {
+          const res = await fetch(options.customThumbnailUrl);
+          if (res.ok) {
+            thumbnailBuffer = Buffer.from(await res.arrayBuffer());
+            console.log(`[NeuralBeatPipeline] Using user-supplied custom thumbnail (${(thumbnailBuffer.length / 1024).toFixed(0)} KB)`);
+          } else {
+            console.warn(`[NeuralBeatPipeline] Custom thumbnail fetch HTTP ${res.status} — falling back to AI composition`);
+          }
+        } catch (err) {
+          console.warn('[NeuralBeatPipeline] Custom thumbnail fetch failed — falling back:', err instanceof Error ? err.message : err);
+        }
+      }
+
       // Compose 3 A/B thumbnail variants with burned-in hook text + logo badge.
       // Non-fatal: if all variants fail we fall back to raw AI image.
+      // Skipped when a custom thumbnail was successfully loaded above.
       try {
+        if (thumbnailBuffer && options?.customThumbnailUrl) {
+          console.log('[NeuralBeatPipeline] Skipping AI thumbnail composition — user supplied a custom one');
+        }
         const availableBackgrounds = aiImageBuffers.slice(0, 3);
         const variants = (youtubeMetadata!.thumbnailVariants || []).slice(0, availableBackgrounds.length);
-        if (availableBackgrounds.length > 0 && variants.length > 0) {
+        if (!thumbnailBuffer && availableBackgrounds.length > 0 && variants.length > 0) {
           steps[5].result = `Komponerer ${variants.length} thumbnail-varianter...`;
           notify();
           thumbnailVariantBuffers = await composeThumbnailVariants(
@@ -714,6 +740,8 @@ export class NeuralBeatPipeline {
             thumbnailHooks: (youtubeMetadata!.thumbnailVariants || []).map((v) => v.hook),
             chapterMarkers: chapterMarkers.length > 0 ? chapterMarkers : undefined,
             durationSeconds: renderedDurationSec ?? undefined,
+            customThumbnail: !!options?.customThumbnailUrl,
+            customImageCount: options?.customImageUrls?.length || 0,
           },
           ...(genreImageUrl ? { imageUrl: genreImageUrl } : {}),
         });
