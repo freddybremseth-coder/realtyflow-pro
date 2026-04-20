@@ -69,19 +69,18 @@ export async function GET(req: NextRequest) {
     console.log("[OAuth Facebook] /me/accounts full response:", JSON.stringify(pagesData).substring(0, 1000));
     console.log("[OAuth Facebook] Pages found:", pages.length, pages.map((p: { name: string; id: string }) => `${p.name} (${p.id})`));
 
-    // If no pages found via /me/accounts, try to get user info and save as personal account
+    // If no pages found via /me/accounts, do NOT fall back to storing the user
+    // token — posting to /{user_id}/photos with a user token yields
+    // "...permission(s) must be granted before impersonating a user's page".
+    // Instead, surface a clear error so the user knows to re-auth with the
+    // right scopes / admin role.
     if (pages.length === 0) {
-      console.log("[OAuth Facebook] No pages found, saving user account directly...");
-      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${longLivedToken}`);
-      const meData = await meRes.json();
-      if (meData.id) {
-        pages.push({
-          id: meData.id,
-          name: meData.name || "Facebook User",
-          access_token: longLivedToken,
-        });
-        console.log("[OAuth Facebook] Added user as fallback page:", meData.name);
-      }
+      console.warn("[OAuth Facebook] /me/accounts returned no pages — aborting without fallback");
+      return NextResponse.redirect(
+        `${req.nextUrl.origin}/settings?oauth=error&platform=facebook&msg=${encodeURIComponent(
+          "Ingen Facebook-sider funnet. Sørg for at du er admin for minst én side og at du godtok tillatelsene pages_show_list + pages_manage_posts + pages_read_engagement.",
+        )}`,
+      );
     }
 
     const supabase = getSupabase();

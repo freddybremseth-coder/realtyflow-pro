@@ -1,0 +1,100 @@
+/**
+ * GET /api/oauth/facebook/diagnose?brand=xxx
+ *
+ * Inspects every `social_accounts` row for the given brand (facebook + instagram)
+ * and reports per-account token health: type (USER/PAGE/APP), validity, scopes,
+ * expiry, and a Norwegian hint if the row needs a reconnect.
+ *
+ * Intended for the Settings page to show a "Diagnose tilkobling" button.
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { debugToken, sanitizeToken } from '@/services/publishing/facebook-token-helper';
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
+
+function normalizeBrand(b: string): string {
+  return b.toLowerCase().replace(/[-_.\s]/g, '').replace(/homes$/, '').replace(/pro$/, '');
+}
+
+export async function GET(req: NextRequest) {
+  const brand = req.nextUrl.searchParams.get('brand');
+  if (!brand) {
+    return NextResponse.json({ error: 'brand is required' }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  const { data: allAccounts, error } = await supabase
+    .from('social_accounts')
+    .select('id, platform, account_id, account_name, access_token, brand, is_active')
+    .in('platform', ['facebook', 'instagram']);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const rows = (allAccounts || []).filter(
+    (a: { brand: string }) => normalizeBrand(a.brand) === normalizeBrand(brand),
+  );
+
+  const report = await Promise.all(
+    rows.map(async (row) => {
+      const clean = sanitizeToken(row.access_token);
+      const hadWhitespace = clean !== row.access_token;
+      const debug = clean ? await debugToken(clean) : { valid: false, error: 'Empty token' };
+
+      // Derive a user-facing hint
+      let hint: string | null = null;
+      if (!clean) {
+        hint = 'Tom token — koble til Facebook på nytt.';
+      } else if (!debug.valid) {
+        hint = `Token ugyldig (${debug.error || 'ukjent'}) — koble til på nytt.`;
+      } else if (row.platform === 'facebook' && debug.type !== 'PAGE') {
+        hint = `Denne raden har ${debug.type}-token, men trenger PAGE-token. Neste publisering prøver å oppgradere automatisk.`;
+      } else if (row.platform === 'instagram' && debug.type !== 'PAGE') {
+        hint = `Instagram krever FB Page-token (fikk ${debug.type}). Koble til Facebook på nytt.`;
+      } else if (debug.expiresAt && debug.expiresAt > 0) {
+        const daysLeft = Math.round((debug.expiresAt * 1000 - Date.now()) / 86400000);
+        if (daysLeft < 7) hint = `Token utløper om ${daysLeft} dager — re-autoriser snart.`;
+      }
+
+      return {
+        id: row.id,
+        platform: row.platform,
+        account_id: row.account_id,
+        account_name: row.account_name,
+        is_active: row.is_active,
+        hadWhitespaceInToken: hadWhitespace,
+        token: {
+          present: !!clean,
+          length: clean.length,
+          valid: debug.valid,
+          type: debug.type,
+          scopes: debug.scopes,
+          expiresAt: debug.expiresAt,
+          error: debug.error,
+        },
+        hint,
+      };
+    }),
+  );
+
+  const problems = report.filter((r) => r.hint !== null);
+
+  return NextResponse.json({
+    brand,
+    accountCount: report.length,
+    problemCount: problems.length,
+    accounts: report,
+    summary:
+      problems.length === 0
+        ? `Alle ${report.length} kontoer ser gyldige ut.`
+        : `${problems.length} av ${report.length} kontoer trenger oppmerksomhet.`,
+  });
+}

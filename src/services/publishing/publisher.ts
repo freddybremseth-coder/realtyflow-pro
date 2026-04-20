@@ -1,4 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  resolveFacebookPageToken,
+  resolveInstagramToken,
+  sanitizeToken,
+  TokenError,
+} from "./facebook-token-helper";
 
 export interface PublishResult {
   platform: string;
@@ -220,14 +226,24 @@ export async function executePublishForDraft(params: {
       let result: PublishResult;
 
       switch (platform) {
-        case "facebook":
-          result = await publishToFacebook(account.account_id, account.access_token, content, publicImageUrl);
+        case "facebook": {
+          // Sanitize + auto-upgrade USER→PAGE token if needed. Throws TokenError
+          // with a user-facing Norwegian message if the token is unrecoverable.
+          const resolved = await resolveFacebookPageToken(
+            account.id,
+            account.account_id,
+            account.access_token,
+          );
+          result = await publishToFacebook(account.account_id, resolved.token, content, publicImageUrl);
           break;
-        case "instagram":
-          result = await publishToInstagram(account.account_id, account.access_token, content, publicImageUrl);
+        }
+        case "instagram": {
+          const resolved = await resolveInstagramToken(account.id, account.access_token);
+          result = await publishToInstagram(account.account_id, resolved.token, content, publicImageUrl);
           break;
+        }
         case "linkedin":
-          result = await publishToLinkedIn(account.access_token, account.account_id, content, publicImageUrl);
+          result = await publishToLinkedIn(sanitizeToken(account.access_token), account.account_id, content, publicImageUrl);
           break;
         case "youtube":
           // YouTube requires video — community posts need 500+ subscribers
@@ -251,11 +267,15 @@ export async function executePublishForDraft(params: {
           .eq("id", draftId);
       }
     } catch (err) {
-      results.push({
-        platform,
-        success: false,
-        error: err instanceof Error ? err.message : "Ukjent feil",
-      });
+      // TokenError carries a user-facing Norwegian hint; everything else gets
+      // the raw message (still useful for Graph API errors).
+      const msg =
+        err instanceof TokenError
+          ? err.userFacing
+          : err instanceof Error
+            ? err.message
+            : "Ukjent feil";
+      results.push({ platform, success: false, error: msg });
     }
   }
 
