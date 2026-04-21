@@ -23,7 +23,7 @@
  * Does NOT mutate anything — safe to hit repeatedly.
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 interface BrandRow {
@@ -218,5 +218,84 @@ export async function GET() {
         ? `Alle ${checks.length} YouTube-tokens er gyldige.`
         : `${problems.length} av ${checks.length} tokens trenger oppmerksomhet.`,
     checks,
+  });
+}
+
+/**
+ * DELETE /api/oauth/google/diagnose?mode=revoked|all|brand&brand_id=xxx
+ *
+ * Cleans up broken youtube_refresh_token entries in brand_settings:
+ *   - mode=revoked (default): re-runs diagnostics, removes only tokens that
+ *     fail exchange with invalid_grant
+ *   - mode=all: removes every youtube_refresh_token entry (nuclear option)
+ *   - mode=brand (with brand_id=xxx): removes one specific row's token
+ *
+ * The token key is removed via settings-merge, NOT by deleting the row, so
+ * unrelated brand settings (IG handle, FB page, etc.) are preserved.
+ *
+ * Returns: { removed: [brand_ids], kept: [brand_ids] }
+ */
+export async function DELETE(req: NextRequest) {
+  const mode = req.nextUrl.searchParams.get('mode') || 'revoked';
+  const targetBrand = req.nextUrl.searchParams.get('brand_id');
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+  }
+  const supabase = createClient(url, key);
+
+  const { data, error } = await supabase.from('brand_settings').select('brand_id, settings');
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const rows = (data || []) as BrandRow[];
+  const removed: string[] = [];
+  const kept: string[] = [];
+
+  for (const row of rows) {
+    const raw = row.settings?.youtube_refresh_token;
+    if (typeof raw !== 'string' || !raw) continue;
+
+    let shouldRemove = false;
+
+    if (mode === 'all') {
+      shouldRemove = true;
+    } else if (mode === 'brand') {
+      shouldRemove = !!targetBrand && row.brand_id === targetBrand;
+    } else {
+      // mode=revoked: test token; remove only if exchange fails with invalid_grant
+      const exchange = await exchangeRefreshToken(sanitize(raw));
+      const errStr = exchange.error || '';
+      shouldRemove = /invalid_grant/i.test(errStr);
+    }
+
+    if (!shouldRemove) {
+      kept.push(row.brand_id);
+      continue;
+    }
+
+    // Strip only the youtube_refresh_token key, keep the rest of settings intact
+    const nextSettings = { ...(row.settings || {}) };
+    delete nextSettings.youtube_refresh_token;
+
+    const { error: upErr } = await supabase
+      .from('brand_settings')
+      .update({ settings: nextSettings, updated_at: new Date().toISOString() })
+      .eq('brand_id', row.brand_id);
+
+    if (upErr) {
+      console.error(`[YT Diagnose] Failed to clear token for ${row.brand_id}:`, upErr);
+      kept.push(row.brand_id);
+    } else {
+      removed.push(row.brand_id);
+    }
+  }
+
+  return NextResponse.json({
+    mode,
+    removed,
+    kept,
+    message: `Fjernet ${removed.length} ugyldig(e) token(s). Beholdt ${kept.length}.`,
   });
 }

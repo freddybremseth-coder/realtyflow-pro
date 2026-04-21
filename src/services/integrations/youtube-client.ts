@@ -3,95 +3,155 @@ import { OAuth2Client } from 'google-auth-library';
 import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { Readable } from 'stream';
 
-// Cache per brand: brandId → { client, refreshToken }
+// Cache per (brandId, token) so we can re-use OAuth clients but also invalidate
+// when we fall back to a different token source.
 const clientCache: Map<string, { client: youtube_v3.Youtube; refreshToken: string }> = new Map();
 
+interface TokenCandidate {
+  source: string;  // "brand:zeneco" | "_system" | "env:YOUTUBE_REFRESH_TOKEN"
+  token: string;
+}
+
+function sanitizeToken(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw.trim().replace(/^["']|["']$/g, '').trim();
+}
+
 /**
- * Try to fetch the refresh token stored in Supabase.
- * If brandId is provided, check brand_settings for that brand first.
- * Falls back to _system token.
+ * Collect every refresh token that could serve this brand, in priority order:
+ *   1. brand-specific row (if brandId set and row exists)
+ *   2. _system row (global default)
+ *   3. env YOUTUBE_REFRESH_TOKEN (last-resort fallback)
+ *
+ * The caller walks the list and tries each — needed because Google's 100-token
+ * limit per client+user means older tokens get revoked silently when new ones
+ * are issued, so a brand-specific token may be dead even though _system works.
  */
-async function getRefreshTokenFromSupabase(brandId?: string): Promise<string | null> {
+async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[]> {
+  const candidates: TokenCandidate[] = [];
+
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return null;
-    const supabase = createClient(url, key);
+    if (url && key) {
+      const supabase = createClient(url, key);
 
-    // 1. Check brand-specific token
-    if (brandId && brandId !== '_system') {
-      const { data: brandData } = await supabase
+      if (brandId && brandId !== '_system') {
+        const { data: brandData } = await supabase
+          .from('brand_settings')
+          .select('settings')
+          .eq('brand_id', brandId)
+          .maybeSingle();
+        const brandToken = sanitizeToken(brandData?.settings?.youtube_refresh_token);
+        if (brandToken) candidates.push({ source: `brand:${brandId}`, token: brandToken });
+      }
+
+      const { data: sysData } = await supabase
         .from('brand_settings')
         .select('settings')
-        .eq('brand_id', brandId)
-        .single();
-      const brandToken = brandData?.settings?.youtube_refresh_token;
-      if (brandToken) return brandToken;
+        .eq('brand_id', '_system')
+        .maybeSingle();
+      const sysToken = sanitizeToken(sysData?.settings?.youtube_refresh_token);
+      if (sysToken && !candidates.some((c) => c.token === sysToken)) {
+        candidates.push({ source: '_system', token: sysToken });
+      }
     }
-
-    // 2. Fall back to _system token
-    const { data } = await supabase
-      .from('brand_settings')
-      .select('settings')
-      .eq('brand_id', '_system')
-      .single();
-    return data?.settings?.youtube_refresh_token || null;
-  } catch {
-    return null;
+  } catch (err) {
+    console.warn('[YouTube] Supabase token lookup failed:', err instanceof Error ? err.message : err);
   }
+
+  const envToken = sanitizeToken(process.env.YOUTUBE_REFRESH_TOKEN);
+  if (envToken && !candidates.some((c) => c.token === envToken)) {
+    candidates.push({ source: 'env:YOUTUBE_REFRESH_TOKEN', token: envToken });
+  }
+
+  return candidates;
 }
 
-async function getOAuth2Client(brandId?: string) {
+function buildOAuthClient(refreshToken: string): OAuth2Client {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-
-  // Check brand-specific token first, then _system, then env var
-  let refreshToken = await getRefreshTokenFromSupabase(brandId);
-  let tokenSource = brandId ? `brand:${brandId}` : '_system';
-
-  if (!refreshToken) {
-    refreshToken = process.env.YOUTUBE_REFRESH_TOKEN || null;
-    tokenSource = 'env:YOUTUBE_REFRESH_TOKEN';
-  }
-
-  console.log(`[YouTube] OAuth2 client for ${brandId || 'default'}, token source: ${tokenSource}, hasToken: ${!!refreshToken}`);
-
   if (!clientId || !clientSecret) {
     throw new Error('YouTube OAuth2 credentials not configured: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are required');
   }
+  const oauth2Client = new OAuth2Client(clientId, clientSecret);
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return oauth2Client;
+}
 
-  if (!refreshToken) {
+function buildYoutubeClient(brandId: string | undefined, candidate: TokenCandidate): youtube_v3.Youtube {
+  const cacheKey = `${brandId || '_default'}|${candidate.token}`;
+  const cached = clientCache.get(cacheKey);
+  if (cached) return cached.client;
+  const oauth2Client = buildOAuthClient(candidate.token);
+  const client = youtube({ version: 'v3', auth: oauth2Client });
+  clientCache.set(cacheKey, { client, refreshToken: candidate.token });
+  return client;
+}
+
+/**
+ * Legacy single-token client resolver — kept for code paths that don't need
+ * the invalid_grant fallback (channel info, list videos, etc.). New code
+ * should use runWithTokenFallback instead.
+ */
+async function getClient(brandId?: string): Promise<youtube_v3.Youtube> {
+  const candidates = await collectTokenCandidates(brandId);
+  if (candidates.length === 0) {
+    const hint = brandId
+      ? `No YouTube refresh token found for brand "${brandId}". Set it in brand settings or configure YOUTUBE_REFRESH_TOKEN env var.`
+      : 'No YouTube refresh token found. Set YOUTUBE_REFRESH_TOKEN env var or configure token in brand settings.';
+    throw new Error(hint);
+  }
+  const first = candidates[0];
+  console.log(`[YouTube] OAuth2 client for ${brandId || 'default'}, token source: ${first.source}`);
+  return buildYoutubeClient(brandId, first);
+}
+
+/**
+ * Run `work` against each candidate token, falling through to the next on
+ * invalid_grant. Returns the result of the first successful call, or throws
+ * the last error if every candidate fails.
+ *
+ * Retried errors:
+ *   - invalid_grant (token revoked / expired)
+ *   - invalid_client / unauthorized_client (rare, but not retryable — rethrow)
+ */
+function isInvalidGrantError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /invalid[_\s]grant/i.test(msg) || /Token has been expired or revoked/i.test(msg);
+}
+
+async function runWithTokenFallback<T>(
+  brandId: string | undefined,
+  work: (client: youtube_v3.Youtube, source: string) => Promise<T>,
+): Promise<T> {
+  const candidates = await collectTokenCandidates(brandId);
+  if (candidates.length === 0) {
     const hint = brandId
       ? `No YouTube refresh token found for brand "${brandId}". Set it in brand settings or configure YOUTUBE_REFRESH_TOKEN env var.`
       : 'No YouTube refresh token found. Set YOUTUBE_REFRESH_TOKEN env var or configure token in brand settings.';
     throw new Error(hint);
   }
 
-  const oauth2Client = new OAuth2Client(clientId, clientSecret);
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-  return { oauth2Client, refreshToken };
-}
-
-/**
- * Get a YouTube API client. If brandId is provided and that brand has its
- * own youtube_refresh_token in brand_settings, a dedicated client for that
- * channel is returned. Otherwise falls back to the default channel.
- */
-async function getClient(brandId?: string): Promise<youtube_v3.Youtube> {
-  const cacheKey = brandId || '_default';
-  const cached = clientCache.get(cacheKey);
-
-  const { oauth2Client, refreshToken } = await getOAuth2Client(brandId);
-
-  // Return cached client if token hasn't changed
-  if (cached && cached.refreshToken === refreshToken) {
-    return cached.client;
+  let lastErr: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      const client = buildYoutubeClient(brandId, candidate);
+      console.log(`[YouTube] Attempting upload with token source: ${candidate.source}`);
+      return await work(client, candidate.source);
+    } catch (err) {
+      lastErr = err;
+      if (!isInvalidGrantError(err)) {
+        // Non-auth error — don't retry with different token
+        throw err;
+      }
+      console.warn(
+        `[YouTube] Token from ${candidate.source} failed with invalid_grant, trying next candidate...`,
+      );
+    }
   }
-
-  const client = youtube({ version: 'v3', auth: oauth2Client });
-  clientCache.set(cacheKey, { client, refreshToken });
-  return client;
+  throw lastErr ?? new Error('All YouTube refresh tokens failed with invalid_grant');
 }
 
 /**
@@ -102,8 +162,6 @@ export async function uploadVideo(
   metadata: YouTubeVideoMetadata,
   brandId?: string,
 ): Promise<YouTubeUploadResult> {
-  const youtube = await getClient(brandId);
-
   // When publishAt is set we must upload as PRIVATE — YouTube rejects scheduling
   // on any other privacy status. Sanitize here so callers don't have to remember.
   const willSchedule = !!metadata.publishAt;
@@ -115,36 +173,39 @@ export async function uploadVideo(
     statusPayload.publishAt = metadata.publishAt;
   }
 
-  const res = await youtube.videos.insert({
-    part: ['snippet', 'status'],
-    requestBody: {
-      snippet: {
-        title: metadata.title,
-        description: metadata.description,
-        tags: metadata.tags,
-        categoryId: metadata.categoryId || '10', // Music category
-        defaultLanguage: metadata.language || 'en',
+  return runWithTokenFallback(brandId, async (youtube, source) => {
+    const res = await youtube.videos.insert({
+      part: ['snippet', 'status'],
+      requestBody: {
+        snippet: {
+          title: metadata.title,
+          description: metadata.description,
+          tags: metadata.tags,
+          categoryId: metadata.categoryId || '10', // Music category
+          defaultLanguage: metadata.language || 'en',
+        },
+        status: statusPayload,
       },
-      status: statusPayload,
-    },
-    media: {
-      body: Readable.from(videoBuffer),
-      mimeType: 'video/mp4',
-    },
+      media: {
+        body: Readable.from(videoBuffer),
+        mimeType: 'video/mp4',
+      },
+    });
+
+    const video = res.data;
+    const videoId = video.id || '';
+    console.log(`[YouTube] Upload OK via ${source}, videoId=${videoId}, channel=${video.snippet?.channelId}`);
+
+    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    return {
+      videoId,
+      videoUrl: youtubeUrl,
+      youtubeUrl,
+      channelId: video.snippet?.channelId || '',
+      publishedAt: video.snippet?.publishedAt || new Date().toISOString(),
+      thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
+    };
   });
-
-  const video = res.data;
-  const videoId = video.id || '';
-
-  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  return {
-    videoId,
-    videoUrl: youtubeUrl,
-    youtubeUrl,
-    channelId: video.snippet?.channelId || '',
-    publishedAt: video.snippet?.publishedAt || new Date().toISOString(),
-    thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
-  };
 }
 
 /**
