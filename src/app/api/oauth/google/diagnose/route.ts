@@ -158,10 +158,20 @@ export async function GET() {
       hint = `Tokenet har ingen YouTube-kanal. Brukeren som autoriserte har ikke YouTube-kanal.`;
     } else {
       const primary = channels[0];
-      // Fuzzy check: does channel title contain brand_id fragment? Just informational.
+      // Fuzzy mismatch check — normalize both sides (lowercase, strip spaces/
+      // hyphens/underscores) so "remasterfreddy" matches "Re-master Freddy"
+      // and "_system" never triggers a warning (it's the default/fallback).
+      const normalize = (s: string) => s.toLowerCase().replace(/[-_\s]/g, '');
+      const brandNorm = normalize(row.brand_id);
+      const titleNorm = normalize(primary.title);
+      const urlNorm = normalize(primary.customUrl || '');
+      const isSystemRow = row.brand_id === '_system' || row.brand_id.startsWith('env:');
       const looksMismatched =
-        !primary.title.toLowerCase().includes(row.brand_id.toLowerCase()) &&
-        !(primary.customUrl || '').toLowerCase().includes(row.brand_id.toLowerCase());
+        !isSystemRow &&
+        brandNorm.length > 2 &&
+        !titleNorm.includes(brandNorm) &&
+        !urlNorm.includes(brandNorm) &&
+        !brandNorm.includes(titleNorm.slice(0, 6));
       if (looksMismatched) {
         hint = `⚠️ Kanalen (${primary.title}) ser ikke ut til å matche brand_id "${row.brand_id}". Hvis dette er feil kanal, kjør /api/oauth/google?brand=${row.brand_id} mens du er logget inn med riktig Google-konto.`;
       }
