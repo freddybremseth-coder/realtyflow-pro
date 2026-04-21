@@ -100,6 +100,36 @@ export async function GET(req: NextRequest) {
 }
 
 /**
+ * PATCH /api/oauth/facebook/diagnose?id=<row-uuid>&brand=<new-brand>
+ *
+ * Moves a single social_accounts row to a different brand. Used after a
+ * bulk OAuth run where multiple pages landed under one brand and need
+ * redistributing (e.g. Chat Genius saved under zeneco → move to chatgenius).
+ *
+ * Returns the updated row or a not-found error.
+ */
+export async function PATCH(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get('id');
+  const newBrand = req.nextUrl.searchParams.get('brand');
+  if (!id || !newBrand) {
+    return NextResponse.json({ error: 'id and brand are required' }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('social_accounts')
+    .update({ brand: newBrand })
+    .eq('id', id)
+    .select('id, platform, account_id, account_name, brand')
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: 'row not found' }, { status: 404 });
+
+  return NextResponse.json({ updated: data });
+}
+
+/**
  * DELETE /api/oauth/facebook/diagnose?brand=xxx&mode=invalid|all|id&id=uuid
  *
  *   mode=invalid (default): removes only rows whose token fails /debug_token
