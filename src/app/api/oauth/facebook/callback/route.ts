@@ -116,22 +116,59 @@ export async function GET(req: NextRequest) {
     // tasks, posting to /{page_id}/photos or /{page_id}/feed returns the same
     // "permission(s) must be granted before impersonating a user's page" error
     // we're trying to prevent.
-    const pages = allPages.filter(
+    const tasksOk = allPages.filter(
       (p: { tasks?: string[] }) => Array.isArray(p.tasks) && p.tasks.includes("CREATE_CONTENT"),
     );
-    const skippedPages = allPages.filter(
-      (p: { tasks?: string[] }) => !Array.isArray(p.tasks) || !p.tasks.includes("CREATE_CONTENT"),
+
+    // Per-page scope verification. With FB Granular Permissions, each Page
+    // token has its OWN scope set — the user might have granted full scopes
+    // for Page A but only a subset for Page B in the same flow. debug_token
+    // each page token and drop the ones missing pages_manage_posts /
+    // pages_read_engagement before we save them.
+    const REQUIRED_PAGE_SCOPES = ["pages_manage_posts", "pages_read_engagement"];
+    const pageChecks = await Promise.all(
+      tasksOk.map(async (p: { id: string; name: string; access_token: string }) => {
+        try {
+          const dbgRes = await fetch(
+            `https://graph.facebook.com/v19.0/debug_token?input_token=${encodeURIComponent(p.access_token)}&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`,
+          );
+          const dbg = await dbgRes.json();
+          const scopes: string[] = dbg?.data?.scopes || [];
+          const missing = REQUIRED_PAGE_SCOPES.filter((s) => !scopes.includes(s));
+          return { page: p, scopes, missing, ok: missing.length === 0 };
+        } catch {
+          // On introspection failure, let it through — publisher will surface
+          // any real issue at post time.
+          return { page: p, scopes: [] as string[], missing: [] as string[], ok: true };
+        }
+      }),
     );
+
+    const pages = pageChecks.filter((c) => c.ok).map((c) => c.page);
+    const badPages = pageChecks.filter((c) => !c.ok);
+    const skippedPages = [
+      ...allPages.filter(
+        (p: { tasks?: string[] }) => !Array.isArray(p.tasks) || !p.tasks.includes("CREATE_CONTENT"),
+      ),
+      ...badPages.map((c) => c.page),
+    ];
+
     if (skippedPages.length > 0) {
       console.warn(
-        "[OAuth Facebook] Skipping pages without CREATE_CONTENT:",
+        "[OAuth Facebook] Skipping pages:",
         skippedPages.map((p: { name: string; id: string }) => `${p.name} (${p.id})`),
+        "| missing-scope details:",
+        badPages.map((c) => `${c.page.name}: missing ${c.missing.join(",")}`),
       );
     }
+
     if (pages.length === 0 && allPages.length > 0) {
+      const details = badPages
+        .map((c) => `${c.page.name} mangler: ${c.missing.join(", ")}`)
+        .join(" | ");
       return NextResponse.redirect(
         `${req.nextUrl.origin}/settings?oauth=error&platform=facebook&msg=${encodeURIComponent(
-          `Du har ${allPages.length} Facebook-side(r), men ingen med CREATE_CONTENT-rettigheter. Sjekk at du er admin/editor (ikke bare analytiker) i Facebook Business Settings → Sider.`,
+          `Ingen Facebook-sider med tilstrekkelige tillatelser. ${details || ""} Fjern appen fra https://www.facebook.com/settings?tab=business_tools og prøv igjen.`,
         )}`,
       );
     }
