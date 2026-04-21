@@ -244,9 +244,10 @@ export async function uploadVideoFromUrl(
  */
 export async function setThumbnail(
   videoId: string,
-  thumbnailBuffer: Buffer
+  thumbnailBuffer: Buffer,
+  brandId?: string,
 ): Promise<void> {
-  const youtube = await getClient();
+  const youtube = await getClient(brandId);
   await youtube.thumbnails.set({
     videoId,
     media: {
@@ -431,13 +432,13 @@ export async function deleteVideo(videoId: string): Promise<void> {
   console.log(`[YouTube] Deleted video: ${videoId}`);
 }
 
-export async function listPlaylists(): Promise<Array<{
+export async function listPlaylists(brandId?: string): Promise<Array<{
   id: string;
   title: string;
   description: string;
   itemCount: number;
 }>> {
-  const yt = await getClient();
+  const yt = await getClient(brandId);
   const res = await yt.playlists.list({
     part: ['snippet', 'contentDetails'],
     mine: true,
@@ -451,8 +452,13 @@ export async function listPlaylists(): Promise<Array<{
   }));
 }
 
-export async function createPlaylist(title: string, description: string, privacyStatus: 'public' | 'unlisted' | 'private' = 'public'): Promise<{ id: string; title: string }> {
-  const yt = await getClient();
+export async function createPlaylist(
+  title: string,
+  description: string,
+  privacyStatus: 'public' | 'unlisted' | 'private' = 'public',
+  brandId?: string,
+): Promise<{ id: string; title: string }> {
+  const yt = await getClient(brandId);
   const res = await yt.playlists.insert({
     part: ['snippet', 'status'],
     requestBody: {
@@ -464,8 +470,8 @@ export async function createPlaylist(title: string, description: string, privacy
   return { id: res.data.id || '', title: res.data.snippet?.title || title };
 }
 
-export async function addToPlaylist(playlistId: string, videoId: string): Promise<void> {
-  const yt = await getClient();
+export async function addToPlaylist(playlistId: string, videoId: string, brandId?: string): Promise<void> {
+  const yt = await getClient(brandId);
   await yt.playlistItems.insert({
     part: ['snippet'],
     requestBody: {

@@ -23,6 +23,13 @@ import * as path from 'path';
 import * as os from 'os';
 import { createClient } from '@supabase/supabase-js';
 
+// All Neural Beat uploads belong to the Re-Master Freddy YouTube channel.
+// The brand_settings row with this brand_id must hold a valid
+// youtube_refresh_token — re-run /api/oauth/google?brand=remasterfreddy and
+// select the Re-Master Freddy channel on the Google consent screen if it
+// ever falls out of sync. Env var overrides for flexibility in preview deploys.
+const NEURAL_BEAT_BRAND_ID = process.env.NEURAL_BEAT_BRAND_ID || 'remasterfreddy';
+
 const STEP_NAMES = [
   'Update Status to Processing',
   'Download Audio File',
@@ -158,30 +165,36 @@ function getPlaylistForSong(mood: string, energy: string, genre: string): typeof
   return PLAYLIST_RULES.find((r) => r.match(moodLower, energy, genreLower)) || PLAYLIST_RULES[PLAYLIST_RULES.length - 1];
 }
 
-async function ensurePlaylistAndAdd(videoId: string, mood: string, energy: string, genre: string): Promise<string> {
+async function ensurePlaylistAndAdd(
+  videoId: string,
+  mood: string,
+  energy: string,
+  genre: string,
+  brandId?: string,
+): Promise<string> {
   const target = getPlaylistForSong(mood, energy, genre);
   const catchAll = PLAYLIST_RULES[PLAYLIST_RULES.length - 1];
 
   // Fetch existing playlists
-  const existing = await listPlaylists();
+  const existing = await listPlaylists(brandId);
 
   // Helper: find or create playlist
   const findOrCreate = async (rule: typeof PLAYLIST_RULES[0]): Promise<string> => {
     const found = existing.find((p) => p.title === rule.name);
     if (found) return found.id;
-    const created = await createPlaylist(rule.name, rule.description, 'public');
+    const created = await createPlaylist(rule.name, rule.description, 'public', brandId);
     return created.id;
   };
 
   // Add to the matched playlist
   const playlistId = await findOrCreate(target);
-  await addToPlaylist(playlistId, videoId);
+  await addToPlaylist(playlistId, videoId, brandId);
 
   // Also add to catch-all "Alle spor" if it's not already the catch-all
   if (target.name !== catchAll.name) {
     try {
       const catchAllId = await findOrCreate(catchAll);
-      await addToPlaylist(catchAllId, videoId);
+      await addToPlaylist(catchAllId, videoId, brandId);
     } catch {
       // Non-fatal
     }
@@ -730,14 +743,14 @@ export class NeuralBeatPipeline {
             ? 'private'
             : ((youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public'),
           publishAt: publishAtIso || undefined,
-        });
+        }, NEURAL_BEAT_BRAND_ID);
         youtubeUrl = uploadResult.youtubeUrl;
         youtubeVideoId = uploadResult.videoId;
 
         // Try to set custom thumbnail (requires channel verification)
         if (thumbnailBuffer) {
           try {
-            await setThumbnail(uploadResult.videoId, thumbnailBuffer);
+            await setThumbnail(uploadResult.videoId, thumbnailBuffer, NEURAL_BEAT_BRAND_ID);
             console.log('[NeuralBeatPipeline] Custom thumbnail set successfully');
           } catch (e) {
             console.warn('[NeuralBeatPipeline] Could not set custom thumbnail (non-fatal):', e);
@@ -753,7 +766,8 @@ export class NeuralBeatPipeline {
               youtubeVideoId,
               songAnalysis.mood,
               songAnalysis.energy,
-              songAnalysis.genre
+              songAnalysis.genre,
+              NEURAL_BEAT_BRAND_ID,
             );
             steps[currentStepIndex].result = `Lagt til i "${playlistName}"`;
             notify();
@@ -910,7 +924,7 @@ export class NeuralBeatPipeline {
             tags: [...youtubeMetadata.tags.slice(0, 17), 'Shorts', 'YouTube Shorts', 'Short'],
             categoryId: youtubeMetadata.categoryId,
             privacyStatus: 'public',
-          });
+          }, NEURAL_BEAT_BRAND_ID);
 
           console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);
 
