@@ -98,3 +98,92 @@ export async function GET(req: NextRequest) {
         : `${problems.length} av ${report.length} kontoer trenger oppmerksomhet.`,
   });
 }
+
+/**
+ * DELETE /api/oauth/facebook/diagnose?brand=xxx&mode=invalid|all|id&id=uuid
+ *
+ *   mode=invalid (default): removes only rows whose token fails /debug_token
+ *   mode=all: removes every FB/IG row for the brand (nuclear)
+ *   mode=id (+ id=<uuid>): removes one specific row
+ *
+ * Use this to clean out stale rows that OAuth reconnects don't touch (e.g. a
+ * Page the user no longer has admin access to, or a row from a previous
+ * failed OAuth run).
+ *
+ * Returns: { removed: [...], kept: [...] }
+ */
+export async function DELETE(req: NextRequest) {
+  const brand = req.nextUrl.searchParams.get('brand');
+  const mode = req.nextUrl.searchParams.get('mode') || 'invalid';
+  const targetId = req.nextUrl.searchParams.get('id');
+  if (!brand) {
+    return NextResponse.json({ error: 'brand is required' }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  const { data: allAccounts, error } = await supabase
+    .from('social_accounts')
+    .select('id, platform, account_id, account_name, access_token, brand, is_active')
+    .in('platform', ['facebook', 'instagram']);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const rows = (allAccounts || []).filter(
+    (a: { brand: string }) => normalizeBrand(a.brand) === normalizeBrand(brand),
+  );
+
+  const removed: Array<{ id: string; platform: string; account_name: string; reason: string }> = [];
+  const kept: Array<{ id: string; platform: string; account_name: string; reason: string }> = [];
+
+  for (const row of rows) {
+    let shouldRemove = false;
+    let reason = '';
+
+    if (mode === 'all') {
+      shouldRemove = true;
+      reason = 'mode=all';
+    } else if (mode === 'id') {
+      shouldRemove = !!targetId && row.id === targetId;
+      reason = 'mode=id match';
+    } else {
+      // mode=invalid
+      const clean = sanitizeToken(row.access_token);
+      if (!clean) {
+        shouldRemove = true;
+        reason = 'empty token';
+      } else {
+        const debug = await debugToken(clean);
+        if (!debug.valid) {
+          shouldRemove = true;
+          reason = `invalid: ${debug.error || 'unknown'}`;
+        } else {
+          reason = 'token valid';
+        }
+      }
+    }
+
+    if (!shouldRemove) {
+      kept.push({ id: row.id, platform: row.platform, account_name: row.account_name, reason });
+      continue;
+    }
+
+    const { error: delErr } = await supabase.from('social_accounts').delete().eq('id', row.id);
+    if (delErr) {
+      kept.push({
+        id: row.id,
+        platform: row.platform,
+        account_name: row.account_name,
+        reason: `delete failed: ${delErr.message}`,
+      });
+    } else {
+      removed.push({ id: row.id, platform: row.platform, account_name: row.account_name, reason });
+    }
+  }
+
+  return NextResponse.json({
+    brand,
+    mode,
+    removed,
+    kept,
+    message: `Fjernet ${removed.length}. Beholdt ${kept.length}.`,
+  });
+}
