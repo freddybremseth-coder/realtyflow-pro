@@ -90,10 +90,9 @@ export async function debugToken(token: string): Promise<TokenDebugInfo> {
       return { valid: false, error: body.error.message || 'debug_token error' };
     }
     const d = body.data || {};
-    if (d.is_valid === false) {
-      return { valid: false, error: d.error?.message || 'Token marked invalid by Graph' };
-    }
-    return {
+    // Even when is_valid=false, FB often returns type/scopes/granular_scopes —
+    // surface them so callers can distinguish "wrong scopes" from "expired".
+    const base: TokenDebugInfo = {
       valid: !!d.is_valid,
       type: d.type as TokenDebugInfo['type'],
       appId: d.app_id,
@@ -101,6 +100,10 @@ export async function debugToken(token: string): Promise<TokenDebugInfo> {
       scopes: d.scopes || [],
       expiresAt: d.expires_at ?? null,
     };
+    if (d.is_valid === false) {
+      return { ...base, valid: false, error: d.error?.message || 'Token marked invalid by Graph' };
+    }
+    return base;
   } catch (err) {
     return { valid: false, error: err instanceof Error ? err.message : 'Network error' };
   }
