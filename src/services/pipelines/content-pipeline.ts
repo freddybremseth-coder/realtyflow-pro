@@ -339,6 +339,10 @@ Returner KUN gyldig JSON:
             tags: generatedTags || [],
             privacyStatus: input.privacyStatus || 'private',
             language: input.language || 'no',
+            // Route to the brand's YouTube channel — without this, the
+            // uploader falls through to _system/env and videos land in the
+            // wrong channel (commonly Re-Master Freddy).
+            brandId: input.brandId,
           });
 
           if (result.success) {

@@ -208,10 +208,36 @@ export async function executePublishForDraft(params: {
     (a: { brand: string }) => normalizeBrand(a.brand) === normalizeBrand(brandId)
   );
 
+  // When multiple rows exist under the same brand for one platform (e.g. two
+  // FB pages saved against `zeneco` after a bulk OAuth run), `.find()` picks
+  // an arbitrary one — which is how posts for Zen Eco Homes ended up landing
+  // on Freddybremseth.com. Prefer the row whose `account_name` fuzzy-matches
+  // the brand id; fall back to the first active row otherwise.
+  const normBrand = normalizeBrand(brandId);
+  const pickAccountForPlatform = (platform: string) => {
+    const matches = accounts.filter((a: { platform: string }) => a.platform === platform);
+    if (matches.length === 0) return null;
+    if (matches.length === 1) return matches[0];
+    const byName = matches.find((a: { account_name?: string }) => {
+      const name = (a.account_name || "").toLowerCase().replace(/[-_.\s]/g, "");
+      return name.includes(normBrand) || normBrand.includes(name.slice(0, 6));
+    });
+    if (byName) {
+      console.log(
+        `[Publisher] ${platform} for "${brandId}": ${matches.length} candidates, picked "${byName.account_name}" by name match`,
+      );
+      return byName;
+    }
+    console.warn(
+      `[Publisher] ${platform} for "${brandId}": ${matches.length} candidates, no name match — using first: "${matches[0].account_name}". Consider cleaning up /api/oauth/facebook/diagnose.`,
+    );
+    return matches[0];
+  };
+
   const results: PublishResult[] = [];
 
   for (const platform of platforms) {
-    const account = accounts.find((a: { platform: string }) => a.platform === platform);
+    const account = pickAccountForPlatform(platform);
 
     if (!account) {
       results.push({

@@ -20,6 +20,13 @@ export interface YouTubePublishInput {
   categoryId?: string;
   privacyStatus?: 'public' | 'unlisted' | 'private';
   language?: string;
+  /**
+   * Brand ID for per-brand token routing. The YouTube client looks up the
+   * refresh token in `brand_settings` → `_system` → env var in that order.
+   * Omitting this means "use the first available token" — which has been a
+   * source of bugs where videos land in the wrong channel.
+   */
+  brandId?: string;
 }
 
 export interface SocialPostInput {
@@ -78,7 +85,7 @@ export async function publishToYouTube(input: YouTubePublishInput): Promise<Publ
       language: input.language || 'no',
     };
 
-    const result = await uploadVideo(input.video, metadata);
+    const result = await uploadVideo(input.video, metadata, input.brandId);
 
     return {
       platform: 'youtube',
@@ -469,6 +476,7 @@ export async function publishToMultiplePlatforms(
             tags: input.youtubeTags || [],
             categoryId: input.youtubeCategoryId,
             privacyStatus: input.youtubePrivacyStatus || 'private',
+            brandId: input.brandId,
           });
         }
         return {
