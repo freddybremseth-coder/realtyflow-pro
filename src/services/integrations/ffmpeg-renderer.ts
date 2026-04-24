@@ -260,40 +260,49 @@ function escapeFfmpegText(s: string): string {
 /**
  * Build a comma-chained FFmpeg vf filter string for text overlays.
  * Uses drawbox (for semi-transparent bars) + drawtext with explicit fontfile.
+ *
+ * All drawtext calls use `shadowcolor=black:shadowx=2:shadowy=2` so the text
+ * stays readable even on the rare frame where the drawbox doesn't fully
+ * cover behind it (or when a background image has high-contrast detail
+ * leaking through the alpha).
  */
 function buildDrawtextFilters(slide: TextSlide, fontPath: string): string {
   const parts: string[] = [];
   // fontfile parameter — essential for drawtext to work on serverless
   const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
+  const shadow = `shadowcolor=black@0.85\\:shadowx=2\\:shadowy=2`;
 
   // ── Top brand bar (full width, prominent) ──
   if (slide.topText) {
-    parts.push(`drawbox=x=0:y=0:w=iw:h=60:color=black@0.7:t=fill`);
-    parts.push(`drawtext=${ff}fontsize=26:fontcolor=white:x=20:y=18:text='${escapeFfmpegText(slide.topText)}'`);
+    parts.push(`drawbox=x=0:y=0:w=iw:h=64:color=black@0.72:t=fill`);
+    parts.push(`drawtext=${ff}fontsize=28:fontcolor=white:${shadow}:x=24:y=18:text='${escapeFfmpegText(slide.topText)}'`);
   }
 
-  // ── Main large text + sub text background bar ──
+  // ── Main large text + sub text background bar (taller for readability) ──
   if (slide.mainText || slide.subText) {
-    const barH = slide.subText ? 120 : 80;
+    const barH = slide.subText ? 140 : 90;
     const barY = slide.ctaText ? barH + 60 : barH;
-    parts.push(`drawbox=x=0:y=ih-${barY}:w=iw:h=${barH}:color=black@0.75:t=fill`);
+    parts.push(`drawbox=x=0:y=ih-${barY}:w=iw:h=${barH}:color=black@0.78:t=fill`);
   }
 
   if (slide.mainText) {
-    const yOffset = slide.ctaText ? 130 : 70;
-    const subOffset = slide.subText ? 40 : 0;
-    parts.push(`drawtext=${ff}fontsize=56:fontcolor=white:x=(w-text_w)/2:y=ih-${yOffset + subOffset}:text='${escapeFfmpegText(slide.mainText)}'`);
+    // Bumped 56 → 68: price/headline numbers are the hero on a property
+    // video, they need to read on a thumbnail-sized phone preview.
+    const yOffset = slide.ctaText ? 138 : 78;
+    const subOffset = slide.subText ? 44 : 0;
+    parts.push(`drawtext=${ff}fontsize=68:fontcolor=white:${shadow}:x=(w-text_w)/2:y=ih-${yOffset + subOffset}:text='${escapeFfmpegText(slide.mainText)}'`);
   }
 
   if (slide.subText) {
-    const yOffset = slide.ctaText ? 78 : 26;
-    parts.push(`drawtext=${ff}fontsize=28:fontcolor=white@0.9:x=(w-text_w)/2:y=ih-${yOffset}:text='${escapeFfmpegText(slide.subText)}'`);
+    // Bumped 28 → 34: rooms / m² / location were too small to read on mobile
+    const yOffset = slide.ctaText ? 82 : 30;
+    parts.push(`drawtext=${ff}fontsize=34:fontcolor=white@0.95:${shadow}:x=(w-text_w)/2:y=ih-${yOffset}:text='${escapeFfmpegText(slide.subText)}'`);
   }
 
   // ── Bottom CTA bar (always prominent — brand color accent) ──
   if (slide.ctaText) {
     parts.push(`drawbox=x=0:y=ih-58:w=iw:h=58:color=0x0891b2@0.92:t=fill`);
-    parts.push(`drawtext=${ff}fontsize=30:fontcolor=white:x=(w-text_w)/2:y=ih-42:text='${escapeFfmpegText(slide.ctaText)}'`);
+    parts.push(`drawtext=${ff}fontsize=30:fontcolor=white:${shadow}:x=(w-text_w)/2:y=ih-42:text='${escapeFfmpegText(slide.ctaText)}'`);
   }
 
   return parts.join(',');

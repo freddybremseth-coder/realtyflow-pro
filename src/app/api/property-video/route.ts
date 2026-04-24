@@ -93,6 +93,50 @@ async function downloadImage(url: string, destPath: string): Promise<boolean> {
 }
 
 /**
+ * Resolve a brand logo to a local file path that ffmpeg can read. Lookup
+ * order:
+ *   1. Caller-supplied URL (brandLogoUrl in request body) — downloaded
+ *   2. /public/brand-logos/<brandId>.png — copied straight from the bundle
+ *   3. null (renderer skips the overlay)
+ *
+ * Local file lookup happens at render time so dropping a new logo into
+ * /public/brand-logos doesn't require any code changes.
+ */
+async function resolveBrandLogo(
+  brandId: string | undefined,
+  brandLogoUrl: string | undefined,
+  destDir: string,
+): Promise<string | undefined> {
+  // Caller override takes precedence
+  if (brandLogoUrl) {
+    const dest = path.join(destDir, "logo.png");
+    if (await downloadImage(brandLogoUrl, dest)) return dest;
+  }
+
+  // Fall back to a logo file shipped in /public/brand-logos
+  if (brandId) {
+    const candidates = [
+      path.join(process.cwd(), "public", "brand-logos", `${brandId}.png`),
+      path.join(process.cwd(), "public", "brand-logos", `${brandId}.jpg`),
+    ];
+    for (const candidate of candidates) {
+      try {
+        await fs.access(candidate);
+        const ext = path.extname(candidate);
+        const dest = path.join(destDir, `logo${ext}`);
+        await fs.copyFile(candidate, dest);
+        console.log(`[Property Video] Using local brand logo: ${candidate}`);
+        return dest;
+      } catch {
+        // not found, try next
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * POST /api/property-video
  *
  * action: "generate_seo" - Generate YouTube SEO title, description, tags for a property
@@ -248,13 +292,13 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
 
             send({ step: 1, total: 5, message: `${imagePaths.length} bilder lastet ned` });
 
-            // Step 2: Download logo if provided
-            let logoPath: string | undefined;
-            if (brandLogoUrl) {
-              send({ step: 2, total: 5, message: "Laster ned logo..." });
-              const logoTmpPath = path.join(imgDir, "logo.png");
-              const logoOk = await downloadImage(brandLogoUrl, logoTmpPath);
-              if (logoOk) logoPath = logoTmpPath;
+            // Step 2: Resolve brand logo (caller URL → /public/brand-logos/<brandId>.png → none)
+            send({ step: 2, total: 5, message: "Klargjør brand-logo..." });
+            const logoPath = await resolveBrandLogo(brandId, brandLogoUrl, imgDir);
+            if (logoPath) {
+              send({ step: 2, total: 5, message: "Brand-logo klar." });
+            } else {
+              send({ step: 2, total: 5, message: "Ingen brand-logo funnet — fortsetter uten." });
             }
 
             // Step 3: Download background music (or generate silent fallback)
@@ -313,6 +357,11 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
               logoPath,
               textSlides,
               duration: totalDuration,
+              // Property videos use text-heavy slides (price/rooms/sqm) and a
+              // brand logo overlay — Ken Burns zoom/pan blurs the text and
+              // makes the logo wander, so we render still frames here. Music
+              // videos still get Ken Burns by default (see neural-beat).
+              kenBurns: false,
               onSegmentProgress: (current, total) => {
                 send({ step: 4, total: 5, message: `Rendrer bilde ${current}/${total}` });
               },
