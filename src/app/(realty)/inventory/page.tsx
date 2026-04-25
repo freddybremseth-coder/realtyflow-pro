@@ -14,6 +14,7 @@ import {
   DollarSign, BarChart3, Instagram, Linkedin,
   Facebook, Mail, MessageSquare, Clock, Send, Youtube,
   ChevronLeft, ChevronRight, Image as ImageIcon,
+  Wand2,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -42,6 +43,8 @@ interface Property {
   garage?: boolean;
   energyRating?: string;
   ref?: string;
+  /** AI-generated long-form selling copy. Picked up by PDF generator. */
+  marketing_description?: string;
 }
 
 const INITIAL_PROPERTIES: Property[] = [
@@ -362,6 +365,7 @@ function dbRowToProperty(row: Record<string, unknown>): Property {
     garage: Boolean(row.garage),
     energyRating: (row.energy_rating || row.energyRating || undefined) as string | undefined,
     ref: (row.ref || undefined) as string | undefined,
+    marketing_description: (row.marketing_description || undefined) as string | undefined,
   };
 }
 
@@ -517,6 +521,11 @@ export default function InventoryPage() {
   const [generatingSoMe, setGeneratingSoMe] = useState<string | null>(null);
   const [someSuccess, setSomeSuccess] = useState<string | null>(null);
 
+  // AI selling-copy state
+  const [generatingCopy, setGeneratingCopy] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
   // Import state
   const [importTab, setImportTab] = useState<"redsp" | "xml" | "csv">("redsp");
   const [redspUrl, setRedspUrl] = useState("https://xml.redsp.net/files/901/46721pms78l/21-3-25-all-extended.xml");
@@ -618,6 +627,44 @@ export default function InventoryPage() {
       console.error('Failed to create drafts:', err);
     } finally {
       setPublishingDrafts(false);
+    }
+  };
+
+  /** Ask Claude to write a long-form selling description for a property and
+   *  save it on the row as `marketing_description`. The PDF generator picks
+   *  this up automatically. */
+  const generateSellingCopy = async (
+    property: Property,
+    tone: "warm" | "luxury" | "family" | "lifestyle" | "investment" = "warm",
+  ) => {
+    setGeneratingCopy(property.id);
+    setCopySuccess(null);
+    setCopyError(null);
+    try {
+      const res = await fetch(`/api/properties/${property.id}/marketing-copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tone, brandId: selectedBrand, save: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.copy) throw new Error(data.error || "AI feilet");
+      // Reflect locally so user sees the change without a refetch
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.id === property.id
+            ? ({ ...p, marketing_description: data.copy } as Property)
+            : p,
+        ),
+      );
+      if (showDetailModal && showDetailModal.id === property.id) {
+        setShowDetailModal({ ...showDetailModal, marketing_description: data.copy } as Property);
+      }
+      setCopySuccess(property.id);
+      setTimeout(() => setCopySuccess(null), 3500);
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : "Ukjent feil");
+    } finally {
+      setGeneratingCopy(null);
     }
   };
 
@@ -1479,6 +1526,44 @@ REGLER:
                   Send PDF på e-post
                 </Button>
               </div>
+
+              {/* AI Selling Copy — generates a longer, sales-grade
+                  description and saves it as marketing_description so the
+                  PDF picks it up automatically. */}
+              <Button
+                variant="outline"
+                className="w-full mb-3"
+                disabled={generatingCopy === showDetailModal.id}
+                onClick={() => generateSellingCopy(showDetailModal, "warm")}
+              >
+                {generatingCopy === showDetailModal.id ? (
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                ) : copySuccess === showDetailModal.id ? (
+                  <CheckCircle2 size={16} className="mr-2 text-emerald-500" />
+                ) : (
+                  <Wand2 size={16} className="mr-2" />
+                )}
+                {generatingCopy === showDetailModal.id
+                  ? "Genererer salgstekst ..."
+                  : copySuccess === showDetailModal.id
+                    ? "Salgstekst lagret"
+                    : showDetailModal.marketing_description
+                      ? "Generer salgstekst på nytt"
+                      : "Generer salgstekst med AI"}
+              </Button>
+              {showDetailModal.marketing_description ? (
+                <div className="mb-3 p-3 rounded-md bg-zinc-900/60 border border-zinc-800">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+                    AI-salgstekst (lagret)
+                  </div>
+                  <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-6">
+                    {showDetailModal.marketing_description}
+                  </p>
+                </div>
+              ) : null}
+              {copyError ? (
+                <div className="mb-3 text-xs text-red-400">{copyError}</div>
+              ) : null}
 
               {/* SoMe Post Button */}
               <Button

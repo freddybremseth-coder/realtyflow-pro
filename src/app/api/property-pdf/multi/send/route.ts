@@ -30,7 +30,9 @@ import {
   type PdfPropertyInput,
   type PdfBrandInput,
   type PdfAgentInput,
+  type PdfAreaProfile,
 } from "@/services/pdf/property-prospect";
+import { slugify } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -161,7 +163,38 @@ export async function POST(req: NextRequest) {
       displayName: emailConfig.display_name || agent.agent_name || brand.custom_name || undefined,
     };
 
-    // 4. Render PDF
+    // 4. Area profiles for matched locations
+    const slugSet = new Set<string>();
+    for (const p of properties) {
+      const s = slugify(p.location || "");
+      if (s) slugSet.add(s);
+    }
+    const areaProfilesBySlug: Record<string, PdfAreaProfile> = {};
+    if (slugSet.size > 0) {
+      const { data: areaRows } = await supabase
+        .from("area_profiles")
+        .select("*")
+        .eq("brand_id", brandId)
+        .in("slug", Array.from(slugSet));
+      for (const a of (areaRows || []) as Record<string, unknown>[]) {
+        const slug = String(a.slug || "");
+        if (!slug) continue;
+        areaProfilesBySlug[slug] = {
+          name: String(a.name || ""),
+          slug,
+          country: (a.country as string | null) ?? null,
+          region: (a.region as string | null) ?? null,
+          hero_blurb: (a.hero_blurb as string | null) ?? null,
+          description: (a.description as string | null) ?? null,
+          highlights: Array.isArray(a.highlights) ? (a.highlights as string[]) : [],
+          climate: (a.climate as string | null) ?? null,
+          lifestyle: (a.lifestyle as string | null) ?? null,
+          photo_url: (a.photo_url as string | null) ?? null,
+        };
+      }
+    }
+
+    // 5. Render PDF
     const pdfBuffer = await renderMultiPropertyProspect({
       properties,
       brand,
@@ -169,6 +202,7 @@ export async function POST(req: NextRequest) {
       brandLogoUrl,
       headline: body.headline,
       intro: body.intro,
+      areaProfilesBySlug,
     });
 
     const filename = `eiendomsutvalg-${properties.length}.pdf`;

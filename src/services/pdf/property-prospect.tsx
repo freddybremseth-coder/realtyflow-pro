@@ -60,6 +60,22 @@ export interface PdfPropertyInput {
   pool?: boolean;
   garage?: boolean;
   ref?: string;
+  /** AI-generated long-form selling copy. Used in PDF if present, else falls
+   *  back to `description`. */
+  marketing_description?: string;
+}
+
+export interface PdfAreaProfile {
+  name: string;
+  slug?: string;
+  country?: string | null;
+  region?: string | null;
+  hero_blurb?: string | null;
+  description?: string | null;
+  highlights?: string[] | null;
+  climate?: string | null;
+  lifestyle?: string | null;
+  photo_url?: string | null;
 }
 
 export interface PdfBrandInput {
@@ -91,6 +107,9 @@ interface RenderInput {
   brandLogoUrl?: string;
   /** Locale for price formatting. Default "nb-NO". */
   locale?: string;
+  /** Optional area profile matched on property.location → renders an "Om
+   *  [sted]" section after the property description. */
+  areaProfile?: PdfAreaProfile;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +308,41 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: COLORS.muted,
   },
+  // Area profile
+  areaHero: {
+    width: "100%",
+    height: 180,
+    objectFit: "cover",
+    backgroundColor: COLORS.faint,
+    marginBottom: 14,
+  },
+  areaTagline: {
+    fontSize: 13,
+    color: COLORS.accent,
+    fontStyle: "italic",
+    marginBottom: 12,
+  },
+  areaHighlights: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginVertical: 8,
+  },
+  areaHighlight: {
+    width: "50%",
+    fontSize: 10,
+    color: "#333",
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  areaSubhead: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: COLORS.ink,
+    marginTop: 12,
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -325,6 +379,7 @@ function ProspectDocument({
   agent,
   brandLogoUrl,
   locale,
+  areaProfile,
 }: RenderInput) {
   const title = property.title || "Eiendom uten tittel";
   const location = property.location || "";
@@ -447,25 +502,77 @@ function ProspectDocument({
       {/* ============================================================== */}
       {/* Description + area                                             */}
       {/* ============================================================== */}
-      {(property.description || brand?.area_blurb) ? (
-        <Page size="A4" style={styles.page}>
-          {property.description ? (
-            <>
-              <Text style={styles.sectionTitle}>Om eiendommen</Text>
-              <View style={styles.sectionDivider} />
-              <Text style={styles.body}>{property.description}</Text>
-            </>
-          ) : null}
-          {brand?.area_blurb ? (
-            <>
-              <Text style={styles.sectionTitle}>Om området</Text>
-              <View style={styles.sectionDivider} />
-              <Text style={styles.body}>{brand.area_blurb}</Text>
-            </>
-          ) : null}
-          <Footer />
-        </Page>
-      ) : null}
+      {(() => {
+        const propertyCopy = pickField(property.marketing_description, property.description);
+        const hasArea = areaProfile && (areaProfile.description || areaProfile.hero_blurb || (areaProfile.highlights?.length ?? 0) > 0);
+        const hasAreaBlurb = !hasArea && brand?.area_blurb;
+        if (!propertyCopy && !hasArea && !hasAreaBlurb) return null;
+
+        const propertyParas = (propertyCopy || "").split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+
+        return (
+          <Page size="A4" style={styles.page}>
+            {propertyCopy ? (
+              <>
+                <Text style={styles.sectionTitle}>Om eiendommen</Text>
+                <View style={styles.sectionDivider} />
+                {propertyParas.length > 0
+                  ? propertyParas.map((p, i) => (
+                      <Text key={`pdesc-${i}`} style={styles.body}>{p}</Text>
+                    ))
+                  : <Text style={styles.body}>{propertyCopy}</Text>}
+              </>
+            ) : null}
+
+            {hasArea && areaProfile ? (
+              <>
+                <Text style={styles.sectionTitle}>Om {areaProfile.name}</Text>
+                <View style={styles.sectionDivider} />
+                {areaProfile.photo_url ? (
+                  <Image src={areaProfile.photo_url} style={styles.areaHero} />
+                ) : null}
+                {areaProfile.hero_blurb ? (
+                  <Text style={styles.areaTagline}>{areaProfile.hero_blurb}</Text>
+                ) : null}
+                {areaProfile.description
+                  ? areaProfile.description.split(/\n{2,}/).map((p, i) => (
+                      <Text key={`adesc-${i}`} style={styles.body}>{p.trim()}</Text>
+                    ))
+                  : null}
+                {areaProfile.highlights && areaProfile.highlights.length > 0 ? (
+                  <>
+                    <Text style={styles.areaSubhead}>Høydepunkter</Text>
+                    <View style={styles.areaHighlights}>
+                      {areaProfile.highlights.slice(0, 8).map((h, i) => (
+                        <Text key={`ah-${i}`} style={styles.areaHighlight}>• {h}</Text>
+                      ))}
+                    </View>
+                  </>
+                ) : null}
+                {areaProfile.climate ? (
+                  <>
+                    <Text style={styles.areaSubhead}>Klima</Text>
+                    <Text style={styles.body}>{areaProfile.climate}</Text>
+                  </>
+                ) : null}
+                {areaProfile.lifestyle ? (
+                  <>
+                    <Text style={styles.areaSubhead}>Hverdagsliv</Text>
+                    <Text style={styles.body}>{areaProfile.lifestyle}</Text>
+                  </>
+                ) : null}
+              </>
+            ) : hasAreaBlurb ? (
+              <>
+                <Text style={styles.sectionTitle}>Om området</Text>
+                <View style={styles.sectionDivider} />
+                <Text style={styles.body}>{brand!.area_blurb}</Text>
+              </>
+            ) : null}
+            <Footer />
+          </Page>
+        );
+      })()}
 
       {/* ============================================================== */}
       {/* Gallery                                                        */}
@@ -567,6 +674,11 @@ interface MultiRenderInput {
   headline?: string;
   /** Optional intro paragraph beneath the headline. */
   intro?: string;
+  /** Map keyed by slugified property.location → area profile. The renderer
+   *  picks the matching profile per property; profiles only seen by a single
+   *  property are inlined on its detail page, while profiles shared across
+   *  multiple properties get one consolidated "Om [sted]" page. */
+  areaProfilesBySlug?: Record<string, PdfAreaProfile>;
 }
 
 const multiStyles = StyleSheet.create({
@@ -654,6 +766,19 @@ const multiStyles = StyleSheet.create({
   },
 });
 
+// Internal slug helper kept here so the PDF generator stays standalone (no
+// dependency on @/lib/utils when called from edge contexts).
+function pdfSlug(s: string | undefined | null): string {
+  if (!s) return "";
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function MultiProspectDocument({
   properties,
   brand,
@@ -662,6 +787,7 @@ function MultiProspectDocument({
   locale,
   headline,
   intro,
+  areaProfilesBySlug,
 }: MultiRenderInput) {
   const brandName = pickField(brand?.custom_name, brand?.display_name, brand?.brand_id) || "";
   const brandWebsite = brand?.website || "";
@@ -821,14 +947,44 @@ function MultiProspectDocument({
               ) : null}
             </View>
 
-            {/* Compact description */}
-            {p.description ? (
-              <Text style={[styles.body, { marginTop: 4 }]}>
-                {p.description.length > 700
-                  ? `${p.description.slice(0, 700)}…`
-                  : p.description}
-              </Text>
-            ) : null}
+            {/* Compact description — prefer AI marketing copy */}
+            {(() => {
+              const propertyCopy = pickField(p.marketing_description, p.description);
+              if (!propertyCopy) return null;
+              const trimmed = propertyCopy.length > 900
+                ? `${propertyCopy.slice(0, 900)}…`
+                : propertyCopy;
+              const paras = trimmed.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean);
+              return paras.length > 0
+                ? paras.map((para, pi) => (
+                    <Text key={`mp-${pi}`} style={[styles.body, { marginTop: pi === 0 ? 4 : 0 }]}>
+                      {para}
+                    </Text>
+                  ))
+                : <Text style={[styles.body, { marginTop: 4 }]}>{trimmed}</Text>;
+            })()}
+
+            {/* Compact area profile if matched on location */}
+            {(() => {
+              const slug = pdfSlug(p.location);
+              const area = slug && areaProfilesBySlug ? areaProfilesBySlug[slug] : undefined;
+              if (!area) return null;
+              return (
+                <View wrap={false} style={{ marginTop: 4, marginBottom: 6 }}>
+                  <Text style={styles.areaSubhead}>Om {area.name}</Text>
+                  {area.hero_blurb ? (
+                    <Text style={[styles.body, { marginBottom: 4 }]}>{area.hero_blurb}</Text>
+                  ) : null}
+                  {area.highlights && area.highlights.length > 0 ? (
+                    <View style={styles.areaHighlights}>
+                      {area.highlights.slice(0, 4).map((h, hi) => (
+                        <Text key={`mah-${hi}`} style={styles.areaHighlight}>• {h}</Text>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })()}
 
             {/* Mini gallery — 4 thumbnails to keep one page per property */}
             {gallery.length > 0 ? (

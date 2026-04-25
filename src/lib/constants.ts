@@ -107,6 +107,7 @@ export const SIDEBAR_NAV = {
   realty: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
+    { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
   ],

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV } from "@/lib/constants";
 import {
-  LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
+  LayoutDashboard, GitBranch, Building2, Calculator, Users, Map, MapPin,
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
-  LayoutDashboard, GitBranch, Building2, Calculator, Users, Map,
+  LayoutDashboard, GitBranch, Building2, Calculator, Users, Map, MapPin,
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,

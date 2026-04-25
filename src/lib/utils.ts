@@ -52,3 +52,19 @@ export function stripMarkdownFormatting(text: string): string {
 export function generateId(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * Lowercase + ASCII-fold + dash-join. Used for matching property locations
+ * against area_profiles ("Calpe", "calpe", "CALPE" all → "calpe"; "Jávea" →
+ * "javea"). Strips diacritics so Spanish + Scandinavian names match cleanly.
+ */
+export function slugify(input: string | null | undefined): string {
+  if (!input) return "";
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}

@@ -27,7 +27,9 @@ import {
   type PdfPropertyInput,
   type PdfBrandInput,
   type PdfAgentInput,
+  type PdfAreaProfile,
 } from "@/services/pdf/property-prospect";
+import { slugify } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -132,7 +134,39 @@ export async function POST(req: NextRequest) {
 
     const brandLogoUrl = await resolveBrandLogoUrl(req.nextUrl.origin, brandId, brand.logo_url);
 
-    // 3. Render
+    // 3. Area profiles — fetch all profiles for this brand whose slug matches
+    //    any property.location. The PDF renderer maps by slug.
+    const slugSet = new Set<string>();
+    for (const p of properties) {
+      const s = slugify(p.location || "");
+      if (s) slugSet.add(s);
+    }
+    const areaProfilesBySlug: Record<string, PdfAreaProfile> = {};
+    if (slugSet.size > 0) {
+      const { data: areaRows } = await supabase
+        .from("area_profiles")
+        .select("*")
+        .eq("brand_id", brandId)
+        .in("slug", Array.from(slugSet));
+      for (const a of (areaRows || []) as Record<string, unknown>[]) {
+        const slug = String(a.slug || "");
+        if (!slug) continue;
+        areaProfilesBySlug[slug] = {
+          name: String(a.name || ""),
+          slug,
+          country: (a.country as string | null) ?? null,
+          region: (a.region as string | null) ?? null,
+          hero_blurb: (a.hero_blurb as string | null) ?? null,
+          description: (a.description as string | null) ?? null,
+          highlights: Array.isArray(a.highlights) ? (a.highlights as string[]) : [],
+          climate: (a.climate as string | null) ?? null,
+          lifestyle: (a.lifestyle as string | null) ?? null,
+          photo_url: (a.photo_url as string | null) ?? null,
+        };
+      }
+    }
+
+    // 4. Render
     const pdfBuffer = await renderMultiPropertyProspect({
       properties,
       brand,
@@ -140,6 +174,7 @@ export async function POST(req: NextRequest) {
       brandLogoUrl,
       headline: body.headline,
       intro: body.intro,
+      areaProfilesBySlug,
     });
 
     const filename = `eiendomsutvalg-${properties.length}-${Date.now()}.pdf`;
