@@ -11,6 +11,24 @@ export interface SmtpConfig {
   displayName?: string;
 }
 
+/**
+ * Attachment shape — passes straight through to nodemailer's
+ * `Mail.Attachment`. Use `content` for in-memory buffers (PDFs, images
+ * generated at request time) and `path` only for files on the same
+ * server filesystem (which won't exist on serverless).
+ */
+export interface OutgoingAttachment {
+  filename: string;
+  content?: Buffer | string;
+  contentType?: string;
+  /** Local file path. Avoid in serverless deployments. */
+  path?: string;
+  /** Remote URL. Nodemailer will fetch and attach. */
+  href?: string;
+  /** "base64", "hex", "utf8" — only relevant when `content` is a string. */
+  encoding?: string;
+}
+
 export interface OutgoingEmail {
   to: string[];
   cc?: string[];
@@ -19,6 +37,7 @@ export interface OutgoingEmail {
   bodyHtml?: string;
   inReplyTo?: string; // Message-ID of email being replied to
   references?: string[]; // For threading
+  attachments?: OutgoingAttachment[];
 }
 
 export interface SendResult {
@@ -69,6 +88,21 @@ export async function sendEmail(
     if (email.inReplyTo) {
       mailOptions.inReplyTo = email.inReplyTo;
       mailOptions.references = email.references?.join(" ") || email.inReplyTo;
+    }
+
+    // Pass attachments straight through; nodemailer's `attachments`
+    // field accepts the same shape we expose. Cast at the array level
+    // because nodemailer's `encoding` is a literal union and we accept
+    // any string at our public boundary.
+    if (email.attachments && email.attachments.length > 0) {
+      mailOptions.attachments = email.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+        path: a.path,
+        href: a.href,
+        encoding: a.encoding,
+      })) as nodemailer.SendMailOptions["attachments"];
     }
 
     const info = await transporter.sendMail(mailOptions);

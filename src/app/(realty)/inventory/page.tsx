@@ -1651,6 +1651,49 @@ REGLER:
               })()}
             </div>
             <div className="flex justify-end gap-3 p-5 border-t border-slate-700">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!showEditModal) return;
+                  // Open PDF in a new tab. Server inlines so the user can preview, then save.
+                  const params = new URLSearchParams({
+                    propertyId: showEditModal.id,
+                    brandId: selectedBrand,
+                  });
+                  window.open(`/api/property-pdf?${params.toString()}`, "_blank");
+                }}
+              >
+                Last ned PDF
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!showEditModal) return;
+                  const to = window.prompt("Send prospekt til (e-postadresse):", "");
+                  if (!to || !to.trim()) return;
+                  try {
+                    const res = await fetch("/api/property-pdf/send", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        propertyId: showEditModal.id,
+                        brandId: selectedBrand,
+                        to: to.trim(),
+                      }),
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      window.alert(`Sendt til ${to.trim()}.`);
+                    } else {
+                      window.alert(`Kunne ikke sende: ${data.error || "ukjent feil"}`);
+                    }
+                  } catch (err) {
+                    window.alert(`Feil: ${err instanceof Error ? err.message : "ukjent"}`);
+                  }
+                }}
+              >
+                Send PDF på e-post
+              </Button>
               <Button variant="outline" onClick={() => setShowEditModal(null)}>Avbryt</Button>
               <Button onClick={handleSaveEdit}>Lagre endringer</Button>
             </div>

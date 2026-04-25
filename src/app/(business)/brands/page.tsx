@@ -25,6 +25,17 @@ interface BrandSettings {
   apiKey: string;
   phone: string;
   address: string;
+  // Agent profile (used by /api/property-pdf to render a contact card on the
+  // back of the prospect). Stored in the same JSONB blob — keys are
+  // documented in supabase/migrations/20260425_property_floorplans_and_agent.sql.
+  agent_name: string;
+  agent_title: string;
+  agent_photo_url: string;
+  agent_email: string;
+  agent_phone: string;
+  agent_bio: string;
+  // Optional area description shown on the prospect's "Om området" page.
+  area_blurb: string;
 }
 
 interface BrandEntry {
@@ -54,6 +65,13 @@ const emptySettings: BrandSettings = {
   apiKey: "",
   phone: "",
   address: "",
+  agent_name: "",
+  agent_title: "",
+  agent_photo_url: "",
+  agent_email: "",
+  agent_phone: "",
+  agent_bio: "",
+  area_blurb: "",
 };
 
 const typeColors: Record<string, string> = {
@@ -973,6 +991,84 @@ export default function BrandsPage() {
                           updateSettings("address", e.target.value)
                         }
                         placeholder="Gate 1, 0000 By"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Agent / Megler — appears on PDF prospect's contact page */}
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+                    <Settings size={16} className="text-amber-400" />
+                    Megler (PDF prospekt)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Disse feltene vises på baksiden av PDF-prospektet som genereres
+                    fra eiendomssiden. Bilde-URLen bør være en kvadratisk profilbilde.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">Navn</label>
+                      <Input
+                        value={selectedBrand.settings.agent_name}
+                        onChange={(e) => updateSettings("agent_name", e.target.value)}
+                        placeholder="Freddy Bremseth"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">Tittel</label>
+                      <Input
+                        value={selectedBrand.settings.agent_title}
+                        onChange={(e) => updateSettings("agent_title", e.target.value)}
+                        placeholder="Eiendomsmegler"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-slate-400 mb-1 block">Bilde-URL</label>
+                      <Input
+                        value={selectedBrand.settings.agent_photo_url}
+                        onChange={(e) => updateSettings("agent_photo_url", e.target.value)}
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">E-post</label>
+                      <Input
+                        value={selectedBrand.settings.agent_email}
+                        onChange={(e) => updateSettings("agent_email", e.target.value)}
+                        placeholder="freddy@zenecohomes.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">Telefon</label>
+                      <Input
+                        value={selectedBrand.settings.agent_phone}
+                        onChange={(e) => updateSettings("agent_phone", e.target.value)}
+                        placeholder="+47 ..."
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Kort bio (valgfritt)
+                      </label>
+                      <textarea
+                        value={selectedBrand.settings.agent_bio}
+                        onChange={(e) => updateSettings("agent_bio", e.target.value)}
+                        rows={3}
+                        placeholder="Erfaren megler i Costa Blanca-regionen..."
+                        className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Områdebeskrivelse (valgfritt — vises på «Om området»-siden)
+                      </label>
+                      <textarea
+                        value={selectedBrand.settings.area_blurb}
+                        onChange={(e) => updateSettings("area_blurb", e.target.value)}
+                        rows={3}
+                        placeholder="Costa Blanca byr på 320 soldager i året, krystallklart middelhav..."
+                        className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
