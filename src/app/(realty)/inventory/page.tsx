@@ -1547,6 +1547,108 @@ REGLER:
                   <option value="SOLGT">Solgt</option>
                 </select>
               </div>
+
+              {/* ── Bilder & Plantegninger ──
+                  Two side-by-side columns: Galleri (incl. primary) and
+                  Plantegninger. The PDF prospect generator splits these into
+                  separate sections, so the agent flags floor plans here.
+                  Two ways to move an image: drag-and-drop on desktop, or
+                  click the arrow button on mobile. */}
+              {(() => {
+                const m = showEditModal;
+                const galleryAll: string[] = [m.imageUrl, ...(m.gallery || [])].filter((s): s is string => Boolean(s));
+                const floorplansAll: string[] = m.floorplans || [];
+
+                const moveToFloorplans = (url: string) => {
+                  // Remove from gallery / imageUrl, append to floorplans
+                  const nextGallery = (m.gallery || []).filter(u => u !== url);
+                  const nextFloorplans = [...floorplansAll.filter(u => u !== url), url];
+                  setShowEditModal({
+                    ...m,
+                    imageUrl: m.imageUrl === url ? (nextGallery[0] || undefined) : m.imageUrl,
+                    gallery: m.imageUrl === url ? nextGallery : nextGallery,
+                    floorplans: nextFloorplans,
+                  });
+                };
+                const moveToGallery = (url: string) => {
+                  const nextFloorplans = floorplansAll.filter(u => u !== url);
+                  // If no primary image, promote this one; otherwise append to gallery
+                  if (!m.imageUrl) {
+                    setShowEditModal({ ...m, imageUrl: url, floorplans: nextFloorplans });
+                  } else {
+                    setShowEditModal({
+                      ...m,
+                      gallery: [...(m.gallery || []).filter(u => u !== url), url],
+                      floorplans: nextFloorplans,
+                    });
+                  }
+                };
+
+                const ImageCard = ({ url, side }: { url: string; side: "gallery" | "floorplans" }) => (
+                  <div
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", JSON.stringify({ url, side }));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-900 cursor-grab active:cursor-grabbing"
+                  >
+                    <img src={url} alt="" className="w-full h-20 object-cover pointer-events-none" />
+                    <button
+                      type="button"
+                      onClick={() => (side === "gallery" ? moveToFloorplans(url) : moveToGallery(url))}
+                      className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/60 transition-colors text-white text-xs font-medium opacity-0 group-hover:opacity-100"
+                      title={side === "gallery" ? "Flytt til plantegninger" : "Flytt til galleri"}
+                    >
+                      {side === "gallery" ? "→ Plantegning" : "← Galleri"}
+                    </button>
+                  </div>
+                );
+
+                const Column = ({ title, items, accept, hint }: {
+                  title: string;
+                  items: string[];
+                  accept: "gallery" | "floorplans";
+                  hint: string;
+                }) => (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      try {
+                        const { url, side } = JSON.parse(e.dataTransfer.getData("text/plain")) as { url: string; side: string };
+                        if (side === accept) return; // dropped on its own column = no-op
+                        if (accept === "floorplans") moveToFloorplans(url);
+                        else moveToGallery(url);
+                      } catch {}
+                    }}
+                    className="rounded-lg border border-dashed border-slate-600 bg-slate-900/40 p-2 min-h-[120px]"
+                  >
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <span className="text-xs font-medium text-slate-300">{title}</span>
+                      <span className="text-[10px] text-slate-500">{items.length}</span>
+                    </div>
+                    {items.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 text-center py-4 px-2">{hint}</p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {items.map(url => <ImageCard key={url} url={url} side={accept} />)}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                return (
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Bilder & plantegninger</label>
+                    <p className="text-[11px] text-slate-500 mb-2">Dra eller klikk for å flytte bilder mellom galleri og plantegninger. Plantegninger får egen seksjon i PDF-prospektet.</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Column title="Galleri" items={galleryAll} accept="gallery" hint="Slipp bilder her" />
+                      <Column title="Plantegninger" items={floorplansAll} accept="floorplans" hint="Dra plantegninger hit" />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="flex justify-end gap-3 p-5 border-t border-slate-700">
               <Button variant="outline" onClick={() => setShowEditModal(null)}>Avbryt</Button>
