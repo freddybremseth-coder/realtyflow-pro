@@ -25,7 +25,7 @@ import {
   type PdfAgentInput,
   type PdfAreaProfile,
 } from "@/services/pdf/property-prospect";
-import { slugify } from "@/lib/utils";
+import { findAreaProfileForLocation } from "@/services/pdf/area-lookup";
 
 export const runtime = "nodejs";
 
@@ -140,34 +140,17 @@ async function buildPdfResponse(
   // 3. Brand logo URL — explicit settings url, else /public file
   const brandLogoUrl = await resolveBrandLogo(req, brandId, brand.logo_url);
 
-  // 4. Area profile (matched by slugified property.location)
+  // 4. Area profile — fuzzy match against any of the brand's saved profiles
+  //    so "Calpe, Costa Blanca" still resolves to the "Calpe" profile.
   let areaProfile: PdfAreaProfile | undefined;
   if (brandId && (propertyRow as { location?: string }).location) {
-    const slug = slugify((propertyRow as { location?: string }).location || "");
-    if (slug) {
-      const sb = supabase as ReturnType<typeof createClient>;
-      const { data: areaRow } = await sb
-        .from("area_profiles")
-        .select("*")
-        .eq("brand_id", brandId)
-        .eq("slug", slug)
-        .maybeSingle();
-      if (areaRow) {
-        const a = areaRow as Record<string, unknown>;
-        areaProfile = {
-          name: String(a.name || ""),
-          slug: String(a.slug || ""),
-          country: (a.country as string | null) ?? null,
-          region: (a.region as string | null) ?? null,
-          hero_blurb: (a.hero_blurb as string | null) ?? null,
-          description: (a.description as string | null) ?? null,
-          highlights: Array.isArray(a.highlights) ? (a.highlights as string[]) : [],
-          climate: (a.climate as string | null) ?? null,
-          lifestyle: (a.lifestyle as string | null) ?? null,
-          photo_url: (a.photo_url as string | null) ?? null,
-        };
-      }
-    }
+    const sb = supabase as ReturnType<typeof createClient>;
+    const match = await findAreaProfileForLocation(
+      sb,
+      brandId,
+      (propertyRow as { location?: string }).location || "",
+    );
+    if (match) areaProfile = match;
   }
 
   // 5. Render
