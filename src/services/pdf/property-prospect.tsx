@@ -543,3 +543,359 @@ export async function renderPropertyProspect(input: RenderInput): Promise<Buffer
 }
 
 export { ProspectDocument };
+
+// ===========================================================================
+// Multi-property prospect — used by the Content Hub to send a curated
+// shortlist to a buyer. Structure:
+//   1. Cover page                — brand logo, intro, count
+//   2. Overview list             — one row per property with thumbnail
+//                                  and key facts; ref + page number for
+//                                  jumping into the detailed section
+//   3. Per-property detail pages — cover (image + facts), description,
+//                                  gallery (all on one page so the file
+//                                  doesn't balloon for 10+ properties)
+//   4. Agent contact card        — common to all properties
+// ===========================================================================
+
+interface MultiRenderInput {
+  properties: PdfPropertyInput[];
+  brand?: PdfBrandInput;
+  agent?: PdfAgentInput;
+  brandLogoUrl?: string;
+  locale?: string;
+  /** Optional headline / customer name shown on the cover. */
+  headline?: string;
+  /** Optional intro paragraph beneath the headline. */
+  intro?: string;
+}
+
+const multiStyles = StyleSheet.create({
+  // Cover
+  coverHeadline: {
+    fontSize: 32,
+    fontWeight: 700,
+    marginTop: 80,
+    marginBottom: 8,
+    color: COLORS.ink,
+  },
+  coverSubhead: {
+    fontSize: 14,
+    color: COLORS.muted,
+    marginBottom: 30,
+  },
+  coverIntro: {
+    fontSize: 12,
+    lineHeight: 1.6,
+    color: "#333",
+    marginBottom: 20,
+  },
+  coverCount: {
+    marginTop: 32,
+    fontSize: 11,
+    color: COLORS.accent,
+    textTransform: "uppercase",
+    letterSpacing: 2,
+  },
+  // Overview row
+  overviewRow: {
+    flexDirection: "row",
+    borderBottom: `1pt solid ${COLORS.faint}`,
+    paddingVertical: 12,
+  },
+  overviewThumb: {
+    width: 110,
+    height: 80,
+    objectFit: "cover",
+    backgroundColor: COLORS.faint,
+    marginRight: 14,
+    borderRadius: 4,
+  },
+  overviewBody: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  overviewTitle: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: COLORS.ink,
+    marginBottom: 2,
+  },
+  overviewMeta: {
+    fontSize: 10,
+    color: COLORS.muted,
+    marginBottom: 4,
+  },
+  overviewFacts: {
+    fontSize: 9,
+    color: "#444",
+  },
+  overviewPriceCol: {
+    width: 110,
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  overviewPrice: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: COLORS.accent,
+  },
+  overviewRef: {
+    fontSize: 9,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
+  // Per-property condensed cover
+  detailHero: {
+    width: "100%",
+    height: 240,
+    objectFit: "cover",
+    marginBottom: 16,
+    backgroundColor: COLORS.faint,
+  },
+});
+
+function MultiProspectDocument({
+  properties,
+  brand,
+  agent,
+  brandLogoUrl,
+  locale,
+  headline,
+  intro,
+}: MultiRenderInput) {
+  const brandName = pickField(brand?.custom_name, brand?.display_name, brand?.brand_id) || "";
+  const brandWebsite = brand?.website || "";
+
+  const Footer = () => (
+    <View style={styles.footer} fixed>
+      <Text>
+        {brandName}
+        {brandWebsite ? `  ·  ${brandWebsite}` : ""}
+      </Text>
+      <Text
+        style={styles.pageNumber}
+        render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}
+      />
+    </View>
+  );
+
+  const propsList = properties.filter(Boolean);
+  const docTitle = headline || `Eiendomsutvalg (${propsList.length})`;
+
+  return (
+    <Document title={docTitle} author={brandName} subject="Eiendomsutvalg">
+      {/* ============================================================== */}
+      {/* Cover                                                          */}
+      {/* ============================================================== */}
+      <Page size="A4" style={styles.page}>
+        {brandLogoUrl ? <Image src={brandLogoUrl} style={styles.brandLogoCover} /> : null}
+        <Text style={multiStyles.coverHeadline}>{headline || "Eiendomsutvalg"}</Text>
+        <Text style={multiStyles.coverSubhead}>
+          {brandName ? `Kuratert av ${brandName}` : "Personlig kuratert utvalg"}
+        </Text>
+        {intro ? <Text style={multiStyles.coverIntro}>{intro}</Text> : null}
+        <Text style={multiStyles.coverCount}>
+          {propsList.length} {propsList.length === 1 ? "eiendom" : "eiendommer"}
+        </Text>
+        <Footer />
+      </Page>
+
+      {/* ============================================================== */}
+      {/* Overview list                                                  */}
+      {/* ============================================================== */}
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Oversikt</Text>
+        <View style={styles.sectionDivider} />
+        {propsList.map((p, i) => {
+          const heroImage = pickField(p.imageUrl, p.primary_image);
+          const type = pickField(p.type, p.property_type) || "Eiendom";
+          const area = pickField(p.area, p.built_area);
+          const facts: string[] = [type];
+          if (p.bedrooms) facts.push(`${p.bedrooms} sov`);
+          if (p.bathrooms) facts.push(`${p.bathrooms} bad`);
+          if (area) facts.push(`${area} m²`);
+          return (
+            <View key={`${p.id || i}-row`} style={multiStyles.overviewRow} wrap={false}>
+              {heroImage ? (
+                <Image src={heroImage} style={multiStyles.overviewThumb} />
+              ) : (
+                <View style={multiStyles.overviewThumb} />
+              )}
+              <View style={multiStyles.overviewBody}>
+                <Text style={multiStyles.overviewTitle}>
+                  {p.title || "Uten tittel"}
+                </Text>
+                <Text style={multiStyles.overviewMeta}>{p.location || ""}</Text>
+                <Text style={multiStyles.overviewFacts}>{facts.join(" · ")}</Text>
+              </View>
+              <View style={multiStyles.overviewPriceCol}>
+                <Text style={multiStyles.overviewPrice}>
+                  {formatPrice(p.price, locale)}
+                </Text>
+                {p.ref ? (
+                  <Text style={multiStyles.overviewRef}>Ref. {p.ref}</Text>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+        <Footer />
+      </Page>
+
+      {/* ============================================================== */}
+      {/* Per-property detail pages                                      */}
+      {/* ============================================================== */}
+      {propsList.map((p, i) => {
+        const title = p.title || "Eiendom uten tittel";
+        const location = p.location || "";
+        const price = formatPrice(p.price, locale);
+        const type = pickField(p.type, p.property_type) || "Eiendom";
+        const area = pickField(p.area, p.built_area);
+        const plotArea = pickField(p.plotArea, p.plot_size);
+        const yearBuilt = pickField(p.yearBuilt, p.year_built);
+        const energyRating = pickField(p.energyRating, p.energy_rating);
+        const heroImage = pickField(p.imageUrl, p.primary_image);
+        const gallery = (p.gallery || [])
+          .filter((u) => u && u !== heroImage)
+          .slice(0, 4);
+
+        return (
+          <Page size="A4" style={styles.page} key={`${p.id || i}-detail`}>
+            {brandLogoUrl ? <Image src={brandLogoUrl} style={styles.brandLogoCover} /> : null}
+
+            {heroImage ? (
+              <Image src={heroImage} style={multiStyles.detailHero} />
+            ) : (
+              <View style={multiStyles.detailHero} />
+            )}
+
+            <Text style={styles.coverTitle}>{title}</Text>
+            <Text style={styles.coverLocation}>{location}</Text>
+
+            <View style={styles.coverPriceRow}>
+              <Text style={styles.coverPrice}>{price}</Text>
+              {p.ref ? <Text style={styles.coverRef}>Ref. {p.ref}</Text> : null}
+            </View>
+
+            {/* Compact key-fact strip */}
+            <View style={styles.factGrid}>
+              <View style={styles.factCell}>
+                <Text style={styles.factLabel}>Type</Text>
+                <Text style={styles.factValue}>{type}</Text>
+              </View>
+              {p.bedrooms ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Soverom</Text>
+                  <Text style={styles.factValue}>{p.bedrooms}</Text>
+                </View>
+              ) : null}
+              {p.bathrooms ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Bad</Text>
+                  <Text style={styles.factValue}>{p.bathrooms}</Text>
+                </View>
+              ) : null}
+              {area ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Boligareal</Text>
+                  <Text style={styles.factValue}>{area} m²</Text>
+                </View>
+              ) : null}
+              {plotArea ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Tomt</Text>
+                  <Text style={styles.factValue}>{plotArea} m²</Text>
+                </View>
+              ) : null}
+              {yearBuilt ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Byggeår</Text>
+                  <Text style={styles.factValue}>{yearBuilt}</Text>
+                </View>
+              ) : null}
+              {energyRating ? (
+                <View style={styles.factCell}>
+                  <Text style={styles.factLabel}>Energi</Text>
+                  <Text style={styles.factValue}>{energyRating}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Compact description */}
+            {p.description ? (
+              <Text style={[styles.body, { marginTop: 4 }]}>
+                {p.description.length > 700
+                  ? `${p.description.slice(0, 700)}…`
+                  : p.description}
+              </Text>
+            ) : null}
+
+            {/* Mini gallery — 4 thumbnails to keep one page per property */}
+            {gallery.length > 0 ? (
+              <View style={styles.galleryGrid}>
+                {gallery.map((url, gi) => (
+                  <View
+                    key={`${url}-${gi}`}
+                    style={[styles.galleryCell, { width: "25%" }]}
+                    wrap={false}
+                  >
+                    <Image src={url} style={[styles.galleryImg, { height: 90 }]} />
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <Footer />
+          </Page>
+        );
+      })}
+
+      {/* ============================================================== */}
+      {/* Agent contact (shared)                                         */}
+      {/* ============================================================== */}
+      {(agent?.agent_name || agent?.agent_email || agent?.agent_phone) ? (
+        <Page size="A4" style={styles.page}>
+          <Text style={styles.sectionTitle}>Kontakt megler</Text>
+          <View style={styles.sectionDivider} />
+          <View style={styles.agentCard}>
+            {agent.agent_photo_url ? (
+              <Image src={agent.agent_photo_url} style={styles.agentPhoto} />
+            ) : null}
+            <View style={styles.agentInfo}>
+              {agent.agent_name ? (
+                <Text style={styles.agentName}>{agent.agent_name}</Text>
+              ) : null}
+              {agent.agent_title ? (
+                <Text style={styles.agentTitle}>{agent.agent_title}</Text>
+              ) : null}
+              {agent.agent_bio ? (
+                <Text style={styles.agentBio}>{agent.agent_bio}</Text>
+              ) : null}
+              {agent.agent_phone ? (
+                <Text style={styles.agentContact}>Telefon: {agent.agent_phone}</Text>
+              ) : null}
+              {agent.agent_email ? (
+                <Text style={styles.agentContact}>E-post: {agent.agent_email}</Text>
+              ) : null}
+            </View>
+          </View>
+          <Footer />
+        </Page>
+      ) : null}
+    </Document>
+  );
+}
+
+/**
+ * Render a multi-property prospect (a curated shortlist of properties)
+ * to a Node Buffer of PDF bytes.
+ */
+export async function renderMultiPropertyProspect(input: MultiRenderInput): Promise<Buffer> {
+  const instance = pdf(<MultiProspectDocument {...input} />);
+  const blob = await instance.toBlob();
+  const arrayBuffer = await blob.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+export { MultiProspectDocument };
+export type { MultiRenderInput };

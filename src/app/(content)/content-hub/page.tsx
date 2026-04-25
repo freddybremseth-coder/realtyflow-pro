@@ -195,6 +195,64 @@ export default function ContentHubPage() {
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
 
+  // -------------------------------------------------------------------
+  // Customer-PDF state — pick several properties matching a buyer's
+  // criteria and bundle them into one prospect PDF (overview list +
+  // per-property pages). Sent via /api/property-pdf/multi.
+  // -------------------------------------------------------------------
+  interface PropertyRow {
+    id: string;
+    title?: string | null;
+    location?: string | null;
+    price?: number | null;
+    property_type?: string | null;
+    bedrooms?: number | null;
+    bathrooms?: number | null;
+    built_area?: number | null;
+    primary_image?: string | null;
+    ref?: string | null;
+    status?: string | null;
+  }
+  const [pdfBrand, setPdfBrand] = useState<string>(
+    BRANDS.find((b) => b.type === "real_estate")?.id || BRANDS[0].id,
+  );
+  const [pdfProperties, setPdfProperties] = useState<PropertyRow[]>([]);
+  const [pdfPropertiesLoading, setPdfPropertiesLoading] = useState(false);
+  const [pdfSelected, setPdfSelected] = useState<Set<string>>(new Set());
+  const [pdfFilters, setPdfFilters] = useState({
+    search: "",
+    type: "Alle",
+    bedrooms: "Alle",
+    priceMin: "",
+    priceMax: "",
+    onlyAvailable: true,
+  });
+  const [pdfHeadline, setPdfHeadline] = useState("");
+  const [pdfIntro, setPdfIntro] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState<string | null>(null);
+
+  // Load properties whenever the customer-PDF tab might be opened — we
+  // fetch lazily on first interaction to keep the initial page light.
+  // Using a separate fn so the button can also trigger a refresh.
+  const loadPdfProperties = useCallback(async () => {
+    setPdfPropertiesLoading(true);
+    try {
+      const res = await fetch("/api/properties");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setPdfProperties(data as PropertyRow[]);
+      }
+    } catch {
+      // silent — UI shows empty list
+    } finally {
+      setPdfPropertiesLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void loadPdfProperties();
+  }, [loadPdfProperties]);
+
   // Scheduling state
   const [scheduleMode, setScheduleMode] = useState<"now" | "schedule">("now");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -950,6 +1008,9 @@ export default function ContentHubPage() {
           </TabsTrigger>
           <TabsTrigger value="strategi" className="flex items-center gap-2">
             <Bot size={14} /> AI Strategi
+          </TabsTrigger>
+          <TabsTrigger value="kunde-pdf" className="flex items-center gap-2">
+            <FileText size={14} /> Kunde-PDF
           </TabsTrigger>
         </TabsList>
 
@@ -2463,6 +2524,368 @@ export default function ContentHubPage() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+        </TabsContent>
+
+        {/* ============================================================ */}
+        {/* TAB: KUNDE-PDF                                                */}
+        {/*                                                               */}
+        {/* Pick a brand + filter properties to a customer's criteria,   */}
+        {/* tick boxes, generate one combined PDF or send straight via    */}
+        {/* SMTP. Each row links back to the inventory page for a deep    */}
+        {/* dive on a specific property.                                  */}
+        {/* ============================================================ */}
+        <TabsContent value="kunde-pdf">
+          <div className="space-y-4">
+            {/* Header card with brand picker + cover info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText size={18} className="text-emerald-400" />
+                  Kuratert eiendoms-PDF til kunde
+                </CardTitle>
+                <CardDescription>
+                  Filtrer og velg eiendommer som matcher kundens kriterier. Vi
+                  lager én PDF med oversiktsliste først og detaljside per eiendom,
+                  inkludert megler-kontaktinfo til slutt.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">
+                      Merkevare (logo + megler)
+                    </label>
+                    <select
+                      value={pdfBrand}
+                      onChange={(e) => setPdfBrand(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                    >
+                      {BRANDS.filter((b) => b.type === "real_estate").map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">
+                      Forside-tittel (valgfritt)
+                    </label>
+                    <Input
+                      value={pdfHeadline}
+                      onChange={(e) => setPdfHeadline(e.target.value)}
+                      placeholder="For familien Hansen"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">
+                      Forside-intro (valgfritt)
+                    </label>
+                    <Input
+                      value={pdfIntro}
+                      onChange={(e) => setPdfIntro(e.target.value)}
+                      placeholder="Et utvalg basert på samtalen vår..."
+                    />
+                  </div>
+                </div>
+
+                {/* Filter row */}
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-slate-400 mb-1 block">Søk</label>
+                    <Input
+                      value={pdfFilters.search}
+                      onChange={(e) => setPdfFilters({ ...pdfFilters, search: e.target.value })}
+                      placeholder="tittel, sted, ref..."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Type</label>
+                    <select
+                      value={pdfFilters.type}
+                      onChange={(e) => setPdfFilters({ ...pdfFilters, type: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white"
+                    >
+                      {["Alle","Villa","Leilighet","Penthouse","Rekkehus","Bungalow","Finca","Duplex","Byggetomt"].map(t => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Soverom</label>
+                    <select
+                      value={pdfFilters.bedrooms}
+                      onChange={(e) => setPdfFilters({ ...pdfFilters, bedrooms: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white"
+                    >
+                      {["Alle","1+","2+","3+","4+","5+"].map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Pris fra (€)</label>
+                    <Input
+                      type="number"
+                      value={pdfFilters.priceMin}
+                      onChange={(e) => setPdfFilters({ ...pdfFilters, priceMin: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Pris til (€)</label>
+                    <Input
+                      type="number"
+                      value={pdfFilters.priceMax}
+                      onChange={(e) => setPdfFilters({ ...pdfFilters, priceMax: e.target.value })}
+                      placeholder="∞"
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={pdfFilters.onlyAvailable}
+                    onChange={(e) => setPdfFilters({ ...pdfFilters, onlyAvailable: e.target.checked })}
+                    className="rounded border-slate-600 bg-slate-800"
+                  />
+                  Kun tilgjengelige
+                </label>
+              </CardContent>
+            </Card>
+
+            {/* Properties grid + selection */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">
+                    {pdfSelected.size > 0
+                      ? `${pdfSelected.size} valgt`
+                      : "Velg eiendommer"}
+                  </CardTitle>
+                  <CardDescription>
+                    Klikk på en rad for å markere. Trykk «Vis» for å åpne
+                    eiendommen i ny fane.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPdfSelected(new Set())}
+                    disabled={pdfSelected.size === 0}
+                  >
+                    <X size={14} className="mr-1.5" /> Tøm utvalg
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadPdfProperties()}
+                    disabled={pdfPropertiesLoading}
+                  >
+                    {pdfPropertiesLoading ? (
+                      <Loader2 size={14} className="mr-1.5 animate-spin" />
+                    ) : (
+                      <RefreshCw size={14} className="mr-1.5" />
+                    )}
+                    Oppdater
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  // Build the filtered list inline so render stays a single block.
+                  const minBeds = pdfFilters.bedrooms === "Alle" ? 0 : parseInt(pdfFilters.bedrooms);
+                  const min = pdfFilters.priceMin ? Number(pdfFilters.priceMin) : 0;
+                  const max = pdfFilters.priceMax ? Number(pdfFilters.priceMax) : Infinity;
+                  const q = pdfFilters.search.toLowerCase().trim();
+
+                  const filtered = pdfProperties.filter((p) => {
+                    if (pdfFilters.onlyAvailable && p.status && p.status !== "TILGJENGELIG") return false;
+                    if (pdfFilters.type !== "Alle" && (p.property_type || "") !== pdfFilters.type) return false;
+                    if (minBeds && (p.bedrooms || 0) < minBeds) return false;
+                    const price = Number(p.price || 0);
+                    if (price < min || price > max) return false;
+                    if (q) {
+                      const hay = `${p.title || ""} ${p.location || ""} ${p.ref || ""}`.toLowerCase();
+                      if (!hay.includes(q)) return false;
+                    }
+                    return true;
+                  });
+
+                  if (pdfPropertiesLoading) {
+                    return (
+                      <div className="py-8 text-center text-sm text-slate-400">
+                        <Loader2 size={20} className="mx-auto mb-2 animate-spin" />
+                        Laster eiendommer...
+                      </div>
+                    );
+                  }
+                  if (filtered.length === 0) {
+                    return (
+                      <p className="text-sm text-slate-400 py-6 text-center">
+                        Ingen eiendommer matcher filtrene.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[460px] overflow-y-auto pr-1">
+                      {filtered.map((p) => {
+                        const checked = pdfSelected.has(p.id);
+                        const toggle = () => {
+                          setPdfSelected((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(p.id)) next.delete(p.id);
+                            else next.add(p.id);
+                            return next;
+                          });
+                        };
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={toggle}
+                            className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition ${
+                              checked
+                                ? "border-emerald-500 bg-emerald-500/10"
+                                : "border-slate-700 bg-slate-900/40 hover:border-slate-500"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={toggle}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-4 w-4"
+                            />
+                            {p.primary_image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={p.primary_image}
+                                alt=""
+                                className="w-16 h-12 object-cover rounded bg-slate-800"
+                              />
+                            ) : (
+                              <div className="w-16 h-12 rounded bg-slate-800 flex items-center justify-center text-slate-600 text-xs">
+                                —
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-white truncate">{p.title || "Uten tittel"}</p>
+                              <p className="text-xs text-slate-400 truncate">
+                                {(p.property_type || "Eiendom")}
+                                {p.bedrooms ? ` · ${p.bedrooms} sov` : ""}
+                                {p.built_area ? ` · ${p.built_area} m²` : ""}
+                                {p.location ? ` · ${p.location}` : ""}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-emerald-400">
+                                €{Number(p.price || 0).toLocaleString("nb-NO")}
+                              </p>
+                              {p.ref && (
+                                <p className="text-[10px] text-slate-500">Ref. {p.ref}</p>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`/inventory?id=${encodeURIComponent(p.id)}`, "_blank");
+                              }}
+                            >
+                              Vis
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* Action bar */}
+            <Card>
+              <CardContent className="py-4 flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={pdfSelected.size === 0 || pdfBusy}
+                  onClick={async () => {
+                    setPdfBusy(true);
+                    setPdfStatus(null);
+                    try {
+                      const res = await fetch("/api/property-pdf/multi", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          propertyIds: Array.from(pdfSelected),
+                          brandId: pdfBrand,
+                          headline: pdfHeadline || undefined,
+                          intro: pdfIntro || undefined,
+                        }),
+                      });
+                      if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        throw new Error(data.error || `Feilet (${res.status})`);
+                      }
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, "_blank");
+                      // Free the blob after the new tab has had a moment to load it
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                      setPdfStatus(`Generert PDF med ${pdfSelected.size} eiendommer.`);
+                    } catch (err) {
+                      setPdfStatus(`Feil: ${err instanceof Error ? err.message : "ukjent"}`);
+                    } finally {
+                      setPdfBusy(false);
+                    }
+                  }}
+                >
+                  {pdfBusy ? (
+                    <Loader2 size={14} className="mr-1.5 animate-spin" />
+                  ) : (
+                    <FileText size={14} className="mr-1.5" />
+                  )}
+                  Generer PDF ({pdfSelected.size})
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={pdfSelected.size === 0 || pdfBusy}
+                  onClick={async () => {
+                    const to = window.prompt("Send PDF til (e-postadresse):", "");
+                    if (!to || !to.trim()) return;
+                    setPdfBusy(true);
+                    setPdfStatus(null);
+                    try {
+                      const res = await fetch("/api/property-pdf/multi/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          propertyIds: Array.from(pdfSelected),
+                          brandId: pdfBrand,
+                          to: to.trim(),
+                          headline: pdfHeadline || undefined,
+                          intro: pdfIntro || undefined,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        setPdfStatus(`Sendt til ${to.trim()} (${data.properties} eiendommer).`);
+                      } else {
+                        throw new Error(data.error || "Sending feilet");
+                      }
+                    } catch (err) {
+                      setPdfStatus(`Feil: ${err instanceof Error ? err.message : "ukjent"}`);
+                    } finally {
+                      setPdfBusy(false);
+                    }
+                  }}
+                >
+                  <Send size={14} className="mr-1.5" />
+                  Send PDF på e-post
+                </Button>
+                {pdfStatus && (
+                  <span className="text-xs text-slate-300 ml-2">{pdfStatus}</span>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>

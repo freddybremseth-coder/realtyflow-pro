@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
 import {
   Palette, Globe, Mail, Phone, Youtube, Instagram, Linkedin,
-  Settings, Plus, X, Pencil, Trash2, Check,
+  Settings, Plus, X, Pencil, Trash2, Check, Upload, Loader2,
 } from "lucide-react";
 
 interface BrandSettings {
@@ -120,6 +120,13 @@ export default function BrandsPage() {
 
   const [newEmailInput, setNewEmailInput] = useState("");
 
+  // Agent photo upload state. The file input is hidden — clicking the
+  // button below opens the picker; the upload progress flag disables
+  // the button while the request is in flight.
+  const agentPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingAgentPhoto, setUploadingAgentPhoto] = useState(false);
+  const [agentPhotoError, setAgentPhotoError] = useState<string | null>(null);
+
   const selectedBrand = brands.find((b) => b.id === selectedId) || null;
 
   const saveSettings = useCallback(async (brandId: string) => {
@@ -153,6 +160,39 @@ export default function BrandsPage() {
       setSaving(false);
     }
   }, [brands]);
+
+  // Upload an agent photo file to Supabase Storage via /api/upload-image
+  // and write the resulting public URL into agent_photo_url. The same
+  // endpoint is used for content images, so we get free moderation and
+  // 10MB cap behavior.
+  const uploadAgentPhoto = useCallback(
+    async (file: File) => {
+      if (!selectedId) return;
+      setAgentPhotoError(null);
+      setUploadingAgentPhoto(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/upload-image", { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+          throw new Error(data.error || "Opplasting feilet");
+        }
+        setBrands((prev) =>
+          prev.map((b) =>
+            b.id === selectedId
+              ? { ...b, settings: { ...b.settings, agent_photo_url: data.url as string } }
+              : b,
+          ),
+        );
+      } catch (err) {
+        setAgentPhotoError(err instanceof Error ? err.message : "Ukjent feil");
+      } finally {
+        setUploadingAgentPhoto(false);
+      }
+    },
+    [selectedId],
+  );
 
   const updateSettings = (field: keyof BrandSettings, value: string) => {
     if (!selectedId) return;
@@ -1024,12 +1064,77 @@ export default function BrandsPage() {
                       />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="text-[11px] text-slate-400 mb-1 block">Bilde-URL</label>
-                      <Input
-                        value={selectedBrand.settings.agent_photo_url}
-                        onChange={(e) => updateSettings("agent_photo_url", e.target.value)}
-                        placeholder="https://..."
-                      />
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Profilbilde
+                      </label>
+                      <div className="flex items-start gap-3">
+                        {selectedBrand.settings.agent_photo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={selectedBrand.settings.agent_photo_url}
+                            alt="Megler profilbilde"
+                            className="w-16 h-16 rounded-full object-cover border border-slate-600 bg-slate-700"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full border border-dashed border-slate-600 bg-slate-800 flex items-center justify-center text-[10px] text-slate-500 text-center px-1">
+                            Ingen
+                            <br />
+                            bilde
+                          </div>
+                        )}
+                        <div className="flex-1 space-y-2">
+                          <input
+                            ref={agentPhotoInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void uploadAgentPhoto(file);
+                              // Allow re-uploading the same filename later
+                              if (agentPhotoInputRef.current) agentPhotoInputRef.current.value = "";
+                            }}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={uploadingAgentPhoto}
+                              onClick={() => agentPhotoInputRef.current?.click()}
+                            >
+                              {uploadingAgentPhoto ? (
+                                <Loader2 size={14} className="mr-1.5 animate-spin" />
+                              ) : (
+                                <Upload size={14} className="mr-1.5" />
+                              )}
+                              {uploadingAgentPhoto ? "Laster opp..." : "Last opp bilde"}
+                            </Button>
+                            {selectedBrand.settings.agent_photo_url && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => updateSettings("agent_photo_url", "")}
+                              >
+                                <X size={14} className="mr-1.5" />
+                                Fjern
+                              </Button>
+                            )}
+                          </div>
+                          <Input
+                            value={selectedBrand.settings.agent_photo_url}
+                            onChange={(e) => updateSettings("agent_photo_url", e.target.value)}
+                            placeholder="...eller lim inn URL"
+                          />
+                          {agentPhotoError && (
+                            <p className="text-[11px] text-red-400">{agentPhotoError}</p>
+                          )}
+                          <p className="text-[10px] text-slate-500">
+                            Kvadratisk JPG/PNG/WebP, maks 10 MB.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <label className="text-[11px] text-slate-400 mb-1 block">E-post</label>

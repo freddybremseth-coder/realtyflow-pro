@@ -1432,6 +1432,54 @@ REGLER:
                 Generer Markedsføringskit
               </Button>
 
+              {/* PDF Prospekt buttons — preview in new tab + email to client. */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      propertyId: showDetailModal.id,
+                      brandId: selectedBrand,
+                    });
+                    window.open(`/api/property-pdf?${params.toString()}`, "_blank");
+                  }}
+                >
+                  <FileText size={16} className="mr-2" />
+                  Lag PDF prospekt
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    const to = window.prompt("Send prospekt til (e-postadresse):", "");
+                    if (!to || !to.trim()) return;
+                    try {
+                      const res = await fetch("/api/property-pdf/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          propertyId: showDetailModal.id,
+                          brandId: selectedBrand,
+                          to: to.trim(),
+                        }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        window.alert(`Sendt til ${to.trim()}.`);
+                      } else {
+                        window.alert(`Kunne ikke sende: ${data.error || "ukjent feil"}`);
+                      }
+                    } catch (err) {
+                      window.alert(`Feil: ${err instanceof Error ? err.message : "ukjent"}`);
+                    }
+                  }}
+                >
+                  <Mail size={16} className="mr-2" />
+                  Send PDF på e-post
+                </Button>
+              </div>
+
               {/* SoMe Post Button */}
               <Button
                 className="w-full mb-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400 text-white font-medium"
@@ -1720,6 +1768,60 @@ REGLER:
               </div>
               <button onClick={() => setShowMarketingKit(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
             </div>
+
+            {/* PDF prospekt — quick action row, always visible while modal is open */}
+            {showDetailModal && (
+              <div className="px-5 py-3 border-b border-slate-700 bg-slate-900/40 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-400 mr-1">PDF prospekt:</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      propertyId: showDetailModal.id,
+                      brandId: selectedBrand,
+                    });
+                    window.open(`/api/property-pdf?${params.toString()}`, "_blank");
+                  }}
+                >
+                  <FileText size={14} className="mr-1.5" />
+                  Forhåndsvis PDF
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const to = window.prompt("Send prospekt til (e-postadresse):", "");
+                    if (!to || !to.trim()) return;
+                    try {
+                      const res = await fetch("/api/property-pdf/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          propertyId: showDetailModal.id,
+                          brandId: selectedBrand,
+                          to: to.trim(),
+                        }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        window.alert(`Sendt til ${to.trim()}.`);
+                      } else {
+                        window.alert(`Kunne ikke sende: ${data.error || "ukjent feil"}`);
+                      }
+                    } catch (err) {
+                      window.alert(`Feil: ${err instanceof Error ? err.message : "ukjent"}`);
+                    }
+                  }}
+                >
+                  <Mail size={14} className="mr-1.5" />
+                  Send på e-post
+                </Button>
+                <span className="text-[11px] text-slate-500 ml-auto">
+                  Bruker {BRANDS.find(b => b.id === selectedBrand)?.name || selectedBrand}-profilen
+                </span>
+              </div>
+            )}
 
             {generatingKit ? (
               <div className="p-16 text-center">
