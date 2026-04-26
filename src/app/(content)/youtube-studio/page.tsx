@@ -36,7 +36,15 @@ interface ChannelStats {
   videoCount: string;
 }
 
-const brandOptions = ["Zen Eco Homes", "Soleada.no", "ChatGenius.pro", "Dona Anna", "Freddy Bremseth", "Pinoso Ecolife", "Neural Beat"];
+const brandOptions: { id: string; name: string }[] = [
+  { id: "zeneco", name: "Zen Eco Homes" },
+  { id: "soleada", name: "Soleada.no" },
+  { id: "chatgenius", name: "ChatGenius.pro" },
+  { id: "donaanna", name: "Dona Anna" },
+  { id: "freddyb", name: "Freddy Bremseth" },
+  { id: "pinosoecolife", name: "Pinoso Ecolife" },
+  { id: "neuralbeat", name: "Re-Master Freddy" },
+];
 
 const statusConfig = {
   published: { label: "Publisert", variant: "success" as const },
@@ -68,9 +76,13 @@ export default function YouTubeStudioPage() {
     title: "",
     description: "",
     tags: "",
-    brand: "Zen Eco Homes",
+    brandId: "zeneco",
     visibility: "public" as "public" | "unlisted" | "private",
   });
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ url: string; videoId: string } | null>(null);
 
   const fetchYouTubeData = useCallback(async () => {
     setLoading(true);
@@ -142,29 +154,41 @@ export default function YouTubeStudioPage() {
       ? videos.filter((v) => v.status === "published")
       : videos.filter((v) => v.status === "draft");
 
-  const addVideo = () => {
-    if (!newVideo.title) return;
-    const video: Video = {
-      id: `V${Date.now()}`,
-      title: newVideo.title,
-      description: newVideo.description,
-      channel: newVideo.brand,
-      brand: newVideo.brand,
-      views: 0,
-      likes: 0,
-      comments: 0,
-      ctr: 0,
-      publishedAt: "",
-      duration: "0:00",
-      status: "draft",
-      thumbnailUrl: "",
-      thumbnailColor: "bg-gradient-to-br from-rose-600/40 to-red-500/30",
-      tags: newVideo.tags.split(",").map((t) => t.trim()).filter(Boolean),
-      visibility: newVideo.visibility,
-    };
-    setVideos((prev) => [video, ...prev]);
-    setNewVideo({ title: "", description: "", tags: "", brand: "Zen Eco Homes", visibility: "public" });
-    setShowUpload(false);
+  const resetUploadForm = () => {
+    setNewVideo({ title: "", description: "", tags: "", brandId: "zeneco", visibility: "public" });
+    setVideoFile(null);
+    setUploadError(null);
+    setUploadResult(null);
+  };
+
+  const uploadVideo = async () => {
+    if (!videoFile || !newVideo.title) return;
+    setUploading(true);
+    setUploadError(null);
+    setUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", videoFile);
+      formData.append("title", newVideo.title);
+      formData.append("description", newVideo.description);
+      formData.append("tags", newVideo.tags);
+      // Music goes under category 10, everything else uses 22 (People & Blogs).
+      formData.append("categoryId", newVideo.brandId === "neuralbeat" ? "10" : "22");
+      formData.append("privacyStatus", newVideo.visibility);
+      formData.append("brandId", newVideo.brandId);
+
+      const res = await fetch("/api/youtube", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Opplasting feilet");
+      }
+      setUploadResult({ url: data.youtubeUrl || data.videoUrl, videoId: data.videoId });
+      await fetchYouTubeData();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Ukjent feil");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const deleteVideo = (id: string) => {
@@ -234,22 +258,62 @@ export default function YouTubeStudioPage() {
 
       {/* Upload Modal */}
       {showUpload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowUpload(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => {
+            if (uploading) return;
+            setShowUpload(false);
+            resetUploadForm();
+          }}
+        >
           <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white">Last opp ny video</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowUpload(false)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => { setShowUpload(false); resetUploadForm(); }}
+                  disabled={uploading}
+                >
                   <X size={18} />
                 </Button>
               </div>
               <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Videofil</label>
+                  <label
+                    htmlFor="yt-upload-file"
+                    className="w-full h-28 rounded-lg border-2 border-dashed border-slate-600 bg-slate-800/50 flex items-center justify-center cursor-pointer hover:border-slate-500 transition-colors"
+                  >
+                    <div className="text-center px-4">
+                      <Upload size={24} className="mx-auto text-slate-500 mb-1" />
+                      {videoFile ? (
+                        <>
+                          <p className="text-sm text-slate-200 break-all">{videoFile.name}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{(videoFile.size / 1024 / 1024).toFixed(1)} MB</p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-500">Klikk for å velge videofil (mp4, mov, …)</p>
+                      )}
+                    </div>
+                  </label>
+                  <input
+                    id="yt-upload-file"
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                    disabled={uploading}
+                  />
+                </div>
                 <div>
                   <label className="text-xs font-medium text-slate-300 mb-1.5 block">Tittel</label>
                   <Input
                     value={newVideo.title}
                     onChange={(e) => setNewVideo((p) => ({ ...p, title: e.target.value }))}
                     placeholder="Skriv inn videotittelen..."
+                    disabled={uploading}
                   />
                 </div>
                 <div>
@@ -259,6 +323,7 @@ export default function YouTubeStudioPage() {
                     onChange={(e) => setNewVideo((p) => ({ ...p, description: e.target.value }))}
                     placeholder="Beskriv videoen..."
                     className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none"
+                    disabled={uploading}
                   />
                 </div>
                 <div>
@@ -267,27 +332,20 @@ export default function YouTubeStudioPage() {
                     value={newVideo.tags}
                     onChange={(e) => setNewVideo((p) => ({ ...p, tags: e.target.value }))}
                     placeholder="eiendom, spania, luksus"
+                    disabled={uploading}
                   />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Thumbnail</label>
-                  <div className="w-full h-28 rounded-lg border-2 border-dashed border-slate-600 bg-slate-800/50 flex items-center justify-center cursor-pointer hover:border-slate-500 transition-colors">
-                    <div className="text-center">
-                      <Upload size={24} className="mx-auto text-slate-500 mb-1" />
-                      <p className="text-xs text-slate-500">Klikk for å laste opp thumbnail</p>
-                    </div>
-                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-slate-300 mb-1.5 block">Brand</label>
                     <select
-                      value={newVideo.brand}
-                      onChange={(e) => setNewVideo((p) => ({ ...p, brand: e.target.value }))}
+                      value={newVideo.brandId}
+                      onChange={(e) => setNewVideo((p) => ({ ...p, brandId: e.target.value }))}
                       className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                      disabled={uploading}
                     >
                       {brandOptions.map((b) => (
-                        <option key={b}>{b}</option>
+                        <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </select>
                   </div>
@@ -297,6 +355,7 @@ export default function YouTubeStudioPage() {
                       value={newVideo.visibility}
                       onChange={(e) => setNewVideo((p) => ({ ...p, visibility: e.target.value as "public" | "unlisted" | "private" }))}
                       className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                      disabled={uploading}
                     >
                       <option value="public">Offentlig</option>
                       <option value="unlisted">Ikke oppført</option>
@@ -304,9 +363,44 @@ export default function YouTubeStudioPage() {
                     </select>
                   </div>
                 </div>
-                <Button onClick={addVideo} className="w-full" disabled={!newVideo.title}>
-                  <Upload size={16} className="mr-1" />
-                  Opprett som kladd
+
+                {uploadError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2">
+                    <AlertCircle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-300">{uploadError}</p>
+                  </div>
+                )}
+
+                {uploadResult && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                    <p className="text-xs text-emerald-300 mb-1">Video lastet opp!</p>
+                    <a
+                      href={uploadResult.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-200 underline break-all"
+                    >
+                      {uploadResult.url}
+                    </a>
+                  </div>
+                )}
+
+                <Button
+                  onClick={uploadVideo}
+                  className="w-full"
+                  disabled={!videoFile || !newVideo.title || uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 size={16} className="mr-1 animate-spin" />
+                      Laster opp til YouTube…
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} className="mr-1" />
+                      Last opp til YouTube
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
