@@ -35,8 +35,8 @@ export async function GET() {
     }
 
     const [channel, videos] = await Promise.all([
-      getChannelInfo(),
-      listVideos(50),
+      getChannelInfo("neuralbeat"),
+      listVideos(50, "neuralbeat"),
     ]);
 
     // Sort videos by views to identify top performers

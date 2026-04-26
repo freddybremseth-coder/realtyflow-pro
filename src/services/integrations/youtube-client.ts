@@ -260,7 +260,7 @@ export async function setThumbnail(
 /**
  * Get channel information for the authenticated user.
  */
-export async function getChannelInfo(): Promise<{
+export async function getChannelInfo(brandId?: string): Promise<{
   id: string;
   title: string;
   subscriberCount: number;
@@ -268,7 +268,7 @@ export async function getChannelInfo(): Promise<{
   viewCount: number;
   thumbnailUrl: string;
 }> {
-  const youtube = await getClient();
+  const youtube = await getClient(brandId);
   const res = await youtube.channels.list({
     part: ['snippet', 'statistics'],
     mine: true,
@@ -290,7 +290,7 @@ export async function getChannelInfo(): Promise<{
 /**
  * List recent videos from the authenticated channel.
  */
-export async function listVideos(maxResults = 20): Promise<Array<{
+export async function listVideos(maxResults = 20, brandId?: string): Promise<Array<{
   id: string;
   title: string;
   description: string;
@@ -300,14 +300,13 @@ export async function listVideos(maxResults = 20): Promise<Array<{
   likeCount: number;
   commentCount: number;
 }>> {
-  const youtube = await getClient();
+  const youtube = await getClient(brandId);
 
   // First get the uploads playlist
   const channelRes = await youtube.channels.list({
     part: ['contentDetails'],
     mine: true,
   });
-
   const uploadsPlaylistId = channelRes.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploadsPlaylistId) return [];
 

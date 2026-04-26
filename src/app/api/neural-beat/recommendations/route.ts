@@ -46,7 +46,7 @@ export async function GET() {
       return NextResponse.json({ error: "YouTube ikke konfigurert" }, { status: 503 });
     }
 
-    const [channel, videos] = await Promise.all([getChannelInfo(), listVideos(50)]);
+    const [channel, videos] = await Promise.all([getChannelInfo("neuralbeat"), listVideos(50, "neuralbeat")]);
 
     const now = Date.now();
     const videosWithStats = videos.map((v) => {

@@ -13,7 +13,7 @@ import {
  * Returns channel statistics and recent videos with analytics.
  * If YouTube is not configured, returns { configured: false }.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     if (!isConfigured()) {
       return NextResponse.json({
@@ -23,9 +23,11 @@ export async function GET() {
       });
     }
 
+    const brandId = req.nextUrl.searchParams.get("brandId") || undefined;
+
     const [channel, videos] = await Promise.all([
-      getChannelInfo(),
-      listVideos(),
+      getChannelInfo(brandId),
+      listVideos(20, brandId),
     ]);
 
     return NextResponse.json({

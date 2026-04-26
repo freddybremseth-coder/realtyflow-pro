@@ -228,7 +228,7 @@ export default function NeuralBeatPage() {
   // Fetch YouTube stats
   const fetchYouTubeStats = useCallback(() => {
     setYtLoading(true);
-    fetch('/api/youtube')
+    fetch('/api/youtube?brandId=neuralbeat')
       .then((res) => res.json())
       .then((data) => {
         if (data.channel) setYtChannel(data.channel);

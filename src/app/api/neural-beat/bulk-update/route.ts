@@ -26,7 +26,7 @@ function applyReplacements(text: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const videos = await listVideos(50);
+    const videos = await listVideos(50, "neuralbeat");
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
