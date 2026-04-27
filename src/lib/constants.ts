@@ -115,6 +115,7 @@ export const SIDEBAR_NAV = {
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
     { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
     { label: "Content Hub", href: "/content-hub", icon: "FileText" },
+    { label: "YouTube Studio", href: "/youtube-studio", icon: "Youtube" },
     { label: "Re-Master Freddy", href: "/neural-beat", icon: "Music" },
   ],
   business: [
