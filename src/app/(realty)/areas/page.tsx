@@ -39,6 +39,7 @@ interface AreaProfile {
   climate?: string | null;
   lifestyle?: string | null;
   photo_url?: string | null;
+  show_on_website?: boolean | null;
   updated_at?: string;
 }
 
@@ -55,6 +56,7 @@ const BLANK: AreaProfile = {
   climate: "",
   lifestyle: "",
   photo_url: "",
+  show_on_website: false,
 };
 
 export default function AreasPage() {
@@ -125,6 +127,7 @@ export default function AreasPage() {
           climate: editing.climate,
           lifestyle: editing.lifestyle,
           photoUrl: editing.photo_url,
+          showOnWebsite: !!editing.show_on_website,
         }),
       });
       const data = await r.json();
@@ -334,7 +337,7 @@ export default function AreasPage() {
                         ) : null}
                       </div>
                       <Badge variant="outline" className="text-[10px]">
-                        {(p.highlights?.length || 0)}
+                        {p.show_on_website ? "Nettside" : (p.highlights?.length || 0)}
                       </Badge>
                     </div>
                   </button>
@@ -504,6 +507,21 @@ export default function AreasPage() {
                   placeholder="https://..."
                 />
               </div>
+
+              <label className="flex items-start gap-3 rounded-md border border-input p-3 text-sm cursor-pointer bg-emerald-50/40">
+                <input
+                  type="checkbox"
+                  checked={!!editing.show_on_website}
+                  onChange={(e) => updateField("show_on_website", e.target.checked)}
+                  className="mt-1 w-4 h-4"
+                />
+                <span>
+                  <span className="font-medium block">Vis på Zen Eco Homes-nettsiden</span>
+                  <span className="text-xs text-muted-foreground">
+                    Når denne er huket av, kan området hentes av nettsiden via API-et.
+                  </span>
+                </span>
+              </label>
 
               <p className="text-xs text-muted-foreground border-t pt-3">
                 <RefreshCw className="w-3 h-3 inline mr-1" />

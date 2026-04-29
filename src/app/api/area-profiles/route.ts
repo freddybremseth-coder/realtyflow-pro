@@ -24,6 +24,7 @@ function getSupabase() {
 
 export async function GET(req: NextRequest) {
   const brandId = req.nextUrl.searchParams.get("brandId");
+  const publicOnly = req.nextUrl.searchParams.get("public") === "1";
   if (!brandId) {
     return NextResponse.json({ error: "brandId is required" }, { status: 400 });
   }
@@ -33,14 +34,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  const { data, error } = await supabase
+  const query = supabase
     .from("area_profiles")
     .select("*")
     .eq("brand_id", brandId)
     .order("name", { ascending: true });
 
+  const { data, error } = await query;
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ profiles: data || [] });
+  const profiles = publicOnly
+    ? (data || []).filter((profile: { show_on_website?: boolean }) =>
+        typeof profile.show_on_website === "boolean" ? profile.show_on_website : true,
+      )
+    : data || [];
+  return NextResponse.json({ profiles });
 }
 
 export async function POST(req: NextRequest) {
@@ -58,6 +66,7 @@ export async function POST(req: NextRequest) {
       climate?: string | null;
       lifestyle?: string | null;
       photoUrl?: string | null;
+      showOnWebsite?: boolean | null;
     };
 
     const brandId = body.brandId;
@@ -88,6 +97,7 @@ export async function POST(req: NextRequest) {
       climate: body.climate ?? null,
       lifestyle: body.lifestyle ?? null,
       photo_url: body.photoUrl ?? null,
+      show_on_website: body.showOnWebsite ?? false,
       updated_at: new Date().toISOString(),
     };
 
