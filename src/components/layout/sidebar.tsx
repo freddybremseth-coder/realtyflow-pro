@@ -10,7 +10,7 @@ import {
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
-  ChevronLeft, ChevronRight, LogOut, Menu, X,
+  ChevronLeft, ChevronRight, KeyRound, LogOut, Menu, X,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -116,8 +116,15 @@ export function Sidebar() {
               <p className="text-slate-500">Admin</p>
             </div>
             <button
-              onClick={logout}
+              onClick={() => router.push("/account/password")}
               className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+              title="Endre passord"
+            >
+              <KeyRound size={14} />
+            </button>
+            <button
+              onClick={logout}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"
               title="Logg ut"
             >
               <LogOut size={14} />
