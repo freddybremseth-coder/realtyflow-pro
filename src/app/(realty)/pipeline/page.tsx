@@ -150,6 +150,8 @@ export default function PipelinePage() {
   const [gmailInteractions, setGmailInteractions] = useState<Interaction[]>([]);
   const [gmailError, setGmailError] = useState<string | null>(null);
   const [showGmailMerged, setShowGmailMerged] = useState(false);
+  const [portalInviteStatus, setPortalInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [portalInviteError, setPortalInviteError] = useState("");
 
   // ── Load leads from database ───────────────────────
 
@@ -194,6 +196,11 @@ export default function PipelinePage() {
       if (updated) setSelectedLead(updated);
     }
   }, [leads, selectedLead?.id]);
+
+  useEffect(() => {
+    setPortalInviteStatus("idle");
+    setPortalInviteError("");
+  }, [selectedLead?.id]);
 
   const filteredLeads = leads.filter(
     (l) =>
@@ -390,6 +397,29 @@ export default function PipelinePage() {
     setGmailInteractions([]);
     setShowGmailMerged(true);
     setTimeout(() => setShowGmailMerged(false), 3000);
+  };
+
+  const inviteToPortal = async () => {
+    if (!selectedLead) return;
+    setPortalInviteStatus("sending");
+    setPortalInviteError("");
+    try {
+      const res = await fetch("/api/portal/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactId: selectedLead.id,
+          redirectTo: "https://zenecohomes.com/auth/callback",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke sende portaltilgang");
+      setPortalInviteStatus("sent");
+      await loadLeads();
+    } catch (error) {
+      setPortalInviteError(error instanceof Error ? error.message : "Kunne ikke sende portaltilgang");
+      setPortalInviteStatus("error");
+    }
   };
 
   // ── Add lead / CSV ─────────────────────────────────
@@ -1390,6 +1420,35 @@ export default function PipelinePage() {
                     <Trash2 size={12} className="mr-1" />Slett
                   </Button>
                 </div>
+                {selectedLead.email && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-emerald-300">Min side</p>
+                        <p className="text-[11px] text-slate-400">Send invitasjon til Zen Eco Homes-portalen.</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-700"
+                        disabled={portalInviteStatus === "sending"}
+                        onClick={inviteToPortal}
+                      >
+                        {portalInviteStatus === "sending" ? (
+                          <Loader2 size={12} className="mr-1 animate-spin" />
+                        ) : (
+                          <UserCheck size={12} className="mr-1" />
+                        )}
+                        Gi tilgang
+                      </Button>
+                    </div>
+                    {portalInviteStatus === "sent" && (
+                      <p className="text-[11px] text-emerald-300">Invitasjon er sendt til {selectedLead.email}.</p>
+                    )}
+                    {portalInviteStatus === "error" && (
+                      <p className="text-[11px] text-red-300">{portalInviteError}</p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
