@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_NAV } from "@/lib/constants";
 import {
@@ -10,7 +10,7 @@ import {
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
-  ChevronLeft, ChevronRight, Menu, X,
+  ChevronLeft, ChevronRight, LogOut, Menu, X,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -30,8 +30,15 @@ const sectionLabels: Record<string, string> = {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
 
   const navContent = (
     <div className="flex flex-col h-full">
@@ -108,6 +115,13 @@ export function Sidebar() {
               <p className="text-slate-300 font-medium">Freddy Bremseth</p>
               <p className="text-slate-500">Admin</p>
             </div>
+            <button
+              onClick={logout}
+              className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+              title="Logg ut"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         )}
       </div>
