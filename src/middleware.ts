@@ -52,7 +52,7 @@ async function verifyToken(token?: string) {
 
   try {
     const data = decodePayload<{ email?: string; exp?: number }>(payload);
-    const allowedEmails = (process.env.REALTYFLOW_ADMIN_EMAILS || "freddy@soleada.no")
+    const allowedEmails = (process.env.REALTYFLOW_ADMIN_EMAILS || "freddy.bremseth@gmail.com")
       .split(",")
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean);

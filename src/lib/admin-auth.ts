@@ -1,4 +1,4 @@
-const DEFAULT_ADMIN_EMAILS = ["freddy@soleada.no"];
+const DEFAULT_ADMIN_EMAILS = ["freddy.bremseth@gmail.com"];
 
 export function getAdminEmails() {
   return (process.env.REALTYFLOW_ADMIN_EMAILS || DEFAULT_ADMIN_EMAILS.join(","))
