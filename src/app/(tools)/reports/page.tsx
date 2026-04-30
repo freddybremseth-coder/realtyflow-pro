@@ -74,12 +74,17 @@ export default function ReportsPage() {
   const [selectedContactEmails, setSelectedContactEmails] = useState<string[]>([]);
   const [portalPublishing, setPortalPublishing] = useState<string | null>(null);
   const [portalStatus, setPortalStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [reportApproved, setReportApproved] = useState(false);
 
   // Manual market intelligence input
   const [manualInsightTopic, setManualInsightTopic] = useState("Costa Blanca eiendomsmarked");
   const [manualInsightText, setManualInsightText] = useState("");
   const [savingInsight, setSavingInsight] = useState(false);
   const [savedInsights, setSavedInsights] = useState<{ topic: string; summary: string; details: string; date: string }[]>([]);
+  const [buyerReportTitle, setBuyerReportTitle] = useState("Markedsrapport for norske boligkjøpere");
+  const [buyerReportArea, setBuyerReportArea] = useState("Costa Blanca Sør");
+  const [buyerReportSource, setBuyerReportSource] = useState("");
+  const [buyerDrafting, setBuyerDrafting] = useState(false);
 
   // Fetch reports and latest snapshot
   const fetchData = useCallback(async () => {
@@ -129,6 +134,7 @@ export default function ReportsPage() {
         if (data.report) {
           setReports(prev => [data.report, ...prev]);
           setSelectedReport(data.report);
+          setReportApproved(false);
         }
       }
     } catch (err) {
@@ -183,11 +189,41 @@ export default function ReportsPage() {
       setReports(prev => prev.map(r => r.id === reportId ? data.report : r));
       if (selectedReport?.id === reportId) setSelectedReport(data.report);
       setPortalStatus("saved");
+      setReportApproved(false);
     } catch (err) {
       console.error("Failed to publish to portal:", err);
       setPortalStatus("error");
     }
     setPortalPublishing(null);
+  };
+
+  const createBuyerDraft = async () => {
+    if (!buyerReportSource.trim()) return;
+    setBuyerDrafting(true);
+    try {
+      const res = await fetch("/api/reports/buyer-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: buyerReportTitle,
+          area: buyerReportArea,
+          sourceText: buyerReportSource,
+        }),
+      });
+      if (!res.ok) throw new Error("Draft failed");
+      const data = await res.json();
+      if (data.report) {
+        setReports(prev => [data.report, ...prev]);
+        setSelectedReport(data.report);
+        setReportApproved(false);
+        setPortalStatus("idle");
+        setBuyerReportSource("");
+        setActiveTab("rapporter");
+      }
+    } catch (err) {
+      console.error("Failed to create buyer draft:", err);
+    }
+    setBuyerDrafting(false);
   };
 
   // Save manual market intelligence
@@ -484,6 +520,52 @@ export default function ReportsPage() {
             </Card>
           </div>
 
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Kjøperrapport: Perplexity / Idealista → AI → godkjenning
+            </h2>
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs text-slate-400">
+                  Lim inn rådata fra Perplexity Pro, Idealista eller egne notater. RealtyFlow skriver en norsk,
+                  kjøpervennlig rapport som du kan lese, godkjenne og publisere til alle eller utvalgte kunder.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    value={buyerReportTitle}
+                    onChange={(e) => setBuyerReportTitle(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                    placeholder="Rapporttittel"
+                  />
+                  <select
+                    value={buyerReportArea}
+                    onChange={(e) => setBuyerReportArea(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                  >
+                    <option>Costa Blanca Nord</option>
+                    <option>Costa Blanca Sør</option>
+                    <option>Costa Calida</option>
+                    <option>Hele markedet</option>
+                  </select>
+                </div>
+                <textarea
+                  value={buyerReportSource}
+                  onChange={(e) => setBuyerReportSource(e.target.value)}
+                  placeholder="Lim inn rådata, Idealista-tall, Perplexity-rapport, kilder eller egne notater her..."
+                  rows={7}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 resize-y"
+                />
+                <Button
+                  onClick={createBuyerDraft}
+                  disabled={buyerDrafting || !buyerReportSource.trim()}
+                  className="bg-emerald-600 hover:bg-emerald-500"
+                >
+                  {buyerDrafting ? <><Loader2 size={14} className="mr-2 animate-spin" /> Skriver kjøperrapport...</> : "Lag AI-utkast for kjøpere"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Recent Reports */}
           <div>
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
@@ -506,7 +588,7 @@ export default function ReportsPage() {
                   <Card
                     key={report.id}
                     className="hover:border-slate-600 transition-colors cursor-pointer"
-                    onClick={() => setSelectedReport(report)}
+                    onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); }}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center gap-4">
@@ -577,7 +659,7 @@ export default function ReportsPage() {
               return (
                 <div
                   key={report.id}
-                  onClick={() => setSelectedReport(report)}
+                  onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); }}
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                     isSelected
                       ? "border-cyan-500/50 bg-cyan-500/5"
@@ -615,7 +697,7 @@ export default function ReportsPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => publishToPortal(selectedReport.id)}
-                        disabled={portalPublishing === selectedReport.id || (portalMode === "selected" && selectedContactEmails.length === 0)}
+                        disabled={!reportApproved || portalPublishing === selectedReport.id || (portalMode === "selected" && selectedContactEmails.length === 0)}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-sm transition-colors disabled:opacity-50"
                       >
                         {portalPublishing === selectedReport.id ? (
@@ -661,6 +743,16 @@ export default function ReportsPage() {
                       {selectedReport.recipients === "portal_all" && <Badge variant="success" className="text-[10px]">Synlig for alle portalbrukere</Badge>}
                       {selectedReport.recipients === "portal_selected" && <Badge variant="success" className="text-[10px]">Synlig for {selectedReport.sent_to?.length || 0}</Badge>}
                     </div>
+                    <label className="mt-3 flex items-start gap-2 text-xs text-slate-300">
+                      <input
+                        checked={reportApproved}
+                        onChange={(e) => setReportApproved(e.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        Jeg har lest gjennom og godkjent rapporten for kundebruk. Publisering til Min side låses opp etter godkjenning.
+                      </span>
+                    </label>
                     {portalMode === "selected" && (
                       <div className="mt-3 max-h-44 overflow-auto rounded border border-slate-700/40">
                         {contacts.map(contact => {
