@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
     .update({
       recipients: mode === "all" ? "portal_all" : "portal_selected",
       sent_to: mode === "all" ? [] : recipients,
-      sent_at: new Date().toISOString(),
     })
     .eq("id", reportId)
     .select()
