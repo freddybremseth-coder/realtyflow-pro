@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const contactId = String(body.contactId || "");
-  const redirectTo = String(body.redirectTo || "https://zenecohomes.com/auth/callback");
+  const redirectTo = String(body.redirectTo || "https://www.zenecohomes.com/auth/callback");
 
   if (!contactId) {
     return NextResponse.json({ error: "contactId is required" }, { status: 400 });

@@ -409,7 +409,7 @@ export default function PipelinePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contactId: selectedLead.id,
-          redirectTo: "https://zenecohomes.com/auth/callback",
+          redirectTo: "https://www.zenecohomes.com/auth/callback",
         }),
       });
       const data = await res.json();
