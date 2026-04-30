@@ -1155,6 +1155,9 @@ export default function PipelinePage() {
                 </div>
                 <div className="space-y-2 min-h-[200px] rounded-lg bg-slate-900/50 border border-slate-700/30 p-2">
                   {colLeads.map((lead) => (
+                    (() => {
+                      const signalScore = getBuyingSignalScore(lead);
+                      return (
                     <Card
                       key={lead.id}
                       draggable
@@ -1169,8 +1172,8 @@ export default function PipelinePage() {
                             <span className="text-sm font-medium text-slate-100 truncate max-w-[140px]">{lead.name}</span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <SentimentIcon score={lead.sentiment} />
-                            <span className={`text-xs font-medium ${sentimentColor(lead.sentiment)}`}>{lead.sentiment}%</span>
+                            <SentimentIcon score={signalScore} />
+                            <span className={`text-xs font-medium ${sentimentColor(signalScore)}`}>{signalScore}%</span>
                           </div>
                         </div>
                         {lead.property && <p className="text-xs text-slate-400 mb-1.5 truncate">{lead.property}</p>}
@@ -1208,6 +1211,8 @@ export default function PipelinePage() {
                         )}
                       </CardContent>
                     </Card>
+                      );
+                    })()
                   ))}
                 </div>
               </div>

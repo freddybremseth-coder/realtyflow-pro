@@ -123,8 +123,8 @@ const agents: AgentInfo[] = [
   },
   {
     id: "seo",
-    name: "SEO Agent",
-    role: "S\u00f8kemotoroptimalisering",
+    name: "Victoria SEO",
+    role: "SEO, Google & organisk vekst",
     color: "#10b981",
     status: "idle",
     lastActivity: "2 timer siden",
@@ -160,6 +160,7 @@ const agents: AgentInfo[] = [
 ];
 
 const suggestedCommands = [
+  "Victoria, analyser SEO for Zen Eco Homes og deleger konkrete oppgaver til agentene",
   "Send oppf\u00f8lgingsepost til alle leads i pipeline",
   "Lag en Facebook-kampanje for Soleada sine nye eiendommer",
   "Generer innhold for alle brands denne uken",
