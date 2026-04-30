@@ -7,35 +7,161 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const templates = [
-  "Kjøpsprosess i Spania",
-  "Sjekkliste før reservasjon",
-  "Guide til tomtekjøp og bygging",
-  "Områdeguide for kunde",
-  "Finansiering, notar og NIE",
+  {
+    title: "Kjøpsprosess i Spania",
+    audience: "Norsk boligkjøper som vurderer Spania",
+    sections: [
+      "Kort oversikt: fra behovsavklaring til overtakelse",
+      "Reservasjon, depositum og kontraktsløp",
+      "NIE, bank, notar, advokat og fullmakter",
+      "Kostnader, skatt og anbefalte kontrollpunkter",
+      "Neste steg for kunden og oppfølging i RealtyFlow",
+    ],
+  },
+  {
+    title: "Sjekkliste før reservasjon",
+    audience: "Kunde som vurderer å reservere bolig eller tomt",
+    sections: [
+      "Kundens kjøpskriterier og budsjett",
+      "Dokumenter som må sjekkes før reservasjon",
+      "Risiko og forbehold som skal avklares skriftlig",
+      "Spørsmål til utbygger/megler/advokat",
+      "Beslutningsgrunnlag: anbefal, vent eller avklar mer",
+    ],
+  },
+  {
+    title: "Guide til tomtekjøp og bygging",
+    audience: "Kunde som vurderer tomt og nybygg i Spania",
+    sections: [
+      "Hva kunden må forstå før tomtekjøp",
+      "Regulering, byggbarhet, vann, strøm og adkomst",
+      "Kostnadsbilde fra tomt til ferdig bolig",
+      "Arkitekt, entreprenør, lisens og tidslinje",
+      "Anbefalt due diligence før bud/reservasjon",
+    ],
+  },
+  {
+    title: "Områdeguide for kunde",
+    audience: "Norsk kjøper som sammenligner områder i Spania",
+    sections: [
+      "Hvem området passer for",
+      "Boligtyper, prisnivå og typiske kjøpere",
+      "Avstand til strand, flyplass, golf, skole og service",
+      "Fordeler, ulemper og sesongvariasjoner",
+      "Anbefalte boliger/tomter og neste steg",
+    ],
+  },
+  {
+    title: "Finansiering, notar og NIE",
+    audience: "Norsk kunde som skal forstå kostnader og praktiske steg",
+    sections: [
+      "Finansieringsvalg: Norge, Spania eller egenkapital",
+      "Omtrentlige kjøpskostnader og valutarisiko",
+      "NIE, notar, bankkonto og betalingsflyt",
+      "Dokumentasjon banken ofte ber om",
+      "Forbehold: kunden må kontrollere med bank/advokat",
+    ],
+  },
+  {
+    title: "ChatGenius salgsbrev",
+    audience: "Bedriftseier som vurderer AI-app eller spesialsoftware",
+    sections: [
+      "Problem: tid, manuelle prosesser og tapte leads",
+      "Løsning: skreddersydd AI-app fra ChatGenius.pro",
+      "Eksempler: CRM, kundeservice, dokumentflyt, innhold og automasjon",
+      "Effekt: raskere responstid, bedre kontroll og mer salg",
+      "Tydelig call-to-action: kartleggingssamtale eller demo",
+    ],
+  },
+  {
+    title: "Om ChatGenius.pro",
+    audience: "Potensiell B2B-kunde eller samarbeidspartner",
+    sections: [
+      "Hvem vi er og hva vi bygger",
+      "Hva som gjør oss annerledes: praktiske AI-systemer som brukes i drift",
+      "Case: RealtyFlow som hub for eiendom, CRM, innhold og kundeportal",
+      "Arbeidsmetode: analyse, prototype, integrasjon, opplæring og videreutvikling",
+      "Neste steg for kunden",
+    ],
+  },
+  {
+    title: "Tilbud: spesiallaget AI-app/software",
+    audience: "Kunde som har bedt om pris på utvikling",
+    sections: [
+      "Sammendrag av behov og mål",
+      "Anbefalt løsning og moduler",
+      "Leveranser, avgrensninger og milepæler",
+      "Pris, betalingsplan og drift/support",
+      "Forutsetninger, kundens ansvar og godkjenning",
+    ],
+  },
+  {
+    title: "Utviklingskontrakt for AI/software",
+    audience: "Kunde som skal signere utviklingsprosjekt",
+    sections: [
+      "Parter, prosjektbeskrivelse og definisjoner",
+      "Leveranser, endringshåndtering og akseptanse",
+      "Rettigheter, lisens, tredjepartsverktøy og kildekode",
+      "Betaling, forsinkelse, oppsigelse og support",
+      "Ansvar, konfidensialitet og juridisk kontroll før signering",
+    ],
+  },
+  {
+    title: "GDPR og databehandleravtale",
+    audience: "B2B-kunde som bruker ChatGenius/AI-systemer",
+    sections: [
+      "Roller: behandlingsansvarlig og databehandler",
+      "Hvilke data som behandles og hvorfor",
+      "Underleverandører, lagring, sikkerhet og sletting",
+      "AI-bruk, logging, tilgangsstyring og kundens instruks",
+      "Avvik, revisjon og krav om juridisk kvalitetssikring",
+    ],
+  },
+  {
+    title: "Nyhetsbrevkampanje",
+    audience: "Kunder/leads som følger Zen Eco Homes eller ChatGenius",
+    sections: [
+      "Målgruppe og kjøps-/beslutningssignal",
+      "Emnelinje, preheader og hovedbudskap",
+      "3-5 innholdsblokker med klar CTA",
+      "Segmentering: alle, varme leads, kunder eller valgt liste",
+      "Måling: åpning, klikk, svar og oppfølgingsoppgaver",
+    ],
+  },
 ];
 
+function getTemplate(title: string) {
+  return templates.find((template) => template.title === title) || templates[0];
+}
+
 export default function DocumentHubPage() {
-  const [topic, setTopic] = useState("Kjøpsprosess i Spania");
-  const [audience, setAudience] = useState("Norsk boligkjøper som vurderer Spania");
+  const [topic, setTopic] = useState(templates[0].title);
+  const [audience, setAudience] = useState(templates[0].audience);
   const [draft, setDraft] = useState("");
   const [approved, setApproved] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<"idle" | "published" | "error">("idle");
 
   function createDraft() {
+    const template = getTemplate(topic);
+    const sections = template.sections
+      .map((section, index) => `${index + 1}. ${section}\n   - Fakta/status:\n   - Utkast:\n   - Må kvalitetssikres:`)
+      .join("\n\n");
+
     setDraft(`Dokument: ${topic}
 
 Målgruppe: ${audience}
 
 Kvalitetssikret struktur:
-1. Formål og hvem dokumentet gjelder for
-2. Kort norsk forklaring uten juridiske løfter
-3. Praktiske steg kunden må forstå
-4. Risiko, forbehold og hva som må kontrolleres lokalt
-5. Spørsmål Freddy/Zen Eco Homes bør avklare før anbefaling
-6. Neste steg i RealtyFlow: lagre på kunde, send prospekt/guide, logg oppfølging
+${sections}
 
-AI-agenten bør alltid verifisere fakta mot oppdaterte kilder, markere usikkerhet og skille mellom generell informasjon og rådgivning fra advokat/økonom.`);
+Publisering og oppfølging:
+- Lagre som dokumentutkast i Content Hub hvis det skal brukes i kampanje/nyhetsbrev.
+- Lagre under Dokumenter på Min side hvis det gjelder eiendomskunder.
+- Opprett CRM-oppgave hvis dokumentet sendes til et varmt lead.
+
+Kvalitetssikring:
+AI-agenten skal verifisere fakta mot oppdaterte kilder, markere usikkerhet og skille mellom generell informasjon og rådgivning fra advokat, økonom eller jurist. Kontrakter, GDPR og databehandleravtaler skal alltid kontrolleres juridisk før signering.`);
     setApproved(false);
     setPublishStatus("idle");
   }
@@ -82,9 +208,12 @@ AI-agenten bør alltid verifisere fakta mot oppdaterte kilder, markere usikkerhe
               <select
                 className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
                 value={topic}
-                onChange={(event) => setTopic(event.target.value)}
+                onChange={(event) => {
+                  setTopic(event.target.value);
+                  setAudience(getTemplate(event.target.value).audience);
+                }}
               >
-                {templates.map((template) => <option key={template}>{template}</option>)}
+                {templates.map((template) => <option key={template.title}>{template.title}</option>)}
               </select>
             </div>
             <div>

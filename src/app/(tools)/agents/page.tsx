@@ -91,6 +91,13 @@ interface AgentInfo {
   tasksCompleted: number;
 }
 
+interface CommandCenterStats {
+  tasksToday: number | null;
+  successRate: number | null;
+  emailsToday: number | null;
+  contentToday: number | null;
+}
+
 // --- Data ---
 
 const agents: AgentInfo[] = [
@@ -100,8 +107,8 @@ const agents: AgentInfo[] = [
     role: "Strategisk leder & koordinator",
     color: "#06b6d4",
     status: "active",
-    lastActivity: "Akkurat n\u00e5",
-    tasksCompleted: 47,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "marketing",
@@ -109,8 +116,8 @@ const agents: AgentInfo[] = [
     role: "Kampanjer & innhold",
     color: "#ec4899",
     status: "idle",
-    lastActivity: "12 min siden",
-    tasksCompleted: 34,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "sales",
@@ -118,8 +125,8 @@ const agents: AgentInfo[] = [
     role: "Leads & salg",
     color: "#f59e0b",
     status: "idle",
-    lastActivity: "34 min siden",
-    tasksCompleted: 28,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "seo",
@@ -127,8 +134,8 @@ const agents: AgentInfo[] = [
     role: "SEO, Google & organisk vekst",
     color: "#10b981",
     status: "idle",
-    lastActivity: "2 timer siden",
-    tasksCompleted: 19,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "business",
@@ -136,8 +143,8 @@ const agents: AgentInfo[] = [
     role: "Forretningsstrategi",
     color: "#8b5cf6",
     status: "idle",
-    lastActivity: "5 timer siden",
-    tasksCompleted: 15,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "youtube",
@@ -145,8 +152,8 @@ const agents: AgentInfo[] = [
     role: "Video & manus",
     color: "#ef4444",
     status: "idle",
-    lastActivity: "1 time siden",
-    tasksCompleted: 22,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
   {
     id: "multi-domain",
@@ -154,22 +161,54 @@ const agents: AgentInfo[] = [
     role: "Tverrfaglig koordinering",
     color: "#3b82f6",
     status: "idle",
-    lastActivity: "20 min siden",
-    tasksCompleted: 31,
+    lastActivity: "Klar",
+    tasksCompleted: 0,
   },
 ];
 
 const suggestedCommands = [
   "Victoria, analyser SEO for Zen Eco Homes og deleger konkrete oppgaver til agentene",
-  "Send oppf\u00f8lgingsepost til alle leads i pipeline",
+  "Send oppfølgingsepost til alle leads i pipeline",
   "Lag en Facebook-kampanje for Soleada sine nye eiendommer",
   "Generer innhold for alle brands denne uken",
   "Analyser hvilke leads som er kaldest og lag en varmekampanje",
   "Lag lead magnet for Zen Eco Homes",
   "Send ukentlig nyhetsbrev til alle kontakter",
-  "Start A/B test p\u00e5 Instagram-innhold for Neural Beat",
-  "Vis meg status p\u00e5 alle brands",
+  "Start A/B test på Instagram-innhold for Neural Beat",
+  "Vis meg status på alle brands",
 ];
+
+function cleanVictoriaText(value?: string | null) {
+  if (!value) return "";
+  return value
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/Ã¥/g, "å")
+    .replace(/Ã¸/g, "ø")
+    .replace(/Ã¦/g, "æ")
+    .replace(/Ã…/g, "Å")
+    .replace(/Ã˜/g, "Ø")
+    .replace(/Ã†/g, "Æ")
+    .replace(/Â/g, "");
+}
+
+function todayIsoStart() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+function formatRelativeActivity(dateValue?: string | null) {
+  if (!dateValue) return "Ingen registrert aktivitet";
+  const diff = Date.now() - new Date(dateValue).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return "Nylig aktivitet";
+  const minutes = Math.round(diff / 60000);
+  if (minutes < 1) return "Akkurat nå";
+  if (minutes < 60) return `${minutes} min siden`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} t siden`;
+  const days = Math.round(hours / 24);
+  return `${days} d siden`;
+}
 
 // recentActions is now loaded dynamically from Supabase (see state in component)
 
@@ -202,10 +241,10 @@ function PlanCard({
   onCancel: () => void;
 }) {
   const statusLabels: Record<string, string> = {
-    draft: "Venter p\u00e5 bekreftelse",
+    draft: "Venter på bekreftelse",
     confirmed: "Bekreftet",
-    executing: "Utf\u00f8rer...",
-    done: "Fullf\u00f8rt",
+    executing: "Utfører...",
+    done: "Fullført",
     error: "Feil oppsto",
   };
 
@@ -230,25 +269,25 @@ function PlanCard({
     <div className="bg-slate-800/80 border border-slate-700 rounded-lg p-4 space-y-3">
       <div className="flex items-center gap-2">
         <FileText size={16} className="text-cyan-400" />
-        <span className="text-sm font-semibold text-white">Plan: {plan.title}</span>
+        <span className="text-sm font-semibold text-white">Plan: {cleanVictoriaText(plan.title)}</span>
       </div>
       <div className="space-y-2">
         {plan.steps.map((step) => (
           <div key={step.id} className="flex items-start gap-2">
             <div className="mt-0.5">{stepIcons[step.status]}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-slate-200">{step.id}. {step.description}</p>
+              <p className="text-sm text-slate-200">{step.id}. {cleanVictoriaText(step.description)}</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <Badge variant="outline" className="text-[10px] gap-1">
                   <Bot size={10} />
-                  {step.agent}
+                  {cleanVictoriaText(step.agent)}
                 </Badge>
                 <Badge variant="secondary" className="text-[10px] gap-1">
                   {systemIcons[step.system] || <Zap size={10} />}
-                  {step.system}
+                  {cleanVictoriaText(step.system)}
                 </Badge>
                 {step.result && (
-                  <span className="text-[10px] text-emerald-400">{step.result}</span>
+                  <span className="text-[10px] text-emerald-400">{cleanVictoriaText(step.result)}</span>
                 )}
               </div>
             </div>
@@ -263,7 +302,7 @@ function PlanCard({
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={onExecute} className="gap-1.5 text-xs">
               <Rocket size={12} />
-              Kj\u00f8r plan
+              Kjør plan
             </Button>
             <Button size="sm" variant="ghost" onClick={onCancel} className="text-xs">
               <X size={12} />
@@ -289,7 +328,7 @@ function ExecutionCard({ execution, plan }: { execution: Execution; plan?: Plan 
       <div className="flex items-center gap-2">
         <Zap size={16} className="text-cyan-400" />
         <span className="text-sm font-semibold text-white">
-          Utf\u00f8rer: {plan?.title || "Oppgave"}
+          Utfører: {cleanVictoriaText(plan?.title) || "Oppgave"}
         </span>
       </div>
       {plan && (
@@ -298,8 +337,8 @@ function ExecutionCard({ execution, plan }: { execution: Execution; plan?: Plan 
             <div key={step.id} className="flex items-center gap-2">
               {stepIcons[step.status]}
               <span className={`text-sm ${step.status === "done" ? "text-slate-300" : step.status === "running" ? "text-white" : "text-slate-500"}`}>
-                Steg {step.id}: {step.description}
-                {step.result && <span className="text-emerald-400 ml-1">- {step.result}</span>}
+                Steg {step.id}: {cleanVictoriaText(step.description)}
+                {step.result && <span className="text-emerald-400 ml-1">- {cleanVictoriaText(step.result)}</span>}
               </span>
             </div>
           ))}
@@ -358,6 +397,12 @@ export default function AgentsCommandCenter() {
   const [agentStatuses, setAgentStatuses] = useState<AgentInfo[]>(agents);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [recentActions, setRecentActions] = useState<{label: string; time: string; status: "done" | "error"}[]>([]);
+  const [runtimeStats, setRuntimeStats] = useState<CommandCenterStats>({
+    tasksToday: null,
+    successRate: null,
+    emailsToday: null,
+    contentToday: null,
+  });
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -423,6 +468,81 @@ export default function AgentsCommandCenter() {
       setRecentActions(actions.slice(0, 6));
     } catch (err) {
       console.error("Failed to fetch recent actions:", err);
+    }
+  }, []);
+
+  const fetchRuntimeStats = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const startOfDay = todayIsoStart();
+
+    try {
+      const [executionsResult, publicationsCount, emailCount] = await Promise.all([
+        supabase
+          .from("command_executions")
+          .select("status, steps, created_at")
+          .gte("created_at", startOfDay)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        supabase
+          .from("content_publications")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", startOfDay),
+        supabase
+          .from("email_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("direction", "outbound")
+          .gte("created_at", startOfDay),
+      ]);
+
+      const executions = executionsResult.data || [];
+      let completedSteps = 0;
+      const agentCounts: Record<string, number> = {};
+      const agentLatest: Record<string, string> = {};
+
+      for (const execution of executions) {
+        const steps = Array.isArray(execution.steps) ? execution.steps : [];
+        for (const rawStep of steps) {
+          const step = rawStep as { status?: string; agent?: string };
+          const done = step.status === "completed" || step.status === "done";
+          if (!done) continue;
+          completedSteps += 1;
+          const agentId = (step.agent || "").toLowerCase().replace(/\s+/g, "-");
+          const matchedAgent = agents.find(
+            (agent) =>
+              agentId.includes(agent.id) ||
+              agent.name.toLowerCase().includes((step.agent || "").toLowerCase())
+          );
+          const key = matchedAgent?.id || agentId;
+          if (key) {
+            agentCounts[key] = (agentCounts[key] || 0) + 1;
+            agentLatest[key] = execution.created_at;
+          }
+        }
+      }
+
+      const totalExecutions = executions.length;
+      const successfulExecutions = executions.filter((execution) =>
+        ["completed", "partial", "done"].includes(execution.status)
+      ).length;
+
+      setRuntimeStats({
+        tasksToday: completedSteps,
+        successRate: totalExecutions > 0 ? Math.round((successfulExecutions / totalExecutions) * 100) : null,
+        emailsToday: emailCount.error ? null : emailCount.count ?? 0,
+        contentToday: publicationsCount.error ? null : publicationsCount.count ?? 0,
+      });
+
+      setAgentStatuses((previous) =>
+        previous.map((agent) => ({
+          ...agent,
+          tasksCompleted: agentCounts[agent.id] || 0,
+          lastActivity: agentCounts[agent.id] ? formatRelativeActivity(agentLatest[agent.id]) : "Ingen registrert aktivitet i dag",
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to fetch command center stats:", err);
     }
   }, []);
 
@@ -584,12 +704,13 @@ export default function AgentsCommandCenter() {
   // Cleanup timer on unmount + fetch recent actions + load conversations
   useEffect(() => {
     fetchRecentActions();
+    fetchRuntimeStats();
     loadConversations();
     return () => {
       if (executionTimerRef.current) clearInterval(executionTimerRef.current);
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [fetchRecentActions, loadConversations]);
+  }, [fetchRecentActions, fetchRuntimeStats, loadConversations]);
 
   const handleSend = async (overrideMessage?: string) => {
     const userMsg = (overrideMessage || input).trim();
@@ -710,6 +831,7 @@ export default function AgentsCommandCenter() {
 
         // Refresh recent actions and conversation list after execution
         fetchRecentActions();
+        fetchRuntimeStats();
         loadConversations();
       }
     } catch {
@@ -717,8 +839,8 @@ export default function AgentsCommandCenter() {
         ...prev,
         {
           role: "assistant",
-          content:
-            "Beklager, kunne ikke n\u00e5 AI-systemet. Sjekk at ANTHROPIC_API_KEY er konfigurert.",
+                content:
+            "Beklager, kunne ikke nå AI-systemet. Sjekk at ANTHROPIC_API_KEY er konfigurert.",
         },
       ]);
     }
@@ -741,7 +863,7 @@ export default function AgentsCommandCenter() {
               ...prev,
               {
                 role: "assistant",
-                content: data.response || "Plan fullf\u00f8rt!",
+                content: data.response || "Plan fullført!",
                 plan: data.plan,
               },
             ]);
@@ -801,14 +923,14 @@ export default function AgentsCommandCenter() {
   };
 
   const handleExecutePlan = () => {
-    handleSend("Kj\u00f8r");
+    handleSend("Kjør");
   };
 
   const handleCancelPlan = () => {
     setActivePlan(null);
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "Plan avbrutt. Hva vil du gj\u00f8re i stedet?" },
+      { role: "assistant", content: "Plan avbrutt. Hva vil du gjøre i stedet?" },
     ]);
   };
 
@@ -827,7 +949,7 @@ export default function AgentsCommandCenter() {
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   };
 
-  const totalTasksToday = agentStatuses.reduce((sum, a) => sum + a.tasksCompleted, 0);
+  const statValue = (value: number | null, suffix = "") => value === null ? "–" : `${value}${suffix}`;
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
@@ -1098,7 +1220,7 @@ export default function AgentsCommandCenter() {
                   <h2 className="text-lg font-semibold text-white mb-1">Hei Freddy!</h2>
                   <p className="text-sm text-slate-400 mb-6 max-w-md">
                     Jeg er Victoria, din strategiske AI-assistent. Fortell meg hva du vil
-                    oppn\u00e5, s\u00e5 koordinerer jeg alle agentene for \u00e5 f\u00e5 det gjort.
+                    oppnå, så koordinerer jeg alle agentene for å få det gjort.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
                     {suggestedCommands.map((cmd) => (
@@ -1120,7 +1242,7 @@ export default function AgentsCommandCenter() {
                   {msg.role === "user" ? (
                     <div className="flex justify-end">
                       <div className="max-w-[80%] bg-primary-600 text-white rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap">
-                        {msg.content}
+                        {cleanVictoriaText(msg.content)}
                       </div>
                     </div>
                   ) : (
@@ -1134,7 +1256,7 @@ export default function AgentsCommandCenter() {
                         </div>
                         {msg.content && (
                           <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
-                            {msg.content}
+                            {cleanVictoriaText(msg.content)}
                           </div>
                         )}
                         {msg.plan && (
@@ -1170,8 +1292,8 @@ export default function AgentsCommandCenter() {
                   onKeyDown={handleKeyDown}
                   placeholder={
                     executing
-                      ? "Venter p\u00e5 at planen fullf\u00f8res..."
-                      : "Fortell Victoria hva du vil gj\u00f8re..."
+                      ? "Venter på at planen fullføres..."
+                      : "Fortell Victoria hva du vil gjøre..."
                   }
                   disabled={executing}
                   rows={1}
@@ -1190,7 +1312,7 @@ export default function AgentsCommandCenter() {
                 </Button>
               </div>
               <p className="text-[10px] text-slate-600 mt-1.5 text-center">
-                Shift+Enter for ny linje - Enter for \u00e5 sende
+                Shift+Enter for ny linje - Enter for å sende
               </p>
             </div>
           </Card>
@@ -1206,10 +1328,10 @@ export default function AgentsCommandCenter() {
           {/* Quick Stats */}
           <div className="grid grid-cols-2 gap-2 flex-shrink-0">
             {[
-              { label: "Oppgaver i dag", value: totalTasksToday, icon: Zap, color: "text-cyan-400" },
-              { label: "Vellykket", value: "98%", icon: CheckCircle, color: "text-emerald-400" },
-              { label: "E-poster sendt", value: 156, icon: Mail, color: "text-blue-400" },
-              { label: "Innhold generert", value: 42, icon: FileText, color: "text-pink-400" },
+              { label: "Oppgaver i dag", value: statValue(runtimeStats.tasksToday), icon: Zap, color: "text-cyan-400" },
+              { label: "Vellykket", value: statValue(runtimeStats.successRate, "%"), icon: CheckCircle, color: "text-emerald-400" },
+              { label: "E-poster sendt", value: statValue(runtimeStats.emailsToday), icon: Mail, color: "text-blue-400" },
+              { label: "Innhold laget", value: statValue(runtimeStats.contentToday), icon: FileText, color: "text-pink-400" },
             ].map((stat) => (
               <Card key={stat.label} className="border-slate-700">
                 <CardContent className="p-3 flex items-center gap-2.5">
@@ -1304,7 +1426,7 @@ export default function AgentsCommandCenter() {
                   </span>
                 </div>
                 <div className="bg-slate-800/50 rounded-md p-2.5">
-                  <p className="text-xs font-medium text-white mb-1">{activePlan.title}</p>
+                  <p className="text-xs font-medium text-white mb-1">{cleanVictoriaText(activePlan.title)}</p>
                   <div className="flex items-center gap-2">
                     <Badge
                       variant={
@@ -1319,7 +1441,7 @@ export default function AgentsCommandCenter() {
                       {activePlan.status === "draft"
                         ? "Venter"
                         : activePlan.status === "executing"
-                        ? "Utf\u00f8rer"
+                        ? "Utfører"
                         : activePlan.status}
                     </Badge>
                     <span className="text-[10px] text-slate-500">

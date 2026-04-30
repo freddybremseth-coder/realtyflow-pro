@@ -89,6 +89,9 @@ const CONTENT_TYPES = [
   { id: "reel", name: "Reel", icon: Play },
   { id: "story", name: "Story", icon: Clock },
   { id: "article", name: "Artikkel", icon: FileText },
+  { id: "newsletter", name: "Nyhetsbrev", icon: Inbox },
+  { id: "document", name: "Dokument", icon: FileText },
+  { id: "proposal", name: "Salgsbrev/tilbud", icon: Send },
 ];
 
 const PLATFORMS = [
@@ -109,30 +112,80 @@ const IMAGE_STYLES = [
 
 const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
 
-\u2705 YouTube - Allerede integrert og fungerer. Sterkeste plattform for
+✓ YouTube - Allerede integrert og fungerer. Sterkeste plattform for
    eiendom (virtuelle visninger), Neural Beat (musikkvideoer) og
    Freddy Bremseth (personal brand).
 
-\u2705 Instagram - Essensielt for eiendom og livsstil. Reels for
+✓ Instagram - Essensielt for eiendom og livsstil. Reels for
    korte eiendommvisninger, Stories for behind-the-scenes,
    Posts for nye listings.
 
-\u2705 Facebook - Viktig for Soleada.no (skandinavisk m\u00e5lgruppe 35-65),
+✓ Facebook - Viktig for Soleada.no (skandinavisk målgruppe 35-65),
    Facebook Groups for expat-communities, Marketplace for eiendommer.
 
-\u2705 LinkedIn - Kritisk for ChatGenius.pro (B2B SaaS), Freddy Bremseth
+✓ LinkedIn - Kritisk for ChatGenius.pro (B2B SaaS), Freddy Bremseth
    (thought leadership), og nettverksbygging.
 
-\u2705 TikTok - ANBEFALT for vekst. Eksplosiv organisk rekkevidde.
+✓ TikTok - ANBEFALT for vekst. Eksplosiv organisk rekkevidde.
    Perfekt for: eiendomsturer, "Day in the life in Spain",
    Neural Beat clips, matlagingsvideoer (Dona Anna).
 
-\u2705 Pinterest - ANBEFALT for eiendom og livsstil. H\u00f8y kj\u00f8psintensjon.
-   Pinoso Ecolife (dr\u00f8mmeboliger), Dona Anna (oppskrifter),
-   Soleada.no (dr\u00f8mmehus i Spania). Evigr\u00f8nt innhold.
+✓ Pinterest - ANBEFALT for eiendom og livsstil. Høy kjøpsintensjon.
+   Pinoso Ecolife (drømmeboliger), Dona Anna (oppskrifter),
+   Soleada.no (drømmehus i Spania). Eviggrønt innhold.
 
-\u23f3 Twitter/X - Lavere prioritet. Nyttig for ChatGenius.pro (tech),
+⏳ Twitter/X - Lavere prioritet. Nyttig for ChatGenius.pro (tech),
    men begrenset for eiendom i Spania.`;
+
+function createFallbackContent(brandName: string, brandDescription: string, contentType: string) {
+  if (contentType === "newsletter") {
+    return `Emne: Nytt fra ${brandName}
+Preheader: Praktiske oppdateringer, muligheter og neste steg.
+
+Hei,
+
+Her er det viktigste akkurat nå:
+1. Hva som skjer i markedet/prosjektet.
+2. Hva dette betyr for deg som kunde.
+3. Hvilket neste steg vi anbefaler.
+
+Svar på denne e-posten hvis du vil at vi skal se på saken din konkret.`;
+  }
+
+  if (contentType === "document") {
+    return `Dokumentutkast for ${brandName}
+
+Formål:
+Forklar temaet enkelt, praktisk og uten løfter som må juridisk kontrolleres.
+
+Hovedpunkter:
+1. Hva kunden må forstå.
+2. Hvilke valg kunden har.
+3. Risiko og forbehold.
+4. Neste steg og oppfølging.
+
+Kvalitetssikring:
+Fakta, priser, regler og juridiske formuleringer må verifiseres før dokumentet sendes.`;
+  }
+
+  if (contentType === "proposal") {
+    return `Salgsbrev/tilbud for ${brandName}
+
+Problem:
+Kunden bruker for mye tid på manuelle prosesser, taper leads eller mangler systemkontroll.
+
+Løsning:
+Vi bygger en praktisk AI-app eller spesialsoftware som samler prosess, data og oppfølging.
+
+Leveranse:
+Kartlegging, prototype, integrasjon, opplæring og videreutvikling.
+
+Neste steg:
+Book en kort gjennomgang slik at vi kan avklare behov, prisnivå og tidslinje.`;
+  }
+
+  return `Utforsk ${brandDescription || "nye muligheter"} med ${brandName}.`;
+}
 
 // --- Component ---
 export default function ContentHubPage() {
@@ -712,14 +765,15 @@ export default function ContentHubPage() {
               tone: brand?.tone,
               specialties: brand?.specialties,
               field,
+              content_type: selectedContentType,
               platform: selectedPlatforms[0] || 'instagram',
               existing_title: title,
               existing_description: description,
               instruction: field === 'title'
-                ? `Lag en fengende tittel for ${brand?.name} innlegg. Kun tittel, ingen annet.`
+                ? `Lag en profesjonell tittel for ${brand?.name}. Innholdstype: ${selectedContentType}. Kun tittel, ingen annet.`
                 : field === 'description'
-                ? `Skriv en engasjerende beskrivelse/caption for ${brand?.name}. Maks 200 ord. Inkluder relevante hashtags.`
-                : `Generer 8-12 relevante hashtags for ${brand?.name}. Kun hashtags separert med mellomrom.`,
+                ? `Skriv et kjøper-/kundevennlig utkast for ${brand?.name}. Innholdstype: ${selectedContentType}. For newsletter: bruk emnelinje, preheader og 3 korte blokker. For document: bruk kvalitetssikret struktur. For proposal: bruk problem, løsning, leveranse, prisforbehold og CTA. Maks 250 ord.`
+                : `Generer 8-12 relevante tags/temaer for ${brand?.name} og innholdstype ${selectedContentType}. Kun tags separert med mellomrom.`,
             }
           }]
         }),
@@ -733,18 +787,18 @@ export default function ContentHubPage() {
         else if (field === 'tags') setTags(text.trim());
       } else {
         // Fallback
-        if (field === "title") setTitle(`${brand?.name} - Oppdag ${brand?.specialties?.[0] || "nye muligheter"}`);
-        else if (field === "description") setDescription(`Utforsk ${brand?.description || "fantastiske muligheter"} med ${brand?.name}.`);
+        if (field === "title") setTitle(`${brand?.name} - ${selectedContentType === "newsletter" ? "nyhetsbrev" : selectedContentType === "proposal" ? "tilbud og løsning" : "oppdag nye muligheter"}`);
+        else if (field === "description") setDescription(createFallbackContent(brand?.name || selectedBrand, brand?.description || "", selectedContentType));
         else if (field === "tags") setTags((brand?.specialties || []).map((s) => `#${s.replace(/\s+/g, "")}`).join(" "));
       }
     } catch {
       const brand = BRANDS.find((b) => b.id === selectedBrand);
-      if (field === "title") setTitle(`${brand?.name} - Oppdag ${brand?.specialties?.[0] || "nye muligheter"}`);
-      else if (field === "description") setDescription(`Utforsk ${brand?.description || "fantastiske muligheter"} med ${brand?.name}.`);
+      if (field === "title") setTitle(`${brand?.name} - ${selectedContentType === "newsletter" ? "nyhetsbrev" : selectedContentType === "proposal" ? "tilbud og løsning" : "oppdag nye muligheter"}`);
+      else if (field === "description") setDescription(createFallbackContent(brand?.name || selectedBrand, brand?.description || "", selectedContentType));
       else if (field === "tags") setTags((brand?.specialties || []).map((s) => `#${s.replace(/\s+/g, "")}`).join(" "));
     }
     setAiGenerating(null);
-  }, [selectedBrand, selectedPlatforms, title, description]);
+  }, [selectedBrand, selectedPlatforms, selectedContentType, title, description]);
 
   const handlePublish = useCallback(async () => {
     if (selectedPlatforms.length === 0) return;
