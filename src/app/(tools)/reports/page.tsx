@@ -44,6 +44,13 @@ interface MarketSnapshot {
   fetched_at?: string;
 }
 
+interface Contact {
+  id: string;
+  name?: string;
+  email?: string;
+  pipeline_status?: string;
+}
+
 // ─── Template Config ─────────────────────────────────────────
 const TEMPLATES = [
   { id: "tall-og-trender", name: "Tall og Trender", icon: BarChart3, color: "text-cyan-400", bg: "bg-cyan-500/15", freq: "Annenhver uke" },
@@ -62,6 +69,11 @@ export default function ReportsPage() {
   const [sending, setSending] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [activeTab, setActiveTab] = useState<"oversikt" | "rapporter" | "markedsdata" | "mottakere">("oversikt");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [portalMode, setPortalMode] = useState<"all" | "selected">("all");
+  const [selectedContactEmails, setSelectedContactEmails] = useState<string[]>([]);
+  const [portalPublishing, setPortalPublishing] = useState<string | null>(null);
+  const [portalStatus, setPortalStatus] = useState<"idle" | "saved" | "error">("idle");
 
   // Manual market intelligence input
   const [manualInsightTopic, setManualInsightTopic] = useState("Costa Blanca eiendomsmarked");
@@ -92,6 +104,16 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetch("/api/contacts?view=pipeline")
+      .then(r => r.ok ? r.json() : { contacts: [] })
+      .then(d => {
+        const withEmail = (d.contacts || []).filter((contact: Contact) => contact.email);
+        setContacts(withEmail);
+      })
+      .catch(() => setContacts([]));
+  }, []);
 
   // Generate a report
   const handleGenerate = async (templateId: string) => {
@@ -133,6 +155,39 @@ export default function ReportsPage() {
       console.error("Failed to send:", err);
     }
     setSending(null);
+  };
+
+  const toggleContact = (email?: string) => {
+    if (!email) return;
+    const normalized = email.toLowerCase();
+    setSelectedContactEmails(prev =>
+      prev.includes(normalized) ? prev.filter(item => item !== normalized) : [...prev, normalized]
+    );
+  };
+
+  const publishToPortal = async (reportId: string) => {
+    setPortalPublishing(reportId);
+    setPortalStatus("idle");
+    try {
+      const res = await fetch("/api/reports/publish-portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId,
+          mode: portalMode,
+          recipients: selectedContactEmails,
+        }),
+      });
+      if (!res.ok) throw new Error("Publish failed");
+      const data = await res.json();
+      setReports(prev => prev.map(r => r.id === reportId ? data.report : r));
+      if (selectedReport?.id === reportId) setSelectedReport(data.report);
+      setPortalStatus("saved");
+    } catch (err) {
+      console.error("Failed to publish to portal:", err);
+      setPortalStatus("error");
+    }
+    setPortalPublishing(null);
   };
 
   // Save manual market intelligence
@@ -558,6 +613,18 @@ export default function ReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => publishToPortal(selectedReport.id)}
+                        disabled={portalPublishing === selectedReport.id || (portalMode === "selected" && selectedContactEmails.length === 0)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-sm transition-colors disabled:opacity-50"
+                      >
+                        {portalPublishing === selectedReport.id ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <FileText size={14} />
+                        )}
+                        Legg på Min side
+                      </button>
                       {!selectedReport.sent_at && (
                         <button
                           onClick={() => handleSend(selectedReport.id)}
@@ -576,6 +643,50 @@ export default function ReportsPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  <div className="mb-6 rounded-lg border border-slate-700/40 bg-slate-900/50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Publisering</span>
+                      <button
+                        onClick={() => setPortalMode("all")}
+                        className={`rounded px-3 py-1.5 text-xs font-medium ${portalMode === "all" ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-400"}`}
+                      >
+                        Alle med Min side
+                      </button>
+                      <button
+                        onClick={() => setPortalMode("selected")}
+                        className={`rounded px-3 py-1.5 text-xs font-medium ${portalMode === "selected" ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-400"}`}
+                      >
+                        Valgte kontakter
+                      </button>
+                      {selectedReport.recipients === "portal_all" && <Badge variant="success" className="text-[10px]">Synlig for alle portalbrukere</Badge>}
+                      {selectedReport.recipients === "portal_selected" && <Badge variant="success" className="text-[10px]">Synlig for {selectedReport.sent_to?.length || 0}</Badge>}
+                    </div>
+                    {portalMode === "selected" && (
+                      <div className="mt-3 max-h-44 overflow-auto rounded border border-slate-700/40">
+                        {contacts.map(contact => {
+                          const email = contact.email?.toLowerCase() || "";
+                          return (
+                            <label key={contact.id} className="flex cursor-pointer items-center gap-3 border-b border-slate-800 px-3 py-2 text-xs text-slate-300 last:border-b-0">
+                              <input
+                                type="checkbox"
+                                checked={selectedContactEmails.includes(email)}
+                                onChange={() => toggleContact(email)}
+                              />
+                              <span className="flex-1">
+                                <strong className="text-white">{contact.name || contact.email}</strong>
+                                <span className="ml-2 text-slate-500">{contact.email}</span>
+                              </span>
+                              {contact.pipeline_status && <span className="text-slate-500">{contact.pipeline_status}</span>}
+                            </label>
+                          );
+                        })}
+                        {contacts.length === 0 && <p className="p-3 text-xs text-slate-500">Ingen kontakter med e-post funnet.</p>}
+                      </div>
+                    )}
+                    {portalStatus === "saved" && <p className="mt-2 text-xs text-emerald-300">Rapporten er lagt under Dokumenter på Min side.</p>}
+                    {portalStatus === "error" && <p className="mt-2 text-xs text-red-300">Kunne ikke publisere rapporten.</p>}
+                  </div>
+
                   {/* Key Metrics */}
                   {selectedReport.key_metrics && selectedReport.key_metrics.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -839,7 +950,7 @@ export default function ReportsPage() {
                 {[
                   { group: "internal", label: "Intern", desc: "Kun deg (Freddy)", count: 1, color: "bg-slate-500" },
                   { group: "investors", label: "Investorer", desc: "Investorprofiler fra CRM", count: 0, color: "bg-emerald-500" },
-                  { group: "leads", label: "Aktive Leads", desc: "Leads i Viewing/Interested-fase", count: 0, color: "bg-cyan-500" },
+                  { group: "leads", label: "Aktive Leads", desc: "Leads i Viewing/Interested-fase", count: contacts.length, color: "bg-cyan-500" },
                   { group: "donaanna", label: "Dona Anna", desc: "Olivenoljekunder og grossister", count: 0, color: "bg-amber-500" },
                   { group: "all", label: "Alle", desc: "Full distribusjonslist", count: 0, color: "bg-purple-500" },
                 ].map(list => (
@@ -854,8 +965,8 @@ export default function ReportsPage() {
                 ))}
               </div>
               <p className="text-xs text-slate-500 mt-4">
-                Mottakere hentes automatisk fra CRM og kan konfigureres i Innstillinger.
-                Rapporter sendes foreløpig kun til din e-post.
+                Mottakere hentes fra CRM. Bruk rapportvisningen for å legge rapporten på Min side for alle portalbrukere
+                eller bare utvalgte kontakter.
               </p>
             </CardContent>
           </Card>
