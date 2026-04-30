@@ -152,6 +152,7 @@ export default function PipelinePage() {
   const [showGmailMerged, setShowGmailMerged] = useState(false);
   const [portalInviteStatus, setPortalInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [portalInviteError, setPortalInviteError] = useState("");
+  const [portalTemporaryPassword, setPortalTemporaryPassword] = useState("");
 
   // ── Load leads from database ───────────────────────
 
@@ -200,6 +201,7 @@ export default function PipelinePage() {
   useEffect(() => {
     setPortalInviteStatus("idle");
     setPortalInviteError("");
+    setPortalTemporaryPassword("");
   }, [selectedLead?.id]);
 
   const filteredLeads = leads.filter(
@@ -415,6 +417,7 @@ export default function PipelinePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kunne ikke sende portaltilgang");
       setPortalInviteStatus("sent");
+      setPortalTemporaryPassword(data.temporaryPassword || "");
       await loadLeads();
     } catch (error) {
       setPortalInviteError(error instanceof Error ? error.message : "Kunne ikke sende portaltilgang");
@@ -1425,7 +1428,7 @@ export default function PipelinePage() {
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-semibold text-emerald-300">Min side</p>
-                        <p className="text-[11px] text-slate-400">Send invitasjon til Zen Eco Homes-portalen.</p>
+                        <p className="text-[11px] text-slate-400">Lag midlertidig passord til Zen Eco Homes-portalen.</p>
                       </div>
                       <Button
                         size="sm"
@@ -1438,11 +1441,19 @@ export default function PipelinePage() {
                         ) : (
                           <UserCheck size={12} className="mr-1" />
                         )}
-                        Gi tilgang
+                        Lag passord
                       </Button>
                     </div>
                     {portalInviteStatus === "sent" && (
-                      <p className="text-[11px] text-emerald-300">Invitasjon er sendt til {selectedLead.email}.</p>
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-emerald-300">Tilgang er opprettet for {selectedLead.email}.</p>
+                        {portalTemporaryPassword && (
+                          <div className="rounded-md border border-emerald-500/20 bg-slate-950/40 p-2">
+                            <p className="text-[10px] text-slate-400">Midlertidig passord kunden skal bytte ved første innlogging:</p>
+                            <code className="text-xs text-emerald-200 break-all">{portalTemporaryPassword}</code>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {portalInviteStatus === "error" && (
                       <p className="text-[11px] text-red-300">{portalInviteError}</p>

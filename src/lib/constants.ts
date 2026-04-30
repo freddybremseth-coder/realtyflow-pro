@@ -110,6 +110,7 @@ export const SIDEBAR_NAV = {
     { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
+    { label: "Dokumenter", href: "/document-hub", icon: "FileText" },
   ],
   content: [
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },

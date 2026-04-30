@@ -8,13 +8,31 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+function createTemporaryPassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(12)))
+    .map((value) => alphabet[value % alphabet.length])
+    .join("");
+  return `Zeneco-${random}!1`;
+}
+
+async function findAuthUserByEmail(supabase: any, email: string) {
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) return null;
+    const user = data.users.find((item: { email?: string }) => item.email?.toLowerCase() === email.toLowerCase());
+    if (user) return user;
+    if (data.users.length < 100) return null;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 500 });
 
   const body = await request.json();
   const contactId = String(body.contactId || "");
-  const redirectTo = String(body.redirectTo || "https://www.zenecohomes.com/auth/callback");
 
   if (!contactId) {
     return NextResponse.json({ error: "contactId is required" }, { status: 400 });
@@ -34,18 +52,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Contact needs an email address before portal access can be granted" }, { status: 400 });
   }
 
-  const { data: authData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(contact.email, {
-    data: {
+  const temporaryPassword = createTemporaryPassword();
+  const userMetadata = {
       contact_id: contact.id,
       brand_id: contact.brand_id || "zeneco",
       name: contact.name,
       role: "customer",
-    },
-    redirectTo,
-  });
+      must_change_password: true,
+  };
 
-  if (inviteError) {
-    return NextResponse.json({ error: inviteError.message }, { status: 500 });
+  const existingUser = await findAuthUserByEmail(supabase, contact.email);
+  const authResult = existingUser
+    ? await supabase.auth.admin.updateUserById(existingUser.id, {
+        password: temporaryPassword,
+        email_confirm: true,
+        user_metadata: { ...(existingUser.user_metadata || {}), ...userMetadata },
+      })
+    : await supabase.auth.admin.createUser({
+        email: contact.email,
+        password: temporaryPassword,
+        email_confirm: true,
+        user_metadata: userMetadata,
+      });
+
+  if (authResult.error) {
+    return NextResponse.json({ error: authResult.error.message }, { status: 500 });
   }
 
   const now = new Date().toISOString();
@@ -54,7 +85,7 @@ export async function POST(request: NextRequest) {
     .upsert(
       {
         contact_id: contact.id,
-        auth_user_id: authData.user?.id || null,
+        auth_user_id: authResult.data.user?.id || existingUser?.id || null,
         email: contact.email,
         name: contact.name || null,
         brand_id: contact.brand_id || "zeneco",
@@ -80,7 +111,7 @@ export async function POST(request: NextRequest) {
   const interaction = {
     id: `portal_${Date.now()}`,
     type: "note",
-    content: `Portaltilgang sendt til ${contact.email}${portalWarning ? " (portal_users mangler i Supabase)" : ""}`,
+    content: `Portaltilgang opprettet for ${contact.email}. Midlertidig passord ble generert.${portalWarning ? " (portal_users mangler i Supabase)" : ""}`,
     date: now.split("T")[0],
   };
 
@@ -99,5 +130,10 @@ export async function POST(request: NextRequest) {
     })
     .eq("id", contact.id);
 
-  return NextResponse.json({ success: true, portalUser: portalUser || null, warning: portalWarning });
+  return NextResponse.json({
+    success: true,
+    portalUser: portalUser || null,
+    temporaryPassword,
+    warning: portalWarning,
+  });
 }
