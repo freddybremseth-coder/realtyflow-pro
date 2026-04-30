@@ -19,7 +19,9 @@ function getSupabase() {
 
 interface DashboardStats {
   activeLeads: number;
+  hotSignals: number;
   properties: number;
+  plots: number;
   pipelineValue: string;
   publishedPosts: number;
   scheduledPosts: number;
@@ -28,6 +30,17 @@ interface DashboardStats {
   aiAgents: number;
   recentActivity: { type: string; text: string; time: string }[];
   alerts: { type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
+}
+
+function buyingSignalScore(contact: { interactions?: unknown[]; notes?: string | null; pipeline_status?: string | null; pipeline_value?: number | null }) {
+  const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
+  const haystack = `${contact.notes || ""} ${interactions.map((item: any) => item?.content || "").join(" ")}`.toLowerCase();
+  let score = 20;
+  if ((contact.pipeline_value || 0) > 0) score += 15;
+  if (/kjøpssignal|oppdaterte ønsker|min side|favoritt|kalkulator|rapport|dokument/.test(haystack)) score += 35;
+  if (/klar nå|innen 3 mnd|visning|reservasjon|budsjett til/.test(haystack)) score += 20;
+  if (["VIEWING", "NEGOTIATION"].includes(contact.pipeline_status || "")) score += 20;
+  return Math.min(100, score);
 }
 
 export default function Dashboard() {
@@ -44,9 +57,10 @@ export default function Dashboard() {
 
       try {
         // Fetch real data in parallel
-        const [leadsRes, propertiesRes, pubsRes, scheduledRes, draftsRes, failedRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
-          supabase.from("leads").select("id", { count: "exact", head: true }),
+        const [contactsRes, propertiesRes, plotsRes, pubsRes, scheduledRes, draftsRes, failedRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
+          supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
           supabase.from("properties").select("id", { count: "exact", head: true }),
+          supabase.from("land_plots").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
@@ -108,8 +122,10 @@ export default function Dashboard() {
         }
 
         setStats({
-          activeLeads: leadsRes.count || 0,
+          activeLeads: contactsRes.data?.length || 0,
+          hotSignals: (contactsRes.data || []).filter((contact) => buyingSignalScore(contact) >= 70).length,
           properties: propertiesRes.count || 0,
+          plots: plotsRes.count || 0,
           pipelineValue: "–",
           publishedPosts: pubsRes.count || 0,
           scheduledPosts: scheduledRes.count || 0,
@@ -135,7 +151,7 @@ export default function Dashboard() {
       <div>
         <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Oversikt over eiendom, innhold og forretning
+          Operativ oversikt for leads, boliger, tomter, rapporter og kundeoppfølging
         </p>
       </div>
 
@@ -154,8 +170,8 @@ export default function Dashboard() {
               {[
                 { label: "Aktive Leads", value: String(stats?.activeLeads || 0), icon: Users, color: "text-primary-400" },
                 { label: "Eiendommer", value: String(stats?.properties || 0), icon: Building2, color: "text-emerald-400" },
-                { label: "Pipeline Verdi", value: stats?.pipelineValue || "–", icon: TrendingUp, color: "text-amber-400" },
-                { label: "Publiserte Poster", value: String(stats?.publishedPosts || 0), icon: BarChart3, color: "text-blue-400" },
+                { label: "Tomter", value: String(stats?.plots || 0), icon: Globe, color: "text-cyan-400" },
+                { label: "Varme kjøpssignal", value: String(stats?.hotSignals || 0), icon: TrendingUp, color: "text-amber-400" },
               ].map((stat) => (
                 <Card key={stat.label}>
                   <CardContent className="p-4">
@@ -175,7 +191,7 @@ export default function Dashboard() {
           {/* Content & Marketing KPIs */}
           <div>
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Innhold & Marketing
+              Kundeinnhold
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
@@ -287,12 +303,12 @@ export default function Dashboard() {
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: "Content Hub", href: "/content-hub", icon: Target, color: "bg-pink-500/20 text-pink-300" },
-                    { label: "Generer Innhold", href: "/content-studio", icon: Zap, color: "bg-purple-500/20 text-purple-300" },
                     { label: "Ny Lead", href: "/pipeline", icon: Users, color: "bg-primary-500/20 text-primary-300" },
                     { label: "Se Eiendommer", href: "/inventory", icon: Building2, color: "bg-emerald-500/20 text-emerald-300" },
-                    { label: "Brands", href: "/brands", icon: Globe, color: "bg-violet-500/20 text-violet-300" },
-                    { label: "AI Agenter", href: "/agents", icon: Bot, color: "bg-amber-500/20 text-amber-300" },
+                    { label: "Tomter", href: "/tomtebase", icon: Globe, color: "bg-cyan-500/20 text-cyan-300" },
+                    { label: "Dokumenter", href: "/document-hub", icon: FileText, color: "bg-amber-500/20 text-amber-300" },
+                    { label: "Markedsrapport", href: "/reports", icon: Target, color: "bg-pink-500/20 text-pink-300" },
+                    { label: "AI Agenter", href: "/agents", icon: Bot, color: "bg-purple-500/20 text-purple-300" },
                   ].map((action) => (
                     <a
                       key={action.label}

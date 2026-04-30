@@ -99,6 +99,27 @@ function statusLabel(status: LeadStatus) {
   return columns.find((c) => c.key === status)?.label || status;
 }
 
+function getBuyingSignalScore(lead: Lead) {
+  const activityText = [lead.notes, lead.property, lead.source, ...lead.interactions.map((item) => item.content)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  let score = lead.sentiment || 35;
+  if (Number(lead.budget.replace(/[^0-9]/g, "")) > 0) score += 10;
+  if (/kjøpssignal|oppdaterte ønsker|min side|favoritt|kalkulator|rapport|dokument/.test(activityText)) score += 25;
+  if (/klar nå|innen 3 mnd|visning|reservasjon|book|budsjett til/.test(activityText)) score += 20;
+  if (["VIEWING", "NEGOTIATION"].includes(lead.status)) score += 15;
+  if (lead.email && lead.phone) score += 5;
+  return Math.min(100, Math.max(0, score));
+}
+
+function signalLabel(score: number) {
+  if (score >= 80) return "Varmt kjøpssignal";
+  if (score >= 60) return "Aktiv vurdering";
+  if (score >= 40) return "Bør følges";
+  return "Tidlig fase";
+}
+
 const emptyLead = {
   name: "", email: "", phone: "", budget: "", source: "", property: "", notes: "",
 };
@@ -1233,6 +1254,28 @@ export default function PipelinePage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-slate-300">
                     <Globe size={14} className="text-slate-500" />{selectedLead.source}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-amber-300">Kjøpssignal-score</p>
+                      <p className="text-[11px] text-slate-400">{signalLabel(getBuyingSignalScore(selectedLead))}</p>
+                    </div>
+                    <div className="text-2xl font-bold text-white">{getBuyingSignalScore(selectedLead)}%</div>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-slate-800">
+                    <div
+                      className="h-2 rounded-full bg-amber-400"
+                      style={{ width: `${getBuyingSignalScore(selectedLead)}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+                    <span>Aktivitet: {selectedLead.interactions.length}</span>
+                    <span>Status: {statusLabel(selectedLead.status)}</span>
+                    <span>Portal: {selectedLead.interactions.some((item) => /min side|portal|kjøpssignal/i.test(item.content)) ? "Aktiv" : "Ikke logget"}</span>
+                    <span>Oppfølging: {getBuyingSignalScore(selectedLead) >= 70 ? "Innen 24t" : "Normal"}</span>
                   </div>
                 </div>
 

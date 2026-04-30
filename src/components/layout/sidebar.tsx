@@ -23,9 +23,8 @@ const iconMap: Record<string, React.ElementType> = {
 const sectionLabels: Record<string, string> = {
   overview: "OVERSIKT",
   realty: "EIENDOM",
-  content: "INNHOLD & MARKETING",
-  business: "FORRETNING",
-  tools: "VERKTØY",
+  content: "MARKEDSFØRING",
+  tools: "INTELLIGENS & VERKTØY",
 };
 
 export function Sidebar() {
@@ -50,7 +49,7 @@ export function Sidebar() {
         {!collapsed && (
           <div className="animate-fade-in">
             <h1 className="text-base font-bold text-white">RealtyFlow Pro</h1>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Super App</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Zen Eco Homes Hub</p>
           </div>
         )}
         <button

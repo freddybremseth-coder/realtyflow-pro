@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, CheckCircle2, FileText, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, CheckCircle2, FileText, Send, ShieldCheck, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,9 @@ export default function DocumentHubPage() {
   const [topic, setTopic] = useState("Kjøpsprosess i Spania");
   const [audience, setAudience] = useState("Norsk boligkjøper som vurderer Spania");
   const [draft, setDraft] = useState("");
+  const [approved, setApproved] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<"idle" | "published" | "error">("idle");
 
   function createDraft() {
     setDraft(`Dokument: ${topic}
@@ -33,6 +36,30 @@ Kvalitetssikret struktur:
 6. Neste steg i RealtyFlow: lagre på kunde, send prospekt/guide, logg oppfølging
 
 AI-agenten bør alltid verifisere fakta mot oppdaterte kilder, markere usikkerhet og skille mellom generell informasjon og rådgivning fra advokat/økonom.`);
+    setApproved(false);
+    setPublishStatus("idle");
+  }
+
+  async function publishToPortal() {
+    if (!draft || !approved) return;
+    setPublishing(true);
+    setPublishStatus("idle");
+    try {
+      const res = await fetch("/api/documents/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: topic,
+          audience,
+          content: draft,
+        }),
+      });
+      if (!res.ok) throw new Error("Publish failed");
+      setPublishStatus("published");
+    } catch {
+      setPublishStatus("error");
+    }
+    setPublishing(false);
   }
 
   return (
@@ -89,12 +116,47 @@ AI-agenten bør alltid verifisere fakta mot oppdaterte kilder, markere usikkerhe
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><FileText size={18} /> Utkast</CardTitle>
+          <CardTitle className="flex items-center gap-2"><FileText size={18} /> Utkast og publisering</CardTitle>
         </CardHeader>
-        <CardContent>
-          <pre className="min-h-[320px] whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-200">
-            {draft || "Velg mal og lag et strukturert utkast."}
-          </pre>
+        <CardContent className="space-y-4">
+          <textarea
+            className="min-h-[360px] w-full resize-y whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-200 outline-none focus:border-primary-500"
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setApproved(false);
+              setPublishStatus("idle");
+            }}
+            placeholder="Velg mal og lag et strukturert utkast."
+          />
+          <div className="flex flex-col gap-3 rounded-lg border border-slate-700/60 bg-slate-900/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex items-start gap-3 text-sm text-slate-300">
+              <input
+                checked={approved}
+                className="mt-1"
+                disabled={!draft}
+                onChange={(event) => setApproved(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                Jeg har kvalitetssikret dokumentet og vil publisere det under Dokumenter på Min side for alle kunder.
+              </span>
+            </label>
+            <Button disabled={!draft || !approved || publishing} onClick={publishToPortal}>
+              {publishing ? <Bot size={16} className="mr-2 animate-spin" /> : <Send size={16} className="mr-2" />}
+              Publiser
+            </Button>
+          </div>
+          {publishStatus === "published" && (
+            <p className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+              Dokumentet er publisert på Min side.
+            </p>
+          )}
+          {publishStatus === "error" && (
+            <p className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+              Kunne ikke publisere dokumentet akkurat nå.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
