@@ -24,6 +24,7 @@ const sectionLabels: Record<string, string> = {
   overview: "OVERSIKT",
   realty: "EIENDOM",
   content: "MARKEDSFØRING",
+  business: "BRANDS",
   tools: "INTELLIGENS & VERKTØY",
 };
 

@@ -6,6 +6,9 @@ import {
   isConfigured as ytConfigured,
 } from "@/services/integrations/youtube-client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 /** Extract JSON from AI response that may contain markdown, preamble text, etc. */
 function extractJSON(text: string): Record<string, unknown> {
   try { return JSON.parse(text.trim()); } catch { /* continue */ }
