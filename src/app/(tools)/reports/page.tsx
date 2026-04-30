@@ -51,6 +51,16 @@ interface Contact {
   pipeline_status?: string;
 }
 
+interface SavedInsight {
+  id?: string;
+  topic: string;
+  summary: string;
+  details: string;
+  date?: string;
+  created_at?: string;
+  sources?: string[];
+}
+
 // ─── Template Config ─────────────────────────────────────────
 const TEMPLATES = [
   { id: "tall-og-trender", name: "Tall og Trender", icon: BarChart3, color: "text-cyan-400", bg: "bg-cyan-500/15", freq: "Annenhver uke" },
@@ -80,11 +90,12 @@ export default function ReportsPage() {
   const [manualInsightTopic, setManualInsightTopic] = useState("Costa Blanca eiendomsmarked");
   const [manualInsightText, setManualInsightText] = useState("");
   const [savingInsight, setSavingInsight] = useState(false);
-  const [savedInsights, setSavedInsights] = useState<{ topic: string; summary: string; details: string; date: string }[]>([]);
+  const [savedInsights, setSavedInsights] = useState<SavedInsight[]>([]);
   const [buyerReportTitle, setBuyerReportTitle] = useState("Markedsrapport for norske boligkjøpere");
   const [buyerReportArea, setBuyerReportArea] = useState("Costa Blanca Sør");
   const [buyerReportSource, setBuyerReportSource] = useState("");
   const [buyerDrafting, setBuyerDrafting] = useState(false);
+  const [insightGenerating, setInsightGenerating] = useState<string | null>(null);
 
   // Fetch reports and latest snapshot
   const fetchData = useCallback(async () => {
@@ -226,6 +237,39 @@ export default function ReportsPage() {
     setBuyerDrafting(false);
   };
 
+  const createFromInsight = async (insight: SavedInsight, outputType: "report" | "presentation" | "both") => {
+    if (!insight.id) {
+      setBuyerReportSource(insight.details || insight.summary || "");
+      setActiveTab("oversikt");
+      return;
+    }
+    setInsightGenerating(`${insight.id}:${outputType}`);
+    try {
+      const res = await fetch("/api/reports/from-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          insightIds: [insight.id],
+          title: outputType === "presentation" ? `Presentasjon: ${insight.topic}` : `Kjøperrapport: ${insight.topic}`,
+          area: buyerReportArea,
+          outputType,
+        }),
+      });
+      if (!res.ok) throw new Error("Insight generation failed");
+      const data = await res.json();
+      if (data.report) {
+        setReports(prev => [data.report, ...prev]);
+        setSelectedReport(data.report);
+        setReportApproved(false);
+        setPortalStatus("idle");
+        setActiveTab("rapporter");
+      }
+    } catch (err) {
+      console.error("Failed to create report from insight:", err);
+    }
+    setInsightGenerating(null);
+  };
+
   // Save manual market intelligence
   const saveManualInsight = async () => {
     if (!manualInsightText.trim()) return;
@@ -246,7 +290,8 @@ export default function ReportsPage() {
       });
 
       if (res.ok) {
-        setSavedInsights(prev => [insight, ...prev]);
+        const data = await res.json();
+        setSavedInsights(prev => [data.insight || insight, ...prev]);
         setManualInsightText("");
       }
     } catch (err) {
@@ -270,6 +315,14 @@ export default function ReportsPage() {
   const formatTime = (d: string) => {
     const date = new Date(d);
     return date.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+  };
+  const getInsightDate = (insight: SavedInsight) => insight.created_at || insight.date || "";
+  const formatInsightDate = (insight: SavedInsight) => {
+    const value = getInsightDate(insight);
+    if (!value) return "Uten dato";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Uten dato";
+    return date.toLocaleDateString("nb-NO");
   };
 
   // Get template info
@@ -508,10 +561,17 @@ export default function ReportsPage() {
                 {savedInsights.length > 0 && (
                   <div className="space-y-2 pt-2 border-t border-slate-700/50">
                     {savedInsights.slice(0, 5).map((insight, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs">
+                      <div key={insight.id || i} className="flex items-center gap-2 text-xs">
                         <Badge className="bg-purple-500/20 text-purple-300 text-[9px] shrink-0">{insight.topic}</Badge>
                         <span className="text-slate-400 truncate">{insight.summary?.substring(0, 80)}...</span>
-                        <span className="text-slate-600 shrink-0">{new Date(insight.date).toLocaleDateString("nb-NO")}</span>
+                        <span className="text-slate-600 shrink-0">{formatInsightDate(insight)}</span>
+                        <button
+                          onClick={() => createFromInsight(insight, "both")}
+                          disabled={Boolean(insightGenerating)}
+                          className="ml-auto shrink-0 rounded bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                        >
+                          {insightGenerating === `${insight.id}:both` ? "Lager..." : "Lag kundemateriale"}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1012,12 +1072,43 @@ export default function ReportsPage() {
                 <div className="space-y-3">
                   <h4 className="text-xs font-semibold text-slate-500 uppercase">Lagrede analyser ({savedInsights.length})</h4>
                   {savedInsights.map((insight, i) => (
-                    <div key={i} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/30">
+                    <div key={insight.id || i} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/30">
                       <div className="flex items-center justify-between mb-1">
                         <Badge className="bg-purple-500/20 text-purple-300 text-[10px]">{insight.topic}</Badge>
-                        <span className="text-[10px] text-slate-500">{new Date(insight.date).toLocaleDateString("nb-NO")}</span>
+                        <span className="text-[10px] text-slate-500">{formatInsightDate(insight)}</span>
                       </div>
                       <p className="text-xs text-slate-300 line-clamp-3 whitespace-pre-line">{insight.summary}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => createFromInsight(insight, "report")}
+                          disabled={Boolean(insightGenerating)}
+                          className="h-8 text-xs"
+                        >
+                          {insightGenerating === `${insight.id}:report` ? <Loader2 size={12} className="mr-1 animate-spin" /> : <FileText size={12} className="mr-1" />}
+                          Lag rapport
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => createFromInsight(insight, "presentation")}
+                          disabled={Boolean(insightGenerating)}
+                          className="h-8 text-xs"
+                        >
+                          {insightGenerating === `${insight.id}:presentation` ? <Loader2 size={12} className="mr-1 animate-spin" /> : <BarChart3 size={12} className="mr-1" />}
+                          Lag presentasjon
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => createFromInsight(insight, "both")}
+                          disabled={Boolean(insightGenerating)}
+                          className="h-8 bg-emerald-600 text-xs hover:bg-emerald-500"
+                        >
+                          {insightGenerating === `${insight.id}:both` ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Zap size={12} className="mr-1" />}
+                          Kundemateriale
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
