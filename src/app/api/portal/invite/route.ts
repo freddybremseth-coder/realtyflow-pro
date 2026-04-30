@@ -68,14 +68,19 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
-  if (portalError) {
+  const portalWarning =
+    portalError && /portal_users|schema cache|does not exist|not find the table/i.test(portalError.message)
+      ? "portal_users table is not available; invite was sent and contact activity was logged instead."
+      : null;
+
+  if (portalError && !portalWarning) {
     return NextResponse.json({ error: portalError.message }, { status: 500 });
   }
 
   const interaction = {
     id: `portal_${Date.now()}`,
     type: "note",
-    content: `Portaltilgang sendt til ${contact.email}`,
+    content: `Portaltilgang sendt til ${contact.email}${portalWarning ? " (portal_users mangler i Supabase)" : ""}`,
     date: now.split("T")[0],
   };
 
@@ -94,5 +99,5 @@ export async function POST(request: NextRequest) {
     })
     .eq("id", contact.id);
 
-  return NextResponse.json({ success: true, portalUser });
+  return NextResponse.json({ success: true, portalUser: portalUser || null, warning: portalWarning });
 }
