@@ -21,6 +21,11 @@ export async function GET(req: NextRequest) {
     "pages_manage_posts",
     "pages_read_user_content",
     "business_management",
+    // Instagram publishing — required for posting to IG Business accounts
+    // linked to a Facebook Page. Both scopes are auto-approved for apps
+    // in Live mode without app review when used with a Business account.
+    "instagram_basic",
+    "instagram_content_publish",
   ].join(",");
 
   const state = JSON.stringify({ brand });
