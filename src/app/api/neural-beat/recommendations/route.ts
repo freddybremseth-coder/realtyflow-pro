@@ -401,7 +401,11 @@ export async function POST(req: NextRequest) {
           throw new Error("Ingen endringer å gjøre");
         }
 
-        await updateVideoMetadata(action.videoId, updates as { title?: string; description?: string; tags?: string[] });
+        await updateVideoMetadata(
+          action.videoId,
+          updates as { title?: string; description?: string; tags?: string[] },
+          "neuralbeat",
+        );
 
         // Log the action
         if (supabase) {
