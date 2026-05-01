@@ -365,9 +365,10 @@ export async function listVideos(maxResults = 20, brandId?: string): Promise<Arr
  */
 export async function updateVideoMetadata(
   videoId: string,
-  metadata: Partial<YouTubeVideoMetadata>
+  metadata: Partial<YouTubeVideoMetadata>,
+  brandId?: string
 ): Promise<void> {
-  const youtube = await getClient();
+  return runWithTokenFallback(brandId, async (youtube) => {
 
   const wantsSnippet = !!(metadata.title || metadata.description || metadata.tags || metadata.categoryId);
   const wantsStatus = !!metadata.privacyStatus;
@@ -418,6 +419,7 @@ export async function updateVideoMetadata(
   await youtube.videos.update({
     part: parts,
     requestBody: updateData,
+  });
   });
 }
 
