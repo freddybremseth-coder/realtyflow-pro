@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ImageUpload } from "@/components/ui/image-upload";
 import {
   Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2,
   Clock, Star, RefreshCw, AlertCircle, Send, CheckCircle,
+  Upload, Sparkles, Link as LinkIcon,
 } from "lucide-react";
 
 interface GeneratedImage {
@@ -52,6 +55,8 @@ export default function ImageStudioPage() {
   const [history, setHistory] = useState<GeneratedImage[]>([]);
   const [sendingToHub, setSendingToHub] = useState<string | null>(null);
   const [sentToHub, setSentToHub] = useState<Set<string>>(new Set());
+  const [uploadedUrl, setUploadedUrl] = useState("");
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const sendToContentHub = async (img: GeneratedImage) => {
     setSendingToHub(img.id);
@@ -192,6 +197,58 @@ export default function ImageStudioPage() {
       </div>
 
       {/* Generator */}
+      {/* ─── Upload reference / product image ───────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload size={18} className="text-emerald-400" />
+            Last opp produktbilde
+          </CardTitle>
+          <p className="text-xs text-slate-400 mt-1">
+            Last opp et produktbilde til biblioteket. Bruk URL-en i Ad Campaign-wizard, Content Studio eller andre verktøy.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ImageUpload
+            value={uploadedUrl}
+            onChange={setUploadedUrl}
+            label="Velg eller dra et bilde hit"
+            allowUrlEntry={false}
+          />
+          {uploadedUrl && (
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={uploadedUrl}
+                  className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-md text-xs font-mono text-slate-300"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(uploadedUrl);
+                    setCopiedUrl(true);
+                    setTimeout(() => setCopiedUrl(false), 2000);
+                  }}
+                  className="gap-1.5"
+                >
+                  {copiedUrl ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedUrl ? "Kopiert" : "Kopier URL"}
+                </Button>
+              </div>
+              <Link href="/ad-campaigns/new">
+                <Button size="sm" className="gap-1.5">
+                  <Sparkles className="w-3 h-3" />
+                  Bruk i ny Ad Campaign
+                </Button>
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
