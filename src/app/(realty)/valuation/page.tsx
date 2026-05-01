@@ -1,425 +1,468 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { FormEvent, useMemo, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Brain, TrendingUp, TrendingDown, Minus, MapPin,
-  Home, Bed, Bath, Maximize, Sparkles, BarChart3,
-  ArrowRight, CheckCircle2, Loader2,
+  BarChart3,
+  Bath,
+  Bed,
+  Brain,
+  CheckCircle2,
+  Copy,
+  Database,
+  FileText,
+  Loader2,
+  Mail,
+  MapPin,
+  Maximize,
+  Minus,
+  Send,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 
-interface ValuationResult {
+type Comparable = {
+  address?: string;
+  location?: string;
+  price?: number;
+  area?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  source?: string;
+  date?: string;
+};
+
+type ValuationResult = {
   low: number;
   agent: number;
   high: number;
+  pricePerM2: number;
   confidence: number;
+  sourceScore: number;
+  aiSummary?: string;
+  pricingStrategy: string;
+  sellerReport: string;
+  marketSignals: string[];
+  methodology: string[];
+  dataSources: string[];
   factors: { label: string; impact: "positive" | "neutral" | "negative"; detail: string }[];
-  comparable: { address: string; price: number; area: number; date: string }[];
-}
+  comparable: Array<Comparable & { pricePerM2: number; adjustedPricePerM2: number; weight: number }>;
+};
 
 const propertyTypes = ["Leilighet", "Villa", "Rekkehus", "Penthouse", "Bungalow", "Tomt"];
 const conditions = ["Nybygget", "Meget god", "God", "Middels", "Oppussingsobjekt"];
 const amenities = [
-  "Basseng", "Havutsikt", "Garasje", "Hage", "Terrasse",
-  "Aircondition", "Sentralvarme", "Lagerrom", "Fellesomrade",
+  "Basseng",
+  "Havutsikt",
+  "Garasje",
+  "Hage",
+  "Terrasse",
+  "Aircondition",
+  "Heis",
+  "Nær sjø",
+  "Nær golf",
+  "Utleiepotensial",
 ];
 
-const mockResult: ValuationResult = {
-  low: 365000,
-  agent: 425000,
-  high: 490000,
-  confidence: 87,
-  factors: [
-    { label: "Beliggenhet", impact: "positive", detail: "Altea er et ettertraktet omrade med stigende priser (+8% siste ar)" },
-    { label: "Havutsikt", impact: "positive", detail: "Eiendommer med havutsikt har 15-25% premium" },
-    { label: "Areal vs pris", impact: "neutral", detail: "Prisen per kvm er i trad med markedsgjennomsnittet" },
-    { label: "Tilstand", impact: "positive", detail: "Meget god tilstand reduserer forventet renoveringskostnad" },
-    { label: "Soverom", impact: "neutral", detail: "3 soverom er standard for denne eiendomstypen" },
-  ],
-  comparable: [
-    { address: "Calle del Mar 14, Altea", price: 410000, area: 145, date: "2024-02" },
-    { address: "Av. del Albir 22, Altea", price: 445000, area: 160, date: "2024-01" },
-    { address: "Partida Cap Negret 8, Altea", price: 395000, area: 135, date: "2023-12" },
-  ],
-};
+const exampleMarketData = `Idealista/CASAFARI/Tinsa/Notariado-data kan limes inn her.
+Eksempel:
+Altea: 3.350 €/m2, +8,4% siste 12 mnd, lavt tilbud av moderne villaer.
+Sammenlignbare boliger med havutsikt ligger ofte 10-20% over snittet.
+Gjennomsnittlig tid i markedet for riktig prisede villaer: 60-90 dager.`;
+
+function parseComparables(value: string): Comparable[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(";").map((part) => part.trim());
+      return {
+        address: parts[0] || "",
+        price: Number(parts[1]?.replace(/[^\d]/g, "")) || undefined,
+        area: Number(parts[2]?.replace(/[^\d]/g, "")) || undefined,
+        bedrooms: Number(parts[3]?.replace(/[^\d]/g, "")) || undefined,
+        bathrooms: Number(parts[4]?.replace(/[^\d]/g, "")) || undefined,
+        source: parts[5] || "",
+        date: parts[6] || "",
+      };
+    })
+    .filter((item) => item.price && item.area);
+}
+
+function formatEuro(value: number) {
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function impactIcon(impact: string) {
+  if (impact === "positive") return <TrendingUp size={14} className="text-emerald-400" />;
+  if (impact === "negative") return <TrendingDown size={14} className="text-red-400" />;
+  return <Minus size={14} className="text-amber-400" />;
+}
 
 export default function ValuationPage() {
   const [formData, setFormData] = useState({
+    ref: "",
+    title: "",
     type: "Villa",
     location: "",
     bedrooms: "",
     bathrooms: "",
     area: "",
+    plotSize: "",
     yearBuilt: "",
     condition: "God",
+    askingPrice: "",
+    sellerName: "",
+    sellerEmail: "",
+    sellerPhone: "",
+    sellerNotes: "",
+    marketData: "",
+    comparablesText: "",
     selectedAmenities: [] as string[],
   });
   const [result, setResult] = useState<ValuationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sendToSeller, setSendToSeller] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const handleAmenityToggle = (amenity: string) => {
+  const comparables = useMemo(() => parseComparables(formData.comparablesText), [formData.comparablesText]);
+
+  function updateField(field: keyof typeof formData, value: string) {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleAmenityToggle(amenity: string) {
     setFormData((prev) => ({
       ...prev,
       selectedAmenities: prev.selectedAmenities.includes(amenity)
-        ? prev.selectedAmenities.filter((a) => a !== amenity)
+        ? prev.selectedAmenities.filter((item) => item !== amenity)
         : [...prev.selectedAmenities, amenity],
     }));
-  };
+  }
 
-  const resetForm = () => {
-    setFormData({
-      type: "Villa", location: "", bedrooms: "", bathrooms: "",
-      area: "", yearBuilt: "", condition: "God", selectedAmenities: [],
-    });
-    setResult(null);
-  };
-
-  const handleGenerate = () => {
-    setResult(null);
+  async function handleGenerate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setIsLoading(true);
-    // Generate dynamic mock based on form input
-    const area = parseInt(formData.area) || 150;
-    const basePricePerM2 = formData.type === "Villa" ? 2800 : formData.type === "Penthouse" ? 3200 : 2200;
-    const locationBonus = formData.location.toLowerCase().includes("altea") ? 1.15 : formData.location.toLowerCase().includes("javea") ? 1.2 : 1.0;
-    const amenityBonus = 1 + (formData.selectedAmenities.length * 0.03);
-    const basePrice = Math.round(area * basePricePerM2 * locationBonus * amenityBonus);
-    setTimeout(() => {
-      setResult({
-        low: Math.round(basePrice * 0.85),
-        agent: basePrice,
-        high: Math.round(basePrice * 1.15),
-        confidence: 78 + Math.min(formData.selectedAmenities.length * 2, 15),
-        factors: [
-          { label: "Beliggenhet", impact: locationBonus > 1 ? "positive" : "neutral", detail: formData.location ? `${formData.location} - ${locationBonus > 1 ? "ettertraktet område" : "standard marked"}` : "Ingen beliggenhet oppgitt" },
-          { label: "Areal", impact: area > 120 ? "positive" : "neutral", detail: `${area} m² - ${area > 120 ? "over gjennomsnittet" : "standard størrelse"}` },
-          { label: "Fasiliteter", impact: formData.selectedAmenities.length > 3 ? "positive" : "neutral", detail: `${formData.selectedAmenities.length} fasiliteter valgt` },
-          { label: "Tilstand", impact: formData.condition === "Nybygget" ? "positive" : formData.condition === "Oppussingsobjekt" ? "negative" : "neutral", detail: formData.condition },
-          ...(formData.yearBuilt ? [{ label: "Byggeår", impact: (parseInt(formData.yearBuilt) > 2015 ? "positive" : parseInt(formData.yearBuilt) < 1990 ? "negative" : "neutral") as "positive" | "neutral" | "negative", detail: `Bygget i ${formData.yearBuilt}` }] : []),
-        ],
-        comparable: [
-          { address: `Calle del Mar 14, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 0.96), area: area - 10, date: "2024-02" },
-          { address: `Av. del Albir 22, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 1.05), area: area + 15, date: "2024-01" },
-          { address: `Partida Cap Negret 8, ${formData.location || "Costa Blanca"}`, price: Math.round(basePrice * 0.92), area: area - 15, date: "2023-12" },
-        ],
-      });
-      setIsLoading(false);
-    }, 2000);
-  };
+    setStatus("");
+    setResult(null);
 
-  const impactIcon = (impact: string) => {
-    switch (impact) {
-      case "positive":
-        return <TrendingUp size={14} className="text-emerald-400" />;
-      case "negative":
-        return <TrendingDown size={14} className="text-red-400" />;
-      default:
-        return <Minus size={14} className="text-amber-400" />;
+    const response = await fetch("/api/valuations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...formData,
+        amenities: formData.selectedAmenities,
+        comparables,
+        marketData: formData.marketData,
+        sendToSeller,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    setIsLoading(false);
+
+    if (!response.ok) {
+      setStatus(data.error || "Kunne ikke lage vurdering.");
+      return;
     }
-  };
+
+    setResult(data.analysis);
+    if (sendToSeller) {
+      setStatus(data.emailResult?.success ? "Vurderingen er sendt til selger." : data.emailResult?.error || "Vurdering lagret, men e-post ble ikke sendt.");
+    } else {
+      setStatus("Vurdering lagret i RealtyFlow.");
+    }
+  }
+
+  async function copyReport() {
+    if (!result) return;
+    await navigator.clipboard.writeText(result.sellerReport);
+    setStatus("Rapporttekst kopiert.");
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Brain className="text-purple-400" size={28} />
-          AI Eiendomsvurdering
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Fa en intelligent verdivurdering basert pa markedsdata og AI-analyse
-        </p>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Brain className="text-purple-400" size={28} />
+            AI Eiendomsvurdering
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Lag en datadrevet prisvurdering med selgerinformasjon, markedsdata, sammenlignbare objekter og profesjonell rapport.
+          </p>
+        </div>
+        <Badge className="w-fit border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+          <Database size={12} className="mr-1" />
+          Klar for Idealista, CASAFARI og egne scanner-data
+        </Badge>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Form */}
-        <div className="lg:col-span-2 space-y-4">
+      <form onSubmit={handleGenerate} className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="xl:col-span-2 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Eiendomsdetaljer</CardTitle>
-              <CardDescription>Fyll inn informasjon om eiendommen</CardDescription>
+              <CardTitle className="text-base">Eiendom og selger</CardTitle>
+              <CardDescription>Jo mer presis input, desto bedre confidence-score.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Type */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Type eiendom</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value }))}
-                  className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-primary-500 focus:outline-none"
-                >
-                  {propertyTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+              <div className="grid grid-cols-2 gap-3">
+                <Input placeholder="Referanse" value={formData.ref} onChange={(event) => updateField("ref", event.target.value)} />
+                <Input placeholder="Tittel/navn" value={formData.title} onChange={(event) => updateField("title", event.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <select value={formData.type} onChange={(event) => updateField("type", event.target.value)} className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                  {propertyTypes.map((type) => <option key={type}>{type}</option>)}
+                </select>
+                <select value={formData.condition} onChange={(event) => updateField("condition", event.target.value)} className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                  {conditions.map((condition) => <option key={condition}>{condition}</option>)}
                 </select>
               </div>
 
-              {/* Location */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Beliggenhet</label>
-                <div className="relative">
-                  <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <Input
-                    placeholder="F.eks. Altea, Costa Blanca"
-                    value={formData.location}
-                    onChange={(e) => setFormData((p) => ({ ...p, location: e.target.value }))}
-                    className="pl-9"
-                  />
-                </div>
+              <div className="relative">
+                <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Input className="pl-9" placeholder="Område, f.eks. Altea, Finestrat, Calpe" value={formData.location} onChange={(event) => updateField("location", event.target.value)} />
               </div>
 
-              {/* Bedrooms & Bathrooms */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Soverom</label>
-                  <div className="relative">
-                    <Bed size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <Input
-                      type="number"
-                      placeholder="3"
-                      value={formData.bedrooms}
-                      onChange={(e) => setFormData((p) => ({ ...p, bedrooms: e.target.value }))}
-                      className="pl-9"
-                    />
-                  </div>
+                <div className="relative">
+                  <Bed size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Input className="pl-9" placeholder="Soverom" type="number" value={formData.bedrooms} onChange={(event) => updateField("bedrooms", event.target.value)} />
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">Bad</label>
-                  <div className="relative">
-                    <Bath size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <Input
-                      type="number"
-                      placeholder="2"
-                      value={formData.bathrooms}
-                      onChange={(e) => setFormData((p) => ({ ...p, bathrooms: e.target.value }))}
-                      className="pl-9"
-                    />
-                  </div>
+                <div className="relative">
+                  <Bath size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Input className="pl-9" placeholder="Bad" type="number" value={formData.bathrooms} onChange={(event) => updateField("bathrooms", event.target.value)} />
                 </div>
               </div>
 
-              {/* Area */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Areal (m{"\u00B2"})</label>
+              <div className="grid grid-cols-3 gap-3">
                 <div className="relative">
                   <Maximize size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <Input
-                    type="number"
-                    placeholder="150"
-                    value={formData.area}
-                    onChange={(e) => setFormData((p) => ({ ...p, area: e.target.value }))}
-                    className="pl-9"
-                  />
+                  <Input className="pl-9" placeholder="Bolig m2" type="number" value={formData.area} onChange={(event) => updateField("area", event.target.value)} required />
                 </div>
+                <Input placeholder="Tomt m2" type="number" value={formData.plotSize} onChange={(event) => updateField("plotSize", event.target.value)} />
+                <Input placeholder="Byggeår" type="number" value={formData.yearBuilt} onChange={(event) => updateField("yearBuilt", event.target.value)} />
               </div>
 
-              {/* Year Built */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Byggeår</label>
-                <Input
-                  type="number"
-                  placeholder="F.eks. 2005"
-                  value={formData.yearBuilt}
-                  onChange={(e) => setFormData((p) => ({ ...p, yearBuilt: e.target.value }))}
-                />
-              </div>
+              <Input placeholder="Selgers ønskede pris, hvis kjent" type="number" value={formData.askingPrice} onChange={(event) => updateField("askingPrice", event.target.value)} />
 
-              {/* Condition */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Tilstand</label>
-                <select
-                  value={formData.condition}
-                  onChange={(e) => setFormData((p) => ({ ...p, condition: e.target.value }))}
-                  className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-primary-500 focus:outline-none"
-                >
-                  {conditions.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap gap-2">
+                {amenities.map((amenity) => (
+                  <button
+                    key={amenity}
+                    type="button"
+                    onClick={() => handleAmenityToggle(amenity)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      formData.selectedAmenities.includes(amenity)
+                        ? "border-primary-500/30 bg-primary-500/20 text-primary-300"
+                        : "border-slate-600 bg-slate-700/50 text-slate-400 hover:border-slate-500"
+                    }`}
+                  >
+                    {amenity}
+                  </button>
+                ))}
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Amenities */}
-              <div>
-                <label className="text-xs font-medium text-slate-300 mb-1.5 block">Fasiliteter</label>
-                <div className="flex flex-wrap gap-2">
-                  {amenities.map((a) => (
-                    <button
-                      key={a}
-                      onClick={() => handleAmenityToggle(a)}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                        formData.selectedAmenities.includes(a)
-                          ? "bg-primary-500/20 text-primary-300 border border-primary-500/30"
-                          : "bg-slate-700/50 text-slate-400 border border-slate-600 hover:border-slate-500"
-                      }`}
-                    >
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {result && (
-                <Button onClick={resetForm} variant="outline" className="w-full mb-2">
-                  Ny vurdering (tøm skjema)
-                </Button>
-              )}
-              <Button onClick={handleGenerate} disabled={isLoading} className="w-full">
-                {isLoading ? (
-                  <>
-                    <Loader2 size={16} className="mr-2 animate-spin" />
-                    Analyserer...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={16} className="mr-2" />
-                    Generer AI Vurdering
-                  </>
-                )}
-              </Button>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Selger og utsending</CardTitle>
+              <CardDescription>Brukes i rapporttekst og valgfri e-post.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input placeholder="Selgers navn" value={formData.sellerName} onChange={(event) => updateField("sellerName", event.target.value)} />
+              <Input placeholder="Selgers e-post" type="email" value={formData.sellerEmail} onChange={(event) => updateField("sellerEmail", event.target.value)} />
+              <Input placeholder="Telefon" value={formData.sellerPhone} onChange={(event) => updateField("sellerPhone", event.target.value)} />
+              <textarea
+                className="min-h-24 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                placeholder="Notater om motivasjon, tidslinje, eiersituasjon, ønsket salgspris..."
+                value={formData.sellerNotes}
+                onChange={(event) => updateField("sellerNotes", event.target.value)}
+              />
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" checked={sendToSeller} onChange={(event) => setSendToSeller(event.target.checked)} />
+                Send prisvurdering direkte til selger
+              </label>
             </CardContent>
           </Card>
         </div>
 
-        {/* Results */}
-        <div className="lg:col-span-3 space-y-4">
-          {!result && !isLoading && (
-            <Card className="h-full flex items-center justify-center min-h-[400px]">
-              <div className="text-center p-8">
-                <Brain size={64} className="mx-auto text-slate-600 mb-4" />
-                <h3 className="text-lg font-semibold text-slate-300 mb-2">
-                  Klar for AI-analyse
-                </h3>
-                <p className="text-sm text-slate-500 max-w-sm">
-                  Fyll inn eiendomsdetaljene til venstre og klikk &quot;Generer AI Vurdering&quot; for a fa en intelligent verdivurdering
-                </p>
+        <div className="xl:col-span-3 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Markedsdata og sammenlignbare objekter</CardTitle>
+              <CardDescription>
+                Lim inn tall fra Idealista, CASAFARI, Tinsa, Notariado, egne scanner-funn eller meglerrapporter.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <textarea
+                className="min-h-36 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                placeholder={exampleMarketData}
+                value={formData.marketData}
+                onChange={(event) => updateField("marketData", event.target.value)}
+              />
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Sammenlignbare objekter</label>
+                  <span className="text-xs text-slate-500">{comparables.length} gyldige</span>
+                </div>
+                <textarea
+                  className="min-h-28 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                  placeholder={"Ett objekt per linje:\nAdresse/område; pris; m2; soverom; bad; kilde; dato\nAltea Hills villa; 895000; 245; 4; 3; Idealista; 2026-04"}
+                  value={formData.comparablesText}
+                  onChange={(event) => updateField("comparablesText", event.target.value)}
+                />
               </div>
+              <div className="flex flex-wrap gap-3">
+                <Button disabled={isLoading} type="submit">
+                  {isLoading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Sparkles size={16} className="mr-2" />}
+                  {sendToSeller ? "Generer og send" : "Generer vurdering"}
+                </Button>
+                {result && (
+                  <Button type="button" variant="outline" onClick={copyReport}>
+                    <Copy size={16} className="mr-2" />
+                    Kopier rapport
+                  </Button>
+                )}
+              </div>
+              {status && <p className="text-sm text-slate-300">{status}</p>}
+            </CardContent>
+          </Card>
+
+          {!result && !isLoading && (
+            <Card className="min-h-80">
+              <CardContent className="flex min-h-80 items-center justify-center">
+                <div className="max-w-md text-center">
+                  <FileText size={56} className="mx-auto mb-4 text-slate-600" />
+                  <h3 className="mb-2 text-lg font-semibold text-slate-300">Klar for profesjonell prisvurdering</h3>
+                  <p className="text-sm text-slate-500">
+                    Best resultat får du med område, areal, standard, 3-6 sammenlignbare objekter og ferske markedsnotater fra Idealista/CASAFARI eller egne scanner-funn.
+                  </p>
+                </div>
+              </CardContent>
             </Card>
           )}
 
           {isLoading && (
-            <Card className="h-full flex items-center justify-center min-h-[400px]">
-              <div className="text-center p-8">
-                <div className="relative mx-auto w-20 h-20 mb-4">
-                  <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
-                  <div className="absolute inset-0 rounded-full border-2 border-t-purple-400 animate-spin" />
-                  <Brain size={32} className="absolute inset-0 m-auto text-purple-400" />
+            <Card className="min-h-80">
+              <CardContent className="flex min-h-80 items-center justify-center">
+                <div className="text-center">
+                  <Loader2 size={44} className="mx-auto mb-4 animate-spin text-purple-400" />
+                  <h3 className="text-lg font-semibold text-slate-300">Bygger vurderingsgrunnlag...</h3>
+                  <p className="text-sm text-slate-500">Vekter markedsdata, sammenlignbare objekter, kvaliteter og selgerrapport.</p>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-300 mb-1">
-                  AI analyserer eiendommen...
-                </h3>
-                <p className="text-sm text-slate-500">
-                  Sammenligner med markedsdata og lignende eiendommer
-                </p>
-              </div>
+              </CardContent>
             </Card>
           )}
 
           {result && !isLoading && (
-            <>
-              {/* Price Range */}
+            <div className="space-y-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Estimert Verdi</CardTitle>
-                    <Badge variant="success">
-                      <CheckCircle2 size={12} className="mr-1" />
-                      {result.confidence}% sikkerhet
-                    </Badge>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <CardTitle className="text-base">Estimert verdi</CardTitle>
+                    <div className="flex gap-2">
+                      <Badge variant="success"><CheckCircle2 size={12} className="mr-1" />{result.confidence}% sikkerhet</Badge>
+                      <Badge className="border border-blue-500/30 bg-blue-500/10 text-blue-300">{result.sourceScore}% kildescore</Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="text-center p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
-                      <p className="text-xs text-slate-500 mb-1">Lav</p>
-                      <p className="text-xl font-bold text-slate-300">
-                        {"\u20AC"}{(result.low / 1000).toFixed(0)}K
-                      </p>
+                  <div className="mb-4 grid grid-cols-3 gap-4">
+                    <div className="rounded-lg border border-slate-700/30 bg-slate-900/50 p-4 text-center">
+                      <p className="mb-1 text-xs text-slate-500">Lav</p>
+                      <p className="text-xl font-bold text-slate-300">{formatEuro(result.low)}</p>
                     </div>
-                    <div className="text-center p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                      <p className="text-xs text-emerald-400 mb-1">Meglerverdi</p>
-                      <p className="text-2xl font-bold text-emerald-400">
-                        {"\u20AC"}{(result.agent / 1000).toFixed(0)}K
-                      </p>
+                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-center">
+                      <p className="mb-1 text-xs text-emerald-400">Anbefalt meglerverdi</p>
+                      <p className="text-2xl font-bold text-emerald-400">{formatEuro(result.agent)}</p>
                     </div>
-                    <div className="text-center p-4 rounded-lg bg-slate-900/50 border border-slate-700/30">
-                      <p className="text-xs text-slate-500 mb-1">Hoy</p>
-                      <p className="text-xl font-bold text-slate-300">
-                        {"\u20AC"}{(result.high / 1000).toFixed(0)}K
-                      </p>
+                    <div className="rounded-lg border border-slate-700/30 bg-slate-900/50 p-4 text-center">
+                      <p className="mb-1 text-xs text-slate-500">Høy</p>
+                      <p className="text-xl font-bold text-slate-300">{formatEuro(result.high)}</p>
                     </div>
                   </div>
-
-                  {/* Range bar */}
-                  <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="absolute h-full bg-gradient-to-r from-amber-500 via-emerald-500 to-blue-500 rounded-full"
-                      style={{ left: "10%", right: "10%" }}
-                    />
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-emerald-400"
-                      style={{ left: "50%" }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                    <span>{"\u20AC"}{result.low.toLocaleString("nb-NO")}</span>
-                    <span>{"\u20AC"}{result.high.toLocaleString("nb-NO")}</span>
-                  </div>
+                  <p className="text-sm text-slate-300">{result.aiSummary || result.pricingStrategy}</p>
+                  <p className="mt-3 text-xs text-slate-500">Beregnet pris per m2: {result.pricePerM2.toLocaleString("nb-NO")} €/m2</p>
                 </CardContent>
               </Card>
 
-              {/* Factors */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 size={16} className="text-purple-400" />
-                    Pavirknigsfaktorer
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {result.factors.map((f, i) => (
-                      <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-slate-900/30">
-                        {impactIcon(f.impact)}
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-200">{f.label}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{f.detail}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Comparable */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Home size={16} className="text-blue-400" />
-                    Sammenlignbare salg
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {result.comparable.map((c, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/30">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base"><BarChart3 size={16} className="text-purple-400" />Påvirkningsfaktorer</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {result.factors.map((factor, index) => (
+                      <div key={index} className="flex items-start gap-3 rounded-lg bg-slate-900/30 p-3">
+                        {impactIcon(factor.impact)}
                         <div>
-                          <p className="text-sm text-slate-200">{c.address}</p>
-                          <p className="text-xs text-slate-500">{c.area} m{"\u00B2"} &middot; Solgt {c.date}</p>
+                          <p className="text-sm font-medium text-slate-200">{factor.label}</p>
+                          <p className="mt-0.5 text-xs text-slate-400">{factor.detail}</p>
                         </div>
-                        <p className="text-sm font-semibold text-emerald-400">
-                          {"\u20AC"}{c.price.toLocaleString("nb-NO")}
-                        </p>
                       </div>
                     ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base"><Database size={16} className="text-blue-400" />Datagrunnlag</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {result.dataSources.map((source) => <Badge key={source} className="mr-2 border border-slate-600 bg-slate-800 text-slate-300">{source}</Badge>)}
+                    <div className="space-y-2 pt-2">
+                      {result.methodology.map((item, index) => <p key={index} className="text-xs text-slate-400">- {item}</p>)}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Sammenlignbare objekter</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {result.comparable.length ? result.comparable.map((item, index) => (
+                    <div key={index} className="grid gap-2 rounded-lg bg-slate-900/30 p-3 md:grid-cols-[1fr_auto]">
+                      <div>
+                        <p className="text-sm text-slate-200">{item.address || item.location || "Sammenlignbart objekt"}</p>
+                        <p className="text-xs text-slate-500">{item.area} m2 · {item.bedrooms || "-"} sov · {item.source || "Kilde ikke oppgitt"} · vekt {item.weight.toFixed(2)}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-emerald-400">{formatEuro(item.price || 0)} / {item.adjustedPricePerM2.toLocaleString("nb-NO")} €/m2</p>
+                    </div>
+                  )) : <p className="text-sm text-slate-500">Ingen sammenlignbare objekter lagt inn. Legg inn 3-6 for høyere sikkerhet.</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base"><Mail size={16} className="text-emerald-400" />Selgerrapport</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <pre className="whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-950/60 p-4 text-sm leading-relaxed text-slate-200">{result.sellerReport}</pre>
+                  <div className="mt-3 flex gap-3">
+                    <Button type="button" variant="outline" onClick={copyReport}><Copy size={16} className="mr-2" />Kopier</Button>
+                    <Button type="button" variant="outline" onClick={() => setSendToSeller(true)}><Send size={16} className="mr-2" />Klar for utsending</Button>
                   </div>
                 </CardContent>
               </Card>
-            </>
+            </div>
           )}
         </div>
-      </div>
+      </form>
     </div>
   );
 }
