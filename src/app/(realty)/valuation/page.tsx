@@ -176,7 +176,9 @@ export default function ValuationPage() {
     }
 
     setResult(data.analysis);
-    if (sendToSeller) {
+    if (data.saveWarning) {
+      setStatus(`Vurdering laget, men ikke lagret i database: ${data.saveWarning}`);
+    } else if (sendToSeller) {
       setStatus(data.emailResult?.success ? "Vurderingen er sendt til selger." : data.emailResult?.error || "Vurdering lagret, men e-post ble ikke sendt.");
     } else {
       setStatus("Vurdering lagret i RealtyFlow.");

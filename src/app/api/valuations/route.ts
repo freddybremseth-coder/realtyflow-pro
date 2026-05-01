@@ -46,34 +46,43 @@ Krav:
       generatedAt: new Date().toISOString(),
     };
 
-    const supabase = createServerClient();
-    let { data, error } = await supabase
-      .from("saved_valuations")
-      .insert({
-        property_ref: input.ref || input.title || input.location,
-        estimated_price_low: calculated.low,
-        estimated_price_agent: calculated.agent,
-        estimated_price_high: calculated.high,
-        comparable_properties: calculated.comparable,
-        market_analysis: JSON.stringify(analysis),
-      })
-      .select()
-      .single();
+    let data = null;
+    let saveWarning: string | null = null;
 
-    if (error && /estimated_price|comparable_properties|schema cache/i.test(error.message)) {
-      const retry = await supabase
+    try {
+      const supabase = createServerClient();
+      let result = await supabase
         .from("saved_valuations")
         .insert({
           property_ref: input.ref || input.title || input.location,
+          estimated_price_low: calculated.low,
+          estimated_price_agent: calculated.agent,
+          estimated_price_high: calculated.high,
+          comparable_properties: calculated.comparable,
           market_analysis: JSON.stringify(analysis),
         })
         .select()
         .single();
-      data = retry.data;
-      error = retry.error;
-    }
 
-    if (error) throw error;
+      if (result.error && /estimated_price|comparable_properties|schema cache/i.test(result.error.message)) {
+        result = await supabase
+          .from("saved_valuations")
+          .insert({
+            property_ref: input.ref || input.title || input.location,
+            market_analysis: JSON.stringify(analysis),
+          })
+          .select()
+          .single();
+      }
+
+      if (result.error) {
+        saveWarning = result.error.message;
+      } else {
+        data = result.data;
+      }
+    } catch (saveError) {
+      saveWarning = saveError instanceof Error ? saveError.message : "Could not save valuation";
+    }
 
     let emailResult: { success: boolean; error?: string; id?: string } | null = null;
     if (body.sendToSeller && input.sellerEmail) {
@@ -84,8 +93,9 @@ Krav:
       });
     }
 
-    return NextResponse.json({ valuation: data, analysis, emailResult });
+    return NextResponse.json({ valuation: data, analysis, emailResult, saveWarning });
   } catch (error) {
+    console.error("[Valuations]", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
       { status: 500 }
