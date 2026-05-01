@@ -12,6 +12,11 @@ interface TokenCandidate {
   token: string;
 }
 
+const BRAND_TOKEN_ALIASES: Record<string, string[]> = {
+  neuralbeat: ['remasterfreddy'],
+  remasterfreddy: ['neuralbeat'],
+};
+
 function sanitizeToken(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.trim().replace(/^["']|["']$/g, '').trim();
@@ -37,14 +42,20 @@ async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[
     if (url && key) {
       const supabase = createClient(url, key);
 
-      if (brandId && brandId !== '_system') {
+      const candidateBrandIds = brandId && brandId !== '_system'
+        ? [brandId, ...(BRAND_TOKEN_ALIASES[brandId] || [])]
+        : [];
+
+      for (const candidateBrandId of candidateBrandIds) {
         const { data: brandData } = await supabase
           .from('brand_settings')
           .select('settings')
-          .eq('brand_id', brandId)
+          .eq('brand_id', candidateBrandId)
           .maybeSingle();
         const brandToken = sanitizeToken(brandData?.settings?.youtube_refresh_token);
-        if (brandToken) candidates.push({ source: `brand:${brandId}`, token: brandToken });
+        if (brandToken && !candidates.some((c) => c.token === brandToken)) {
+          candidates.push({ source: `brand:${candidateBrandId}`, token: brandToken });
+        }
       }
 
       const { data: sysData } = await supabase
@@ -138,7 +149,7 @@ async function runWithTokenFallback<T>(
   for (const candidate of candidates) {
     try {
       const client = buildYoutubeClient(brandId, candidate);
-      console.log(`[YouTube] Attempting upload with token source: ${candidate.source}`);
+      console.log(`[YouTube] Attempting API call with token source: ${candidate.source}`);
       return await work(client, candidate.source);
     } catch (err) {
       lastErr = err;
@@ -247,13 +258,14 @@ export async function setThumbnail(
   thumbnailBuffer: Buffer,
   brandId?: string,
 ): Promise<void> {
-  const youtube = await getClient(brandId);
-  await youtube.thumbnails.set({
-    videoId,
-    media: {
-      body: Readable.from(thumbnailBuffer),
-      mimeType: 'image/png',
-    },
+  await runWithTokenFallback(brandId, async (youtube) => {
+    await youtube.thumbnails.set({
+      videoId,
+      media: {
+        body: Readable.from(thumbnailBuffer),
+        mimeType: 'image/png',
+      },
+    });
   });
 }
 
@@ -268,23 +280,25 @@ export async function getChannelInfo(brandId?: string): Promise<{
   viewCount: number;
   thumbnailUrl: string;
 }> {
-  const youtube = await getClient(brandId);
-  const res = await youtube.channels.list({
-    part: ['snippet', 'statistics'],
-    mine: true,
+  return runWithTokenFallback(brandId, async (youtube, source) => {
+    const res = await youtube.channels.list({
+      part: ['snippet', 'statistics'],
+      mine: true,
+    });
+
+    const channel = res.data.items?.[0];
+    if (!channel) throw new Error('No YouTube channel found for this account');
+
+    console.log(`[YouTube] Channel info OK via ${source}: ${channel.snippet?.title}`);
+    return {
+      id: channel.id || '',
+      title: channel.snippet?.title || '',
+      subscriberCount: Number(channel.statistics?.subscriberCount || 0),
+      videoCount: Number(channel.statistics?.videoCount || 0),
+      viewCount: Number(channel.statistics?.viewCount || 0),
+      thumbnailUrl: channel.snippet?.thumbnails?.high?.url || '',
+    };
   });
-
-  const channel = res.data.items?.[0];
-  if (!channel) throw new Error('No YouTube channel found for this account');
-
-  return {
-    id: channel.id || '',
-    title: channel.snippet?.title || '',
-    subscriberCount: Number(channel.statistics?.subscriberCount || 0),
-    videoCount: Number(channel.statistics?.videoCount || 0),
-    viewCount: Number(channel.statistics?.viewCount || 0),
-    thumbnailUrl: channel.snippet?.thumbnails?.high?.url || '',
-  };
 }
 
 /**
@@ -300,44 +314,46 @@ export async function listVideos(maxResults = 20, brandId?: string): Promise<Arr
   likeCount: number;
   commentCount: number;
 }>> {
-  const youtube = await getClient(brandId);
+  return runWithTokenFallback(brandId, async (youtube, source) => {
 
-  // First get the uploads playlist
-  const channelRes = await youtube.channels.list({
-    part: ['contentDetails'],
-    mine: true,
+    // First get the uploads playlist
+    const channelRes = await youtube.channels.list({
+      part: ['contentDetails'],
+      mine: true,
+    });
+    const uploadsPlaylistId = channelRes.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) return [];
+
+    const playlistRes = await youtube.playlistItems.list({
+      part: ['snippet'],
+      playlistId: uploadsPlaylistId,
+      maxResults,
+    });
+
+    const videoIds = (playlistRes.data.items || [])
+      .map((item) => item.snippet?.resourceId?.videoId)
+      .filter(Boolean) as string[];
+
+    if (videoIds.length === 0) return [];
+
+    const videosRes = await youtube.videos.list({
+      part: ['snippet', 'statistics'],
+      id: videoIds,
+    });
+
+    console.log(`[YouTube] Listed ${videosRes.data.items?.length || 0} videos via ${source}`);
+    return (videosRes.data.items || []).map((video) => ({
+      id: video.id || '',
+      title: video.snippet?.title || '',
+      description: video.snippet?.description || '',
+      tags: video.snippet?.tags || [],
+      publishedAt: video.snippet?.publishedAt || '',
+      thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
+      viewCount: Number(video.statistics?.viewCount || 0),
+      likeCount: Number(video.statistics?.likeCount || 0),
+      commentCount: Number(video.statistics?.commentCount || 0),
+    }));
   });
-  const uploadsPlaylistId = channelRes.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
-  if (!uploadsPlaylistId) return [];
-
-  const playlistRes = await youtube.playlistItems.list({
-    part: ['snippet'],
-    playlistId: uploadsPlaylistId,
-    maxResults,
-  });
-
-  const videoIds = (playlistRes.data.items || [])
-    .map((item) => item.snippet?.resourceId?.videoId)
-    .filter(Boolean) as string[];
-
-  if (videoIds.length === 0) return [];
-
-  const videosRes = await youtube.videos.list({
-    part: ['snippet', 'statistics'],
-    id: videoIds,
-  });
-
-  return (videosRes.data.items || []).map((video) => ({
-    id: video.id || '',
-    title: video.snippet?.title || '',
-    description: video.snippet?.description || '',
-    tags: video.snippet?.tags || [],
-    publishedAt: video.snippet?.publishedAt || '',
-    thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
-    viewCount: Number(video.statistics?.viewCount || 0),
-    likeCount: Number(video.statistics?.likeCount || 0),
-    commentCount: Number(video.statistics?.commentCount || 0),
-  }));
 }
 
 /**
@@ -575,10 +591,10 @@ export async function replyToComment(commentId: string, text: string): Promise<{
 }
 
 export function isConfigured(): boolean {
-  // Check env vars synchronously; Supabase token is checked lazily at runtime
+  // Refresh tokens may be stored per brand in Supabase. Check those lazily
+  // when an API call knows which brand/channel it needs.
   return !!(
     process.env.YOUTUBE_CLIENT_ID &&
-    process.env.YOUTUBE_CLIENT_SECRET &&
-    (process.env.YOUTUBE_REFRESH_TOKEN || clientCache.size > 0)
+    process.env.YOUTUBE_CLIENT_SECRET
   );
 }

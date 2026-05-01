@@ -44,16 +44,31 @@ export async function POST(req: NextRequest) {
     const updateData: Record<string, unknown> = {
         status: "scheduled",
         scheduled_at: scheduledDate.toISOString(),
+        scheduled_platforms: platforms,
+        publish_attempts: 0,
+        last_publish_error: null,
         updated_at: new Date().toISOString(),
       };
     // Only set optional columns if they exist (migration may not have run)
     if (ai_timing_reasoning) updateData.ai_timing_reasoning = ai_timing_reasoning;
     if (ai_recommended_time) updateData.ai_recommended_time = ai_recommended_time;
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from("content_publications")
       .update(updateData)
       .eq("id", draft_id);
+
+    if (error && /scheduled_platforms|publish_attempts|last_publish_error|schema cache/i.test(error.message)) {
+      const fallbackUpdate = { ...updateData };
+      delete fallbackUpdate.scheduled_platforms;
+      delete fallbackUpdate.publish_attempts;
+      delete fallbackUpdate.last_publish_error;
+      const retry = await supabase
+        .from("content_publications")
+        .update(fallbackUpdate)
+        .eq("id", draft_id);
+      error = retry.error;
+    }
 
     if (error) {
       console.error("[Schedule API] Error:", error);

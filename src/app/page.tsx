@@ -7,6 +7,7 @@ import {
   Building2, Users, TrendingUp, FileText,
   Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
   Loader2, AlertTriangle, CheckCircle, XCircle, ArrowRight,
+  Trash2, X,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -29,7 +30,7 @@ interface DashboardStats {
   failedPosts: number;
   aiAgents: number;
   recentActivity: { type: string; text: string; time: string }[];
-  alerts: { type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
+  alerts: { id: string; type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
 }
 
 interface DailyBrief {
@@ -64,6 +65,36 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [brief, setBrief] = useState<DailyBrief | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      return new Set(JSON.parse(localStorage.getItem("dashboard:dismissed-alerts") || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+
+  function dismissAlert(id: string) {
+    setDismissedAlerts((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("dashboard:dismissed-alerts", JSON.stringify(Array.from(next)));
+      }
+      return next;
+    });
+  }
+
+  function dismissAllAlerts(ids: string[]) {
+    setDismissedAlerts((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      if (typeof window !== "undefined") {
+        localStorage.setItem("dashboard:dismissed-alerts", JSON.stringify(Array.from(next)));
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     async function fetchStats() {
@@ -75,14 +106,13 @@ export default function Dashboard() {
 
       try {
         // Fetch real data in parallel
-        const [contactsRes, propertiesRes, plotsRes, pubsRes, scheduledRes, draftsRes, failedRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
+        const [contactsRes, propertiesRes, plotsRes, pubsRes, scheduledRes, draftsRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
           supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("land_plots").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "failed"),
           supabase.from("content_publications")
             .select("title, status, brand_id, created_at, published_at, scheduled_at")
             .order("created_at", { ascending: false })
@@ -118,11 +148,20 @@ export default function Dashboard() {
 
         const failedPubs = failedPubsRes.data || [];
         for (const pub of failedPubs) {
+          const updatedAt = pub.updated_at ? new Date(pub.updated_at) : new Date();
+          const ageDays = (Date.now() - updatedAt.getTime()) / 86400000;
+          const errorText = pub.last_publish_error || `${pub.publish_attempts || 0} forsøk mislyktes`;
+          const nonActionable =
+            /ingen plattformer valgt/i.test(errorText) ||
+            /maks antall forsøk/i.test(errorText) ||
+            ageDays > 14;
+          if (nonActionable) continue;
           alerts.push({
+            id: `publication:${pub.id}`,
             type: "error",
             title: `Publisering feilet: ${pub.title || 'Ukjent'}`,
-            detail: pub.last_publish_error || `${pub.publish_attempts || 0} forsøk mislyktes`,
-            time: getTimeAgo(new Date(pub.updated_at)),
+            detail: errorText,
+            time: getTimeAgo(updatedAt),
             href: "/content-hub",
           });
         }
@@ -130,11 +169,15 @@ export default function Dashboard() {
         const autoErrors = automationErrorsRes.data || [];
         for (const err of autoErrors) {
           const details = err.details as Record<string, string> | null;
+          const createdAt = err.created_at ? new Date(err.created_at) : new Date();
+          const ageDays = (Date.now() - createdAt.getTime()) / 86400000;
+          if (ageDays > 14) continue;
           alerts.push({
+            id: `automation:${err.id}`,
             type: "warning",
             title: `${err.agent_name || 'System'}: ${err.action || 'Feil'}`,
             detail: details?.error || details?.message || 'Automatisering feilet',
-            time: getTimeAgo(new Date(err.created_at)),
+            time: getTimeAgo(createdAt),
             href: "/automation",
           });
         }
@@ -148,7 +191,7 @@ export default function Dashboard() {
           publishedPosts: pubsRes.count || 0,
           scheduledPosts: scheduledRes.count || 0,
           totalDrafts: draftsRes.count || 0,
-          failedPosts: failedRes.count || 0,
+          failedPosts: alerts.filter((alert) => alert.type === "error").length,
           aiAgents: 8,
           recentActivity,
           alerts,
@@ -168,6 +211,8 @@ export default function Dashboard() {
 
     fetchStats();
   }, []);
+
+  const visibleAlerts = (stats?.alerts || []).filter((alert) => !dismissedAlerts.has(alert.id));
 
   return (
     <div className="space-y-6">
@@ -295,16 +340,26 @@ export default function Dashboard() {
           </div>
 
           {/* Alerts & Notifications */}
-          {(stats?.alerts?.length || 0) > 0 && (
+          {visibleAlerts.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <AlertTriangle size={14} />
-                Varsler ({stats!.alerts.length})
-              </h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle size={14} />
+                  Varsler ({visibleAlerts.length})
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => dismissAllAlerts(visibleAlerts.map((alert) => alert.id))}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                >
+                  <Trash2 size={12} />
+                  Skjul alle
+                </button>
+              </div>
               <div className="space-y-2">
-                {stats!.alerts.map((alert, i) => (
+                {visibleAlerts.map((alert) => (
                   <a
-                    key={i}
+                    key={alert.id}
                     href={alert.href || "#"}
                     className={`block p-3 rounded-lg border transition-colors ${
                       alert.type === "error"
@@ -323,6 +378,18 @@ export default function Dashboard() {
                         <p className="text-xs text-slate-400 mt-0.5 truncate">{alert.detail}</p>
                       </div>
                       <span className="text-[10px] text-slate-500 shrink-0">{alert.time}</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          dismissAlert(alert.id);
+                        }}
+                        className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+                        title="Skjul varsel"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   </a>
                 ))}
@@ -331,12 +398,14 @@ export default function Dashboard() {
           )}
 
           {/* Failed Posts Counter in KPIs */}
-          {(stats?.failedPosts || 0) > 0 && (
+          {visibleAlerts.some((alert) => alert.type === "error") && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-3">
               <XCircle size={20} className="text-red-400" />
               <div>
-                <p className="text-sm font-medium text-red-300">{stats!.failedPosts} publisering{stats!.failedPosts > 1 ? 'er' : ''} har feilet</p>
-                <p className="text-xs text-slate-400">Sjekk Content Hub for detaljer og prøv på nytt</p>
+                <p className="text-sm font-medium text-red-300">
+                  {visibleAlerts.filter((alert) => alert.type === "error").length} publisering{visibleAlerts.filter((alert) => alert.type === "error").length > 1 ? 'er' : ''} trenger oppfølging
+                </p>
+                <p className="text-xs text-slate-400">Gamle og ikke-handlingsbare feil er skjult fra dashboardet.</p>
               </div>
               <a href="/content-hub" className="ml-auto text-xs text-red-400 hover:text-red-300 underline">Se detaljer</a>
             </div>
