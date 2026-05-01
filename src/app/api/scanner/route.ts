@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
 
       // ── Import to properties table ──────────────────────────────
       case 'import_property': {
-        const { id: importId } = body;
+        const { id: importId, showOnWebsite = false, publishToPortal = false } = body;
         if (!importId || !supabase) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
         // Get scanned property
@@ -269,19 +269,45 @@ export async function POST(request: NextRequest) {
         if (fetchErr || !scanned) return NextResponse.json({ error: 'Property not found' }, { status: 404 });
 
         // Insert into properties table
-        const { error: insertErr } = await supabase.from('properties').insert({
+        const propertyInsert = {
           title: scanned.title,
           price: scanned.price_numeric,
           location: scanned.location,
-          size: scanned.size_m2 ? `${scanned.size_m2} m²` : null,
+          area: scanned.size_m2 || 0,
+          built_area: scanned.size_m2 || 0,
+          plot_size: scanned.plot_m2 || 0,
           bedrooms: scanned.bedrooms,
           bathrooms: scanned.bathrooms,
           type: scanned.type,
+          property_type: scanned.type,
           description: scanned.description,
+          features: scanned.features || [],
+          images: scanned.image_urls || [],
+          primary_image: scanned.image_urls?.[0] || null,
+          ref: scanned.ref_number || null,
+          title_no: scanned.title,
+          description_no: scanned.description,
+          pool: Array.isArray(scanned.features) ? scanned.features.some((feature: string) => /pool|basseng/i.test(feature)) : false,
+          energy_rating: scanned.energy_rating || null,
           status: 'active',
           source: scanned.source,
           external_url: scanned.source_url,
-        });
+          show_on_website: Boolean(showOnWebsite),
+          website_visible: Boolean(showOnWebsite),
+        };
+
+        let { data: insertedProperty, error: insertErr } = await supabase
+          .from('properties')
+          .insert(propertyInsert)
+          .select()
+          .single();
+
+        if (insertErr && /show_on_website|website_visible|schema cache/i.test(insertErr.message)) {
+          const { show_on_website, website_visible, ...fallbackInsert } = propertyInsert;
+          const retry = await supabase.from('properties').insert(fallbackInsert).select().single();
+          insertedProperty = retry.data;
+          insertErr = retry.error;
+        }
 
         if (insertErr) throw insertErr;
 
@@ -291,7 +317,27 @@ export async function POST(request: NextRequest) {
           .update({ status: 'imported', updated_at: new Date().toISOString() })
           .eq('id', importId);
 
-        return NextResponse.json({ success: true });
+        if (publishToPortal && insertedProperty?.id) {
+          const pdfUrl = `/api/property-pdf?propertyId=${insertedProperty.id}&brandId=zeneco&download=1`;
+          await supabase.from('market_reports').insert({
+            template_id: 'scanner-property-prospect',
+            title: `Prospekt: ${scanned.title}`,
+            subtitle: `${scanned.location || scanned.municipality || 'Spania'} · ${scanned.price || 'Pris på forespørsel'}`,
+            summary: `Ny eiendom vurdert av Zen Eco Homes. ${scanned.description || ''}`.slice(0, 260),
+            content_text: `${scanned.title}\n\n${scanned.description || ''}\n\nPris: ${scanned.price || 'Pris på forespørsel'}\nOmråde: ${scanned.location || ''}\nKilde: ${scanned.source || ''}\nAnnonse: ${scanned.source_url || ''}\nProspekt: ${pdfUrl}`,
+            sections: [
+              {
+                heading: scanned.title,
+                content: `<p>${String(scanned.description || '').replace(/</g, '&lt;')}</p><p><strong>Pris:</strong> ${scanned.price || 'Pris på forespørsel'}</p><p><strong>Område:</strong> ${scanned.location || ''}</p><p><a href="${pdfUrl}">Last ned prospekt (PDF)</a></p>`,
+              },
+            ],
+            data_sources: [scanned.source || 'Scanner'],
+            recipients: 'portal_all',
+            generated_at: new Date().toISOString(),
+          });
+        }
+
+        return NextResponse.json({ success: true, property: insertedProperty });
       }
 
       default:

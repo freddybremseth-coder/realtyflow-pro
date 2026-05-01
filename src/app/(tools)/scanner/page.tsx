@@ -10,7 +10,7 @@ import {
   ScanLine, Search, Globe, Download, ExternalLink, Plus, Loader2,
   MapPin, Home, Building2, TreePine, Trash2, Star, Eye, Clock,
   ChevronDown, ChevronUp, Filter, RefreshCw, CheckCircle, X,
-  Hammer, DollarSign, Ruler, BedDouble, Bath, Zap, Calendar,
+  Hammer, DollarSign, Ruler, BedDouble, Bath, Zap, Calendar, FileText, Send,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -121,6 +121,7 @@ export default function ScannerPage() {
   const [url, setUrl] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("nye");
+  const [actionStatus, setActionStatus] = useState<Record<string, string>>({});
 
   // Filters
   const [filterType, setFilterType] = useState("Alle");
@@ -252,18 +253,21 @@ export default function ScannerPage() {
     }
   };
 
-  const importProperty = async (id: string) => {
+  const importProperty = async (id: string, options?: { showOnWebsite?: boolean; publishToPortal?: boolean }) => {
+    setActionStatus((prev) => ({ ...prev, [id]: options?.publishToPortal ? "Lager PDF og Min side..." : options?.showOnWebsite ? "Legger på nettsiden..." : "Importerer..." }));
     try {
-      await fetch("/api/scanner", {
+      const res = await fetch("/api/scanner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import_property", id }),
+        body: JSON.stringify({ action: "import_property", id, ...options }),
       });
+      if (!res.ok) throw new Error("Import failed");
       setProperties((prev) =>
         prev.map((p) => p.id === id ? { ...p, status: "imported" as const } : p)
       );
+      setActionStatus((prev) => ({ ...prev, [id]: options?.publishToPortal ? "Lagt på Min side" : options?.showOnWebsite ? "Lagt på nettsiden" : "Importert" }));
     } catch {
-      // silently handle
+      setActionStatus((prev) => ({ ...prev, [id]: "Feilet" }));
     }
   };
 
@@ -535,7 +539,10 @@ export default function ScannerPage() {
                   onInvestigate={() => updateStatus(property.id, "investigating")}
                   onReject={() => updateStatus(property.id, "rejected")}
                   onImport={() => importProperty(property.id)}
+                  onPublishWebsite={() => importProperty(property.id, { showOnWebsite: true })}
+                  onPublishPortal={() => importProperty(property.id, { showOnWebsite: true, publishToPortal: true })}
                   onRestore={() => updateStatus(property.id, "new")}
+                  actionStatus={actionStatus[property.id]}
                 />
               ))
             )}
@@ -549,7 +556,7 @@ export default function ScannerPage() {
 // ─── Property Card ───────────────────────────────────────────────────────────
 
 function PropertyCard({
-  property, expanded, onToggle, onInterested, onInvestigate, onReject, onImport, onRestore,
+  property, expanded, onToggle, onInterested, onInvestigate, onReject, onImport, onPublishWebsite, onPublishPortal, onRestore, actionStatus,
 }: {
   property: ScannedProperty;
   expanded: boolean;
@@ -558,7 +565,10 @@ function PropertyCard({
   onInvestigate: () => void;
   onReject: () => void;
   onImport: () => void;
+  onPublishWebsite: () => void;
+  onPublishPortal: () => void;
   onRestore: () => void;
+  actionStatus?: string;
 }) {
   const typeCfg = TYPE_CONFIG[property.type] || TYPE_CONFIG.other;
   const TypeIcon = typeCfg.icon;
@@ -655,6 +665,11 @@ function PropertyCard({
 
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2 pt-2">
+              {actionStatus && (
+                <span className="flex items-center rounded border border-slate-700 px-2 py-1 text-xs text-slate-300">
+                  {actionStatus}
+                </span>
+              )}
               {property.status === "new" && (
                 <>
                   <Button size="sm" onClick={onInterested} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500">
@@ -673,6 +688,17 @@ function PropertyCard({
                   <Button size="sm" onClick={onImport} className="h-7 text-xs bg-cyan-600 hover:bg-cyan-500">
                     <Download size={12} className="mr-1" /> Importer til Eiendommer
                   </Button>
+                  <Button size="sm" onClick={onPublishWebsite} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500">
+                    <Globe size={12} className="mr-1" /> Legg på nettsiden
+                  </Button>
+                  <Button size="sm" onClick={onPublishPortal} className="h-7 text-xs bg-purple-600 hover:bg-purple-500">
+                    <FileText size={12} className="mr-1" /> Min side + PDF
+                  </Button>
+                  {property.source_url && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs border-blue-500/30 text-blue-300" onClick={() => window.open(`mailto:?subject=${encodeURIComponent(property.title)}&body=${encodeURIComponent(`${property.title}\n${property.price}\n${property.location}\n\n${property.source_url}`)}`)}>
+                      <Send size={12} className="mr-1" /> Send lenke
+                    </Button>
+                  )}
                   <Button size="sm" onClick={onReject} variant="outline" className="h-7 text-xs border-red-500/30 text-red-400">
                     <X size={12} className="mr-1" /> Forkast
                   </Button>

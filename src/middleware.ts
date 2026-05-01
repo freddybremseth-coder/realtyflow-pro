@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   "/api/public/leads",
   "/api/portal/preferences",
   "/api/portal/documents",
+  "/api/portal/messages",
   "/api/chatbot",
   "/api/health",
 ];
