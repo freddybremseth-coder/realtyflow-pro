@@ -1,4 +1,5 @@
 import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 
@@ -71,9 +72,23 @@ export async function fetchRecentEmails(
         const envelope = message.envelope;
         if (!envelope) continue;
 
-        // Parse body from source
-        const source = message.source?.toString() || "";
-        const { text, html } = parseEmailBody(source);
+        // Parse body using mailparser — handles nested multipart, charsets,
+        // quoted-printable, base64, attachments, inline images, etc.
+        const source = message.source as Buffer | undefined;
+        let text = "";
+        let html = "";
+        if (source) {
+          try {
+            const parsed = await simpleParser(source);
+            text = parsed.text || "";
+            html = typeof parsed.html === "string"
+              ? parsed.html
+              : (parsed.textAsHtml || "");
+          } catch (parseErr) {
+            console.warn(`[IMAP] mailparser failed, falling back to raw text`, parseErr);
+            text = source.toString("utf-8");
+          }
+        }
 
         // Build thread ID from references or in-reply-to
         const references = envelope.inReplyTo
@@ -137,85 +152,3 @@ export async function fetchEmailsSince(
   );
 }
 
-// ─── Email Body Parser ───────────────────────────────────────────────
-
-/**
- * Basic email body parser for raw email source.
- * Extracts text/plain and text/html parts from MIME messages.
- */
-function parseEmailBody(source: string): { text: string; html: string } {
-  let text = "";
-  let html = "";
-
-  // Check for multipart boundary
-  const boundaryMatch = source.match(/boundary="?([^"\r\n;]+)"?/i);
-
-  if (boundaryMatch) {
-    const boundary = boundaryMatch[1];
-    const parts = source.split(`--${boundary}`);
-
-    for (const part of parts) {
-      const headerEnd = part.indexOf("\r\n\r\n");
-      if (headerEnd === -1) continue;
-
-      const headers = part.substring(0, headerEnd).toLowerCase();
-      let body = part.substring(headerEnd + 4);
-
-      // Remove trailing boundary markers
-      const endIdx = body.indexOf(`--${boundary}`);
-      if (endIdx !== -1) {
-        body = body.substring(0, endIdx);
-      }
-      body = body.replace(/--\s*$/, "").trim();
-
-      // Handle transfer encoding
-      if (headers.includes("content-transfer-encoding: base64")) {
-        try {
-          body = Buffer.from(body.replace(/\s/g, ""), "base64").toString("utf-8");
-        } catch {
-          // Keep raw if decode fails
-        }
-      } else if (headers.includes("content-transfer-encoding: quoted-printable")) {
-        body = decodeQuotedPrintable(body);
-      }
-
-      if (headers.includes("content-type: text/plain")) {
-        text = body;
-      } else if (headers.includes("content-type: text/html")) {
-        html = body;
-      }
-    }
-  } else {
-    // Single-part message - extract body after headers
-    const headerEnd = source.indexOf("\r\n\r\n");
-    if (headerEnd !== -1) {
-      text = source.substring(headerEnd + 4).trim();
-    }
-  }
-
-  // If we only have HTML, strip tags for text version
-  if (!text && html) {
-    text = html
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .trim();
-  }
-
-  return { text, html };
-}
-
-/**
- * Decode quoted-printable encoded text.
- */
-function decodeQuotedPrintable(input: string): string {
-  return input
-    .replace(/=\r?\n/g, "") // soft line breaks
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
-}

@@ -8,6 +8,7 @@ import {
   ArrowLeft, Loader2, StarOff,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+import { EmailBodyViewer } from "@/components/email/email-body-viewer";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -654,20 +655,12 @@ export default function EmailInboxPage() {
                   </div>
                 </div>
 
-                {/* Email body */}
-                <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/30">
-                  {selectedMessage.body_html ? (
-                    <div
-                      className="text-sm text-slate-200 prose prose-invert prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{
-                        __html: selectedMessage.body_html,
-                      }}
-                    />
-                  ) : (
-                    <pre className="text-sm text-slate-200 whitespace-pre-wrap font-sans">
-                      {selectedMessage.body_text || "(tom e-post)"}
-                    </pre>
-                  )}
+                {/* Email body — sandboxed iframe preserves email's own CSS */}
+                <div className="bg-white rounded-xl border border-slate-700/30 overflow-hidden">
+                  <EmailBodyViewer
+                    html={selectedMessage.body_html}
+                    text={selectedMessage.body_text}
+                  />
                 </div>
 
                 {/* AI Analysis section */}
