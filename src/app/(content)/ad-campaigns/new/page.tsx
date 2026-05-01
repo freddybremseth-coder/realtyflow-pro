@@ -65,8 +65,12 @@ export default function NewAdCampaignPage() {
     if (url) runImageAnalysis(url);
   };
   const [offer, setOffer] = useState("15% on first order");
+  const [targetTotal, setTargetTotal] = useState(50);
+  const [aspectRatios, setAspectRatios] = useState<string[]>(["1:1", "9:16"]);
 
   const selectedBrand = BRANDS.find((b) => b.id === brandId);
+  const estimatedCost = (targetTotal * 0.04).toFixed(2);
+  const estimatedMinutes = Math.max(2, Math.ceil(targetTotal / 5)); // ~5 ads/min at concurrency 2
 
   // Auto-fill brand voice when brand changes
   const handleBrandChange = (id: string) => {
@@ -94,6 +98,8 @@ export default function NewAdCampaignPage() {
           brand_voice: brandVoice || null,
           funnel_stage: funnelStage,
           offer: offer || null,
+          total_creatives: targetTotal,
+          aspect_ratios: aspectRatios,
         }),
       });
       const data = await res.json();
@@ -257,6 +263,65 @@ export default function NewAdCampaignPage() {
             <label className="text-xs text-gray-400 mb-1 block">Tilbud / CTA</label>
             <Input value={offer} onChange={(e) => setOffer(e.target.value)}
               placeholder="15% on first order" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>4. Antall &amp; format</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-2 block">Antall ads</label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[10, 25, 50, 100, 200].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setTargetTotal(n)}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    targetTotal === n
+                      ? "border-amber-400 bg-amber-400/10"
+                      : "border-gray-700 hover:border-gray-500"
+                  }`}
+                >
+                  <div className="font-semibold">{n}</div>
+                  <div className="text-xs text-gray-500">ads</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Estimat: <span className="text-amber-400">${estimatedCost}</span> · ~{estimatedMinutes} min
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-2 block">Format</label>
+            <div className="flex gap-2">
+              {[
+                { id: "1:1", label: "1:1 Feed" },
+                { id: "9:16", label: "9:16 Reels/Stories" },
+              ].map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => {
+                    setAspectRatios((prev) =>
+                      prev.includes(r.id)
+                        ? prev.length > 1 ? prev.filter((x) => x !== r.id) : prev
+                        : [...prev, r.id]
+                    );
+                  }}
+                  className={`flex-1 p-3 rounded-lg border text-sm transition-all ${
+                    aspectRatios.includes(r.id)
+                      ? "border-amber-400 bg-amber-400/10 text-amber-100"
+                      : "border-gray-700 hover:border-gray-500 text-gray-400"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Du kan velge ett eller begge — minst ett må være valgt.
+            </p>
           </div>
         </CardContent>
       </Card>

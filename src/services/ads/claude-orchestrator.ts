@@ -77,21 +77,66 @@ Return strict JSON with this schema:
 
 
 // ─── 2. Build the matrix (Step 2) ──────────────────────────────────────
-// We don't ask Claude to invent scenes — we use the brand template and
-// optionally let Claude annotate `market_lean` per scene based on audience.
-export function buildMatrix(brandType: string): CampaignMatrix {
+// Uses the brand template scenes. If `target_total` is given (and smaller
+// than the full set), subsamples evenly across angles so each angle is
+// represented. `aspect_ratios` chooses 1 or 2 ratios.
+export interface BuildMatrixOptions {
+  aspect_ratios?: ("1:1" | "9:16")[];
+  target_total?: number;             // e.g. 10, 25, 50
+}
+
+export function buildMatrix(
+  brandType: string,
+  options: BuildMatrixOptions = {}
+): CampaignMatrix {
   const tmpl = getBrandTemplate(brandType);
+  const aspect_ratios = options.aspect_ratios && options.aspect_ratios.length > 0
+    ? options.aspect_ratios
+    : (["1:1", "9:16"] as ("1:1" | "9:16")[]);
+
+  let scenes = tmpl.scenes;
+
+  // If target_total set, pick a subset of scenes evenly across angles.
+  if (options.target_total) {
+    const scenesNeeded = Math.max(1, Math.ceil(options.target_total / aspect_ratios.length));
+    if (scenesNeeded < scenes.length) {
+      scenes = pickEvenlyAcrossAngles(scenes, scenesNeeded);
+    }
+  }
+
   const moodCount: Record<string, number> = {};
-  for (const s of tmpl.scenes) {
+  for (const s of scenes) {
     moodCount[s.mood] = (moodCount[s.mood] || 0) + 1;
   }
-  const aspect_ratios: ("1:1" | "9:16")[] = ["1:1", "9:16"];
+
   return {
-    scenes: tmpl.scenes,
+    scenes,
     mood_distribution: moodCount,
     aspect_ratios,
-    total_creatives: tmpl.scenes.length * aspect_ratios.length,
+    total_creatives: scenes.length * aspect_ratios.length,
   };
+}
+
+// Distribute `n` selections across angle groups as evenly as possible,
+// preserving the original scene order within each angle.
+function pickEvenlyAcrossAngles<T extends { angle: string }>(scenes: T[], n: number): T[] {
+  const byAngle: Record<string, T[]> = {};
+  const order: string[] = [];
+  for (const s of scenes) {
+    if (!byAngle[s.angle]) { byAngle[s.angle] = []; order.push(s.angle); }
+    byAngle[s.angle].push(s);
+  }
+  const out: T[] = [];
+  let i = 0;
+  while (out.length < n) {
+    const angle = order[i % order.length];
+    const pool = byAngle[angle];
+    const taken = out.filter((s) => s.angle === angle).length;
+    if (taken < pool.length) out.push(pool[taken]);
+    i++;
+    if (i > 1000) break; // safety
+  }
+  return out;
 }
 
 

@@ -47,15 +47,21 @@ export async function submitPrediction(
     },
   };
 
+  // Build headers — only include Prefer when we want to block server-side.
+  // waitSeconds=0 means "submit and return immediately" (caller polls).
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${getToken()}`,
+    "Content-Type": "application/json",
+  };
+  if (waitSeconds > 0) {
+    headers.Prefer = `wait=${waitSeconds}`;
+  }
+
   const res = await fetch(API_URL, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${getToken()}`,
-      "Content-Type": "application/json",
-      Prefer: `wait=${waitSeconds}`,
-    },
+    headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout((waitSeconds + 10) * 1000),
+    signal: AbortSignal.timeout(Math.max(waitSeconds + 10, 15) * 1000),
   });
 
   if (!res.ok) {

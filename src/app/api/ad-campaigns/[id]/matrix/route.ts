@@ -9,9 +9,13 @@ import { buildPrompt } from "@/services/ads/prompt-builder";
 import { BRANDS } from "@/lib/constants";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const body = await req.json().catch(() => ({}));
+  const target_total: number | undefined = body.target_total;
+  const aspect_ratios: ("1:1" | "9:16")[] | undefined = body.aspect_ratios;
+
   const supabase = createServerClient();
   const { data: campaign, error } = await supabase
     .from("ad_campaigns")
@@ -24,7 +28,10 @@ export async function POST(
 
   const brand = BRANDS.find((b) => b.id === campaign.brand_id);
   const brandType = brand?.type ?? "ecommerce";
-  const matrix = buildMatrix(brandType);
+  const matrix = buildMatrix(brandType, {
+    target_total: target_total ?? campaign.total_creatives ?? 50,
+    aspect_ratios: aspect_ratios ?? campaign.aspect_ratios ?? undefined,
+  });
 
   // Pre-seed creative rows so progress UI can render immediately
   const rows = [];
