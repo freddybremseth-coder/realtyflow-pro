@@ -92,6 +92,9 @@ export interface TextSlide {
   mainText?: string;  // Large price/feature text bottom-center
   subText?: string;   // Smaller info below mainText
   ctaText?: string;   // CTA bar at very bottom (website etc.)
+  overlayStyle?: 'property-details';
+  detailsKicker?: string;
+  detailsText?: string;
 }
 
 export interface FFmpegRenderOptions {
@@ -271,6 +274,25 @@ function buildDrawtextFilters(slide: TextSlide, fontPath: string): string {
   // fontfile parameter — essential for drawtext to work on serverless
   const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
   const shadow = `shadowcolor=black@0.85\\:shadowx=2\\:shadowy=2`;
+
+  if (slide.overlayStyle === 'property-details') {
+    if (slide.detailsKicker || slide.detailsText) {
+      // Subtle premium strip: readable on mobile, but low enough and calm
+      // enough that the property video remains the hero.
+      parts.push(`drawbox=x=0:y=ih-104:w=iw:h=104:color=black@0.48:t=fill`);
+      parts.push(`drawbox=x=0:y=ih-104:w=iw:h=2:color=white@0.20:t=fill`);
+    }
+
+    if (slide.detailsKicker) {
+      parts.push(`drawtext=${ff}fontsize=24:fontcolor=white@0.82:${shadow}:x=42:y=ih-86:text='${escapeFfmpegText(slide.detailsKicker)}'`);
+    }
+
+    if (slide.detailsText) {
+      parts.push(`drawtext=${ff}fontsize=32:fontcolor=white:${shadow}:x=42:y=ih-52:text='${escapeFfmpegText(slide.detailsText)}'`);
+    }
+
+    return parts.join(',');
+  }
 
   // ── Top brand bar (full width, prominent) ──
   if (slide.topText) {

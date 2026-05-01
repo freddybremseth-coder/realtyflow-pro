@@ -38,45 +38,45 @@ function getAnthropicClient(): Anthropic | null {
   return new Anthropic({ apiKey: key });
 }
 
-/** Build cycling text slides for a property video (price, size, location, CTA) */
+function formatVideoPrice(value: unknown): string {
+  const price = Number(value || 0);
+  if (!price) return "Pris pa foresporsel";
+  return `EUR ${price.toLocaleString("no-NO")}`;
+}
+
+function formatVideoArea(property: Record<string, unknown>): string {
+  const area = Number(property?.built_area || property?.area || property?.size || 0);
+  return area > 0 ? `${area.toLocaleString("no-NO")} m2` : "";
+}
+
+function cleanVideoLabel(value: unknown, fallback = ""): string {
+  return String(value || fallback).replace(/\s+/g, " ").trim();
+}
+
+function fitVideoText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+/** Build a calm, persistent property detail strip for the whole video. */
 function buildPropertyTextSlides(property: Record<string, unknown>, brand: { name?: string; website?: string }): TextSlide[] {
   const brandName = brand?.name || "Real Estate";
-  const website = (brand?.website || "").replace(/^https?:\/\//, "");
-  const ctaLine = website || brandName;
+  const location = cleanVideoLabel(property?.town || property?.location, "Spania");
+  const type = cleanVideoLabel(property?.property_type || property?.type, "Bolig");
+  const price = formatVideoPrice(property?.price);
+  const area = formatVideoArea(property);
+  const bedrooms = Number(property?.bedrooms || 0) > 0 ? `${property.bedrooms} soverom` : "";
+  const bathrooms = Number(property?.bathrooms || 0) > 0 ? `${property.bathrooms} bad` : "";
 
-  const price = property?.price
-    ? `EUR ${Number(property.price).toLocaleString("no-NO")}`
-    : "";
+  const detailParts = [type, price, area, bedrooms, bathrooms].filter(Boolean);
+  const detailsText = fitVideoText(detailParts.join("  |  "), 76);
 
-  const rooms = [
-    Number(property?.bedrooms) > 0 ? `${property.bedrooms} sov` : null,
-    Number(property?.bathrooms) > 0 ? `${property.bathrooms} bad` : null,
-    Number(property?.built_area) > 0 ? `${property.built_area} m2` : null,
-  ].filter(Boolean).join("  ·  ");
-
-  const location = String(property?.town || property?.location || "Spania");
-  const region = "Costa Blanca  ·  Spania";
-
-  const features = [
-    property?.pool ? "Privat basseng" : null,
-    property?.garage ? "Garasje" : null,
-    Number(property?.plot_size) > 0 ? `Tomt ${property.plot_size}m2` : null,
-  ].filter(Boolean).join("  ·  ") || location;
-
-  // Every slide gets the brand CTA bar at the bottom for maximum visibility
   return [
-    // Slide 0 – Price focus (hero slide)
-    { topText: brandName, mainText: price, subText: rooms || location, ctaText: `${ctaLine}  |  Ta kontakt i dag!` },
-    // Slide 1 – Rooms + Size
-    { topText: brandName, mainText: rooms || price, subText: `${location}  ·  ${price}`, ctaText: `Besok oss: ${ctaLine}` },
-    // Slide 2 – Location
-    { topText: brandName, mainText: location, subText: region, ctaText: `${ctaLine}  |  Din bolig i Spania` },
-    // Slide 3 – Features + strong CTA
-    { topText: brandName, mainText: features, subText: price, ctaText: `Kontakt ${brandName}: ${ctaLine}` },
-    // Slide 4 – Repeat price with different CTA variation (for longer galleries)
-    { topText: brandName, mainText: price, subText: `${rooms}  ·  ${location}`, ctaText: `Se alle boliger: ${ctaLine}` },
-    // Slide 5 – Brand-focused
-    { topText: `${brandName}  ·  ${location}`, mainText: `Fra ${price}`, subText: features, ctaText: `${ctaLine}  |  Kontakt oss na!` },
+    {
+      overlayStyle: "property-details",
+      detailsKicker: fitVideoText(`${location}  ·  ${brandName}`, 62),
+      detailsText,
+    },
   ];
 }
 
