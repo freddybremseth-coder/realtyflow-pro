@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImageUpload } from "@/components/ui/image-upload";
-import { Loader2, Sparkles, ArrowRight } from "lucide-react";
+import { Loader2, Sparkles, ArrowRight, Wand2, RefreshCw } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
 export default function NewAdCampaignPage() {
@@ -23,6 +23,47 @@ export default function NewAdCampaignPage() {
   const [audienceSegments, setAudienceSegments] = useState("Premium consumers, B2B");
   const [brandVoice, setBrandVoice] = useState("");
   const [funnelStage, setFunnelStage] = useState("cold");
+
+  // ─── AI image analysis state ──────────────────────────
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState("");
+  const [aiFilled, setAiFilled] = useState(false);
+  const [analysisConfidence, setAnalysisConfidence] = useState<"high" | "medium" | "low" | null>(null);
+
+  const runImageAnalysis = async (url: string) => {
+    if (!url) return;
+    setAnalyzing(true);
+    setAnalyzeError("");
+    try {
+      const res = await fetch("/api/ad-campaigns/analyze-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: url, enrich: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Analyse feilet");
+      const a = data.analysis;
+      // Only auto-fill empty fields so the user's edits aren't overwritten
+      if (a.product_name && !productName) setProductName(a.product_name);
+      if (a.label_description && !labelDescription) setLabelDescription(a.label_description);
+      if (!name && a.brand_hint && a.category_hint) {
+        setName(`${a.brand_hint} — ${a.category_hint} kampanje`);
+      }
+      setAnalysisConfidence(a.confidence);
+      setAiFilled(true);
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleImageChange = (url: string) => {
+    setProductImageUrl(url);
+    setAiFilled(false);
+    setAnalysisConfidence(null);
+    if (url) runImageAnalysis(url);
+  };
   const [offer, setOffer] = useState("15% on first order");
 
   const selectedBrand = BRANDS.find((b) => b.id === brandId);
@@ -116,12 +157,49 @@ export default function NewAdCampaignPage() {
           </div>
           <ImageUpload
             value={productImageUrl}
-            onChange={setProductImageUrl}
+            onChange={handleImageChange}
             label="Produktbilde"
-            hint="JPG, PNG eller WebP — maks 10MB. Bruk et rent produktfoto med god belysning."
+            hint="JPG, PNG eller WebP — maks 10MB. AI analyserer automatisk."
           />
+
+          {/* AI analysis status */}
+          {analyzing && (
+            <div className="flex items-center gap-2 text-sm text-amber-400 -mt-1">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              AI analyserer bildet og fyller ut produktnavn + etikett-beskrivelse…
+            </div>
+          )}
+          {aiFilled && !analyzing && (
+            <div className="flex items-center justify-between gap-2 text-sm -mt-1">
+              <span className="flex items-center gap-2 text-emerald-400">
+                <Wand2 className="w-4 h-4" />
+                AI-analyse fullført
+                {analysisConfidence && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    analysisConfidence === "high" ? "bg-emerald-500/20 text-emerald-300" :
+                    analysisConfidence === "medium" ? "bg-amber-500/20 text-amber-300" :
+                    "bg-red-500/20 text-red-300"
+                  }`}>
+                    {analysisConfidence} confidence
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={() => runImageAnalysis(productImageUrl)}
+                className="text-xs text-gray-400 hover:text-amber-400 flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" /> Analyser på nytt
+              </button>
+            </div>
+          )}
+          {analyzeError && (
+            <div className="text-xs text-red-400 -mt-1">
+              AI-analyse feilet: {analyzeError}. Du kan fylle inn manuelt nedenfor.
+            </div>
+          )}
+
           <p className="text-xs text-gray-500 -mt-1">
-            Bildet lastes opp til din Supabase Storage og brukes som referanse for hver av de 50 ads.
+            Bildet lastes opp til Supabase Storage og brukes som referanse for hver av de 50 ads.
           </p>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">
