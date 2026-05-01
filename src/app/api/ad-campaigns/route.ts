@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
     funnel_stage = "cold",
     offer = null,
     off_limits = null,
+    total_creatives = 50,
+    aspect_ratios = ["1:1", "9:16"],
   } = body || {};
+
+  const safeTotal = Math.min(Math.max(Number(total_creatives) || 50, 5), 200);
 
   if (!name || !product_name || !product_image_url || !label_description) {
     return NextResponse.json(
@@ -55,8 +59,9 @@ export async function POST(req: NextRequest) {
       offer,
       off_limits,
       status: "draft",
-      total_creatives: 50,
-      estimated_cost_usd: 50 * 0.04,
+      total_creatives: safeTotal,
+      estimated_cost_usd: safeTotal * 0.04,
+      aspect_ratios,
     })
     .select()
     .single();

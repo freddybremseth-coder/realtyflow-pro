@@ -66,19 +66,42 @@ export default function AdCampaignDetailPage() {
     }
   };
 
-  // Auto-batch loop while generating
+  // Auto-batch loop while generating. Stops on safety conditions to
+  // avoid runaway loops if the API is misbehaving.
   const generateBatch = async () => {
     let keepGoing = true;
-    while (keepGoing) {
-      const res = await fetch(`/api/ad-campaigns/${id}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batch_size: 4 }),
-      });
-      const data = await res.json();
-      await load();
-      keepGoing = data.pending_total > 0;
-      if (data.status === "completed" || data.status === "failed") keepGoing = false;
+    let iterations = 0;
+    let lastCompleted = -1;
+    let stalledRounds = 0;
+    while (keepGoing && iterations < 60) {  // hard cap: 60 iterations
+      iterations++;
+      try {
+        const res = await fetch(`/api/ad-campaigns/${id}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batch_size: 4 }),
+        });
+        const data = await res.json();
+        await load();
+
+        // Detect stalls: if completed_total isn't increasing across rounds, stop
+        if (data.completed_total === lastCompleted) {
+          stalledRounds++;
+          if (stalledRounds >= 3) {
+            setError("Generation ser ut til å henge — prøv 'Retry failed' for å gjenoppta.");
+            break;
+          }
+        } else {
+          stalledRounds = 0;
+          lastCompleted = data.completed_total;
+        }
+
+        keepGoing = data.pending_total > 0;
+        if (data.status === "completed" || data.status === "failed") keepGoing = false;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        break;
+      }
     }
     setBusy("");
   };
@@ -229,6 +252,21 @@ export default function AdCampaignDetailPage() {
               <RefreshCw className="w-3 h-3 animate-spin" /> Behandler…
             </Button>
           )}
+          {failed > 0 && campaign.status !== "generating" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!!busy}
+              onClick={async () => {
+                await post(`/api/ad-campaigns/${id}/retry-failed`);
+                await startGeneration();
+              }}
+              className="gap-2 text-amber-300 border-amber-500/40"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry {failed} failed
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {creatives.length === 0 ? (
@@ -325,8 +363,12 @@ function CreativeGallery({ creatives }: { creatives: AdCreative[] }) {
                     <Loader2 className="w-4 h-4 animate-spin" />
                   </div>
                 ) : c.status === "failed" ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-red-400">
-                    <AlertCircle className="w-4 h-4" />
+                  <div
+                    className="absolute inset-0 flex flex-col items-center justify-center text-red-400 p-2 text-center cursor-help"
+                    title={c.error || "Failed"}
+                  >
+                    <AlertCircle className="w-4 h-4 mb-1" />
+                    <span className="text-[10px] line-clamp-3">{c.error?.slice(0, 80) || "Failed"}</span>
                   </div>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs">

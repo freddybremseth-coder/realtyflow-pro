@@ -88,6 +88,7 @@ export interface AdCampaign {
   matrix: CampaignMatrix | null;
   delivery: CampaignDelivery | null;
 
+  aspect_ratios: AspectRatio[] | null;
   total_creatives: number;
   succeeded_count: number;
   failed_count: number;
