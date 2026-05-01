@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Building2, Users, TrendingUp, FileText,
   Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
-  Loader2, AlertTriangle, CheckCircle, XCircle,
+  Loader2, AlertTriangle, CheckCircle, XCircle, ArrowRight,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -32,6 +32,23 @@ interface DashboardStats {
   alerts: { type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
 }
 
+interface DailyBrief {
+  summary: string;
+  top_priorities: {
+    rank: number;
+    id: string;
+    title: string;
+    description?: string;
+    priority: string;
+    source_type: string;
+    next_action: string;
+    ai_score: number;
+    due_date?: string;
+  }[];
+  synthetic?: boolean;
+  table_not_ready?: boolean;
+}
+
 function buyingSignalScore(contact: { interactions?: unknown[]; notes?: string | null; pipeline_status?: string | null; pipeline_value?: number | null }) {
   const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
   const haystack = `${contact.notes || ""} ${interactions.map((item: any) => item?.content || "").join(" ")}`.toLowerCase();
@@ -45,6 +62,7 @@ function buyingSignalScore(contact: { interactions?: unknown[]; notes?: string |
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [brief, setBrief] = useState<DailyBrief | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -135,6 +153,12 @@ export default function Dashboard() {
           recentActivity,
           alerts,
         });
+
+        const briefRes = await fetch("/api/hub/daily-brief");
+        if (briefRes.ok) {
+          const briefData = await briefRes.json();
+          setBrief(briefData);
+        }
       } catch (err) {
         console.error("Dashboard fetch error:", err);
       } finally {
@@ -161,6 +185,61 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {/* Daily AI Brief */}
+          <div>
+            <h2 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Bot size={14} />
+              Dagens prioriterte handlinger
+            </h2>
+            <Card className="border-cyan-500/20 bg-cyan-500/5">
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-sm text-slate-200">{brief?.summary || "Victoria samler dagens prioriteringer."}</p>
+                    {brief?.table_not_ready && (
+                      <p className="mt-2 text-xs text-amber-300">
+                        Work items-tabellen må migreres for permanente oppgaver. Viser foreløpig smarte prioriteringer fra eksisterende data.
+                      </p>
+                    )}
+                  </div>
+                  <a href="/marketing-tasks" className="inline-flex items-center gap-2 rounded-lg bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-cyan-500/20">
+                    Åpne oppgaver
+                    <ArrowRight size={12} />
+                  </a>
+                </div>
+                <div className="mt-4 grid gap-2">
+                  {(brief?.top_priorities || []).slice(0, 7).map((item) => (
+                    <a
+                      key={item.id}
+                      href={item.source_type === "content" ? "/content-hub" : item.source_type === "automation" ? "/automation" : item.source_type === "crm" ? "/pipeline" : "/marketing-tasks"}
+                      className="flex items-start gap-3 rounded-lg border border-slate-700/40 bg-slate-900/60 p-3 transition-colors hover:border-cyan-500/30"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-xs font-semibold text-cyan-300">
+                        {item.rank}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">{item.title}</p>
+                          <Badge variant={item.priority === "CRITICAL" || item.priority === "HIGH" ? "destructive" : item.priority === "MEDIUM" ? "warning" : "secondary"} className="text-[9px]">
+                            {item.priority}
+                          </Badge>
+                          <Badge variant="outline" className="text-[9px]">{item.source_type}</Badge>
+                          <span className="text-[10px] text-slate-500">{item.ai_score}/100</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">{item.next_action || item.description}</p>
+                      </div>
+                    </a>
+                  ))}
+                  {(!brief?.top_priorities || brief.top_priorities.length === 0) && (
+                    <p className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3 text-sm text-slate-500">
+                      Ingen prioriterte handlinger akkurat nå.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Realty KPIs */}
           <div>
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
