@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { ImageUpload } from "@/components/ui/image-upload";
 import { Loader2, Sparkles, ArrowRight } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -114,12 +114,15 @@ export default function NewAdCampaignPage() {
             <Input value={productName} onChange={(e) => setProductName(e.target.value)}
               placeholder="Doña Anna Verde Alto olive oil bottle" />
           </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Produktbilde URL (offentlig tilgjengelig)</label>
-            <Input value={productImageUrl} onChange={(e) => setProductImageUrl(e.target.value)}
-              placeholder="https://..." />
-            <p className="text-xs text-gray-500 mt-1">Last opp via Image Studio eller bruk eksisterende CDN-URL.</p>
-          </div>
+          <ImageUpload
+            value={productImageUrl}
+            onChange={setProductImageUrl}
+            label="Produktbilde"
+            hint="JPG, PNG eller WebP — maks 10MB. Bruk et rent produktfoto med god belysning."
+          />
+          <p className="text-xs text-gray-500 -mt-1">
+            Bildet lastes opp til din Supabase Storage og brukes som referanse for hver av de 50 ads.
+          </p>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">
               Etikett-beskrivelse <span className="text-amber-400">(kritisk for label-bevaring)</span>
