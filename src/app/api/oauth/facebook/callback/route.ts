@@ -69,6 +69,8 @@ export async function GET(req: NextRequest) {
       "pages_show_list",
       "pages_manage_posts",
       "pages_read_engagement",
+      "instagram_basic",
+      "instagram_content_publish",
     ];
     try {
       const debugRes = await fetch(
@@ -182,7 +184,7 @@ export async function GET(req: NextRequest) {
       console.warn("[OAuth Facebook] /me/accounts returned no pages — aborting without fallback");
       return NextResponse.redirect(
         `${req.nextUrl.origin}/settings?oauth=error&platform=facebook&msg=${encodeURIComponent(
-          "Ingen Facebook-sider funnet. Sørg for at du er admin for minst én side og at du godtok tillatelsene pages_show_list + pages_manage_posts + pages_read_engagement.",
+          "Ingen Facebook-sider funnet. Sørg for at du er admin for minst én side og at du godtok tillatelsene pages_show_list + pages_manage_posts + pages_read_engagement + instagram_basic + instagram_content_publish.",
         )}`,
       );
     }
