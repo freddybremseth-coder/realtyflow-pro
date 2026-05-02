@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PlotAssetsPanel } from "@/components/plots/plot-assets-panel";
 import {
   MapPin, Plus, Filter, Grid3X3, List,
   Droplets, Zap, X, Upload, FileText,
@@ -771,6 +772,10 @@ export default function TomtebasePage() {
                       onClick={() => handleDeletePlot(selectedPlot.id)}>
                       <Trash2 size={12} />
                     </Button>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-slate-700/50">
+                    <PlotAssetsPanel plotId={selectedPlot.id} />
                   </div>
                 </CardContent>
               </Card>
