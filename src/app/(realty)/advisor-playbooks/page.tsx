@@ -38,6 +38,7 @@ export default function AdvisorPlaybooksPage() {
   const [emptyDatabase, setEmptyDatabase] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [hubStatus, setHubStatus] = useState<string | null>(null);
 
   async function loadPlaybooks() {
     setLoading(true);
@@ -61,22 +62,28 @@ export default function AdvisorPlaybooksPage() {
 
   async function seedPlaybooks() {
     setSaving(true);
+    setHubStatus(null);
     try {
       for (const playbook of playbooks.filter((item) => item.synthetic || item.id.startsWith("seed-"))) {
-        await fetch("/api/advisor-playbooks", {
+        const res = await fetch("/api/advisor-playbooks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(playbook),
         });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunne ikke lagre playbook.");
       }
       await loadPlaybooks();
+      setHubStatus("Playbook lagret i Supabase.");
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke lagre playbook.");
     } finally {
       setSaving(false);
     }
   }
 
   async function pushTask(playbook: AdvisorPlaybook) {
-    await fetch("/api/work-items", {
+    setHubStatus(null);
+    const res = await fetch("/api/work-items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -92,6 +99,12 @@ export default function AdvisorPlaybooksPage() {
         metadata: { topic: playbook.topic, region: playbook.region },
       }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setHubStatus(data.error || "Kunne ikke sende til HUB.");
+      return;
+    }
+    setHubStatus(data.fallback_source_type ? "Sendt til HUB. Databasen brukte fallback source_type=manual." : "Sendt til Oppgave-HUB.");
   }
 
   async function copyMessage(playbook: AdvisorPlaybook) {
@@ -130,6 +143,12 @@ export default function AdvisorPlaybooksPage() {
       {emptyDatabase && !tableNotReady && (
         <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">
           Tabellen er klar, men tom. Klikk `Lagre seed-playbooks` for å lagre første verifiserte rådgivertekst i Supabase.
+        </div>
+      )}
+
+      {hubStatus && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {hubStatus}
         </div>
       )}
 

@@ -99,6 +99,7 @@ export default function PublishingHubPage() {
   const [booksTableNotReady, setBooksTableNotReady] = useState(false);
   const [showNewBook, setShowNewBook] = useState(false);
   const [savingBook, setSavingBook] = useState(false);
+  const [hubStatus, setHubStatus] = useState<string | null>(null);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -148,7 +149,9 @@ export default function PublishingHubPage() {
   async function createKdpTasks() {
     setCreating(true);
     setCreated(0);
+    setHubStatus(null);
     let count = 0;
+    let failures = 0;
 
     for (const task of kdpTasks) {
       const res = await fetch("/api/work-items", {
@@ -164,9 +167,11 @@ export default function PublishingHubPage() {
         }),
       });
       if (res.ok) count += 1;
+      else failures += 1;
     }
 
     setCreated(count);
+    setHubStatus(failures > 0 ? `${count} oppgaver opprettet, ${failures} feilet.` : `${count} KDP-oppgaver er lagt i Oppgave-HUB-en.`);
     setCreating(false);
   }
 
@@ -183,6 +188,7 @@ export default function PublishingHubPage() {
   async function seedBooksToDatabase() {
     if (!books.length) return;
     setSavingBook(true);
+    setHubStatus(null);
     try {
       for (const book of books.filter((item) => item.synthetic || item.id.startsWith("seed-"))) {
         await createBook({
@@ -194,8 +200,10 @@ export default function PublishingHubPage() {
         });
       }
       await loadBooks();
+      setHubStatus("Seed-bøkene er lagret i Supabase.");
     } catch (err) {
       console.error("Could not seed publishing books:", err);
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke lagre seed-bøkene.");
     } finally {
       setSavingBook(false);
     }
@@ -204,6 +212,7 @@ export default function PublishingHubPage() {
   async function addBook() {
     if (!newBook.title.trim()) return;
     setSavingBook(true);
+    setHubStatus(null);
     try {
       await createBook({
         ...newBook,
@@ -237,15 +246,18 @@ export default function PublishingHubPage() {
       });
       setShowNewBook(false);
       await loadBooks();
+      setHubStatus("Boken er lagret.");
     } catch (err) {
       console.error("Could not add publishing book:", err);
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke lagre boken.");
     } finally {
       setSavingBook(false);
     }
   }
 
   async function pushBookTask(book: PublishingBook) {
-    await fetch("/api/work-items", {
+    setHubStatus(null);
+    const res = await fetch("/api/work-items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -261,6 +273,14 @@ export default function PublishingHubPage() {
         metadata: { book_title: book.title, asin: book.asin || null, role: book.role || null },
       }),
     });
+    const data = await res.json().catch(() => ({}));
+    setHubStatus(
+      res.ok
+        ? data.fallback_source_type
+          ? "Sendt til HUB. Databasen brukte fallback source_type=manual."
+          : "Bokoppgave sendt til Oppgave-HUB."
+        : data.error || "Kunne ikke sende bokoppgave til HUB.",
+    );
   }
 
   return (
@@ -284,6 +304,12 @@ export default function PublishingHubPage() {
       {created > 0 && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
           {created} KDP-oppgaver er lagt i Oppgave-HUB-en.
+        </div>
+      )}
+
+      {hubStatus && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {hubStatus}
         </div>
       )}
 

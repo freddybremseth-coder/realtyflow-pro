@@ -298,8 +298,24 @@ export async function POST(request: NextRequest) {
   };
 
   const { data, error } = await supabase.from("work_items").insert(payload).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ work_item: data }, { status: 201 });
+  if (!error) return NextResponse.json({ work_item: data }, { status: 201 });
+
+  // Older databases may still have the original source_type CHECK constraint.
+  // Keep the HUB action usable and preserve the intended source in metadata.
+  if (/source_type|violates check constraint/i.test(error.message) && payload.source_type !== "manual") {
+    const fallbackPayload = {
+      ...payload,
+      source_type: "manual" as const,
+      metadata: {
+        ...(typeof payload.metadata === "object" && payload.metadata ? payload.metadata : {}),
+        original_source_type: payload.source_type,
+      },
+    };
+    const fallback = await supabase.from("work_items").insert(fallbackPayload).select().single();
+    if (!fallback.error) return NextResponse.json({ work_item: fallback.data, fallback_source_type: true }, { status: 201 });
+  }
+
+  return NextResponse.json({ error: error.message }, { status: 500 });
 }
 
 export async function PATCH(request: NextRequest) {
