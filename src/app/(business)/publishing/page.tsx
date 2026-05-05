@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Target, TrendingUp } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Target, TrendingUp, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +101,7 @@ export default function PublishingHubPage() {
   const [booksSupabaseHost, setBooksSupabaseHost] = useState("");
   const [showNewBook, setShowNewBook] = useState(false);
   const [savingBook, setSavingBook] = useState(false);
+  const [importingReport, setImportingReport] = useState(false);
   const [hubStatus, setHubStatus] = useState<string | null>(null);
   const [newBook, setNewBook] = useState({
     title: "",
@@ -287,6 +288,37 @@ export default function PublishingHubPage() {
     );
   }
 
+  async function importKdpReport(file?: File | null) {
+    if (!file) return;
+    setImportingReport(true);
+    setHubStatus(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/publishing/import", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke importere KDP-rapport.");
+        return;
+      }
+      if (data.duplicate) {
+        setHubStatus(data.message || "Denne KDP-rapporten er allerede importert.");
+      } else {
+        setHubStatus(
+          `KDP-rapport importert: ${data.rows_imported || 0} rader, ${data.books_touched || 0} bøker, ${data.total_orders || 0} ordre, ${data.currency || "USD"} ${Number(data.total_royalties || 0).toFixed(2)} royalties.`,
+        );
+      }
+      await loadBooks();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke importere KDP-rapport.");
+    } finally {
+      setImportingReport(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -415,6 +447,21 @@ export default function PublishingHubPage() {
                 <Plus className="mr-2" size={14} />
                 Legg til bok
               </Button>
+              <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-slate-600 px-3 text-xs font-medium text-slate-200 transition-all hover:bg-slate-700">
+                {importingReport ? <Loader2 className="mr-2 animate-spin" size={14} /> : <Upload className="mr-2" size={14} />}
+                Importer KDP CSV
+                <input
+                  type="file"
+                  accept=".csv,.tsv,text/csv,text/tab-separated-values"
+                  className="hidden"
+                  disabled={importingReport}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    importKdpReport(file);
+                  }}
+                />
+              </label>
             </div>
           </div>
         </CardHeader>
