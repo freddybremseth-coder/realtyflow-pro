@@ -104,6 +104,15 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+function supabaseProjectHost() {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    return url ? new URL(url).host : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeList(value: unknown) {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   return String(value || "")
@@ -166,7 +175,13 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) {
     if (/publishing_books|schema cache|does not exist|relation/i.test(error.message)) {
-      return NextResponse.json({ books: seedBooks, synthetic: true, tableNotReady: true });
+      return NextResponse.json({
+        books: seedBooks,
+        synthetic: true,
+        tableNotReady: true,
+        dbError: error.message,
+        supabaseHost: supabaseProjectHost(),
+      });
     }
     return NextResponse.json({ error: error.message, books: [] }, { status: 500 });
   }

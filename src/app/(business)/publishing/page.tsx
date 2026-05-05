@@ -97,6 +97,8 @@ export default function PublishingHubPage() {
   const [booksLoading, setBooksLoading] = useState(true);
   const [booksSynthetic, setBooksSynthetic] = useState(false);
   const [booksTableNotReady, setBooksTableNotReady] = useState(false);
+  const [booksDbError, setBooksDbError] = useState("");
+  const [booksSupabaseHost, setBooksSupabaseHost] = useState("");
   const [showNewBook, setShowNewBook] = useState(false);
   const [savingBook, setSavingBook] = useState(false);
   const [hubStatus, setHubStatus] = useState<string | null>(null);
@@ -135,6 +137,8 @@ export default function PublishingHubPage() {
       setBooks(data.books || []);
       setBooksSynthetic(Boolean(data.synthetic));
       setBooksTableNotReady(Boolean(data.tableNotReady));
+      setBooksDbError(data.dbError || "");
+      setBooksSupabaseHost(data.supabaseHost || "");
     } catch (err) {
       console.error("Could not load publishing books:", err);
     } finally {
@@ -315,7 +319,14 @@ export default function PublishingHubPage() {
 
       {booksTableNotReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-          Kjør migrasjonen `20260505123000_publishing_books.sql` for å lagre Book Growth Dashboard permanent. Viser foreløpig seed-data.
+          <p>
+            Live-appen finner ikke tabellen `publishing_books` i Supabase-prosjektet den er koblet til. Viser foreløpig seed-data.
+          </p>
+          {booksSupabaseHost && <p className="mt-1 text-xs text-amber-100/80">Supabase host: {booksSupabaseHost}</p>}
+          {booksDbError && <p className="mt-1 text-xs text-amber-100/80">Databasefeil: {booksDbError}</p>}
+          <p className="mt-2 text-xs text-amber-100/80">
+            Sjekk at migrasjonen er kjørt i samme Supabase-prosjekt som Vercel bruker i `NEXT_PUBLIC_SUPABASE_URL`.
+          </p>
         </div>
       )}
 

@@ -34,6 +34,8 @@ export default function AdvisorPlaybooksPage() {
   const [playbooks, setPlaybooks] = useState<AdvisorPlaybook[]>([]);
   const [loading, setLoading] = useState(true);
   const [tableNotReady, setTableNotReady] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const [supabaseHost, setSupabaseHost] = useState("");
   const [synthetic, setSynthetic] = useState(false);
   const [emptyDatabase, setEmptyDatabase] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,6 +51,8 @@ export default function AdvisorPlaybooksPage() {
       setTableNotReady(Boolean(data.tableNotReady));
       setSynthetic(Boolean(data.synthetic));
       setEmptyDatabase(Boolean(data.emptyDatabase));
+      setDbError(data.dbError || "");
+      setSupabaseHost(data.supabaseHost || "");
     } catch (err) {
       console.error("Could not load advisor playbooks:", err);
     } finally {
@@ -136,7 +140,9 @@ export default function AdvisorPlaybooksPage() {
 
       {tableNotReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-          Kjør migrasjonen `20260505130000_advisor_playbooks.sql` for å lagre playbooks permanent.
+          <p>Live-appen finner ikke tabellen `advisor_playbooks` i Supabase-prosjektet den er koblet til.</p>
+          {supabaseHost && <p className="mt-1 text-xs text-amber-100/80">Supabase host: {supabaseHost}</p>}
+          {dbError && <p className="mt-1 text-xs text-amber-100/80">Databasefeil: {dbError}</p>}
         </div>
       )}
 
