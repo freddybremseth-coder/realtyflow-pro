@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Target, TrendingUp, Upload } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,20 @@ type PublishingBook = {
   priority?: number | null;
   notes?: string | null;
   synthetic?: boolean;
+};
+
+type PublishingRecommendation = {
+  id: string;
+  type: "portfolio" | "metadata" | "reviews" | "ads" | "launch" | "funnel" | "cleanup";
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  ai_score: number;
+  title: string;
+  description: string;
+  impact: string;
+  effort: "low" | "medium" | "high";
+  next_action: string;
+  book_id?: string;
+  book_title?: string;
 };
 
 const kdpTasks = [
@@ -111,7 +125,7 @@ function getAuditScore(book: PublishingBook) {
     { ok: Number(book.price || 0) > 0, label: "pris" },
     { ok: Boolean(book.amazon_url), label: "Amazon-lenke" },
     { ok: Boolean(book.next_action), label: "neste handling" },
-    { ok: ["front_product", "next_launch", "support", "lead_magnet", "parked"].includes(String(book.role || "")), label: "rolle" },
+    { ok: ["front_product", "next_launch", "support", "lead_magnet", "authority_book", "secondary", "parked"].includes(String(book.role || "")), label: "rolle" },
   ];
 
   for (const check of checks) {
@@ -127,6 +141,8 @@ function getBookStrategy(book: PublishingBook) {
   if (role === "front_product") return "Selge og validere hovedplattformen. Denne må ha best cover, metadata, reviews og Ads-test.";
   if (role === "next_launch") return "Neste kommersielle lansering. Bruk konkurrentanalyse og søkedata før manus bygges ferdig.";
   if (role === "lead_magnet") return "Bygge e-postliste og reader team. Ikke optimaliser primært for royalties.";
+  if (role === "authority_book") return "Autoritetsbok som skal skape leads og tillit, ikke nødvendigvis mest Amazon-royalty.";
+  if (role === "secondary") return "Sekundær bok. Hold oversikt og rydd metadata, men vent med aktiv trafikkbudsjett.";
   if (role === "parked") return "Ikke bruk trafikkbudsjett nå. Behold i systemet, men prioriter ikke aktivt.";
   return "Støttebok som bygger autoritet, intern trafikk og mer dybde rundt hovedplattformen.";
 }
@@ -144,6 +160,9 @@ export default function PublishingHubPage() {
   const [savingBook, setSavingBook] = useState(false);
   const [importingReport, setImportingReport] = useState(false);
   const [hubStatus, setHubStatus] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<PublishingRecommendation[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsSynthetic, setRecommendationsSynthetic] = useState(false);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -188,9 +207,42 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadRecommendations() {
+    setRecommendationsLoading(true);
+    try {
+      const res = await fetch("/api/publishing/recommendations", { cache: "no-store" });
+      const data = await res.json();
+      setRecommendations(data.recommendations || []);
+      setRecommendationsSynthetic(Boolean(data.synthetic));
+    } catch (err) {
+      console.error("Could not load publishing recommendations:", err);
+      setHubStatus("Kunne ikke hente Amazon/KDP-anbefalinger.");
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadBooks();
+    loadRecommendations();
   }, []);
+
+  async function pushRecommendation(recommendation: PublishingRecommendation) {
+    setHubStatus(null);
+    const res = await fetch("/api/publishing/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: recommendation.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setHubStatus(
+      res.ok
+        ? data.fallback_source_type
+          ? "Anbefaling sendt til HUB. Databasen brukte fallback source_type=manual."
+          : "Anbefaling sendt til Oppgave-HUB."
+        : data.error || "Kunne ikke sende anbefaling til HUB.",
+    );
+  }
 
   async function createKdpTasks() {
     setCreating(true);
@@ -445,10 +497,16 @@ export default function PublishingHubPage() {
             KDP, bøker, metadata, anmeldelser, annonser og nye bokideer samlet som én vekstmaskin.
           </p>
         </div>
-        <Button onClick={createKdpTasks} disabled={creating}>
-          {creating ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Plus className="mr-2" size={16} />}
-          Opprett KDP-oppgaver
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={loadRecommendations} disabled={recommendationsLoading}>
+            {recommendationsLoading ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Sparkles className="mr-2" size={16} />}
+            Analyser Amazon/KDP
+          </Button>
+          <Button onClick={createKdpTasks} disabled={creating}>
+            {creating ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Plus className="mr-2" size={16} />}
+            Opprett KDP-oppgaver
+          </Button>
+        </div>
       </div>
 
       {created > 0 && (
@@ -512,6 +570,62 @@ export default function PublishingHubPage() {
           </Card>
         ))}
       </div>
+
+      <Card className="border-cyan-500/20 bg-cyan-500/5">
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <Sparkles size={18} className="text-cyan-300" />
+              AI-anbefalinger for Amazon/KDP
+            </CardTitle>
+            {recommendationsSynthetic && (
+              <Badge variant="outline" className="w-fit text-[10px]">
+                Bruker seed-data til Supabase er fylt
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {recommendationsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="animate-spin text-slate-400" size={24} />
+            </div>
+          ) : recommendations.length === 0 ? (
+            <p className="text-sm text-slate-400">Ingen anbefalinger ennå. Kjør analysen når bøkene er lastet inn.</p>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {recommendations.slice(0, 8).map((recommendation) => (
+                <div key={recommendation.id} className="rounded-lg border border-slate-700/50 bg-slate-900/70 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={recommendation.priority === "CRITICAL" ? "destructive" : recommendation.priority === "HIGH" ? "success" : "secondary"} className="text-[10px]">
+                      {recommendation.priority}
+                    </Badge>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-400">
+                      AI {recommendation.ai_score}/100
+                    </span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-400">
+                      {recommendation.type}
+                    </span>
+                  </div>
+                  <h3 className="mt-3 text-sm font-semibold text-white">{recommendation.title}</h3>
+                  <p className="mt-2 text-sm text-slate-300">{recommendation.description}</p>
+                  <p className="mt-3 text-xs text-slate-500">
+                    <span className="text-slate-400">Effekt:</span> {recommendation.impact}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    <span className="text-slate-400">Neste:</span> {recommendation.next_action}
+                  </p>
+                  <div className="mt-4 flex justify-end">
+                    <Button variant="secondary" size="sm" onClick={() => pushRecommendation(recommendation)}>
+                      Send til HUB
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-rose-500/20 bg-rose-500/5 lg:col-span-2">
@@ -618,6 +732,8 @@ export default function PublishingHubPage() {
                   <option value="support">Support</option>
                   <option value="next_launch">Next launch</option>
                   <option value="lead_magnet">Lead magnet</option>
+                  <option value="authority_book">Authority book</option>
+                  <option value="secondary">Secondary</option>
                   <option value="parked">Parked</option>
                 </select>
                 <Input placeholder="Pris" value={newBook.price} onChange={(e) => setNewBook((p) => ({ ...p, price: e.target.value }))} />
