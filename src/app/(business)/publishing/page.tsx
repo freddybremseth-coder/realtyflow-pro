@@ -90,6 +90,47 @@ const series = [
   "Olive Oil Quality Checklist",
 ];
 
+const authorPlatform = {
+  name: "Mediterraneo Vital",
+  positioning: "Health, longevity and sustainable living from the Mediterranean olive grove.",
+  promise:
+    "Hjelpe lesere å forstå ekte middelhavsliv, extra virgin olive oil, polyfenoler, sunnere matvalg og et roligere liv i Spania.",
+  primaryAudience: "Health-conscious readers 40+, Mediterranean diet readers, expats, food lovers and Doña Anna followers.",
+  commercialPriority: "The Olive Oil Cure først, deretter Mediterranean Olive Oil Cookbook for Beginners.",
+};
+
+function getAuditScore(book: PublishingBook) {
+  let score = 0;
+  const checks = [
+    { ok: Boolean(book.title), label: "tittel" },
+    { ok: Boolean(book.subtitle && book.subtitle.length > 35), label: "undertittel" },
+    { ok: Boolean(book.asin), label: "ASIN" },
+    { ok: Boolean(book.main_category), label: "kategori" },
+    { ok: Boolean(book.keywords && book.keywords.length >= 5), label: "keywords" },
+    { ok: Number(book.reviews_count || 0) >= 10, label: "reviews" },
+    { ok: Number(book.price || 0) > 0, label: "pris" },
+    { ok: Boolean(book.amazon_url), label: "Amazon-lenke" },
+    { ok: Boolean(book.next_action), label: "neste handling" },
+    { ok: ["front_product", "next_launch", "support", "lead_magnet", "parked"].includes(String(book.role || "")), label: "rolle" },
+  ];
+
+  for (const check of checks) {
+    if (check.ok) score += 10;
+  }
+
+  const missing = checks.filter((check) => !check.ok).map((check) => check.label);
+  return { score, missing };
+}
+
+function getBookStrategy(book: PublishingBook) {
+  const role = String(book.role || "support");
+  if (role === "front_product") return "Selge og validere hovedplattformen. Denne må ha best cover, metadata, reviews og Ads-test.";
+  if (role === "next_launch") return "Neste kommersielle lansering. Bruk konkurrentanalyse og søkedata før manus bygges ferdig.";
+  if (role === "lead_magnet") return "Bygge e-postliste og reader team. Ikke optimaliser primært for royalties.";
+  if (role === "parked") return "Ikke bruk trafikkbudsjett nå. Behold i systemet, men prioriter ikke aktivt.";
+  return "Støttebok som bygger autoritet, intern trafikk og mer dybde rundt hovedplattformen.";
+}
+
 export default function PublishingHubPage() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(0);
@@ -288,6 +329,79 @@ export default function PublishingHubPage() {
     );
   }
 
+  async function createBookCampaign(book: PublishingBook) {
+    setHubStatus(null);
+    const score = getAuditScore(book);
+    const tasks = [
+      {
+        title: `Audit: ${book.title}`,
+        description: `Audit score ${score.score}/100. Mangler: ${score.missing.join(", ") || "ingen kritiske hull"}.`,
+        next_action: "Gå gjennom cover, tittel, undertittel, description, keywords, kategori, pris og preview.",
+        priority: "HIGH",
+        ai_score: Math.max(70, score.score),
+      },
+      {
+        title: `Amazon SEO: ${book.title}`,
+        description: "Lag 7 KDP keyword-felt, kategori-kandidater og konkurrent-ASIN-liste.",
+        next_action: "Bruk reader-intent: Mediterranean diet, EVOO, polyphenols, anti-inflammatory, longevity og relevante konkurrenttitler.",
+        priority: "HIGH",
+        ai_score: 86,
+      },
+      {
+        title: `Sales copy: ${book.title}`,
+        description: "Skriv om Amazon-beskrivelse som salgsside uten medisinske garantier.",
+        next_action: "Start med drøm/problem, forklar løftet, vis hva leseren lærer, etabler troverdighet og avslutt med CTA.",
+        priority: "HIGH",
+        ai_score: 84,
+      },
+      {
+        title: `Content engine: ${book.title}`,
+        description: "Lag 10 blogginnlegg, 20 sosiale poster og 5 e-poster fra bokens hovedidé.",
+        next_action: "Koble innholdet til bok, lead magnet, Doña Anna og Mediterraneo Vital.",
+        priority: "MEDIUM",
+        ai_score: 78,
+      },
+      {
+        title: `Review loop: ${book.title}`,
+        description: "Bygg lovlig early reader-flow for frivillige ærlige reviews.",
+        next_action: "Finn 30-50 relevante lesere og be om feedback, ikke rating eller garantert review.",
+        priority: "HIGH",
+        ai_score: 82,
+      },
+      {
+        title: `Ads readiness: ${book.title}`,
+        description: "Klargjør Amazon Ads først etter at metadata, cover, preview og review-plan er bedre.",
+        next_action: "Start med automatic discovery, exact keywords og competitor ASIN targeting på lavt budsjett.",
+        priority: "MEDIUM",
+        ai_score: 74,
+      },
+    ];
+
+    let count = 0;
+    for (const task of tasks) {
+      const res = await fetch("/api/work-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...task,
+          brand_id: "freddypublishing",
+          source_type: "kdp",
+          source_id: book.id,
+          assigned_agent: "publishing",
+          metadata: {
+            book_title: book.title,
+            asin: book.asin || null,
+            role: book.role || null,
+            campaign: "30_day_book_growth",
+            platform: authorPlatform.name,
+          },
+        }),
+      });
+      if (res.ok) count += 1;
+    }
+    setHubStatus(`${count}/${tasks.length} kampanjeoppgaver for "${book.title}" er lagt i Oppgave-HUB-en.`);
+  }
+
   async function importKdpReport(file?: File | null) {
     if (!file) return;
     setImportingReport(true);
@@ -361,6 +475,25 @@ export default function PublishingHubPage() {
           </p>
         </div>
       )}
+
+      <Card className="border-rose-500/20 bg-rose-500/5">
+        <CardContent className="p-5">
+          <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-rose-300">Author Platform</p>
+              <h2 className="mt-2 text-2xl font-bold text-white">{authorPlatform.name}</h2>
+              <p className="mt-1 text-sm text-rose-100/90">{authorPlatform.positioning}</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-300">{authorPlatform.promise}</p>
+            </div>
+            <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Strategisk prioritet</p>
+              <p className="mt-2 text-sm text-slate-200">{authorPlatform.commercialPriority}</p>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Primær målgruppe</p>
+              <p className="mt-2 text-sm text-slate-300">{authorPlatform.primaryAudience}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-5">
         {[
@@ -513,6 +646,19 @@ export default function PublishingHubPage() {
                 <div key={book.id} className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
+                      {(() => {
+                        const audit = getAuditScore(book);
+                        return (
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${audit.score >= 80 ? "bg-emerald-500/15 text-emerald-300" : audit.score >= 55 ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"}`}>
+                              Audit {audit.score}/100
+                            </span>
+                            {audit.missing.slice(0, 4).map((item) => (
+                              <span key={item} className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-500">Mangler {item}</span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-base font-semibold text-white">{book.title}</h3>
                         <Badge variant={book.role === "front_product" ? "destructive" : book.role === "next_launch" ? "success" : "secondary"} className="text-[10px]">
@@ -540,6 +686,9 @@ export default function PublishingHubPage() {
                       <p className="mt-3 text-sm text-slate-300">
                         <span className="text-slate-500">Neste:</span> {book.next_action || "Legg inn neste handling."}
                       </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        <span className="text-slate-400">Strategi:</span> {getBookStrategy(book)}
+                      </p>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {book.amazon_url && (
@@ -550,6 +699,9 @@ export default function PublishingHubPage() {
                       )}
                       <Button variant="outline" size="sm" onClick={() => pushBookTask(book)}>
                         Send til HUB
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => createBookCampaign(book)}>
+                        30d kampanje
                       </Button>
                     </div>
                   </div>
