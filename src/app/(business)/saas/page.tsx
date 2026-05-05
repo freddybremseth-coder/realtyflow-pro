@@ -136,6 +136,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const SEED_APPS: Partial<SaaSApp>[] = [
   {
+    slug: 'chatgenius', name: 'ChatGenius.pro', domain: 'chatgenius.pro',
+    description: 'Main platform and brand hub for AI agents, automations and SaaS products',
+    category: 'ai-chat', color: '#8b5cf6', status: 'live', pricing_model: 'subscription',
+    tech_stack: ['next.js', 'supabase', 'openai', 'vercel'], dev_platform: 'codex',
+    repo_url: 'https://github.com/freddybremseth-coder/ChatGenius-App', live_url: 'https://chatgenius.pro',
+  },
+  {
     slug: 'astro', name: 'Astro AI', domain: 'astro.chatgenius.pro',
     description: 'AI-drevet astrologiassistent med personlige horoskoper og livscoaching',
     category: 'ai-chat', color: '#8b5cf6', status: 'live', pricing_model: 'freemium',
@@ -145,13 +152,22 @@ const SEED_APPS: Partial<SaaSApp>[] = [
     slug: 'olivia', name: 'Olivia AI', domain: 'olivia.chatgenius.pro',
     description: 'Personlig AI-assistent for daglige oppgaver, planlegging og produktivitet',
     category: 'ai-chat', color: '#ec4899', status: 'live', pricing_model: 'freemium',
-    price_monthly: 14.99, tech_stack: ['next.js', 'anthropic', 'supabase'], dev_platform: 'claude-code',
+    price_monthly: 14.99, tech_stack: ['next.js', 'anthropic', 'supabase'], dev_platform: 'codex',
+    repo_url: 'https://github.com/freddybremseth-coder/olivia', live_url: 'https://olivia.chatgenius.pro',
   },
   {
-    slug: 'realtyflow', name: 'RealtyFlow Chat', domain: 'realtyflow.chatgenius.pro',
+    slug: 'realtyflow', name: 'RealtyFlow Pro', domain: 'realtyflow.chatgenius.pro',
     description: 'AI eiendomsassistent for kjopere og selgere i Spania',
     category: 'real-estate', color: '#06b6d4', status: 'live', pricing_model: 'subscription',
-    price_monthly: 29.99, tech_stack: ['next.js', 'anthropic', 'supabase', 'leaflet'], dev_platform: 'claude-code',
+    price_monthly: 29.99, tech_stack: ['next.js', 'anthropic', 'supabase', 'leaflet'], dev_platform: 'codex',
+    repo_url: 'https://github.com/freddybremseth-coder/realtyflow-pro', live_url: 'https://realtyflow.chatgenius.pro',
+  },
+  {
+    slug: 'donaanna', name: 'Dona Anna', domain: 'donaanna.com',
+    description: 'Olive oil, farm story and Mediterranean product brand connected to Olivia farm data',
+    category: 'ecommerce', color: '#f59e0b', status: 'live', pricing_model: 'one-time',
+    tech_stack: ['next.js', 'supabase', 'content-commerce'], dev_platform: 'codex',
+    repo_url: 'https://github.com/freddybremseth-coder/donaanna', live_url: 'https://donaanna.com',
   },
   {
     slug: 'socialmusichub', name: 'Social Music Hub', domain: 'socialmusichub.chatgenius.pro',

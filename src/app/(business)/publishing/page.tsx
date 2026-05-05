@@ -52,6 +52,14 @@ type PublishingRecommendation = {
   book_title?: string;
 };
 
+type BusinessOverviewTotals = {
+  publishingBooks?: number;
+  publishingOrders?: number;
+  publishingRoyalties?: number;
+  saasMrr?: number;
+  oliviaNetProfit?: number;
+};
+
 const kdpTasks = [
   {
     title: "Optimaliser The Olive Oil Cure metadata",
@@ -163,6 +171,7 @@ export default function PublishingHubPage() {
   const [recommendations, setRecommendations] = useState<PublishingRecommendation[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsSynthetic, setRecommendationsSynthetic] = useState(false);
+  const [businessTotals, setBusinessTotals] = useState<BusinessOverviewTotals | null>(null);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -222,9 +231,20 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadBusinessOverviewTotals() {
+    try {
+      const res = await fetch("/api/business/overview", { cache: "no-store" });
+      const data = await res.json();
+      setBusinessTotals(data.totals || null);
+    } catch (err) {
+      console.error("Could not load shared business overview totals:", err);
+    }
+  }
+
   useEffect(() => {
     loadBooks();
     loadRecommendations();
+    loadBusinessOverviewTotals();
   }, []);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
@@ -555,11 +575,11 @@ export default function PublishingHubPage() {
 
       <div className="grid gap-4 md:grid-cols-5">
         {[
-          ["Bøker", books.length, "Totalt i publishing-porteføljen"],
+          ["Bøker", businessTotals?.publishingBooks ?? books.length, "Synket med Business Overview"],
           ["Aktive", totals.active, "Launch/active/optimize"],
           ["Reviews", totals.reviews, "Samlet review-base"],
-          ["Orders", totals.orders, "Registrert fra Ads/salg"],
-          ["Royalties", `$${totals.royalties.toFixed(0)}`, "Registrert inntekt"],
+          ["Orders", businessTotals?.publishingOrders ?? totals.orders, "Synket med Business Overview"],
+          ["Royalties", `$${Number(businessTotals?.publishingRoyalties ?? totals.royalties).toFixed(0)}`, "Synket inntekt"],
         ].map(([label, value, description]) => (
           <Card key={String(label)}>
             <CardContent className="p-4">

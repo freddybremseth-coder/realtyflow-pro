@@ -5,15 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
-import { createClient } from "@supabase/supabase-js";
 import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf } from "lucide-react";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
 
 interface BrandData {
   brandId: string;
@@ -30,6 +22,14 @@ interface BrandData {
   pipelineLeads: number;
   crmContacts: number;
   growthActions: number;
+  saasApps: number;
+  saasMrr: number;
+  saasRevenue: number;
+  publishingBooks: number;
+  publishingOrders: number;
+  publishingRoyalties: number;
+  oliviaRevenue: number;
+  oliviaNetProfit: number;
 }
 
 interface OliviaData {
@@ -60,100 +60,24 @@ export default function BusinessOverviewPage() {
     totalBrands: BRANDS.length,
     pipelineLeads: 0,
     crmContacts: 0,
+    saasApps: 0,
+    saasMrr: 0,
+    saasRevenue: 0,
+    publishingBooks: 0,
+    publishingOrders: 0,
+    publishingRoyalties: 0,
+    oliviaRevenue: 0,
+    oliviaNetProfit: 0,
   });
 
   const fetchOverviewData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all data sources in parallel
-      const supabase = getSupabase();
-
-      const [contentRes, accountsRes, allContactsRes, actionsRes, oliviaRes] = await Promise.allSettled([
-        // Fetch content_publications directly from Supabase (not /api/content which queries wrong table)
-        supabase
-          ? supabase.from("content_publications").select("id, brand_id, status, created_at").order("created_at", { ascending: false }).limit(500).then(r => ({ publications: r.data || [] }))
-          : Promise.resolve({ publications: [] }),
-        fetch("/api/social-accounts").then(r => r.json()).catch(() => ({ accounts: [] })),
-        // Fetch ALL contacts in a single call to avoid double-counting
-        fetch("/api/contacts?view=pipeline").then(r => r.json()).catch(() => ({ contacts: [] })),
-        fetch("/api/growth/actions").then(r => r.json()).catch(() => ({ actions: [] })),
-        fetch("/api/olivia").then(r => r.json()).catch(() => null),
-      ]);
-
-      const publications = contentRes.status === "fulfilled" ? (contentRes.value.publications || []) : [];
-      const socialAccounts = accountsRes.status === "fulfilled" ? (accountsRes.value.accounts || []) : [];
-      const allContacts: Record<string, unknown>[] = allContactsRes.status === "fulfilled" ? (allContactsRes.value.contacts || []) : [];
-      const growthActions = actionsRes.status === "fulfilled" ? (actionsRes.value.actions || []) : [];
-
-      // Olivia farm data
-      const olivia = oliviaRes.status === "fulfilled" && oliviaRes.value && !oliviaRes.value.error
-        ? oliviaRes.value as OliviaData
-        : null;
-      setOliviaData(olivia);
-
-      // Derive pipeline and CRM views from single contacts list (no duplicates)
-      const pipelineContacts = allContacts;
-      const crmContacts = allContacts.filter((c) => c.pipeline_status !== "NEW");
-
-      // Build per-brand data
-      const newBrandData: Record<string, BrandData> = {};
-
-      for (const brand of BRANDS) {
-        const brandPosts = publications.filter((p: Record<string, unknown>) =>
-          p.brand_id === brand.id || p.brand === brand.id
-        );
-        const brandPublished = brandPosts.filter((p: Record<string, unknown>) =>
-          p.status === "published"
-        );
-        const brandAccounts = socialAccounts.filter((a: Record<string, unknown>) =>
-          a.brand === brand.id || a.brand_id === brand.id
-        );
-        const brandPipeline = pipelineContacts.filter((c: Record<string, unknown>) =>
-          c.brand_id === brand.id
-        );
-        const brandCrm = crmContacts.filter((c: Record<string, unknown>) =>
-          c.brand_id === brand.id
-        );
-        const brandActions = growthActions.filter((a: Record<string, unknown>) =>
-          a.brand === brand.id || a.brand_id === brand.id
-        );
-
-        // Calculate commission income from WON contacts (use allContacts directly, no duplicates)
-        const uniqueWon = allContacts.filter((c: Record<string, unknown>) =>
-          c.pipeline_status === "WON" && c.brand_id === brand.id
-        );
-        const commissionTotal = uniqueWon.reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
-        const commissionPaid = uniqueWon.filter((c) => c.commission_paid_date).reduce((s, c) => s + (Number(c.commission_amount) || 0), 0);
-        const saleTotal = uniqueWon.reduce((s, c) => s + (Number(c.sale_price) || 0), 0);
-
-        newBrandData[brand.id] = {
-          brandId: brand.id,
-          revenue: saleTotal > 0 ? `€${saleTotal.toLocaleString()}` : "Ikke tilgjengelig",
-          revenueAmount: saleTotal,
-          commissionTotal,
-          commissionPaid,
-          commissionPending: commissionTotal - commissionPaid,
-          wonDeals: uniqueWon.length,
-          customers: brandCrm.length,
-          totalPosts: brandPosts.length,
-          publishedPosts: brandPublished.length,
-          connectedAccounts: brandAccounts.length,
-          pipelineLeads: brandPipeline.length,
-          crmContacts: brandCrm.length,
-          growthActions: brandActions.length,
-        };
-      }
-
-      setBrandDataMap(newBrandData);
-
-      setTotals({
-        totalPosts: publications.length,
-        publishedPosts: publications.filter((p: Record<string, unknown>) => p.status === "published").length,
-        connectedAccounts: socialAccounts.length,
-        totalBrands: BRANDS.length,
-        pipelineLeads: pipelineContacts.length,
-        crmContacts: crmContacts.length,
-      });
+      const res = await fetch("/api/business/overview", { cache: "no-store" });
+      const data = await res.json();
+      setBrandDataMap(data.brandDataMap || {});
+      setTotals((prev) => ({ ...prev, ...(data.totals || {}) }));
+      setOliviaData(data.oliviaData && !data.oliviaData.error ? data.oliviaData as OliviaData : null);
     } catch {
       // If all fetches fail, leave everything at 0
     } finally {
@@ -325,6 +249,26 @@ export default function BusinessOverviewPage() {
             <p className="text-[10px] text-slate-500 uppercase">CRM kunder</p>
           </CardContent>
         </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-cyan-400">${Number(totals.saasMrr || 0).toLocaleString()}</p>
+            <p className="text-[10px] text-slate-500 uppercase">ChatGenius MRR</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-rose-400">${Number(totals.publishingRoyalties || 0).toLocaleString()}</p>
+            <p className="text-[10px] text-slate-500 uppercase">KDP royalties</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className={`text-2xl font-bold ${Number(totals.oliviaNetProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              €{Number(totals.oliviaNetProfit || 0).toLocaleString()}
+            </p>
+            <p className="text-[10px] text-slate-500 uppercase">Olivia netto</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Brand Selector */}
@@ -452,6 +396,44 @@ export default function BusinessOverviewPage() {
                     <span className="text-xs text-slate-400">Veksthandlinger</span>
                     <span className="text-sm font-medium text-cyan-400">{data.growthActions}</span>
                   </div>
+                  {brand.id === "chatgenius" && (
+                    <>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">SaaS apps</span>
+                        <span className="text-sm font-medium text-cyan-400">{data.saasApps}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">MRR</span>
+                        <span className="text-sm font-medium text-emerald-400">${Number(data.saasMrr || 0).toLocaleString()}</span>
+                      </div>
+                    </>
+                  )}
+                  {brand.id === "freddypublishing" && (
+                    <>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">Bøker</span>
+                        <span className="text-sm font-medium text-rose-400">{data.publishingBooks}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">KDP royalties</span>
+                        <span className="text-sm font-medium text-emerald-400">${Number(data.publishingRoyalties || 0).toLocaleString()}</span>
+                      </div>
+                    </>
+                  )}
+                  {brand.id === "donaanna" && (
+                    <>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">Olivia inntekt</span>
+                        <span className="text-sm font-medium text-emerald-400">€{Number(data.oliviaRevenue || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                        <span className="text-xs text-slate-400">Olivia netto</span>
+                        <span className={`text-sm font-medium ${Number(data.oliviaNetProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          €{Number(data.oliviaNetProfit || 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
