@@ -278,6 +278,7 @@ export default function Dashboard() {
           automationErrorsRes,
           contentByBrandRes,
           socialAccountsRes,
+          websiteLeadTasksRes,
         ] = await Promise.all([
           supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes,brand,source").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
           supabase.from("properties").select("id", { count: "exact", head: true }),
@@ -307,6 +308,12 @@ export default function Dashboard() {
             .limit(500),
           supabase.from("social_accounts")
             .select("brand,platform,is_active"),
+          supabase.from("work_items")
+            .select("id,title,description,brand_id,source_id,created_at,updated_at,metadata")
+            .eq("source_type", "website_lead")
+            .eq("status", "TO_DO")
+            .order("updated_at", { ascending: false })
+            .limit(5),
         ]);
 
         // Build recent activity from real data
@@ -357,6 +364,21 @@ export default function Dashboard() {
             detail: details?.error || details?.message || 'Automatisering feilet',
             time: getTimeAgo(createdAt),
             href: "/automation",
+          });
+        }
+
+        const websiteLeadTasks = websiteLeadTasksRes.data || [];
+        for (const task of websiteLeadTasks) {
+          const updatedAt = task.updated_at ? new Date(task.updated_at) : new Date();
+          const ageDays = (Date.now() - updatedAt.getTime()) / 86400000;
+          if (ageDays > 7) continue;
+          alerts.push({
+            id: `website-lead:${task.id}`,
+            type: "info",
+            title: task.title || "Ny lead fra nettsiden",
+            detail: task.description || "Ny aktivitet fra ZenEcoHomes eller kundeportal.",
+            time: getTimeAgo(updatedAt),
+            href: "/pipeline",
           });
         }
 

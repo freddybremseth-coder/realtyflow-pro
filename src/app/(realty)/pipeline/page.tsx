@@ -41,6 +41,7 @@ interface Lead {
   property?: string;
   notes?: string;
   createdAt: string;
+  lastContact?: string;
   interactions: Interaction[];
   sale_price?: number;
   commission_amount?: number;
@@ -194,6 +195,7 @@ export default function PipelinePage() {
           property: c.property_interest || undefined,
           notes: c.notes || undefined,
           createdAt: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          lastContact: c.last_contact ? c.last_contact.split('T')[0] : c.updated_at ? c.updated_at.split('T')[0] : undefined,
           interactions: c.interactions || [],
           sale_price: c.sale_price || undefined,
           commission_amount: c.commission_amount || undefined,
@@ -467,6 +469,9 @@ export default function PipelinePage() {
       pipeline_status: "NEW",
       property_interest: newLead.property || "",
       notes: newLead.notes || "",
+      last_contact: now,
+      next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
       created_at: now,
       updated_at: now,
     };
@@ -484,7 +489,8 @@ export default function PipelinePage() {
         budget: newLead.budget ? `€${newLead.budget}` : "€0",
         source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
         property: newLead.property || undefined, notes: newLead.notes || undefined,
-        createdAt: now.split("T")[0], interactions: [],
+        createdAt: now.split("T")[0], lastContact: now.split("T")[0],
+        interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
       };
       setLeads((prev) => [lead, ...prev]);
     } catch {
@@ -494,7 +500,8 @@ export default function PipelinePage() {
         budget: newLead.budget ? `€${newLead.budget}` : "€0",
         source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
         property: newLead.property || undefined, notes: newLead.notes || undefined,
-        createdAt: now.split("T")[0], interactions: [],
+        createdAt: now.split("T")[0], lastContact: now.split("T")[0],
+        interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
       };
       setLeads((prev) => [lead, ...prev]);
     }
@@ -532,7 +539,9 @@ export default function PipelinePage() {
         sentiment: 50, status: "NEW",
         property: propertyIdx >= 0 ? cols[propertyIdx]?.trim() : undefined,
         notes: notesIdx >= 0 ? cols[notesIdx]?.trim() : undefined,
-        createdAt: new Date().toISOString().split("T")[0], interactions: [],
+        createdAt: new Date().toISOString().split("T")[0],
+        lastContact: new Date().toISOString().split("T")[0],
+        interactions: [],
       });
     }
     setCsvData(parsed);
@@ -561,11 +570,16 @@ export default function PipelinePage() {
             pipeline_status: 'NEW',
             pipeline_value: parseInt(String(lead.budget).replace(/[^0-9]/g, '')) || 0,
             source: lead.source || 'CSV Import', property_interest: lead.property || '',
-            notes: lead.notes || '', created_at: now, updated_at: now,
+            notes: lead.notes || '',
+            last_contact: now,
+            next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            interactions: [{ id: `csv-${Date.now()}`, type: "note", content: "Lead importert fra CSV", date: now, direction: "in" }],
+            created_at: now,
+            updated_at: now,
           }),
         });
         const data = await res.json();
-        savedLeads.push({ ...lead, id: data.contact?.id || lead.id });
+        savedLeads.push({ ...lead, id: data.contact?.id || lead.id, lastContact: now.split("T")[0] });
       } catch {
         savedLeads.push(lead);
       }
@@ -632,6 +646,7 @@ export default function PipelinePage() {
             sentiment: l.sentiment === 'hot' ? 90 : l.sentiment === 'warm' ? 70 : l.sentiment === 'cold' ? 20 : 50,
             status: 'NEW' as LeadStatus,
             createdAt: new Date().toISOString().split('T')[0],
+            lastContact: new Date().toISOString().split('T')[0],
             interactions: [],
           };
         });
@@ -1177,6 +1192,10 @@ export default function PipelinePage() {
                           </div>
                         </div>
                         {lead.property && <p className="text-xs text-slate-400 mb-1.5 truncate">{lead.property}</p>}
+                        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-amber-300">
+                          <Clock size={10} />
+                          <span>Siste kontakt: {lead.lastContact || lead.createdAt}</span>
+                        </div>
                         <div className="space-y-0.5">
                           {lead.email && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Mail size={10} /><span className="truncate">{lead.email}</span></div>}
                           {lead.phone && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Phone size={10} /><span>{lead.phone}</span></div>}
@@ -1259,6 +1278,9 @@ export default function PipelinePage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-slate-300">
                     <Globe size={14} className="text-slate-500" />{selectedLead.source}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-amber-300">
+                    <Clock size={14} className="text-slate-500" />Siste kontakt: {selectedLead.lastContact || selectedLead.createdAt}
                   </div>
                 </div>
 

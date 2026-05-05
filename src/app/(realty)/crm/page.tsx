@@ -165,7 +165,7 @@ export default function CRMPage() {
           type: ((c.type || 'buyer').toUpperCase() as CustomerType),
           preferredLocation: c.preferred_location || c.interested_in || '',
           budget: c.budget || undefined,
-          lastContact: c.last_contact || c.updated_at?.split('T')[0] || '',
+          lastContact: c.last_contact ? c.last_contact.split('T')[0] : c.updated_at?.split('T')[0] || '',
           notes: c.notes || '',
           interactions: c.interactions || [],
           avatar: (c.name || '').split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase(),
@@ -595,6 +595,7 @@ export default function CRMPage() {
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Mail size={14} className="text-slate-500" />{selectedCustomer.email}</div>
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Phone size={14} className="text-slate-500" />{selectedCustomer.phone}</div>
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Building2 size={14} className="text-slate-500" />{selectedCustomer.preferredLocation}</div>
+                    <div className="flex items-center gap-2 text-sm text-amber-300"><Clock size={14} className="text-slate-500" />Siste kontakt: {selectedCustomer.lastContact || "Ikke logget"}</div>
                     {selectedCustomer.budget && <div className="flex items-center gap-2 text-sm text-emerald-400"><span className="text-slate-500 text-xs">Budsjett:</span>{selectedCustomer.budget}</div>}
                   </div>
 

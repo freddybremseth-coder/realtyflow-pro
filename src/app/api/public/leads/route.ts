@@ -19,6 +19,27 @@ function cleanText(value: unknown, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
+function interactionSummary(params: {
+  source: string;
+  requestType: string;
+  preferredArea: string;
+  budget: string;
+  timeline: string;
+  propertyRef: string;
+  propertyTitle: string;
+  message: string;
+}) {
+  return [
+    `Ny aktivitet fra ${params.source || "nettside"}`,
+    params.requestType ? `Forespørsel: ${params.requestType}` : "",
+    params.propertyRef || params.propertyTitle ? `Bolig: ${[params.propertyRef, params.propertyTitle].filter(Boolean).join(" - ")}` : "",
+    params.preferredArea ? `Område: ${params.preferredArea}` : "",
+    params.budget ? `Budsjett: ${params.budget}` : "",
+    params.timeline ? `Tidslinje: ${params.timeline}` : "",
+    params.message ? `Melding: ${params.message}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export async function POST(request: NextRequest) {
   const expectedKey = process.env.ZENECO_API_KEY || process.env.REALTYFLOW_PUBLIC_LEAD_KEY;
   const providedKey = request.headers.get("x-realtyflow-source-key") || "";
@@ -48,7 +69,11 @@ export async function POST(request: NextRequest) {
   const timeline = cleanText(body.timeline, 120);
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
-  const pipelineValue = budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0;
+  const source = cleanText(body.source, 120) || "zenecohomes-public-lead";
+  const rawNotes = cleanText(body.notes, 5000);
+  const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
+  const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
+  const pipelineValue = incomingPipelineValue || (budget ? Number(budget.replace(/[^0-9]/g, "")) || 0 : 0);
 
   const notes = [
     requestType ? `Forespørsel: ${requestType}` : "",
@@ -62,28 +87,44 @@ export async function POST(request: NextRequest) {
     timeline ? `Tidslinje: ${timeline}` : "",
     body.utm_source || body.utm_campaign ? `UTM: ${cleanText(body.utm_source, 80)} / ${cleanText(body.utm_campaign, 120)}` : "",
     message,
+    rawNotes,
   ].filter(Boolean).join("\n");
 
   const now = new Date().toISOString();
   const { data: existing } = await supabase
     .from("contacts")
-    .select("id")
+    .select("id,notes,interactions,pipeline_status")
     .eq("email", email)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
+  const incomingInteraction = {
+    id: `website-${Date.now()}`,
+    type: "note",
+    content: interactionSummary({ source, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle, message }),
+    date: now,
+    direction: "in",
+  };
+  const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
+  const existingStatus = String(existing?.pipeline_status || "");
+  const nextStatus = existingStatus && !["LOST", "ON_HOLD"].includes(existingStatus) ? existingStatus : "NEW";
+  const mergedNotes = [notes, existing?.notes ? `Tidligere notater:\n${existing.notes}` : ""].filter(Boolean).join("\n\n---\n\n");
+
   const contactPayload = {
       name,
       email,
       phone: cleanText(body.phone, 80) || null,
-      source: cleanText(body.source, 120) || "zenecohomes-public-lead",
-      notes,
-      pipeline_status: "NEW",
+      source,
+      notes: mergedNotes,
+      pipeline_status: nextStatus,
       pipeline_value: pipelineValue,
-      property_interest: [propertyRef, propertyTitle].filter(Boolean).join(" - ") || preferredArea,
+      property_interest: [propertyRef, propertyTitle].filter(Boolean).join(" - ") || incomingPropertyInterest || preferredArea,
       brand: "zeneco",
       brand_id: "zeneco",
+      last_contact: now,
+      next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      interactions: [incomingInteraction, ...existingInteractions],
       updated_at: now,
     };
 
@@ -96,8 +137,8 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await supabase.from("work_items").insert({
-    title: `Ny ZenEcoHomes-lead: ${name}`,
-    description: `${email}${preferredArea ? ` · ${preferredArea}` : ""}${budget ? ` · ${budget}` : ""}`,
+    title: `${existing?.id ? "Ny aktivitet fra" : "Ny ZenEcoHomes-lead:"} ${name}`,
+    description: `${email}${preferredArea || incomingPropertyInterest ? ` · ${preferredArea || incomingPropertyInterest}` : ""}${budget || pipelineValue ? ` · ${budget || `€${pipelineValue}`}` : ""}`,
     status: "TO_DO",
     priority: pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
     due_date: new Date().toISOString().slice(0, 10),
@@ -105,9 +146,18 @@ export async function POST(request: NextRequest) {
     source_type: "website_lead",
     source_id: data.id,
     assigned_agent: "sales",
-    next_action: "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
+    next_action: existing?.id
+      ? "Kunden har sendt ny info. Sjekk endringen og svar personlig i dag."
+      : "Send personlig oppfølging og avklar område, budsjett og tidslinje.",
     ai_score: pipelineValue >= 500000 || propertyRef ? 86 : 68,
-    metadata: { page_url: pageUrl, property_ref: propertyRef, timeline, created_from_public_endpoint: true },
+    metadata: {
+      page_url: pageUrl,
+      property_ref: propertyRef,
+      timeline,
+      email,
+      is_existing_contact: Boolean(existing?.id),
+      created_from_public_endpoint: true,
+    },
     created_at: now,
     updated_at: now,
   }).then(() => null);
