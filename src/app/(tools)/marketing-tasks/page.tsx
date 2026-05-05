@@ -33,7 +33,7 @@ const cols: { key: TaskStatus; label: string; color: string }[] = [
 ];
 
 const priorityColors = { CRITICAL: "destructive" as const, HIGH: "destructive" as const, MEDIUM: "warning" as const, LOW: "secondary" as const };
-const platforms = ["Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Email", "Twitter", "Website"];
+const platforms = ["HUB", "Brand", "KDP", "Instagram", "Facebook", "LinkedIn", "YouTube", "TikTok", "Email", "Twitter", "Website"];
 
 function mapWorkItem(item: any): Task {
   return {
@@ -134,9 +134,9 @@ export default function MarketingTasksPage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <CheckSquare className="text-primary-400" size={28} />
-            Marketing Tasks
+            Oppgave-HUB
           </h1>
-          <p className="text-sm text-slate-400 mt-1">Dra oppgaver mellom kolonnene eller bruk hurtigknappene</p>
+          <p className="text-sm text-slate-400 mt-1">Én kø for leads, brand-arbeid, KDP, publisering og automasjoner</p>
         </div>
         <Button onClick={() => setShowNew(true)}><Plus size={16} className="mr-2" />Ny oppgave</Button>
       </div>

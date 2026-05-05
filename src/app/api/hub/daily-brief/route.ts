@@ -47,7 +47,11 @@ export async function GET(request: Request) {
     }));
 
   const opportunities = sorted
-    .filter((item) => ["crm", "website_lead", "chatbot", "saas", "market_intelligence"].includes(String(item.source_type || "")))
+    .filter((item) =>
+      ["crm", "website_lead", "chatbot", "saas", "publishing", "kdp", "brand", "market_intelligence"].includes(
+        String(item.source_type || ""),
+      ),
+    )
     .slice(0, 4)
     .map((item) => ({
       title: item.title,

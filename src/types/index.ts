@@ -2,7 +2,7 @@
 export interface Brand {
   id: string;
   name: string;
-  type: "real_estate" | "saas" | "agriculture" | "personal" | "music" | "tourism" | "ecommerce" | "other";
+  type: "real_estate" | "saas" | "agriculture" | "personal" | "music" | "publishing" | "tourism" | "ecommerce" | "other";
   description: string;
   color: string;
   logo_url?: string;

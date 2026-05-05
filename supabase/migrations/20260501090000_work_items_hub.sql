@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS work_items (
       'website_lead',
       'chatbot',
       'saas',
+      'publishing',
+      'kdp',
+      'brand',
       'property',
       'market_intelligence'
     )),

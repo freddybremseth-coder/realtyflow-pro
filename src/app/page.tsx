@@ -81,6 +81,15 @@ const BRAND_WORKSPACES = [
     accent: "emerald",
   },
   {
+    id: "soleada",
+    aliases: ["soleada", "soleada.no"],
+    label: "Soleada.no",
+    unit: "Premium eiendom",
+    description: "Skandinaviske kjøpere, Costa Blanca/Cálida, rådgivning og henvisningsavtaler.",
+    href: "/pipeline",
+    accent: "cyan",
+  },
+  {
     id: "pinosoecolife",
     aliases: ["pinosoecolife", "pinoso eco life"],
     label: "PinosoEcoLife",
@@ -117,7 +126,16 @@ const BRAND_WORKSPACES = [
     accent: "purple",
   },
   {
-    id: "remasterfreddy",
+    id: "freddypublishing",
+    aliases: ["freddypublishing", "freddy publishing", "kindle", "kdp", "amazon", "books", "boker", "bøker"],
+    label: "Freddy Publishing",
+    unit: "Bøker og KDP",
+    description: "Kindle SEO, bokfunnels, metadata, annonser, reviews og nye bokideer.",
+    href: "/content-hub",
+    accent: "rose",
+  },
+  {
+    id: "neuralbeat",
     aliases: ["remasterfreddy", "remaster", "neuralbeat", "re-master freddy"],
     label: "Re-Master Freddy",
     unit: "Musikk og YouTube",
@@ -155,10 +173,13 @@ function brandMatches(value: string | null | undefined, aliases: string[]) {
 
 function getWorkspaceIcon(id: string) {
   if (id === "zeneco") return Building2;
+  if (id === "soleada") return Building2;
   if (id === "pinosoecolife") return Sprout;
   if (id === "chatgenius") return MessageSquare;
   if (id === "donaanna") return Sprout;
+  if (id === "freddypublishing") return FileText;
   if (id === "remasterfreddy") return Music2;
+  if (id === "neuralbeat") return Music2;
   return BriefcaseBusiness;
 }
 
@@ -205,6 +226,20 @@ function getAccentClasses(accent: string) {
       icon: "bg-red-500/15 text-red-300",
       text: "text-red-300",
       chip: "border-red-500/25 bg-red-500/10 text-red-300",
+    },
+    cyan: {
+      border: "border-cyan-500/25",
+      bg: "bg-cyan-500/5",
+      icon: "bg-cyan-500/15 text-cyan-300",
+      text: "text-cyan-300",
+      chip: "border-cyan-500/25 bg-cyan-500/10 text-cyan-300",
+    },
+    rose: {
+      border: "border-rose-500/25",
+      bg: "bg-rose-500/5",
+      icon: "bg-rose-500/15 text-rose-300",
+      text: "text-rose-300",
+      chip: "border-rose-500/25 bg-rose-500/10 text-rose-300",
     },
   };
   return map[accent] || map.blue;

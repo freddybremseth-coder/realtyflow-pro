@@ -1,11 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { BRANDS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type WorkItemStatus = "TO_DO" | "IN_PROGRESS" | "REVIEW" | "DONE" | "CANCELLED";
 type WorkItemPriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+type WorkItemSource =
+  | "manual"
+  | "crm"
+  | "content"
+  | "automation"
+  | "ai_agent"
+  | "website_lead"
+  | "chatbot"
+  | "saas"
+  | "publishing"
+  | "kdp"
+  | "brand"
+  | "property"
+  | "market_intelligence";
+
+const SOURCE_TYPES: WorkItemSource[] = [
+  "manual",
+  "crm",
+  "content",
+  "automation",
+  "ai_agent",
+  "website_lead",
+  "chatbot",
+  "saas",
+  "publishing",
+  "kdp",
+  "brand",
+  "property",
+  "market_intelligence",
+];
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -26,6 +57,11 @@ function normalizePriority(priority?: string): WorkItemPriority {
   return "MEDIUM";
 }
 
+function normalizeSourceType(sourceType?: string): WorkItemSource {
+  const value = String(sourceType || "manual").toLowerCase();
+  return SOURCE_TYPES.includes(value as WorkItemSource) ? (value as WorkItemSource) : "manual";
+}
+
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -42,7 +78,7 @@ function scoreContact(contact: { interactions?: unknown[]; notes?: string | null
 }
 
 async function synthesizedItems(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
-  const [contactsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
+  const [contactsRes, failedPubsRes, automationErrorsRes, contentHealthRes, accountsRes, growthActionsRes] = await Promise.all([
     supabase
       .from("contacts")
       .select("id,name,email,pipeline_status,pipeline_value,interactions,notes,brand_id,brand,updated_at")
@@ -61,6 +97,19 @@ async function synthesizedItems(supabase: NonNullable<ReturnType<typeof getSupab
       .eq("status", "error")
       .order("created_at", { ascending: false })
       .limit(10),
+    supabase
+      .from("content_publications")
+      .select("id,brand_id,status,created_at,updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("social_accounts")
+      .select("brand,platform,is_active"),
+    supabase
+      .from("growth_actions")
+      .select("id,brand,status,created_at,updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(500),
   ]);
 
   const contactItems = (contactsRes.data || [])
@@ -121,7 +170,71 @@ async function synthesizedItems(supabase: NonNullable<ReturnType<typeof getSupab
     updated_at: log.created_at,
   }));
 
-  return [...contactItems, ...failedPublicationItems, ...automationItems]
+  const contentRows = contentHealthRes.data || [];
+  const accounts = accountsRes.data || [];
+  const growthActions = growthActionsRes.data || [];
+  const thirtyDaysAgo = Date.now() - 30 * 86400000;
+
+  const brandHealthItems = BRANDS.flatMap((brand) => {
+    const brandContent = contentRows.filter((item) => item.brand_id === brand.id);
+    const recentPublished = brandContent.some((item) => {
+      const timestamp = item.updated_at || item.created_at;
+      return item.status === "published" && timestamp && new Date(timestamp).getTime() >= thirtyDaysAgo;
+    });
+    const hasActiveChannel = accounts.some((account) => account.brand === brand.id && account.is_active !== false);
+    const hasRecentGrowthAction = growthActions.some((action) => {
+      const timestamp = action.updated_at || action.created_at;
+      return action.brand === brand.id && timestamp && new Date(timestamp).getTime() >= thirtyDaysAgo;
+    });
+
+    const items = [];
+    if (!hasActiveChannel) {
+      items.push({
+        id: `brand-channel-${brand.id}`,
+        title: `Koble publiseringskanaler for ${brand.name}`,
+        description: `${brand.name} mangler aktive sosiale kontoer i HUB-en. Uten kanal mister agentene publiserings- og måleloop.`,
+        status: "TO_DO",
+        priority: brand.id === "freddypublishing" || brand.type === "real_estate" ? "HIGH" : "MEDIUM",
+        due_date: todayDate(),
+        brand_id: brand.id,
+        source_type: "brand",
+        source_id: `channel-${brand.id}`,
+        assigned_agent: "victoria",
+        next_action: "Koble minst én kanal eller merk brandet som parkert slik at HUB-en prioriterer riktig.",
+        ai_score: brand.id === "freddypublishing" || brand.type === "real_estate" ? 84 : 68,
+        metadata: { synthetic: true, reason: "missing_active_channel" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    if (!recentPublished && !hasRecentGrowthAction) {
+      items.push({
+        id: `brand-growth-${brand.id}`,
+        title: `Lag 30-dagers vekstplan for ${brand.name}`,
+        description: `${brand.name} har ingen tydelig nylig publiserings- eller vekstaktivitet i HUB-en.`,
+        status: "TO_DO",
+        priority: brand.id === "freddypublishing" || brand.type === "real_estate" ? "HIGH" : "MEDIUM",
+        due_date: todayDate(),
+        brand_id: brand.id,
+        source_type: brand.id === "freddypublishing" ? "kdp" : "brand",
+        source_id: `growth-${brand.id}`,
+        assigned_agent: brand.id === "freddypublishing" ? "publishing" : "marketing",
+        next_action:
+          brand.id === "freddypublishing"
+            ? "Analyser Amazon-metadata, konkurrerende bøker, reviews og lag første KDP-optimaliseringsplan."
+            : "Velg ett konkret tilbud, ett lead magnet-konsept og tre publiseringsideer for de neste 30 dagene.",
+        ai_score: brand.id === "freddypublishing" || brand.type === "real_estate" ? 86 : 72,
+        metadata: { synthetic: true, reason: "stale_growth_loop" },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    return items;
+  });
+
+  return [...contactItems, ...failedPublicationItems, ...automationItems, ...brandHealthItems]
     .sort((a, b) => (b.ai_score || 0) - (a.ai_score || 0));
 }
 
@@ -176,7 +289,7 @@ export async function POST(request: NextRequest) {
     priority: normalizePriority(body.priority),
     due_date: body.due_date || body.dueDate || null,
     brand_id: body.brand_id || body.brand || null,
-    source_type: body.source_type || "manual",
+    source_type: normalizeSourceType(body.source_type),
     source_id: body.source_id || null,
     assigned_agent: body.assigned_agent || body.platform || null,
     next_action: body.next_action || null,
