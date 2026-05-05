@@ -171,7 +171,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message, books: [] }, { status: 500 });
   }
 
-  return NextResponse.json({ books: data || [], synthetic: false });
+  if (!data || data.length === 0) {
+    return NextResponse.json({ books: seedBooks, synthetic: true, emptyDatabase: true });
+  }
+
+  return NextResponse.json({ books: data, synthetic: false });
 }
 
 export async function POST(request: NextRequest) {

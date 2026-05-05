@@ -116,7 +116,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message, playbooks: [] }, { status: 500 });
   }
 
-  return NextResponse.json({ playbooks: data || [], synthetic: false });
+  if (!data || data.length === 0) {
+    return NextResponse.json({ playbooks: seedPlaybooks, synthetic: true, emptyDatabase: true });
+  }
+
+  return NextResponse.json({ playbooks: data, synthetic: false });
 }
 
 export async function POST(request: NextRequest) {

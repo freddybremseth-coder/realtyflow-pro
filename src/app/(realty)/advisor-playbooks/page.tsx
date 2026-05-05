@@ -35,6 +35,7 @@ export default function AdvisorPlaybooksPage() {
   const [loading, setLoading] = useState(true);
   const [tableNotReady, setTableNotReady] = useState(false);
   const [synthetic, setSynthetic] = useState(false);
+  const [emptyDatabase, setEmptyDatabase] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -46,6 +47,7 @@ export default function AdvisorPlaybooksPage() {
       setPlaybooks(data.playbooks || []);
       setTableNotReady(Boolean(data.tableNotReady));
       setSynthetic(Boolean(data.synthetic));
+      setEmptyDatabase(Boolean(data.emptyDatabase));
     } catch (err) {
       console.error("Could not load advisor playbooks:", err);
     } finally {
@@ -122,6 +124,12 @@ export default function AdvisorPlaybooksPage() {
       {tableNotReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
           Kjør migrasjonen `20260505130000_advisor_playbooks.sql` for å lagre playbooks permanent.
+        </div>
+      )}
+
+      {emptyDatabase && !tableNotReady && (
+        <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">
+          Tabellen er klar, men tom. Klikk `Lagre seed-playbooks` for å lagre første verifiserte rådgivertekst i Supabase.
         </div>
       )}
 
