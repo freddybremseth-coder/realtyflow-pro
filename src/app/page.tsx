@@ -7,7 +7,8 @@ import {
   Building2, Users, TrendingUp, FileText,
   Eye, Zap, BarChart3, Bot, Globe, DollarSign, Target,
   Loader2, AlertTriangle, CheckCircle, XCircle, ArrowRight,
-  Trash2, X,
+  Trash2, X, BriefcaseBusiness, Sprout, Music2, PlayCircle, MessageSquare,
+  CalendarDays, Megaphone,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -24,13 +25,32 @@ interface DashboardStats {
   properties: number;
   plots: number;
   pipelineValue: string;
+  pipelineValueRaw: number;
   publishedPosts: number;
   scheduledPosts: number;
   totalDrafts: number;
   failedPosts: number;
   aiAgents: number;
+  connectedChannels: number;
+  brandWorkspaces: BrandWorkspaceStats[];
   recentActivity: { type: string; text: string; time: string }[];
   alerts: { id: string; type: "error" | "warning" | "info"; title: string; detail: string; time: string; href?: string }[];
+}
+
+interface BrandWorkspaceStats {
+  id: string;
+  label: string;
+  unit: string;
+  description: string;
+  href: string;
+  leads: number;
+  pipelineValue: number;
+  drafts: number;
+  scheduled: number;
+  published: number;
+  channels: string[];
+  status: "operativ" | "mangler-kanaler" | "bygges";
+  accent: string;
 }
 
 interface DailyBrief {
@@ -48,6 +68,146 @@ interface DailyBrief {
   }[];
   synthetic?: boolean;
   table_not_ready?: boolean;
+}
+
+const BRAND_WORKSPACES = [
+  {
+    id: "zeneco",
+    aliases: ["zeneco", "zenecohomes", "zen eco homes"],
+    label: "ZenEcoHomes",
+    unit: "Eiendom",
+    description: "Nybygg, boligrådgivning, kjøperreise og Min side.",
+    href: "/inventory",
+    accent: "emerald",
+  },
+  {
+    id: "pinosoecolife",
+    aliases: ["pinosoecolife", "pinoso eco life"],
+    label: "PinosoEcoLife",
+    unit: "Tomter og livsstil",
+    description: "Tomter, innland, eco living, finca og byggeprosess.",
+    href: "/tomtebase",
+    accent: "lime",
+  },
+  {
+    id: "chatgenius",
+    aliases: ["chatgenius", "chatgenius.pro"],
+    label: "ChatGenius",
+    unit: "SaaS",
+    description: "AI-apper, automasjon, demoer, salgsbrev og B2B-pipeline.",
+    href: "/saas",
+    accent: "blue",
+  },
+  {
+    id: "donaanna",
+    aliases: ["donaanna", "donnaanna", "doña anna", "dona anna"],
+    label: "Dona Anna",
+    unit: "Oliven og gård",
+    description: "Olivia, produkter, gårdsfortelling, B2B og nyhetsbrev.",
+    href: "/content-hub",
+    accent: "amber",
+  },
+  {
+    id: "freddyb",
+    aliases: ["freddyb", "freddybremseth", "freddy bremseth"],
+    label: "FreddyBremseth",
+    unit: "Personlig brand",
+    description: "Tillit, artikler, rådgivning, bøker og overordnet profil.",
+    href: "/brands",
+    accent: "purple",
+  },
+  {
+    id: "remasterfreddy",
+    aliases: ["remasterfreddy", "remaster", "neuralbeat", "re-master freddy"],
+    label: "Re-Master Freddy",
+    unit: "Musikk og YouTube",
+    description: "YouTube, låter, publisering, statistikk og kampanjer.",
+    href: "/neural-beat",
+    accent: "red",
+  },
+];
+
+function normalizeWorkspaceKey(value?: string | null) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function formatEuroCompact(value: number) {
+  if (!value) return "€0";
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+    notation: value >= 1000000 ? "compact" : "standard",
+  }).format(value);
+}
+
+function brandMatches(value: string | null | undefined, aliases: string[]) {
+  const normalized = normalizeWorkspaceKey(value);
+  return aliases.some((alias) => {
+    const key = normalizeWorkspaceKey(alias);
+    return normalized === key || normalized.includes(key);
+  });
+}
+
+function getWorkspaceIcon(id: string) {
+  if (id === "zeneco") return Building2;
+  if (id === "pinosoecolife") return Sprout;
+  if (id === "chatgenius") return MessageSquare;
+  if (id === "donaanna") return Sprout;
+  if (id === "remasterfreddy") return Music2;
+  return BriefcaseBusiness;
+}
+
+function getAccentClasses(accent: string) {
+  const map: Record<string, { border: string; bg: string; icon: string; text: string; chip: string }> = {
+    emerald: {
+      border: "border-emerald-500/25",
+      bg: "bg-emerald-500/5",
+      icon: "bg-emerald-500/15 text-emerald-300",
+      text: "text-emerald-300",
+      chip: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
+    },
+    lime: {
+      border: "border-lime-500/25",
+      bg: "bg-lime-500/5",
+      icon: "bg-lime-500/15 text-lime-300",
+      text: "text-lime-300",
+      chip: "border-lime-500/25 bg-lime-500/10 text-lime-300",
+    },
+    blue: {
+      border: "border-blue-500/25",
+      bg: "bg-blue-500/5",
+      icon: "bg-blue-500/15 text-blue-300",
+      text: "text-blue-300",
+      chip: "border-blue-500/25 bg-blue-500/10 text-blue-300",
+    },
+    amber: {
+      border: "border-amber-500/25",
+      bg: "bg-amber-500/5",
+      icon: "bg-amber-500/15 text-amber-300",
+      text: "text-amber-300",
+      chip: "border-amber-500/25 bg-amber-500/10 text-amber-300",
+    },
+    purple: {
+      border: "border-purple-500/25",
+      bg: "bg-purple-500/5",
+      icon: "bg-purple-500/15 text-purple-300",
+      text: "text-purple-300",
+      chip: "border-purple-500/25 bg-purple-500/10 text-purple-300",
+    },
+    red: {
+      border: "border-red-500/25",
+      bg: "bg-red-500/5",
+      icon: "bg-red-500/15 text-red-300",
+      text: "text-red-300",
+      chip: "border-red-500/25 bg-red-500/10 text-red-300",
+    },
+  };
+  return map[accent] || map.blue;
 }
 
 function buyingSignalScore(contact: { interactions?: unknown[]; notes?: string | null; pipeline_status?: string | null; pipeline_value?: number | null }) {
@@ -106,8 +266,20 @@ export default function Dashboard() {
 
       try {
         // Fetch real data in parallel
-        const [contactsRes, propertiesRes, plotsRes, pubsRes, scheduledRes, draftsRes, recentPubsRes, failedPubsRes, automationErrorsRes] = await Promise.all([
-          supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
+        const [
+          contactsRes,
+          propertiesRes,
+          plotsRes,
+          pubsRes,
+          scheduledRes,
+          draftsRes,
+          recentPubsRes,
+          failedPubsRes,
+          automationErrorsRes,
+          contentByBrandRes,
+          socialAccountsRes,
+        ] = await Promise.all([
+          supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes,brand,source").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("land_plots").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
@@ -129,6 +301,12 @@ export default function Dashboard() {
             .eq("status", "error")
             .order("created_at", { ascending: false })
             .limit(5),
+          supabase.from("content_publications")
+            .select("brand_id,status")
+            .order("updated_at", { ascending: false })
+            .limit(500),
+          supabase.from("social_accounts")
+            .select("brand,platform,is_active"),
         ]);
 
         // Build recent activity from real data
@@ -182,17 +360,59 @@ export default function Dashboard() {
           });
         }
 
+        const activeContacts = contactsRes.data || [];
+        const contentItems = contentByBrandRes.data || [];
+        const socialAccounts = socialAccountsRes.data || [];
+        const brandWorkspaces: BrandWorkspaceStats[] = BRAND_WORKSPACES.map((workspace) => {
+          const leads = activeContacts.filter((contact) => {
+            const brand = (contact as { brand?: string | null }).brand;
+            const source = (contact as { source?: string | null }).source;
+            return brandMatches(brand, workspace.aliases) || brandMatches(source, workspace.aliases);
+          });
+          const content = contentItems.filter((item) => brandMatches((item as { brand_id?: string | null }).brand_id, workspace.aliases));
+          const channels = Array.from(
+            new Set(
+              socialAccounts
+                .filter((account) => {
+                  const typed = account as { brand?: string | null; platform?: string | null; is_active?: boolean | null };
+                  return typed.is_active !== false && brandMatches(typed.brand, workspace.aliases) && typed.platform;
+                })
+                .map((account) => String((account as { platform?: string | null }).platform || "").toLowerCase()),
+            ),
+          ).sort();
+          const pipelineValue = leads.reduce((sum, contact) => sum + (Number((contact as { pipeline_value?: number | null }).pipeline_value) || 0), 0);
+          return {
+            id: workspace.id,
+            label: workspace.label,
+            unit: workspace.unit,
+            description: workspace.description,
+            href: workspace.href,
+            leads: leads.length,
+            pipelineValue,
+            drafts: content.filter((item) => (item as { status?: string }).status === "draft").length,
+            scheduled: content.filter((item) => (item as { status?: string }).status === "scheduled").length,
+            published: content.filter((item) => (item as { status?: string }).status === "published").length,
+            channels,
+            status: channels.length > 0 ? "operativ" : leads.length || content.length ? "mangler-kanaler" : "bygges",
+            accent: workspace.accent,
+          };
+        });
+        const pipelineValueRaw = activeContacts.reduce((sum, contact) => sum + (Number(contact.pipeline_value) || 0), 0);
+
         setStats({
-          activeLeads: contactsRes.data?.length || 0,
-          hotSignals: (contactsRes.data || []).filter((contact) => buyingSignalScore(contact) >= 70).length,
+          activeLeads: activeContacts.length || 0,
+          hotSignals: activeContacts.filter((contact) => buyingSignalScore(contact) >= 70).length,
           properties: propertiesRes.count || 0,
           plots: plotsRes.count || 0,
-          pipelineValue: "–",
+          pipelineValue: formatEuroCompact(pipelineValueRaw),
+          pipelineValueRaw,
           publishedPosts: pubsRes.count || 0,
           scheduledPosts: scheduledRes.count || 0,
           totalDrafts: draftsRes.count || 0,
           failedPosts: alerts.filter((alert) => alert.type === "error").length,
           aiAgents: 8,
+          connectedChannels: socialAccounts.filter((account) => (account as { is_active?: boolean | null }).is_active !== false).length,
+          brandWorkspaces,
           recentActivity,
           alerts,
         });
@@ -283,6 +503,152 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          {/* BusinessFlow Mission Control */}
+          <div>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-orange-300">
+                  <BriefcaseBusiness size={14} />
+                  BusinessFlow Mission Control
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Én intern portal for Freddy, med tydelige brand-workspaces og egne kundereiser.
+                </p>
+              </div>
+              <a href="/brands" className="inline-flex items-center gap-2 rounded-lg border border-orange-500/25 bg-orange-500/10 px-3 py-2 text-xs font-medium text-orange-200 hover:bg-orange-500/20">
+                Åpne brands
+                <ArrowRight size={12} />
+              </a>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <Card className="border-orange-500/20 bg-orange-500/5 lg:col-span-1">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-orange-200/80">Master cockpit</p>
+                      <p className="mt-2 text-2xl font-bold text-white">{stats?.pipelineValue || "€0"}</p>
+                      <p className="mt-1 text-xs text-slate-400">Aktiv pipeline på tvers av brands</p>
+                    </div>
+                    <DollarSign className="text-orange-300 opacity-70" size={28} />
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                      <p className="text-[10px] uppercase text-slate-500">Leads</p>
+                      <p className="text-lg font-semibold text-white">{stats?.activeLeads || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                      <p className="text-[10px] uppercase text-slate-500">Kanaler</p>
+                      <p className="text-lg font-semibold text-white">{stats?.connectedChannels || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                      <p className="text-[10px] uppercase text-slate-500">Planlagt</p>
+                      <p className="text-lg font-semibold text-white">{stats?.scheduledPosts || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                      <p className="text-[10px] uppercase text-slate-500">Utkast</p>
+                      <p className="text-lg font-semibold text-white">{stats?.totalDrafts || 0}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-700/50 bg-slate-900/50 lg:col-span-3">
+                <CardContent className="p-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {[
+                      { label: "Brand", text: "Velg workspace, målgruppe og brand memory.", icon: Globe },
+                      { label: "Innhold", text: "Lag artikkel, SoMe, YouTube, e-post eller dokument.", icon: FileText },
+                      { label: "Godkjenning", text: "Victoria foreslår, du godkjenner før publisering.", icon: CheckCircle },
+                      { label: "Publisering", text: "Send til nettside, SoMe, YouTube eller kundeportal.", icon: Megaphone },
+                      { label: "Analyse", text: "Mål leads, reach, pipeline og neste beste handling.", icon: BarChart3 },
+                      { label: "Oppfølging", text: "Lag oppgave, møte, melding eller automatisert sekvens.", icon: CalendarDays },
+                    ].map((step, index) => (
+                      <div key={step.label} className="rounded-lg border border-slate-700/40 bg-slate-950/35 p-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/15 text-[11px] font-semibold text-orange-200">
+                            {index + 1}
+                          </span>
+                          <step.icon size={14} className="text-orange-300" />
+                          <p className="text-sm font-medium text-white">{step.label}</p>
+                        </div>
+                        <p className="text-xs leading-5 text-slate-400">{step.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {(stats?.brandWorkspaces || []).map((workspace) => {
+                const Icon = getWorkspaceIcon(workspace.id);
+                const accent = getAccentClasses(workspace.accent);
+                return (
+                  <a
+                    key={workspace.id}
+                    href={workspace.href}
+                    className={`rounded-xl border ${accent.border} ${accent.bg} p-4 transition-colors hover:border-slate-500/60`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${accent.icon}`}>
+                          <Icon size={18} />
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-white">{workspace.label}</p>
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${accent.chip}`}>
+                              {workspace.unit}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-slate-400">{workspace.description}</p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant={workspace.status === "operativ" ? "success" : workspace.status === "mangler-kanaler" ? "warning" : "secondary"}
+                        className="text-[9px]"
+                      >
+                        {workspace.status === "operativ" ? "Operativ" : workspace.status === "mangler-kanaler" ? "Koble kanaler" : "Bygges"}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 grid grid-cols-4 gap-2">
+                      <div>
+                        <p className="text-[10px] uppercase text-slate-500">Leads</p>
+                        <p className="text-sm font-semibold text-white">{workspace.leads}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-slate-500">Pipeline</p>
+                        <p className="text-sm font-semibold text-white">{formatEuroCompact(workspace.pipelineValue)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-slate-500">Kø</p>
+                        <p className="text-sm font-semibold text-white">{workspace.drafts + workspace.scheduled}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-slate-500">Kanaler</p>
+                        <p className="text-sm font-semibold text-white">{workspace.channels.length}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {workspace.channels.length > 0 ? (
+                        workspace.channels.map((channel) => (
+                          <span key={channel} className="rounded-md border border-slate-700/50 bg-slate-950/40 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+                            {channel}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] uppercase tracking-wide text-amber-300">
+                          Ingen aktive SoMe-kanaler
+                        </span>
+                      )}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
           </div>
 
           {/* Realty KPIs */}
