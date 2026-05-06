@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,15 @@ import { Input } from "@/components/ui/input";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { Loader2, Sparkles, ArrowRight, Wand2, RefreshCw } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+
+interface BankImage {
+  id: string;
+  url: string;
+  name: string | null;
+  kind: "product" | "variant" | "image" | "logo" | "thumbnail";
+  tags: string[] | null;
+  created_at: string;
+}
 
 export default function NewAdCampaignPage() {
   const router = useRouter();
@@ -67,6 +76,8 @@ export default function NewAdCampaignPage() {
   const [offer, setOffer] = useState("15% on first order");
   const [targetTotal, setTargetTotal] = useState(50);
   const [aspectRatios, setAspectRatios] = useState<string[]>(["1:1", "9:16"]);
+  const [bankImages, setBankImages] = useState<BankImage[]>([]);
+  const [bankLoading, setBankLoading] = useState(false);
 
   const selectedBrand = BRANDS.find((b) => b.id === brandId);
   const estimatedCost = (targetTotal * 0.04).toFixed(2);
@@ -79,6 +90,30 @@ export default function NewAdCampaignPage() {
     if (b?.tone && !brandVoice) setBrandVoice(b.tone);
     if (b?.target_audience && !audienceSegments) setAudienceSegments(b.target_audience);
   };
+
+  useEffect(() => {
+    const loadBankImages = async () => {
+      setBankLoading(true);
+      try {
+        const [productsRes, variantsRes] = await Promise.all([
+          fetch("/api/neural-beat/image-bank?kind=product&owner=all&limit=40"),
+          fetch("/api/neural-beat/image-bank?kind=variant&owner=all&limit=20"),
+        ]);
+        const products = await productsRes.json().catch(() => ({}));
+        const variants = await variantsRes.json().catch(() => ({}));
+        setBankImages([
+          ...((products.images || []) as BankImage[]),
+          ...((variants.images || []) as BankImage[]),
+        ]);
+      } catch {
+        setBankImages([]);
+      } finally {
+        setBankLoading(false);
+      }
+    };
+
+    void loadBankImages();
+  }, []);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -166,7 +201,46 @@ export default function NewAdCampaignPage() {
             onChange={handleImageChange}
             label="Produktbilde"
             hint="JPG, PNG eller WebP — maks 10MB. AI analyserer automatisk."
+            uploadFields={{
+              save_to_bank: "true",
+              bank_kind: "product",
+              bank_owner: brandId || "system",
+              bank_name: productName || name || "Ad campaign produktbilde",
+              bank_tags: `product,ad-campaign,${brandId}`,
+            }}
           />
+
+          {bankImages.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400 block">Eller velg et opplastet produktbilde</label>
+                {bankLoading && <span className="text-[10px] text-gray-500">Laster arkiv...</span>}
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {bankImages.slice(0, 10).map((img) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => {
+                      handleImageChange(img.url);
+                      if (!productName && img.name) setProductName(img.name.replace(/\.[a-z0-9]+$/i, ""));
+                    }}
+                    className={`relative aspect-square rounded-md overflow-hidden border transition-all bg-gray-900 ${
+                      productImageUrl === img.url
+                        ? "border-amber-400 ring-2 ring-amber-400/30"
+                        : "border-gray-700 hover:border-amber-300"
+                    }`}
+                    title={img.name || "Produktbilde"}
+                  >
+                    <img src={img.url} alt={img.name || "Produktbilde"} className="w-full h-full object-cover" />
+                    <span className="absolute left-1 bottom-1 right-1 truncate rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
+                      {img.kind === "variant" ? "Variant" : img.name || "Produkt"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* AI analysis status */}
           {analyzing && (

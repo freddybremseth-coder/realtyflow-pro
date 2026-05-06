@@ -10,6 +10,8 @@ export const maxDuration = 30;
  *   - image:     slideshow custom images
  *   - logo:      watermark/thumbnail brand logos
  *   - thumbnail: custom thumbnails to override the AI-composed ones
+ *   - product:   reusable product/reference images for ads and campaigns
+ *   - variant:   AI-generated variants based on a product/reference image
  *
  * Table: user_image_bank (see migration 20260418_user_image_bank.sql).
  */
@@ -21,7 +23,7 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-const VALID_KINDS = new Set(['image', 'logo', 'thumbnail']);
+const VALID_KINDS = new Set(['image', 'logo', 'thumbnail', 'product', 'variant']);
 
 /**
  * GET /api/neural-beat/image-bank?kind=image&owner=system
@@ -42,9 +44,12 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('user_image_bank')
       .select('id, url, name, kind, tags, width, height, size_bytes, created_at, last_used_at, use_count')
-      .eq('owner', owner)
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    if (owner !== 'all') {
+      query = query.eq('owner', owner);
+    }
 
     if (kind && VALID_KINDS.has(kind)) {
       query = query.eq('kind', kind);

@@ -23,6 +23,8 @@ interface ImageUploadProps {
   allowUrlEntry?: boolean;
   /** Optional className for the outer wrapper */
   className?: string;
+  /** Extra form fields sent to /api/upload-image */
+  uploadFields?: Record<string, string>;
 }
 
 /**
@@ -41,6 +43,7 @@ export function ImageUpload({
   hint = "JPG, PNG eller WebP — maks 10MB",
   allowUrlEntry = true,
   className = "",
+  uploadFields,
 }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -62,6 +65,11 @@ export function ImageUpload({
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (uploadFields) {
+        Object.entries(uploadFields).forEach(([key, fieldValue]) => {
+          fd.append(key, fieldValue);
+        });
+      }
       const res = await fetch("/api/upload-image", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Opplasting feilet");
@@ -71,7 +79,7 @@ export function ImageUpload({
     } finally {
       setUploading(false);
     }
-  }, [maxSizeMB, onChange, onFileSelect]);
+  }, [maxSizeMB, onChange, onFileSelect, uploadFields]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

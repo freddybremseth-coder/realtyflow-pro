@@ -383,7 +383,24 @@ export default function ContentHubPage() {
         query = query.eq("brand_id", brandId);
       }
       const { data } = await query;
-      if (data) setAvailableImages(data);
+      const bankRes = await fetch("/api/neural-beat/image-bank?owner=all&limit=80");
+      const bankData = await bankRes.json().catch(() => ({ images: [] }));
+      const bankImages: DraftItem[] = (bankData.images || [])
+        .filter((img: { url?: string; kind?: string }) => img.url && ["product", "variant", "image", "thumbnail"].includes(img.kind || ""))
+        .map((img: { id: string; url: string; name?: string | null; kind: string; tags?: string[] | null; created_at: string }) => ({
+          id: `bank-${img.id}`,
+          brand_id: brandId || "image-bank",
+          content_type: img.kind,
+          title: img.name || (img.kind === "product" ? "Produktbilde" : "Bildearkiv"),
+          description: "Lagret bilde fra Bilde Studio / produktarkiv",
+          tags: img.tags || [],
+          ai_generated: img.kind === "variant",
+          ai_image_url: img.url,
+          status: "draft",
+          created_at: img.created_at,
+          scheduled_platforms: [],
+        }));
+      setAvailableImages([...(data || []), ...bankImages]);
     } catch (err) {
       console.error("Failed to fetch images:", err);
     } finally {
@@ -410,6 +427,11 @@ export default function ContentHubPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("draft_id", draftId);
+      formData.append("save_to_bank", "true");
+      formData.append("bank_kind", "image");
+      formData.append("bank_owner", "content-hub");
+      formData.append("bank_name", file.name);
+      formData.append("bank_tags", "content-hub,uploaded");
 
       const res = await fetch("/api/upload-image", {
         method: "POST",

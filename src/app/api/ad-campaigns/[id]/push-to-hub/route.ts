@@ -1,5 +1,5 @@
 // ─── POST /api/ad-campaigns/:id/push-to-hub ────────────────────────────
-// Pushes selected (or top-pick) creatives into the Content Hub as work_items
+// Pushes selected (or top-pick) creatives into Content Hub drafts
 // so they can be reviewed, scheduled, and published.
 //
 // Body: { creative_ids?: string[]  (default: all top picks) }
@@ -39,45 +39,50 @@ export async function POST(
     return NextResponse.json({ pushed: 0, message: "No eligible creatives" });
   }
 
-  const items = creatives.map((c) => ({
+  const drafts = creatives.map((c) => ({
+    brand_id: campaign.brand_id || "zeneco",
+    content_type: c.aspect_ratio === "9:16" ? "reel" : "post",
     title: `${campaign.name} · ${c.angle} (${c.scene_id} ${c.aspect_ratio})`,
     description: [
       `Product: ${campaign.product_name}`,
-      `Caption: ${c.caption_primary ?? "(none)"}`,
-      c.caption_secondary ? `Caption (alt): ${c.caption_secondary}` : null,
-      c.hashtags?.length ? `Hashtags: ${c.hashtags.join(" ")}` : null,
-      `Image: ${c.image_url ?? "(missing)"}`,
+      c.caption_primary ?? null,
+      c.caption_secondary ? `Alt: ${c.caption_secondary}` : null,
+      c.hashtags?.length ? c.hashtags.join(" ") : null,
+      "",
+      `Ad campaign: ${campaign.name}`,
+      `Creative: ${c.scene_id} · ${c.angle} · ${c.aspect_ratio}`,
     ].filter(Boolean).join("\n"),
-    status: "TO_DO",
-    priority: c.is_top_pick ? "HIGH" : "MEDIUM",
-    brand_id: campaign.brand_id,
-    source_type: "content",
-    metadata: {
-      ad_campaign_id: params.id,
-      ad_creative_id: c.id,
-      scene_id: c.scene_id,
-      angle: c.angle,
-      aspect_ratio: c.aspect_ratio,
-      image_url: c.image_url,
-      caption_primary: c.caption_primary,
-      caption_secondary: c.caption_secondary,
-      hashtags: c.hashtags,
-      is_top_pick: c.is_top_pick,
-    },
+    tags: [
+      "ad-campaign",
+      campaign.product_name,
+      c.angle,
+      c.scene_id,
+      c.aspect_ratio,
+      ...(c.hashtags || []).map((tag: string) => tag.replace(/^#/, "")),
+    ].filter(Boolean),
+    status: "draft",
+    ai_generated: true,
+    ai_title: `${campaign.name} · ${c.angle}`,
+    ai_description: c.caption_primary ?? null,
+    ai_tags: c.hashtags || [],
+    ai_image_url: c.image_url,
+    campaign_id: params.id,
+    scheduled_platforms: c.aspect_ratio === "9:16" ? ["instagram", "facebook"] : ["facebook", "instagram", "linkedin"],
   }));
 
   const { data: inserted, error: insertErr } = await supabase
-    .from("work_items")
-    .insert(items)
+    .from("content_publications")
+    .insert(drafts)
     .select("id");
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
   // Mark creatives as pushed
-  const ids = creatives.map((c) => c.id);
-  await supabase
-    .from("ad_creatives")
-    .update({ pushed_to_hub: true })
-    .in("id", ids);
+  await Promise.all(creatives.map((c, index) =>
+    supabase
+      .from("ad_creatives")
+      .update({ pushed_to_hub: true, hub_content_id: inserted?.[index]?.id ?? null })
+      .eq("id", c.id)
+  ));
 
-  return NextResponse.json({ pushed: inserted?.length ?? 0 });
+  return NextResponse.json({ pushed: inserted?.length ?? 0, content_hub: true });
 }

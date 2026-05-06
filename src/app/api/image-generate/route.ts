@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 // ─── Image Generation API using Gemini 2.5 Flash Image ──────────────
 // POST /api/image-generate
@@ -21,6 +22,59 @@ const ASPECT_RATIO_HINTS: Record<string, string> = {
   "4:5": "slightly tall composition, ideal for Instagram feed",
 };
 
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function imageUrlToInlineData(imageUrl: string) {
+  if (imageUrl.startsWith("data:")) {
+    const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) throw new Error("Ugyldig data-URL for kildebilde");
+    return { mimeType: match[1], data: match[2] };
+  }
+
+  const res = await fetch(imageUrl, { signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`Kunne ikke hente kildebilde (${res.status})`);
+  const mimeType = res.headers.get("content-type")?.split(";")[0] || "image/png";
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { mimeType, data: buffer.toString("base64") };
+}
+
+async function persistGeneratedImage(imageBase64: string, mimeType: string, brand: string, kind: string, sourceImageUrl?: string) {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const ext = mimeType.includes("jpeg") ? "jpg" : mimeType.includes("webp") ? "webp" : "png";
+  const safeBrand = (brand || "generated").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const storagePath = `generated/${safeBrand}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const buffer = Buffer.from(imageBase64, "base64");
+
+  const { error: uploadError } = await supabase.storage
+    .from("content-images")
+    .upload(storagePath, buffer, { contentType: mimeType, upsert: false });
+
+  if (uploadError) {
+    console.error("[Image Generate] Persist upload failed:", uploadError);
+    return null;
+  }
+
+  const { data: urlData } = supabase.storage.from("content-images").getPublicUrl(storagePath);
+  const publicUrl = urlData.publicUrl;
+
+  await supabase.from("user_image_bank").insert({
+    owner: brand || "system",
+    url: publicUrl,
+    name: kind === "variant" ? "AI produktvariant" : "AI generert bilde",
+    kind,
+    tags: sourceImageUrl ? ["variant", "product-reference"] : ["generated"],
+  });
+
+  return publicUrl;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -37,6 +91,10 @@ export async function POST(req: NextRequest) {
       style = "photo",
       aspectRatio = "1:1",
       brand = "",
+      sourceImageUrl = "",
+      instructions = "",
+      persist = false,
+      bankKind = "image",
     } = body;
 
     if (!prompt || typeof prompt !== "string") {
@@ -49,7 +107,22 @@ export async function POST(req: NextRequest) {
     const styleHint = STYLE_PROMPTS[style] || STYLE_PROMPTS.photo;
     const ratioHint = ASPECT_RATIO_HINTS[aspectRatio] || "";
     const brandHint = brand ? `For the brand "${brand}".` : "";
-    const enhancedPrompt = `${prompt}. ${styleHint}. ${ratioHint}. ${brandHint} No text, letters, words, or watermarks in the image.`.trim();
+    const variantInstruction = sourceImageUrl
+      ? `Use the provided product/reference image as the core subject. Preserve the real product identity, label, package shape, colors, and recognizable details. Create a marketing-ready variant according to these instructions: ${instructions || prompt}.`
+      : prompt;
+    const noTextInstruction = sourceImageUrl
+      ? "Do not invent new label text. Keep existing readable product label details as close as possible."
+      : "No text, letters, words, or watermarks in the image.";
+    const enhancedPrompt = `${variantInstruction}. ${styleHint}. ${ratioHint}. ${brandHint} ${noTextInstruction}`.trim();
+
+    const promptParts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [
+      { text: `Generate a high-quality image: ${enhancedPrompt}` },
+    ];
+
+    if (sourceImageUrl && typeof sourceImageUrl === "string") {
+      const inlineData = await imageUrlToInlineData(sourceImageUrl);
+      promptParts.push({ inlineData });
+    }
 
     // Use Gemini 2.5 Flash Image model via REST API
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
@@ -60,9 +133,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         contents: [
           {
-            parts: [
-              { text: `Generate a high-quality image: ${enhancedPrompt}` },
-            ],
+            parts: promptParts,
           },
         ],
         generationConfig: {
@@ -84,13 +155,13 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await geminiRes.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const responseParts = data?.candidates?.[0]?.content?.parts || [];
 
     let imageBase64 = "";
     let mimeType = "image/png";
     let textResponse = "";
 
-    for (const part of parts) {
+    for (const part of responseParts) {
       if (part.inlineData) {
         imageBase64 = part.inlineData.data;
         mimeType = part.inlineData.mimeType || "image/png";
@@ -110,10 +181,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const imageUrl = `data:${mimeType};base64,${imageBase64}`;
+    const persistedUrl = persist
+      ? await persistGeneratedImage(imageBase64, mimeType, brand || "system", sourceImageUrl ? "variant" : bankKind, sourceImageUrl)
+      : null;
+    const imageUrl = persistedUrl || `data:${mimeType};base64,${imageBase64}`;
 
     return NextResponse.json({
       imageUrl,
+      persisted: Boolean(persistedUrl),
       revisedPrompt: enhancedPrompt,
       textResponse,
     });

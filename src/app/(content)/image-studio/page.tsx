@@ -57,6 +57,9 @@ export default function ImageStudioPage() {
   const [sentToHub, setSentToHub] = useState<Set<string>>(new Set());
   const [uploadedUrl, setUploadedUrl] = useState("");
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [variantInstructions, setVariantInstructions] = useState("");
+  const [variantLoading, setVariantLoading] = useState(false);
+  const [variantError, setVariantError] = useState("");
 
   const sendToContentHub = async (img: GeneratedImage) => {
     setSendingToHub(img.id);
@@ -97,7 +100,7 @@ export default function ImageStudioPage() {
       const res = await fetch("/api/image-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, style, aspectRatio, brand }),
+        body: JSON.stringify({ prompt, style, aspectRatio, brand, persist: true, bankKind: "image" }),
       });
 
       const data = await res.json();
@@ -141,6 +144,51 @@ export default function ImageStudioPage() {
       setError("Kunne ikke nå bildegenereringstjenesten. Prøv igjen.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateVariant = async () => {
+    if (!uploadedUrl || !variantInstructions.trim()) return;
+    setVariantLoading(true);
+    setVariantError("");
+
+    try {
+      const res = await fetch("/api/image-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: variantInstructions,
+          instructions: variantInstructions,
+          sourceImageUrl: uploadedUrl,
+          style,
+          aspectRatio,
+          brand,
+          persist: true,
+          bankKind: "variant",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke generere variant");
+
+      const newImage: GeneratedImage = {
+        id: `variant-${Date.now()}`,
+        prompt: `Variant av produktbilde: ${variantInstructions}`,
+        aspectRatio,
+        style,
+        brand,
+        imageUrl: data.imageUrl,
+        textDescription: data.textResponse || data.revisedPrompt || "",
+        timestamp: new Date().toLocaleString("nb-NO"),
+        starred: true,
+      };
+
+      setHistory((prev) => [newImage, ...prev]);
+      setVariantInstructions("");
+    } catch (err) {
+      setVariantError(err instanceof Error ? err.message : "Kunne ikke generere variant");
+    } finally {
+      setVariantLoading(false);
     }
   };
 
@@ -214,6 +262,13 @@ export default function ImageStudioPage() {
             onChange={setUploadedUrl}
             label="Velg eller dra et bilde hit"
             allowUrlEntry={false}
+            uploadFields={{
+              save_to_bank: "true",
+              bank_kind: "product",
+              bank_owner: brand,
+              bank_name: `Produktbilde ${brand}`,
+              bank_tags: `product,${brand}`,
+            }}
           />
           {uploadedUrl && (
             <div className="space-y-2 pt-2 border-t border-slate-800">
@@ -244,6 +299,31 @@ export default function ImageStudioPage() {
                   Bruk i ny Ad Campaign
                 </Button>
               </Link>
+              <div className="pt-3 space-y-2">
+                <label className="text-xs font-medium text-slate-300 block">
+                  Generer produktvariant med instruks
+                </label>
+                <textarea
+                  value={variantInstructions}
+                  onChange={(e) => setVariantInstructions(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 resize-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  placeholder="F.eks. plasser flasken på et middelhavskjøkken med varm morgensol, sitroner og olivengren. Behold etiketten og flasken tydelig."
+                />
+                {variantError && (
+                  <p className="text-xs text-red-400">{variantError}</p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={variantLoading || !variantInstructions.trim()}
+                  onClick={handleGenerateVariant}
+                  className="gap-1.5"
+                >
+                  {variantLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  {variantLoading ? "Lager variant..." : "Lag variant"}
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

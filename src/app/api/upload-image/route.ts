@@ -24,6 +24,11 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const draftId = formData.get("draft_id") as string | null;
+    const saveToBank = formData.get("save_to_bank") === "true";
+    const bankKind = (formData.get("bank_kind") as string | null) || "image";
+    const bankOwner = (formData.get("bank_owner") as string | null) || "system";
+    const bankName = (formData.get("bank_name") as string | null) || file?.name || null;
+    const bankTagsRaw = (formData.get("bank_tags") as string | null) || "";
 
     if (!file) {
       return NextResponse.json({ error: "Ingen fil valgt" }, { status: 400 });
@@ -95,7 +100,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ url: publicUrl, success: true });
+    let bankImage = null;
+    if (saveToBank) {
+      const validKinds = new Set(["image", "logo", "thumbnail", "product", "variant"]);
+      const tags = bankTagsRaw
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+
+      const { data: savedImage, error: bankError } = await supabase
+        .from("user_image_bank")
+        .insert({
+          owner: bankOwner,
+          url: publicUrl,
+          name: bankName,
+          kind: validKinds.has(bankKind) ? bankKind : "image",
+          tags,
+          size_bytes: file.size,
+        })
+        .select("id, url, name, kind, tags, created_at")
+        .single();
+
+      if (bankError) {
+        console.error("Image bank save error:", bankError);
+      } else {
+        bankImage = savedImage;
+      }
+    }
+
+    return NextResponse.json({ url: publicUrl, success: true, bankImage });
   } catch (error) {
     console.error("Upload image error:", error);
     return NextResponse.json(
