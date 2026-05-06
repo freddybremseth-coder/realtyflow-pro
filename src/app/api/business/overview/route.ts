@@ -28,20 +28,23 @@ type BrandData = {
   publishingRoyalties: number;
   oliviaRevenue: number;
   oliviaNetProfit: number;
+  financialIncome: number;
+  financialExpense: number;
+  financialNet: number;
 };
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key) as any;
 }
 
 function getOliviaSupabase() {
   const url = process.env.OLIVIA_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.OLIVIA_SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key) as any;
 }
 
 function safeRows<T>(result: PromiseSettledResult<{ data: T[] | null }>) {
@@ -142,6 +145,9 @@ function emptyBrandData(brandId: string): BrandData {
     publishingRoyalties: 0,
     oliviaRevenue: 0,
     oliviaNetProfit: 0,
+    financialIncome: 0,
+    financialExpense: 0,
+    financialNet: 0,
   };
 }
 
@@ -156,22 +162,25 @@ export async function GET() {
     });
   }
 
-  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, publishingRes, oliviaData] = await Promise.all([
+  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, publishingRes, ledgerRes, oliviaData] = await Promise.all([
     supabase.from("content_publications").select("id, brand_id, brand, status, created_at").order("created_at", { ascending: false }).limit(500),
     supabase.from("social_accounts").select("id, brand, brand_id, is_active"),
     supabase.from("contacts").select("id, brand_id, pipeline_status, pipeline_value, sale_price, commission_amount, commission_paid_date"),
     supabase.from("growth_actions").select("id, brand, brand_id, status, created_at, updated_at"),
     supabase.from("saas_apps").select("id, slug, name, status, total_users, active_users_30d, total_revenue, mrr, arr"),
     supabase.from("publishing_books").select("id, brand_id, title, orders, royalties, ad_spend, reviews_count, role, status"),
+    supabase.from("business_financial_events").select("id, brand_id, stream, direction, status, amount, currency, event_date"),
     getOliviaData(),
   ]);
 
-  const publications = contentRes.data || [];
-  const socialAccounts = accountsRes.data || [];
-  const contacts = contactsRes.data || [];
-  const growthActions = actionsRes.data || [];
-  const saasApps = saasRes.data || [];
-  const publishingBooks = publishingRes.data || [];
+  const publications: Record<string, any>[] = contentRes.data || [];
+  const socialAccounts: Record<string, any>[] = accountsRes.data || [];
+  const contacts: Record<string, any>[] = contactsRes.data || [];
+  const growthActions: Record<string, any>[] = actionsRes.data || [];
+  const saasApps: Record<string, any>[] = saasRes.data || [];
+  const publishingBooks: Record<string, any>[] = publishingRes.data || [];
+  const ledgerEvents: Record<string, any>[] = ledgerRes.data || [];
+  const hasLedger = ledgerEvents.length > 0;
   const pipelineContacts = contacts;
   const crmContacts = contacts.filter((contact) => contact.pipeline_status !== "NEW");
 
@@ -202,23 +211,54 @@ export async function GET() {
     data.growthActions = brandActions.length;
     data.revenueAmount = uniqueWon.reduce((sum, contact) => sum + (Number(contact.sale_price) || 0), 0);
 
+    const brandLedger = ledgerEvents.filter((event) => event.brand_id === brand.id);
+    data.financialIncome = brandLedger
+      .filter((event) => event.direction === "income")
+      .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
+    data.financialExpense = brandLedger
+      .filter((event) => event.direction === "expense")
+      .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
+    data.financialNet = data.financialIncome - data.financialExpense;
+
+    if (hasLedger) {
+      data.commissionTotal = brandLedger
+        .filter((event) => event.stream === "commission")
+        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
+      data.commissionPaid = brandLedger
+        .filter((event) => event.stream === "commission" && event.status === "paid")
+        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
+      data.commissionPending = brandLedger
+        .filter((event) => event.stream === "commission" && event.status === "pending")
+        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
+    }
+
     if (brand.id === "chatgenius") {
       data.saasApps = saasApps.length;
-      data.saasMrr = saasApps.reduce((sum, app) => sum + (Number(app.mrr) || 0), 0);
-      data.saasRevenue = saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0);
+      data.saasMrr = hasLedger
+        ? brandLedger.filter((event) => event.stream === "saas_mrr").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+        : saasApps.reduce((sum, app) => sum + (Number(app.mrr) || 0), 0);
+      data.saasRevenue = hasLedger
+        ? brandLedger.filter((event) => event.stream === "saas_revenue").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+        : saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0);
       data.revenueAmount += data.saasRevenue;
     }
 
     if (brand.id === "freddypublishing") {
       data.publishingBooks = publishingBooks.length;
       data.publishingOrders = publishingBooks.reduce((sum, book) => sum + (Number(book.orders) || 0), 0);
-      data.publishingRoyalties = publishingBooks.reduce((sum, book) => sum + (Number(book.royalties) || 0), 0);
+      data.publishingRoyalties = hasLedger
+        ? brandLedger.filter((event) => event.stream === "kdp_royalty").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+        : publishingBooks.reduce((sum, book) => sum + (Number(book.royalties) || 0), 0);
       data.revenueAmount += data.publishingRoyalties;
     }
 
     if (brand.id === "donaanna" && oliviaData) {
-      data.oliviaRevenue = Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0);
-      data.oliviaNetProfit = Number(oliviaData.financials.netProfit || 0);
+      data.oliviaRevenue = hasLedger
+        ? brandLedger
+            .filter((event) => event.stream === "olive_harvest" || event.stream === "olive_subsidy")
+            .reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+        : Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0);
+      data.oliviaNetProfit = hasLedger ? data.financialNet : Number(oliviaData.financials.netProfit || 0);
       data.revenueAmount += data.oliviaRevenue;
     }
 
@@ -234,13 +274,35 @@ export async function GET() {
     pipelineLeads: pipelineContacts.length,
     crmContacts: crmContacts.length,
     saasApps: saasApps.length,
-    saasMrr: saasApps.reduce((sum, app) => sum + (Number(app.mrr) || 0), 0),
-    saasRevenue: saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0),
+    saasMrr: hasLedger
+      ? ledgerEvents.filter((event) => event.stream === "saas_mrr").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+      : saasApps.reduce((sum, app) => sum + (Number(app.mrr) || 0), 0),
+    saasRevenue: hasLedger
+      ? ledgerEvents.filter((event) => event.stream === "saas_revenue").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+      : saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0),
     publishingBooks: publishingBooks.length,
     publishingOrders: publishingBooks.reduce((sum, book) => sum + (Number(book.orders) || 0), 0),
-    publishingRoyalties: publishingBooks.reduce((sum, book) => sum + (Number(book.royalties) || 0), 0),
-    oliviaRevenue: oliviaData ? Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0) : 0,
-    oliviaNetProfit: oliviaData ? Number(oliviaData.financials.netProfit || 0) : 0,
+    publishingRoyalties: hasLedger
+      ? ledgerEvents.filter((event) => event.stream === "kdp_royalty").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+      : publishingBooks.reduce((sum, book) => sum + (Number(book.royalties) || 0), 0),
+    oliviaRevenue: hasLedger
+      ? ledgerEvents
+          .filter((event) => event.brand_id === "donaanna" && (event.stream === "olive_harvest" || event.stream === "olive_subsidy"))
+          .reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
+      : oliviaData
+        ? Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0)
+        : 0,
+    oliviaNetProfit: hasLedger
+      ? ledgerEvents
+          .filter((event) => event.brand_id === "donaanna")
+          .reduce((sum, event) => sum + (event.direction === "expense" ? -Number(event.amount || 0) : event.direction === "income" ? Number(event.amount || 0) : 0), 0)
+      : oliviaData
+        ? Number(oliviaData.financials.netProfit || 0)
+        : 0,
+    financeEvents: ledgerEvents.length,
+    financialIncome: ledgerEvents.filter((event) => event.direction === "income").reduce((sum, event) => sum + (Number(event.amount) || 0), 0),
+    financialExpense: ledgerEvents.filter((event) => event.direction === "expense").reduce((sum, event) => sum + (Number(event.amount) || 0), 0),
+    financialNet: ledgerEvents.reduce((sum, event) => sum + (event.direction === "expense" ? -Number(event.amount || 0) : event.direction === "income" ? Number(event.amount || 0) : 0), 0),
   };
 
   return NextResponse.json({
@@ -252,6 +314,7 @@ export async function GET() {
       saas: saasRes.error?.message || null,
       publishing: publishingRes.error?.message || null,
       contacts: contactsRes.error?.message || null,
+      finance: ledgerRes.error?.message || null,
     },
   });
 }

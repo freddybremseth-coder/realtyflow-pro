@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
-import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf } from "lucide-react";
+import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf, RefreshCw } from "lucide-react";
 
 interface BrandData {
   brandId: string;
@@ -30,6 +30,9 @@ interface BrandData {
   publishingRoyalties: number;
   oliviaRevenue: number;
   oliviaNetProfit: number;
+  financialIncome: number;
+  financialExpense: number;
+  financialNet: number;
 }
 
 interface OliviaData {
@@ -68,7 +71,13 @@ export default function BusinessOverviewPage() {
     publishingRoyalties: 0,
     oliviaRevenue: 0,
     oliviaNetProfit: 0,
+    financeEvents: 0,
+    financialIncome: 0,
+    financialExpense: 0,
+    financialNet: 0,
   });
+  const [syncingFinance, setSyncingFinance] = useState(false);
+  const [financeStatus, setFinanceStatus] = useState<string | null>(null);
 
   const fetchOverviewData = useCallback(async () => {
     setLoading(true);
@@ -89,6 +98,26 @@ export default function BusinessOverviewPage() {
     fetchOverviewData();
   }, [fetchOverviewData]);
 
+  async function syncFinance() {
+    setSyncingFinance(true);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch("/api/business/finance/sync", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFinanceStatus(data.error || "Kunne ikke synke økonomi.");
+        return;
+      }
+      const warnings = Array.isArray(data.warnings) && data.warnings.length > 0 ? ` Varsler: ${data.warnings.join(" | ")}` : "";
+      setFinanceStatus(`${data.synced || 0} økonomihendelser synket.${warnings}`);
+      await fetchOverviewData();
+    } catch (err) {
+      setFinanceStatus(err instanceof Error ? err.message : "Kunne ikke synke økonomi.");
+    } finally {
+      setSyncingFinance(false);
+    }
+  }
+
   const brandsToShow = selectedBrand === "all" ? BRANDS : BRANDS.filter((b) => b.id === selectedBrand);
 
   if (loading) {
@@ -101,13 +130,25 @@ export default function BusinessOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <PieChart className="text-primary-400" size={28} />
-          Business Oversikt
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand (sanntidsdata)</p>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <PieChart className="text-primary-400" size={28} />
+            Business Oversikt
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand (sanntidsdata)</p>
+        </div>
+        <Button onClick={syncFinance} disabled={syncingFinance}>
+          {syncingFinance ? <Loader2 className="mr-2 animate-spin" size={16} /> : <RefreshCw className="mr-2" size={16} />}
+          Synk økonomi
+        </Button>
       </div>
+
+      {financeStatus && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {financeStatus}
+        </div>
+      )}
 
       {/* Commission Income Banner */}
       {(() => {
@@ -215,6 +256,14 @@ export default function BusinessOverviewPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
+            <p className={`text-2xl font-bold ${Number(totals.financialNet || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              €{Number(totals.financialNet || 0).toLocaleString()}
+            </p>
+            <p className="text-[10px] text-slate-500 uppercase">Økonomi netto</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-white">{totals.totalBrands}</p>
             <p className="text-[10px] text-slate-500 uppercase">Brands</p>
           </CardContent>
@@ -235,6 +284,12 @@ export default function BusinessOverviewPage() {
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-blue-400">{totals.connectedAccounts}</p>
             <p className="text-[10px] text-slate-500 uppercase">Sosiale kontoer</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-white">{Number(totals.financeEvents || 0).toLocaleString()}</p>
+            <p className="text-[10px] text-slate-500 uppercase">Økonomihendelser</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
@@ -395,6 +450,12 @@ export default function BusinessOverviewPage() {
                   <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
                     <span className="text-xs text-slate-400">Veksthandlinger</span>
                     <span className="text-sm font-medium text-cyan-400">{data.growthActions}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
+                    <span className="text-xs text-slate-400">Økonomi netto</span>
+                    <span className={`text-sm font-medium ${Number(data.financialNet || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      €{Number(data.financialNet || 0).toLocaleString()}
+                    </span>
                   </div>
                   {brand.id === "chatgenius" && (
                     <>
