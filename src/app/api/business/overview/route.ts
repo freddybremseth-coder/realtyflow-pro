@@ -212,6 +212,7 @@ export async function GET() {
     data.revenueAmount = uniqueWon.reduce((sum, contact) => sum + (Number(contact.sale_price) || 0), 0);
 
     const brandLedger = ledgerEvents.filter((event) => event.brand_id === brand.id);
+    const brandHasLedger = brandLedger.length > 0;
     data.financialIncome = brandLedger
       .filter((event) => event.direction === "income")
       .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
@@ -220,7 +221,7 @@ export async function GET() {
       .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
     data.financialNet = data.financialIncome - data.financialExpense;
 
-    if (hasLedger) {
+    if (brandHasLedger) {
       data.commissionTotal = brandLedger
         .filter((event) => event.stream === "commission")
         .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
@@ -253,12 +254,16 @@ export async function GET() {
     }
 
     if (brand.id === "donaanna" && oliviaData) {
-      data.oliviaRevenue = hasLedger
+      const oliviaLedger = brandLedger.filter(
+        (event) => event.source_type === "olivia" || String(event.stream || "").startsWith("olive_")
+      );
+      const hasOliviaLedger = oliviaLedger.length > 0;
+      data.oliviaRevenue = hasOliviaLedger
         ? brandLedger
             .filter((event) => event.stream === "olive_harvest" || event.stream === "olive_subsidy")
             .reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
         : Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0);
-      data.oliviaNetProfit = hasLedger ? data.financialNet : Number(oliviaData.financials.netProfit || 0);
+      data.oliviaNetProfit = hasOliviaLedger ? data.financialNet : Number(oliviaData.financials.netProfit || 0);
       data.revenueAmount += data.oliviaRevenue;
     }
 
@@ -285,14 +290,14 @@ export async function GET() {
     publishingRoyalties: hasLedger
       ? ledgerEvents.filter((event) => event.stream === "kdp_royalty").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
       : publishingBooks.reduce((sum, book) => sum + (Number(book.royalties) || 0), 0),
-    oliviaRevenue: hasLedger
+    oliviaRevenue: ledgerEvents.some((event) => event.brand_id === "donaanna" && (event.source_type === "olivia" || String(event.stream || "").startsWith("olive_")))
       ? ledgerEvents
           .filter((event) => event.brand_id === "donaanna" && (event.stream === "olive_harvest" || event.stream === "olive_subsidy"))
           .reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
       : oliviaData
         ? Number(oliviaData.financials.totalRevenue || 0) + Number(oliviaData.financials.totalSubsidies || 0)
         : 0,
-    oliviaNetProfit: hasLedger
+    oliviaNetProfit: ledgerEvents.some((event) => event.brand_id === "donaanna" && (event.source_type === "olivia" || String(event.stream || "").startsWith("olive_")))
       ? ledgerEvents
           .filter((event) => event.brand_id === "donaanna")
           .reduce((sum, event) => sum + (event.direction === "expense" ? -Number(event.amount || 0) : event.direction === "income" ? Number(event.amount || 0) : 0), 0)

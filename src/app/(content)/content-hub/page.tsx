@@ -240,7 +240,7 @@ export default function ContentHubPage() {
   const [publishPlatforms, setPublishPlatforms] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishResults, setPublishResults] = useState<{platform: string; success: boolean; postUrl?: string; error?: string}[]>([]);
-  const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string}[]>([]);
+  const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string; brand_id?: string | null}[]>([]);
 
   // Image picker state
   const [imagePickerDraft, setImagePickerDraft] = useState<string | null>(null);
@@ -365,8 +365,9 @@ export default function ContentHubPage() {
     return b.toLowerCase().replace(/[-_.\s]/g, "").replace(/homes$/, "").replace(/pro$/, "");
   }, []);
 
-  const brandMatches = useCallback((accountBrand: string, draftBrand: string) => {
-    return normalizeBrand(accountBrand) === normalizeBrand(draftBrand);
+  const brandMatches = useCallback((accountBrand: string, draftBrand: string, accountBrandId?: string | null) => {
+    return normalizeBrand(accountBrand) === normalizeBrand(draftBrand)
+      || normalizeBrand(accountBrandId || "") === normalizeBrand(draftBrand);
   }, [normalizeBrand]);
 
   const fetchAvailableImages = useCallback(async (brandId?: string) => {
@@ -475,7 +476,7 @@ export default function ContentHubPage() {
     // SoMe drafts are created per platform, so this avoids publishing an
     // Instagram variant to every connected account by accident.
     const brandAccounts = connectedAccounts
-      .filter((a) => brandMatches(a.brand, draft.brand_id))
+      .filter((a) => brandMatches(a.brand, draft.brand_id, a.brand_id))
       .map((a) => a.platform);
     const intended = Array.isArray(draft.scheduled_platforms) && draft.scheduled_platforms.length > 0
       ? draft.scheduled_platforms
@@ -566,14 +567,17 @@ export default function ContentHubPage() {
           }),
         });
         const data = await res.json();
-        setPublishResults(data.results || []);
+        const results = data.results?.length
+          ? data.results
+          : [{ platform: "system", success: false, error: data.error || "Ingen respons fra publiseringstjenesten" }];
+        setPublishResults(results);
 
         if (data.success) {
           setDrafts((prev) => prev.filter((d) => d.id !== publishDraft.id));
         }
       }
     } catch (err) {
-      setPublishResults([{ platform: "system", success: false, error: "Nettverksfeil" }]);
+      setPublishResults([{ platform: "system", success: false, error: err instanceof Error ? err.message : "Nettverksfeil" }]);
     } finally {
       setPublishing(false);
     }
@@ -1440,7 +1444,7 @@ export default function ContentHubPage() {
                       { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500/20" },
                     ].map((p) => {
                       const isConnected = connectedAccounts.some(
-                        (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id)
+                        (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id, a.brand_id)
                       );
                       const isSelected = publishPlatforms.includes(p.id);
                       return (
@@ -1474,7 +1478,7 @@ export default function ContentHubPage() {
                     })}
                   </div>
 
-                  {connectedAccounts.filter((a) => brandMatches(a.brand, publishDraft.brand_id)).length === 0 && (
+                  {connectedAccounts.filter((a) => brandMatches(a.brand, publishDraft.brand_id, a.brand_id)).length === 0 && (
                     <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                       <p className="text-xs text-yellow-300">
                         Ingen kontoer koblet til for dette brandet. Gå til{" "}

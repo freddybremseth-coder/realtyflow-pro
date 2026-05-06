@@ -205,7 +205,9 @@ export async function executePublishForDraft(params: {
     .eq("is_active", true);
 
   const accounts = (allAccounts || []).filter(
-    (a: { brand: string }) => normalizeBrand(a.brand) === normalizeBrand(brandId)
+    (a: { brand?: string; brand_id?: string }) =>
+      normalizeBrand(a.brand || "") === normalizeBrand(brandId) ||
+      normalizeBrand(a.brand_id || "") === normalizeBrand(brandId)
   );
 
   // When multiple rows exist under the same brand for one platform (e.g. two

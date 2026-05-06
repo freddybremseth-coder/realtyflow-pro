@@ -138,6 +138,7 @@ export default function GrowthHubPage() {
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [loadingStrategies, setLoadingStrategies] = useState(false);
   const [generatingLeadMagnet, setGeneratingLeadMagnet] = useState<string | null>(null);
+  const [publishingActionId, setPublishingActionId] = useState<string | null>(null);
 
   // Stats
   const [stats, setStats] = useState({ activeActions: 0, leadsThisWeek: 0, growthRate: 0, cyclesRun: 0 });
@@ -320,42 +321,54 @@ export default function GrowthHubPage() {
   };
 
   const publishAction = async (actionId: string) => {
+    setPublishingActionId(actionId);
     try {
+      const action = actions.find((a) => a.id === actionId);
+      if (!action) {
+        addToast("Fant ikke handlingen som skulle publiseres.", "error");
+        return;
+      }
+
+      const platform = String(action.platform || "").toLowerCase();
+      const scheduledPlatforms = ["facebook", "instagram", "linkedin", "pinterest", "tiktok"].includes(platform)
+        ? [platform]
+        : ["facebook", "instagram", "linkedin"];
+
+      const draftRes = await fetch("/api/marketing-kit/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drafts: [{
+            brand_id: action.brand_id,
+            content_type: action.action_type || "social_post",
+            title: `${action.platform || "SoMe"} - ${action.action_type}`,
+            description: action.content,
+            tags: [action.platform, action.action_type, "growth-engine"].filter(Boolean),
+            scheduled_platforms: scheduledPlatforms,
+          }],
+        }),
+      });
+      const draftData = await draftRes.json().catch(() => ({}));
+      if (!draftRes.ok || draftData.drafts_created === 0) {
+        throw new Error(draftData.error || draftData.results?.map((r: { error?: string }) => r.error).filter(Boolean).join(", ") || "Kunne ikke opprette Content Hub-utkast");
+      }
+
       // 1. Update status in growth_actions
       const res = await fetch("/api/growth/actions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: actionId, status: "published" }),
       });
-      if (res.ok) {
-        setActions((prev) => prev.map((a) => a.id === actionId ? { ...a, status: "published" as const } : a));
-
-        // 2. Also create a draft in content_publications
-        const action = actions.find((a) => a.id === actionId);
-        if (action) {
-          try {
-            await fetch("/api/marketing-kit/drafts", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                drafts: [{
-                  brand_id: action.brand_id,
-                  content_type: action.action_type || "social_post",
-                  title: `${action.platform} - ${action.action_type}`,
-                  description: action.content,
-                  tags: [action.platform, action.action_type, "growth-engine"].filter(Boolean),
-                }],
-              }),
-            });
-          } catch {
-            // Content publication creation is secondary; don't fail the main action
-          }
-        }
-
-        addToast("Handling publisert og utkast opprettet!", "success");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Utkast ble opprettet, men handlingen kunne ikke markeres publisert.");
       }
-    } catch {
-      addToast("Kunne ikke publisere.", "error");
+      setActions((prev) => prev.map((a) => a.id === actionId ? { ...a, status: "published" as const } : a));
+      addToast("Handling sendt til Content Hub som publiserbart utkast.", "success");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Kunne ikke publisere.", "error");
+    } finally {
+      setPublishingActionId(null);
     }
   };
 
@@ -767,8 +780,9 @@ export default function GrowthHubPage() {
                           {/* Action buttons */}
                           <div className="flex flex-col gap-1.5 shrink-0">
                             {(action.status === "planned" || action.status === "ready") && (
-                              <Button size="sm" variant="default" className="text-xs h-7" onClick={() => publishAction(action.id)}>
-                                <Send size={12} className="mr-1" />Publiser
+                              <Button size="sm" variant="default" className="text-xs h-7" disabled={publishingActionId === action.id} onClick={() => publishAction(action.id)}>
+                                {publishingActionId === action.id ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Send size={12} className="mr-1" />}
+                                Send til Hub
                               </Button>
                             )}
                             {action.status === "published" && (
