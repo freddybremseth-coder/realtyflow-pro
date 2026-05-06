@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
           ai_title: draft.title,
           ai_description: draft.description,
           ai_tags: draft.tags || [],
+          scheduled_platforms: draft.scheduled_platforms || (draft.metadata?.platform ? [draft.metadata.platform] : []),
           ...(draft.ai_image_url ? { ai_image_url: draft.ai_image_url } : {}),
         })
         .select('id, title, status')

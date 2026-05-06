@@ -322,7 +322,7 @@ export default function ContentHubPage() {
       if (!supabase) return;
       const { data, error } = await supabase
         .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at, scheduled_platforms")
         .in("status", ["draft", "scheduled", "published", "failed"])
         .order("created_at", { ascending: false })
         .limit(50);
@@ -443,17 +443,24 @@ export default function ContentHubPage() {
 
   const openPublishModal = useCallback((draft: DraftItem) => {
     setPublishDraft(draft);
-    setPublishPlatforms([]);
     setPublishResults([]);
     setPublishing(false);
     setScheduleMode("now");
     setScheduledAt("");
     setAiRecommendation(null);
-    // Pre-select platforms that have accounts for this brand
+    // Pre-select intended platforms from the draft when present. Property
+    // SoMe drafts are created per platform, so this avoids publishing an
+    // Instagram variant to every connected account by accident.
     const brandAccounts = connectedAccounts
       .filter((a) => brandMatches(a.brand, draft.brand_id))
       .map((a) => a.platform);
-    setPublishPlatforms(Array.from(new Set(brandAccounts)));
+    const intended = Array.isArray(draft.scheduled_platforms) && draft.scheduled_platforms.length > 0
+      ? draft.scheduled_platforms
+      : draft.tags?.filter((tag) => ["facebook", "instagram", "linkedin", "pinterest", "tiktok"].includes(String(tag).toLowerCase())) || [];
+    const preselected = intended.length > 0
+      ? intended.filter((platform) => brandAccounts.includes(platform))
+      : brandAccounts;
+    setPublishPlatforms(Array.from(new Set(preselected)));
   }, [connectedAccounts, brandMatches]);
 
   const fetchAiRecommendation = useCallback(async () => {

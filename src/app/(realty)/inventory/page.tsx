@@ -712,24 +712,37 @@ REGLER:
         ? agentData.response
         : agentData.plan?.steps?.[0]?.result || `${property.title}\n\n${property.description}\n\n📍 ${property.location}\n💰 €${property.price.toLocaleString("nb-NO")}\n🛏️ ${property.bedrooms} soverom | 🛁 ${property.bathrooms} bad | 📐 ${property.area} m²`;
 
-      // Create draft(s) in content_publications with property image
+      const propertyImage = property.imageUrl || property.gallery?.[0] || null;
+      const baseTags = [
+        "eiendom",
+        property.type.toLowerCase(),
+        property.location.split(",")[0].trim().toLowerCase(),
+        selectedBrand,
+      ].filter(Boolean);
+
+      // Create one clear draft per publishing platform. Content Hub will now
+      // preselect the intended platform, so the user can approve/publish with
+      // less room for account mixups.
       const drafts = [
-        {
+        { platform: "facebook", prefix: "Facebook" },
+        { platform: "instagram", prefix: "Instagram" },
+        { platform: "linkedin", prefix: "LinkedIn" },
+      ].map(({ platform, prefix }) => ({
           brand_id: selectedBrand,
-          title: `SoMe: ${property.title}`,
+          title: `${prefix}: ${property.title}`,
           description: postContent,
-          tags: ["eiendom", property.type.toLowerCase(), property.location.split(",")[0].trim().toLowerCase()],
+          tags: [platform, ...baseTags],
           content_type: "marketing_post",
           status: "draft",
-          ai_image_url: property.imageUrl || null,
+          ai_image_url: propertyImage,
+          scheduled_platforms: [platform],
           metadata: {
-            platform: "instagram",
+            platform,
             property_id: property.id,
             property_title: property.title,
-            property_image: property.imageUrl || null,
+            property_image: propertyImage,
           },
-        },
-      ];
+        }));
 
       const draftRes = await fetch("/api/marketing-kit/drafts", {
         method: "POST",
