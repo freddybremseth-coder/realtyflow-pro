@@ -739,7 +739,22 @@ export default function AgentsCommandCenter() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const providerText = Array.isArray(data.providers)
+          ? data.providers
+              .filter((provider: { configured?: boolean }) => provider.configured)
+              .map((provider: { name?: string }) => provider.name)
+              .join(", ")
+          : "";
+        throw new Error(
+          data.response ||
+          data.error ||
+          (providerText
+            ? `AI-systemet svarte ikke. Konfigurerte fallback-modeller: ${providerText}.`
+            : "AI-systemet svarte ikke. Legg til ANTHROPIC_API_KEY, GEMINI_API_KEY eller OPENAI_API_KEY.")
+        );
+      }
 
       // Map API status values to client-side status values
       const mapStepStatus = (st: string): PlanStep["status"] => {
@@ -834,13 +849,15 @@ export default function AgentsCommandCenter() {
         fetchRuntimeStats();
         loadConversations();
       }
-    } catch {
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-                content:
-            "Beklager, kunne ikke nå AI-systemet. Sjekk at ANTHROPIC_API_KEY er konfigurert.",
+          content:
+            error instanceof Error
+              ? error.message
+              : "Beklager, kunne ikke nå AI-systemet. Sjekk at minst én modellnøkkel er konfigurert: ANTHROPIC_API_KEY, GEMINI_API_KEY eller OPENAI_API_KEY.",
         },
       ]);
     }

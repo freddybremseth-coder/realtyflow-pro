@@ -221,3 +221,11 @@ export async function askClaudeWithImage(
 export function isConfigured(): boolean {
   return !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
 }
+
+export function getConfiguredAIProviders() {
+  return [
+    { id: 'anthropic', name: 'Anthropic Claude', configured: !!process.env.ANTHROPIC_API_KEY, priority: 1 },
+    { id: 'gemini', name: 'Google Gemini', configured: !!process.env.GEMINI_API_KEY, priority: 2 },
+    { id: 'openai', name: 'OpenAI', configured: !!process.env.OPENAI_API_KEY, priority: 3 },
+  ];
+}

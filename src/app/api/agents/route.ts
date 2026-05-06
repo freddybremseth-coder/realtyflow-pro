@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentOrchestrator } from "@/services/agents/orchestrator";
+import { getConfiguredAIProviders } from "@/services/ai/claude-client";
 
 const orchestrator = new AgentOrchestrator();
 
 export async function GET() {
   const capabilities = orchestrator.getAgentCapabilities();
-  return NextResponse.json({ agents: capabilities });
+  return NextResponse.json({ agents: capabilities, providers: getConfiguredAIProviders() });
 }
 
 export async function POST(req: NextRequest) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { askClaude, isConfigured } from '@/services/ai/claude-client';
+import { askClaude, getConfiguredAIProviders, isConfigured } from '@/services/ai/claude-client';
 import { AgentOrchestrator } from '@/services/agents/orchestrator';
 import {
   getChannelInfo,
@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       response:
         'Ingen AI-nøkler konfigurert. Legg til ANTHROPIC_API_KEY, GEMINI_API_KEY eller OPENAI_API_KEY.',
+      providers: getConfiguredAIProviders(),
     });
   }
 
@@ -177,11 +178,11 @@ KRITISK - ALDRI gjør noen av disse:
           .replace(/"[^"]*":/g, '')
           .replace(/,\s*$/g, '')
           .trim();
-        return NextResponse.json({ response: cleanResp || 'Jeg har laget en plan for deg.', plan: parsed.plan });
+        return NextResponse.json({ response: cleanResp || 'Jeg har laget en plan for deg.', plan: parsed.plan, providers: getConfiguredAIProviders() });
       }
       if (parsed && parsed.response && typeof parsed.response === 'string') {
         // JSON with only response field — extract the text
-        return NextResponse.json({ response: parsed.response });
+        return NextResponse.json({ response: parsed.response, providers: getConfiguredAIProviders() });
       }
     } catch {
       // Not JSON — good, return as plain text
@@ -203,11 +204,14 @@ KRITISK - ALDRI gjør noen av disse:
       }
     }
 
-    return NextResponse.json({ response: cleanText || text });
+    return NextResponse.json({ response: cleanText || text, providers: getConfiguredAIProviders() });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Ukjent feil';
     return NextResponse.json(
-      { response: `Feil ved kontakt med AI: ${errorMessage}` },
+      {
+        response: `AI-systemet svarte ikke via noen konfigurert modell. Fallback-kjeden er Claude → Gemini → OpenAI. Teknisk feil: ${errorMessage}`,
+        providers: getConfiguredAIProviders(),
+      },
       { status: 500 }
     );
   }

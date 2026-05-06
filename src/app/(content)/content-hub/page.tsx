@@ -229,6 +229,8 @@ export default function ContentHubPage() {
   // Drafts state
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(false);
+  const [draftsError, setDraftsError] = useState("");
+  const [draftsSourceHost, setDraftsSourceHost] = useState("");
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -317,24 +319,23 @@ export default function ContentHubPage() {
 
   const fetchDrafts = useCallback(async () => {
     setDraftsLoading(true);
+    setDraftsError("");
     try {
-      const supabase = getSupabase();
-      if (!supabase) return;
-      const { data, error } = await supabase
-        .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at, scheduled_at, scheduled_platforms")
-        .in("status", ["draft", "scheduled", "published", "failed"])
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) {
-        console.error("Supabase fetchDrafts error:", error.message);
+      const res = await fetch("/api/content-hub/drafts?limit=100", { cache: "no-store" });
+      const data = await res.json();
+      setDraftsSourceHost(data.supabaseHost || "");
+      if (!res.ok) {
+        throw new Error(data.error || "Kunne ikke hente Content Hub-utkast");
       }
-      if (data) {
-        console.log(`[Content Hub] Fetched ${data.length} publications`);
-        setDrafts(data);
+      console.log(`[Content Hub] Fetched ${data.count || 0} publications from ${data.supabaseHost || "Supabase"}`);
+      setDrafts(data.drafts || []);
+      if (data.usedFallback) {
+        setDraftsError("Content Hub leser utkast, men live-databasen mangler scheduled_platforms-kolonnen. Kjør scheduling-migrasjonen i samme Supabase-prosjekt.");
       }
     } catch (err) {
       console.error("Failed to fetch drafts:", err);
+      setDraftsError(err instanceof Error ? err.message : "Kunne ikke hente Content Hub-utkast");
+      setDrafts([]);
     } finally {
       setDraftsLoading(false);
     }
@@ -1103,13 +1104,22 @@ export default function ContentHubPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">AI-genererte utkast</h3>
-                <p className="text-sm text-zinc-400">Utkast fra Markedsføringskit og AI-agenter. Rediger og publiser.</p>
+                <p className="text-sm text-zinc-400">
+                  Utkast fra Markedsføringskit og AI-agenter. Rediger og publiser.
+                  {draftsSourceHost && <span className="ml-1 text-zinc-500">Supabase: {draftsSourceHost}</span>}
+                </p>
               </div>
               <Button variant="outline" size="sm" onClick={fetchDrafts} disabled={draftsLoading}>
                 {draftsLoading ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
                 Oppdater
               </Button>
             </div>
+
+            {draftsError && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                {draftsError}
+              </div>
+            )}
 
             {draftsLoading && drafts.length === 0 ? (
               <div className="flex items-center justify-center py-12">
