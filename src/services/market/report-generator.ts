@@ -305,6 +305,26 @@ export class ReportGenerator {
           : 'Uendret',
       });
     }
+    if (marketData.interestRates?.norway) {
+      const rates = marketData.interestRates.norway;
+      report.key_metrics.push({
+        label: 'Norges Bank',
+        value: `${rates.policyRate}%`,
+        change: `Bank +${rates.bankMarkupMin}-${rates.bankMarkupMax}pp`,
+      });
+      report.key_metrics.push({
+        label: 'NO boliglån est.',
+        value: `${rates.estimatedMortgageMin}-${rates.estimatedMortgageMax}%`,
+      });
+    }
+    if (marketData.interestRates?.spain) {
+      const rates = marketData.interestRates.spain;
+      report.key_metrics.push({
+        label: 'ES boliglån est.',
+        value: `${rates.estimatedMortgageMin}-${rates.estimatedMortgageMax}%`,
+        change: `ECB +${rates.bankMarkupMin}-${rates.bankMarkupMax}pp`,
+      });
+    }
     if (marketData.perplexityInsights?.length) {
       report.key_metrics.push(
         { label: 'Markedskilder', value: `${marketData.perplexityInsights.length} analyser` },
@@ -313,6 +333,8 @@ export class ReportGenerator {
     report.data_sources = [
       ...(marketData.exchangeRates?.length ? ['ECB Exchange Rates'] : []),
       ...(marketData.ecbRate ? ['ECB Interest Rate'] : []),
+      ...(marketData.interestRates?.norway ? ['Norges Bank Policy Rate'] : []),
+      ...(marketData.interestRates ? ['Bank margin assumptions'] : []),
       ...(marketData.idealistaNews?.length ? ['Idealista News'] : []),
       ...(marketData.perplexityInsights?.length ? ['Perplexity AI (sanntid)'] : []),
     ];
@@ -374,6 +396,25 @@ export class ReportGenerator {
         context += '\n';
       }
       context += '\n';
+    }
+
+    if (marketData.interestRates) {
+      const norway = marketData.interestRates.norway;
+      const spain = marketData.interestRates.spain;
+      context += 'RENTER OG BANKPÅSLAG:\n';
+      if (norway) {
+        context += `- Norge: Norges Bank styringsrente ${norway.policyRate}% per ${norway.policyRateDate}. `;
+        context += `Praktisk bankpåslag: +${norway.bankMarkupMin}-${norway.bankMarkupMax} prosentpoeng. `;
+        context += `Estimert norsk boliglånsrente: ${norway.estimatedMortgageMin}-${norway.estimatedMortgageMax}%.\n`;
+        context += `  Merk: ${norway.note}\n`;
+      }
+      if (spain) {
+        context += `- Eurosonen/Spania: ECB deposit ${spain.ecbDepositRate}%, MRO ${spain.ecbMainRefinancingRate}%, marginal lending ${spain.ecbMarginalLendingRate}% per ${spain.ecbRateDate}. `;
+        context += `Praktisk spansk bankpåslag: +${spain.bankMarkupMin}-${spain.bankMarkupMax} prosentpoeng. `;
+        context += `Estimert spansk lånerente: ${spain.estimatedMortgageMin}-${spain.estimatedMortgageMax}%.\n`;
+        context += `  Merk: ${spain.note}\n`;
+      }
+      context += 'Bruk disse rentene som rådgivningskontekst for kjøpekraft, månedskostnad og timing, ikke som bindende banktilbud.\n\n';
     }
 
     // News
@@ -588,7 +629,7 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
       {
         heading: 'N\u00f8kkeltall',
         content:
-          '<p>EUR/NOK: 11.45 (+0.3%)<br>ECB-rente: 3.75%<br>Nye annonser Costa del Sol: 1 247</p>',
+          '<p>EUR/NOK: 11.45 (+0.3%)<br>Norges Bank: 4.25% + bankpåslag<br>ECB MRO: 2.15% + spansk bankpåslag</p>',
       },
       {
         heading: 'Oppsummering',
@@ -615,8 +656,8 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
         'Dette er en plassholder-rapport. Konfigurer ANTHROPIC_API_KEY for AI-genererte rapporter med ekte analyse og innsikt.',
       key_metrics: [
         { label: 'EUR/NOK', value: '11.45', change: '+0.3%' },
-        { label: 'ECB-rente', value: '3.75%' },
-        { label: 'Nye annonser', value: '1 247', change: '+5.2%' },
+        { label: 'Norges Bank', value: '4.25%', change: 'Bank +1.25-2.00pp' },
+        { label: 'ECB MRO', value: '2.15%', change: 'ES bank +0.75-1.75pp' },
       ],
       sections,
       theme: options?.theme,

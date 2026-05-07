@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       perplexity_insights: marketData.perplexityInsights,
       internal_metrics: marketData.internalMetrics,
       raw_data: marketData,
-      sources: ['ecb', 'idealista', 'perplexity', 'supabase'].filter(s =>
+      sources: ['ecb', 'norges-bank', 'bank-margin-assumptions', 'idealista', 'perplexity', 'supabase'].filter(s =>
         s === 'perplexity' ? marketData.perplexityInsights.length > 0 : true
       ),
       fetched_at: marketData.fetchedAt,
@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
     const dataPoints =
       marketData.exchangeRates.length +
       (marketData.ecbRate.rate ? 1 : 0) +
+      (marketData.interestRates ? 2 : 0) +
       marketData.idealistaNews.length;
 
     console.log(`[Cron: market-data] Saved snapshot with ${dataPoints} data points`);

@@ -11,6 +11,7 @@ export interface PerplexityInsight {
 export interface MarketData {
   exchangeRates: { pair: string; rate: number; date: string; change7d: number }[];
   ecbRate: { rate: number; date: string; previousRate: number };
+  interestRates: InterestRateAssumptions;
   idealistaNews: { title: string; link: string; date: string; summary: string }[];
   perplexityInsights: PerplexityInsight[];
   internalMetrics: {
@@ -37,6 +38,37 @@ interface ECBRateResult {
   previous_rate: number;
 }
 
+interface NorwayPolicyRateResult {
+  rate: number;
+  date: string;
+  source: string;
+}
+
+export interface InterestRateAssumptions {
+  norway: {
+    policyRate: number;
+    policyRateDate: string;
+    bankMarkupMin: number;
+    bankMarkupMax: number;
+    estimatedMortgageMin: number;
+    estimatedMortgageMax: number;
+    source: string;
+    note: string;
+  };
+  spain: {
+    ecbDepositRate: number;
+    ecbMainRefinancingRate: number;
+    ecbMarginalLendingRate: number;
+    ecbRateDate: string;
+    bankMarkupMin: number;
+    bankMarkupMax: number;
+    estimatedMortgageMin: number;
+    estimatedMortgageMax: number;
+    source: string;
+    note: string;
+  };
+}
+
 interface NewsEntry {
   title: string;
   link: string;
@@ -60,6 +92,9 @@ export class MarketDataFetcher {
 
   private static readonly ECB_INTEREST_URL =
     'https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.4F.KR.MRR_FR.LEV?format=jsondata&lastNObservations=5';
+
+  private static readonly NORGES_BANK_POLICY_RATE_URL =
+    'https://www.norges-bank.no/en/topics/Monetary-policy/policy-rate/';
 
   private static readonly IDEALISTA_RSS_URL =
     'https://www.idealista.com/en/news/feed/';
@@ -190,7 +225,81 @@ export class MarketDataFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Idealista RSS News
+  // 3. Norges Bank Policy Rate
+  // ---------------------------------------------------------------------------
+
+  async fetchNorwayPolicyRate(): Promise<NorwayPolicyRateResult> {
+    const fallback = {
+      rate: 4.25,
+      date: '2026-05-07',
+      source: MarketDataFetcher.NORGES_BANK_POLICY_RATE_URL,
+    };
+
+    try {
+      console.log('[MarketDataFetcher] Fetching Norges Bank policy rate...');
+      const res = await fetch(MarketDataFetcher.NORGES_BANK_POLICY_RATE_URL);
+      if (!res.ok) throw new Error(`Norges Bank returned ${res.status}`);
+      const html = await res.text();
+      const rateMatch = html.match(/Policy rate[\s\S]*?([0-9]+(?:[.,][0-9]+)?)%/i);
+      const publishedMatch = html.match(/Published\s+(\d{2})\.(\d{2})\.(\d{4})/i);
+
+      const rate = rateMatch
+        ? Number(rateMatch[1].replace(',', '.'))
+        : fallback.rate;
+      const date = publishedMatch
+        ? `${publishedMatch[3]}-${publishedMatch[2]}-${publishedMatch[1]}`
+        : fallback.date;
+
+      console.log(`[MarketDataFetcher] Norges Bank policy rate: ${rate}% (${date})`);
+      return { rate, date, source: MarketDataFetcher.NORGES_BANK_POLICY_RATE_URL };
+    } catch (err) {
+      console.log(
+        '[MarketDataFetcher] Failed to fetch Norges Bank policy rate:',
+        (err as Error).message
+      );
+      return fallback;
+    }
+  }
+
+  buildInterestRateAssumptions(
+    norwayPolicyRate: NorwayPolicyRateResult,
+    ecbRate: MarketData['ecbRate']
+  ): InterestRateAssumptions {
+    const norwayMarkupMin = 1.25;
+    const norwayMarkupMax = 2.0;
+    const spainMarkupMin = 0.75;
+    const spainMarkupMax = 1.75;
+
+    const ecbMainRefinancingRate = ecbRate.rate || 2.15;
+
+    return {
+      norway: {
+        policyRate: norwayPolicyRate.rate,
+        policyRateDate: norwayPolicyRate.date,
+        bankMarkupMin: norwayMarkupMin,
+        bankMarkupMax: norwayMarkupMax,
+        estimatedMortgageMin: Number((norwayPolicyRate.rate + norwayMarkupMin).toFixed(2)),
+        estimatedMortgageMax: Number((norwayPolicyRate.rate + norwayMarkupMax).toFixed(2)),
+        source: norwayPolicyRate.source,
+        note: 'Bankpåslag er et praktisk estimat for nye/flytende boliglån og må justeres mot konkret banktilbud, belåningsgrad og kundeprofil.',
+      },
+      spain: {
+        ecbDepositRate: 2.0,
+        ecbMainRefinancingRate,
+        ecbMarginalLendingRate: 2.4,
+        ecbRateDate: ecbRate.date || '2025-06-11',
+        bankMarkupMin: spainMarkupMin,
+        bankMarkupMax: spainMarkupMax,
+        estimatedMortgageMin: Number((ecbMainRefinancingRate + spainMarkupMin).toFixed(2)),
+        estimatedMortgageMax: Number((ecbMainRefinancingRate + spainMarkupMax).toFixed(2)),
+        source: 'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/key_ecb_interest_rates/html/index.en.html',
+        note: 'Spansk bankpåslag er en praktisk antakelse for kunde-/bankmargin. Variable lån prises ofte mot Euribor, så dette er et rådgivningsestimat, ikke et banktilbud.',
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. Idealista RSS News
   // ---------------------------------------------------------------------------
 
   async fetchIdealistaNews(): Promise<NewsEntry[]> {
@@ -264,7 +373,7 @@ export class MarketDataFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Internal CRM Data (Supabase)
+  // 5. Internal CRM Data (Supabase)
   // ---------------------------------------------------------------------------
 
   async fetchInternalMetrics(
@@ -355,7 +464,7 @@ export class MarketDataFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Perplexity API - Real-time Market Intelligence
+  // 6. Perplexity API - Real-time Market Intelligence
   // ---------------------------------------------------------------------------
 
   async fetchPerplexityInsights(): Promise<PerplexityInsight[]> {
@@ -376,7 +485,7 @@ export class MarketDataFetcher {
       },
       {
         topic: 'Europeisk økonomi og renter',
-        query: `What are the latest ECB interest rate decisions and European economic outlook? Include inflation data for Spain and the Eurozone, ECB rate forecasts, impact on mortgage rates in Spain, EUR/NOK and EUR/SEK exchange rate trends, and any relevant fiscal policy changes affecting property investment in Southern Europe.`,
+        query: `What are the latest ECB and Norges Bank interest rate decisions and European economic outlook? Include inflation data for Spain, Norway and the Eurozone, ECB/Norges Bank rate forecasts, impact on mortgage rates in Spain and Norway, EUR/NOK and EUR/SEK exchange rate trends, and any relevant fiscal policy changes affecting property investment in Southern Europe.`,
       },
     ];
 
@@ -435,16 +544,17 @@ export class MarketDataFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Combined Fetch
+  // 7. Combined Fetch
   // ---------------------------------------------------------------------------
 
   async fetchAll(supabase: SupabaseClient): Promise<MarketData> {
     console.log('[MarketDataFetcher] Starting full market data fetch...');
 
-    const [exchangeRatesRaw, ecbRateRaw, idealistaNews, perplexityInsights, internalMetrics] =
+    const [exchangeRatesRaw, ecbRateRaw, norwayPolicyRate, idealistaNews, perplexityInsights, internalMetrics] =
       await Promise.all([
         this.fetchExchangeRates(),
         this.fetchECBInterestRate(),
+        this.fetchNorwayPolicyRate(),
         this.fetchIdealistaNews(),
         this.fetchPerplexityInsights(),
         this.fetchInternalMetrics(supabase),
@@ -464,6 +574,7 @@ export class MarketDataFetcher {
     const result: MarketData = {
       exchangeRates,
       ecbRate,
+      interestRates: this.buildInterestRateAssumptions(norwayPolicyRate, ecbRate),
       idealistaNews,
       perplexityInsights,
       internalMetrics,

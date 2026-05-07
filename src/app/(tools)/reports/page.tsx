@@ -40,8 +40,34 @@ interface MarketSnapshot {
   idealista_news?: { title: string; link: string; date: string; summary: string }[];
   perplexity_insights?: { topic: string; summary: string; details: string; sources?: string[] }[];
   internal_metrics?: Record<string, number>;
-  raw_data?: { perplexityInsights?: { topic: string; summary: string; details: string; sources?: string[] }[] };
+  raw_data?: {
+    interestRates?: InterestRates;
+    perplexityInsights?: { topic: string; summary: string; details: string; sources?: string[] }[];
+  };
   fetched_at?: string;
+}
+
+interface InterestRates {
+  norway?: {
+    policyRate: number;
+    policyRateDate?: string;
+    bankMarkupMin: number;
+    bankMarkupMax: number;
+    estimatedMortgageMin: number;
+    estimatedMortgageMax: number;
+    note?: string;
+  };
+  spain?: {
+    ecbDepositRate: number;
+    ecbMainRefinancingRate: number;
+    ecbMarginalLendingRate: number;
+    ecbRateDate?: string;
+    bankMarkupMin: number;
+    bankMarkupMax: number;
+    estimatedMortgageMin: number;
+    estimatedMortgageMax: number;
+    note?: string;
+  };
 }
 
 interface Contact {
@@ -96,6 +122,27 @@ export default function ReportsPage() {
   const [buyerReportSource, setBuyerReportSource] = useState("");
   const [buyerDrafting, setBuyerDrafting] = useState(false);
   const [insightGenerating, setInsightGenerating] = useState<string | null>(null);
+
+  const interestRates: InterestRates = snapshot?.raw_data?.interestRates ?? {
+    norway: {
+      policyRate: 4.25,
+      policyRateDate: "2026-05-07",
+      bankMarkupMin: 1.25,
+      bankMarkupMax: 2,
+      estimatedMortgageMin: 5.5,
+      estimatedMortgageMax: 6.25,
+    },
+    spain: {
+      ecbDepositRate: 2,
+      ecbMainRefinancingRate: snapshot?.ecb_rate || 2.15,
+      ecbMarginalLendingRate: 2.4,
+      ecbRateDate: "2025-06-11",
+      bankMarkupMin: 0.75,
+      bankMarkupMax: 1.75,
+      estimatedMortgageMin: Number(((snapshot?.ecb_rate || 2.15) + 0.75).toFixed(2)),
+      estimatedMortgageMax: Number(((snapshot?.ecb_rate || 2.15) + 1.75).toFixed(2)),
+    },
+  };
 
   // Fetch reports and latest snapshot
   const fetchData = useCallback(async () => {
@@ -370,7 +417,7 @@ export default function ReportsPage() {
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Siste Markedsdata
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
@@ -398,9 +445,11 @@ export default function ReportsPage() {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs text-slate-400">ECB Rente</p>
+                      <p className="text-xs text-slate-400">ECB MRO</p>
                       <p className="text-2xl font-bold text-white mt-1">
-                        {snapshot?.ecb_rate ? `${snapshot.ecb_rate}%` : "--"}
+                        {interestRates?.spain?.ecbMainRefinancingRate
+                          ? `${interestRates.spain.ecbMainRefinancingRate}%`
+                          : snapshot?.ecb_rate ? `${snapshot.ecb_rate}%` : "--"}
                       </p>
                       {snapshot?.ecb_rate_previous && (
                         <Badge variant="default" className="mt-2 text-[10px]">
@@ -409,6 +458,25 @@ export default function ReportsPage() {
                       )}
                     </div>
                     <TrendingUp className="text-emerald-400 opacity-60" size={28} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-slate-400">Norges Bank</p>
+                      <p className="text-2xl font-bold text-white mt-1">
+                        {interestRates?.norway?.policyRate ? `${interestRates.norway.policyRate}%` : "--"}
+                      </p>
+                      {interestRates?.norway && (
+                        <Badge variant="default" className="mt-2 text-[10px]">
+                          Bank +{interestRates.norway.bankMarkupMin}-{interestRates.norway.bankMarkupMax}pp
+                        </Badge>
+                      )}
+                    </div>
+                    <TrendingUp className="text-amber-400 opacity-60" size={28} />
                   </div>
                 </CardContent>
               </Card>
@@ -965,27 +1033,71 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          {/* ECB Rate */}
+          {/* Interest Rates */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp size={16} className="text-emerald-400" />
-                ECB Styringsrente
+                Renter og bankpåslag
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-8">
-                <div>
-                  <p className="text-xs text-slate-500">Nåværende</p>
-                  <p className="text-3xl font-bold text-white">{snapshot?.ecb_rate ? `${snapshot.ecb_rate}%` : "--"}</p>
-                </div>
-                {snapshot?.ecb_rate_previous && (
-                  <div>
-                    <p className="text-xs text-slate-500">Forrige</p>
-                    <p className="text-xl text-slate-400">{snapshot.ecb_rate_previous}%</p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/30">
+                  <p className="text-xs text-slate-500 uppercase">Norge</p>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Norges Bank</p>
+                      <p className="text-2xl font-bold text-white">
+                        {interestRates?.norway?.policyRate ? `${interestRates.norway.policyRate}%` : "--"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Estimert boliglån</p>
+                      <p className="text-2xl font-bold text-white">
+                        {interestRates?.norway
+                          ? `${interestRates.norway.estimatedMortgageMin}-${interestRates.norway.estimatedMortgageMax}%`
+                          : "--"}
+                      </p>
+                    </div>
                   </div>
-                )}
+                  {interestRates?.norway && (
+                    <p className="text-xs text-slate-400 mt-3">
+                      Vanlig bankpåslag brukt i modellen: +{interestRates.norway.bankMarkupMin}-{interestRates.norway.bankMarkupMax} prosentpoeng.
+                    </p>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/30">
+                  <p className="text-xs text-slate-500 uppercase">Spania / eurosonen</p>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <p className="text-xs text-slate-500">ECB MRO</p>
+                      <p className="text-2xl font-bold text-white">
+                        {interestRates?.spain?.ecbMainRefinancingRate
+                          ? `${interestRates.spain.ecbMainRefinancingRate}%`
+                          : snapshot?.ecb_rate ? `${snapshot.ecb_rate}%` : "--"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Estimert lånerente</p>
+                      <p className="text-2xl font-bold text-white">
+                        {interestRates?.spain
+                          ? `${interestRates.spain.estimatedMortgageMin}-${interestRates.spain.estimatedMortgageMax}%`
+                          : "--"}
+                      </p>
+                    </div>
+                  </div>
+                  {interestRates?.spain && (
+                    <p className="text-xs text-slate-400 mt-3">
+                      ECB deposit {interestRates.spain.ecbDepositRate}%, marginal {interestRates.spain.ecbMarginalLendingRate}%. Spansk bankpåslag i modellen: +{interestRates.spain.bankMarkupMin}-{interestRates.spain.bankMarkupMax} prosentpoeng.
+                    </p>
+                  )}
+                </div>
               </div>
+              <p className="text-[10px] text-slate-600 mt-3">
+                Bankpåslag er rådgivningsestimater og må erstattes av faktisk banktilbud i konkrete kundecaser.
+              </p>
             </CardContent>
           </Card>
 
