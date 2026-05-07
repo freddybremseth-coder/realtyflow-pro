@@ -1034,7 +1034,7 @@ REGLER:
               <>
                 <div className={`relative h-48 bg-gradient-to-br ${property.imageColor} flex items-center justify-center`}>
                   {property.imageUrl ? (
-                    <img src={property.imageUrl} alt={property.title} className="w-full h-full object-cover" />
+                    <img src={property.imageUrl} alt={property.title} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   ) : (
                     <Building2 size={48} className="text-slate-400/30" />
                   )}
@@ -1376,7 +1376,7 @@ REGLER:
               return (
                 <div className={`relative h-64 bg-gradient-to-br ${showDetailModal.imageColor} flex items-center justify-center`}>
                   {allImgs.length > 0 ? (
-                    <img src={allImgs[detailSlide % allImgs.length]} alt={showDetailModal.title} className="w-full h-full object-cover" />
+                    <img src={allImgs[detailSlide % allImgs.length]} alt={showDetailModal.title} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   ) : (
                     <Building2 size={64} className="text-slate-400/20" />
                   )}
@@ -1416,7 +1416,7 @@ REGLER:
                   {allImgs.map((img, idx) => (
                     <button key={idx} onClick={() => setDetailSlide(idx)}
                       className={`shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-all ${idx === detailSlide % allImgs.length ? "border-cyan-400" : "border-transparent opacity-60 hover:opacity-100"}`}>
-                      <img src={img} alt={`${idx + 1}`} className="w-full h-full object-cover" />
+                      <img src={img} alt={`${idx + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>

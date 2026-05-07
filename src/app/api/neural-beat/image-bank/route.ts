@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const kind = searchParams.get('kind') || undefined;
     const owner = searchParams.get('owner') || 'system';
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10) || 100, 200);
+    const limit = Math.min(parseInt(searchParams.get('limit') || '24', 10) || 24, 60);
 
     let query = supabase
       .from('user_image_bank')

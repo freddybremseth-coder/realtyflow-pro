@@ -549,7 +549,7 @@ export default function NeuralBeatPage() {
       const res = await fetch(`/api/neural-beat/image-bank?${params.toString()}`);
       const data = await res.json();
       if (res.ok && Array.isArray(data.images)) {
-        setImageBank(data.images);
+        setImageBank(data.images.slice(0, 24));
       }
     } catch {
       // Non-fatal
@@ -1084,7 +1084,7 @@ export default function NeuralBeatPage() {
               ) : (
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-700/50">
                   {logoUrl && (
-                    <img src={logoUrl} alt="Logo" className="h-10 w-10 object-contain rounded" />
+                    <img src={logoUrl} alt="Logo" loading="lazy" decoding="async" className="h-10 w-10 object-contain rounded" />
                   )}
                   <span className="text-sm text-white flex-1 truncate">{logoFile.name}</span>
                   <Button
@@ -1142,7 +1142,7 @@ export default function NeuralBeatPage() {
                     {customImageFiles.map((f, i) => (
                       <div key={i} className="relative group">
                         {customImageUrls[i] && (
-                          <img src={customImageUrls[i]} alt={f.name} className="h-12 w-12 object-cover rounded" />
+                          <img src={customImageUrls[i]} alt={f.name} loading="lazy" decoding="async" className="h-12 w-12 object-cover rounded" />
                         )}
                         <button
                           onClick={() => {
@@ -1212,7 +1212,7 @@ export default function NeuralBeatPage() {
               ) : (
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-700/50">
                   {customThumbnailUrl && (
-                    <img src={customThumbnailUrl} alt="Thumbnail" className="h-14 w-24 object-cover rounded" />
+                    <img src={customThumbnailUrl} alt="Thumbnail" loading="lazy" decoding="async" className="h-14 w-24 object-cover rounded" />
                   )}
                   <span className="text-sm text-white flex-1 truncate">{customThumbnailFile.name || 'Thumbnail'}</span>
                   <Button
@@ -1294,6 +1294,8 @@ export default function NeuralBeatPage() {
                           <img
                             src={entry.url}
                             alt={entry.name || ''}
+                            loading="lazy"
+                            decoding="async"
                             className="h-16 w-full object-cover rounded cursor-pointer border border-transparent hover:border-pink-500"
                             onClick={() => selectFromImageBank(entry)}
                             title={entry.name || ''}
@@ -1948,7 +1950,7 @@ export default function NeuralBeatPage() {
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             <span className="text-sm font-bold text-slate-500 w-5">{i + 1}</span>
                             {video.thumbnailUrl ? (
-                              <img src={video.thumbnailUrl} alt="" className="h-9 w-14 rounded object-cover shrink-0" />
+                              <img src={video.thumbnailUrl} alt="" loading="lazy" decoding="async" className="h-9 w-14 rounded object-cover shrink-0" />
                             ) : (
                               <div className="h-9 w-14 rounded bg-slate-700 flex items-center justify-center shrink-0">
                                 <Play className="h-3 w-3 text-slate-500" />
@@ -2026,7 +2028,7 @@ export default function NeuralBeatPage() {
                         <div key={video.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 transition-colors">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             {video.thumbnailUrl ? (
-                              <img src={video.thumbnailUrl} alt="" className="h-10 w-16 rounded object-cover shrink-0" />
+                              <img src={video.thumbnailUrl} alt="" loading="lazy" decoding="async" className="h-10 w-16 rounded object-cover shrink-0" />
                             ) : (
                               <div className="h-10 w-16 rounded bg-slate-700 flex items-center justify-center shrink-0">
                                 <Play className="h-4 w-4 text-slate-500" />

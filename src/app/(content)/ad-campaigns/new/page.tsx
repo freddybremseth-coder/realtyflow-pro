@@ -96,8 +96,8 @@ export default function NewAdCampaignPage() {
       setBankLoading(true);
       try {
         const [productsRes, variantsRes] = await Promise.all([
-          fetch("/api/neural-beat/image-bank?kind=product&owner=all&limit=40"),
-          fetch("/api/neural-beat/image-bank?kind=variant&owner=all&limit=20"),
+          fetch("/api/neural-beat/image-bank?kind=product&owner=all&limit=12"),
+          fetch("/api/neural-beat/image-bank?kind=variant&owner=all&limit=8"),
         ]);
         const products = await productsRes.json().catch(() => ({}));
         const variants = await variantsRes.json().catch(() => ({}));
@@ -232,7 +232,7 @@ export default function NewAdCampaignPage() {
                     }`}
                     title={img.name || "Produktbilde"}
                   >
-                    <img src={img.url} alt={img.name || "Produktbilde"} className="w-full h-full object-cover" />
+                    <img src={img.url} alt={img.name || "Produktbilde"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                     <span className="absolute left-1 bottom-1 right-1 truncate rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
                       {img.kind === "variant" ? "Variant" : img.name || "Produkt"}
                     </span>

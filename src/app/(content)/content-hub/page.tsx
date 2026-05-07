@@ -385,7 +385,7 @@ export default function ContentHubPage() {
         query = query.eq("brand_id", brandId);
       }
       const { data } = await query;
-      const bankRes = await fetch("/api/neural-beat/image-bank?owner=all&limit=80");
+      const bankRes = await fetch("/api/neural-beat/image-bank?owner=all&limit=24");
       const bankData = await bankRes.json().catch(() => ({ images: [] }));
       const bankImages: DraftItem[] = (bankData.images || [])
         .filter((img: { url?: string; kind?: string }) => img.url && ["product", "variant", "image", "thumbnail"].includes(img.kind || ""))
@@ -1195,6 +1195,8 @@ export default function ContentHubPage() {
                                     <img
                                       src={draft.ai_image_url}
                                       alt={draft.title || "AI-generert bilde"}
+                                      loading="lazy"
+                                      decoding="async"
                                       className="w-full h-auto object-cover max-h-48"
                                     />
                                   </div>
@@ -1395,6 +1397,8 @@ export default function ContentHubPage() {
                         <img
                           src={img.ai_image_url!}
                           alt={img.title || "AI-bilde"}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full aspect-square object-cover"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
@@ -2855,6 +2859,8 @@ export default function ContentHubPage() {
                               <img
                                 src={p.primary_image}
                                 alt=""
+                                loading="lazy"
+                                decoding="async"
                                 className="w-16 h-12 object-cover rounded bg-slate-800"
                               />
                             ) : (
