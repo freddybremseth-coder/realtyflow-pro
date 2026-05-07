@@ -51,6 +51,20 @@ function safeRows<T>(result: PromiseSettledResult<{ data: T[] | null }>) {
   return result.status === "fulfilled" ? result.value.data || [] : [];
 }
 
+function settledError(result: PromiseSettledResult<{ error: { message: string } | null }>) {
+  if (result.status === "rejected") return result.reason instanceof Error ? result.reason.message : String(result.reason);
+  return result.value.error?.message || null;
+}
+
+function getOliviaHost() {
+  const url = process.env.OLIVIA_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  try {
+    return url ? new URL(url).host : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatRevenue(value: number, currency = "EUR") {
   if (!value) return "Ikke tilgjengelig";
   return new Intl.NumberFormat("nb-NO", {
@@ -77,6 +91,16 @@ async function getOliviaData() {
   const subsidies = safeRows<Record<string, unknown>>(subsidyRes);
   const parcels = safeRows<Record<string, unknown>>(parcelRes);
   const settings = settingsRes.status === "fulfilled" ? settingsRes.value.data : null;
+  const tableErrors = {
+    harvest_records: settledError(harvestRes),
+    farm_expenses: settledError(expenseRes),
+    subsidy_income: settledError(subsidyRes),
+    parcels: settledError(parcelRes),
+    farm_settings: settledError(settingsRes),
+  };
+  const warnings = Object.entries(tableErrors)
+    .filter(([, message]) => message)
+    .map(([table, message]) => `${table}: ${message}`);
 
   const totalRevenue = harvests.reduce((sum, row) => sum + (Number(row.kilograms) || 0) * (Number(row.price_per_kg) || 0), 0);
   const totalHarvestKg = harvests.reduce((sum, row) => sum + (Number(row.kilograms) || 0), 0);
@@ -99,6 +123,11 @@ async function getOliviaData() {
   }
 
   return {
+    source: "supabase",
+    supabaseHost: getOliviaHost(),
+    configuredSeparateOliviaDb: Boolean(process.env.OLIVIA_SUPABASE_URL && process.env.OLIVIA_SUPABASE_KEY),
+    warnings,
+    tableErrors,
     farmName: (settings as Record<string, unknown> | null)?.farm_name || "DonaAnna",
     currency: (settings as Record<string, unknown> | null)?.currency || "EUR",
     parcels: {

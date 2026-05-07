@@ -135,6 +135,7 @@ const PIPELINE_STEPS = [
 
 export default function NeuralBeatPage() {
   const [songs, setSongs] = useState<Song[]>([]);
+  const [songsDbError, setSongsDbError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [processingIds, setProcessingIds] = useState<Map<string, string>>(new Map());
   const [pipelineStatuses, setPipelineStatuses] = useState<Record<string, PipelineStatus>>({});
@@ -211,8 +212,11 @@ export default function NeuralBeatPage() {
   const fetchSongs = useCallback(() => {
     fetch('/api/neural-beat')
       .then((res) => res.json())
-      .then((data) => setSongs(data.songs || []))
-      .catch(() => {})
+      .then((data) => {
+        setSongs(data.songs || []);
+        setSongsDbError(data.source === 'error' || data.source === 'not-configured' ? data.message || 'Supabase svarer ikke for Re-Master Freddy.' : null);
+      })
+      .catch((err) => setSongsDbError(err instanceof Error ? err.message : 'Kunne ikke nå Re-Master Freddy API.'))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -954,6 +958,18 @@ export default function NeuralBeatPage() {
             </Button>
           )}
         </div>
+        {songsDbError && (
+          <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Re-Master Freddy mangler databasekontakt</p>
+                <p className="text-amber-100/80 mt-1">{songsDbError}</p>
+                <p className="text-amber-100/60 mt-1">Kjor migrasjonen <code>20260507135000_remaster_olivia_foundation.sql</code> i samme Supabase-prosjekt som Vercel bruker.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MP3 Upload Section */}

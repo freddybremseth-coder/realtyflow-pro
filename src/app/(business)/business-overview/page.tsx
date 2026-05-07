@@ -36,6 +36,9 @@ interface BrandData {
 }
 
 interface OliviaData {
+  supabaseHost?: string | null;
+  configuredSeparateOliviaDb?: boolean;
+  warnings?: string[];
   farmName: string;
   currency: string;
   parcels: { count: number; totalArea: number; totalTrees: number };
@@ -201,6 +204,14 @@ export default function BusinessOverviewPage() {
               <h2 className="text-lg font-bold text-white">{oliviaData.farmName} — Gårdsdrift</h2>
               <Badge variant="secondary" className="text-[10px] ml-auto">Olivia</Badge>
             </div>
+            {oliviaData.warnings && oliviaData.warnings.length > 0 && (
+              <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                <p className="font-medium">Olivia har Supabase-kontakt, men mangler forventede tabeller/data.</p>
+                <p className="mt-1 text-amber-100/80">
+                  Host: {oliviaData.supabaseHost || "ukjent"}. Kjor <code>20260507135000_remaster_olivia_foundation.sql</code>, eller sett <code>OLIVIA_SUPABASE_URL</code> og <code>OLIVIA_SUPABASE_KEY</code> til riktig Olivia-prosjekt i Vercel.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
               <div>
                 <p className="text-[10px] text-slate-500 uppercase mb-1">Høstinntekter</p>

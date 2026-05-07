@@ -14,6 +14,20 @@ function getOliviaSupabase() {
   return createClient(url, key);
 }
 
+function getOliviaHost() {
+  const url = process.env.OLIVIA_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  try {
+    return url ? new URL(url).host : null;
+  } catch {
+    return null;
+  }
+}
+
+function settledError(result: PromiseSettledResult<{ error: { message: string } | null }>) {
+  if (result.status === "rejected") return result.reason instanceof Error ? result.reason.message : String(result.reason);
+  return result.value.error?.message || null;
+}
+
 export async function GET() {
   try {
     const supabase = getOliviaSupabase();
@@ -72,8 +86,23 @@ export async function GET() {
     }
 
     const netProfit = totalHarvestRevenue + totalSubsidies - totalExpenses;
+    const tableErrors = {
+      harvest_records: settledError(harvestRes),
+      farm_expenses: settledError(expenseRes),
+      subsidy_income: settledError(subsidyRes),
+      parcels: settledError(parcelRes),
+      farm_settings: settledError(settingsRes),
+    };
+    const warnings = Object.entries(tableErrors)
+      .filter(([, message]) => message)
+      .map(([table, message]) => `${table}: ${message}`);
 
     return NextResponse.json({
+      source: "supabase",
+      supabaseHost: getOliviaHost(),
+      configuredSeparateOliviaDb: Boolean(process.env.OLIVIA_SUPABASE_URL && process.env.OLIVIA_SUPABASE_KEY),
+      warnings,
+      tableErrors,
       farmName: settings?.farm_name || "DonaAnna",
       currency: settings?.currency || "EUR",
       parcels: {
