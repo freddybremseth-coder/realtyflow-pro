@@ -172,10 +172,11 @@ export default function NeuralBeatPage() {
   const [multilingualDescription, setMultilingualDescription] = useState(true);
 
   // Image bank (persistent saved images)
-  interface ImageBankEntry {
-    id: string;
-    url: string;
-    name?: string | null;
+	  interface ImageBankEntry {
+	    id: string;
+	    url: string;
+	    thumbnail_url?: string | null;
+	    name?: string | null;
     kind: 'image' | 'logo' | 'thumbnail';
     use_count?: number;
     created_at?: string;
@@ -1292,7 +1293,7 @@ export default function NeuralBeatPage() {
                       {imageBank.map((entry) => (
                         <div key={entry.id} className="relative group">
                           <img
-                            src={entry.url}
+	                            src={entry.thumbnail_url || entry.url}
                             alt={entry.name || ''}
                             loading="lazy"
                             decoding="async"

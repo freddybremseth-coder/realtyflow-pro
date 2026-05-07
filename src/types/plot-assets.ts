@@ -26,6 +26,7 @@ export interface PlotAsset {
   size_bytes: number;
   storage_path: string;
   public_url: string;
+  thumbnail_url: string | null;
 
   kind: PlotAssetKind;
   title: string | null;

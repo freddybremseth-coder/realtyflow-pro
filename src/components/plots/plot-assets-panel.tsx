@@ -191,7 +191,7 @@ function AssetRow({
         {/* Thumbnail / icon */}
         {isImage ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={asset.public_url} alt={asset.title || asset.filename}
+          <img src={asset.thumbnail_url || asset.public_url} alt={asset.title || asset.filename}
             loading="lazy" decoding="async"
             className="w-12 h-12 object-cover rounded border border-slate-700" />
         ) : (

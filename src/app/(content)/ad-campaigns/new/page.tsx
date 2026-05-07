@@ -12,6 +12,7 @@ import { BRANDS } from "@/lib/constants";
 interface BankImage {
   id: string;
   url: string;
+  thumbnail_url?: string | null;
   name: string | null;
   kind: "product" | "variant" | "image" | "logo" | "thumbnail";
   tags: string[] | null;
@@ -232,7 +233,7 @@ export default function NewAdCampaignPage() {
                     }`}
                     title={img.name || "Produktbilde"}
                   >
-                    <img src={img.url} alt={img.name || "Produktbilde"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    <img src={img.thumbnail_url || img.url} alt={img.name || "Produktbilde"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                     <span className="absolute left-1 bottom-1 right-1 truncate rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
                       {img.kind === "variant" ? "Variant" : img.name || "Produkt"}
                     </span>

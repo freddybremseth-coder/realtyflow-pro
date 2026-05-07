@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('user_image_bank')
-      .select('id, url, name, kind, tags, width, height, size_bytes, created_at, last_used_at, use_count')
+      .select('id, url, thumbnail_url, name, kind, tags, width, height, size_bytes, created_at, last_used_at, use_count')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { url, name, kind = 'image', tags = [], width, height, sizeBytes, owner = 'system' } = body;
+    const { url, thumbnailUrl, name, kind = 'image', tags = [], width, height, sizeBytes, owner = 'system' } = body;
 
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'url is required' }, { status: 400 });
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     const insertRow = {
       owner,
       url,
+      thumbnail_url: thumbnailUrl || null,
       name: name || null,
       kind,
       tags: Array.isArray(tags) ? tags.slice(0, 20) : [],

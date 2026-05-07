@@ -66,6 +66,7 @@ export async function POST(
     ai_description: c.caption_primary ?? null,
     ai_tags: c.hashtags || [],
     ai_image_url: c.image_url,
+    thumbnail_url: c.thumbnail_url || null,
     campaign_id: params.id,
     scheduled_platforms: c.aspect_ratio === "9:16" ? ["instagram", "facebook"] : ["facebook", "instagram", "linkedin"],
   }));

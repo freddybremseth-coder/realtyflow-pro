@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { submitPrediction, pollPrediction, extractOutputUrl } from "@/services/ads/replicate-client";
+import { uploadThumbnail } from "@/services/storage/media";
 
 export const maxDuration = 60;
 
@@ -165,10 +166,12 @@ export async function POST(
         if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
 
         const { data: pub } = supabase.storage.from("ad-creatives").getPublicUrl(path);
+        const thumbnailUrl = await uploadThumbnail(supabase, buf, "image/png", path);
 
         await supabase.from("ad_creatives").update({
           status: "completed",
           image_url: pub.publicUrl,
+          thumbnail_url: thumbnailUrl,
           source_url: t.outputUrl,
           replicate_prediction_id: t.predictionId ?? null,
         }).eq("id", t.row.id);

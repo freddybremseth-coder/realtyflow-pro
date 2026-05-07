@@ -112,6 +112,7 @@ export interface AdCreative {
   prompt: string;
   status: CreativeStatus;
   image_url: string | null;
+  thumbnail_url: string | null;
   source_url: string | null;
   replicate_prediction_id: string | null;
   generation_seconds: number | null;

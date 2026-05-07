@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { uploadThumbnail } from "@/services/storage/media";
 
 // ─── Image Generation API using Gemini 2.5 Flash Image ──────────────
 // POST /api/image-generate
@@ -63,10 +64,12 @@ async function persistGeneratedImage(imageBase64: string, mimeType: string, bran
 
   const { data: urlData } = supabase.storage.from("content-images").getPublicUrl(storagePath);
   const publicUrl = urlData.publicUrl;
+  const thumbnailUrl = await uploadThumbnail(supabase, buffer, mimeType, storagePath);
 
   await supabase.from("user_image_bank").insert({
     owner: brand || "system",
     url: publicUrl,
+    thumbnail_url: thumbnailUrl,
     name: kind === "variant" ? "AI produktvariant" : "AI generert bilde",
     kind,
     tags: sourceImageUrl ? ["variant", "product-reference"] : ["generated"],

@@ -4,6 +4,7 @@
 //      title?, description?, kind?, tags? (csv)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import { uploadThumbnail } from "@/services/storage/media";
 
 const ALLOWED_TYPES = [
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -75,6 +76,7 @@ export async function POST(
   if (upErr) return NextResponse.json({ error: `Opplasting feilet: ${upErr.message}` }, { status: 500 });
 
   const { data: pub } = supabase.storage.from("plot-assets").getPublicUrl(storagePath);
+  const thumbnailUrl = await uploadThumbnail(supabase, buf, file.type, storagePath);
 
   const { data: asset, error: insertErr } = await supabase
     .from("plot_assets")
@@ -85,6 +87,7 @@ export async function POST(
       size_bytes: file.size,
       storage_path: storagePath,
       public_url: pub.publicUrl,
+      thumbnail_url: thumbnailUrl,
       kind: kindOverride ?? inferKind(file.type),
       title,
       description,

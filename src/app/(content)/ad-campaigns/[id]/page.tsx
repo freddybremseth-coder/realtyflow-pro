@@ -357,7 +357,7 @@ function CreativeGallery({ creatives }: { creatives: AdCreative[] }) {
               <div key={c.id} className="relative aspect-square bg-gray-900 rounded-md overflow-hidden border border-gray-800">
                 {c.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.image_url} alt={c.scene_id} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                  <img src={c.thumbnail_url || c.image_url} alt={c.scene_id} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 ) : c.status === "generating" ? (
                   <div className="absolute inset-0 flex items-center justify-center text-gray-500">
                     <Loader2 className="w-4 h-4 animate-spin" />

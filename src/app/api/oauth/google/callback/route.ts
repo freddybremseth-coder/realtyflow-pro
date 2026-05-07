@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
     const mergedSettings = {
       ...(existing?.settings || {}),
       youtube_refresh_token: tokenData.refresh_token,
+      google_drive_refresh_token: tokenData.refresh_token,
     };
 
     const { error: upsertErr } = await supabase.from("brand_settings").upsert(

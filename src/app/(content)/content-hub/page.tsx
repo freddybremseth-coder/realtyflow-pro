@@ -67,6 +67,7 @@ interface DraftItem {
   tags: string[];
   ai_generated: boolean;
   ai_image_url: string | null;
+  thumbnail_url?: string | null;
   status: string;
   created_at: string;
   scheduled_at?: string;
@@ -377,7 +378,7 @@ export default function ContentHubPage() {
       if (!supabase) return;
       let query = supabase
         .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, status, created_at")
+        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, thumbnail_url, status, created_at")
         .not("ai_image_url", "is", null)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -389,7 +390,7 @@ export default function ContentHubPage() {
       const bankData = await bankRes.json().catch(() => ({ images: [] }));
       const bankImages: DraftItem[] = (bankData.images || [])
         .filter((img: { url?: string; kind?: string }) => img.url && ["product", "variant", "image", "thumbnail"].includes(img.kind || ""))
-        .map((img: { id: string; url: string; name?: string | null; kind: string; tags?: string[] | null; created_at: string }) => ({
+        .map((img: { id: string; url: string; thumbnail_url?: string | null; name?: string | null; kind: string; tags?: string[] | null; created_at: string }) => ({
           id: `bank-${img.id}`,
           brand_id: brandId || "image-bank",
           content_type: img.kind,
@@ -398,6 +399,7 @@ export default function ContentHubPage() {
           tags: img.tags || [],
           ai_generated: img.kind === "variant",
           ai_image_url: img.url,
+          thumbnail_url: img.thumbnail_url || null,
           status: "draft",
           created_at: img.created_at,
           scheduled_platforms: [],
@@ -410,15 +412,15 @@ export default function ContentHubPage() {
     }
   }, []);
 
-  const attachImageToDraft = useCallback(async (draftId: string, imageUrl: string) => {
+  const attachImageToDraft = useCallback(async (draftId: string, imageUrl: string, thumbnailUrl?: string | null) => {
     const supabase = getSupabase();
     if (!supabase) return;
     await supabase
       .from("content_publications")
-      .update({ ai_image_url: imageUrl, updated_at: new Date().toISOString() })
+      .update({ ai_image_url: imageUrl, thumbnail_url: thumbnailUrl || null, updated_at: new Date().toISOString() })
       .eq("id", draftId);
     setDrafts((prev) =>
-      prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl } : d)
+      prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl, thumbnail_url: thumbnailUrl || null } : d)
     );
     setImagePickerDraft(null);
   }, []);
@@ -442,7 +444,7 @@ export default function ContentHubPage() {
       const data = await res.json();
       if (data.url) {
         setDrafts((prev) =>
-          prev.map((d) => d.id === draftId ? { ...d, ai_image_url: data.url } : d)
+          prev.map((d) => d.id === draftId ? { ...d, ai_image_url: data.url, thumbnail_url: data.thumbnailUrl || data.url } : d)
         );
         setImagePickerDraft(null);
       } else {
@@ -1193,7 +1195,7 @@ export default function ContentHubPage() {
                                 {draft.ai_image_url && (
                                   <div className="rounded-lg overflow-hidden mb-2 bg-zinc-800 max-h-48">
                                     <img
-                                      src={draft.ai_image_url}
+                                      src={draft.thumbnail_url || draft.ai_image_url}
                                       alt={draft.title || "AI-generert bilde"}
                                       loading="lazy"
                                       decoding="async"
@@ -1391,11 +1393,11 @@ export default function ContentHubPage() {
                     {availableImages.map((img) => (
                       <button
                         key={img.id}
-                        onClick={() => img.ai_image_url && attachImageToDraft(imagePickerDraft, img.ai_image_url)}
+                        onClick={() => img.ai_image_url && attachImageToDraft(imagePickerDraft, img.ai_image_url, img.thumbnail_url)}
                         className="group relative rounded-lg overflow-hidden border border-zinc-700 hover:border-purple-500 transition-all bg-zinc-800"
                       >
                         <img
-                          src={img.ai_image_url!}
+                          src={img.thumbnail_url || img.ai_image_url!}
                           alt={img.title || "AI-bilde"}
                           loading="lazy"
                           decoding="async"

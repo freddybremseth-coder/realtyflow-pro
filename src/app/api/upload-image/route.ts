@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { uploadThumbnail } from "@/services/storage/media";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -79,6 +80,7 @@ export async function POST(req: NextRequest) {
       .getPublicUrl(storagePath);
 
     const publicUrl = urlData.publicUrl;
+    const thumbnailUrl = await uploadThumbnail(supabase, buffer, file.type, storagePath);
 
     // If a draft_id was provided, update the draft record
     if (draftId) {
@@ -86,6 +88,7 @@ export async function POST(req: NextRequest) {
         .from("content_publications")
         .update({
           ai_image_url: publicUrl,
+          thumbnail_url: thumbnailUrl,
           updated_at: new Date().toISOString(),
         })
         .eq("id", draftId);
@@ -95,6 +98,7 @@ export async function POST(req: NextRequest) {
         // Image was uploaded successfully, just return warning
         return NextResponse.json({
           url: publicUrl,
+          thumbnailUrl,
           warning: "Bildet ble lastet opp, men kunne ikke knyttes til utkastet.",
         });
       }
@@ -114,12 +118,13 @@ export async function POST(req: NextRequest) {
         .insert({
           owner: bankOwner,
           url: publicUrl,
+          thumbnail_url: thumbnailUrl,
           name: bankName,
           kind: validKinds.has(bankKind) ? bankKind : "image",
           tags,
           size_bytes: file.size,
         })
-        .select("id, url, name, kind, tags, created_at")
+        .select("id, url, thumbnail_url, name, kind, tags, created_at")
         .single();
 
       if (bankError) {
@@ -129,7 +134,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ url: publicUrl, success: true, bankImage });
+    return NextResponse.json({ url: publicUrl, thumbnailUrl, success: true, bankImage });
   } catch (error) {
     console.error("Upload image error:", error);
     return NextResponse.json(
