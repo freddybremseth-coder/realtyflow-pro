@@ -59,6 +59,19 @@ interface YouTubeVideo {
   viewsPerDay?: number;
 }
 
+const REMASTER_FREDDY_OAUTH_URL = '/api/oauth/google?brand=remasterfreddy';
+
+function isYoutubeReconnectError(error?: string) {
+  return /invalid_grant|token.*utløpt|tilbakekalt|reconnect|koble.*youtube|refresh token/i.test(error || '');
+}
+
+function youtubeErrorMessage(error?: string) {
+  if (isYoutubeReconnectError(error)) {
+    return 'YouTube-tilkoblingen for Re-Master Freddy er utløpt. Koble Google/YouTube til på nytt, og kjør videoen igjen.';
+  }
+  return error || 'Ukjent feil. Sjekk stegene i Re-Master Freddy.';
+}
+
 interface AIAnalysis {
   overallScore: number;
   summary: string;
@@ -728,7 +741,7 @@ export default function NeuralBeatPage() {
             error: errorMessage,
           },
         }));
-        window.alert(`YouTube-prosessering feilet: ${errorMessage}`);
+        window.alert(`YouTube-prosessering feilet: ${youtubeErrorMessage(errorMessage)}`);
         setProcessingIds((prev) => {
           const next = new Map(prev);
           next.delete(recordId);
@@ -771,7 +784,7 @@ export default function NeuralBeatPage() {
               if (data.status === 'completed') {
                 setTimeout(fetchSongs, 2000);
               } else {
-                window.alert(`YouTube-prosessering feilet: ${data.error || 'Ukjent feil. Sjekk stegene i Re-Master Freddy.'}`);
+                window.alert(`YouTube-prosessering feilet: ${youtubeErrorMessage(data.error)}`);
               }
             }
           } catch {
@@ -1649,8 +1662,16 @@ export default function NeuralBeatPage() {
                             <div>
                               <div className="flex items-center gap-2 text-sm text-red-400">
                                 <XCircle className="h-4 w-4" />
-                                {pipelineStatus.error}
+                                {youtubeErrorMessage(pipelineStatus.error)}
                               </div>
+                              {isYoutubeReconnectError(pipelineStatus.error) && (
+                                <a href={REMASTER_FREDDY_OAUTH_URL} className="mt-3 inline-flex">
+                                  <Button size="sm" className="bg-red-600 hover:bg-red-500">
+                                    <Youtube className="mr-2 h-4 w-4" />
+                                    Koble Re-Master Freddy til YouTube på nytt
+                                  </Button>
+                                </a>
+                              )}
                               {pipelineStatus.steps && pipelineStatus.steps.length > 0 && (
                                 <div className="mt-2 space-y-1">
                                   {pipelineStatus.steps.map((step, i) => (

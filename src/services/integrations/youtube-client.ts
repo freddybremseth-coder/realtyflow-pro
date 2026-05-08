@@ -168,6 +168,11 @@ async function runWithTokenFallback<T>(
       );
     }
   }
+  if (options?.requireBrandToken && brandId && lastErr && isInvalidGrantError(lastErr)) {
+    throw new Error(
+      `YouTube-token for brand "${brandId}" er utløpt eller tilbakekalt (invalid_grant). Koble Re-Master Freddy til Google/YouTube på nytt: /api/oauth/google?brand=${brandId}`,
+    );
+  }
   throw lastErr ?? new Error('All YouTube refresh tokens failed with invalid_grant');
 }
 
