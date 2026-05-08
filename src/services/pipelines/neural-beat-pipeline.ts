@@ -29,6 +29,7 @@ import { createClient } from '@supabase/supabase-js';
 // select the Re-Master Freddy channel on the Google consent screen if it
 // ever falls out of sync. Env var overrides for flexibility in preview deploys.
 const NEURAL_BEAT_BRAND_ID = process.env.NEURAL_BEAT_BRAND_ID || 'remasterfreddy';
+const NEURAL_BEAT_RECONNECT_URL = 'https://realtyflow.chatgenius.pro/api/oauth/google?brand=remasterfreddy';
 
 const STEP_NAMES = [
   'Update Status to Processing',
@@ -780,7 +781,10 @@ export class NeuralBeatPipeline {
 
         stepCompleted(steps[currentStepIndex]);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const message = /invalid[_\s]grant|expired or revoked|utløpt|tilbakekalt/i.test(rawMessage)
+          ? `YouTube-tilkoblingen for Re-Master Freddy er utløpt eller tilbakekalt. Koble til på nytt her: ${NEURAL_BEAT_RECONNECT_URL}`
+          : rawMessage;
         stepFailed(steps[currentStepIndex], message);
         throw new Error(`Step 7 failed: ${message}`);
       }

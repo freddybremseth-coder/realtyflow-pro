@@ -129,7 +129,16 @@ async function getClient(brandId?: string): Promise<youtube_v3.Youtube> {
  *   - invalid_client / unauthorized_client (rare, but not retryable — rethrow)
  */
 function isInvalidGrantError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = [
+    err instanceof Error ? err.message : String(err),
+    (() => {
+      try {
+        return JSON.stringify((err as { response?: { data?: unknown } })?.response?.data || {});
+      } catch {
+        return '';
+      }
+    })(),
+  ].join(' ');
   return /invalid[_\s]grant/i.test(msg) || /Token has been expired or revoked/i.test(msg);
 }
 
