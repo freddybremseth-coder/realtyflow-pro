@@ -14,7 +14,7 @@ function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
 function json(body: unknown, init?: ResponseInit) {
@@ -29,23 +29,30 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = getSupabase();
-  const brandId = request.nextUrl.searchParams.get("brand_id") || request.nextUrl.searchParams.get("brand") || "";
-  if (!brandId) return json({ error: "brand_id is required" }, { status: 400 });
-  if (!supabase) return json({ error: "No DB" }, { status: 500 });
+  try {
+    const supabase = getSupabase();
+    const brandId = request.nextUrl.searchParams.get("brand_id") || request.nextUrl.searchParams.get("brand") || "";
+    if (!brandId) return json({ error: "brand_id is required" }, { status: 400 });
+    if (!supabase) return json({ error: "Supabase is not configured" }, { status: 503 });
 
-  const { data, error } = await supabase
-    .from("brand_settings")
-    .select("settings")
-    .eq("brand_id", brandId)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from("brand_settings")
+      .select("settings")
+      .eq("brand_id", brandId)
+      .maybeSingle();
 
-  if (error) return json({ error: error.message }, { status: 500 });
+    if (error) return json({ error: error.message, code: error.code }, { status: 500 });
 
-  const booking = data?.settings?.booking;
-  if (!booking?.published) {
-    return json({ error: "Booking page is not published for this brand" }, { status: 404 });
+    const booking = data?.settings?.booking;
+    if (!booking?.published) {
+      return json({ error: "Booking page is not published for this brand" }, { status: 404 });
+    }
+
+    return json({ config: booking });
+  } catch (error) {
+    return json(
+      { error: error instanceof Error ? error.message : "Unknown booking config error" },
+      { status: 500 },
+    );
   }
-
-  return json({ config: booking });
 }
