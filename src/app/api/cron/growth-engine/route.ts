@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { AutonomousGrowthEngine } from '@/services/growth/growth-engine';
+import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/growth-engine", "schedule": "0 6 * * *" }]
 // Runs daily at 06:00 UTC
@@ -21,6 +22,15 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const safeMode = await evaluateCronSafeMode('/api/cron/growth-engine');
+    if (safeMode.skip) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        mode: safeMode.mode,
+        reason: safeMode.reason,
+      });
     }
 
     const supabase = getSupabase();

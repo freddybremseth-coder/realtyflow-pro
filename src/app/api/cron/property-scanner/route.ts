@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { PropertyScanner } from '@/services/scanner/property-scanner';
+import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 export const maxDuration = 120;
 
@@ -24,6 +25,15 @@ export async function GET(request: NextRequest) {
       if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
+    }
+    const safeMode = await evaluateCronSafeMode('/api/cron/property-scanner');
+    if (safeMode.skip) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        mode: safeMode.mode,
+        reason: safeMode.reason,
+      });
     }
 
     console.log('[Property Scanner Cron] Starting weekly scan...');

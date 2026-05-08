@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 export const maxDuration = 120;
 
@@ -25,6 +26,15 @@ export async function GET(request: NextRequest) {
       if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
+    }
+    const safeMode = await evaluateCronSafeMode('/api/cron/property-marketing');
+    if (safeMode.skip) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        mode: safeMode.mode,
+        reason: safeMode.reason,
+      });
     }
 
     if (!process.env.ANTHROPIC_API_KEY) {

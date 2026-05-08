@@ -6,6 +6,7 @@ import {
   isConfigured,
 } from '@/services/integrations/airtable-client';
 import { NeuralBeatPipeline } from '@/services/pipelines/neural-beat-pipeline';
+import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // ─── Vercel serverless: allow up to 5 minutes for batch processing ──
 export const maxDuration = 300;
@@ -30,6 +31,15 @@ export async function GET(request: NextRequest) {
 
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const safeMode = await evaluateCronSafeMode('/api/neural-beat/cron');
+  if (safeMode.skip) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      mode: safeMode.mode,
+      reason: safeMode.reason,
+    });
   }
 
   // ── Config check ──

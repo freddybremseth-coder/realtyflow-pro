@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { listVideos, isConfigured as ytConfigured } from "@/services/integrations/youtube-client";
+import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 
 // Runs daily to fetch engagement metrics for published posts
 export const maxDuration = 120;
@@ -56,6 +57,15 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get("authorization");
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const safeMode = await evaluateCronSafeMode('/api/cron/engagement-tracker');
+    if (safeMode.skip) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        mode: safeMode.mode,
+        reason: safeMode.reason,
+      });
     }
 
     const supabase = getSupabase();

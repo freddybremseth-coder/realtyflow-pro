@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { MarketDataFetcher } from '@/services/market/data-fetcher';
+import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/market-data", "schedule": "0 3 * * *" }]
 
@@ -23,6 +24,15 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const safeMode = await evaluateCronSafeMode('/api/cron/market-data');
+    if (safeMode.skip) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        mode: safeMode.mode,
+        reason: safeMode.reason,
+      });
     }
 
     const supabase = getSupabase();
