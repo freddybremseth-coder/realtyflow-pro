@@ -743,9 +743,11 @@ export class NeuralBeatPipeline {
             ? 'private'
             : ((youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public'),
           publishAt: publishAtIso || undefined,
-        }, NEURAL_BEAT_BRAND_ID);
+        }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
         youtubeUrl = uploadResult.youtubeUrl;
         youtubeVideoId = uploadResult.videoId;
+        steps[currentStepIndex].result = `Lastet opp og verifisert: ${uploadResult.youtubeUrl} (${uploadResult.privacyStatus || 'ukjent status'}, kanal ${uploadResult.channelId || 'ukjent'})`;
+        notify();
 
         // Try to set custom thumbnail (requires channel verification)
         if (thumbnailBuffer) {
@@ -924,7 +926,7 @@ export class NeuralBeatPipeline {
             tags: [...youtubeMetadata.tags.slice(0, 17), 'Shorts', 'YouTube Shorts', 'Short'],
             categoryId: youtubeMetadata.categoryId,
             privacyStatus: 'public',
-          }, NEURAL_BEAT_BRAND_ID);
+          }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
 
           console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);
 

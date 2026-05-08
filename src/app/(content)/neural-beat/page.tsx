@@ -720,13 +720,15 @@ export default function NeuralBeatPage() {
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({ error: 'Ukjent feil' }));
+        const errorMessage = data.error || 'Kunne ikke starte pipeline';
         setPipelineStatuses((prev) => ({
           ...prev,
           [recordId]: {
             id: '', recordId, status: 'failed', steps: [],
-            error: data.error || 'Kunne ikke starte pipeline',
+            error: errorMessage,
           },
         }));
+        window.alert(`YouTube-prosessering feilet: ${errorMessage}`);
         setProcessingIds((prev) => {
           const next = new Map(prev);
           next.delete(recordId);
@@ -768,6 +770,8 @@ export default function NeuralBeatPage() {
               });
               if (data.status === 'completed') {
                 setTimeout(fetchSongs, 2000);
+              } else {
+                window.alert(`YouTube-prosessering feilet: ${data.error || 'Ukjent feil. Sjekk stegene i Re-Master Freddy.'}`);
               }
             }
           } catch {
@@ -793,6 +797,7 @@ export default function NeuralBeatPage() {
       if (!finalStatus || finalStatus.status === 'running') {
         const recovered = await pollForCompletion(recordId, finalStatus);
         if (!recovered) {
+          window.alert('YouTube-prosessering feilet eller mistet tilkoblingen. Sjekk statuskortet for siste feilmelding.');
           setProcessingIds((prev) => {
             const next = new Map(prev);
             next.delete(recordId);

@@ -109,9 +109,27 @@ function getBuyingSignalScore(lead: Lead) {
   if (Number(lead.budget.replace(/[^0-9]/g, "")) > 0) score += 10;
   if (/kjøpssignal|oppdaterte ønsker|min side|favoritt|kalkulator|rapport|dokument/.test(activityText)) score += 25;
   if (/klar nå|innen 3 mnd|visning|reservasjon|book|budsjett til/.test(activityText)) score += 20;
+  if (isBookedMeetingLead(lead)) score += 30;
   if (["VIEWING", "NEGOTIATION"].includes(lead.status)) score += 15;
   if (lead.email && lead.phone) score += 5;
   return Math.min(100, Math.max(0, score));
+}
+
+function isBookedMeetingLead(lead: Lead) {
+  const activityText = [lead.notes, lead.property, lead.source, ...lead.interactions.map((item) => item.content)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return lead.source?.startsWith("appointment_app:")
+    || /webmote booket|webmøte booket|bookingreferanse|bookingtype|ny booking|booket/.test(activityText)
+    || lead.interactions.some((item) => item.type === "meeting" && /book|mote|møte|samtale/.test(item.content.toLowerCase()));
+}
+
+function bookedMeetingSummary(lead: Lead) {
+  const meeting = lead.interactions.find((item) => item.type === "meeting");
+  if (meeting?.content) return meeting.content;
+  const match = lead.notes?.match(/Tidspunkt:\s*(.+)/i);
+  return match?.[1] || "Kunden har valgt tid og forventer oppfolging.";
 }
 
 function signalLabel(score: number) {
@@ -190,7 +208,7 @@ export default function PipelinePage() {
           phone: c.phone || '',
           budget: c.pipeline_value ? `€${c.pipeline_value.toLocaleString()}` : '€0',
           source: c.source || 'Manuell',
-          sentiment: typeof c.sentiment === 'number' ? c.sentiment : 50,
+          sentiment: typeof c.sentiment === 'number' ? c.sentiment : c.sentiment === 'hot' ? 90 : c.sentiment === 'warm' ? 70 : c.sentiment === 'cold' ? 20 : 50,
           status: (c.pipeline_status || 'NEW') as LeadStatus,
           property: c.property_interest || undefined,
           notes: c.notes || undefined,
@@ -1172,15 +1190,24 @@ export default function PipelinePage() {
                   {colLeads.map((lead) => (
                     (() => {
                       const signalScore = getBuyingSignalScore(lead);
+                      const bookedMeeting = isBookedMeetingLead(lead);
                       return (
                     <Card
                       key={lead.id}
                       draggable
                       onDragStart={() => handleDragStart(lead.id)}
                       onClick={() => openDetail(lead)}
-                      className={`cursor-pointer hover:border-slate-500 transition-all ${selectedLead?.id === lead.id ? "ring-2 ring-primary-500 border-primary-500" : ""}`}
+                      className={`cursor-pointer transition-all ${bookedMeeting ? "border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.18)] hover:border-emerald-400" : "hover:border-slate-500"} ${selectedLead?.id === lead.id ? "ring-2 ring-primary-500 border-primary-500" : ""}`}
                     >
                       <CardContent className="p-3">
+                        {bookedMeeting && (
+                          <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1">
+                            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-200">
+                              <Calendar size={11} /> Booket webmøte
+                            </span>
+                            <span className="text-[10px] font-semibold text-emerald-100">Prioritet</span>
+                          </div>
+                        )}
                         <div className="flex items-start justify-between mb-1">
                           <div className="flex items-center gap-1.5">
                             <GripVertical size={12} className="text-slate-600 cursor-grab" />
@@ -1192,6 +1219,9 @@ export default function PipelinePage() {
                           </div>
                         </div>
                         {lead.property && <p className="text-xs text-slate-400 mb-1.5 truncate">{lead.property}</p>}
+                        {bookedMeeting && (
+                          <p className="mb-1.5 line-clamp-2 text-[11px] font-medium text-emerald-200">{bookedMeetingSummary(lead)}</p>
+                        )}
                         <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-amber-300">
                           <Clock size={10} />
                           <span>Siste kontakt: {lead.lastContact || lead.createdAt}</span>
@@ -1283,6 +1313,18 @@ export default function PipelinePage() {
                     <Clock size={14} className="text-slate-500" />Siste kontakt: {selectedLead.lastContact || selectedLead.createdAt}
                   </div>
                 </div>
+
+                {isBookedMeetingLead(selectedLead) && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-200">
+                      <Calendar size={15} />
+                      Booket webmøte - prioriter denne
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-emerald-100/80">
+                      {bookedMeetingSummary(selectedLead)}
+                    </p>
+                  </div>
+                )}
 
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
                   <div className="flex items-center justify-between">

@@ -89,6 +89,8 @@ export interface YouTubeUploadResult {
   channelId: string;
   publishedAt: string;
   thumbnailUrl: string;
+  privacyStatus?: string;
+  tokenSource?: string;
 }
 
 // ---- Song / Neural Beat Types ----

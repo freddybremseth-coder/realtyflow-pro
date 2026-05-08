@@ -136,11 +136,17 @@ function isInvalidGrantError(err: unknown): boolean {
 async function runWithTokenFallback<T>(
   brandId: string | undefined,
   work: (client: youtube_v3.Youtube, source: string) => Promise<T>,
+  options?: { requireBrandToken?: boolean },
 ): Promise<T> {
-  const candidates = await collectTokenCandidates(brandId);
+  const allCandidates = await collectTokenCandidates(brandId);
+  const candidates = options?.requireBrandToken
+    ? allCandidates.filter((candidate) => candidate.source.startsWith('brand:'))
+    : allCandidates;
   if (candidates.length === 0) {
     const hint = brandId
-      ? `No YouTube refresh token found for brand "${brandId}". Set it in brand settings or configure YOUTUBE_REFRESH_TOKEN env var.`
+      ? options?.requireBrandToken
+        ? `No brand-specific YouTube refresh token found for brand "${brandId}". Reconnect Google/YouTube for this brand before processing videos.`
+        : `No YouTube refresh token found for brand "${brandId}". Set it in brand settings or configure YOUTUBE_REFRESH_TOKEN env var.`
       : 'No YouTube refresh token found. Set YOUTUBE_REFRESH_TOKEN env var or configure token in brand settings.';
     throw new Error(hint);
   }
@@ -172,6 +178,7 @@ export async function uploadVideo(
   videoBuffer: Buffer,
   metadata: YouTubeVideoMetadata,
   brandId?: string,
+  options?: { requireBrandToken?: boolean },
 ): Promise<YouTubeUploadResult> {
   // When publishAt is set we must upload as PRIVATE — YouTube rejects scheduling
   // on any other privacy status. Sanitize here so callers don't have to remember.
@@ -205,18 +212,32 @@ export async function uploadVideo(
 
     const video = res.data;
     const videoId = video.id || '';
+    if (!videoId) {
+      throw new Error('YouTube upload did not return a video id. Nothing was confirmed as uploaded.');
+    }
     console.log(`[YouTube] Upload OK via ${source}, videoId=${videoId}, channel=${video.snippet?.channelId}`);
+
+    const verify = await youtube.videos.list({
+      part: ['snippet', 'status'],
+      id: [videoId],
+    });
+    const verifiedVideo = verify.data.items?.[0];
+    if (!verifiedVideo?.id) {
+      throw new Error(`YouTube upload returned video id ${videoId}, but verification lookup did not find the video.`);
+    }
 
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
     return {
       videoId,
       videoUrl: youtubeUrl,
       youtubeUrl,
-      channelId: video.snippet?.channelId || '',
-      publishedAt: video.snippet?.publishedAt || new Date().toISOString(),
-      thumbnailUrl: video.snippet?.thumbnails?.high?.url || '',
+      channelId: verifiedVideo.snippet?.channelId || video.snippet?.channelId || '',
+      publishedAt: verifiedVideo.snippet?.publishedAt || video.snippet?.publishedAt || new Date().toISOString(),
+      thumbnailUrl: verifiedVideo.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.high?.url || '',
+      privacyStatus: verifiedVideo.status?.privacyStatus || String(statusPayload.privacyStatus || ''),
+      tokenSource: source,
     };
-  });
+  }, options);
 }
 
 /**

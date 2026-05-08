@@ -79,6 +79,7 @@ function propertyInterest(payload: BookingPayload) {
 function notesFrom(payload: BookingPayload) {
   const answers = payload.answers || {};
   const lines = [
+    "VIKTIG: WEBMOTE BOOKET - folges opp personlig og prioriteres foran vanlige leads.",
     `Bookingtype: ${clean(payload.serviceTitle, 180)}`,
     `Merkevare: ${clean(payload.brandName || payload.brandId, 120)}`,
     payload.date && payload.time ? `Tidspunkt: ${payload.date} kl. ${payload.time}` : "",
@@ -153,10 +154,10 @@ export async function POST(request: NextRequest) {
     pipeline_value: value,
     property_interest: interest,
     notes: mergedNotes,
-    sentiment: value >= 500000 ? "hot" : value >= 200000 ? "warm" : "neutral",
+    sentiment: "hot",
     interactions: [interaction, ...existingInteractions],
     last_contact: now,
-    next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    next_followup: now,
     updated_at: now,
   };
 
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
     title: `Ny booking: ${name}`,
     description: `${clean(payload.serviceTitle, 180)} · ${email}${payload.date && payload.time ? ` · ${payload.date} ${payload.time}` : ""}`,
     status: "TO_DO",
-    priority: value >= 500000 || payload.paid ? "HIGH" : "MEDIUM",
+    priority: "HIGH",
     due_date: new Date().toISOString().slice(0, 10),
     brand_id: brandId,
     source_type: "website_lead",
@@ -200,14 +201,16 @@ export async function POST(request: NextRequest) {
     assigned_agent: isBusinessLead ? "business" : "sales",
     next_action: payload.paid
       ? "Sjekk betaling og send personlig bekreftelse."
-      : "Følg opp bookingen personlig og forbered møtet.",
-    ai_score: value >= 500000 || payload.paid ? 86 : 70,
+      : "Prioriter denne webmøte-bookingen: send personlig bekreftelse og forbered møtet.",
+    ai_score: 95,
     metadata: {
       appointment_booking_id: payload.id,
       appointment_service_id: payload.serviceId,
       appointment_date: payload.date,
       appointment_time: payload.time,
       appointment_price: payload.price,
+      is_web_meeting_booking: true,
+      priority_reason: "Kunden har booket konkret mote/webmote",
       lead_id: lead?.id || null,
       created_from_appointment_app: true,
     },
