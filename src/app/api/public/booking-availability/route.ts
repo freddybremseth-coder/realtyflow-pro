@@ -71,8 +71,12 @@ export async function GET(request: NextRequest) {
       busy: expandBusyWithBuffer(busy, Number.isFinite(buffer) ? buffer : 30),
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown booking availability error";
+    if (/invalid_grant|invalid credentials|unauthorized/i.test(message)) {
+      return json({ configured: false, busy: [], warning: "Google Calendar token is invalid" });
+    }
     return json(
-      { error: error instanceof Error ? error.message : "Unknown booking availability error" },
+      { error: message },
       { status: 500 },
     );
   }
