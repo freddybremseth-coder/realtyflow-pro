@@ -9,6 +9,7 @@ type ArchiveCandidate = {
   url: string;
   name: string;
   brand?: string | null;
+  tenant?: string | null;
   status?: string | null;
 };
 
@@ -26,6 +27,21 @@ async function getDriveRefreshToken(supabase: SupabaseClient) {
     .maybeSingle();
 
   return data?.settings?.google_drive_refresh_token || data?.settings?.youtube_refresh_token || null;
+}
+
+async function loadTenantByBrandMap(supabase: SupabaseClient) {
+  const { data } = await supabase
+    .from("brand_tenant_map")
+    .select("brand_key, tenant_slug")
+    .limit(500);
+
+  const map = new Map<string, string>();
+  for (const row of data || []) {
+    if (row.brand_key && row.tenant_slug) {
+      map.set(String(row.brand_key).toLowerCase(), String(row.tenant_slug).toLowerCase());
+    }
+  }
+  return map;
 }
 
 async function getDriveClient(supabase: SupabaseClient) {
@@ -131,6 +147,7 @@ export async function archivePublishedStorageToDrive(
   const drive = await getDriveClient(supabase);
   const root = await ensureFolder(drive, "Supabase");
   const candidates = await loadCandidates(supabase, limit);
+  const tenantByBrand = await loadTenantByBrandMap(supabase);
   const results: Array<{ id: string; table: string; status: string; destination?: string; error?: string }> = [];
 
   for (const candidate of candidates) {
@@ -141,8 +158,13 @@ export async function archivePublishedStorageToDrive(
       const buffer = Buffer.from(await res.arrayBuffer());
       const contentType = res.headers.get("content-type") || "application/octet-stream";
 
-      const bucketFolder = await ensureFolder(drive, sanitizeFolderName(parsed?.bucket || candidate.table), root);
-      const brandFolder = await ensureFolder(drive, sanitizeFolderName(candidate.brand || "Unsorted"), bucketFolder);
+      const brandSlug = sanitizeFolderName((candidate.brand || "unsorted").toLowerCase());
+      const tenantSlug = sanitizeFolderName(
+        tenantByBrand.get((candidate.brand || "").toLowerCase()) || "unmapped"
+      );
+      const tenantFolder = await ensureFolder(drive, tenantSlug, root);
+      const bucketFolder = await ensureFolder(drive, sanitizeFolderName(parsed?.bucket || candidate.table), tenantFolder);
+      const brandFolder = await ensureFolder(drive, brandSlug, bucketFolder);
       const statusFolder = await ensureFolder(drive, sanitizeFolderName(candidate.status || "published"), brandFolder);
       const destination = await uploadToDrive(drive, statusFolder, candidate, buffer, contentType);
       await markArchived(supabase, candidate, destination);

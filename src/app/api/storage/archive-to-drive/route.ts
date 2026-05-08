@@ -7,6 +7,11 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
+    const authHeader = req.headers.get("authorization");
+    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const supabase = createServerClient();
     const result = await archivePublishedStorageToDrive(supabase, {
