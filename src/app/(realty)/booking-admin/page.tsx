@@ -40,8 +40,15 @@ type BookingConfig = {
 
 const inputClass = "border-slate-700 bg-slate-950/70";
 const textAreaClass = "min-h-[92px] w-full rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500";
-const PUBLIC_BASE = process.env.NEXT_PUBLIC_REALTYFLOW_PUBLIC_URL || "https://realtyflow.chatgenius.pro";
-const APPOINTMENT_BASE = process.env.NEXT_PUBLIC_APPOINTMENT_PUBLIC_BASE_URL || "https://appointment.chatgenius.pro";
+
+function productionBase(value: string | undefined, fallback: string) {
+  const clean = (value || "").trim().replace(/\/$/, "");
+  if (!clean || /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(clean)) return fallback;
+  return clean;
+}
+
+const PUBLIC_BASE = productionBase(process.env.NEXT_PUBLIC_REALTYFLOW_PUBLIC_URL, "https://realtyflow.chatgenius.pro");
+const APPOINTMENT_BASE = productionBase(process.env.NEXT_PUBLIC_APPOINTMENT_PUBLIC_BASE_URL, "https://appointment.chatgenius.pro");
 
 function brandToBookingParam(brandId: string) {
   if (brandId === "zeneco") return "zen";
