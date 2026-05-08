@@ -14,11 +14,15 @@ export async function GET(req: NextRequest) {
   // Decode `state` to recover the brand this OAuth flow was initiated for.
   // Falls back to `_system` so existing bookmarks / old flows still work.
   let brandId = "_system";
+  let service = "youtube";
   if (stateRaw) {
     try {
       const parsed = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8"));
       if (parsed?.brand && typeof parsed.brand === "string") {
         brandId = parsed.brand.trim() || "_system";
+      }
+      if (parsed?.service && typeof parsed.service === "string") {
+        service = parsed.service.trim() || "youtube";
       }
     } catch {
       // Ignore malformed state; fall through to _system
@@ -84,7 +88,7 @@ export async function GET(req: NextRequest) {
     const mergedSettings = {
       ...(existing?.settings || {}),
       youtube_refresh_token: tokenData.refresh_token,
-      google_drive_refresh_token: tokenData.refresh_token,
+      ...(service === "drive" ? { google_drive_refresh_token: tokenData.refresh_token } : {}),
     };
 
     const { error: upsertErr } = await supabase.from("brand_settings").upsert(

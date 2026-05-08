@@ -25,14 +25,23 @@ export async function GET(req: NextRequest) {
   // Pass brand through via OAuth state so the callback can route the token
   // to the correct brand_settings row. Default: _system (global fallback).
   const brand = (req.nextUrl.searchParams.get("brand") || "_system").trim();
-  const state = Buffer.from(JSON.stringify({ brand })).toString("base64url");
+  const service = (req.nextUrl.searchParams.get("service") || "youtube").trim();
+  const youtubeOnly = service === "youtube" || ["remasterfreddy", "neuralbeat"].includes(brand);
+  const scopes = [
+    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    ...(!youtubeOnly ? ["https://www.googleapis.com/auth/drive.file"] : []),
+  ];
+  const state = Buffer.from(JSON.stringify({ brand, service })).toString("base64url");
 
   console.log(`[Google OAuth] redirect_uri: ${redirectUri}, brand: ${brand}`);
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/drive.file");
+  authUrl.searchParams.set("scope", scopes.join(" "));
   authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "consent"); // Force new refresh token
   authUrl.searchParams.set("state", state);
