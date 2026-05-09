@@ -49,6 +49,15 @@ export async function GET(request: NextRequest) {
   sparkSince.setUTCDate(now.getUTCDate() - 6);
   sparkSince.setUTCHours(0, 0, 0, 0);
 
+  type WorkItemRow = {
+    id: string;
+    status?: string | null;
+    due_date?: string | null;
+    metadata?: Record<string, unknown> | null;
+    created_at?: string | null;
+    attendance?: string | null;
+  };
+
   const buildQuery = (withAttendance: boolean) => {
     const cols = withAttendance
       ? "id,status,due_date,metadata,created_at,attendance"
@@ -68,7 +77,8 @@ export async function GET(request: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const rows = (data || []).filter((row) => Boolean(row.metadata?.is_web_meeting_booking));
+  const rawRows = (data as unknown as WorkItemRow[]) || [];
+  const rows = rawRows.filter((row) => Boolean(row.metadata?.is_web_meeting_booking));
 
   let thisMonthCount = 0;
   let lastMonthCount = 0;

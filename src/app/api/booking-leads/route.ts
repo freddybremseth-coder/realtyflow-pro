@@ -60,6 +60,18 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") || 20), 100);
   const todayKey = new Date().toISOString().slice(0, 10);
 
+  type WorkItemRow = {
+    id: string;
+    title?: string | null;
+    description?: string | null;
+    status?: string | null;
+    due_date?: string | null;
+    brand_id?: string | null;
+    metadata?: Record<string, unknown> | null;
+    created_at?: string | null;
+    attendance?: string | null;
+  };
+
   const buildQuery = (withAttendance: boolean) => {
     const cols = withAttendance
       ? "id,title,description,status,due_date,brand_id,metadata,created_at,attendance"
@@ -81,7 +93,8 @@ export async function GET(request: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const rows: BookingRow[] = (data || [])
+  const rawRows = (data as unknown as WorkItemRow[]) || [];
+  const rows: BookingRow[] = rawRows
     .filter((row) => Boolean(row.metadata?.is_web_meeting_booking))
     .map((row) => {
       const meta = (row.metadata || {}) as Record<string, unknown>;
