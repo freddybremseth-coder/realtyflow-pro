@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
+import { markCalendarSynced } from "@/lib/calendar-sync";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
     });
 
     const busy = res.data.calendars?.[calendarId]?.busy || [];
+    markCalendarSynced();
     return json({
       configured: true,
       calendarId,
