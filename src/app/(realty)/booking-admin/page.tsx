@@ -14,6 +14,7 @@ type BookingConfig = {
   domain: string;
   siteName: string;
   bookingUrl: string;
+  logoUrl?: string;
   accent: string;
   profile: { name: string; initials: string; role: string; location: string; tz: string; bio: string };
   page: { eyebrow: string; title: string; lead: string; intro: string[] };
@@ -230,12 +231,20 @@ export default function BookingAdminPage() {
                   <Input className={inputClass} value={config.bookingUrl} onChange={(e) => update({ bookingUrl: e.target.value })} />
                 </label>
                 <label className="space-y-1 text-sm">
+                  <span className="text-slate-400">Brand-logo URL</span>
+                  <Input className={inputClass} value={config.logoUrl || ""} onChange={(e) => update({ logoUrl: e.target.value })} placeholder="https://.../logo.png" />
+                </label>
+                <label className="space-y-1 text-sm">
                   <span className="text-slate-400">Profilnavn</span>
                   <Input className={inputClass} value={config.profile.name} onChange={(e) => updateProfile("name", e.target.value)} />
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="text-slate-400">Rolle</span>
                   <Input className={inputClass} value={config.profile.role} onChange={(e) => updateProfile("role", e.target.value)} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-slate-400">Område / visningssted</span>
+                  <Input className={inputClass} value={config.profile.location} onChange={(e) => updateProfile("location", e.target.value)} placeholder="Costa Blanca" />
                 </label>
                 <label className="space-y-1 text-sm md:col-span-2">
                   <span className="text-slate-400">Profiltekst</span>

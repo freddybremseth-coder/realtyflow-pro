@@ -117,7 +117,7 @@ export const SIDEBAR_NAV = {
   ],
   realty: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
-    { label: "Booking", href: "/booking-admin", icon: "Calendar" },
+    { label: "Booking Admin", href: "/booking-admin", icon: "Calendar" },
     { label: "Kalender", href: "/calendar", icon: "Calendar" },
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
     { label: "Områder", href: "/areas", icon: "MapPin" },

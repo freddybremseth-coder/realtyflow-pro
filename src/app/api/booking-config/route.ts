@@ -122,12 +122,13 @@ function knownBookingConfig(brandId: string) {
       domain: "ZenEcoHomes.com",
       siteName: "ZenEcoHomes",
       bookingUrl: "zenecohomes.com/book",
+      logoUrl: "https://realtyflow.chatgenius.pro/brand-logos/zeneco.png",
       accent: "leaf",
       profile: {
         name: "ZenEcoHomes",
         initials: "ZE",
         role: "Bolig i Spania",
-        location: "Costa Blanca · Pinoso · Aspe · Novelda",
+        location: "Costa Blanca",
         tz: "Europa/Madrid (CET)",
         bio: "Jeg hjelper deg å finne og kjøpe riktig bolig i Spania.",
       },
@@ -141,13 +142,14 @@ function knownBookingConfig(brandId: string) {
           "Målet er at du skal få bedre oversikt og ta tryggere valg før du går videre.",
         ],
       },
-      services: realEstateServices("zen", "leaf", ["Costa Blanca Nord", "Costa Blanca Sør", "Pinoso / Aspe / Novelda", "Altea / Albir / Benidorm", "Calpe / Jávea / Moraira", "Vet ikke ennå"]),
+      services: realEstateServices("zen", "leaf", ["Costa Blanca", "Costa Blanca Nord", "Costa Blanca Sør", "Altea / Albir / Benidorm", "Calpe / Jávea / Moraira", "Vet ikke ennå"]),
       crossLinks: [],
     },
     pinosoecolife: {
       domain: "PinosoEcoLife.com",
       siteName: "PinosoEcoLife",
       bookingUrl: "pinosoecolife.com/book",
+      logoUrl: "",
       accent: "blue",
       profile: {
         name: "PinosoEcoLife",
@@ -174,6 +176,7 @@ function knownBookingConfig(brandId: string) {
       domain: "ChatGenius.pro",
       siteName: "ChatGenius",
       bookingUrl: "chatgenius.pro/book",
+      logoUrl: "",
       accent: "violet",
       profile: {
         name: "ChatGenius.pro",
@@ -252,6 +255,7 @@ function knownBookingConfig(brandId: string) {
       domain: "FreddyBremseth.com",
       siteName: "Freddy Bremseth",
       bookingUrl: "freddybremseth.com/book",
+      logoUrl: "",
       accent: "amber",
       profile: {
         name: "Freddy Bremseth",
@@ -403,6 +407,7 @@ function defaultBookingConfig(brandId: string) {
     domain: brand.website?.replace(/^https?:\/\//, "") || brand.name,
     siteName: brand.name,
     bookingUrl: `${brand.website?.replace(/^https?:\/\//, "") || brand.id}/book`,
+    logoUrl: "",
     accent: isAI ? "violet" : isRealEstate ? "leaf" : "amber",
     profile: {
       name: brand.name,
