@@ -75,10 +75,17 @@ async function verifyToken(token?: string) {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isPublicPath(pathname)) return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
 
   const isAllowed = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
-  if (isAllowed) return NextResponse.next();
+  if (isAllowed) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
 
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("next", pathname);
