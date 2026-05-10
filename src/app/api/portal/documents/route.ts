@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 
   const { data: reports, error } = await supabase
     .from("market_reports")
-    .select("id,template_id,title,subtitle,summary,content_html,content_text,sections,data_sources,recipients,sent_to,generated_at,created_at")
+    .select("id,template_id,title,subtitle,summary,content_html,content_text,sections,data_sources,recipients,sent_to,status,channel,published_at,generated_at,created_at")
     .order("generated_at", { ascending: false })
     .limit(100);
 
@@ -70,6 +70,15 @@ export async function GET(request: NextRequest) {
 
   const portalReports = (reports || [])
     .filter((report) => {
+      // Only show documents that are explicitly published. Drafts and archived stay hidden.
+      // Legacy rows without a status column behave as published for backwards-compat.
+      const status = (report as { status?: string }).status;
+      if (status && status !== "published") return false;
+
+      // Only show documents whose channel is portal (default for legacy rows).
+      const channel = (report as { channel?: string }).channel;
+      if (channel && channel !== "portal") return false;
+
       const sentTo = Array.isArray(report.sent_to) ? report.sent_to.map((item: string) => item.toLowerCase()) : [];
       return report.recipients === "portal_all" || sentTo.includes(email);
     })
