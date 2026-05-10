@@ -24,13 +24,22 @@ function sanitizeToken(raw: unknown): string {
 
 /**
  * Collect every refresh token that could serve this brand, in priority order:
- *   1. brand-specific row (if brandId set and row exists)
- *   2. _system row (global default)
- *   3. env YOUTUBE_REFRESH_TOKEN (last-resort fallback)
+ *   1. NEW: oauth_tokens row(s) for active social_channels matching this brand
+ *      and platform=youtube (Phase 4 — preferred path).
+ *   2. brand_settings row for this brand (legacy, written to by the
+ *      finalize step in src/lib/oauth/google.ts as a transition aid).
+ *   3. brand_settings rows for the alias brands.
+ *   4. brand_settings _system row (global default fallback).
+ *   5. env YOUTUBE_REFRESH_TOKEN / no env name change so old prod keys still
+ *      work; renamed env vars (GOOGLE_*) only affect the OAuth client below.
  *
  * The caller walks the list and tries each — needed because Google's 100-token
  * limit per client+user means older tokens get revoked silently when new ones
  * are issued, so a brand-specific token may be dead even though _system works.
+ *
+ * Important: we deduplicate by token value, so when finalizeGoogleChannel
+ * mirrors the same refresh token to brand_settings AND oauth_tokens (Phase 4
+ * dual-write), we don't try the same token twice.
  */
 async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[]> {
   const candidates: TokenCandidate[] = [];
@@ -42,6 +51,32 @@ async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[
     if (url && key) {
       const supabase = createClient(url, key);
 
+      // ─── 1. New tables: oauth_tokens for active YT channels of this brand ─
+      // We look up by brand_id + platform=youtube and decrypt the refresh
+      // token. There can be more than one channel for a brand (e.g. main +
+      // secondary) — we add all of them, in display_name order, so the
+      // fallback walker can try each.
+      if (brandId) {
+        try {
+          const { getChannelsByBrand, getDecryptedTokens } = await import('@/lib/oauth/channels');
+          const channels = await getChannelsByBrand(brandId, 'youtube');
+          for (const ch of channels) {
+            const tokens = await getDecryptedTokens(ch.id);
+            const refresh = tokens?.refreshToken;
+            if (refresh && !candidates.some((c) => c.token === refresh)) {
+              candidates.push({ source: `oauth_tokens:${ch.display_name}`, token: refresh });
+            }
+          }
+        } catch (err) {
+          // Not fatal — we just fall through to the legacy paths.
+          console.warn(
+            '[YouTube] oauth_tokens lookup failed (falling back to brand_settings):',
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
+      // ─── 2-4. Legacy brand_settings paths ────────────────────────────────
       const candidateBrandIds = brandId && brandId !== '_system'
         ? [brandId, ...(BRAND_TOKEN_ALIASES[brandId] || [])]
         : [];
@@ -72,6 +107,7 @@ async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[
     console.warn('[YouTube] Supabase token lookup failed:', err instanceof Error ? err.message : err);
   }
 
+  // ─── 5. env fallback ───────────────────────────────────────────────────
   const envToken = sanitizeToken(process.env.YOUTUBE_REFRESH_TOKEN);
   if (envToken && !candidates.some((c) => c.token === envToken)) {
     candidates.push({ source: 'env:YOUTUBE_REFRESH_TOKEN', token: envToken });
@@ -81,10 +117,15 @@ async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[
 }
 
 function buildOAuthClient(refreshToken: string): OAuth2Client {
-  const clientId = process.env.YOUTUBE_CLIENT_ID;
-  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+  // Phase 4 rename: prefer the canonical GOOGLE_* names. The deprecated
+  // YOUTUBE_* names are accepted as a fallback for one release so the
+  // existing Vercel env vars keep working until they're renamed.
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    throw new Error('YouTube OAuth2 credentials not configured: YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are required');
+    throw new Error(
+      'Google OAuth credentials not configured: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (or legacy YOUTUBE_CLIENT_ID/SECRET).',
+    );
   }
   const oauth2Client = new OAuth2Client(clientId, clientSecret);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
@@ -628,10 +669,14 @@ export async function replyToComment(commentId: string, text: string): Promise<{
 }
 
 export function isConfigured(): boolean {
-  // Refresh tokens may be stored per brand in Supabase. Check those lazily
-  // when an API call knows which brand/channel it needs.
+  // Refresh tokens may be stored per brand in Supabase (oauth_tokens) or
+  // brand_settings (legacy). Check those lazily when an API call knows
+  // which brand/channel it needs. This function only verifies the OAuth
+  // CLIENT credentials are present — without those we can't redeem any
+  // refresh token. Accepts either the canonical GOOGLE_* names or the
+  // legacy YOUTUBE_* names during the rename window.
   return !!(
-    process.env.YOUTUBE_CLIENT_ID &&
-    process.env.YOUTUBE_CLIENT_SECRET
+    (process.env.GOOGLE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID) &&
+    (process.env.GOOGLE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET)
   );
 }

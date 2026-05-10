@@ -1,26 +1,34 @@
 /**
  * facebook-token-helper — sanitize, validate, and upgrade Facebook/Instagram
- * access tokens stored in `social_accounts`.
+ * access tokens stored in either:
  *
- * Handles three recurring failure modes we've observed in production:
+ *   - the new `oauth_tokens` table (post-Phase-3 OAuth flow), or
+ *   - the legacy `social_accounts.access_token` column (pre-migration rows).
+ *
+ * Phase 4 changes the helper's contract: callers now pass `{channelId,
+ * legacyAccountId}` so that token upgrades (USER→PAGE) write back to the
+ * correct store. Without this, an upgrade applied to a legacy row would
+ * silently leave the new oauth_tokens row stale, or vice versa, and the
+ * next publish would re-trigger the same upgrade roundtrip.
+ *
+ * Failure modes handled (unchanged from pre-Phase-4):
  *   1. Tokens saved with wrapping whitespace/quotes (Graph rejects with
  *      "Cannot parse access token")
  *   2. USER tokens saved where a PAGE token is required — Graph rejects with
  *      "...permission(s) must be granted before impersonating a user's page"
  *   3. Expired/revoked tokens that need a re-OAuth to recover
- *
- * We try to auto-recover case (2) by calling `/me/accounts` with the stored
- * user token to find the matching Page and its Page token, then upserting it
- * into `social_accounts` so subsequent posts use the right token.
  */
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const GRAPH = 'https://graph.facebook.com/v19.0';
+import { encrypt } from "@/lib/oauth/crypto";
+import { getMetaCredentials } from "@/lib/oauth/providers";
+
+const GRAPH = "https://graph.facebook.com/v19.0";
 
 export interface TokenDebugInfo {
   valid: boolean;
-  type?: 'USER' | 'PAGE' | 'APP' | 'unknown';
+  type?: "USER" | "PAGE" | "APP" | "unknown";
   appId?: string;
   userId?: string;
   scopes?: string[];
@@ -31,16 +39,19 @@ export interface TokenDebugInfo {
 export interface ResolvedToken {
   /** The token string ready to pass to Graph (trimmed, validated). */
   token: string;
-  /** Whether the token was rewritten in Supabase during resolution. */
+  /** Whether the token was rewritten in storage during resolution. */
   refreshed: boolean;
   /** Human-readable note on what happened (shown to user on failure). */
   note?: string;
 }
 
 export class TokenError extends Error {
-  constructor(message: string, public readonly userFacing: string) {
+  constructor(
+    message: string,
+    public readonly userFacing: string,
+  ) {
     super(message);
-    this.name = 'TokenError';
+    this.name = "TokenError";
   }
 }
 
@@ -49,12 +60,12 @@ export class TokenError extends Error {
  * Returns empty string for null/undefined/effectively-empty input.
  */
 export function sanitizeToken(raw: string | null | undefined): string {
-  if (!raw) return '';
+  if (!raw) return "";
   let t = String(raw).trim();
   if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
     t = t.slice(1, -1).trim();
   }
-  if (t.toLowerCase().startsWith('bearer ')) t = t.slice(7).trim();
+  if (t.toLowerCase().startsWith("bearer ")) t = t.slice(7).trim();
   return t;
 }
 
@@ -72,40 +83,40 @@ function getSupabase(): SupabaseClient {
 export async function debugToken(token: string): Promise<TokenDebugInfo> {
   const clean = sanitizeToken(token);
   if (!clean) {
-    return { valid: false, error: 'Token is empty' };
+    return { valid: false, error: "Token is empty" };
   }
 
-  const appId = process.env.FACEBOOK_APP_ID;
-  const appSecret = process.env.FACEBOOK_APP_SECRET;
-  if (!appId || !appSecret) {
-    return { valid: false, error: 'FACEBOOK_APP_ID / FACEBOOK_APP_SECRET not set' };
+  let credentials;
+  try {
+    credentials = getMetaCredentials();
+  } catch {
+    return { valid: false, error: "META_APP_ID / META_APP_SECRET not set" };
   }
 
   try {
     const res = await fetch(
-      `${GRAPH}/debug_token?input_token=${encodeURIComponent(clean)}&access_token=${appId}|${appSecret}`,
+      `${GRAPH}/debug_token?input_token=${encodeURIComponent(clean)}` +
+        `&access_token=${encodeURIComponent(`${credentials.clientId}|${credentials.clientSecret}`)}`,
     );
     const body = await res.json();
     if (body.error) {
-      return { valid: false, error: body.error.message || 'debug_token error' };
+      return { valid: false, error: body.error.message || "debug_token error" };
     }
     const d = body.data || {};
-    // Even when is_valid=false, FB often returns type/scopes/granular_scopes —
-    // surface them so callers can distinguish "wrong scopes" from "expired".
     const base: TokenDebugInfo = {
       valid: !!d.is_valid,
-      type: d.type as TokenDebugInfo['type'],
+      type: d.type as TokenDebugInfo["type"],
       appId: d.app_id,
       userId: d.user_id,
       scopes: d.scopes || [],
       expiresAt: d.expires_at ?? null,
     };
     if (d.is_valid === false) {
-      return { ...base, valid: false, error: d.error?.message || 'Token marked invalid by Graph' };
+      return { ...base, valid: false, error: d.error?.message || "Token marked invalid by Graph" };
     }
     return base;
   } catch (err) {
-    return { valid: false, error: err instanceof Error ? err.message : 'Network error' };
+    return { valid: false, error: err instanceof Error ? err.message : "Network error" };
   }
 }
 
@@ -126,120 +137,156 @@ export async function fetchPageTokenFromUserToken(
     );
     const body = await res.json();
     if (!res.ok || body.error) return null;
-    const match = (body.data || []).find((p: { id: string; access_token?: string }) => p.id === pageId);
+    const match = (body.data || []).find(
+      (p: { id: string; access_token?: string }) => p.id === pageId,
+    );
     return match?.access_token ? sanitizeToken(match.access_token) : null;
   } catch {
     return null;
   }
 }
 
+interface TokenLocation {
+  /** New-tables row id; null if the token came from the legacy fallback. */
+  channelId: string | null;
+  /** Legacy social_accounts row id; null if the token came from oauth_tokens. */
+  legacyAccountId: string | null;
+}
+
 /**
- * Resolve a token for a Facebook Page row: ensure it's a Page token. If the
- * stored token is a User token, try to upgrade by calling `/me/accounts` and
- * persist the upgrade to `social_accounts` for next time.
+ * Resolve a Page token: ensure it's a Page token (not the user token).
+ * If we have a user token saved against a Page row, try to upgrade by
+ * calling `/me/accounts` and persist the upgrade to the same store the
+ * stale token came from.
  *
  * Throws TokenError with a user-facing Norwegian message on unrecoverable state.
  */
-export async function resolveFacebookPageToken(
-  accountRowId: string,
-  pageId: string,
-  storedToken: string,
-): Promise<ResolvedToken> {
-  const clean = sanitizeToken(storedToken);
+export async function resolveFacebookPageToken(input: {
+  externalId: string;
+  storedToken: string;
+  channelId: string | null;
+  legacyAccountId: string | null;
+}): Promise<ResolvedToken> {
+  const clean = sanitizeToken(input.storedToken);
   if (!clean) {
     throw new TokenError(
-      'Empty Facebook token',
-      'Facebook-tilkoblingen mangler token. Gå til Innstillinger og koble til Facebook på nytt.',
+      "Empty Facebook token",
+      "Facebook-tilkoblingen mangler token. Gå til Innstillinger og koble til Facebook på nytt.",
     );
   }
 
   const debug = await debugToken(clean);
-
-  // If trimming changed the token, always persist the clean version so we
-  // don't re-debug whitespace next time.
-  let refreshed = clean !== storedToken;
+  let refreshed = clean !== input.storedToken;
 
   if (!debug.valid) {
     throw new TokenError(
-      `Facebook token invalid: ${debug.error || 'unknown'}`,
-      `Facebook-token er ugyldig eller utløpt (${debug.error || 'ukjent'}). Koble til Facebook på nytt.`,
+      `Facebook token invalid: ${debug.error || "unknown"}`,
+      `Facebook-token er ugyldig eller utløpt (${debug.error || "ukjent"}). Koble til Facebook på nytt.`,
     );
   }
 
-  // Happy path: it's already a Page token
-  if (debug.type === 'PAGE') {
-    if (refreshed) await persistToken(accountRowId, clean);
-    return { token: clean, refreshed, note: 'PAGE token OK' };
+  if (debug.type === "PAGE") {
+    if (refreshed) {
+      await persistFacebookToken(clean, { channelId: input.channelId, legacyAccountId: input.legacyAccountId });
+    }
+    return { token: clean, refreshed, note: "PAGE token OK" };
   }
 
-  // USER token saved for a Page row → attempt upgrade
-  if (debug.type === 'USER') {
-    const pageToken = await fetchPageTokenFromUserToken(clean, pageId);
+  if (debug.type === "USER") {
+    const pageToken = await fetchPageTokenFromUserToken(clean, input.externalId);
     if (!pageToken) {
       throw new TokenError(
-        'User token cannot be upgraded to Page token (missing scopes or not admin)',
-        `Du har ikke riktige tillatelser til Facebook-siden "${pageId}". Gå til Innstillinger → Koble til Facebook på nytt og godta alle tillatelser (pages_show_list, pages_manage_posts, pages_read_engagement).`,
+        "User token cannot be upgraded to Page token (missing scopes or not admin)",
+        `Du har ikke riktige tillatelser til Facebook-siden "${input.externalId}". Gå til Innstillinger → Koble til Facebook på nytt og godta alle tillatelser.`,
       );
     }
-    // Persist the upgraded token so next post doesn't re-upgrade
-    await persistToken(accountRowId, pageToken);
-    return { token: pageToken, refreshed: true, note: 'Upgraded USER→PAGE token' };
+    await persistFacebookToken(pageToken, { channelId: input.channelId, legacyAccountId: input.legacyAccountId });
+    return { token: pageToken, refreshed: true, note: "Upgraded USER→PAGE token" };
   }
 
-  // Some other token type (APP, unknown) — fail with guidance
   throw new TokenError(
     `Unexpected token type: ${debug.type}`,
-    `Uventet tokentype (${debug.type || 'ukjent'}). Koble til Facebook på nytt for å få et gyldig Page-token.`,
+    `Uventet tokentype (${debug.type || "ukjent"}). Koble til Facebook på nytt for å få et gyldig Page-token.`,
   );
 }
 
 /**
  * Instagram Business publishing always uses the linked Facebook Page's token.
- * Validate shape + issue a Page-flavored error message. We don't try to
- * auto-upgrade here because the FB Page row (if any) would have been handled
- * separately — but we DO sanitize + debug.
+ * We don't try to auto-upgrade here because the FB Page row (if any) is
+ * handled separately — but we DO sanitize + debug.
  */
-export async function resolveInstagramToken(
-  accountRowId: string,
-  storedToken: string,
-): Promise<ResolvedToken> {
-  const clean = sanitizeToken(storedToken);
+export async function resolveInstagramToken(input: {
+  storedToken: string;
+  channelId: string | null;
+  legacyAccountId: string | null;
+}): Promise<ResolvedToken> {
+  const clean = sanitizeToken(input.storedToken);
   if (!clean) {
     throw new TokenError(
-      'Empty Instagram token',
-      'Instagram-tilkoblingen mangler token. Gå til Innstillinger → Koble til Facebook på nytt (Instagram bruker FB Page-token).',
+      "Empty Instagram token",
+      "Instagram-tilkoblingen mangler token. Gå til Innstillinger → Koble til Facebook på nytt (Instagram bruker FB Page-token).",
     );
   }
 
   const debug = await debugToken(clean);
-  const refreshed = clean !== storedToken;
+  const refreshed = clean !== input.storedToken;
 
   if (!debug.valid) {
     throw new TokenError(
-      `Instagram token invalid: ${debug.error || 'unknown'}`,
-      `Instagram-token er ugyldig (${debug.error || 'ukjent'}). Koble til Facebook på nytt — Instagram bruker Facebook-siden sitt token.`,
+      `Instagram token invalid: ${debug.error || "unknown"}`,
+      `Instagram-token er ugyldig (${debug.error || "ukjent"}). Koble til Facebook på nytt.`,
     );
   }
 
-  if (debug.type !== 'PAGE') {
+  if (debug.type !== "PAGE") {
     throw new TokenError(
       `Instagram requires Page token, got ${debug.type}`,
-      `Instagram krever et Facebook Page-token (fikk ${debug.type || 'ukjent'}). Koble til Facebook på nytt.`,
+      `Instagram krever et Facebook Page-token (fikk ${debug.type || "ukjent"}). Koble til Facebook på nytt.`,
     );
   }
 
-  if (refreshed) await persistToken(accountRowId, clean);
-  return { token: clean, refreshed, note: 'Instagram PAGE token OK' };
+  if (refreshed) {
+    await persistFacebookToken(clean, { channelId: input.channelId, legacyAccountId: input.legacyAccountId });
+  }
+  return { token: clean, refreshed, note: "Instagram PAGE token OK" };
 }
 
-async function persistToken(accountRowId: string, token: string): Promise<void> {
+/**
+ * Persist a refreshed/upgraded token back to whichever table it came from.
+ *
+ * For new-tables channels: write through `oauth_tokens.access_token_*` with
+ * the same encryption envelope schema the rest of the app uses (importing
+ * `encrypt` so we don't ship a second crypto path).
+ *
+ * For legacy social_accounts rows: write the plaintext token back into the
+ * old column. We KNOW this is plaintext-at-rest — that was always the case
+ * for that table; the encrypted path is only for the new flow.
+ */
+async function persistFacebookToken(token: string, where: TokenLocation): Promise<void> {
   try {
     const supabase = getSupabase();
-    await supabase
-      .from('social_accounts')
-      .update({ access_token: token })
-      .eq('id', accountRowId);
+
+    if (where.channelId) {
+      const env = encrypt(token);
+      await supabase
+        .from("oauth_tokens")
+        .update({
+          access_token_ciphertext: "\\x" + env.ciphertext.toString("hex"),
+          access_token_iv: "\\x" + env.iv.toString("hex"),
+          access_token_tag: "\\x" + env.tag.toString("hex"),
+          rotated_at: new Date().toISOString(),
+        })
+        .eq("social_channel_id", where.channelId);
+      return;
+    }
+
+    if (where.legacyAccountId) {
+      await supabase
+        .from("social_accounts")
+        .update({ access_token: token })
+        .eq("id", where.legacyAccountId);
+    }
   } catch (err) {
-    console.warn('[FBTokenHelper] Failed to persist refreshed token:', err);
+    console.warn("[FBTokenHelper] Failed to persist refreshed token:", err);
   }
 }
