@@ -100,6 +100,12 @@ export async function POST(req: NextRequest) {
       instagram_channel_id: result.instagramChannelId,
       page_name: picked.name,
       ig_username: picked.instagram?.username ?? null,
+      // Carried over from the callback so the picker UI can include it in
+      // its eventual redirect back to Settings, which shows the orphan
+      // warning toast.
+      orphaned: typeof state.metadata.orphaned_summary === "string"
+        ? state.metadata.orphaned_summary
+        : null,
     });
   } catch (err) {
     console.error("[FB OAuth finalize] finalizeFacebookPage failed:", err);

@@ -149,12 +149,29 @@ export async function GET(req: NextRequest) {
   // brand's saved token would start failing the moment the *current* brand
   // finishes connecting. Best-effort: if a row write fails we log + move
   // on (the current brand's connection still succeeds below).
+  //
+  // Also collects any channels NOT in the fresh response — those are now
+  // orphaned by the FLB "select only these Pages" choice and need a
+  // user-visible warning so they don't fail silently at publish time.
+  let orphanedSummary = "";
   try {
     const refreshed = await refreshKnownChannelTokens(pages.postable, granted);
     if (refreshed.facebookRowsUpdated || refreshed.instagramRowsUpdated) {
       console.log(
         `[FB OAuth] refreshed ${refreshed.facebookRowsUpdated} FB + ${refreshed.instagramRowsUpdated} IG row(s) with fresh page tokens.`,
       );
+    }
+    if (refreshed.orphanedChannels.length) {
+      console.warn(
+        "[FB OAuth] Channels orphaned by FLB 'select only these Pages' choice:",
+        refreshed.orphanedChannels.map((c) => `${c.brand_id}/${c.display_name}`).join(", "),
+      );
+      // Encode a brief summary for the redirect. Comma-separated list of
+      // "<brand>/<display_name>" entries, capped so the URL stays sane.
+      orphanedSummary = refreshed.orphanedChannels
+        .slice(0, 6)
+        .map((c) => `${c.brand_id}/${c.display_name}`)
+        .join(",");
     }
   } catch (err) {
     console.warn("[FB OAuth] refreshKnownChannelTokens failed (non-fatal):", err);
@@ -181,6 +198,7 @@ export async function GET(req: NextRequest) {
       platform: "facebook",
       brand: state.brand_id,
       count: 1,
+      orphaned: orphanedSummary || undefined,
     });
   }
 
@@ -205,6 +223,12 @@ export async function GET(req: NextRequest) {
       candidates,
       non_postable: pages.nonPostable.map((p) => ({ id: p.id, name: p.name })),
       scopes: granted,
+      // Threaded through so the eventual return_to redirect (after the user
+      // picks a Page in /oauth/select → /api/oauth/facebook/finalize) can
+      // re-attach the orphan warning to its success redirect. Without this
+      // the user wouldn't see the orphan list when going through the
+      // multi-Page path.
+      orphaned_summary: orphanedSummary || null,
     },
   });
 
@@ -232,12 +256,19 @@ function errorRedirect(
 function successRedirect(
   req: NextRequest,
   returnTo: string,
-  ctx: { platform: string; brand: string; count: number },
+  ctx: { platform: string; brand: string; count: number; orphaned?: string },
 ): NextResponse {
   const url = new URL(returnTo, req.nextUrl.origin);
   url.searchParams.set("oauth_success", "true");
   url.searchParams.set("platform", ctx.platform);
   url.searchParams.set("brand", ctx.brand);
   url.searchParams.set("count", String(ctx.count));
+  if (ctx.orphaned) {
+    // Comma-separated "<brand>/<display_name>" entries. The Settings UI
+    // turns this into a banner telling the user which previously-connected
+    // channels just got orphaned by Meta's "select only these Pages"
+    // choice on the consent screen.
+    url.searchParams.set("oauth_orphaned", ctx.orphaned);
+  }
   return NextResponse.redirect(url.toString());
 }

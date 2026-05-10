@@ -110,6 +110,13 @@ export default function OAuthSelectPage() {
       target.searchParams.set("oauth_success", "true");
       target.searchParams.set("platform", pending.platform);
       target.searchParams.set("brand", pending.brand_id);
+      // Forward the orphan summary from the callback so the Settings UI
+      // can warn the user about Pages that lost app access during this
+      // OAuth (FLB "select only these Pages" choice). null means no
+      // orphans detected.
+      if (body.orphaned) {
+        target.searchParams.set("oauth_orphaned", String(body.orphaned));
+      }
       router.replace(target.pathname + target.search);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");

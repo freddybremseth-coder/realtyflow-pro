@@ -130,6 +130,13 @@ export function SocialChannelsTab() {
   const [busyChannelId, setBusyChannelId] = useState<string | null>(null);
   const [showLegacy, setShowLegacy] = useState(false);
   const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  // Persistent warning when an FB OAuth orphaned previously-connected
+  // channels (FLB "select only these Pages" with the prior Page unticked).
+  // Sticks around until the user dismisses it, since they need to re-OAuth
+  // each listed channel.
+  const [orphanWarning, setOrphanWarning] = useState<
+    Array<{ brand: string; displayName: string }> | null
+  >(null);
 
   const reloadChannels = useCallback(async (bid: string) => {
     const res = await fetch(`/api/oauth/channels?brand_id=${encodeURIComponent(bid)}`);
@@ -166,6 +173,7 @@ export function SocialChannelsTab() {
     const params = new URLSearchParams(window.location.search);
     const ok = params.get("oauth_success");
     const err = params.get("oauth_error");
+    const orphaned = params.get("oauth_orphaned");
     if (ok) {
       const platform = params.get("platform") || "konto";
       const brand = params.get("brand") || brandId;
@@ -174,14 +182,30 @@ export function SocialChannelsTab() {
         kind: "success",
         message: `Koblet til ${platform} for ${brand}${count !== "1" ? ` (${count} kontoer)` : ""}.`,
       });
-      // Clear the params so a refresh doesn't re-trigger the toast.
-      const u = new URL(window.location.href);
-      ["oauth_success", "oauth_error", "platform", "brand", "count"].forEach((k) => u.searchParams.delete(k));
-      window.history.replaceState(null, "", u.toString());
     } else if (err) {
       setToast({ kind: "error", message: `OAuth-feil: ${err}` });
+    }
+    if (orphaned) {
+      // Format: "brand1/Name 1,brand2/Name 2,...". Parse defensively —
+      // the callback escapes commas in display names with a space, but a
+      // pathological name with a literal "," would split here. Worst case
+      // we show a slightly wrong label; the warning fires regardless.
+      const parsed = orphaned
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const [brand, ...rest] = entry.split("/");
+          return { brand: brand || "?", displayName: rest.join("/") || entry };
+        });
+      if (parsed.length) setOrphanWarning(parsed);
+    }
+    // Clear ALL OAuth params so a refresh doesn't re-trigger.
+    if (ok || err || orphaned) {
       const u = new URL(window.location.href);
-      ["oauth_success", "oauth_error", "platform", "brand", "count"].forEach((k) => u.searchParams.delete(k));
+      ["oauth_success", "oauth_error", "oauth_orphaned", "platform", "brand", "count"].forEach((k) =>
+        u.searchParams.delete(k),
+      );
       window.history.replaceState(null, "", u.toString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -301,6 +325,43 @@ export function SocialChannelsTab() {
         </div>
       )}
 
+      {/* Orphan warning — channels whose Page token Meta just revoked because
+          the user picked "Velg bare gjeldende Sider" without including the
+          previously-connected Page. These channels will fail at publish until
+          re-connected with all Pages granted. */}
+      {orphanWarning && orphanWarning.length > 0 && (
+        <div className="p-4 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-100">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={18} className="text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1 space-y-2">
+              <p className="font-semibold text-amber-200">
+                Forrige tilkobling kan ha mistet tilgang på Meta-nivå
+              </p>
+              <p className="text-amber-100/80 text-sm">
+                Den siste OAuth-runden inkluderte ikke disse sidene, så Facebook har
+                trukket tilbake appens tilgang til dem. De vil feile ved publisering
+                til de blir koblet til på nytt med <em>«Velg alle gjeldende og
+                fremtidige Sider»</em> på samtykkeskjermen:
+              </p>
+              <ul className="text-sm list-disc pl-5 space-y-0.5">
+                {orphanWarning.map((o, i) => (
+                  <li key={`${o.brand}-${i}`}>
+                    <strong>{o.brand}</strong>: {o.displayName}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button
+              onClick={() => setOrphanWarning(null)}
+              className="text-amber-400 hover:text-amber-200 shrink-0"
+              aria-label="Lukk"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Brand selector */}
       <Card className="border-blue-500/30 bg-blue-500/5">
         <CardHeader className="pb-3">
@@ -328,6 +389,32 @@ export function SocialChannelsTab() {
               {b.name}
             </button>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Critical Meta-side gotcha: Facebook Login for Business has a
+          "select only these Pages" option that REVOKES app access to any
+          Page not in the current selection. Re-connecting brand B with a
+          narrow selection therefore breaks brand A. The fix is purely on
+          the consent screen — we can't override Meta's UI, but we can
+          make sure the user never misses this banner. */}
+      <Card className="border-amber-500/30 bg-amber-500/5">
+        <CardContent className="p-4 flex gap-3 text-sm text-amber-100">
+          <AlertCircle size={18} className="text-amber-400 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-200">
+              Når du kobler til Facebook: velg <em>«Velg alle gjeldende og fremtidige Sider»</em>
+            </p>
+            <p className="text-amber-100/80">
+              På Meta sitt samtykkeskjema får du to alternativer. <strong>Velg alltid det
+              øverste</strong> («Velg alle …»). Hvis du i stedet velger «Velg bare gjeldende
+              Sider» og huker av bare én side, fjerner Facebook tilgangen til alle de
+              andre sidene appen tidligere hadde — så <strong>forrige merkevare slutter
+              å fungere</strong>. Du binder fortsatt bare én side per merkevare i steget
+              etterpå (vår egen plukker); det er kun Meta-nivå-tilgangen som skal være
+              bred.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

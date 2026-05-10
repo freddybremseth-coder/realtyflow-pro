@@ -329,10 +329,34 @@ export async function finalizeFacebookPage(input: {
 export async function refreshKnownChannelTokens(
   pages: FacebookPageInfo[],
   scopes: string[],
-): Promise<{ facebookRowsUpdated: number; instagramRowsUpdated: number }> {
+): Promise<{
+  facebookRowsUpdated: number;
+  instagramRowsUpdated: number;
+  /**
+   * Channels we *had* a token for, but whose external_id is NOT in the
+   * current /me/accounts response. These tokens are now orphaned — Facebook
+   * Login for Business "select only these Pages" revokes app access to any
+   * Page not ticked, and our refresh helper can't help (no fresh token
+   * available to write). The callback uses this list to warn the user.
+   */
+  orphanedChannels: Array<{
+    id: string;
+    brand_id: string;
+    platform: "facebook" | "instagram";
+    display_name: string;
+    external_id: string;
+  }>;
+}> {
   const supabase = createServerClient();
   let fbRows = 0;
   let igRows = 0;
+  const orphanedChannels: Array<{
+    id: string;
+    brand_id: string;
+    platform: "facebook" | "instagram";
+    display_name: string;
+    external_id: string;
+  }> = [];
 
   for (const page of pages) {
     if (!page.canPost || !page.accessToken) continue;
@@ -401,5 +425,46 @@ export async function refreshKnownChannelTokens(
     }
   }
 
-  return { facebookRowsUpdated: fbRows, instagramRowsUpdated: igRows };
+  // Orphan detection. After refreshing what we could, walk every active FB
+  // (and linked IG) social_channel row owned by ANY brand and check whether
+  // its external_id appears in the fresh /me/accounts response. Anything
+  // missing from the response is now orphaned (token revoked by the
+  // "select only these Pages" choice on the consent screen).
+  //
+  // Caveat: this also flags rows belonging to a *different* Facebook user
+  // than the one who just authorized. That's acceptable false-positive
+  // territory — the user will see the warning, click Test, and either
+  // confirm the row is fine (different user, separate auth) or know to
+  // re-auth. We can't distinguish "this user has revoked the page" from
+  // "a different user owns that page" without storing FB user IDs, which
+  // we don't.
+  const freshFbIds = new Set(pages.filter((p) => p.canPost).map((p) => p.id));
+  const freshIgIds = new Set(
+    pages.filter((p) => p.canPost && p.instagram?.id).map((p) => p.instagram!.id),
+  );
+
+  const { data: allFbChannels } = await supabase
+    .from("social_channels")
+    .select("id, brand_id, display_name, external_id, platform")
+    .in("platform", ["facebook", "instagram"])
+    .eq("is_active", true);
+
+  for (const ch of allFbChannels ?? []) {
+    const present = ch.platform === "facebook" ? freshFbIds.has(ch.external_id) : freshIgIds.has(ch.external_id);
+    if (!present) {
+      orphanedChannels.push({
+        id: ch.id as string,
+        brand_id: ch.brand_id as string,
+        platform: ch.platform as "facebook" | "instagram",
+        display_name: ch.display_name as string,
+        external_id: ch.external_id as string,
+      });
+    }
+  }
+
+  return {
+    facebookRowsUpdated: fbRows,
+    instagramRowsUpdated: igRows,
+    orphanedChannels,
+  };
 }

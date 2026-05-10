@@ -233,6 +233,36 @@ Each brand binds **one Facebook Page** at a time. To connect:
    pick the Soleada Page in the picker. Both brands now have their own
    page binding and tokens.
 
+### 4.6.1 CRITICAL: choose "all Pages" on Meta's consent screen
+
+Meta's *Facebook Login for Business* consent flow shows two radio options:
+
+- **«Velg alle gjeldende og fremtidige Sider»** (Choose all current and future Pages)
+- **«Velg bare gjeldende Sider»** (Choose only the Pages I select)
+
+You **must** always pick the first option. The second one *replaces* the
+app's previously-granted Page access — any Page not ticked in this round
+loses app access, and any brand previously bound to one of those Pages
+will fail at publish with:
+
+> Facebook-token er ugyldig eller utløpt (Any of the
+> pages_read_engagement, pages_manage_metadata, pages_read_user_content,
+> pages_manage_ads, pages_show_list or pages_messaging permission(s)
+> must be granted before impersonating a user's page.)
+
+Picking "all Pages" on the consent screen does NOT auto-bind every Page
+to the current brand — our app's `/oauth/select` picker still asks you to
+choose exactly one Page per brand. The broad consent is purely about
+keeping Meta-level app access alive across re-OAuths; brand-level
+bindings stay narrow.
+
+If you accidentally orphan a brand by picking "bare gjeldende Sider", the
+Settings UI shows an amber warning listing which channels lost access.
+Re-connect each one, this time choosing "Velg alle …". The orphan
+detection runs on every successful FB OAuth so you'll know immediately.
+
+### 4.6.2 Picking the wrong Page in our picker
+
 If a Page has no `CREATE_CONTENT` task or fails the per-Page scope check,
 it's surfaced under "Hoppet over" in the picker with the reason. Common
 causes:
@@ -332,6 +362,7 @@ picker flow analogous to Meta's Page picker.
 | `OAUTH_ENCRYPTION_KEY is not set` on the callback | Env var missing on the deployment | Add it to Vercel → redeploy. New tokens cannot be persisted without it. |
 | Picker page redirects with `state_invalid_or_expired` | State row >15 min old, or browser back-button replayed a callback | Re-run **Koble til** from Settings. State rows are single-use. |
 | `Mangler Facebook-tillatelser: ...` after Meta consent | User clicked "Edit access" and unchecked a scope | Re-run, click **Continue** without editing access. |
+| Connecting brand B silently breaks brand A's Facebook publishing with "permission(s) must be granted before impersonating a user's page" | On Meta's consent screen the user picked **«Velg bare gjeldende Sider»** and didn't tick brand A's Page. Facebook revoked the app's access to that Page. | Re-connect each orphaned brand. On the consent screen pick **«Velg alle gjeldende og fremtidige Sider»** (top radio). See §4.6.1. The Settings UI lists the orphaned channels for you. |
 | `Channel <id> belongs to brand "X", not "Y"` from `/api/publish` | UI passed a `social_channel_id` that's bound to a different brand | This is the multi-brand guard firing. Don't reuse channel ids across brands; the Settings UI only ever shows ids for the selected brand. |
 | `ambiguous_channels` (HTTP 409) from `/api/publish` | The brand has more than one active channel for that platform and no `social_channel_id` was passed | Either pass `social_channel_ids: { facebook: "<id>" }` from the UI, or deactivate the channels you don't want to use. |
 | YouTube uploads land in the wrong channel | Old `brand_settings.youtube_refresh_token` mirror still routing the upload | Run the **Test** button on the new YouTube channel row in Settings. If green, delete the legacy `brand_settings` row's `youtube_refresh_token` field (Supabase SQL editor). |
