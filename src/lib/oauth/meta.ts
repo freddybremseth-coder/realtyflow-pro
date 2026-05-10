@@ -16,6 +16,7 @@
  */
 
 import { saveTokens, upsertChannel } from "./channels";
+import { createServerClient } from "@/lib/supabase/server";
 
 const GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -305,4 +306,100 @@ export async function finalizeFacebookPage(input: {
   }
 
   return { facebookChannelId: fbChannel.id, instagramChannelId };
+}
+
+/**
+ * Refresh stored tokens for ANY existing social_channels row whose
+ * `external_id` matches one of the freshly-listed Pages — across every
+ * brand, not just the one the user is currently connecting.
+ *
+ * Why: when Freddy authorises the app a second time (for brand B), Meta
+ * silently rotates the PAGE tokens for every Page he admins, including the
+ * one already saved for brand A. The old token immediately starts failing
+ * with "permission(s) must be granted before impersonating a user's page".
+ *
+ * Calling this on every successful FB OAuth keeps every brand's stored
+ * token in sync with whatever the most recent /me/accounts roundtrip
+ * returned, so no brand ever publishes with a stale token.
+ *
+ * Both the Facebook channel row and any Instagram channel row that's
+ * `linked_page_id`-pointed at it get updated, since IG publishing reuses
+ * the FB Page token.
+ */
+export async function refreshKnownChannelTokens(
+  pages: FacebookPageInfo[],
+  scopes: string[],
+): Promise<{ facebookRowsUpdated: number; instagramRowsUpdated: number }> {
+  const supabase = createServerClient();
+  let fbRows = 0;
+  let igRows = 0;
+
+  for (const page of pages) {
+    if (!page.canPost || !page.accessToken) continue;
+
+    // Find all FB social_channels rows for this Page (across brands). We
+    // could `upsert` here but we want to leave non-existent rows alone —
+    // we should only refresh tokens for channels someone explicitly bound.
+    const { data: fbChannels } = await supabase
+      .from("social_channels")
+      .select("id, brand_id")
+      .eq("platform", "facebook")
+      .eq("external_id", page.id);
+
+    for (const ch of fbChannels ?? []) {
+      try {
+        await saveTokens({
+          socialChannelId: ch.id as string,
+          accessToken: page.accessToken,
+          refreshToken: null,
+          expiresAt: null,
+          scopes,
+        });
+        fbRows++;
+        console.log(
+          `[Meta] refreshed FB token for channel ${ch.id} (brand=${ch.brand_id}, page=${page.id})`,
+        );
+      } catch (err) {
+        console.warn(
+          `[Meta] failed to refresh FB token for channel ${ch.id}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    // Cascade to any IG channel linked to this Page. IG channels store
+    // `linked_page_id` in their metadata (set by finalizeFacebookPage),
+    // and external_id is the IG user id, not the page id, so we filter
+    // by metadata.
+    if (page.instagram?.id) {
+      const { data: igChannels } = await supabase
+        .from("social_channels")
+        .select("id, brand_id")
+        .eq("platform", "instagram")
+        .eq("external_id", page.instagram.id);
+
+      for (const ch of igChannels ?? []) {
+        try {
+          await saveTokens({
+            socialChannelId: ch.id as string,
+            accessToken: page.accessToken,
+            refreshToken: null,
+            expiresAt: null,
+            scopes,
+          });
+          igRows++;
+          console.log(
+            `[Meta] refreshed IG token for channel ${ch.id} (brand=${ch.brand_id}, ig=${page.instagram.id})`,
+          );
+        } catch (err) {
+          console.warn(
+            `[Meta] failed to refresh IG token for channel ${ch.id}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    }
+  }
+
+  return { facebookRowsUpdated: fbRows, instagramRowsUpdated: igRows };
 }

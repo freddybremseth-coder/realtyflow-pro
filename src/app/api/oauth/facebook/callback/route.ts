@@ -7,6 +7,7 @@ import {
   exchangeCodeForUserToken,
   finalizeFacebookPage,
   listFacebookPages,
+  refreshKnownChannelTokens,
   verifyUserScopes,
 } from "@/lib/oauth/meta";
 import { buildRedirectUri, getMetaCredentials } from "@/lib/oauth/providers";
@@ -140,6 +141,24 @@ export async function GET(req: NextRequest) {
   }
 
   await attachInstagramInfo(pages.postable);
+
+  // Refresh tokens for ANY existing FB / IG social_channels rows that map
+  // to one of the Pages we just got a fresh token for, regardless of which
+  // brand owns them. Meta rotates Page tokens silently on every successful
+  // user-level OAuth, so without this step the *previously-connected*
+  // brand's saved token would start failing the moment the *current* brand
+  // finishes connecting. Best-effort: if a row write fails we log + move
+  // on (the current brand's connection still succeeds below).
+  try {
+    const refreshed = await refreshKnownChannelTokens(pages.postable, granted);
+    if (refreshed.facebookRowsUpdated || refreshed.instagramRowsUpdated) {
+      console.log(
+        `[FB OAuth] refreshed ${refreshed.facebookRowsUpdated} FB + ${refreshed.instagramRowsUpdated} IG row(s) with fresh page tokens.`,
+      );
+    }
+  } catch (err) {
+    console.warn("[FB OAuth] refreshKnownChannelTokens failed (non-fatal):", err);
+  }
 
   // ─── 4a. Single Page → finalize immediately ──────────────────────────────
   if (pages.postable.length === 1) {
