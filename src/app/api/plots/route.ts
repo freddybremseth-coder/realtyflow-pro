@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { normalizeBrandId, plotMatchesBrand } from '@/lib/realty/brand-rules';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,13 +10,23 @@ function getSupabase() {
 }
 
 // GET - fetch all plots
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ plots: [] });
 
+  const { searchParams } = new URL(request.url);
+  const brandId = searchParams.get('brandId') || searchParams.get('brand_id');
+
   const { data, error } = await supabase.from('land_plots').select('*').order('created_at', { ascending: false });
   if (error) return NextResponse.json({ plots: [], error: error.message });
-  return NextResponse.json({ plots: data || [] });
+
+  const plots = data || [];
+  if (!brandId) return NextResponse.json({ plots });
+
+  const normalizedBrandId = normalizeBrandId(brandId);
+  return NextResponse.json({
+    plots: plots.filter((plot) => plotMatchesBrand(plot, normalizedBrandId)),
+  });
 }
 
 // POST - create or update plot(s)
