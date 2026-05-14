@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
+const WEBSITE_BRANDS = ["zeneco", "pinosoecolife"] as const;
+
 interface AreaProfile {
   id?: string;
   brand_id: string;
@@ -40,6 +42,7 @@ interface AreaProfile {
   lifestyle?: string | null;
   photo_url?: string | null;
   show_on_website?: boolean | null;
+  publish_brand_ids?: string[];
   updated_at?: string;
 }
 
@@ -103,6 +106,19 @@ export default function AreasPage() {
   const updateField = <K extends keyof AreaProfile>(k: K, v: AreaProfile[K]) =>
     setEditing((prev) => ({ ...prev, [k]: v }));
 
+  const togglePublishBrand = (publishBrandId: string) => {
+    setEditing((prev) => {
+      const current = new Set(prev.publish_brand_ids || [prev.brand_id].filter(Boolean));
+      if (current.has(publishBrandId)) current.delete(publishBrandId);
+      else current.add(publishBrandId);
+      return {
+        ...prev,
+        publish_brand_ids: Array.from(current),
+        show_on_website: current.size > 0,
+      };
+    });
+  };
+
   const save = async () => {
     if (!editing.name.trim()) {
       setError("Navn er påkrevd");
@@ -128,11 +144,15 @@ export default function AreasPage() {
           lifestyle: editing.lifestyle,
           photoUrl: editing.photo_url,
           showOnWebsite: !!editing.show_on_website,
+          publishBrandIds: editing.publish_brand_ids || [editing.brand_id || brandId],
         }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Lagring feilet");
-      const saved = data.profile as AreaProfile;
+      const saved = {
+        ...(data.profile as AreaProfile),
+        publish_brand_ids: (data.publishedBrandIds as string[] | undefined) || editing.publish_brand_ids,
+      };
       setEditing(saved);
       setEditingId(saved.id || null);
       await loadProfiles(brandId);
@@ -522,6 +542,29 @@ export default function AreasPage() {
                   </span>
                 </span>
               </label>
+
+              <div className="rounded-md border border-input p-3 bg-slate-50">
+                <div className="font-medium text-sm mb-2">Publiser område på nettsider</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {WEBSITE_BRANDS.map((publishBrandId) => {
+                    const brand = BRANDS.find((b) => b.id === publishBrandId);
+                    const checked = (editing.publish_brand_ids || [editing.brand_id]).includes(publishBrandId);
+                    return (
+                      <label key={publishBrandId} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePublishBrand(publishBrandId)}
+                        />
+                        <span>{brand?.name || publishBrandId}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Huk av Pinoso Eco Life, Zen Eco Homes eller begge. Ved lagring speiles området til valgte brands.
+                </p>
+              </div>
 
               <p className="text-xs text-muted-foreground border-t pt-3">
                 <RefreshCw className="w-3 h-3 inline mr-1" />

@@ -81,6 +81,7 @@ const INITIAL_PROPERTIES: Property[] = [
 ];
 
 const propertyTypes = ["Alle", "Villa", "Leilighet", "Penthouse", "Rekkehus", "Bungalow", "Finca", "Duplex", "Byggetomt"];
+const WEBSITE_BRANDS = ["zeneco", "pinosoecolife"];
 const bedroomOptions = ["Alle", "1+", "2+", "3+", "4+", "5+"];
 const priceRanges = ["Alle", "Under €200K", "€200K - €400K", "€400K - €600K", "Over €600K"];
 const gradients = [
@@ -433,6 +434,34 @@ async function apiDeleteProperty(id: string) {
   }
 }
 
+async function apiLoadPropertyPublication(id: string): Promise<string[]> {
+  try {
+    const res = await fetch(`/api/properties/${encodeURIComponent(id)}/publication`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.visibleBrandIds) ? data.visibleBrandIds : [];
+  } catch (err) {
+    console.error('Failed to load property publication:', err);
+    return [];
+  }
+}
+
+async function apiUpdatePropertyPublication(id: string, visibleBrandIds: string[]): Promise<string[]> {
+  try {
+    const res = await fetch(`/api/properties/${encodeURIComponent(id)}/publication`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibleBrandIds }),
+    });
+    if (!res.ok) return visibleBrandIds;
+    const data = await res.json();
+    return Array.isArray(data.visibleBrandIds) ? data.visibleBrandIds : visibleBrandIds;
+  } catch (err) {
+    console.error('Failed to update property publication:', err);
+    return visibleBrandIds;
+  }
+}
+
 async function apiSaveProperties(properties: Property[]): Promise<{ inserted: number; deduplicated: number }> {
   try {
     const dbRows = properties.map(propertyToDbRow);
@@ -505,6 +534,8 @@ export default function InventoryPage() {
   const [showDetailModal, setShowDetailModal] = useState<Property | null>(null);
   const [detailSlide, setDetailSlide] = useState(0);
   const [showEditModal, setShowEditModal] = useState<Property | null>(null);
+  const [publicationByProperty, setPublicationByProperty] = useState<Record<string, string[]>>({});
+  const [savingPublication, setSavingPublication] = useState<string | null>(null);
 
   // Marketing Kit state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -532,6 +563,14 @@ export default function InventoryPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ count: number; deduplicated?: number; error?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!showDetailModal?.id) return;
+    if (publicationByProperty[showDetailModal.id]) return;
+    void apiLoadPropertyPublication(showDetailModal.id).then((brandIds) => {
+      setPublicationByProperty((prev) => ({ ...prev, [showDetailModal.id]: brandIds }));
+    });
+  }, [publicationByProperty, showDetailModal?.id]);
 
   // Add form
   const [addForm, setAddForm] = useState({
@@ -920,6 +959,19 @@ REGLER:
     setProperties(prev => prev.map(p => p.id === showEditModal.id ? showEditModal : p));
     apiUpdateProperty(showEditModal);
     setShowEditModal(null);
+  };
+
+  const togglePropertyPublication = async (propertyId: string, brandId: string) => {
+    const current = publicationByProperty[propertyId] || [];
+    const next = current.includes(brandId)
+      ? current.filter((id) => id !== brandId)
+      : [...current, brandId];
+
+    setPublicationByProperty((prev) => ({ ...prev, [propertyId]: next }));
+    setSavingPublication(propertyId);
+    const saved = await apiUpdatePropertyPublication(propertyId, next);
+    setPublicationByProperty((prev) => ({ ...prev, [propertyId]: saved }));
+    setSavingPublication(null);
   };
 
   const filtered = properties.filter((p) => {
@@ -1481,6 +1533,35 @@ REGLER:
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="mb-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <label className="text-xs text-zinc-400 block">Publiser på nettsider</label>
+                  {savingPublication === showDetailModal.id && (
+                    <Loader2 size={14} className="animate-spin text-emerald-400" />
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {WEBSITE_BRANDS.map((publishBrandId) => {
+                    const brand = BRANDS.find((b) => b.id === publishBrandId);
+                    const checked = (publicationByProperty[showDetailModal.id] || []).includes(publishBrandId);
+                    return (
+                      <label key={publishBrandId} className="flex items-center gap-2 text-sm text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePropertyPublication(showDetailModal.id, publishBrandId)}
+                          disabled={savingPublication === showDetailModal.id}
+                        />
+                        <span>{brand?.name || publishBrandId}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Overstyrer automatisk filter. Bruk Pinoso, Zeneco eller begge.
+                </p>
               </div>
 
               {/* Marketing Kit Button */}

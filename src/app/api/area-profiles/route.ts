@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       lifestyle?: string | null;
       photoUrl?: string | null;
       showOnWebsite?: boolean | null;
+      publishBrandIds?: string[] | null;
     };
 
     const brandId = body.brandId;
@@ -84,6 +85,15 @@ export async function POST(req: NextRequest) {
     }
 
     const slug = (body.slug && body.slug.trim()) || slugify(name);
+    const publishBrandIds = Array.from(
+      new Set(
+        (Array.isArray(body.publishBrandIds) && body.publishBrandIds.length
+          ? body.publishBrandIds
+          : [brandId]
+        ).filter((value): value is string => typeof value === "string" && Boolean(value.trim())),
+      ),
+    );
+
     const row = {
       ...(body.id ? { id: body.id } : {}),
       brand_id: brandId,
@@ -108,7 +118,29 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ profile: data });
+
+    if (publishBrandIds.length > 0) {
+      const { id: _sourceId, ...mirrorBase } = row;
+      const mirrorRows = publishBrandIds
+        .filter((publishBrandId) => publishBrandId !== brandId)
+        .map((publishBrandId) => ({
+          ...mirrorBase,
+          brand_id: publishBrandId,
+          show_on_website: true,
+        }));
+
+      if (mirrorRows.length > 0) {
+        const { error: mirrorError } = await supabase
+          .from("area_profiles")
+          .upsert(mirrorRows, { onConflict: "brand_id,slug" });
+
+        if (mirrorError) {
+          return NextResponse.json({ error: mirrorError.message }, { status: 500 });
+        }
+      }
+    }
+
+    return NextResponse.json({ profile: data, publishedBrandIds: publishBrandIds });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Save failed";
     return NextResponse.json({ error: message }, { status: 500 });
