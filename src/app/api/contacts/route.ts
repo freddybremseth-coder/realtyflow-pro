@@ -8,6 +8,21 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+function isCustomerStatus(status: unknown) {
+  const value = String(status || '').toUpperCase();
+  return value === 'WON' || value === 'CUSTOMER' || value === 'VIP';
+}
+
+function normalizeContactForClient(contact: any) {
+  if (!contact || typeof contact !== 'object') return contact;
+  if (!isCustomerStatus(contact.pipeline_status)) return contact;
+  return {
+    ...contact,
+    sentiment: 100,
+    buying_signal_score: 100,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ contacts: [] });
@@ -19,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   if (view === 'pipeline') {
     // Pipeline shows ALL contacts across all stages (full kanban)
-    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST', 'ON_HOLD']);
+    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST', 'ON_HOLD', 'CUSTOMER', 'VIP']);
   } else if (view === 'crm') {
     // CRM shows contacts that have progressed beyond NEW (table view)
     query = query.in('pipeline_status', ['CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'CUSTOMER', 'VIP', 'LOST']);
@@ -27,7 +42,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ contacts: [], error: error.message });
-  return NextResponse.json({ contacts: data || [] });
+  return NextResponse.json({ contacts: (data || []).map(normalizeContactForClient) });
 }
 
 export async function POST(request: NextRequest) {
@@ -35,9 +50,13 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 
   const contact = await request.json();
+  if (isCustomerStatus(contact.pipeline_status)) {
+    contact.sentiment = 100;
+    contact.buying_signal_score = 100;
+  }
   const { data, error } = await supabase.from('contacts').upsert(contact).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ contact: data });
+  return NextResponse.json({ contact: normalizeContactForClient(data) });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -46,10 +65,14 @@ export async function PATCH(request: NextRequest) {
 
   const { id, ...updates } = await request.json();
   updates.updated_at = new Date().toISOString();
+  if (isCustomerStatus(updates.pipeline_status)) {
+    updates.sentiment = 100;
+    updates.buying_signal_score = 100;
+  }
 
   const { data, error } = await supabase.from('contacts').update(updates).eq('id', id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ contact: data });
+  return NextResponse.json({ contact: normalizeContactForClient(data) });
 }
 
 export async function DELETE(request: NextRequest) {
