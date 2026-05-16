@@ -35,9 +35,9 @@ function normalizeContactForClient(contact: any) {
   return {
     ...contact,
     pipeline_status: 'WON',
-    sentiment: 100,
-    buying_signal_score: 100,
-    purchase_signal_score: 100,
+    sentiment: contact.sentiment && String(contact.sentiment).toLowerCase() !== 'neutral' ? contact.sentiment : 'hot',
+    buying_signal_score: Number(contact.buying_signal_score || contact.purchase_signal_score || 100),
+    purchase_signal_score: Number(contact.purchase_signal_score || contact.buying_signal_score || 100),
   };
 }
 
@@ -48,11 +48,85 @@ function normalizeIncomingContact(contact: any) {
   next.pipeline_status = normalizeStatus(next.pipeline_status || 'NEW');
   if (isCustomerStatus(next.pipeline_status)) {
     next.pipeline_status = 'WON';
-    next.sentiment = 100;
+    // contacts.sentiment is a text enum/check in older RealtyFlow databases
+    // (hot/warm/neutral/cold). Do not write numeric 100 here; use score columns
+    // for numeric buying signal instead.
+    next.sentiment = 'hot';
     next.buying_signal_score = 100;
     next.purchase_signal_score = 100;
+    if (!next.pipeline_value && next.sale_price) next.pipeline_value = next.sale_price;
   }
   return next;
+}
+
+function stripUnknownColumn(payload: any, column?: string) {
+  if (!column) return payload;
+  const next = { ...payload };
+  delete next[column];
+  return next;
+}
+
+function missingColumnFromError(message = '') {
+  const match = message.match(/'([^']+)' column|column "([^"]+)"|Could not find the '([^']+)' column/i);
+  return match?.[1] || match?.[2] || match?.[3] || '';
+}
+
+async function insertContactWithFallbacks(supabase: any, contact: any) {
+  let payload = { ...contact };
+  const tried = new Set<string>();
+
+  for (let i = 0; i < 8; i += 1) {
+    const { data, error } = await supabase.from('contacts').upsert(payload).select().single();
+    if (!error) return { data, error: null };
+
+    const missingColumn = missingColumnFromError(error.message || '');
+    if (missingColumn && !tried.has(missingColumn)) {
+      tried.add(missingColumn);
+      payload = stripUnknownColumn(payload, missingColumn);
+      continue;
+    }
+
+    // Older contacts schema can have sentiment as text check. If anything still
+    // rejects numeric/invalid sentiment, force a valid text value and retry once.
+    const message = String(error.message || '').toLowerCase();
+    if (!tried.has('sentiment-hot') && message.includes('sentiment')) {
+      tried.add('sentiment-hot');
+      payload = { ...payload, sentiment: 'hot' };
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Kunne ikke lagre kontakt etter schema-fallbacks' } };
+}
+
+async function updateContactWithFallbacks(supabase: any, id: string, updates: any) {
+  let payload = { ...updates };
+  const tried = new Set<string>();
+
+  for (let i = 0; i < 8; i += 1) {
+    const { data, error } = await supabase.from('contacts').update(payload).eq('id', id).select().single();
+    if (!error) return { data, error: null };
+
+    const missingColumn = missingColumnFromError(error.message || '');
+    if (missingColumn && !tried.has(missingColumn)) {
+      tried.add(missingColumn);
+      payload = stripUnknownColumn(payload, missingColumn);
+      continue;
+    }
+
+    const message = String(error.message || '').toLowerCase();
+    if (!tried.has('sentiment-hot') && message.includes('sentiment')) {
+      tried.add('sentiment-hot');
+      payload = { ...payload, sentiment: 'hot' };
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Kunne ikke oppdatere kontakt etter schema-fallbacks' } };
 }
 
 export async function GET(request: NextRequest) {
@@ -60,7 +134,7 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ contacts: [] });
 
   const { searchParams } = new URL(request.url);
-  const view = searchParams.get('view'); // 'pipeline' or 'crm'
+  const view = searchParams.get('view');
 
   let query = supabase.from('contacts').select('*').order('updated_at', { ascending: false });
 
@@ -77,8 +151,8 @@ export async function GET(request: NextRequest) {
 
   // Best effort: if old rows have customer status but old score, repair them in DB too.
   const repairs = contacts
-    .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.sentiment !== 100 || c.buying_signal_score !== 100))
-    .map((c: any) => supabase.from('contacts').update({ pipeline_status: 'WON', sentiment: 100, buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }).eq('id', c.id));
+    .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.buying_signal_score !== 100 || c.purchase_signal_score !== 100 || c.sentiment === 'neutral'))
+    .map((c: any) => updateContactWithFallbacks(supabase, c.id, { pipeline_status: 'WON', sentiment: 'hot', buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }));
   if (repairs.length > 0) Promise.allSettled(repairs).catch(() => {});
 
   return NextResponse.json({ contacts });
@@ -89,8 +163,8 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 
   const contact = normalizeIncomingContact(await request.json());
-  const { data, error } = await supabase.from('contacts').upsert(contact).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error } = await insertContactWithFallbacks(supabase, contact);
+  if (error) return NextResponse.json({ error: error.message, contact }, { status: 500 });
   return NextResponse.json({ contact: normalizeContactForClient(data) });
 }
 
@@ -102,8 +176,8 @@ export async function PATCH(request: NextRequest) {
   const updates = normalizeIncomingContact(rawUpdates);
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase.from('contacts').update(updates).eq('id', id).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data, error } = await updateContactWithFallbacks(supabase, id, updates);
+  if (error) return NextResponse.json({ error: error.message, updates }, { status: 500 });
   return NextResponse.json({ contact: normalizeContactForClient(data) });
 }
 
