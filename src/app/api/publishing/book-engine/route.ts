@@ -503,7 +503,7 @@ export async function POST(request: NextRequest) {
   const enrichedInput = { ...input, series_context: seriesContext };
 
   const baseInsertPayload = {
-    ...enrichedInput,
+    ...input,
     status: "generating",
     metadata_plan: { generation_state: "started" },
     outline_plan: { book_promise: "", toc: [], writing_plan: [] },
