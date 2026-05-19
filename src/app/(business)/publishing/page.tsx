@@ -60,6 +60,27 @@ type BusinessOverviewTotals = {
   oliviaNetProfit?: number;
 };
 
+type PublishingImpact = {
+  totals?: {
+    books: number;
+    orders: number;
+    royalties: number;
+    reviews: number;
+    average_rating: number | null;
+  };
+  latest_import?: {
+    total_orders?: number;
+    total_royalties?: number;
+    currency?: string;
+    created_at?: string;
+  } | null;
+  import_delta?: {
+    orders: number;
+    royalties: number;
+  } | null;
+  no_sales_books?: Array<{ id: string; title: string; role: string }>;
+};
+
 type PublishingAutopilotRun = {
   id: string;
   status: "success" | "error";
@@ -188,6 +209,8 @@ export default function PublishingHubPage() {
   const [businessTotals, setBusinessTotals] = useState<BusinessOverviewTotals | null>(null);
   const [autopilotRuns, setAutopilotRuns] = useState<PublishingAutopilotRun[]>([]);
   const [autopilotLoading, setAutopilotLoading] = useState(false);
+  const [impact, setImpact] = useState<PublishingImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -274,11 +297,26 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadImpact() {
+    setImpactLoading(true);
+    try {
+      const res = await fetch("/api/publishing/impact", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setImpact(data);
+      else setHubStatus(data.error || "Kunne ikke hente KDP impact.");
+    } catch (err) {
+      console.error("Could not load impact:", err);
+    } finally {
+      setImpactLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadBooks();
     loadRecommendations();
     loadBusinessOverviewTotals();
     loadAutopilotResults();
+    loadImpact();
   }, []);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
@@ -588,6 +626,45 @@ export default function PublishingHubPage() {
           {hubStatus}
         </div>
       )}
+
+      <Card className="border-emerald-500/20 bg-emerald-500/5">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-white">KDP Impact Dashboard</CardTitle>
+            <Button variant="outline" size="sm" onClick={loadImpact} disabled={impactLoading}>
+              {impactLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
+              Oppdater
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!impact?.totals ? (
+            <p className="text-sm text-slate-400">Ingen impact-data enda. Importer KDP-rapport og kjør growth loop.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-5">
+                <div className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">Bøker: <span className="text-white">{impact.totals.books}</span></div>
+                <div className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">Orders: <span className="text-white">{impact.totals.orders}</span></div>
+                <div className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">Royalties: <span className="text-white">{impact.totals.royalties}</span></div>
+                <div className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">Reviews: <span className="text-white">{impact.totals.reviews}</span></div>
+                <div className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">Rating: <span className="text-white">{impact.totals.average_rating ?? "-"}</span></div>
+              </div>
+              {impact.import_delta && (
+                <p className="text-xs text-slate-400">
+                  Siste importendring: Orders {impact.import_delta.orders >= 0 ? "+" : ""}{impact.import_delta.orders},
+                  Royalties {impact.import_delta.royalties >= 0 ? "+" : ""}{impact.import_delta.royalties}
+                </p>
+              )}
+              {impact.no_sales_books && impact.no_sales_books.length > 0 && (
+                <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2">
+                  <p className="mb-1 text-xs text-amber-200">Bøker uten salg (prioriter disse):</p>
+                  <p className="text-xs text-slate-200">{impact.no_sales_books.map((b) => `${b.title} (${b.role})`).join(" | ")}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-cyan-500/20 bg-cyan-500/5">
         <CardHeader>
