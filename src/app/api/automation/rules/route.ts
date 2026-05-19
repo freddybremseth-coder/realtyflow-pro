@@ -68,6 +68,18 @@ const seedRules = [
   },
 ];
 
+function mergeWithSeedRules(dbRules: Record<string, unknown>[]) {
+  const existing = dbRules || [];
+  const seenNames = new Set(existing.map((rule) => String(rule.name || "").trim().toLowerCase()));
+  const seenIds = new Set(existing.map((rule) => String(rule.id || "").trim()));
+
+  const missingSeeds = seedRules.filter(
+    (seed) => !seenIds.has(seed.id) && !seenNames.has(seed.name.trim().toLowerCase()),
+  );
+
+  return [...existing, ...missingSeeds];
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -155,8 +167,10 @@ export async function GET() {
   const tableMissing = rulesRes.error && /automation_rules|schema cache|does not exist|relation/i.test(rulesRes.error.message);
   if (tableMissing) return NextResponse.json({ rules: seedRules, runs: [], logs: [], synthetic: true, tableNotReady: true });
 
+  const mergedRules = mergeWithSeedRules((rulesRes.data || []) as Record<string, unknown>[]);
+
   return NextResponse.json({
-    rules: rulesRes.data?.length ? rulesRes.data : seedRules,
+    rules: mergedRules.length ? mergedRules : seedRules,
     runs: runsRes.data || [],
     logs: logsRes.data || [],
     synthetic: !rulesRes.data?.length,
