@@ -249,6 +249,9 @@ export default function PublishingHubPage() {
   const [continuingBookEngineId, setContinuingBookEngineId] = useState<string | null>(null);
   const [generatingBookImagesId, setGeneratingBookImagesId] = useState<string | null>(null);
   const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
+  const [retryingBookEngineId, setRetryingBookEngineId] = useState<string | null>(null);
+  const [savingProjectSeriesId, setSavingProjectSeriesId] = useState<string | null>(null);
+  const [projectSeriesDrafts, setProjectSeriesDrafts] = useState<Record<string, string>>({});
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSnapshots, setMarketSnapshots] = useState<MarketSnapshot[]>([]);
@@ -503,6 +506,53 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function retryBookEngineProject(projectId: string) {
+    setRetryingBookEngineId(projectId);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "retry_generation", id: projectId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke prøve generering på nytt.");
+        return;
+      }
+      setHubStatus(data.warning ? `Retry fullført med varsel: ${data.warning}` : "Generering prøvd på nytt.");
+      await loadBookEngineProjects();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke prøve generering på nytt.");
+    } finally {
+      setRetryingBookEngineId(null);
+    }
+  }
+
+  async function saveBookEngineSeries(projectId: string) {
+    const seriesName = String(projectSeriesDrafts[projectId] || "").trim();
+    setSavingProjectSeriesId(projectId);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "update_project", id: projectId, series_name: seriesName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke lagre serie på bokprosjektet.");
+        return;
+      }
+      setHubStatus("Serie lagret på bokprosjektet.");
+      await loadBookEngineProjects();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke lagre serie.");
+    } finally {
+      setSavingProjectSeriesId(null);
+    }
+  }
+
   async function generateBookImages(projectId: string) {
     setGeneratingBookImagesId(projectId);
     setHubStatus(null);
@@ -651,6 +701,16 @@ export default function PublishingHubPage() {
     loadBookEngineProjects();
     loadMarketWatch();
   }, []);
+
+  useEffect(() => {
+    setProjectSeriesDrafts((prev) => {
+      const next = { ...prev };
+      for (const project of bookEngineProjects) {
+        if (typeof next[project.id] === "undefined") next[project.id] = String((project as any).series_name || "");
+      }
+      return next;
+    });
+  }, [bookEngineProjects]);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
     setHubStatus(null);
@@ -1176,10 +1236,52 @@ export default function PublishingHubPage() {
             <div className="space-y-3">
               {bookEngineProjects.slice(0, 3).map((project) => (
                 <div key={project.id} className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
-                  <p className="text-sm font-semibold text-white">{project.title}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white">{project.title}</p>
+                    <Badge
+                      variant={
+                        project.status === "generated" || project.status === "ready_for_export"
+                          ? "success"
+                          : project.status === "generation_failed"
+                            ? "destructive"
+                            : "secondary"
+                      }
+                      className="text-[10px]"
+                    >
+                      {project.status || "draft"}
+                    </Badge>
+                  </div>
                   <p className="mt-1 text-xs text-slate-400">
                     {project.language || "en"} · {project.target_pages || "-"} sider · {project.target_words || "-"} ord · {project.status || "draft"}
                   </p>
+                  <div className="mt-2 flex flex-col gap-2 md:flex-row">
+                    <Input
+                      placeholder="Serie (skriv ny eller velg)"
+                      value={projectSeriesDrafts[project.id] ?? String((project as any).series_name || "")}
+                      onChange={(e) =>
+                        setProjectSeriesDrafts((prev) => ({
+                          ...prev,
+                          [project.id]: e.target.value,
+                        }))
+                      }
+                      list="series-options"
+                      className="h-9"
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => saveBookEngineSeries(project.id)}
+                      disabled={savingProjectSeriesId === project.id}
+                    >
+                      {savingProjectSeriesId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Lagre serie
+                    </Button>
+                  </div>
+                  {project.status === "generation_failed" && (
+                    <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-200">
+                      Generering feilet. Trykk Prøv igjen.
+                    </div>
+                  )}
                   <p className="mt-2 text-xs text-slate-300">
                     SEO: {String(project.metadata_plan?.positioning || project.metadata_plan?.launch_angle || "Ingen SEO-plan")}
                   </p>
@@ -1196,6 +1298,16 @@ export default function PublishingHubPage() {
                       : 0}
                   </p>
                   <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => retryBookEngineProject(project.id)}
+                      disabled={retryingBookEngineId === project.id}
+                      className="mr-2"
+                    >
+                      {retryingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Prøv igjen
+                    </Button>
                     <Button
                       size="sm"
                       variant="secondary"

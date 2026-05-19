@@ -322,6 +322,94 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const mode = String(body.mode || "create");
 
+  if (mode === "update_project") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for update_project mode" }, { status: 400 });
+    const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (typeof body.series_name !== "undefined") patch.series_name = String(body.series_name || "").trim();
+    if (typeof body.genre !== "undefined") patch.genre = String(body.genre || "").trim();
+    if (typeof body.title !== "undefined") patch.title = String(body.title || "").trim();
+    if (typeof body.subtitle !== "undefined") patch.subtitle = String(body.subtitle || "").trim();
+
+    const { data, error } = await supabase
+      .from("publishing_book_projects")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, mode: "update_project", project: data });
+  }
+
+  if (mode === "retry_generation") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for retry_generation mode" }, { status: 400 });
+    const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+
+    const current = project as Record<string, any>;
+    await supabase
+      .from("publishing_book_projects")
+      .update({ status: "generating", updated_at: new Date().toISOString() })
+      .eq("id", id);
+
+    try {
+      const input = {
+        brand_id: String(current.brand_id || "freddypublishing"),
+        title: String(current.title || "").trim(),
+        subtitle: String(current.subtitle || "").trim(),
+        language: String(current.language || "en"),
+        niche: String(current.niche || "olive_oil_mediterranean"),
+        genre: String(current.genre || "guide"),
+        series_name: String(current.series_name || ""),
+        audience: String(current.audience || "health-conscious readers 40+"),
+        positioning: String(current.positioning || ""),
+        target_words: Number(current.target_words || 30000),
+        target_pages: Number(current.target_pages || 180),
+        seed_keywords: asKeywords(current.seed_keywords),
+      };
+      const seriesContext = await loadSeriesContext(supabase, input.series_name);
+      const enrichedInput = { ...input, series_context: seriesContext };
+      const seoPlan = await generateSeoPlan(enrichedInput);
+      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const { data, error } = await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: "generated",
+          metadata_plan: seoPlan,
+          outline_plan: {
+            book_promise: authorPlan.book_promise || "",
+            toc: asArray(authorPlan.toc),
+            writing_plan: asArray(authorPlan.writing_plan),
+          },
+          chapter_drafts: asArray(authorPlan.sample_chapters),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode: "retry_generation", project: data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not retry generation";
+      const { data } = await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: "generation_failed",
+          metadata_plan: {
+            ...(current.metadata_plan || {}),
+            generation_state: "failed",
+            generation_error: message,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      return NextResponse.json({ success: true, mode: "retry_generation", warning: message, project: data || current });
+    }
+  }
+
   if (mode === "continue") {
     const id = String(body.id || "").trim();
     if (!id) return NextResponse.json({ error: "id is required for continue mode" }, { status: 400 });
