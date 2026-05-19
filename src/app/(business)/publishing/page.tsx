@@ -277,6 +277,7 @@ export default function PublishingHubPage() {
     title: "",
     subtitle: "",
     asin: "",
+    series_name: "",
     format: "kindle",
     role: "support",
     status: "audit",
@@ -290,6 +291,11 @@ export default function PublishingHubPage() {
     priority: "70",
     notes: "",
   });
+
+  const seriesOptions = useMemo(
+    () => Array.from(new Set(books.map((b) => (b.series_name || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [books],
+  );
 
   const totals = useMemo(() => {
     const adSpend = books.reduce((sum, book) => sum + Number(book.ad_spend || 0), 0);
@@ -743,7 +749,7 @@ export default function PublishingHubPage() {
         brand_id: "freddypublishing",
         marketplace: "amazon.com",
         niche: "olive_oil_mediterranean",
-        series_name: "Mediterranean Olive Oil",
+        series_name: String(newBook.series_name || "").trim() || null,
         keywords: newBook.keywords.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean),
         price: newBook.price ? Number(newBook.price) : null,
         reviews_count: Number(newBook.reviews_count || 0),
@@ -755,6 +761,7 @@ export default function PublishingHubPage() {
         title: "",
         subtitle: "",
         asin: "",
+        series_name: "",
         format: "kindle",
         role: "support",
         status: "audit",
@@ -1150,26 +1157,12 @@ export default function PublishingHubPage() {
               <option value="fantasy">Fantasy</option>
               <option value="sci_fi">Sci-Fi</option>
             </select>
-            <select
+            <Input
               value={bookEngineInput.series_name}
               onChange={(e) => setBookEngineInput((p) => ({ ...p, series_name: e.target.value }))}
-              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
-            >
-              <option value="">Ingen serie</option>
-              {Array.from(
-                new Set(
-                  books
-                    .map((b) => (b.series_name || "").trim())
-                    .filter(Boolean),
-                ),
-              )
-                .sort((a, b) => a.localeCompare(b))
-                .map((seriesName) => (
-                  <option key={seriesName} value={seriesName}>
-                    {seriesName}
-                  </option>
-                ))}
-            </select>
+              placeholder="Serie (skriv ny eller velg eksisterende)"
+              list="series-options"
+            />
             <Input placeholder="Språk (en/no)" value={bookEngineInput.language} onChange={(e) => setBookEngineInput((p) => ({ ...p, language: e.target.value }))} />
             <Input placeholder="Målsider" value={bookEngineInput.target_pages} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_pages: e.target.value }))} />
             <Input placeholder="Målord" value={bookEngineInput.target_words} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_words: e.target.value }))} />
@@ -1523,6 +1516,13 @@ export default function PublishingHubPage() {
                 <Input placeholder="Tittel" value={newBook.title} onChange={(e) => setNewBook((p) => ({ ...p, title: e.target.value }))} />
                 <Input placeholder="ASIN" value={newBook.asin} onChange={(e) => setNewBook((p) => ({ ...p, asin: e.target.value }))} />
                 <Input placeholder="Undertittel" value={newBook.subtitle} onChange={(e) => setNewBook((p) => ({ ...p, subtitle: e.target.value }))} className="md:col-span-2" />
+                <Input
+                  placeholder="Serie (skriv ny eller velg eksisterende)"
+                  value={newBook.series_name}
+                  onChange={(e) => setNewBook((p) => ({ ...p, series_name: e.target.value }))}
+                  list="series-options"
+                  className="md:col-span-2"
+                />
                 <select value={newBook.format} onChange={(e) => setNewBook((p) => ({ ...p, format: e.target.value }))} className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
                   <option value="kindle">Kindle</option>
                   <option value="paperback">Paperback</option>
@@ -1675,6 +1675,11 @@ export default function PublishingHubPage() {
           <ExternalLink size={14} />
         </a>
       </div>
+      <datalist id="series-options">
+        {seriesOptions.map((seriesName) => (
+          <option key={seriesName} value={seriesName} />
+        ))}
+      </datalist>
     </div>
   );
 }
