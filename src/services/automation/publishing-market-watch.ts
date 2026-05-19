@@ -9,6 +9,14 @@ type ParsedResult = {
   url: string;
 };
 
+type BookIdea = {
+  title: string;
+  subtitle: string;
+  angle: string;
+  seed_query: string;
+  opportunity_score: number;
+};
+
 function toNumber(value: string | undefined) {
   if (!value) return null;
   const cleaned = value.replace(/[^\d.,]/g, "").replace(",", ".");
@@ -79,6 +87,96 @@ async function getQueries(supabase: SupabaseClient) {
   return defaults;
 }
 
+function slug(input: string) {
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function scoreOpportunity(totalResults: number | null, avgReviews: number, avgRating: number) {
+  const demand = totalResults ? Math.min(100, Math.log10(totalResults + 1) * 30) : 40;
+  const competitionPenalty = Math.min(35, avgReviews / 20);
+  const ratingPenalty = avgRating >= 4.6 ? 8 : avgRating >= 4.3 ? 5 : 2;
+  return Math.max(1, Math.round(demand - competitionPenalty - ratingPenalty + 20));
+}
+
+function ideasFromQuery(query: string): Array<{ title: string; subtitle: string; angle: string }> {
+  const q = query.toLowerCase();
+  if (q.includes("cookbook")) {
+    return [
+      {
+        title: "The Mediterranean Olive Oil Cookbook for Beginners",
+        subtitle: "100 Simple Recipes, 14-Day Meal Plan and Heart-Conscious Everyday Cooking",
+        angle: "Klar kjøpsintensjon: beginner + recipes + meal plan",
+      },
+      {
+        title: "Extra Virgin Olive Oil Kitchen",
+        subtitle: "A Practical Mediterranean Recipe Guide for Better Flavor and Healthy Daily Habits",
+        angle: "Matfokus + enkel implementering i hverdagen",
+      },
+    ];
+  }
+  if (q.includes("anti inflammatory")) {
+    return [
+      {
+        title: "Mediterranean Anti-Inflammatory Eating with Olive Oil",
+        subtitle: "A Practical Guide to Polyphenols, Healthy Fats and Everyday Meal Choices",
+        angle: "Høy helseinteresse uten for sterke claims",
+      },
+    ];
+  }
+  if (q.includes("extra virgin olive oil")) {
+    return [
+      {
+        title: "The Extra Virgin Olive Oil Guide",
+        subtitle: "How to Choose Better EVOO, Understand Polyphenols and Use It Daily",
+        angle: "Kobler kvalitet, kjøpsvalg og bruk",
+      },
+    ];
+  }
+  return [
+    {
+      title: "Mediterranean Olive Oil Living",
+      subtitle: "Food, Longevity and Practical Habits from the Spanish Olive Grove",
+      angle: "Brand-fit bok med Spania + olivengård + livsstil",
+    },
+  ];
+}
+
+async function createBookIdeaTasks(supabase: SupabaseClient, ideas: BookIdea[]) {
+  const dateKey = new Date().toISOString().slice(0, 10);
+  const sourceIds = ideas.map((idea) => `marketwatch:${dateKey}:bookidea:${slug(idea.title)}`);
+  const existing = await supabase
+    .from("work_items")
+    .select("source_id")
+    .in("source_id", sourceIds)
+    .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"]);
+
+  const existingSet = new Set((existing.data || []).map((r: any) => String(r.source_id)));
+  const inserts = ideas
+    .filter((idea) => !existingSet.has(`marketwatch:${dateKey}:bookidea:${slug(idea.title)}`))
+    .map((idea) => ({
+      title: `Best next book: ${idea.title}`,
+      description: `Opportunity score ${idea.opportunity_score}/100. ${idea.angle}. Basert på Amazon-signal: ${idea.seed_query}.`,
+      status: "TO_DO",
+      priority: idea.opportunity_score >= 80 ? "CRITICAL" : "HIGH",
+      due_date: dateKey,
+      brand_id: "freddypublishing",
+      source_type: "kdp",
+      source_id: `marketwatch:${dateKey}:bookidea:${slug(idea.title)}`,
+      assigned_agent: "publishing",
+      next_action: "Lag Book Engine-prosjekt med denne tittelen, optimaliser metadata og bygg launch-plan.",
+      ai_score: idea.opportunity_score,
+      metadata: {
+        loop: "publishing_market_watch_v1",
+        idea,
+      },
+    }));
+
+  if (inserts.length > 0) {
+    await supabase.from("work_items").insert(inserts);
+  }
+  return inserts.length;
+}
+
 export async function runPublishingMarketWatch(supabase: SupabaseClient) {
   const queries = await getQueries(supabase);
   const snapshots: Array<Record<string, unknown>> = [];
@@ -124,6 +222,35 @@ export async function runPublishingMarketWatch(supabase: SupabaseClient) {
   const own = ownBooks || [];
   const ownOrders = own.reduce((sum, b: any) => sum + Number(b.orders || 0), 0);
   const ownCount = own.length;
+  const ideas: BookIdea[] = [];
+
+  for (const snap of snapshots) {
+    if ((snap as any).error) continue;
+    const query = String((snap as any).query || "");
+    const total = Number((snap as any).total_results_estimate || 0) || null;
+    const avgReviews = Number((snap as any).summary?.avg_reviews || 0);
+    const avgRating = Number((snap as any).summary?.avg_rating || 0);
+    const score = scoreOpportunity(total, avgReviews, avgRating);
+    for (const candidate of ideasFromQuery(query)) {
+      ideas.push({
+        ...candidate,
+        seed_query: query,
+        opportunity_score: score,
+      });
+    }
+  }
+
+  ideas.sort((a, b) => b.opportunity_score - a.opportunity_score);
+  const deduped: BookIdea[] = [];
+  const seen = new Set<string>();
+  for (const idea of ideas) {
+    const key = slug(idea.title);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(idea);
+    if (deduped.length >= 3) break;
+  }
+  const ideaTasksCreated = await createBookIdeaTasks(supabase, deduped);
 
   if (ownCount === 0) {
     await supabase.from("work_items").insert({
@@ -146,6 +273,8 @@ export async function runPublishingMarketWatch(supabase: SupabaseClient) {
     snapshots_saved: snapshots.filter((s) => !(s as any).error).length,
     own_books_count: ownCount,
     own_orders_total: ownOrders,
+    top_book_ideas: deduped,
+    idea_tasks_created: ideaTasksCreated,
     snapshots,
   };
 }
