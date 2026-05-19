@@ -62,6 +62,7 @@ export default function MarketingTasksPage() {
   const [newTask, setNewTask] = useState({ title: "", description: "", platform: "Instagram", priority: "MEDIUM" as TaskPriority, dueDate: "", brand: "" });
   const [loading, setLoading] = useState(true);
   const [tableNotReady, setTableNotReady] = useState(false);
+  const [kdpAppliedFilter, setKdpAppliedFilter] = useState<"all" | "applied" | "not_applied">("all");
 
   const loadTasks = async () => {
     setLoading(true);
@@ -250,7 +251,18 @@ export default function MarketingTasksPage() {
           </h1>
           <p className="text-sm text-slate-400 mt-1">Én kø for leads, brand-arbeid, KDP, publisering og automasjoner</p>
         </div>
-        <Button onClick={() => setShowNew(true)}><Plus size={16} className="mr-2" />Ny oppgave</Button>
+        <div className="flex items-center gap-2">
+          <select
+            value={kdpAppliedFilter}
+            onChange={(e) => setKdpAppliedFilter(e.target.value as "all" | "applied" | "not_applied")}
+            className="h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-xs text-slate-100"
+          >
+            <option value="all">KDP: Alle</option>
+            <option value="applied">KDP: Implementert</option>
+            <option value="not_applied">KDP: Ikke implementert</option>
+          </select>
+          <Button onClick={() => setShowNew(true)}><Plus size={16} className="mr-2" />Ny oppgave</Button>
+        </div>
       </div>
 
       {tableNotReady && (
@@ -408,7 +420,14 @@ export default function MarketingTasksPage() {
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {cols.map((col) => {
-          const colTasks = tasks.filter((t) => t.status === col.key);
+          const colTasks = tasks.filter((t) => {
+            if (t.status !== col.key) return false;
+            if (kdpAppliedFilter === "all") return true;
+            const isKdp = ["kdp", "publishing"].includes(String(t.sourceType || "").toLowerCase());
+            if (!isKdp) return true;
+            const applied = Boolean(t.metadata?.autopilot?.applied_to_kdp);
+            return kdpAppliedFilter === "applied" ? applied : !applied;
+          });
           return (
             <div key={col.key} onDragOver={(e) => e.preventDefault()} onDrop={() => handleDrop(col.key)}>
               <div className="flex items-center gap-2 mb-3">
