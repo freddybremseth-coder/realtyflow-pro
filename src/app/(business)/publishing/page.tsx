@@ -116,6 +116,15 @@ type MarketSnapshot = {
   created_at: string;
 };
 
+type WorkshopDirection = {
+  id: string;
+  title: string;
+  audience: string;
+  promise: string;
+  commercial_potential: "high" | "medium" | "low";
+  notes: string;
+};
+
 const kdpTasks = [
   {
     title: "Optimaliser The Olive Oil Cure metadata",
@@ -243,6 +252,15 @@ export default function PublishingHubPage() {
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSnapshots, setMarketSnapshots] = useState<MarketSnapshot[]>([]);
+  const [workshopLoading, setWorkshopLoading] = useState(false);
+  const [workshopPlanning, setWorkshopPlanning] = useState(false);
+  const [workshopTheme, setWorkshopTheme] = useState("");
+  const [workshopDirections, setWorkshopDirections] = useState<WorkshopDirection[]>([]);
+  const [workshopQuestions, setWorkshopQuestions] = useState<string[]>([]);
+  const [workshopGoals, setWorkshopGoals] = useState<string[]>([]);
+  const [selectedDirection, setSelectedDirection] = useState("");
+  const [workshopContentFocus, setWorkshopContentFocus] = useState("");
+  const [workshopStyle, setWorkshopStyle] = useState("practical");
   const [bookEngineInput, setBookEngineInput] = useState({
     title: "The Mediterranean Olive Oil Cookbook for Beginners",
     subtitle: "100 Simple Anti-Inflammatory Recipes, 14-Day Meal Plan and EVOO Guide",
@@ -519,6 +537,75 @@ export default function PublishingHubPage() {
       console.error("Could not load market watch:", err);
     } finally {
       setMarketLoading(false);
+    }
+  }
+
+  async function runWorkshopDiscovery() {
+    if (!workshopTheme.trim()) return;
+    setWorkshopLoading(true);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine/workshop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "discover", theme: workshopTheme }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Workshop discovery feilet.");
+        return;
+      }
+      setWorkshopDirections(data.directions || []);
+      setWorkshopQuestions(data.questions || []);
+      setWorkshopGoals(data.goals || []);
+      setSelectedDirection((data.directions || [])[0]?.title || "");
+      setHubStatus("AI-workshop klar. Velg retning og lag bokplan.");
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Workshop discovery feilet.");
+    } finally {
+      setWorkshopLoading(false);
+    }
+  }
+
+  async function buildWorkshopPlan() {
+    if (!workshopTheme.trim()) return;
+    setWorkshopPlanning(true);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine/workshop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "plan",
+          theme: workshopTheme,
+          selected_direction: selectedDirection,
+          goals: workshopGoals,
+          content_focus: workshopContentFocus,
+          style: workshopStyle,
+          length_pages: Number(bookEngineInput.target_pages || 180),
+          language: bookEngineInput.language || "en",
+        }),
+      });
+      const plan = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(plan.error || "Kunne ikke lage bokplan.");
+        return;
+      }
+      setBookEngineInput((prev) => ({
+        ...prev,
+        title: String(plan.title || prev.title),
+        subtitle: String(plan.subtitle || prev.subtitle),
+        audience: String(plan.audience || prev.audience),
+        positioning: String(plan.positioning || prev.positioning),
+        target_pages: String(plan.target_pages || prev.target_pages),
+        target_words: String(plan.target_words || prev.target_words),
+        seed_keywords: Array.isArray(plan.seed_keywords) ? plan.seed_keywords.join(", ") : prev.seed_keywords,
+      }));
+      setHubStatus("Bokplan bygget. Sjekk feltene og trykk Generer bok.");
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke lage bokplan.");
+    } finally {
+      setWorkshopPlanning(false);
     }
   }
 
@@ -952,6 +1039,70 @@ export default function PublishingHubPage() {
                   {snap.summary?.error ? <span className="ml-2 text-amber-300">Feil: {snap.summary.error}</span> : null}
                 </div>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-purple-500/20 bg-purple-500/5">
+        <CardHeader>
+          <CardTitle className="text-white">Book Workshop (AI + deg)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Tema (f.eks: Olivenolje, anti-inflammatorisk livsstil for 40+)"
+            value={workshopTheme}
+            onChange={(e) => setWorkshopTheme(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <Button onClick={runWorkshopDiscovery} disabled={workshopLoading || !workshopTheme.trim()}>
+              {workshopLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <Sparkles className="mr-2" size={14} />}
+              Finn retninger
+            </Button>
+            <Button variant="secondary" onClick={buildWorkshopPlan} disabled={workshopPlanning || !workshopTheme.trim()}>
+              {workshopPlanning ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+              Lag bokplan
+            </Button>
+          </div>
+          {workshopDirections.length > 0 && (
+            <div className="space-y-2 rounded border border-slate-700/40 bg-slate-900/60 p-3">
+              <p className="text-xs text-slate-400">Velg retning</p>
+              <select
+                value={selectedDirection}
+                onChange={(e) => setSelectedDirection(e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+              >
+                {workshopDirections.map((d) => (
+                  <option key={d.id} value={d.title}>
+                    {d.title} ({d.commercial_potential})
+                  </option>
+                ))}
+              </select>
+              <Input
+                placeholder="Hva må boken fokusere på?"
+                value={workshopContentFocus}
+                onChange={(e) => setWorkshopContentFocus(e.target.value)}
+              />
+              <select
+                value={workshopStyle}
+                onChange={(e) => setWorkshopStyle(e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+              >
+                <option value="practical">Praktisk</option>
+                <option value="storytelling">Storytelling</option>
+                <option value="expert">Ekspert/Faglig</option>
+                <option value="hybrid">Hybrid</option>
+              </select>
+            </div>
+          )}
+          {workshopQuestions.length > 0 && (
+            <div className="rounded border border-slate-700/40 bg-slate-900/60 p-3">
+              <p className="mb-1 text-xs text-slate-400">Avklaringsspørsmål fra AI</p>
+              <ul className="space-y-1 text-xs text-slate-300">
+                {workshopQuestions.slice(0, 6).map((q, i) => (
+                  <li key={`${i}-${q}`}>{i + 1}. {q}</li>
+                ))}
+              </ul>
             </div>
           )}
         </CardContent>
