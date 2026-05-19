@@ -209,7 +209,18 @@ export async function runPublishingMarketWatch(supabase: SupabaseClient) {
       snapshots.push(row);
       await supabase.from("publishing_market_snapshots").insert(row);
     } catch (error) {
-      snapshots.push({ query, error: error instanceof Error ? error.message : "scan_failed" });
+      const message = error instanceof Error ? error.message : "scan_failed";
+      const row = {
+        brand_id: "freddypublishing",
+        source: "amazon_search",
+        query,
+        marketplace: "amazon.com",
+        total_results_estimate: null,
+        top_results: [],
+        summary: { error: message },
+      };
+      snapshots.push({ ...row, error: message });
+      await supabase.from("publishing_market_snapshots").insert(row);
     }
   }
 

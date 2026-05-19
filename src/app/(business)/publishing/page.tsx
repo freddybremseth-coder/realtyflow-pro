@@ -112,7 +112,7 @@ type MarketSnapshot = {
   id: string;
   query: string;
   total_results_estimate?: number | null;
-  summary?: { top_count?: number; avg_reviews?: number; avg_rating?: number };
+  summary?: { top_count?: number; avg_reviews?: number; avg_rating?: number; error?: string };
   created_at: string;
 };
 
@@ -413,21 +413,16 @@ export default function PublishingHubPage() {
       }
       const text = String(data.markdown || "");
       const fileName = String(data.file_name || "book-engine-manuspakke.md");
-      try {
-        await navigator.clipboard.writeText(text);
-        setHubStatus(`Manuspakke kopiert til utklippstavle (${fileName}).`);
-      } catch {
-        const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        setHubStatus(`Manuspakke eksportert (${fileName}).`);
-      }
+      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setHubStatus(`Manuspakke lastet ned (${fileName}).`);
     } catch (err) {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke eksportere manuspakke.");
     } finally {
@@ -472,7 +467,9 @@ export default function PublishingHubPage() {
         setHubStatus(data.error || "Kunne ikke generere bokbilder.");
         return;
       }
-      setHubStatus(`Genererte ${Number(data.generated || 0)} bilder. Gjenstår: ${Number(data.remaining || 0)}.`);
+      setHubStatus(
+        `Genererte ${Number(data.generated || 0)} bilder, feilet ${Number(data.failed || 0)}. Gjenstår: ${Number(data.remaining || 0)}.`,
+      );
       await loadBookEngineProjects();
     } catch (err) {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke generere bokbilder.");
@@ -928,6 +925,7 @@ export default function PublishingHubPage() {
                   <span className="ml-2 text-slate-400">Top: {snap.summary?.top_count ?? 0}</span>
                   <span className="ml-2 text-slate-400">Reviews avg: {snap.summary?.avg_reviews ?? 0}</span>
                   <span className="ml-2 text-slate-400">Rating avg: {snap.summary?.avg_rating ?? 0}</span>
+                  {snap.summary?.error ? <span className="ml-2 text-amber-300">Feil: {snap.summary.error}</span> : null}
                 </div>
               ))}
             </div>
@@ -982,7 +980,10 @@ export default function PublishingHubPage() {
                     Bilder: {project.metadata_plan?.image_plan?.cover?.image_url ? 1 : 0} forside +
                     {" "}{Array.isArray(project.metadata_plan?.image_plan?.chapters)
                       ? project.metadata_plan.image_plan.chapters.filter((c: any) => c?.image_url).length
-                      : 0} kapittelbilder
+                      : 0} kapittelbilder · Feil:
+                    {" "}{Array.isArray(project.metadata_plan?.image_plan?.chapters)
+                      ? project.metadata_plan.image_plan.chapters.filter((c: any) => c?.status === "error").length
+                      : 0}
                   </p>
                   <div className="mt-3 flex justify-end">
                     <Button

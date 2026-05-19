@@ -247,6 +247,7 @@ async function generateImageBatch(
   });
 
   let generated = 0;
+  let failed = 0;
   for (const item of queue.slice(0, Math.max(1, Math.min(limit, 6)))) {
     try {
       const url = await generateImageFromPrompt(
@@ -262,11 +263,13 @@ async function generateImageBatch(
       const message = error instanceof Error ? error.message : "image_failed";
       if (item.type === "cover") cover.error = message;
       else chapters[item.idx] = { ...chapters[item.idx], error: message, status: "error" };
+      failed += 1;
     }
   }
 
   return {
     generated,
+    failed,
     remaining: Math.max(0, queue.length - generated),
     image_plan: { cover, chapters },
   };
@@ -359,7 +362,14 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, mode: "generate_images", generated: batch.generated, remaining: batch.remaining, project: data });
+    return NextResponse.json({
+      success: true,
+      mode: "generate_images",
+      generated: batch.generated,
+      failed: batch.failed,
+      remaining: batch.remaining,
+      project: data,
+    });
   }
 
   const title = String(body.title || "").trim();
@@ -435,7 +445,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           project: updateRes.data,
-          image_generation: { generated: batch.generated, remaining: batch.remaining },
+          image_generation: { generated: batch.generated, failed: batch.failed, remaining: batch.remaining },
         });
       }
     } catch {
