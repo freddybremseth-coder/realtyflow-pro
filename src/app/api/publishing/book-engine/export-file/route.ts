@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import { Document, HeadingLevel, ImageRun, Packer, Paragraph, TextRun } from "docx";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -33,26 +33,101 @@ function getProjectParts(project: Record<string, any>) {
   const outline = (project.outline_plan || {}) as Record<string, any>;
   const chapterDrafts = asArray<Record<string, any>>(project.chapter_drafts);
   const toc = asArray<Record<string, any>>(outline.toc);
-  return { title, subtitle, chapterDrafts, toc };
+  const imagePlan = ((project.metadata_plan || {}) as Record<string, any>).image_plan || {};
+  return { title, subtitle, chapterDrafts, toc, imagePlan };
+}
+
+type LoadedImage = { buffer: Buffer; type: "jpg" | "png" | "gif" | "bmp" };
+
+async function fetchImageBuffer(url: string): Promise<LoadedImage | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000), cache: "no-store" });
+    if (!res.ok) return null;
+    const arr = await res.arrayBuffer();
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    const type: LoadedImage["type"] =
+      contentType.includes("jpeg") || contentType.includes("jpg")
+        ? "jpg"
+        : contentType.includes("gif")
+          ? "gif"
+          : contentType.includes("bmp")
+            ? "bmp"
+            : "png";
+    return { buffer: Buffer.from(arr), type };
+  } catch {
+    return null;
+  }
 }
 
 async function toDocxBuffer(project: Record<string, any>) {
-  const { title, subtitle, chapterDrafts } = getProjectParts(project);
+  const { title, subtitle, chapterDrafts, imagePlan } = getProjectParts(project);
+  const coverImageUrl = clean(imagePlan?.cover?.image_url);
+  const chapterImages = asArray<Record<string, any>>(imagePlan?.chapters);
+  const chapterImageMap = new Map<string, string>();
+  for (const row of chapterImages) {
+    const chapterTitle = clean(row.chapter_title).toLowerCase();
+    const imageUrl = clean(row.image_url);
+    if (chapterTitle && imageUrl) chapterImageMap.set(chapterTitle, imageUrl);
+  }
+
   const children: Paragraph[] = [
     new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(title)] }),
   ];
   if (subtitle) children.push(new Paragraph({ children: [new TextRun({ text: subtitle, italics: true })] }));
   children.push(new Paragraph({ text: "" }));
 
-  chapterDrafts.forEach((chapter, index) => {
+  if (coverImageUrl) {
+    const coverImage = await fetchImageBuffer(coverImageUrl);
+    if (coverImage) {
+      children.push(
+        new Paragraph({
+          children: [
+            new ImageRun({
+              type: coverImage.type,
+              data: coverImage.buffer,
+              transformation: { width: 520, height: 300 },
+            }),
+          ],
+        }),
+      );
+      children.push(new Paragraph({ text: "" }));
+    }
+  }
+
+  for (let index = 0; index < chapterDrafts.length; index += 1) {
+    const chapter = chapterDrafts[index];
     const chapterTitle = clean(chapter.chapter_title) || `Chapter ${index + 1}`;
     const draftText = clean(chapter.draft) || "";
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(chapterTitle)] }));
-    for (const para of draftText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)) {
+    const imageUrl = chapterImageMap.get(chapterTitle.toLowerCase());
+    const chapterParts = draftText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (imageUrl) {
+      chapterParts.unshift(`__IMAGE_PLACEHOLDER__${imageUrl}`);
+    }
+    for (const para of chapterParts) {
+      if (para.startsWith("__IMAGE_PLACEHOLDER__")) {
+        const url = para.replace("__IMAGE_PLACEHOLDER__", "");
+        const chapterImage = await fetchImageBuffer(url);
+        if (chapterImage) {
+          children.push(
+            new Paragraph({
+              children: [
+                new ImageRun({
+                  type: chapterImage.type,
+                  data: chapterImage.buffer,
+                  transformation: { width: 460, height: 270 },
+                }),
+              ],
+            }),
+          );
+          children.push(new Paragraph({ text: "" }));
+          continue;
+        }
+      }
       children.push(new Paragraph({ children: [new TextRun(para)] }));
     }
     children.push(new Paragraph({ text: "" }));
-  });
+  }
 
   const doc = new Document({ sections: [{ children }] });
   return Packer.toBuffer(doc);
