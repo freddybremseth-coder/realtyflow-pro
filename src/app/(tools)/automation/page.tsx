@@ -53,6 +53,7 @@ function actionSummary(rule: AutomationRule) {
   if (!first) return "Ingen handling definert";
   if (first.type === "run_endpoint") return String(first.path || "Kjør endpoint");
   if (first.type === "push_top_publishing_recommendations") return "Send beste Publishing-anbefalinger til HUB";
+  if (first.type === "process_kdp_work_items") return "Prosesser KDP-oppgaver automatisk (TO_DO → REVIEW)";
   return String(first.type || "Handling");
 }
 

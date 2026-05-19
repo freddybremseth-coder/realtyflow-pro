@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/storage-archive",
       "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-autopilot",
+      "schedule": "45 17 * * *"
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { runPublishingAutopilot } from "@/services/automation/publishing-autopilot";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -53,6 +54,18 @@ const seedRules = [
     failure_count: 0,
     synthetic: true,
   },
+  {
+    id: "seed-publishing-autopilot",
+    name: "Publishing Autopilot v1 (TO_DO → REVIEW)",
+    trigger_type: "daily",
+    conditions: { route: "/api/cron/publishing-autopilot" },
+    actions: [{ type: "process_kdp_work_items", limit: 8 }],
+    status: "active",
+    last_run_at: null,
+    next_run_at: null,
+    failure_count: 0,
+    synthetic: true,
+  },
 ];
 
 function getSupabase() {
@@ -96,6 +109,13 @@ async function pushPublishingRecommendations(origin: string, count = 3) {
     pushed.push({ id: rec.id, title: rec.title, success: post.ok, error: postData.error || null });
   }
   return { pushed };
+}
+
+async function processKdpWorkItems(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  limit = 8,
+) {
+  return runPublishingAutopilot(supabase, { limit });
 }
 
 async function insertRun(
@@ -185,6 +205,8 @@ export async function POST(req: NextRequest) {
         outputs.push({ step, result: await runEndpoint(origin, step.path) });
       } else if (step.type === "push_top_publishing_recommendations") {
         outputs.push({ step, result: await pushPublishingRecommendations(origin, Number(step.count || 3)) });
+      } else if (step.type === "process_kdp_work_items") {
+        outputs.push({ step, result: await processKdpWorkItems(supabase, Number(step.limit || 8)) });
       } else {
         outputs.push({ step, skipped: true, reason: "Unsupported automation action" });
       }
