@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/publishing-growth-loop",
       "schedule": "15 17 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-market-watch",
+      "schedule": "30 17 * * *"
     }
   ]
 }

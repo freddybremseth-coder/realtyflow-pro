@@ -108,6 +108,14 @@ type BookEngineProject = {
   created_at: string;
 };
 
+type MarketSnapshot = {
+  id: string;
+  query: string;
+  total_results_estimate?: number | null;
+  summary?: { top_count?: number; avg_reviews?: number; avg_rating?: number };
+  created_at: string;
+};
+
 const kdpTasks = [
   {
     title: "Optimaliser The Olive Oil Cure metadata",
@@ -230,6 +238,8 @@ export default function PublishingHubPage() {
   const [bookEngineLoading, setBookEngineLoading] = useState(false);
   const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketSnapshots, setMarketSnapshots] = useState<MarketSnapshot[]>([]);
   const [bookEngineInput, setBookEngineInput] = useState({
     title: "The Mediterranean Olive Oil Cookbook for Beginners",
     subtitle: "100 Simple Anti-Inflammatory Recipes, 14-Day Meal Plan and EVOO Guide",
@@ -388,6 +398,26 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadMarketWatch() {
+    setMarketLoading(true);
+    try {
+      const res = await fetch("/api/publishing/market-watch", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke hente Market Watch.");
+        return;
+      }
+      setMarketSnapshots(data.snapshots || []);
+      if (data.tableNotReady) {
+        setHubStatus("Market Watch-tabellen mangler. Kjør migrasjon 20260519150000_publishing_market_watch.sql.");
+      }
+    } catch (err) {
+      console.error("Could not load market watch:", err);
+    } finally {
+      setMarketLoading(false);
+    }
+  }
+
   async function setHardMode(enabled: boolean) {
     setHardModeSaving(true);
     setHubStatus(null);
@@ -418,6 +448,7 @@ export default function PublishingHubPage() {
     loadAutopilotResults();
     loadImpact();
     loadBookEngineProjects();
+    loadMarketWatch();
   }, []);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
@@ -787,6 +818,35 @@ export default function PublishingHubPage() {
                   <p className="text-xs text-slate-200">{impact.no_sales_books.map((b) => `${b.title} (${b.role})`).join(" | ")}</p>
                 </div>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-indigo-500/20 bg-indigo-500/5">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-white">Amazon Market Watch</CardTitle>
+            <Button variant="outline" size="sm" onClick={loadMarketWatch} disabled={marketLoading}>
+              {marketLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
+              Oppdater
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {marketSnapshots.length === 0 ? (
+            <p className="text-sm text-slate-400">Ingen snapshots ennå. Kjør Publishing Market Watch v1 i Automasjon.</p>
+          ) : (
+            <div className="space-y-2">
+              {marketSnapshots.slice(0, 6).map((snap) => (
+                <div key={snap.id} className="rounded border border-slate-700/40 bg-slate-900/60 p-2 text-xs text-slate-300">
+                  <span className="text-white">{snap.query}</span>
+                  <span className="ml-2 text-slate-400">Resultater: {snap.total_results_estimate ?? "-"}</span>
+                  <span className="ml-2 text-slate-400">Top: {snap.summary?.top_count ?? 0}</span>
+                  <span className="ml-2 text-slate-400">Reviews avg: {snap.summary?.avg_reviews ?? 0}</span>
+                  <span className="ml-2 text-slate-400">Rating avg: {snap.summary?.avg_rating ?? 0}</span>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

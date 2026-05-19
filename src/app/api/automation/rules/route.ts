@@ -79,6 +79,18 @@ const seedRules = [
     failure_count: 0,
     synthetic: true,
   },
+  {
+    id: "seed-publishing-market-watch",
+    name: "Publishing Market Watch v1 (Amazon signaler)",
+    trigger_type: "daily",
+    conditions: { route: "/api/cron/publishing-market-watch" },
+    actions: [{ type: "run_endpoint", path: "/api/cron/publishing-market-watch" }],
+    status: "active",
+    last_run_at: null,
+    next_run_at: null,
+    failure_count: 0,
+    synthetic: true,
+  },
 ];
 
 function mergeWithSeedRules(dbRules: Record<string, unknown>[]) {
