@@ -238,6 +238,7 @@ export default function PublishingHubPage() {
   const [bookEngineLoading, setBookEngineLoading] = useState(false);
   const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
   const [continuingBookEngineId, setContinuingBookEngineId] = useState<string | null>(null);
+  const [generatingBookImagesId, setGeneratingBookImagesId] = useState<string | null>(null);
   const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
@@ -454,6 +455,29 @@ export default function PublishingHubPage() {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke fortsette bokutkastet.");
     } finally {
       setContinuingBookEngineId(null);
+    }
+  }
+
+  async function generateBookImages(projectId: string) {
+    setGeneratingBookImagesId(projectId);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_images", id: projectId, batch_limit: 4 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke generere bokbilder.");
+        return;
+      }
+      setHubStatus(`Genererte ${Number(data.generated || 0)} bilder. Gjenstår: ${Number(data.remaining || 0)}.`);
+      await loadBookEngineProjects();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke generere bokbilder.");
+    } finally {
+      setGeneratingBookImagesId(null);
     }
   }
 
@@ -954,7 +978,23 @@ export default function PublishingHubPage() {
                   <p className="mt-1 text-xs text-slate-300">
                     Kapitler: {Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0} · Utkast: {Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0}
                   </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Bilder: {project.metadata_plan?.image_plan?.cover?.image_url ? 1 : 0} forside +
+                    {" "}{Array.isArray(project.metadata_plan?.image_plan?.chapters)
+                      ? project.metadata_plan.image_plan.chapters.filter((c: any) => c?.image_url).length
+                      : 0} kapittelbilder
+                  </p>
                   <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => generateBookImages(project.id)}
+                      disabled={generatingBookImagesId === project.id}
+                      className="mr-2"
+                    >
+                      {generatingBookImagesId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Generer bilder
+                    </Button>
                     <Button
                       size="sm"
                       variant="secondary"
