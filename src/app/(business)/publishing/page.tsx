@@ -171,6 +171,8 @@ export default function PublishingHubPage() {
   const [recommendations, setRecommendations] = useState<PublishingRecommendation[]>([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsSynthetic, setRecommendationsSynthetic] = useState(false);
+  const [sendingRecommendationId, setSendingRecommendationId] = useState<string | null>(null);
+  const [sendingBookId, setSendingBookId] = useState<string | null>(null);
   const [businessTotals, setBusinessTotals] = useState<BusinessOverviewTotals | null>(null);
   const [newBook, setNewBook] = useState({
     title: "",
@@ -249,19 +251,26 @@ export default function PublishingHubPage() {
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
     setHubStatus(null);
-    const res = await fetch("/api/publishing/recommendations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: recommendation.id }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setHubStatus(
-      res.ok
-        ? data.fallback_source_type
-          ? "Anbefaling sendt til HUB. Databasen brukte fallback source_type=manual."
-          : "Anbefaling sendt til Oppgave-HUB."
-        : data.error || "Kunne ikke sende anbefaling til HUB.",
-    );
+    setSendingRecommendationId(recommendation.id);
+    try {
+      const res = await fetch("/api/publishing/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: recommendation.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setHubStatus(
+        res.ok
+          ? data.fallback_source_type
+            ? "Anbefaling sendt til HUB. Databasen brukte fallback source_type=manual."
+            : "Anbefaling sendt til Oppgave-HUB."
+          : data.error || "Kunne ikke sende anbefaling til HUB.",
+      );
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke sende anbefaling til HUB.");
+    } finally {
+      setSendingRecommendationId(null);
+    }
   }
 
   async function createKdpTasks() {
@@ -375,30 +384,37 @@ export default function PublishingHubPage() {
 
   async function pushBookTask(book: PublishingBook) {
     setHubStatus(null);
-    const res = await fetch("/api/work-items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `Publishing: ${book.title}`,
-        description: book.subtitle || book.notes || "Bokoppgave fra Publishing Hub.",
-        brand_id: "freddypublishing",
-        source_type: "kdp",
-        source_id: book.id,
-        assigned_agent: "publishing",
-        priority: Number(book.priority || 0) >= 90 ? "CRITICAL" : Number(book.priority || 0) >= 75 ? "HIGH" : "MEDIUM",
-        ai_score: Number(book.priority || 70),
-        next_action: book.next_action || "Vurder metadata, cover, keywords, reviews og Ads-data.",
-        metadata: { book_title: book.title, asin: book.asin || null, role: book.role || null },
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setHubStatus(
-      res.ok
-        ? data.fallback_source_type
-          ? "Sendt til HUB. Databasen brukte fallback source_type=manual."
-          : "Bokoppgave sendt til Oppgave-HUB."
-        : data.error || "Kunne ikke sende bokoppgave til HUB.",
-    );
+    setSendingBookId(book.id);
+    try {
+      const res = await fetch("/api/work-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Publishing: ${book.title}`,
+          description: book.subtitle || book.notes || "Bokoppgave fra Publishing Hub.",
+          brand_id: "freddypublishing",
+          source_type: "kdp",
+          source_id: book.id,
+          assigned_agent: "publishing",
+          priority: Number(book.priority || 0) >= 90 ? "CRITICAL" : Number(book.priority || 0) >= 75 ? "HIGH" : "MEDIUM",
+          ai_score: Number(book.priority || 70),
+          next_action: book.next_action || "Vurder metadata, cover, keywords, reviews og Ads-data.",
+          metadata: { book_title: book.title, asin: book.asin || null, role: book.role || null },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setHubStatus(
+        res.ok
+          ? data.fallback_source_type
+            ? "Sendt til HUB. Databasen brukte fallback source_type=manual."
+            : "Bokoppgave sendt til Oppgave-HUB."
+          : data.error || "Kunne ikke sende bokoppgave til HUB.",
+      );
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke sende bokoppgave til HUB.");
+    } finally {
+      setSendingBookId(null);
+    }
   }
 
   async function createBookCampaign(book: PublishingBook) {
@@ -636,8 +652,20 @@ export default function PublishingHubPage() {
                     <span className="text-slate-400">Neste:</span> {recommendation.next_action}
                   </p>
                   <div className="mt-4 flex justify-end">
-                    <Button variant="secondary" size="sm" onClick={() => pushRecommendation(recommendation)}>
-                      Send til HUB
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => pushRecommendation(recommendation)}
+                      disabled={sendingRecommendationId === recommendation.id}
+                    >
+                      {sendingRecommendationId === recommendation.id ? (
+                        <>
+                          <Loader2 className="mr-2 animate-spin" size={14} />
+                          Sender...
+                        </>
+                      ) : (
+                        "Send til HUB"
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -833,8 +861,20 @@ export default function PublishingHubPage() {
                           <ExternalLink size={12} />
                         </a>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => pushBookTask(book)}>
-                        Send til HUB
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => pushBookTask(book)}
+                        disabled={sendingBookId === book.id}
+                      >
+                        {sendingBookId === book.id ? (
+                          <>
+                            <Loader2 className="mr-2 animate-spin" size={14} />
+                            Sender...
+                          </>
+                        ) : (
+                          "Send til HUB"
+                        )}
                       </Button>
                       <Button variant="secondary" size="sm" onClick={() => createBookCampaign(book)}>
                         30d kampanje
