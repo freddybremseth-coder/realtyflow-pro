@@ -237,6 +237,7 @@ export default function PublishingHubPage() {
   const [hardModeSaving, setHardModeSaving] = useState(false);
   const [bookEngineLoading, setBookEngineLoading] = useState(false);
   const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
+  const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSnapshots, setMarketSnapshots] = useState<MarketSnapshot[]>([]);
@@ -395,6 +396,40 @@ export default function PublishingHubPage() {
       setHubStatus(err instanceof Error ? err.message : "Book Engine feilet.");
     } finally {
       setBookEngineGenerating(false);
+    }
+  }
+
+  async function exportBookEngineProject(projectId: string) {
+    setExportingBookEngineId(projectId);
+    setHubStatus(null);
+    try {
+      const res = await fetch(`/api/publishing/book-engine/export?id=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke eksportere manuspakke.");
+        return;
+      }
+      const text = String(data.markdown || "");
+      const fileName = String(data.file_name || "book-engine-manuspakke.md");
+      try {
+        await navigator.clipboard.writeText(text);
+        setHubStatus(`Manuspakke kopiert til utklippstavle (${fileName}).`);
+      } catch {
+        const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setHubStatus(`Manuspakke eksportert (${fileName}).`);
+      }
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke eksportere manuspakke.");
+    } finally {
+      setExportingBookEngineId(null);
     }
   }
 
@@ -895,6 +930,17 @@ export default function PublishingHubPage() {
                   <p className="mt-1 text-xs text-slate-300">
                     Kapitler: {Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0} · Utkast: {Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0}
                   </p>
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => exportBookEngineProject(project.id)}
+                      disabled={exportingBookEngineId === project.id}
+                    >
+                      {exportingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Eksporter manuspakke
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
