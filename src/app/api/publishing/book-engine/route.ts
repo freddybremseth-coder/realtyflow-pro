@@ -33,6 +33,10 @@ function asKeywords(raw: unknown) {
     .filter(Boolean);
 }
 
+function asArray<T = any>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 async function generateSeoPlan(input: Record<string, any>) {
   const prompt = `
 Du er en KDP SEO-ekspert. Returner KUN gyldig JSON.
@@ -100,6 +104,54 @@ JSON schema:
   });
 }
 
+async function generateChapterDraftBatch(project: Record<string, any>, count = 2) {
+  const toc = asArray<Record<string, any>>(project.outline_plan?.toc);
+  const existingDrafts = asArray<Record<string, any>>(project.chapter_drafts);
+  const draftedTitles = new Set(existingDrafts.map((d) => String(d.chapter_title || "").toLowerCase()));
+  const missing = toc.filter((row) => !draftedTitles.has(String(row.title || "").toLowerCase())).slice(0, count);
+  if (missing.length === 0) return { added: [], done: true };
+
+  const prompt = `
+Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
+
+Skriv utkast for disse kapitlene basert på prosjektet.
+Krav:
+- Praktisk, konkret og leservennlig
+- Ingen medisinske garantier
+- 600-1200 ord per kapittelutkast
+
+Prosjekt:
+${JSON.stringify(
+  {
+    title: project.title,
+    subtitle: project.subtitle,
+    audience: project.audience,
+    language: project.language,
+    niche: project.niche,
+    metadata_plan: project.metadata_plan || {},
+    outline_plan: project.outline_plan || {},
+  },
+  null,
+  2,
+)}
+
+Kapitler å skrive nå:
+${JSON.stringify(missing, null, 2)}
+
+JSON schema:
+{
+  "chapters": [
+    { "chapter_title": "string", "draft": "string" }
+  ]
+}
+`;
+
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 4200, temperature: 0.65 });
+  const parsed = safeJsonParse<{ chapters: Array<{ chapter_title: string; draft: string }> }>(raw, { chapters: [] });
+  const added = asArray(parsed.chapters).filter((c) => c?.chapter_title && c?.draft);
+  return { added, done: missing.length <= added.length };
+}
+
 export async function GET() {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ projects: [] });
@@ -124,6 +176,41 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  const mode = String(body.mode || "create");
+
+  if (mode === "continue") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for continue mode" }, { status: 400 });
+    const chapterCount = Math.min(Math.max(Number(body.chapter_count || 2), 1), 4);
+
+    const { data: project, error: loadError } = await supabase
+      .from("publishing_book_projects")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+
+    try {
+      const batch = await generateChapterDraftBatch(project as Record<string, any>, chapterCount);
+      const mergedDrafts = [...asArray((project as any).chapter_drafts), ...batch.added];
+      const { data, error } = await supabase
+        .from("publishing_book_projects")
+        .update({
+          chapter_drafts: mergedDrafts,
+          status: batch.done ? "ready_for_export" : "drafting",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode: "continue", added: batch.added.length, project: data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not continue drafting";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   const title = String(body.title || "").trim();
   if (!title) return NextResponse.json({ error: "title is required" }, { status: 400 });
 

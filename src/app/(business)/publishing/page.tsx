@@ -237,6 +237,7 @@ export default function PublishingHubPage() {
   const [hardModeSaving, setHardModeSaving] = useState(false);
   const [bookEngineLoading, setBookEngineLoading] = useState(false);
   const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
+  const [continuingBookEngineId, setContinuingBookEngineId] = useState<string | null>(null);
   const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
@@ -430,6 +431,29 @@ export default function PublishingHubPage() {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke eksportere manuspakke.");
     } finally {
       setExportingBookEngineId(null);
+    }
+  }
+
+  async function continueBookEngineProject(projectId: string) {
+    setContinuingBookEngineId(projectId);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "continue", id: projectId, chapter_count: 2 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke fortsette bokutkastet.");
+        return;
+      }
+      setHubStatus(`La til ${Number(data.added || 0)} nye kapittelutkast.`);
+      await loadBookEngineProjects();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke fortsette bokutkastet.");
+    } finally {
+      setContinuingBookEngineId(null);
     }
   }
 
@@ -931,6 +955,16 @@ export default function PublishingHubPage() {
                     Kapitler: {Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0} · Utkast: {Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0}
                   </p>
                   <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => continueBookEngineProject(project.id)}
+                      disabled={continuingBookEngineId === project.id}
+                      className="mr-2"
+                    >
+                      {continuingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Fortsett skriv
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
