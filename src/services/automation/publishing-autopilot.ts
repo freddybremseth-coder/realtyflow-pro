@@ -16,25 +16,41 @@ type WorkItem = {
 };
 
 function buildPublishingDraft(item: WorkItem) {
-  const lines = [
-    "Mål:",
-    item.description || "Optimaliser boken for bedre synlighet, CTR og konvertering.",
-    "",
-    "AI-forslag:",
-    "1) Oppdater tittel/undertittel med tydelig reader-intent",
-    "2) Skriv trygg Amazon-beskrivelse uten medisinske garantier",
-    "3) Forslå 7 backend-keywords",
-    "4) Foreslå 3 relevante KDP-kategorier",
-    "5) Definer review-loop og annonserings-test",
-    "",
-    "Neste handling:",
-    item.next_action || "Godkjenn eller rediger forslaget, og send videre til publisering.",
-  ];
+  const objective = item.description || "Optimaliser boken for bedre synlighet, CTR og konvertering.";
+  const bookTitle = item.title.replace(/^Publishing:\s*/i, "").trim() || item.title;
 
   return {
-    title: `AI-utkast: ${item.title}`,
-    description: lines.join("\n"),
-    tags: ["publishing", "kdp", "amazon", "metadata", "ai-autopilot"],
+    objective,
+    title_suggestion: `${bookTitle}: A Mediterranean Guide to Extra Virgin Olive Oil, Polyphenols, and Everyday Heart-Healthy Cooking`,
+    subtitle_suggestion:
+      "Beginner-friendly framework for better olive oil choices, anti-inflammatory meal patterns, and practical longevity habits.",
+    amazon_description_outline: [
+      "Hook: hvorfor dette er relevant for leseren nå",
+      "Hva boken løser uten overdrivelser",
+      "Hva leseren konkret lærer i kapitlene",
+      "Kort troverdighetsblokk om forfatter",
+      "Tydelig CTA",
+    ],
+    backend_keywords: [
+      "extra virgin olive oil guide",
+      "mediterranean diet beginner",
+      "heart healthy cooking",
+      "anti inflammatory eating",
+      "polyphenols antioxidants",
+      "longevity nutrition habits",
+      "olive oil quality checklist",
+    ],
+    category_candidates: [
+      "Health, Fitness & Dieting > Nutrition",
+      "Health, Fitness & Dieting > Diets & Weight Loss > Mediterranean",
+      "Cookbooks, Food & Wine > Special Diet > Heart Healthy",
+    ],
+    review_loop_plan: [
+      "Bygg early reader-liste (20-50 personer)",
+      "Send frivillig request om ærlig review uten incentiver",
+      "Følg opp etter 7-10 dager",
+    ],
+    ad_test_plan: "Start med lavt budsjett etter metadata/cover/review-baseline er klar.",
   };
 }
 
@@ -55,11 +71,11 @@ export async function runPublishingAutopilot(
     .limit(limit);
 
   if (error) throw error;
-  if (!items?.length) return { processed: 0, moved_to_review: 0, drafts_created: 0, items: [] };
+  if (!items?.length) return { processed: 0, moved_to_review: 0, suggestions_created: 0, items: [] };
 
-  const results: Array<{ id: string; status: string; draft_id?: string; error?: string }> = [];
+  const results: Array<{ id: string; status: string; error?: string }> = [];
   let movedToReview = 0;
-  let draftsCreated = 0;
+  let suggestionsCreated = 0;
 
   for (const item of items as WorkItem[]) {
     try {
@@ -68,23 +84,8 @@ export async function runPublishingAutopilot(
         .update({ status: "IN_PROGRESS", updated_at: new Date().toISOString() })
         .eq("id", item.id);
 
-      const draft = buildPublishingDraft(item);
-      const { data: createdDraft, error: draftError } = await supabase
-        .from("content_publications")
-        .insert({
-          brand_id: item.brand_id || "freddypublishing",
-          content_type: "text",
-          title: draft.title,
-          description: draft.description,
-          tags: draft.tags,
-          status: "draft",
-          ai_generated: true,
-        })
-        .select("id")
-        .single();
-
-      if (draftError) throw draftError;
-      draftsCreated += 1;
+      const suggestion = buildPublishingDraft(item);
+      suggestionsCreated += 1;
 
       const metadata = typeof item.metadata === "object" && item.metadata ? item.metadata : {};
       const autopilotMeta = {
@@ -92,7 +93,8 @@ export async function runPublishingAutopilot(
         autopilot: {
           processor: "publishing_autopilot_v1",
           processed_at: new Date().toISOString(),
-          draft_id: createdDraft?.id || null,
+          channel: "amazon_kdp",
+          suggestion,
         },
       };
 
@@ -100,7 +102,7 @@ export async function runPublishingAutopilot(
         .from("work_items")
         .update({
           status: "REVIEW",
-          next_action: "Se AI-utkast i Content Hub, godkjenn og send til publisering.",
+          next_action: "Se AI-forslag i oppgavens metadata.autopilot.suggestion og bruk det i KDP/Amazon.",
           metadata: autopilotMeta,
           updated_at: new Date().toISOString(),
         })
@@ -108,7 +110,7 @@ export async function runPublishingAutopilot(
 
       if (updateError) throw updateError;
       movedToReview += 1;
-      results.push({ id: item.id, status: "review", draft_id: createdDraft?.id });
+      results.push({ id: item.id, status: "review" });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await supabase
@@ -126,8 +128,7 @@ export async function runPublishingAutopilot(
   return {
     processed: results.length,
     moved_to_review: movedToReview,
-    drafts_created: draftsCreated,
+    suggestions_created: suggestionsCreated,
     items: results,
   };
 }
-
