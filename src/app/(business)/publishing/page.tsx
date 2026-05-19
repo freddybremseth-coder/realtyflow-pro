@@ -401,19 +401,43 @@ export default function PublishingHubPage() {
     }
   }
 
-  async function exportBookEngineProject(projectId: string) {
+  async function exportBookEngineProject(projectId: string, format: "md" | "docx" | "epub" = "md") {
     setExportingBookEngineId(projectId);
     setHubStatus(null);
     try {
-      const res = await fetch(`/api/publishing/book-engine/export?id=${encodeURIComponent(projectId)}`, { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setHubStatus(data.error || "Kunne ikke eksportere manuspakke.");
+      if (format === "md") {
+        const res = await fetch(`/api/publishing/book-engine/export?id=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setHubStatus(data.error || "Kunne ikke eksportere manuspakke.");
+          return;
+        }
+        const text = String(data.markdown || "");
+        const fileName = String(data.file_name || "book-engine-manuspakke.md");
+        const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setHubStatus(`Manuspakke lastet ned (${fileName}).`);
         return;
       }
-      const text = String(data.markdown || "");
-      const fileName = String(data.file_name || "book-engine-manuspakke.md");
-      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+
+      const res = await fetch(
+        `/api/publishing/book-engine/export-file?id=${encodeURIComponent(projectId)}&format=${format}`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setHubStatus(data.error || `Kunne ikke eksportere ${format}.`);
+        return;
+      }
+      const blob = await res.blob();
+      const fileName = res.headers.get("content-disposition")?.match(/filename=\"?([^"]+)\"?/)?.[1] || `book.${format}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -422,7 +446,7 @@ export default function PublishingHubPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setHubStatus(`Manuspakke lastet ned (${fileName}).`);
+      setHubStatus(`${format.toUpperCase()} lastet ned (${fileName}).`);
     } catch (err) {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke eksportere manuspakke.");
     } finally {
@@ -1009,11 +1033,31 @@ export default function PublishingHubPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => exportBookEngineProject(project.id)}
+                      onClick={() => exportBookEngineProject(project.id, "docx")}
+                      disabled={exportingBookEngineId === project.id}
+                      className="mr-2"
+                    >
+                      {exportingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Last ned Word
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => exportBookEngineProject(project.id, "epub")}
+                      disabled={exportingBookEngineId === project.id}
+                      className="mr-2"
+                    >
+                      {exportingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Last ned Kindle
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => exportBookEngineProject(project.id, "md")}
                       disabled={exportingBookEngineId === project.id}
                     >
                       {exportingBookEngineId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
-                      Eksporter manuspakke
+                      Last ned MD
                     </Button>
                   </div>
                 </div>
