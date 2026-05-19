@@ -260,6 +260,7 @@ export default function PublishingHubPage() {
   const [workshopTheme, setWorkshopTheme] = useState("");
   const [workshopDirections, setWorkshopDirections] = useState<WorkshopDirection[]>([]);
   const [workshopQuestions, setWorkshopQuestions] = useState<string[]>([]);
+  const [workshopAnswers, setWorkshopAnswers] = useState<string[]>([]);
   const [workshopGoals, setWorkshopGoals] = useState<string[]>([]);
   const [selectedDirection, setSelectedDirection] = useState("");
   const [workshopContentFocus, setWorkshopContentFocus] = useState("");
@@ -615,6 +616,7 @@ export default function PublishingHubPage() {
       }
       setWorkshopDirections(data.directions || []);
       setWorkshopQuestions(data.questions || []);
+      setWorkshopAnswers((data.questions || []).map(() => ""));
       setWorkshopGoals(data.goals || []);
       setSelectedDirection((data.directions || [])[0]?.title || "");
       setHubStatus("AI-workshop klar. Velg retning og lag bokplan.");
@@ -640,6 +642,7 @@ export default function PublishingHubPage() {
           genre: bookEngineInput.genre || "guide",
           series_name: bookEngineInput.series_name || "",
           goals: workshopGoals,
+          question_answers: workshopQuestions.map((q, i) => ({ question: q, answer: String(workshopAnswers[i] || "").trim() })).filter((row) => row.answer),
           content_focus: workshopContentFocus,
           style: workshopStyle,
           length_pages: Number(bookEngineInput.target_pages || 180),
@@ -1169,11 +1172,24 @@ export default function PublishingHubPage() {
           {workshopQuestions.length > 0 && (
             <div className="rounded border border-slate-700/40 bg-slate-900/60 p-3">
               <p className="mb-1 text-xs text-slate-400">Avklaringsspørsmål fra AI</p>
-              <ul className="space-y-1 text-xs text-slate-300">
-                {workshopQuestions.slice(0, 6).map((q, i) => (
-                  <li key={`${i}-${q}`}>{i + 1}. {q}</li>
+              <div className="space-y-2">
+                {workshopQuestions.slice(0, 8).map((q, i) => (
+                  <div key={`${i}-${q}`} className="space-y-1">
+                    <p className="text-xs text-slate-300">{i + 1}. {q}</p>
+                    <Input
+                      placeholder="Skriv svaret ditt her"
+                      value={workshopAnswers[i] || ""}
+                      onChange={(e) =>
+                        setWorkshopAnswers((prev) => {
+                          const next = [...prev];
+                          next[i] = e.target.value;
+                          return next;
+                        })
+                      }
+                    />
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
         </CardContent>

@@ -50,6 +50,14 @@ JSON schema:
   const genre = String(body.genre || "guide");
   const seriesName = String(body.series_name || "");
   const goals = Array.isArray(body.goals) ? body.goals.map(String) : [];
+  const questionAnswers = Array.isArray(body.question_answers)
+    ? body.question_answers
+        .map((row: unknown) => ({
+          question: String((row as any)?.question || "").trim(),
+          answer: String((row as any)?.answer || "").trim(),
+        }))
+        .filter((row: { question: string; answer: string }) => row.question && row.answer)
+    : [];
   const contentFocus = String(body.content_focus || "");
   const style = String(body.style || "practical");
   const lengthPages = Number(body.length_pages || 180);
@@ -59,7 +67,7 @@ JSON schema:
 Du er en bokstrateg og KDP-planlegger. Returner KUN gyldig JSON.
 
 Input:
-${JSON.stringify({ theme, selectedDirection, genre, seriesName, goals, contentFocus, style, lengthPages, language }, null, 2)}
+${JSON.stringify({ theme, selectedDirection, genre, seriesName, goals, questionAnswers, contentFocus, style, lengthPages, language }, null, 2)}
 
 Lag en konkret bokplan klar for produksjon:
 - tittel + undertittel
