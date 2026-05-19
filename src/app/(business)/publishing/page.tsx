@@ -94,6 +94,20 @@ type PublishingAutopilotRun = {
   error?: string | null;
 };
 
+type BookEngineProject = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  language?: string | null;
+  target_words?: number | null;
+  target_pages?: number | null;
+  status?: string | null;
+  metadata_plan?: Record<string, any>;
+  outline_plan?: Record<string, any>;
+  chapter_drafts?: Array<{ chapter_title?: string; draft?: string }>;
+  created_at: string;
+};
+
 const kdpTasks = [
   {
     title: "Optimaliser The Olive Oil Cure metadata",
@@ -213,6 +227,19 @@ export default function PublishingHubPage() {
   const [impact, setImpact] = useState<PublishingImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
   const [hardModeSaving, setHardModeSaving] = useState(false);
+  const [bookEngineLoading, setBookEngineLoading] = useState(false);
+  const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
+  const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
+  const [bookEngineInput, setBookEngineInput] = useState({
+    title: "The Mediterranean Olive Oil Cookbook for Beginners",
+    subtitle: "100 Simple Anti-Inflammatory Recipes, 14-Day Meal Plan and EVOO Guide",
+    language: "en",
+    target_pages: "180",
+    target_words: "32000",
+    audience: "Health-conscious readers 40+ who want practical Mediterranean habits",
+    positioning: "Practical, science-aware, no-hype Mediterranean olive oil guide",
+    seed_keywords: "mediterranean diet for beginners, extra virgin olive oil guide, anti inflammatory eating, heart healthy mediterranean diet, polyphenols antioxidants",
+  });
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -313,6 +340,54 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadBookEngineProjects() {
+    setBookEngineLoading(true);
+    try {
+      const res = await fetch("/api/publishing/book-engine", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke hente Book Engine-prosjekter.");
+        return;
+      }
+      setBookEngineProjects(data.projects || []);
+      if (data.tableNotReady) {
+        setHubStatus("Book Engine-tabellen mangler. Kjør migrasjon 20260519142000_publishing_book_engine.sql.");
+      }
+    } catch (err) {
+      console.error("Could not load book engine projects:", err);
+    } finally {
+      setBookEngineLoading(false);
+    }
+  }
+
+  async function generateBookEngineProject() {
+    setBookEngineGenerating(true);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...bookEngineInput,
+          brand_id: "freddypublishing",
+          target_pages: Number(bookEngineInput.target_pages || 180),
+          target_words: Number(bookEngineInput.target_words || 32000),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Book Engine feilet.");
+        return;
+      }
+      setHubStatus("Book Engine v1 har laget SEO-plan + bokstruktur + kapittelutkast.");
+      await loadBookEngineProjects();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Book Engine feilet.");
+    } finally {
+      setBookEngineGenerating(false);
+    }
+  }
+
   async function setHardMode(enabled: boolean) {
     setHardModeSaving(true);
     setHubStatus(null);
@@ -342,6 +417,7 @@ export default function PublishingHubPage() {
     loadBusinessOverviewTotals();
     loadAutopilotResults();
     loadImpact();
+    loadBookEngineProjects();
   }, []);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
@@ -694,12 +770,73 @@ export default function PublishingHubPage() {
                   Royalties {impact.import_delta.royalties >= 0 ? "+" : ""}{impact.import_delta.royalties}
                 </p>
               )}
+              {impact.totals.books === 0 && booksSynthetic && (
+                <div className="rounded border border-cyan-500/30 bg-cyan-500/10 p-2">
+                  <p className="mb-2 text-xs text-cyan-200">
+                    Ingen bøker i databasen ennå. Klikk under for å legge inn porteføljen din, så kan vi optimalisere automatisk.
+                  </p>
+                  <Button size="sm" onClick={seedBooksToDatabase} disabled={savingBook || booksTableNotReady}>
+                    {savingBook ? <Loader2 className="mr-2 animate-spin" size={14} /> : <Plus className="mr-2" size={14} />}
+                    Legg inn bøker nå
+                  </Button>
+                </div>
+              )}
               {impact.no_sales_books && impact.no_sales_books.length > 0 && (
                 <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2">
                   <p className="mb-1 text-xs text-amber-200">Bøker uten salg (prioriter disse):</p>
                   <p className="text-xs text-slate-200">{impact.no_sales_books.map((b) => `${b.title} (${b.role})`).join(" | ")}</p>
                 </div>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-fuchsia-500/20 bg-fuchsia-500/5">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-white">Book Engine v1</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={loadBookEngineProjects} disabled={bookEngineLoading}>
+                {bookEngineLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
+                Oppdater
+              </Button>
+              <Button size="sm" onClick={generateBookEngineProject} disabled={bookEngineGenerating}>
+                {bookEngineGenerating ? <Loader2 className="mr-2 animate-spin" size={14} /> : <Sparkles className="mr-2" size={14} />}
+                Generer bok
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input placeholder="Tittel" value={bookEngineInput.title} onChange={(e) => setBookEngineInput((p) => ({ ...p, title: e.target.value }))} />
+            <Input placeholder="Undertittel" value={bookEngineInput.subtitle} onChange={(e) => setBookEngineInput((p) => ({ ...p, subtitle: e.target.value }))} />
+            <Input placeholder="Språk (en/no)" value={bookEngineInput.language} onChange={(e) => setBookEngineInput((p) => ({ ...p, language: e.target.value }))} />
+            <Input placeholder="Målsider" value={bookEngineInput.target_pages} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_pages: e.target.value }))} />
+            <Input placeholder="Målord" value={bookEngineInput.target_words} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_words: e.target.value }))} />
+            <Input placeholder="Seed keywords (komma)" value={bookEngineInput.seed_keywords} onChange={(e) => setBookEngineInput((p) => ({ ...p, seed_keywords: e.target.value }))} />
+            <Input placeholder="Målgruppe" value={bookEngineInput.audience} onChange={(e) => setBookEngineInput((p) => ({ ...p, audience: e.target.value }))} className="md:col-span-2" />
+            <Input placeholder="Posisjonering" value={bookEngineInput.positioning} onChange={(e) => setBookEngineInput((p) => ({ ...p, positioning: e.target.value }))} className="md:col-span-2" />
+          </div>
+          {bookEngineProjects.length === 0 ? (
+            <p className="text-sm text-slate-400">Ingen Book Engine-prosjekter ennå.</p>
+          ) : (
+            <div className="space-y-3">
+              {bookEngineProjects.slice(0, 3).map((project) => (
+                <div key={project.id} className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                  <p className="text-sm font-semibold text-white">{project.title}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {project.language || "en"} · {project.target_pages || "-"} sider · {project.target_words || "-"} ord · {project.status || "draft"}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-300">
+                    SEO: {String(project.metadata_plan?.positioning || project.metadata_plan?.launch_angle || "Ingen SEO-plan")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Kapitler: {Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0} · Utkast: {Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
