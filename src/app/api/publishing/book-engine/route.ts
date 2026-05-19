@@ -411,13 +411,29 @@ export async function POST(request: NextRequest) {
     seed_keywords: asKeywords(body.seed_keywords),
   };
 
+  const seriesContext = await loadSeriesContext(supabase, input.series_name);
+  const enrichedInput = { ...input, series_context: seriesContext };
+
+  const baseInsertPayload = {
+    ...enrichedInput,
+    status: "generating",
+    metadata_plan: { generation_state: "started" },
+    outline_plan: { book_promise: "", toc: [], writing_plan: [] },
+    chapter_drafts: [],
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: createdProject, error: createError } = await supabase
+    .from("publishing_book_projects")
+    .insert(baseInsertPayload)
+    .select()
+    .single();
+  if (createError) return NextResponse.json({ error: createError.message }, { status: 500 });
+
   try {
-    const seriesContext = await loadSeriesContext(supabase, input.series_name);
-    const enrichedInput = { ...input, series_context: seriesContext };
     const seoPlan = await generateSeoPlan(enrichedInput);
     const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
-    const insertPayload = {
-      ...enrichedInput,
+    const updatePayload = {
       status: "generated",
       metadata_plan: seoPlan,
       outline_plan: {
@@ -429,57 +445,31 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from("publishing_book_projects").insert(insertPayload).select().single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    // Auto-generate initial cover/chapter prompts + first image batch.
-    try {
-      const toc = asArray<Record<string, any>>(insertPayload.outline_plan.toc);
-      const drafts = asArray<Record<string, any>>(insertPayload.chapter_drafts);
-      const planned = await generateImagePlan(data as Record<string, any>, toc, drafts);
-      const prompts = asArray<{ chapter_title: string; prompt: string }>(planned.chapter_prompts);
-      const metadata = {
-        ...(data as any).metadata_plan,
-        image_plan: {
-          cover: {
-            prompt: planned.cover_prompt || `Premium photorealistic cover concept for "${(data as any).title}", mediterranean style, no text.`,
-            image_url: null,
-            status: "pending",
-          },
-          chapters: toc.map((row) => {
-            const chapterTitle = String(row.title || "");
-            const found = prompts.find((p) => String(p.chapter_title || "").toLowerCase() === chapterTitle.toLowerCase());
-            return {
-              chapter_title: chapterTitle,
-              prompt: found?.prompt || `Photorealistic editorial scene for chapter "${chapterTitle}".`,
-              image_url: null,
-              status: "pending",
-            };
-          }),
-        },
-      };
-      const batch = await generateImageBatch(supabase, { ...(data as any), metadata_plan: metadata }, 4);
-      metadata.image_plan = batch.image_plan;
-      const updateRes = await supabase
-        .from("publishing_book_projects")
-        .update({ metadata_plan: metadata, updated_at: new Date().toISOString() })
-        .eq("id", (data as any).id)
-        .select()
-        .single();
-      if (!updateRes.error && updateRes.data) {
-        return NextResponse.json({
-          success: true,
-          project: updateRes.data,
-          image_generation: { generated: batch.generated, failed: batch.failed, remaining: batch.remaining },
-        });
-      }
-    } catch {
-      // keep create successful even if image generation fails
+    const { data: generatedProject, error: updateError } = await supabase
+      .from("publishing_book_projects")
+      .update(updatePayload)
+      .eq("id", (createdProject as any).id)
+      .select()
+      .single();
+    if (updateError) {
+      return NextResponse.json({ success: true, project: createdProject, warning: updateError.message });
     }
 
-    return NextResponse.json({ success: true, project: data });
+    return NextResponse.json({ success: true, project: generatedProject });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not generate book project";
-    return NextResponse.json({ error: message }, { status: 500 });
+    await supabase
+      .from("publishing_book_projects")
+      .update({
+        status: "generation_failed",
+        metadata_plan: { generation_state: "failed", generation_error: message },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", (createdProject as any).id);
+    return NextResponse.json({
+      success: true,
+      project: createdProject,
+      warning: `Prosjekt opprettet, men generering stoppet: ${message}`,
+    });
   }
 }
