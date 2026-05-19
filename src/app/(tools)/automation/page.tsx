@@ -54,6 +54,7 @@ function actionSummary(rule: AutomationRule) {
   if (first.type === "run_endpoint") return String(first.path || "Kjør endpoint");
   if (first.type === "push_top_publishing_recommendations") return "Send beste Publishing-anbefalinger til HUB";
   if (first.type === "process_kdp_work_items") return "Prosesser KDP-oppgaver automatisk (TO_DO → REVIEW)";
+  if (first.type === "run_publishing_growth_loop") return "Analyser salgssignal og lag salgsoppgaver automatisk";
   return String(first.type || "Handling");
 }
 

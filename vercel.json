@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/publishing-autopilot",
       "schedule": "45 17 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-growth-loop",
+      "schedule": "15 17 * * *"
     }
   ]
 }

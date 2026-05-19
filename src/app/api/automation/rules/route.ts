@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { runPublishingAutopilot } from "@/services/automation/publishing-autopilot";
+import { runPublishingGrowthLoop } from "@/services/automation/publishing-growth-loop";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -60,6 +61,18 @@ const seedRules = [
     trigger_type: "daily",
     conditions: { route: "/api/cron/publishing-autopilot" },
     actions: [{ type: "process_kdp_work_items", limit: 8 }],
+    status: "active",
+    last_run_at: null,
+    next_run_at: null,
+    failure_count: 0,
+    synthetic: true,
+  },
+  {
+    id: "seed-publishing-growth-loop",
+    name: "Publishing Growth Loop v1 (analyse -> salgsoppgaver)",
+    trigger_type: "daily",
+    conditions: { route: "/api/cron/publishing-growth-loop" },
+    actions: [{ type: "run_publishing_growth_loop", limit: 50 }],
     status: "active",
     last_run_at: null,
     next_run_at: null,
@@ -163,6 +176,13 @@ async function processKdpWorkItems(
   return runPublishingAutopilot(supabase, { limit });
 }
 
+async function runPublishingGrowth(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  limit = 50,
+) {
+  return runPublishingGrowthLoop(supabase, { limit });
+}
+
 async function insertRun(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   ruleId: string | null,
@@ -258,6 +278,8 @@ export async function POST(req: NextRequest) {
         outputs.push({ step, result: await pushPublishingRecommendations(origin, Number(step.count || 3)) });
       } else if (step.type === "process_kdp_work_items") {
         outputs.push({ step, result: await processKdpWorkItems(supabase, Number(step.limit || 8)) });
+      } else if (step.type === "run_publishing_growth_loop") {
+        outputs.push({ step, result: await runPublishingGrowth(supabase, Number(step.limit || 50)) });
       } else {
         outputs.push({ step, skipped: true, reason: "Unsupported automation action" });
       }
