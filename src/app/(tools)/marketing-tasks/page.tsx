@@ -102,6 +102,40 @@ export default function MarketingTasksPage() {
     }
   };
 
+  const buildKdpExportText = (task: Task) => {
+    const suggestion = task.metadata?.autopilot?.suggestion || {};
+    const title = String(suggestion.title_suggestion || "");
+    const subtitle = String(suggestion.subtitle_suggestion || "");
+    const descriptionOutline = Array.isArray(suggestion.amazon_description_outline)
+      ? suggestion.amazon_description_outline.map((line: string, idx: number) => `${idx + 1}. ${line}`).join("\n")
+      : "";
+    const keywords = Array.isArray(suggestion.backend_keywords)
+      ? suggestion.backend_keywords.join(", ")
+      : "";
+    const categories = Array.isArray(suggestion.category_candidates)
+      ? suggestion.category_candidates.join("\n")
+      : "";
+
+    return [
+      "KDP PACKAGE",
+      "",
+      "TITLE",
+      title,
+      "",
+      "SUBTITLE",
+      subtitle,
+      "",
+      "DESCRIPTION OUTLINE",
+      descriptionOutline,
+      "",
+      "BACKEND KEYWORDS",
+      keywords,
+      "",
+      "CATEGORY CANDIDATES",
+      categories,
+    ].join("\n");
+  };
+
   const approveKdpSuggestion = async (task: Task) => {
     const existing = (task.metadata || {}) as Record<string, any>;
     const autopilot = existing.autopilot || {};
@@ -132,6 +166,41 @@ export default function MarketingTasksPage() {
       }
     } catch (err) {
       console.error("Failed to approve KDP suggestion:", err);
+    }
+  };
+
+  const markAppliedToKdp = async (task: Task) => {
+    const existing = (task.metadata || {}) as Record<string, any>;
+    const autopilot = existing.autopilot || {};
+    const metadata = {
+      ...existing,
+      autopilot: {
+        ...autopilot,
+        applied_to_kdp: true,
+        applied_to_kdp_at: new Date().toISOString(),
+      },
+    };
+
+    try {
+      const res = await fetch("/api/work-items", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: task.id,
+          metadata,
+          next_action: "Forslag implementert i KDP. Følg opp med metrics (CTR, reviews, orders).",
+        }),
+      });
+      if (res.ok) {
+        await loadTasks();
+        setSelectedTask({
+          ...task,
+          metadata,
+          nextAction: "Forslag implementert i KDP. Følg opp med metrics (CTR, reviews, orders).",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to mark applied-to-kdp:", err);
     }
   };
 
@@ -287,6 +356,25 @@ export default function MarketingTasksPage() {
                         Kopier kategorier
                       </Button>
                     </div>
+                  </div>
+                  {selectedTask.metadata?.autopilot?.applied_to_kdp && (
+                    <p className="mt-3 rounded bg-emerald-500/15 px-2 py-1 text-[11px] text-emerald-200">
+                      Implementert i KDP: {new Date(String(selectedTask.metadata?.autopilot?.applied_to_kdp_at || "")).toLocaleString("nb-NO")}
+                    </p>
+                  )}
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => copyText(buildKdpExportText(selectedTask))}
+                    >
+                      Eksporter KDP-pakke
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => markAppliedToKdp(selectedTask)}
+                    >
+                      Markér som brukt i KDP
+                    </Button>
                   </div>
                   <Button className="mt-3 w-full" onClick={() => approveKdpSuggestion(selectedTask)}>
                     Godkjenn forslag (sett DONE)
