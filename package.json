@@ -24,6 +24,7 @@
     "google-auth-library": "^10.6.1",
     "googleapis": "^171.4.0",
     "imapflow": "^1.2.16",
+    "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "mailparser": "^3.9.8",
