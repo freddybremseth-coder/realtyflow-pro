@@ -15,21 +15,31 @@ export async function GET() {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ runs: [], error: "Supabase not configured" }, { status: 503 });
 
-  const { data, error } = await supabase
-    .from("automation_logs")
-    .select("id,action,status,details,created_at")
-    .eq("action", "publishing_autopilot_v1")
-    .order("created_at", { ascending: false })
-    .limit(15);
+  const [logsRes, runsRes] = await Promise.all([
+    supabase
+      .from("automation_logs")
+      .select("id,action,status,details,created_at")
+      .eq("action", "publishing_autopilot_v1")
+      .order("created_at", { ascending: false })
+      .limit(15),
+    supabase
+      .from("automation_runs")
+      .select("id,status,input,output,error,started_at,finished_at")
+      .order("started_at", { ascending: false })
+      .limit(40),
+  ]);
 
+  const data = logsRes.data || [];
+  const error = logsRes.error;
   if (error) {
     if (/automation_logs|schema cache|does not exist|relation/i.test(error.message)) {
-      return NextResponse.json({ runs: [], tableNotReady: true, error: error.message });
+      // Continue with runs fallback only.
+    } else {
+      return NextResponse.json({ runs: [], error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ runs: [], error: error.message }, { status: 500 });
   }
 
-  const runs = (data || []).map((row) => {
+  const logRuns = (data || []).map((row) => {
     const details = (row.details || {}) as Record<string, any>;
     return {
       id: row.id,
@@ -44,6 +54,34 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ runs });
-}
+  const runRows = runsRes.data || [];
+  const runFallback = runRows
+    .filter((row) => {
+      const inputName = String((row.input as any)?.name || "");
+      const output = (row.output as any) || {};
+      const outputs = Array.isArray(output.outputs) ? output.outputs : [];
+      return /publishing autopilot v1/i.test(inputName) || outputs.some((item: any) => item?.step?.type === "process_kdp_work_items");
+    })
+    .map((row) => {
+      const output = (row.output as any) || {};
+      const outputs = Array.isArray(output.outputs) ? output.outputs : [];
+      const autopilotResult = outputs.find((item: any) => item?.step?.type === "process_kdp_work_items")?.result || {};
+      return {
+        id: row.id,
+        status: row.status === "error" ? "error" : "success",
+        created_at: row.finished_at || row.started_at || new Date().toISOString(),
+        processed: Number(autopilotResult.processed || 0),
+        moved_to_review: Number(autopilotResult.moved_to_review || 0),
+        suggestions_created: Number(autopilotResult.suggestions_created || 0),
+        created_draft_ids: Array.isArray(autopilotResult.created_draft_ids) ? autopilotResult.created_draft_ids : [],
+        items: Array.isArray(autopilotResult.items) ? autopilotResult.items : [],
+        error: row.error || null,
+      };
+    });
 
+  const merged = [...logRuns, ...runFallback]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 15);
+
+  return NextResponse.json({ runs: merged });
+}

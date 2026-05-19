@@ -80,6 +80,39 @@ function mergeWithSeedRules(dbRules: Record<string, unknown>[]) {
   return [...existing, ...missingSeeds];
 }
 
+function withDerivedLastRun(
+  rules: Record<string, unknown>[],
+  runs: Record<string, unknown>[],
+  logs: Record<string, unknown>[],
+) {
+  return rules.map((rule) => {
+    const ruleId = String(rule.id || "");
+    const ruleName = String(rule.name || "");
+    if (!ruleId.startsWith("seed-")) return rule;
+
+    const matchingRuns = (runs || [])
+      .filter((run) => String((run.input as any)?.name || "").trim().toLowerCase() === ruleName.trim().toLowerCase())
+      .map((run) => String((run.finished_at as any) || (run.started_at as any) || ""))
+      .filter(Boolean);
+
+    const matchingLogs = (logs || [])
+      .filter((log) => String((log.action as any) || "").trim().toLowerCase() === ruleName.trim().toLowerCase())
+      .map((log) => String((log.created_at as any) || ""))
+      .filter(Boolean);
+
+    const candidate = [...matchingRuns, ...matchingLogs]
+      .map((value) => new Date(value).getTime())
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => b - a)[0];
+
+    if (!candidate) return rule;
+    return {
+      ...rule,
+      last_run_at: new Date(candidate).toISOString(),
+    };
+  });
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -167,7 +200,11 @@ export async function GET() {
   const tableMissing = rulesRes.error && /automation_rules|schema cache|does not exist|relation/i.test(rulesRes.error.message);
   if (tableMissing) return NextResponse.json({ rules: seedRules, runs: [], logs: [], synthetic: true, tableNotReady: true });
 
-  const mergedRules = mergeWithSeedRules((rulesRes.data || []) as Record<string, unknown>[]);
+  const mergedRules = withDerivedLastRun(
+    mergeWithSeedRules((rulesRes.data || []) as Record<string, unknown>[]),
+    (runsRes.data || []) as Record<string, unknown>[],
+    (logsRes.data || []) as Record<string, unknown>[],
+  );
 
   return NextResponse.json({
     rules: mergedRules.length ? mergedRules : seedRules,

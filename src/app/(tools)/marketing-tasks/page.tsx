@@ -63,6 +63,8 @@ export default function MarketingTasksPage() {
   const [loading, setLoading] = useState(true);
   const [tableNotReady, setTableNotReady] = useState(false);
   const [kdpAppliedFilter, setKdpAppliedFilter] = useState<"all" | "applied" | "not_applied">("all");
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -241,6 +243,29 @@ export default function MarketingTasksPage() {
     }
   };
 
+  const cleanupTasks = async () => {
+    setCleanupRunning(true);
+    setCleanupStatus(null);
+    try {
+      const res = await fetch("/api/work-items/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ includeDone: false }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCleanupStatus(data.error || "Kunne ikke rydde oppgaver.");
+      } else {
+        setCleanupStatus(`Rydding fullført: ${data.deleted || 0} oppgaver fjernet.`);
+        await loadTasks();
+      }
+    } catch (err) {
+      setCleanupStatus(err instanceof Error ? err.message : "Kunne ikke rydde oppgaver.");
+    } finally {
+      setCleanupRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -262,8 +287,18 @@ export default function MarketingTasksPage() {
             <option value="not_applied">KDP: Ikke implementert</option>
           </select>
           <Button onClick={() => setShowNew(true)}><Plus size={16} className="mr-2" />Ny oppgave</Button>
+          <Button variant="outline" onClick={cleanupTasks} disabled={cleanupRunning}>
+            {cleanupRunning ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+            Rydd test/duplikater
+          </Button>
         </div>
       </div>
+
+      {cleanupStatus && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {cleanupStatus}
+        </div>
+      )}
 
       {tableNotReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200 flex items-start gap-2">
