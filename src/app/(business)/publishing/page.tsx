@@ -60,6 +60,18 @@ type BusinessOverviewTotals = {
   oliviaNetProfit?: number;
 };
 
+type PublishingAutopilotRun = {
+  id: string;
+  status: "success" | "error";
+  created_at: string;
+  processed: number;
+  moved_to_review: number;
+  suggestions_created: number;
+  created_draft_ids: string[];
+  items: Array<{ id: string; status: string; error?: string }>;
+  error?: string | null;
+};
+
 const kdpTasks = [
   {
     title: "Optimaliser The Olive Oil Cure metadata",
@@ -174,6 +186,8 @@ export default function PublishingHubPage() {
   const [sendingRecommendationId, setSendingRecommendationId] = useState<string | null>(null);
   const [sendingBookId, setSendingBookId] = useState<string | null>(null);
   const [businessTotals, setBusinessTotals] = useState<BusinessOverviewTotals | null>(null);
+  const [autopilotRuns, setAutopilotRuns] = useState<PublishingAutopilotRun[]>([]);
+  const [autopilotLoading, setAutopilotLoading] = useState(false);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -243,10 +257,28 @@ export default function PublishingHubPage() {
     }
   }
 
+  async function loadAutopilotResults() {
+    setAutopilotLoading(true);
+    try {
+      const res = await fetch("/api/publishing/autopilot-results", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke hente autopilot-resultater.");
+        return;
+      }
+      setAutopilotRuns(data.runs || []);
+    } catch (err) {
+      console.error("Could not load autopilot results:", err);
+    } finally {
+      setAutopilotLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadBooks();
     loadRecommendations();
     loadBusinessOverviewTotals();
+    loadAutopilotResults();
   }, []);
 
   async function pushRecommendation(recommendation: PublishingRecommendation) {
@@ -556,6 +588,59 @@ export default function PublishingHubPage() {
           {hubStatus}
         </div>
       )}
+
+      <Card className="border-cyan-500/20 bg-cyan-500/5">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-white">Autopilot resultater</CardTitle>
+            <Button variant="outline" size="sm" onClick={loadAutopilotResults} disabled={autopilotLoading}>
+              {autopilotLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
+              Oppdater
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {autopilotRuns.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              Ingen kjøringer logget ennå. Kjør Publishing Autopilot v1 i Automasjon for å se resultatene her.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {autopilotRuns.slice(0, 5).map((run) => (
+                <div key={run.id} className="rounded-lg border border-slate-700/40 bg-slate-900/60 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={run.status === "success" ? "success" : "destructive"} className="text-[10px]">
+                      {run.status}
+                    </Badge>
+                    <span className="text-xs text-slate-400">{new Date(run.created_at).toLocaleString("nb-NO")}</span>
+                  </div>
+                  <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-3">
+                    <p>Prosessert: <span className="text-white">{run.processed}</span></p>
+                    <p>Flyttet til REVIEW: <span className="text-white">{run.moved_to_review}</span></p>
+                    <p>Forslag laget: <span className="text-white">{run.suggestions_created}</span></p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Draft-IDer: {run.created_draft_ids.length ? run.created_draft_ids.join(", ") : "Ingen (KDP-spor oppdaterer oppgaver direkte)."}
+                  </p>
+                  {run.items?.length > 0 && (
+                    <div className="mt-2 rounded border border-slate-700/40 bg-slate-950/40 p-2">
+                      <p className="mb-1 text-[11px] text-slate-400">Oppgaver:</p>
+                      <ul className="space-y-1 text-[11px] text-slate-300">
+                        {run.items.slice(0, 5).map((item) => (
+                          <li key={item.id}>
+                            {item.id.slice(0, 8)}… - {item.status}
+                            {item.error ? ` (${item.error})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {booksTableNotReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">

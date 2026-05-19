@@ -71,7 +71,15 @@ export async function runPublishingAutopilot(
     .limit(limit);
 
   if (error) throw error;
-  if (!items?.length) return { processed: 0, moved_to_review: 0, suggestions_created: 0, items: [] };
+  if (!items?.length) {
+    return {
+      processed: 0,
+      moved_to_review: 0,
+      suggestions_created: 0,
+      created_draft_ids: [] as string[],
+      items: [],
+    };
+  }
 
   const results: Array<{ id: string; status: string; error?: string }> = [];
   let movedToReview = 0;
@@ -129,6 +137,7 @@ export async function runPublishingAutopilot(
     processed: results.length,
     moved_to_review: movedToReview,
     suggestions_created: suggestionsCreated,
+    created_draft_ids: [] as string[],
     items: results,
   };
 }
