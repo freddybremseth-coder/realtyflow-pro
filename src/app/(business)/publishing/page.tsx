@@ -1171,7 +1171,7 @@ export default function PublishingHubPage() {
           )}
           {workshopQuestions.length > 0 && (
             <div className="rounded border border-slate-700/40 bg-slate-900/60 p-3">
-              <p className="mb-1 text-xs text-slate-400">Avklaringsspørsmål fra AI</p>
+              <p className="mb-1 text-xs text-slate-400">Avklaringsspørsmål fra AI (Workshop v2)</p>
               <div className="space-y-2">
                 {workshopQuestions.slice(0, 8).map((q, i) => (
                   <div key={`${i}-${q}`} className="space-y-1">
