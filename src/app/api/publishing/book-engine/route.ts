@@ -94,6 +94,27 @@ JSON schema:
   });
 }
 
+async function loadSeriesContext(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  seriesName: string,
+) {
+  if (!seriesName) return [];
+  const { data } = await supabase
+    .from("publishing_books")
+    .select("title,subtitle,notes,next_action,role,status")
+    .eq("series_name", seriesName)
+    .order("updated_at", { ascending: false })
+    .limit(15);
+  return (data || []).map((row: any) => ({
+    title: row.title,
+    subtitle: row.subtitle,
+    role: row.role,
+    status: row.status,
+    notes: row.notes,
+    next_action: row.next_action,
+  }));
+}
+
 async function generateImagePlan(project: Record<string, any>, toc: Array<Record<string, any>>, chapterDrafts: Array<Record<string, any>>) {
   const prompt = `
 Du er creative director for bokillustrasjoner. Returner KUN gyldig JSON.
@@ -381,6 +402,8 @@ export async function POST(request: NextRequest) {
     subtitle: String(body.subtitle || "").trim(),
     language: String(body.language || "en"),
     niche: String(body.niche || "olive_oil_mediterranean"),
+    genre: String(body.genre || "guide"),
+    series_name: String(body.series_name || ""),
     audience: String(body.audience || "health-conscious readers 40+"),
     positioning: String(body.positioning || ""),
     target_words: Number(body.target_words || 30000),
@@ -389,10 +412,12 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    const seoPlan = await generateSeoPlan(input);
-    const authorPlan = await generateAuthorPlan(input, seoPlan);
+    const seriesContext = await loadSeriesContext(supabase, input.series_name);
+    const enrichedInput = { ...input, series_context: seriesContext };
+    const seoPlan = await generateSeoPlan(enrichedInput);
+    const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
     const insertPayload = {
-      ...input,
+      ...enrichedInput,
       status: "generated",
       metadata_plan: seoPlan,
       outline_plan: {

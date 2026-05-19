@@ -47,6 +47,8 @@ JSON schema:
   }
 
   const selectedDirection = String(body.selected_direction || "");
+  const genre = String(body.genre || "guide");
+  const seriesName = String(body.series_name || "");
   const goals = Array.isArray(body.goals) ? body.goals.map(String) : [];
   const contentFocus = String(body.content_focus || "");
   const style = String(body.style || "practical");
@@ -57,7 +59,7 @@ JSON schema:
 Du er en bokstrateg og KDP-planlegger. Returner KUN gyldig JSON.
 
 Input:
-${JSON.stringify({ theme, selectedDirection, goals, contentFocus, style, lengthPages, language }, null, 2)}
+${JSON.stringify({ theme, selectedDirection, genre, seriesName, goals, contentFocus, style, lengthPages, language }, null, 2)}
 
 Lag en konkret bokplan klar for produksjon:
 - tittel + undertittel

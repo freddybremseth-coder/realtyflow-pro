@@ -264,6 +264,8 @@ export default function PublishingHubPage() {
   const [bookEngineInput, setBookEngineInput] = useState({
     title: "The Mediterranean Olive Oil Cookbook for Beginners",
     subtitle: "100 Simple Anti-Inflammatory Recipes, 14-Day Meal Plan and EVOO Guide",
+    genre: "guide",
+    series_name: "Mediterranean Olive Oil",
     language: "en",
     target_pages: "180",
     target_words: "32000",
@@ -579,6 +581,8 @@ export default function PublishingHubPage() {
           mode: "plan",
           theme: workshopTheme,
           selected_direction: selectedDirection,
+          genre: bookEngineInput.genre || "guide",
+          series_name: bookEngineInput.series_name || "",
           goals: workshopGoals,
           content_focus: workshopContentFocus,
           style: workshopStyle,
@@ -1128,6 +1132,44 @@ export default function PublishingHubPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <Input placeholder="Tittel" value={bookEngineInput.title} onChange={(e) => setBookEngineInput((p) => ({ ...p, title: e.target.value }))} />
             <Input placeholder="Undertittel" value={bookEngineInput.subtitle} onChange={(e) => setBookEngineInput((p) => ({ ...p, subtitle: e.target.value }))} />
+            <select
+              value={bookEngineInput.genre}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, genre: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+            >
+              <option value="guide">Guide / Fagbok</option>
+              <option value="cookbook">Kokebok</option>
+              <option value="memoir">Biografi / Memoir</option>
+              <option value="thriller">Thriller</option>
+              <option value="action">Action / Adventure</option>
+              <option value="children">Barnebok</option>
+              <option value="self_help">Self-help</option>
+              <option value="business">Business</option>
+              <option value="travel">Reise</option>
+              <option value="romance">Romance</option>
+              <option value="fantasy">Fantasy</option>
+              <option value="sci_fi">Sci-Fi</option>
+            </select>
+            <select
+              value={bookEngineInput.series_name}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, series_name: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+            >
+              <option value="">Ingen serie</option>
+              {Array.from(
+                new Set(
+                  books
+                    .map((b) => (b.series_name || "").trim())
+                    .filter(Boolean),
+                ),
+              )
+                .sort((a, b) => a.localeCompare(b))
+                .map((seriesName) => (
+                  <option key={seriesName} value={seriesName}>
+                    {seriesName}
+                  </option>
+                ))}
+            </select>
             <Input placeholder="Språk (en/no)" value={bookEngineInput.language} onChange={(e) => setBookEngineInput((p) => ({ ...p, language: e.target.value }))} />
             <Input placeholder="Målsider" value={bookEngineInput.target_pages} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_pages: e.target.value }))} />
             <Input placeholder="Målord" value={bookEngineInput.target_words} onChange={(e) => setBookEngineInput((p) => ({ ...p, target_words: e.target.value }))} />
