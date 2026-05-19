@@ -65,6 +65,7 @@ export default function MarketingTasksPage() {
   const [kdpAppliedFilter, setKdpAppliedFilter] = useState<"all" | "applied" | "not_applied">("all");
   const [cleanupRunning, setCleanupRunning] = useState(false);
   const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   const loadTasks = async () => {
     setLoading(true);
@@ -100,8 +101,12 @@ export default function MarketingTasksPage() {
   const copyText = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setActionStatus("Kopiert til utklippstavlen.");
+      return true;
     } catch (err) {
       console.error("Copy failed:", err);
+      setActionStatus("Kunne ikke kopiere automatisk. Viser tekst for manuell kopiering.");
+      return false;
     }
   };
 
@@ -412,7 +417,11 @@ export default function MarketingTasksPage() {
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Button
                       variant="outline"
-                      onClick={() => copyText(buildKdpExportText(selectedTask))}
+                      onClick={async () => {
+                        const payload = buildKdpExportText(selectedTask);
+                        const ok = await copyText(payload);
+                        if (!ok) window.prompt("KDP-pakke (kopier manuelt):", payload);
+                      }}
                     >
                       Eksporter KDP-pakke
                     </Button>
@@ -426,6 +435,9 @@ export default function MarketingTasksPage() {
                   <Button className="mt-3 w-full" onClick={() => approveKdpSuggestion(selectedTask)}>
                     Godkjenn forslag (sett DONE)
                   </Button>
+                  {actionStatus && (
+                    <p className="mt-2 text-xs text-slate-300">{actionStatus}</p>
+                  )}
                 </div>
               )}
               <div className="flex flex-wrap gap-2 mb-4">
