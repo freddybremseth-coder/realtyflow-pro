@@ -61,6 +61,7 @@ type BusinessOverviewTotals = {
 };
 
 type PublishingImpact = {
+  hard_mode?: boolean;
   totals?: {
     books: number;
     orders: number;
@@ -211,6 +212,7 @@ export default function PublishingHubPage() {
   const [autopilotLoading, setAutopilotLoading] = useState(false);
   const [impact, setImpact] = useState<PublishingImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
+  const [hardModeSaving, setHardModeSaving] = useState(false);
   const [newBook, setNewBook] = useState({
     title: "",
     subtitle: "",
@@ -308,6 +310,29 @@ export default function PublishingHubPage() {
       console.error("Could not load impact:", err);
     } finally {
       setImpactLoading(false);
+    }
+  }
+
+  async function setHardMode(enabled: boolean) {
+    setHardModeSaving(true);
+    setHubStatus(null);
+    try {
+      const res = await fetch("/api/publishing/hard-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke endre Hard Mode.");
+        return;
+      }
+      setHubStatus(enabled ? "Hard Mode aktivert for Publishing Growth Loop." : "Hard Mode deaktivert.");
+      await loadImpact();
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke endre Hard Mode.");
+    } finally {
+      setHardModeSaving(false);
     }
   }
 
@@ -631,10 +656,24 @@ export default function PublishingHubPage() {
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-white">KDP Impact Dashboard</CardTitle>
-            <Button variant="outline" size="sm" onClick={loadImpact} disabled={impactLoading}>
-              {impactLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
-              Oppdater
-            </Button>
+            <div className="flex items-center gap-2">
+              <Badge variant={impact?.hard_mode ? "destructive" : "secondary"} className="text-[10px]">
+                {impact?.hard_mode ? "Hard Mode: På" : "Hard Mode: Av"}
+              </Badge>
+              <Button
+                variant={impact?.hard_mode ? "outline" : "secondary"}
+                size="sm"
+                onClick={() => setHardMode(!impact?.hard_mode)}
+                disabled={hardModeSaving}
+              >
+                {hardModeSaving ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                {impact?.hard_mode ? "Skru av Hard Mode" : "Aktiver Hard Mode"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={loadImpact} disabled={impactLoading}>
+                {impactLoading ? <Loader2 className="mr-2 animate-spin" size={14} /> : <RefreshCw className="mr-2" size={14} />}
+                Oppdater
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

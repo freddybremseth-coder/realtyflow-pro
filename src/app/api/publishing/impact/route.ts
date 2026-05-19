@@ -15,7 +15,7 @@ export async function GET() {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [booksRes, importsRes] = await Promise.all([
+  const [booksRes, importsRes, systemRes] = await Promise.all([
     supabase
       .from("publishing_books")
       .select("id,title,orders,royalties,reviews_count,average_rating,role,status,updated_at")
@@ -25,6 +25,7 @@ export async function GET() {
       .select("id,total_orders,total_royalties,currency,created_at")
       .order("created_at", { ascending: false })
       .limit(2),
+    supabase.from("brand_settings").select("settings").eq("brand_id", "_system").maybeSingle(),
   ]);
 
   if (booksRes.error) return NextResponse.json({ error: booksRes.error.message }, { status: 500 });
@@ -62,6 +63,7 @@ export async function GET() {
     .map((book) => ({ id: book.id, title: book.title, role: book.role || "support" }));
 
   return NextResponse.json({
+    hard_mode: Boolean((systemRes.data as any)?.settings?.publishing_hard_mode === true),
     totals: {
       books: books.length,
       orders: totals.orders,
@@ -75,4 +77,3 @@ export async function GET() {
     no_sales_books: noSalesBooks,
   });
 }
-

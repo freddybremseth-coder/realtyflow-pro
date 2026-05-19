@@ -28,7 +28,7 @@ type GrowthAction = {
   ai_score: number;
 };
 
-function buildActions(book: Book): GrowthAction[] {
+function buildActions(book: Book, hardMode = false): GrowthAction[] {
   const actions: GrowthAction[] = [];
   const reviews = Number(book.reviews_count || 0);
   const orders = Number(book.orders || 0);
@@ -61,22 +61,22 @@ function buildActions(book: Book): GrowthAction[] {
   if (orders === 0 && spend > 0) {
     actions.push({
       type: "price",
-      priority: "HIGH",
+      priority: hardMode ? "CRITICAL" : "HIGH",
       title: `Pris-test for ${book.title}`,
       description: "Du bruker annonsekroner uten salgssignal. Test pris for bedre konvertering.",
       next_action: "Test Kindle-pris i 7 dager (f.eks. 2.99) og mål CTR/ordrer.",
-      ai_score: 84,
+      ai_score: hardMode ? 92 : 84,
     });
   }
 
   if (orders === 0 && reviews < 15) {
     actions.push({
       type: "cover",
-      priority: "HIGH",
+      priority: hardMode ? "CRITICAL" : "HIGH",
       title: `Cover-thumbnail test: ${book.title}`,
       description: "Ved null salg er thumbnail ofte hovedflaskehals.",
       next_action: "Bestill 2 cover-varianter og kjør A/B-test i listing + annonser.",
-      ai_score: 82,
+      ai_score: hardMode ? 91 : 82,
     });
   }
 
@@ -113,6 +113,17 @@ function buildActions(book: Book): GrowthAction[] {
     });
   }
 
+  if (hardMode && orders === 0) {
+    actions.push({
+      type: "ads",
+      priority: "HIGH",
+      title: `Hard mode: 14-dagers salgs-sprint for ${book.title}`,
+      description: "Boken har null salg. Kjør tett metadata + cover + pris + ads-loop til vi får første ordre.",
+      next_action: "Oppdater listing nå, kjør lavbudsjett exact+product Ads og evaluer hver 48. time.",
+      ai_score: 94,
+    });
+  }
+
   return actions;
 }
 
@@ -120,8 +131,21 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function runPublishingGrowthLoop(supabase: SupabaseClient, options: { limit?: number } = {}) {
+async function readHardMode(supabase: SupabaseClient) {
+  try {
+    const { data } = await supabase.from("brand_settings").select("settings").eq("brand_id", "_system").maybeSingle();
+    return Boolean((data as any)?.settings?.publishing_hard_mode === true);
+  } catch {
+    return false;
+  }
+}
+
+export async function runPublishingGrowthLoop(
+  supabase: SupabaseClient,
+  options: { limit?: number; hardMode?: boolean } = {},
+) {
   const limit = Math.min(Math.max(Number(options.limit || 25), 1), 100);
+  const hardMode = typeof options.hardMode === "boolean" ? options.hardMode : await readHardMode(supabase) || process.env.PUBLISHING_HARD_MODE === "true";
   const { data: books, error } = await supabase
     .from("publishing_books")
     .select("id,title,subtitle,asin,role,status,price,reviews_count,average_rating,orders,royalties,ad_spend,keywords,main_category,series_name,updated_at")
@@ -140,7 +164,7 @@ export async function runPublishingGrowthLoop(supabase: SupabaseClient, options:
   const inserts: Record<string, unknown>[] = [];
 
   for (const book of rows) {
-    const actions = buildActions(book);
+    const actions = buildActions(book, hardMode);
     for (const action of actions) {
       const sourceId = `growthloop:${todayKey()}:${book.id}:${action.type}`;
       if (existingOpen.has(sourceId)) continue;
@@ -158,6 +182,7 @@ export async function runPublishingGrowthLoop(supabase: SupabaseClient, options:
         ai_score: action.ai_score,
         metadata: {
           loop: "publishing_growth_v1",
+          hard_mode: hardMode,
           book_id: book.id,
           book_title: book.title,
           action_type: action.type,
@@ -182,7 +207,7 @@ export async function runPublishingGrowthLoop(supabase: SupabaseClient, options:
   return {
     books_scanned: rows.length,
     actions_created: inserts.length,
+    hard_mode: hardMode,
     date: todayKey(),
   };
 }
-
