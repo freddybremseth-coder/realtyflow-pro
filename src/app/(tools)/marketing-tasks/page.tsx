@@ -23,6 +23,7 @@ interface Task {
   nextAction?: string;
   aiScore?: number;
   synthetic?: boolean;
+  metadata?: Record<string, any>;
 }
 
 const cols: { key: TaskStatus; label: string; color: string }[] = [
@@ -49,6 +50,7 @@ function mapWorkItem(item: any): Task {
     nextAction: item.next_action || undefined,
     aiScore: item.ai_score || 0,
     synthetic: Boolean(item.metadata?.synthetic || String(item.id).includes("-")),
+    metadata: item.metadata || {},
   };
 }
 
@@ -89,6 +91,47 @@ export default function MarketingTasksPage() {
       if (!res.ok) await loadTasks();
     } catch {
       await loadTasks();
+    }
+  };
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  };
+
+  const approveKdpSuggestion = async (task: Task) => {
+    const existing = (task.metadata || {}) as Record<string, any>;
+    const autopilot = existing.autopilot || {};
+    const metadata = {
+      ...existing,
+      autopilot: {
+        ...autopilot,
+        approved: true,
+        approved_at: new Date().toISOString(),
+        approved_by: "freddy",
+      },
+    };
+
+    try {
+      const res = await fetch("/api/work-items", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: task.id,
+          status: "DONE",
+          next_action: "Forslag godkjent. Gjennomfør oppdateringer i Amazon KDP.",
+          metadata,
+        }),
+      });
+      if (res.ok) {
+        await loadTasks();
+        setSelectedTask(null);
+      }
+    } catch (err) {
+      console.error("Failed to approve KDP suggestion:", err);
     }
   };
 
@@ -191,6 +234,65 @@ export default function MarketingTasksPage() {
                 <Button variant="ghost" size="icon" onClick={() => setSelectedTask(null)}><X size={18} /></Button>
               </div>
               {selectedTask.description && <p className="text-sm text-slate-300 mb-4">{selectedTask.description}</p>}
+              {["kdp", "publishing"].includes(String(selectedTask.sourceType || "").toLowerCase()) &&
+                selectedTask.metadata?.autopilot?.suggestion && (
+                <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                  <p className="mb-2 text-sm font-semibold text-amber-200">Amazon/KDP AI-forslag</p>
+                  <div className="space-y-2 text-xs text-slate-200">
+                    <div>
+                      <p className="text-slate-400">Title suggestion</p>
+                      <p>{selectedTask.metadata.autopilot.suggestion.title_suggestion}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => copyText(String(selectedTask.metadata?.autopilot?.suggestion?.title_suggestion || ""))}
+                      >
+                        Kopier tittel
+                      </Button>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">Subtitle suggestion</p>
+                      <p>{selectedTask.metadata.autopilot.suggestion.subtitle_suggestion}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => copyText(String(selectedTask.metadata?.autopilot?.suggestion?.subtitle_suggestion || ""))}
+                      >
+                        Kopier undertittel
+                      </Button>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">Backend keywords</p>
+                      <p>{(selectedTask.metadata.autopilot.suggestion.backend_keywords || []).join(", ")}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => copyText((selectedTask.metadata?.autopilot?.suggestion?.backend_keywords || []).join(", "))}
+                      >
+                        Kopier keywords
+                      </Button>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">Kategorier</p>
+                      <p>{(selectedTask.metadata.autopilot.suggestion.category_candidates || []).join(" | ")}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-1"
+                        onClick={() => copyText((selectedTask.metadata?.autopilot?.suggestion?.category_candidates || []).join("\n"))}
+                      >
+                        Kopier kategorier
+                      </Button>
+                    </div>
+                  </div>
+                  <Button className="mt-3 w-full" onClick={() => approveKdpSuggestion(selectedTask)}>
+                    Godkjenn forslag (sett DONE)
+                  </Button>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 mb-4">
                 <Badge variant="outline">{selectedTask.platform}</Badge>
                 <Badge variant={priorityColors[selectedTask.priority]}>{selectedTask.priority}</Badge>

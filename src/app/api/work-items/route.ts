@@ -339,6 +339,7 @@ export async function PATCH(request: NextRequest) {
   if ("brand_id" in body || "brand" in body) updates.brand_id = body.brand_id || body.brand || null;
   if ("assigned_agent" in body || "platform" in body) updates.assigned_agent = body.assigned_agent || body.platform || null;
   if ("next_action" in body) updates.next_action = body.next_action || null;
+  if ("metadata" in body) updates.metadata = body.metadata || {};
 
   const { data, error } = await supabase.from("work_items").update(updates).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
