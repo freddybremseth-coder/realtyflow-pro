@@ -547,6 +547,21 @@ export async function POST(request: NextRequest) {
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = await generateSeoPlan(enrichedInput);
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
+      const fallbackProject = {
+        ...current,
+        metadata_plan: seoPlan,
+        outline_plan: {
+          book_promise: authorPlan.book_promise || "",
+          toc: asArray(authorPlan.toc),
+          writing_plan: asArray(authorPlan.writing_plan),
+        },
+        chapter_drafts: asArray(authorPlan.sample_chapters),
+      };
+      let chapterDrafts = asArray(authorPlan.sample_chapters);
+      if (chapterDrafts.length === 0) {
+        const batch = await generateChapterDraftBatch(fallbackProject, 2);
+        chapterDrafts = batch.added;
+      }
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
@@ -561,7 +576,7 @@ export async function POST(request: NextRequest) {
             toc: asArray(authorPlan.toc),
             writing_plan: asArray(authorPlan.writing_plan),
           },
-          chapter_drafts: asArray(authorPlan.sample_chapters),
+          chapter_drafts: chapterDrafts,
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
@@ -677,6 +692,21 @@ export async function POST(request: NextRequest) {
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = (current.metadata_plan || {}) as Record<string, any>;
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
+      const fallbackProject = {
+        ...current,
+        metadata_plan: seoPlan,
+        outline_plan: {
+          book_promise: authorPlan.book_promise || "",
+          toc: asArray(authorPlan.toc),
+          writing_plan: asArray(authorPlan.writing_plan),
+        },
+        chapter_drafts: asArray(authorPlan.sample_chapters),
+      };
+      let chapterDrafts = asArray(authorPlan.sample_chapters);
+      if (chapterDrafts.length === 0) {
+        const batch = await generateChapterDraftBatch(fallbackProject, 2);
+        chapterDrafts = batch.added;
+      }
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
@@ -687,7 +717,7 @@ export async function POST(request: NextRequest) {
             toc: asArray(authorPlan.toc),
             writing_plan: asArray(authorPlan.writing_plan),
           },
-          chapter_drafts: asArray(authorPlan.sample_chapters),
+          chapter_drafts: chapterDrafts,
           metadata_plan: {
             ...(current.metadata_plan || {}),
             generation_state: "author_ready",
