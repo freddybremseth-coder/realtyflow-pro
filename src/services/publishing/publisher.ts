@@ -202,15 +202,18 @@ export async function publishToLinkedIn(
   imageUrl?: string,
 ): Promise<PublishResult> {
   const author = accountId.startsWith("urn:") ? accountId : `urn:li:person:${accountId}`;
+  // LinkedIn UGC API requires an uploaded media URN when shareMediaCategory=IMAGE.
+  // We currently don't run the LinkedIn media-upload flow, so publish as a
+  // plain text post and append the image URL when one is present.
+  const text = imageUrl ? `${content}\n\n${imageUrl}` : content;
 
   const postBody: Record<string, unknown> = {
     author,
     lifecycleState: "PUBLISHED",
     specificContent: {
       "com.linkedin.ugc.ShareContent": {
-        shareCommentary: { text: content },
-        shareMediaCategory: imageUrl ? "IMAGE" : "NONE",
-        ...(imageUrl ? { media: [{ status: "READY", originalUrl: imageUrl }] } : {}),
+        shareCommentary: { text },
+        shareMediaCategory: "NONE",
       },
     },
     visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
