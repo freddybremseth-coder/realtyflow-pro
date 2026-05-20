@@ -121,6 +121,11 @@ Du er creative director for bokillustrasjoner. Returner KUN gyldig JSON.
 
 Lag ett forsideprompt og ett bildeprompt per kapittel.
 Ingen tekst i bilder.
+Hvis genre=children:
+- bruk ønsket illustration_style konsekvent
+- opprett en character_bible for alle recurring_characters
+- hvert kapittelprompt må inkludere samme visuelle trekk for gjengangere
+- hvis stil er pixar_like: bruk "3D family animation look, cinematic lighting, expressive faces" (ikke logo/brandnavn)
 
 Prosjekt:
 ${JSON.stringify(
@@ -128,8 +133,12 @@ ${JSON.stringify(
       title: project.title,
       subtitle: project.subtitle,
       language: project.language,
+      genre: project.genre,
       niche: project.niche,
       audience: project.audience,
+      illustration_style: project.illustration_style,
+      consistency_notes: project.consistency_notes,
+      recurring_characters: project.recurring_characters,
       toc,
       chapter_drafts: chapterDrafts.map((d) => ({
         chapter_title: d.chapter_title,
@@ -143,11 +152,18 @@ ${JSON.stringify(
 JSON schema:
 {
   "cover_prompt": "string",
+  "style_guide": "string",
+  "character_bible": [{"name":"string","description":"string","consistency_rules":"string"}],
   "chapter_prompts": [{ "chapter_title": "string", "prompt": "string" }]
 }
 `;
   const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2600, temperature: 0.5 });
-  return safeJsonParse(raw, { cover_prompt: "", chapter_prompts: [] as Array<{ chapter_title: string; prompt: string }> });
+  return safeJsonParse(raw, {
+    cover_prompt: "",
+    style_guide: "",
+    character_bible: [] as Array<{ name: string; description: string; consistency_rules: string }>,
+    chapter_prompts: [] as Array<{ chapter_title: string; prompt: string }>,
+  });
 }
 
 async function persistGeneratedImage(
@@ -196,7 +212,7 @@ async function generateImageFromPrompt(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `Generate a premium photorealistic editorial image: ${prompt}. No text, letters, or watermark.` }] }],
+      contents: [{ parts: [{ text: `Generate a high-quality book illustration based on this exact prompt: ${prompt}. Keep visual continuity if characters are recurring. No text, letters, or watermark.` }] }],
       generationConfig: { responseModalities: ["IMAGE", "TEXT"], temperature: 0.9 },
     }),
     signal: AbortSignal.timeout(60000),
@@ -444,6 +460,8 @@ export async function POST(request: NextRequest) {
       const planned = await generateImagePlan(project as Record<string, any>, toc, chapterDrafts);
       const prompts = asArray<{ chapter_title: string; prompt: string }>(planned.chapter_prompts);
       metadata.image_plan = {
+        style_guide: planned.style_guide || "",
+        character_bible: asArray(planned.character_bible),
         cover: {
           prompt: planned.cover_prompt || `Premium photorealistic book cover concept for "${(project as any).title}", mediterranean tone, no text.`,
           image_url: null,
@@ -497,6 +515,9 @@ export async function POST(request: NextRequest) {
     target_words: Number(body.target_words || 30000),
     target_pages: Number(body.target_pages || 180),
     seed_keywords: asKeywords(body.seed_keywords),
+    illustration_style: String(body.illustration_style || ""),
+    consistency_notes: String(body.consistency_notes || ""),
+    recurring_characters: asKeywords(body.recurring_characters),
   };
 
   const seriesContext = await loadSeriesContext(supabase, input.series_name);

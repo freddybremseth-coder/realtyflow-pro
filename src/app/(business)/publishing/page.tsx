@@ -273,6 +273,9 @@ export default function PublishingHubPage() {
     language: "en",
     target_pages: "180",
     target_words: "32000",
+    illustration_style: "animation",
+    recurring_characters: "",
+    consistency_notes: "",
     audience: "Health-conscious readers 40+ who want practical Mediterranean habits",
     positioning: "Practical, science-aware, no-hype Mediterranean olive oil guide",
     seed_keywords: "mediterranean diet for beginners, extra virgin olive oil guide, anti inflammatory eating, heart healthy mediterranean diet, polyphenols antioxidants",
@@ -1245,6 +1248,33 @@ export default function PublishingHubPage() {
             <Input placeholder="Seed keywords (komma)" value={bookEngineInput.seed_keywords} onChange={(e) => setBookEngineInput((p) => ({ ...p, seed_keywords: e.target.value }))} />
             <Input placeholder="Målgruppe" value={bookEngineInput.audience} onChange={(e) => setBookEngineInput((p) => ({ ...p, audience: e.target.value }))} className="md:col-span-2" />
             <Input placeholder="Posisjonering" value={bookEngineInput.positioning} onChange={(e) => setBookEngineInput((p) => ({ ...p, positioning: e.target.value }))} className="md:col-span-2" />
+            {bookEngineInput.genre === "children" && (
+              <>
+                <select
+                  value={bookEngineInput.illustration_style}
+                  onChange={(e) => setBookEngineInput((p) => ({ ...p, illustration_style: e.target.value }))}
+                  className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                >
+                  <option value="animation">Animasjon</option>
+                  <option value="pixar_like">3D animasjon (Pixar-lignende)</option>
+                  <option value="line_art">Strektegning</option>
+                  <option value="storybook">Klassisk bildebok</option>
+                  <option value="watercolor">Akvarell</option>
+                  <option value="realistic">Realistisk</option>
+                </select>
+                <Input
+                  placeholder="Gjengangere (navn/dyr), separert med komma"
+                  value={bookEngineInput.recurring_characters}
+                  onChange={(e) => setBookEngineInput((p) => ({ ...p, recurring_characters: e.target.value }))}
+                />
+                <Input
+                  placeholder="Konsistensregler (utseende/farger/klær for gjengangere)"
+                  value={bookEngineInput.consistency_notes}
+                  onChange={(e) => setBookEngineInput((p) => ({ ...p, consistency_notes: e.target.value }))}
+                  className="md:col-span-2"
+                />
+              </>
+            )}
           </div>
           {bookEngineProjects.length === 0 ? (
             <p className="text-sm text-slate-400">Ingen Book Engine-prosjekter ennå.</p>
