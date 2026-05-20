@@ -324,6 +324,52 @@ JSON schema:
   return { added, done: missing.length <= added.length };
 }
 
+async function generateOutlineIfMissing(project: Record<string, any>) {
+  const toc = asArray<Record<string, any>>(project.outline_plan?.toc);
+  if (toc.length > 0) return project;
+
+  const prompt = `
+Du er en bokstrateg. Returner KUN gyldig JSON.
+Lag en tydelig kapitteloversikt (TOC) for prosjektet under.
+
+Prosjekt:
+${JSON.stringify(
+    {
+      title: project.title,
+      subtitle: project.subtitle,
+      audience: project.audience,
+      language: project.language,
+      genre: project.genre,
+      positioning: project.positioning,
+      target_words: project.target_words,
+      metadata_plan: project.metadata_plan || {},
+    },
+    null,
+    2,
+  )}
+
+JSON schema:
+{
+  "book_promise": "string",
+  "toc": [{"chapter":1,"title":"string","goal":"string","target_words":1200}],
+  "writing_plan": [{"week":1,"focus":"string","deliverable":"string"}]
+}
+`;
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.45 });
+  const parsed = safeJsonParse<{ book_promise?: string; toc?: Array<Record<string, any>>; writing_plan?: Array<Record<string, any>> }>(
+    raw,
+    { book_promise: "", toc: [], writing_plan: [] },
+  );
+  return {
+    ...project,
+    outline_plan: {
+      book_promise: parsed.book_promise || project.outline_plan?.book_promise || "",
+      toc: asArray(parsed.toc),
+      writing_plan: asArray(parsed.writing_plan),
+    },
+  };
+}
+
 async function generateImageBatch(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   project: Record<string, any>,
@@ -622,11 +668,18 @@ export async function POST(request: NextRequest) {
     const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
 
-    const batch = await generateChapterDraftBatch(project as Record<string, any>, chapterCount);
+    const projectWithOutline = await generateOutlineIfMissing(project as Record<string, any>);
+    const batch = await generateChapterDraftBatch(projectWithOutline, chapterCount);
     const mergedDrafts = [...asArray((project as any).chapter_drafts), ...batch.added];
+    const outlinePlan = projectWithOutline.outline_plan || (project as any).outline_plan || {};
     const { data, error } = await supabase
       .from("publishing_book_projects")
-      .update({ chapter_drafts: mergedDrafts, status: batch.done ? "ready_for_export" : "drafting", updated_at: new Date().toISOString() })
+      .update({
+        outline_plan: outlinePlan,
+        chapter_drafts: mergedDrafts,
+        status: batch.done ? "ready_for_export" : "drafting",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id)
       .select()
       .single();
