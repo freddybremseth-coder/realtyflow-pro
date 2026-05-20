@@ -77,7 +77,7 @@ JSON schema:
   "launch_angle": "string"
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.5 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1600, temperature: 0.45 });
   return safeJsonParse(raw, {
     title: input.title || "Untitled",
     subtitle: input.subtitle || "",
@@ -115,7 +115,7 @@ Krav:
   - Forbedre kun språk, struktur, flyt og lesbarhet.
   - Hvis noe er uklart, skriv [MÅ VERIFISERES] i stedet for å gjette.
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 1800, temperature: 0.55 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1300, temperature: 0.5 });
   return safeJsonParse(raw, {
     book_promise: "Clear practical value for the target reader.",
     toc: [],
@@ -158,7 +158,7 @@ JSON schema:
   "editor_note": "string"
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 1400, temperature: 0.4 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1100, temperature: 0.35 });
   return safeJsonParse(raw, {
     summary: "Automatisk forbedret manus basert på kildetekst.",
     kept: [],
@@ -232,7 +232,7 @@ JSON schema:
   "chapter_prompts": [{ "chapter_title": "string", "prompt": "string" }]
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2600, temperature: 0.5 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1600, temperature: 0.45 });
   return safeJsonParse(raw, {
     cover_prompt: "",
     style_guide: "",
@@ -336,7 +336,7 @@ JSON schema:
   "chapters": [{ "chapter_title": "string", "draft": "string" }]
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.65 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1400, temperature: 0.6 });
   const parsed = safeJsonParse<{ chapters: Array<{ chapter_title: string; draft: string }> }>(raw, { chapters: [] });
   const added = asArray(parsed.chapters).filter((c) => c?.chapter_title && c?.draft);
 
@@ -368,7 +368,7 @@ JSON schema:
   "draft": "string"
 }
 `;
-    const fallbackRaw = await askClaude(strictPrompt, { model: "sonnet", maxTokens: 1400, temperature: 0.62 });
+    const fallbackRaw = await askClaude(strictPrompt, { model: "haiku", maxTokens: 1000, temperature: 0.55 });
     const one = safeJsonParse<{ chapter_title?: string; draft?: string }>(fallbackRaw, {});
     if (one.chapter_title && one.draft) {
       return { added: [{ chapter_title: one.chapter_title, draft: one.draft }], done: missing.length <= 1 };
@@ -408,7 +408,7 @@ JSON schema:
   "writing_plan": [{"week":1,"focus":"string","deliverable":"string"}]
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.45 });
+  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1300, temperature: 0.4 });
   const parsed = safeJsonParse<{ book_promise?: string; toc?: Array<Record<string, any>>; writing_plan?: Array<Record<string, any>> }>(
     raw,
     { book_promise: "", toc: [], writing_plan: [] },
