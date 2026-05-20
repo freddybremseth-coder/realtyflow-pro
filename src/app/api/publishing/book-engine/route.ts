@@ -524,9 +524,25 @@ export async function POST(request: NextRequest) {
   const enrichedInput = { ...input, series_context: seriesContext };
 
   const baseInsertPayload = {
-    ...input,
+    brand_id: input.brand_id,
+    title: input.title,
+    subtitle: input.subtitle,
+    language: input.language,
+    niche: input.niche,
+    genre: input.genre,
+    series_name: input.series_name,
+    audience: input.audience,
+    positioning: input.positioning,
+    target_words: input.target_words,
+    target_pages: input.target_pages,
+    seed_keywords: input.seed_keywords,
     status: "generating",
-    metadata_plan: { generation_state: "started" },
+    metadata_plan: {
+      generation_state: "started",
+      illustration_style: input.illustration_style,
+      consistency_notes: input.consistency_notes,
+      recurring_characters: input.recurring_characters,
+    },
     outline_plan: { book_promise: "", toc: [], writing_plan: [] },
     chapter_drafts: [],
     updated_at: new Date().toISOString(),

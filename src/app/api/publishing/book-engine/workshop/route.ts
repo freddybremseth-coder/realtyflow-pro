@@ -20,11 +20,18 @@ export async function POST(request: NextRequest) {
   if (!theme) return NextResponse.json({ error: "theme is required" }, { status: 400 });
 
   if (mode === "discover") {
+    const genre = String(body.genre || "guide");
+    const illustrationStyle = String(body.illustration_style || "");
     const prompt = `
 Du er en erfaren bokcoach og markedstenker. Returner KUN gyldig JSON.
 
 Brukerens tema:
 ${theme}
+
+Kontekst:
+${JSON.stringify({ genre, illustrationStyle }, null, 2)}
+
+Tilpass spørsmålene til valgt sjanger. Hvis genre=children, inkluder spørsmål som avklarer billedstil, alderstrinn, tone og konsistens for gjengangere.
 
 Lag:
 1) 5 mulige bokretninger med kommersielt potensial

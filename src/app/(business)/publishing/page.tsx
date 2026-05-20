@@ -610,7 +610,12 @@ export default function PublishingHubPage() {
       const res = await fetch("/api/publishing/book-engine/workshop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "discover", theme: workshopTheme }),
+        body: JSON.stringify({
+          mode: "discover",
+          theme: workshopTheme,
+          genre: bookEngineInput.genre || "guide",
+          illustration_style: bookEngineInput.illustration_style || "",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1126,6 +1131,47 @@ export default function PublishingHubPage() {
           <CardTitle className="text-white">Book Workshop (AI + deg)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <select
+              value={bookEngineInput.genre}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, genre: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+            >
+              <option value="guide">Guide / Fagbok</option>
+              <option value="cookbook">Kokebok</option>
+              <option value="memoir">Biografi / Memoir</option>
+              <option value="thriller">Thriller</option>
+              <option value="action">Action / Adventure</option>
+              <option value="children">Barnebok</option>
+              <option value="self_help">Self-help</option>
+              <option value="business">Business</option>
+              <option value="travel">Reise</option>
+              <option value="romance">Romance</option>
+              <option value="fantasy">Fantasy</option>
+              <option value="sci_fi">Sci-Fi</option>
+            </select>
+            {bookEngineInput.genre === "children" ? (
+              <select
+                value={bookEngineInput.illustration_style}
+                onChange={(e) => setBookEngineInput((p) => ({ ...p, illustration_style: e.target.value }))}
+                className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+              >
+                <option value="animation">Animasjon</option>
+                <option value="pixar_like">3D animasjon (Pixar-lignende)</option>
+                <option value="line_art">Strektegning</option>
+                <option value="storybook">Klassisk bildebok</option>
+                <option value="watercolor">Akvarell</option>
+                <option value="realistic">Realistisk</option>
+              </select>
+            ) : (
+              <Input
+                placeholder="Serie (valgfritt)"
+                value={bookEngineInput.series_name}
+                onChange={(e) => setBookEngineInput((p) => ({ ...p, series_name: e.target.value }))}
+                list="series-options"
+              />
+            )}
+          </div>
           <Input
             placeholder="Tema (f.eks: Olivenolje, anti-inflammatorisk livsstil for 40+)"
             value={workshopTheme}
