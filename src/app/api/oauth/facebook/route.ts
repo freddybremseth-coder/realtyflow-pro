@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { buildRedirectUri, getMetaCredentials } from "@/lib/oauth/providers";
 import { createState } from "@/lib/oauth/state";
+import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 /**
  * GET /api/oauth/facebook?brand_id=<id>&return_to=<path>
@@ -18,7 +19,8 @@ import { createState } from "@/lib/oauth/state";
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
-  const brandId = (params.get("brand_id") || params.get("brand") || "").trim();
+  const rawBrandId = (params.get("brand_id") || params.get("brand") || "").trim();
+  const brandId = normalizeBrandId(rawBrandId);
   if (!brandId) {
     return NextResponse.json(
       { error: "brand_id is required. Use /api/oauth/facebook?brand_id=<id>" },

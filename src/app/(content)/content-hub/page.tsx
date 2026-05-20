@@ -363,7 +363,10 @@ export default function ContentHubPage() {
 
   // Normalize brand IDs for matching (zen-eco, zeneco, zen-eco-homes → zeneco)
   const normalizeBrand = useCallback((b: string) => {
-    return b.toLowerCase().replace(/[-_.\s]/g, "").replace(/homes$/, "").replace(/pro$/, "");
+    const n = b.toLowerCase().replace(/[-_.\s]/g, "");
+    if (n === "zenecohomes" || n === "zeneco") return "zeneco";
+    if (n === "pinoso" || n === "pinosoecolife") return "pinosoecolife";
+    return n.replace(/homes$/, "").replace(/pro$/, "");
   }, []);
 
   const brandMatches = useCallback((accountBrand: string, draftBrand: string, accountBrandId?: string | null) => {
@@ -461,10 +464,51 @@ export default function ContentHubPage() {
 
   const fetchConnectedAccounts = useCallback(async () => {
     try {
-      const res = await fetch("/api/social-accounts");
-      const data = await res.json();
-      if (data.accounts) setConnectedAccounts(data.accounts);
-    } catch {}
+      const [legacyRes, oauthRes] = await Promise.allSettled([
+        fetch("/api/social-accounts", { cache: "no-store" }),
+        fetch("/api/oauth/channels", { cache: "no-store" }),
+      ]);
+
+      const merged: { platform: string; account_name: string; brand: string; brand_id?: string | null }[] = [];
+      const seen = new Set<string>();
+
+      if (legacyRes.status === "fulfilled" && legacyRes.value.ok) {
+        const legacyData = await legacyRes.value.json();
+        for (const row of legacyData.accounts || []) {
+          const item = {
+            platform: String(row.platform || ""),
+            account_name: String(row.account_name || row.display_name || row.platform || "Konto"),
+            brand: String(row.brand || row.brand_id || ""),
+            brand_id: row.brand_id || row.brand || null,
+          };
+          const key = `${item.brand_id}|${item.platform}|${item.account_name}`.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(item);
+        }
+      }
+
+      if (oauthRes.status === "fulfilled" && oauthRes.value.ok) {
+        const oauthData = await oauthRes.value.json();
+        for (const row of oauthData.channels || []) {
+          const item = {
+            platform: String(row.platform || ""),
+            account_name: String(row.display_name || row.external_id || row.platform || "Konto"),
+            brand: String(row.brand_id || ""),
+            brand_id: row.brand_id || null,
+          };
+          const key = `${item.brand_id}|${item.platform}|${item.account_name}`.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(item);
+        }
+      }
+
+      setConnectedAccounts(merged);
+    } catch (err) {
+      console.error("Failed to fetch connected accounts:", err);
+      setConnectedAccounts([]);
+    }
   }, []);
 
   const openPublishModal = useCallback((draft: DraftItem) => {

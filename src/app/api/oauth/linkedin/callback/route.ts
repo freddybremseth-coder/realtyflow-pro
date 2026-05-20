@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveTokens, upsertChannel } from "@/lib/oauth/channels";
 import { buildRedirectUri, getLinkedInCredentials } from "@/lib/oauth/providers";
 import { consumeState } from "@/lib/oauth/state";
+import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 /**
  * GET /api/oauth/linkedin/callback
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
   if (!state) {
     return errorRedirect(req, "_unknown", "state_invalid_or_expired");
   }
+  const canonicalBrandId = normalizeBrandId(state.brand_id);
 
   let credentials;
   try {
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     return errorRedirect(
       req,
-      state.brand_id,
+      canonicalBrandId,
       err instanceof Error ? err.message : "linkedin_creds_missing",
       state.return_to,
     );
@@ -80,7 +82,7 @@ export async function GET(req: NextRequest) {
     console.error("[LinkedIn OAuth] token exchange failed:", err);
     return errorRedirect(
       req,
-      state.brand_id,
+      canonicalBrandId,
       err instanceof Error ? err.message : "token_exchange_failed",
       state.return_to,
     );
@@ -100,7 +102,7 @@ export async function GET(req: NextRequest) {
     console.error("[LinkedIn OAuth] userinfo failed:", err);
     return errorRedirect(
       req,
-      state.brand_id,
+      canonicalBrandId,
       err instanceof Error ? err.message : "userinfo_failed",
       state.return_to,
     );
@@ -117,7 +119,7 @@ export async function GET(req: NextRequest) {
   // ─── 3. Persist channel + tokens ────────────────────────────────────────
   try {
     const channel = await upsertChannel({
-      brandId: state.brand_id,
+      brandId: canonicalBrandId,
       platform: "linkedin",
       externalId,
       displayName,
@@ -138,7 +140,7 @@ export async function GET(req: NextRequest) {
     console.error("[LinkedIn OAuth] persist failed:", err);
     return errorRedirect(
       req,
-      state.brand_id,
+      canonicalBrandId,
       err instanceof Error ? err.message : "persist_failed",
       state.return_to,
     );
@@ -146,7 +148,7 @@ export async function GET(req: NextRequest) {
 
   return successRedirect(req, state.return_to, {
     platform: "linkedin",
-    brand: state.brand_id,
+    brand: canonicalBrandId,
     count: 1,
   });
 }

@@ -125,6 +125,19 @@ export function normalizeBrandId(raw?: string | null): string {
   return BRAND_ALIASES[normalized] || normalized;
 }
 
+export function brandIdCandidates(raw?: string | null): string[] {
+  const input = String(raw || "").trim();
+  const canonical = normalizeBrandId(input);
+  if (!canonical) return [];
+
+  const out = new Set<string>([canonical]);
+  if (input) out.add(input);
+  for (const [alias, target] of Object.entries(BRAND_ALIASES)) {
+    if (target === canonical) out.add(alias);
+  }
+  return Array.from(out);
+}
+
 export function classifyPropertyForBrand(property: RealtyRecord, rawBrandId: string): MatchResult {
   const brand_id = normalizeBrandId(rawBrandId);
   const explicitBrand = property.brand_id || property.brand

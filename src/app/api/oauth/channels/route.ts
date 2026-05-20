@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { brandIdCandidates, normalizeBrandId } from "@/lib/realty/brand-rules";
 import { createServerClient } from "@/lib/supabase/server";
 
 /**
@@ -18,7 +19,8 @@ import { createServerClient } from "@/lib/supabase/server";
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
-  const brandId = params.get("brand_id");
+  const rawBrandId = (params.get("brand_id") || "").trim();
+  const brandId = normalizeBrandId(rawBrandId);
   const platform = params.get("platform");
 
   const supabase = createServerClient();
@@ -31,7 +33,14 @@ export async function GET(req: NextRequest) {
     .order("platform")
     .order("display_name");
 
-  if (brandId) chanQuery = chanQuery.eq("brand_id", brandId);
+  if (brandId) {
+    // Backward-compatible alias read: if old rows were persisted with an
+    // alias (e.g. `zenecohomes`) before canonicalization was enforced, still
+    // show them in Settings so they can be reconnected/migrated.
+    const ids = brandIdCandidates(rawBrandId);
+    if (ids.length === 1) chanQuery = chanQuery.eq("brand_id", ids[0]);
+    else chanQuery = chanQuery.in("brand_id", ids);
+  }
   if (platform) chanQuery = chanQuery.eq("platform", platform);
 
   const { data: channels, error: chanErr } = await chanQuery;

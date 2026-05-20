@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { buildRedirectUri, getGoogleCredentials } from "@/lib/oauth/providers";
 import { createState } from "@/lib/oauth/state";
+import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 /**
  * GET /api/oauth/google?brand_id=<id>&service=<youtube|drive>&return_to=<path>
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
 
   // Accept both new and legacy param names. New code should use `brand_id`.
-  const brandId = (params.get("brand_id") || params.get("brand") || "").trim();
+  const rawBrandId = (params.get("brand_id") || params.get("brand") || "").trim();
+  const brandId = normalizeBrandId(rawBrandId);
   if (!brandId) {
     return NextResponse.json(
       { error: "brand_id is required. Use /api/oauth/google?brand_id=<id>" },
