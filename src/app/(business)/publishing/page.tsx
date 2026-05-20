@@ -246,6 +246,7 @@ export default function PublishingHubPage() {
   const [hardModeSaving, setHardModeSaving] = useState(false);
   const [bookEngineLoading, setBookEngineLoading] = useState(false);
   const [bookEngineGenerating, setBookEngineGenerating] = useState(false);
+  const [bookSourceUploading, setBookSourceUploading] = useState(false);
   const [continuingBookEngineId, setContinuingBookEngineId] = useState<string | null>(null);
   const [generatingBookImagesId, setGeneratingBookImagesId] = useState<string | null>(null);
   const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
@@ -276,6 +277,9 @@ export default function PublishingHubPage() {
     illustration_style: "animation",
     recurring_characters: "",
     consistency_notes: "",
+    source_mode: "from_brief",
+    source_instructions: "",
+    source_material: "",
     audience: "Health-conscious readers 40+ who want practical Mediterranean habits",
     positioning: "Practical, science-aware, no-hype Mediterranean olive oil guide",
     seed_keywords: "mediterranean diet for beginners, extra virgin olive oil guide, anti inflammatory eating, heart healthy mediterranean diet, polyphenols antioxidants",
@@ -469,6 +473,33 @@ export default function PublishingHubPage() {
       }
     } finally {
       setBookEngineGenerating(false);
+    }
+  }
+
+  async function uploadBookSourceFile(file?: File | null) {
+    if (!file) return;
+    setBookSourceUploading(true);
+    setHubStatus(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/publishing/book-engine/upload-source", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke lese kildefilen.");
+        return;
+      }
+      setBookEngineInput((prev) => ({
+        ...prev,
+        source_material: String(data.content || ""),
+      }));
+      setHubStatus(
+        `Kildetekst lastet inn (${data.file_name}, ${Number(data.char_count || 0).toLocaleString("nb-NO")} tegn${data.truncated ? ", trimmet" : ""}).`,
+      );
+    } catch (err) {
+      setHubStatus(err instanceof Error ? err.message : "Kunne ikke laste opp kildefil.");
+    } finally {
+      setBookSourceUploading(false);
     }
   }
 
@@ -1332,6 +1363,40 @@ export default function PublishingHubPage() {
             <Input placeholder="Seed keywords (komma)" value={bookEngineInput.seed_keywords} onChange={(e) => setBookEngineInput((p) => ({ ...p, seed_keywords: e.target.value }))} />
             <Input placeholder="Målgruppe" value={bookEngineInput.audience} onChange={(e) => setBookEngineInput((p) => ({ ...p, audience: e.target.value }))} className="md:col-span-2" />
             <Input placeholder="Posisjonering" value={bookEngineInput.positioning} onChange={(e) => setBookEngineInput((p) => ({ ...p, positioning: e.target.value }))} className="md:col-span-2" />
+            <select
+              value={bookEngineInput.source_mode}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, source_mode: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+            >
+              <option value="from_brief">Lag ny bok fra brief/idé</option>
+              <option value="rewrite">Forbedre eksisterende manus</option>
+              <option value="expand">Bygg videre på førsteutkast</option>
+            </select>
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-200 hover:bg-slate-800">
+              {bookSourceUploading ? "Laster opp..." : "Last opp kildefil (.txt, .md, .docx)"}
+              <input
+                type="file"
+                className="hidden"
+                accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  uploadBookSourceFile(file);
+                }}
+              />
+            </label>
+            <Input
+              placeholder="Hva skal AI endre/legge til? (tone, målgruppe, slutt, tempo, kapitler...)"
+              value={bookEngineInput.source_instructions}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, source_instructions: e.target.value }))}
+              className="md:col-span-2"
+            />
+            <textarea
+              value={bookEngineInput.source_material}
+              onChange={(e) => setBookEngineInput((p) => ({ ...p, source_material: e.target.value }))}
+              placeholder="Lim inn hele boka, førsteutkast eller forklaring her (valgfritt hvis du har lastet opp fil)."
+              className="min-h-[180px] w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 md:col-span-2"
+            />
             {bookEngineInput.genre === "children" && (
               <>
                 <select

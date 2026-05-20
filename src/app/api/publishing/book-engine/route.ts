@@ -34,7 +34,18 @@ function asKeywords(raw: unknown) {
     .filter(Boolean);
 }
 
+function compactForPrompt(input: Record<string, any>) {
+  const source = String(input.source_material || "");
+  return {
+    ...input,
+    source_material: source ? source.slice(0, 12000) : "",
+    source_material_truncated: source.length > 12000,
+    source_material_length: source.length,
+  };
+}
+
 async function generateSeoPlan(input: Record<string, any>) {
+  const promptInput = compactForPrompt(input);
   const prompt = `
 Du er en KDP SEO-ekspert. Returner KUN gyldig JSON.
 
@@ -43,7 +54,7 @@ Mål:
 - Ingen medisinske garantier eller udokumenterte påstander.
 
 Input:
-${JSON.stringify(input, null, 2)}
+${JSON.stringify(promptInput, null, 2)}
 
 JSON schema:
 {
@@ -71,11 +82,12 @@ JSON schema:
 }
 
 async function generateAuthorPlan(input: Record<string, any>, seoPlan: Record<string, any>) {
+  const promptInput = compactForPrompt(input);
   const prompt = `
 Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
 
 Input:
-${JSON.stringify({ ...input, seoPlan }, null, 2)}
+${JSON.stringify({ ...promptInput, seoPlan }, null, 2)}
 
 JSON schema:
 {
@@ -383,6 +395,9 @@ export async function POST(request: NextRequest) {
         target_words: Number(current.target_words || 30000),
         target_pages: Number(current.target_pages || 180),
         seed_keywords: asKeywords(current.seed_keywords),
+        source_mode: String(current.metadata_plan?.source_mode || "from_brief"),
+        source_material: String(current.metadata_plan?.source_material || ""),
+        source_instructions: String(current.metadata_plan?.source_instructions || ""),
       };
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
       const enrichedInput = { ...input, series_context: seriesContext };
@@ -448,6 +463,9 @@ export async function POST(request: NextRequest) {
       illustration_style: String(current.metadata_plan?.illustration_style || ""),
       consistency_notes: String(current.metadata_plan?.consistency_notes || ""),
       recurring_characters: asKeywords(current.metadata_plan?.recurring_characters),
+      source_mode: String(current.metadata_plan?.source_mode || "from_brief"),
+      source_material: String(current.metadata_plan?.source_material || ""),
+      source_instructions: String(current.metadata_plan?.source_instructions || ""),
     };
     try {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
@@ -502,6 +520,9 @@ export async function POST(request: NextRequest) {
       illustration_style: String(current.metadata_plan?.illustration_style || ""),
       consistency_notes: String(current.metadata_plan?.consistency_notes || ""),
       recurring_characters: asKeywords(current.metadata_plan?.recurring_characters),
+      source_mode: String(current.metadata_plan?.source_mode || "from_brief"),
+      source_material: String(current.metadata_plan?.source_material || ""),
+      source_instructions: String(current.metadata_plan?.source_instructions || ""),
     };
     try {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
@@ -632,6 +653,9 @@ export async function POST(request: NextRequest) {
     illustration_style: String(body.illustration_style || ""),
     consistency_notes: String(body.consistency_notes || ""),
     recurring_characters: asKeywords(body.recurring_characters),
+    source_mode: String(body.source_mode || "from_brief"),
+    source_material: String(body.source_material || ""),
+    source_instructions: String(body.source_instructions || ""),
   };
 
   const baseInsertPayload = {
@@ -653,6 +677,9 @@ export async function POST(request: NextRequest) {
       illustration_style: input.illustration_style,
       consistency_notes: input.consistency_notes,
       recurring_characters: input.recurring_characters,
+      source_mode: input.source_mode,
+      source_material: input.source_material ? input.source_material.slice(0, 60000) : "",
+      source_instructions: input.source_instructions,
     },
     outline_plan: { book_promise: "", toc: [], writing_plan: [] },
     chapter_drafts: [],
