@@ -84,6 +84,11 @@ Lag en konkret bokplan klar for produksjon:
 - seed keywords
 - kapitteloversikt
 
+Hvis genre er memoir/biografi:
+- Ikke foreslå nye faktiske hendelser/personer som ikke kommer fra brukerens materiale.
+- Prioriter språkforbedring, struktur og tydelig narrativ flyt.
+- Merk usikker informasjon som "Må verifiseres".
+
 JSON schema:
 {
   "title":"string",

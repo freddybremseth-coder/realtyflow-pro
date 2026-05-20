@@ -100,6 +100,11 @@ JSON schema:
 
 Krav:
 - Lag kun ${chapterCount} sample_chapters i første generering (resten kommer via Fortsett skriv).
+- Hvis genre er memoir/biografi:
+  - IKKE finn opp nye fakta, personer, hendelser, datoer, steder eller dialog.
+  - IKKE legg til detaljer som ikke finnes i kildetekst eller brukerens instruks.
+  - Forbedre kun språk, struktur, flyt og lesbarhet.
+  - Hvis noe er uklart, skriv [MÅ VERIFISERES] i stedet for å gjette.
 `;
   const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 1800, temperature: 0.55 });
   return safeJsonParse(raw, {
