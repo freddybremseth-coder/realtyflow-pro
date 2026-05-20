@@ -410,7 +410,7 @@ export default function PublishingHubPage() {
     setBookEngineGenerating(true);
     setHubStatus(null);
     try {
-      const res = await fetch("/api/publishing/book-engine", {
+      const createRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -420,15 +420,53 @@ export default function PublishingHubPage() {
           target_words: Number(bookEngineInput.target_words || 32000),
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setHubStatus(data.error || "Book Engine feilet.");
+      const createData = await createRes.json().catch(() => ({}));
+      if (!createRes.ok) {
+        setHubStatus(createData.error || "Book Engine feilet.");
         return;
       }
+
+      const projectId = String(createData?.project?.id || "").trim();
+      if (!projectId) {
+        setHubStatus("Prosjekt ble opprettet uten id. Prøv igjen.");
+        return;
+      }
+
+      setHubStatus("Prosjekt opprettet. Kjører SEO-plan...");
+      const seoRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_seo", id: projectId }),
+      });
+      const seoData = await seoRes.json().catch(() => ({}));
+      if (!seoRes.ok) {
+        setHubStatus(seoData.error || "SEO-generering feilet. Prosjektet ligger klart for retry.");
+        await loadBookEngineProjects();
+        return;
+      }
+
+      setHubStatus("SEO-plan ferdig. Lager bokstruktur og kapittelutkast...");
+      const authorRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_author", id: projectId }),
+      });
+      const authorData = await authorRes.json().catch(() => ({}));
+      if (!authorRes.ok) {
+        setHubStatus(authorData.error || "Forfatterplan feilet. Prosjektet ligger klart for retry.");
+        await loadBookEngineProjects();
+        return;
+      }
+
       setHubStatus("Book Engine v1 har laget SEO-plan + bokstruktur + kapittelutkast.");
       await loadBookEngineProjects();
     } catch (err) {
-      setHubStatus(err instanceof Error ? err.message : "Book Engine feilet.");
+      const message = err instanceof Error ? err.message : "Book Engine feilet.";
+      if (message.toLowerCase().includes("failed to fetch")) {
+        setHubStatus("Nettverksavbrudd under generering. Trykk Oppdater og bruk Prøv igjen på prosjektet.");
+      } else {
+        setHubStatus(message);
+      }
     } finally {
       setBookEngineGenerating(false);
     }

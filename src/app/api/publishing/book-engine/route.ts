@@ -426,6 +426,120 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (mode === "generate_seo") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for generate_seo mode" }, { status: 400 });
+    const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+    const current = project as Record<string, any>;
+    const input = {
+      brand_id: String(current.brand_id || "freddypublishing"),
+      title: String(current.title || "").trim(),
+      subtitle: String(current.subtitle || "").trim(),
+      language: String(current.language || "en"),
+      niche: String(current.niche || "olive_oil_mediterranean"),
+      genre: String(current.genre || "guide"),
+      series_name: String(current.series_name || ""),
+      audience: String(current.audience || "health-conscious readers 40+"),
+      positioning: String(current.positioning || ""),
+      target_words: Number(current.target_words || 30000),
+      target_pages: Number(current.target_pages || 180),
+      seed_keywords: asKeywords(current.seed_keywords),
+      illustration_style: String(current.metadata_plan?.illustration_style || ""),
+      consistency_notes: String(current.metadata_plan?.consistency_notes || ""),
+      recurring_characters: asKeywords(current.metadata_plan?.recurring_characters),
+    };
+    try {
+      const seriesContext = await loadSeriesContext(supabase, input.series_name);
+      const enrichedInput = { ...input, series_context: seriesContext };
+      const seoPlan = await generateSeoPlan(enrichedInput);
+      const mergedMetadata = {
+        ...(current.metadata_plan || {}),
+        ...seoPlan,
+        generation_state: "seo_ready",
+      };
+      const { data, error } = await supabase
+        .from("publishing_book_projects")
+        .update({ metadata_plan: mergedMetadata, status: "drafting", updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode: "generate_seo", project: data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not generate SEO";
+      await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: "generation_failed",
+          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "seo_failed", generation_error: message },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  if (mode === "generate_author") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for generate_author mode" }, { status: 400 });
+    const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+    const current = project as Record<string, any>;
+    const input = {
+      brand_id: String(current.brand_id || "freddypublishing"),
+      title: String(current.title || "").trim(),
+      subtitle: String(current.subtitle || "").trim(),
+      language: String(current.language || "en"),
+      niche: String(current.niche || "olive_oil_mediterranean"),
+      genre: String(current.genre || "guide"),
+      series_name: String(current.series_name || ""),
+      audience: String(current.audience || "health-conscious readers 40+"),
+      positioning: String(current.positioning || ""),
+      target_words: Number(current.target_words || 30000),
+      target_pages: Number(current.target_pages || 180),
+      seed_keywords: asKeywords(current.seed_keywords),
+      illustration_style: String(current.metadata_plan?.illustration_style || ""),
+      consistency_notes: String(current.metadata_plan?.consistency_notes || ""),
+      recurring_characters: asKeywords(current.metadata_plan?.recurring_characters),
+    };
+    try {
+      const seriesContext = await loadSeriesContext(supabase, input.series_name);
+      const enrichedInput = { ...input, series_context: seriesContext };
+      const seoPlan = (current.metadata_plan || {}) as Record<string, any>;
+      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const { data, error } = await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: "generated",
+          outline_plan: {
+            book_promise: authorPlan.book_promise || "",
+            toc: asArray(authorPlan.toc),
+            writing_plan: asArray(authorPlan.writing_plan),
+          },
+          chapter_drafts: asArray(authorPlan.sample_chapters),
+          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "author_ready" },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode: "generate_author", project: data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not generate author plan";
+      await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: "generation_failed",
+          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "author_failed", generation_error: message },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   if (mode === "continue") {
     const id = String(body.id || "").trim();
     if (!id) return NextResponse.json({ error: "id is required for continue mode" }, { status: 400 });
@@ -520,9 +634,6 @@ export async function POST(request: NextRequest) {
     recurring_characters: asKeywords(body.recurring_characters),
   };
 
-  const seriesContext = await loadSeriesContext(supabase, input.series_name);
-  const enrichedInput = { ...input, series_context: seriesContext };
-
   const baseInsertPayload = {
     brand_id: input.brand_id,
     title: input.title,
@@ -554,47 +665,5 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
   if (createError) return NextResponse.json({ error: createError.message }, { status: 500 });
-
-  try {
-    const seoPlan = await generateSeoPlan(enrichedInput);
-    const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
-    const updatePayload = {
-      status: "generated",
-      metadata_plan: seoPlan,
-      outline_plan: {
-        book_promise: authorPlan.book_promise || "",
-        toc: asArray(authorPlan.toc),
-        writing_plan: asArray(authorPlan.writing_plan),
-      },
-      chapter_drafts: asArray(authorPlan.sample_chapters),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data: generatedProject, error: updateError } = await supabase
-      .from("publishing_book_projects")
-      .update(updatePayload)
-      .eq("id", (createdProject as any).id)
-      .select()
-      .single();
-    if (updateError) {
-      return NextResponse.json({ success: true, project: createdProject, warning: updateError.message });
-    }
-
-    return NextResponse.json({ success: true, project: generatedProject });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not generate book project";
-    await supabase
-      .from("publishing_book_projects")
-      .update({
-        status: "generation_failed",
-        metadata_plan: { generation_state: "failed", generation_error: message },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", (createdProject as any).id);
-    return NextResponse.json({
-      success: true,
-      project: createdProject,
-      warning: `Prosjekt opprettet, men generering stoppet: ${message}`,
-    });
-  }
+  return NextResponse.json({ success: true, project: createdProject, queued: true });
 }
