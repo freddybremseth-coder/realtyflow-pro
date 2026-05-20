@@ -250,6 +250,7 @@ export default function PublishingHubPage() {
   const [continuingBookEngineId, setContinuingBookEngineId] = useState<string | null>(null);
   const [generatingBookImagesId, setGeneratingBookImagesId] = useState<string | null>(null);
   const [exportingBookEngineId, setExportingBookEngineId] = useState<string | null>(null);
+  const [preparingLanguageVersionId, setPreparingLanguageVersionId] = useState<string | null>(null);
   const [retryingBookEngineId, setRetryingBookEngineId] = useState<string | null>(null);
   const [savingProjectSeriesId, setSavingProjectSeriesId] = useState<string | null>(null);
   const [projectSeriesDrafts, setProjectSeriesDrafts] = useState<Record<string, string>>({});
@@ -576,6 +577,35 @@ export default function PublishingHubPage() {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke fortsette bokutkastet.");
     } finally {
       setContinuingBookEngineId(null);
+    }
+  }
+
+  function prepareLanguageVersion(project: BookEngineProject) {
+    const targetLanguage = window.prompt("Målspråk (f.eks. en, no, es, de, fr):", "es");
+    if (!targetLanguage) return;
+    const chapterDrafts = Array.isArray(project.chapter_drafts) ? project.chapter_drafts : [];
+    const sourceText = chapterDrafts
+      .map((ch, i) => `# ${ch.chapter_title || `Kapittel ${i + 1}`}\n\n${ch.draft || ""}`)
+      .join("\n\n");
+    setPreparingLanguageVersionId(project.id);
+    try {
+      setBookEngineInput((prev) => ({
+        ...prev,
+        title: String(project.title || prev.title),
+        subtitle: String(project.subtitle || prev.subtitle || ""),
+        language: targetLanguage.trim().toLowerCase(),
+        genre: String((project as any).genre || prev.genre || "guide"),
+        series_name: String((project as any).series_name || prev.series_name || ""),
+        source_mode: "rewrite",
+        source_material: sourceText || prev.source_material,
+        source_instructions:
+          `Oversett og lokaliser boken til ${targetLanguage.trim().toLowerCase()}. ` +
+          `Behold struktur, budskap og stemme, men tilpass uttrykk naturlig for målspråket.`,
+      }));
+      setHubStatus(`Språkversjon klargjort (${targetLanguage.trim().toLowerCase()}). Trykk Generer bok.`);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setPreparingLanguageVersionId(null);
     }
   }
 
@@ -1508,6 +1538,16 @@ export default function PublishingHubPage() {
                       : 0}
                   </p>
                   <div className="mt-3 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => prepareLanguageVersion(project)}
+                      disabled={preparingLanguageVersionId === project.id}
+                      className="mr-2"
+                    >
+                      {preparingLanguageVersionId === project.id ? <Loader2 className="mr-2 animate-spin" size={14} /> : null}
+                      Lag språkversjon
+                    </Button>
                     <Button
                       size="sm"
                       variant="secondary"
