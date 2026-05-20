@@ -1449,6 +1449,21 @@ export default function PublishingHubPage() {
                   <p className="mt-1 text-xs text-slate-400">
                     {project.language || "en"} · {project.target_pages || "-"} sider · {project.target_words || "-"} ord · {project.status || "draft"}
                   </p>
+                  {project.metadata_plan?.revision_report ? (
+                    <div className="mt-2 rounded border border-cyan-500/30 bg-cyan-500/10 p-2 text-xs text-cyan-100">
+                      <p className="font-semibold">Diff-rapport</p>
+                      <p className="mt-1 text-cyan-50">{String(project.metadata_plan.revision_report.summary || "")}</p>
+                      {Array.isArray(project.metadata_plan.revision_report.kept) && project.metadata_plan.revision_report.kept.length > 0 ? (
+                        <p className="mt-1"><span className="font-semibold">Beholdt:</span> {project.metadata_plan.revision_report.kept.slice(0, 3).join(" · ")}</p>
+                      ) : null}
+                      {Array.isArray(project.metadata_plan.revision_report.changed) && project.metadata_plan.revision_report.changed.length > 0 ? (
+                        <p className="mt-1"><span className="font-semibold">Endret:</span> {project.metadata_plan.revision_report.changed.slice(0, 3).join(" · ")}</p>
+                      ) : null}
+                      {Array.isArray(project.metadata_plan.revision_report.added) && project.metadata_plan.revision_report.added.length > 0 ? (
+                        <p className="mt-1"><span className="font-semibold">Lagt til:</span> {project.metadata_plan.revision_report.added.slice(0, 3).join(" · ")}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-2 flex flex-col gap-2 md:flex-row">
                     <Input
                       placeholder="Serie (skriv ny eller velg)"

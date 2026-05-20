@@ -106,6 +106,51 @@ JSON schema:
   });
 }
 
+async function generateRevisionReport(input: Record<string, any>, authorPlan: Record<string, any>) {
+  const source = String(input.source_material || "").slice(0, 9000);
+  if (!source.trim()) return null;
+  const prompt = `
+Du er en redaktør. Returner KUN gyldig JSON.
+
+Sammenlign kildeteksten med den nye planen/utkastet.
+
+Kildetekst:
+${source}
+
+Ny plan/utkast:
+${JSON.stringify(
+    {
+      book_promise: authorPlan.book_promise || "",
+      toc: asArray(authorPlan.toc).slice(0, 25),
+      sample_chapters: asArray(authorPlan.sample_chapters).slice(0, 4),
+      source_mode: input.source_mode || "from_brief",
+      source_instructions: input.source_instructions || "",
+    },
+    null,
+    2,
+  )}
+
+JSON schema:
+{
+  "summary": "string",
+  "kept": ["string"],
+  "changed": ["string"],
+  "added": ["string"],
+  "risks": ["string"],
+  "editor_note": "string"
+}
+`;
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 1400, temperature: 0.4 });
+  return safeJsonParse(raw, {
+    summary: "Automatisk forbedret manus basert på kildetekst.",
+    kept: [],
+    changed: [],
+    added: [],
+    risks: [],
+    editor_note: "",
+  });
+}
+
 async function loadSeriesContext(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   seriesName: string,
@@ -403,11 +448,15 @@ export async function POST(request: NextRequest) {
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = await generateSeoPlan(enrichedInput);
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
         .update({
           status: "generated",
-          metadata_plan: seoPlan,
+          metadata_plan: {
+            ...seoPlan,
+            revision_report: revisionReport,
+          },
           outline_plan: {
             book_promise: authorPlan.book_promise || "",
             toc: asArray(authorPlan.toc),
@@ -529,6 +578,7 @@ export async function POST(request: NextRequest) {
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = (current.metadata_plan || {}) as Record<string, any>;
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
         .update({
@@ -539,7 +589,11 @@ export async function POST(request: NextRequest) {
             writing_plan: asArray(authorPlan.writing_plan),
           },
           chapter_drafts: asArray(authorPlan.sample_chapters),
-          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "author_ready" },
+          metadata_plan: {
+            ...(current.metadata_plan || {}),
+            generation_state: "author_ready",
+            revision_report: revisionReport,
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
