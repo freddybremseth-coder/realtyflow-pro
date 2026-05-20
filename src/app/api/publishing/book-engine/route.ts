@@ -81,8 +81,9 @@ JSON schema:
   });
 }
 
-async function generateAuthorPlan(input: Record<string, any>, seoPlan: Record<string, any>) {
+async function generateAuthorPlan(input: Record<string, any>, seoPlan: Record<string, any>, sampleChapterCount = 2) {
   const promptInput = compactForPrompt(input);
+  const chapterCount = Math.min(Math.max(Number(sampleChapterCount || 2), 1), 2);
   const prompt = `
 Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
 
@@ -96,8 +97,11 @@ JSON schema:
   "writing_plan": [{"week": 1, "focus": "string", "deliverable": "string"}],
   "sample_chapters": [{"chapter_title": "string", "draft": "string"}]
 }
+
+Krav:
+- Lag kun ${chapterCount} sample_chapters i første generering (resten kommer via Fortsett skriv).
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 3200, temperature: 0.6 });
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 1800, temperature: 0.55 });
   return safeJsonParse(raw, {
     book_promise: "Clear practical value for the target reader.",
     toc: [],
@@ -493,7 +497,7 @@ export async function POST(request: NextRequest) {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = await generateSeoPlan(enrichedInput);
-      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
@@ -623,7 +627,7 @@ export async function POST(request: NextRequest) {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = (current.metadata_plan || {}) as Record<string, any>;
-      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan);
+      const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
