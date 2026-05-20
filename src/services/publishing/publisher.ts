@@ -132,8 +132,21 @@ export async function publishToInstagram(
     };
   }
 
+  // Instagram is strict on aspect ratio. We proxy through an image resize URL
+  // to guarantee a compatible 4:5 feed asset (1080x1350) for property photos.
+  const instagramReadyImageUrl = (() => {
+    if (!imageUrl) return imageUrl;
+    if (imageUrl.includes("images.weserv.nl")) return imageUrl;
+    try {
+      const clean = imageUrl.replace(/^https?:\/\//, "");
+      return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&w=1080&h=1350&fit=cover&output=jpg`;
+    } catch {
+      return imageUrl;
+    }
+  })();
+
   const createParams = new URLSearchParams({
-    image_url: imageUrl,
+    image_url: instagramReadyImageUrl || imageUrl,
     caption,
     access_token: accessToken,
   });
