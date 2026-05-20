@@ -34,6 +34,15 @@ function asKeywords(raw: unknown) {
     .filter(Boolean);
 }
 
+function normalizeTitleKey(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function compactForPrompt(input: Record<string, any>) {
   const source = String(input.source_material || "");
   return {
@@ -298,8 +307,8 @@ async function generateImageFromPrompt(
 async function generateChapterDraftBatch(project: Record<string, any>, count = 2) {
   const toc = asArray<Record<string, any>>(project.outline_plan?.toc);
   const existingDrafts = asArray<Record<string, any>>(project.chapter_drafts);
-  const draftedTitles = new Set(existingDrafts.map((d) => String(d.chapter_title || "").toLowerCase()));
-  const missing = toc.filter((row) => !draftedTitles.has(String(row.title || "").toLowerCase())).slice(0, count);
+  const draftedTitles = new Set(existingDrafts.map((d) => normalizeTitleKey(d.chapter_title)));
+  const missing = toc.filter((row) => !draftedTitles.has(normalizeTitleKey(row.title))).slice(0, count);
   if (missing.length === 0) return { added: [], done: true };
 
   const prompt = `
@@ -327,9 +336,44 @@ JSON schema:
   "chapters": [{ "chapter_title": "string", "draft": "string" }]
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 4200, temperature: 0.65 });
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.65 });
   const parsed = safeJsonParse<{ chapters: Array<{ chapter_title: string; draft: string }> }>(raw, { chapters: [] });
   const added = asArray(parsed.chapters).filter((c) => c?.chapter_title && c?.draft);
+
+  // Fallback: if batch parsing fails/returns nothing, force-generate at least one chapter.
+  if (added.length === 0 && missing.length > 0) {
+    const target = missing[0];
+    const strictPrompt = `
+Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
+
+Skriv ett kapittelutkast for dette kapittelet:
+${JSON.stringify(target, null, 2)}
+
+Prosjekt:
+${JSON.stringify(
+      {
+        title: project.title,
+        subtitle: project.subtitle,
+        audience: project.audience,
+        language: project.language,
+        niche: project.niche,
+      },
+      null,
+      2,
+    )}
+
+JSON schema:
+{
+  "chapter_title": "string",
+  "draft": "string"
+}
+`;
+    const fallbackRaw = await askClaude(strictPrompt, { model: "sonnet", maxTokens: 1400, temperature: 0.62 });
+    const one = safeJsonParse<{ chapter_title?: string; draft?: string }>(fallbackRaw, {});
+    if (one.chapter_title && one.draft) {
+      return { added: [{ chapter_title: one.chapter_title, draft: one.draft }], done: missing.length <= 1 };
+    }
+  }
   return { added, done: missing.length <= added.length };
 }
 
@@ -679,7 +723,15 @@ export async function POST(request: NextRequest) {
 
     const projectWithOutline = await generateOutlineIfMissing(project as Record<string, any>);
     const batch = await generateChapterDraftBatch(projectWithOutline, chapterCount);
-    const mergedDrafts = [...asArray((project as any).chapter_drafts), ...batch.added];
+    const existing = asArray((project as any).chapter_drafts);
+    const seen = new Set(existing.map((d: any) => normalizeTitleKey(d?.chapter_title)));
+    const uniqueAdded = batch.added.filter((d) => {
+      const key = normalizeTitleKey(d.chapter_title);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const mergedDrafts = [...existing, ...uniqueAdded];
     const outlinePlan = projectWithOutline.outline_plan || (project as any).outline_plan || {};
     const { data, error } = await supabase
       .from("publishing_book_projects")
@@ -693,7 +745,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, mode: "continue", added: batch.added.length, project: data });
+    return NextResponse.json({ success: true, mode: "continue", added: uniqueAdded.length, project: data });
   }
 
   if (mode === "generate_images") {
