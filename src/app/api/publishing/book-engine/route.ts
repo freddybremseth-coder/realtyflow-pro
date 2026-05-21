@@ -352,10 +352,17 @@ JSON schema:
 }
 `;
   const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1400, temperature: 0.6 });
-  const parsed = safeJsonParse<{ chapters: Array<{ chapter_title: string; draft: string }> }>(raw, { chapters: [] });
-  const added = asArray(parsed.chapters).filter((c) => c?.chapter_title && c?.draft);
+  const parsed = safeJsonParse<{ chapters?: Array<{ chapter_title: string; draft: string }>; sample_chapters?: Array<{ chapter_title: string; draft: string }> }>(
+    raw,
+    { chapters: [], sample_chapters: [] },
+  );
+  const candidates = [
+    ...asArray(parsed.chapters),
+    ...asArray(parsed.sample_chapters),
+  ];
+  const added = candidates.filter((c) => c?.chapter_title && c?.draft);
 
-  // Fallback: if batch parsing fails/returns nothing, force-generate at least one chapter.
+  // Fallback #1: if batch parsing fails/returns nothing, force-generate at least one chapter.
   if (added.length === 0 && missing.length > 0) {
     const target = missing[0];
     const strictPrompt = `
@@ -387,6 +394,16 @@ JSON schema:
     const one = safeJsonParse<{ chapter_title?: string; draft?: string }>(fallbackRaw, {});
     if (one.chapter_title && one.draft) {
       return { added: [{ chapter_title: one.chapter_title, draft: one.draft }], done: missing.length <= 1 };
+    }
+
+    // Fallback #2: if model still fails JSON, salvage plain text output
+    // so the workflow never gets stuck at "0 new chapters".
+    const plainText = String(fallbackRaw || "").trim();
+    if (plainText) {
+      return {
+        added: [{ chapter_title: String(target.title || "Kapittel"), draft: plainText }],
+        done: missing.length <= 1,
+      };
     }
   }
   return { added, done: missing.length <= added.length };
@@ -821,7 +838,16 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, mode: "continue", added: uniqueAdded.length, project: data });
+    return NextResponse.json({
+      success: true,
+      mode: "continue",
+      added: uniqueAdded.length,
+      warning:
+        uniqueAdded.length === 0
+          ? "La til 0 nye kapittelutkast. Prøv igjen eller bytt språk/stil for dette prosjektet."
+          : null,
+      project: data,
+    });
   }
 
   if (mode === "generate_images") {

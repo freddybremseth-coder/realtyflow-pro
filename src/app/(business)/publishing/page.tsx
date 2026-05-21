@@ -571,7 +571,11 @@ export default function PublishingHubPage() {
         setHubStatus(data.error || "Kunne ikke fortsette bokutkastet.");
         return;
       }
-      setHubStatus(`La til ${Number(data.added || 0)} nye kapittelutkast.`);
+      if (data.warning) {
+        setHubStatus(String(data.warning));
+      } else {
+        setHubStatus(`La til ${Number(data.added || 0)} nye kapittelutkast.`);
+      }
       await loadBookEngineProjects();
     } catch (err) {
       setHubStatus(err instanceof Error ? err.message : "Kunne ikke fortsette bokutkastet.");
