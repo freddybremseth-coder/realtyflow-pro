@@ -7,6 +7,7 @@ import * as path from "path";
 import * as os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 const execFileAsync = promisify(execFile);
 
@@ -248,13 +249,20 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
     }
 
     if (action === "render_and_upload") {
-      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand, brandId } = body;
+      const { imageUrls, title, description, tags, brandLogoUrl, privacyStatus = "public", property, brand } = body;
+      const brandId = normalizeBrandId(String(body.brandId || ""));
 
       if (!imageUrls || imageUrls.length === 0) {
         return NextResponse.json({ error: "imageUrls required" }, { status: 400 });
       }
       if (!title) {
         return NextResponse.json({ error: "title required" }, { status: 400 });
+      }
+      if (!brandId) {
+        return NextResponse.json(
+          { error: "brandId required for YouTube upload (hindrer publisering til feil kanal)." },
+          { status: 400 },
+        );
       }
 
       // SSE streaming for progress updates
@@ -370,8 +378,8 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
             send({ step: 4, total: 5, message: `Video rendret: ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB` });
 
             // Step 5: Upload to YouTube (uses brand-specific channel if configured)
-            send({ step: 5, total: 5, message: `Laster opp til YouTube${brandId ? ` (brand: ${brandId})` : " (standard kanal)"}...` });
-            console.log(`[Property Video] Uploading ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB to YouTube, brandId=${brandId || 'default'}`);
+            send({ step: 5, total: 5, message: `Laster opp til YouTube (brand: ${brandId})...` });
+            console.log(`[Property Video] Uploading ${(renderResult.videoBuffer.length / 1024 / 1024).toFixed(1)} MB to YouTube, brandId=${brandId}`);
 
             let uploadResult;
             try {
@@ -381,7 +389,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
                 tags: tags || [],
                 categoryId: "22",
                 privacyStatus: privacyStatus as "public" | "private" | "unlisted",
-              }, brandId || undefined);
+              }, brandId, { requireBrandToken: true });
               console.log(`[Property Video] Upload success: ${uploadResult.videoId}`);
             } catch (uploadErr) {
               const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
@@ -395,7 +403,7 @@ Return JSON only: {"title": "...", "description": "...", "tags": ["..."]}`;
             // Try to set thumbnail from first image
             try {
               const thumbBuffer = await fs.readFile(imagePaths[0]);
-              await setThumbnail(uploadResult.videoId, thumbBuffer);
+              await setThumbnail(uploadResult.videoId, thumbBuffer, brandId);
               console.log(`[Property Video] Thumbnail set for ${uploadResult.videoId}`);
             } catch (thumbErr) {
               console.warn(`[Property Video] Thumbnail failed (non-critical):`, thumbErr instanceof Error ? thumbErr.message : thumbErr);

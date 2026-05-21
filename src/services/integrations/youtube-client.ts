@@ -299,8 +299,23 @@ export async function uploadVideo(
             `YouTube upload landed on wrong channel (${uploadedChannelId}) for brand "${brandId}". Allowed channels: ${allowedExternalIds.join(', ')}`,
           );
         }
+
+        // Safety net: prevent real-estate/other brands from silently posting
+        // to Re-master/Neural Beat channels due to mistaken OAuth connection.
+        const normalizedBrand = brandId.toLowerCase().replace(/[-_.\s]/g, '');
+        const musicBrands = new Set(['remasterfreddy', 'neuralbeat']);
+        const landedChannel = allowed.find((c) => c.external_id === uploadedChannelId);
+        const landedName = `${landedChannel?.display_name || ''}`.toLowerCase();
+        if (!musicBrands.has(normalizedBrand) && /re-?\s*master|neural\s*beat/.test(landedName)) {
+          throw new Error(
+            `Brand "${brandId}" er koblet til YouTube-kanalen "${landedChannel?.display_name || uploadedChannelId}" (Re-master/Neural Beat). Koble riktig brand-kanal via /api/oauth/google?brand=${brandId} før publisering.`,
+          );
+        }
       } catch (err) {
         if (err instanceof Error && /wrong channel/i.test(err.message)) {
+          throw err;
+        }
+        if (err instanceof Error && /re-master|neural beat|koble riktig brand-kanal/i.test(err.message.toLowerCase())) {
           throw err;
         }
         // Don't block uploads when channel table lookup itself fails.
