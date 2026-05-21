@@ -65,6 +65,36 @@ function getOliviaHost() {
   }
 }
 
+function getOliviaSchemaCandidates() {
+  const configured = String(process.env.OLIVIA_SCHEMA || "").trim();
+  const ordered = [configured, "olivia", "public"].filter(Boolean);
+  return Array.from(new Set(ordered));
+}
+
+async function queryOliviaTable(
+  supabase: any,
+  table: string,
+  selectClause: string,
+  options?: { orderBy?: string; ascending?: boolean; limit?: number; single?: boolean },
+) {
+  let lastError: any = null;
+  for (const schemaName of getOliviaSchemaCandidates()) {
+    let q = supabase.schema(schemaName).from(table).select(selectClause);
+    if (options?.orderBy) q = q.order(options.orderBy, { ascending: options.ascending ?? false });
+    if (options?.limit) q = q.limit(options.limit);
+    if (options?.single) {
+      const { data, error } = await q.single();
+      if (!error) return { data, error: null, schema: schemaName };
+      lastError = error;
+      continue;
+    }
+    const { data, error } = await q;
+    if (!error) return { data, error: null, schema: schemaName };
+    lastError = error;
+  }
+  return { data: options?.single ? null : [], error: lastError, schema: null };
+}
+
 function formatRevenue(value: number, currency = "EUR") {
   if (!value) return "Ikke tilgjengelig";
   return new Intl.NumberFormat("nb-NO", {
@@ -79,24 +109,24 @@ async function getOliviaData() {
   if (!supabase) return null;
 
   const [harvestRes, expenseRes, subsidyRes, parcelRes, settingsRes] = await Promise.allSettled([
-    supabase.from("harvest_records").select("*").order("harvest_date", { ascending: false }),
-    supabase.from("farm_expenses").select("*").order("date", { ascending: false }),
-    supabase.from("subsidy_income").select("*").order("date", { ascending: false }),
-    supabase.from("parcels").select("id, name, area, municipality, crop_type, tree_count"),
-    supabase.from("farm_settings").select("*").limit(1).single(),
+    queryOliviaTable(supabase, "harvest_records", "*", { orderBy: "harvest_date", ascending: false }),
+    queryOliviaTable(supabase, "farm_expenses", "*", { orderBy: "date", ascending: false }),
+    queryOliviaTable(supabase, "subsidy_income", "*", { orderBy: "date", ascending: false }),
+    queryOliviaTable(supabase, "parcels", "id, name, area, municipality, crop_type, tree_count"),
+    queryOliviaTable(supabase, "farm_settings", "*", { limit: 1, single: true }),
   ]);
 
-  const harvests = safeRows<Record<string, unknown>>(harvestRes);
-  const expenses = safeRows<Record<string, unknown>>(expenseRes);
-  const subsidies = safeRows<Record<string, unknown>>(subsidyRes);
-  const parcels = safeRows<Record<string, unknown>>(parcelRes);
-  const settings = settingsRes.status === "fulfilled" ? settingsRes.value.data : null;
+  const harvests = safeRows<Record<string, unknown>>(harvestRes as any);
+  const expenses = safeRows<Record<string, unknown>>(expenseRes as any);
+  const subsidies = safeRows<Record<string, unknown>>(subsidyRes as any);
+  const parcels = safeRows<Record<string, unknown>>(parcelRes as any);
+  const settings = settingsRes.status === "fulfilled" ? (settingsRes.value as any).data : null;
   const tableErrors = {
-    harvest_records: settledError(harvestRes),
-    farm_expenses: settledError(expenseRes),
-    subsidy_income: settledError(subsidyRes),
-    parcels: settledError(parcelRes),
-    farm_settings: settledError(settingsRes),
+    harvest_records: settledError(harvestRes as any),
+    farm_expenses: settledError(expenseRes as any),
+    subsidy_income: settledError(subsidyRes as any),
+    parcels: settledError(parcelRes as any),
+    farm_settings: settledError(settingsRes as any),
   };
   const warnings = Object.entries(tableErrors)
     .filter(([, message]) => message)
@@ -125,6 +155,11 @@ async function getOliviaData() {
   return {
     source: "supabase",
     supabaseHost: getOliviaHost(),
+    schemaCandidates: getOliviaSchemaCandidates(),
+    resolvedSchema:
+      (harvestRes.status === "fulfilled" && (harvestRes.value as any).schema) ||
+      (settingsRes.status === "fulfilled" && (settingsRes.value as any).schema) ||
+      null,
     configuredSeparateOliviaDb: Boolean(process.env.OLIVIA_SUPABASE_URL && process.env.OLIVIA_SUPABASE_KEY),
     warnings,
     tableErrors,
