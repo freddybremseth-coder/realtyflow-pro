@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { BRANDS } from "@/lib/constants";
+import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -252,13 +253,33 @@ export async function GET() {
 
   for (const brand of BRANDS) {
     const data = emptyBrandData(brand.id);
-    const brandPosts = publications.filter((post) => post.brand_id === brand.id || post.brand === brand.id);
+    const brandPosts = publications.filter(
+      (post) =>
+        normalizeBrandId(String(post.brand_id || "")) === brand.id ||
+        normalizeBrandId(String(post.brand || "")) === brand.id,
+    );
     const brandPublished = brandPosts.filter((post) => post.status === "published");
-    const brandAccounts = socialAccounts.filter((account) => account.brand === brand.id || account.brand_id === brand.id);
-    const brandPipeline = pipelineContacts.filter((contact) => contact.brand_id === brand.id);
-    const brandCrm = crmContacts.filter((contact) => contact.brand_id === brand.id);
-    const brandActions = growthActions.filter((action) => action.brand === brand.id || action.brand_id === brand.id);
-    const uniqueWon = contacts.filter((contact) => contact.pipeline_status === "WON" && contact.brand_id === brand.id);
+    const brandAccounts = socialAccounts.filter(
+      (account) =>
+        normalizeBrandId(String(account.brand || "")) === brand.id ||
+        normalizeBrandId(String(account.brand_id || "")) === brand.id,
+    );
+    const brandPipeline = pipelineContacts.filter(
+      (contact) => normalizeBrandId(String(contact.brand_id || "")) === brand.id,
+    );
+    const brandCrm = crmContacts.filter(
+      (contact) => normalizeBrandId(String(contact.brand_id || "")) === brand.id,
+    );
+    const brandActions = growthActions.filter(
+      (action) =>
+        normalizeBrandId(String(action.brand || "")) === brand.id ||
+        normalizeBrandId(String(action.brand_id || "")) === brand.id,
+    );
+    const uniqueWon = contacts.filter(
+      (contact) =>
+        String(contact.pipeline_status || "").toUpperCase() === "WON" &&
+        normalizeBrandId(String(contact.brand_id || "")) === brand.id,
+    );
 
     data.commissionTotal = uniqueWon.reduce((sum, contact) => sum + (Number(contact.commission_amount) || 0), 0);
     data.commissionPaid = uniqueWon
@@ -285,17 +306,10 @@ export async function GET() {
       .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
     data.financialNet = data.financialIncome - data.financialExpense;
 
-    if (brandHasLedger) {
-      data.commissionTotal = brandLedger
-        .filter((event) => event.stream === "commission")
-        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
-      data.commissionPaid = brandLedger
-        .filter((event) => event.stream === "commission" && event.status === "paid")
-        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
-      data.commissionPending = brandLedger
-        .filter((event) => event.stream === "commission" && event.status === "pending")
-        .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
-    }
+    // Important: commission numbers in Business Overview should mirror CRM
+    // won-deals by default. Ledger streams can lag or represent only partial
+    // booking/payment events, which makes commission totals look "wrong"
+    // compared to Pipeline/CRM.
 
     if (brand.id === "chatgenius") {
       data.saasApps = saasApps.length;
