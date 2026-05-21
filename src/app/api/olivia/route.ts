@@ -58,6 +58,17 @@ function settledError(result: PromiseSettledResult<{ error: { message: string } 
   return result.value.error?.message || null;
 }
 
+function isCriticalOliviaTableError(message: string | null) {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("does not exist") ||
+    m.includes("schema cache") ||
+    m.includes("relation") ||
+    m.includes("permission denied")
+  );
+}
+
 export async function GET() {
   try {
     const supabase = getOliviaSupabase();
@@ -124,7 +135,7 @@ export async function GET() {
       farm_settings: settledError(settingsRes),
     };
     const warnings = Object.entries(tableErrors)
-      .filter(([, message]) => message)
+      .filter(([, message]) => isCriticalOliviaTableError(message))
       .map(([table, message]) => `${table}: ${message}`);
 
     return NextResponse.json({

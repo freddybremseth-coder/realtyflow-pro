@@ -57,6 +57,17 @@ function settledError(result: PromiseSettledResult<{ error: { message: string } 
   return result.value.error?.message || null;
 }
 
+function isCriticalOliviaTableError(message: string | null) {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("does not exist") ||
+    m.includes("schema cache") ||
+    m.includes("relation") ||
+    m.includes("permission denied")
+  );
+}
+
 function getOliviaHost() {
   const url = process.env.OLIVIA_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   try {
@@ -130,7 +141,7 @@ async function getOliviaData() {
     farm_settings: settledError(settingsRes as any),
   };
   const warnings = Object.entries(tableErrors)
-    .filter(([, message]) => message)
+    .filter(([, message]) => isCriticalOliviaTableError(message))
     .map(([table, message]) => `${table}: ${message}`);
 
   const totalRevenue = harvests.reduce((sum, row) => sum + (Number(row.kilograms) || 0) * (Number(row.price_per_kg) || 0), 0);
