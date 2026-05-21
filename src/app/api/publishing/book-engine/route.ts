@@ -43,6 +43,21 @@ function normalizeTitleKey(value: unknown) {
     .trim();
 }
 
+function mergeChapterDrafts(
+  existing: Array<Record<string, any>>,
+  incoming: Array<Record<string, any>>,
+) {
+  const out: Array<Record<string, any>> = [];
+  const seen = new Set<string>();
+  for (const row of [...existing, ...incoming]) {
+    const key = normalizeTitleKey(row?.chapter_title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
 function compactForPrompt(input: Record<string, any>) {
   const source = String(input.source_material || "");
   return {
@@ -558,14 +573,16 @@ export async function POST(request: NextRequest) {
         chapter_drafts: asArray(authorPlan.sample_chapters),
       };
       const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
+      const existingDrafts = asArray<Record<string, any>>(current.chapter_drafts);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
       if (chapterDrafts.length === 0) {
         const batch = await generateChapterDraftBatch(projectWithOutline, 2);
         chapterDrafts = batch.added;
       }
+      const mergedDrafts = mergeChapterDrafts(existingDrafts, chapterDrafts);
       const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
       const hasToc = asArray(finalOutlinePlan?.toc).length > 0;
-      const hasDrafts = asArray(chapterDrafts).length > 0;
+      const hasDrafts = asArray(mergedDrafts).length > 0;
       const finalStatus = hasToc && hasDrafts ? "generated" : "drafting";
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
@@ -584,7 +601,7 @@ export async function POST(request: NextRequest) {
                 }),
           },
           outline_plan: finalOutlinePlan,
-          chapter_drafts: chapterDrafts,
+          chapter_drafts: mergedDrafts,
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
@@ -711,14 +728,16 @@ export async function POST(request: NextRequest) {
         chapter_drafts: asArray(authorPlan.sample_chapters),
       };
       const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
+      const existingDrafts = asArray<Record<string, any>>(current.chapter_drafts);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
       if (chapterDrafts.length === 0) {
         const batch = await generateChapterDraftBatch(projectWithOutline, 2);
         chapterDrafts = batch.added;
       }
+      const mergedDrafts = mergeChapterDrafts(existingDrafts, chapterDrafts);
       const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
       const hasToc = asArray(finalOutlinePlan?.toc).length > 0;
-      const hasDrafts = asArray(chapterDrafts).length > 0;
+      const hasDrafts = asArray(mergedDrafts).length > 0;
       const finalStatus = hasToc && hasDrafts ? "generated" : "drafting";
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
@@ -726,7 +745,7 @@ export async function POST(request: NextRequest) {
         .update({
           status: finalStatus,
           outline_plan: finalOutlinePlan,
-          chapter_drafts: chapterDrafts,
+          chapter_drafts: mergedDrafts,
           metadata_plan: {
             ...(current.metadata_plan || {}),
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
@@ -767,6 +786,18 @@ export async function POST(request: NextRequest) {
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
 
     const projectWithOutline = await generateOutlineIfMissing(project as Record<string, any>);
+    const outlinePlan = projectWithOutline.outline_plan || (project as any).outline_plan || {};
+    const tocCount = asArray(outlinePlan?.toc).length;
+    if (tocCount === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Fant ingen kapitteloversikt (TOC) på prosjektet. Kjør Prøv igjen først for å bygge outline, og trykk deretter Fortsett skriv.",
+        },
+        { status: 400 },
+      );
+    }
+
     const batch = await generateChapterDraftBatch(projectWithOutline, chapterCount);
     const existing = asArray((project as any).chapter_drafts);
     const seen = new Set(existing.map((d: any) => normalizeTitleKey(d?.chapter_title)));
@@ -776,14 +807,14 @@ export async function POST(request: NextRequest) {
       seen.add(key);
       return true;
     });
-    const mergedDrafts = [...existing, ...uniqueAdded];
-    const outlinePlan = projectWithOutline.outline_plan || (project as any).outline_plan || {};
+    const mergedDrafts = mergeChapterDrafts(existing, uniqueAdded);
+    const hasAnyDrafts = mergedDrafts.length > 0;
     const { data, error } = await supabase
       .from("publishing_book_projects")
       .update({
         outline_plan: outlinePlan,
         chapter_drafts: mergedDrafts,
-        status: batch.done ? "ready_for_export" : "drafting",
+        status: batch.done && hasAnyDrafts ? "ready_for_export" : "drafting",
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
