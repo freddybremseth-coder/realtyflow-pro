@@ -19,6 +19,56 @@ function asArray<T = any>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function safeJsonParse<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function extractJsonStringField(raw: string, field: string): string {
+  const key = `"${field}"`;
+  const keyIndex = raw.indexOf(key);
+  if (keyIndex < 0) return "";
+  const colonIndex = raw.indexOf(":", keyIndex + key.length);
+  if (colonIndex < 0) return "";
+  const firstQuote = raw.indexOf("\"", colonIndex + 1);
+  if (firstQuote < 0) return "";
+
+  let i = firstQuote + 1;
+  let encoded = "";
+  let escaped = false;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (escaped) {
+      encoded += `\\${ch}`;
+      escaped = false;
+      i += 1;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "\"") break;
+    encoded += ch;
+    i += 1;
+  }
+
+  try {
+    return JSON.parse(`"${encoded}"`);
+  } catch {
+    return encoded
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\"/g, "\"")
+      .replace(/\\\\/g, "\\");
+  }
+}
+
 function sanitizeDraftText(raw: unknown): string {
   const text = String(raw || "").trim();
   if (!text) return "";
@@ -33,18 +83,12 @@ function sanitizeDraftText(raw: unknown): string {
     const draft = String(parsed.draft || "").trim();
     if (draft) return draft;
   }
+  const looseDraft = extractJsonStringField(text, "draft").trim();
+  if (looseDraft) return looseDraft;
   return text
     .replace(/```json[\s\S]*?```/gi, "")
     .replace(/```[\s\S]*?```/g, "")
     .trim();
-}
-
-function safeJsonParse<T>(value: string, fallback: T): T {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 function buildMarkdown(project: Record<string, any>) {
