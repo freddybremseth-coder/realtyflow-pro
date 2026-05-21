@@ -1528,6 +1528,9 @@ export default function PublishingHubPage() {
                   <p className="mt-1 text-xs text-slate-300">
                     Kapitler: {Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0} · Utkast: {Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0}
                   </p>
+                  {project.metadata_plan?.generation_warning ? (
+                    <p className="mt-1 text-xs text-amber-300">{String(project.metadata_plan.generation_warning)}</p>
+                  ) : null}
                   <p className="mt-1 text-xs text-slate-400">
                     Bilder: {project.metadata_plan?.image_plan?.cover?.image_url ? 1 : 0} forside +
                     {" "}{Array.isArray(project.metadata_plan?.image_plan?.chapters)

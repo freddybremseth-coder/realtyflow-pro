@@ -557,25 +557,33 @@ export async function POST(request: NextRequest) {
         },
         chapter_drafts: asArray(authorPlan.sample_chapters),
       };
+      const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
       if (chapterDrafts.length === 0) {
-        const batch = await generateChapterDraftBatch(fallbackProject, 2);
+        const batch = await generateChapterDraftBatch(projectWithOutline, 2);
         chapterDrafts = batch.added;
       }
+      const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
+      const hasToc = asArray(finalOutlinePlan?.toc).length > 0;
+      const hasDrafts = asArray(chapterDrafts).length > 0;
+      const finalStatus = hasToc && hasDrafts ? "generated" : "drafting";
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
         .update({
-          status: "generated",
+          status: finalStatus,
           metadata_plan: {
             ...seoPlan,
             revision_report: revisionReport,
+            generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
+            ...(hasToc && hasDrafts
+              ? {}
+              : {
+                  generation_warning:
+                    "Outline ble laget, men ingen kapittelutkast enda. Trykk Fortsett skriv for å generere kapittelutkast.",
+                }),
           },
-          outline_plan: {
-            book_promise: authorPlan.book_promise || "",
-            toc: asArray(authorPlan.toc),
-            writing_plan: asArray(authorPlan.writing_plan),
-          },
+          outline_plan: finalOutlinePlan,
           chapter_drafts: chapterDrafts,
           updated_at: new Date().toISOString(),
         })
@@ -702,26 +710,33 @@ export async function POST(request: NextRequest) {
         },
         chapter_drafts: asArray(authorPlan.sample_chapters),
       };
+      const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
       if (chapterDrafts.length === 0) {
-        const batch = await generateChapterDraftBatch(fallbackProject, 2);
+        const batch = await generateChapterDraftBatch(projectWithOutline, 2);
         chapterDrafts = batch.added;
       }
+      const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
+      const hasToc = asArray(finalOutlinePlan?.toc).length > 0;
+      const hasDrafts = asArray(chapterDrafts).length > 0;
+      const finalStatus = hasToc && hasDrafts ? "generated" : "drafting";
       const revisionReport = await generateRevisionReport(enrichedInput, authorPlan);
       const { data, error } = await supabase
         .from("publishing_book_projects")
         .update({
-          status: "generated",
-          outline_plan: {
-            book_promise: authorPlan.book_promise || "",
-            toc: asArray(authorPlan.toc),
-            writing_plan: asArray(authorPlan.writing_plan),
-          },
+          status: finalStatus,
+          outline_plan: finalOutlinePlan,
           chapter_drafts: chapterDrafts,
           metadata_plan: {
             ...(current.metadata_plan || {}),
-            generation_state: "author_ready",
+            generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
             revision_report: revisionReport,
+            ...(hasToc && hasDrafts
+              ? {}
+              : {
+                  generation_warning:
+                    "Outline ble laget, men ingen kapittelutkast enda. Trykk Fortsett skriv for å generere kapittelutkast.",
+                }),
           },
           updated_at: new Date().toISOString(),
         })
