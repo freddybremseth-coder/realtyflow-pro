@@ -85,7 +85,10 @@ export async function publishToYouTube(input: YouTubePublishInput): Promise<Publ
       language: input.language || 'no',
     };
 
-    const result = await uploadVideo(input.video, metadata, input.brandId);
+    const result = await uploadVideo(input.video, metadata, input.brandId, {
+      // Never allow fallback to _system/env when publishing branded content.
+      requireBrandToken: true,
+    });
 
     return {
       platform: 'youtube',

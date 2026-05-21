@@ -189,8 +189,10 @@ async function runWithTokenFallback<T>(
   options?: { requireBrandToken?: boolean },
 ): Promise<T> {
   const allCandidates = await collectTokenCandidates(brandId);
+  const isBrandSpecificSource = (source: string) =>
+    source.startsWith('brand:') || source.startsWith('oauth_tokens:');
   const candidates = options?.requireBrandToken
-    ? allCandidates.filter((candidate) => candidate.source.startsWith('brand:'))
+    ? allCandidates.filter((candidate) => isBrandSpecificSource(candidate.source))
     : allCandidates;
   if (candidates.length === 0) {
     const hint = brandId
@@ -282,6 +284,30 @@ export async function uploadVideo(
     }
 
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+    // Extra guard for multi-brand setups:
+    // when a brand is provided, verify the uploaded channel is one of the
+    // brand's active YouTube channels in social_channels.
+    if (brandId) {
+      try {
+        const { getChannelsByBrand } = await import('@/lib/oauth/channels');
+        const allowed = await getChannelsByBrand(brandId, 'youtube');
+        const allowedExternalIds = allowed.map((c) => c.external_id).filter(Boolean);
+        const uploadedChannelId = verifiedVideo.snippet?.channelId || video.snippet?.channelId || '';
+        if (uploadedChannelId && allowedExternalIds.length > 0 && !allowedExternalIds.includes(uploadedChannelId)) {
+          throw new Error(
+            `YouTube upload landed on wrong channel (${uploadedChannelId}) for brand "${brandId}". Allowed channels: ${allowedExternalIds.join(', ')}`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof Error && /wrong channel/i.test(err.message)) {
+          throw err;
+        }
+        // Don't block uploads when channel table lookup itself fails.
+        console.warn('[YouTube] Brand channel verification skipped:', err instanceof Error ? err.message : err);
+      }
+    }
+
     return {
       videoId,
       videoUrl: youtubeUrl,
