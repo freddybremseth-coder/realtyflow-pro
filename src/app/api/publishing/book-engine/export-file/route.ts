@@ -21,6 +21,34 @@ function asArray<T = any>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function safeJsonParse<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function sanitizeDraftText(raw: unknown): string {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    const parsed = safeJsonParse<Record<string, unknown>>(fenced[1], {});
+    const draft = String(parsed.draft || "").trim();
+    if (draft) return draft;
+  }
+  if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+    const parsed = safeJsonParse<Record<string, unknown>>(text, {});
+    const draft = String(parsed.draft || "").trim();
+    if (draft) return draft;
+  }
+  return text
+    .replace(/```json[\s\S]*?```/gi, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+}
+
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
@@ -104,7 +132,7 @@ async function toDocxBuffer(project: Record<string, any>) {
   for (let index = 0; index < chapterDrafts.length; index += 1) {
     const chapter = chapterDrafts[index];
     const chapterTitle = clean(chapter.chapter_title) || `Chapter ${index + 1}`;
-    const draftText = clean(chapter.draft) || "";
+    const draftText = sanitizeDraftText(chapter.draft) || "";
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(chapterTitle)] }));
     const imageUrl = chapterImageMap.get(chapterTitle.toLowerCase());
     const chapterParts = draftText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
@@ -164,7 +192,7 @@ async function toEpubBuffer(project: Record<string, any>) {
   const allChapters = chapterDrafts.length > 0
     ? chapterDrafts.map((chapter, index) => ({
         title: clean(chapter.chapter_title) || `Chapter ${index + 1}`,
-        body: clean(chapter.draft) || "",
+        body: sanitizeDraftText(chapter.draft) || "",
       }))
     : toc.map((row, index) => ({
         title: clean(row.title) || `Chapter ${index + 1}`,

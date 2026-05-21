@@ -43,6 +43,30 @@ function normalizeTitleKey(value: unknown) {
     .trim();
 }
 
+function sanitizeDraftText(raw: unknown): string {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+
+  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    const parsed = safeJsonParse<Record<string, unknown>>(fenced[1], {});
+    const draft = String(parsed.draft || "").trim();
+    if (draft) return draft;
+  }
+
+  if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+    const parsed = safeJsonParse<Record<string, unknown>>(text, {});
+    const draft = String(parsed.draft || "").trim();
+    if (draft) return draft;
+  }
+
+  const noFences = text
+    .replace(/```json[\s\S]*?```/gi, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+  return noFences || text;
+}
+
 function mergeChapterDrafts(
   existing: Array<Record<string, any>>,
   incoming: Array<Record<string, any>>,
@@ -297,13 +321,22 @@ async function generateImageFromPrompt(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
+  const premiumPrompt = [
+    "Create a premium, high-detail, publication-ready illustration.",
+    "Use cinematic composition, realistic lighting, rich textures, and professional color grading.",
+    "Avoid simplistic clipart look, low detail, flat backgrounds, and text overlays.",
+    "No text, letters, logos, or watermark.",
+    "Prompt:",
+    prompt,
+  ].join(" ");
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `Generate a high-quality book illustration based on this exact prompt: ${prompt}. Keep visual continuity if characters are recurring. No text, letters, or watermark.` }] }],
-      generationConfig: { responseModalities: ["IMAGE", "TEXT"], temperature: 0.9 },
+      contents: [{ parts: [{ text: premiumPrompt }] }],
+      generationConfig: { responseModalities: ["IMAGE", "TEXT"], temperature: 0.8 },
     }),
     signal: AbortSignal.timeout(60000),
   });
@@ -360,7 +393,12 @@ JSON schema:
     ...asArray(parsed.chapters),
     ...asArray(parsed.sample_chapters),
   ];
-  const added = candidates.filter((c) => c?.chapter_title && c?.draft);
+  const added = candidates
+    .map((c) => ({
+      chapter_title: String(c?.chapter_title || "").trim(),
+      draft: sanitizeDraftText(c?.draft),
+    }))
+    .filter((c) => c.chapter_title && c.draft);
 
   // Fallback #1: if batch parsing fails/returns nothing, force-generate at least one chapter.
   if (added.length === 0 && missing.length > 0) {
@@ -392,13 +430,14 @@ JSON schema:
 `;
     const fallbackRaw = await askClaude(strictPrompt, { model: "haiku", maxTokens: 1000, temperature: 0.55 });
     const one = safeJsonParse<{ chapter_title?: string; draft?: string }>(fallbackRaw, {});
-    if (one.chapter_title && one.draft) {
-      return { added: [{ chapter_title: one.chapter_title, draft: one.draft }], done: missing.length <= 1 };
+    const oneDraft = sanitizeDraftText(one.draft);
+    if (one.chapter_title && oneDraft) {
+      return { added: [{ chapter_title: one.chapter_title, draft: oneDraft }], done: missing.length <= 1 };
     }
 
     // Fallback #2: if model still fails JSON, salvage plain text output
     // so the workflow never gets stuck at "0 new chapters".
-    const plainText = String(fallbackRaw || "").trim();
+    const plainText = sanitizeDraftText(fallbackRaw);
     if (plainText) {
       return {
         added: [{ chapter_title: String(target.title || "Kapittel"), draft: plainText }],
