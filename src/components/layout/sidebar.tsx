@@ -23,10 +23,12 @@ const iconMap: Record<string, React.ElementType> = {
 
 const sectionLabels: Record<string, string> = {
   overview: "OVERSIKT",
-  realty: "EIENDOM",
+  operations: "DRIFT",
+  properties: "EIENDOM",
   content: "MARKEDSFØRING",
-  business: "BRANDS",
-  tools: "INTELLIGENS & VERKTØY",
+  growth: "VEKST",
+  automation: "AUTOMASJON",
+  admin: "ADMIN",
 };
 
 export function Sidebar() {

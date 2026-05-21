@@ -114,40 +114,44 @@ export const PLATFORMS = [
 export const SIDEBAR_NAV = {
   overview: [
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
+    { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
   ],
-  realty: [
+  operations: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
+    { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
     { label: "Booking Admin", href: "/booking-admin", icon: "Calendar" },
     { label: "Kalender", href: "/calendar", icon: "Calendar" },
+  ],
+  properties: [
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
+    { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
     { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
-    { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
     { label: "Dokumenter", href: "/document-hub", icon: "FileText" },
   ],
   content: [
-    { label: "Content Hub", href: "/content-hub", icon: "FileText" },
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
+    { label: "Content Hub", href: "/content-hub", icon: "FileText" },
     { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
     { label: "Ad Campaigns", href: "/ad-campaigns", icon: "Target" },
     { label: "YouTube Studio", href: "/youtube-studio", icon: "Youtube" },
     { label: "Re-Master Freddy", href: "/neural-beat", icon: "Music" },
   ],
-  business: [
-    { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
-    { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
-    { label: "Brands", href: "/brands", icon: "Palette" },
+  growth: [
     { label: "Publishing Hub", href: "/publishing", icon: "BookOpen" },
     { label: "Growth Hub", href: "/growth-hub", icon: "Rocket" },
-  ],
-  tools: [
-    { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
-    { label: "Automatisering", href: "/automation", icon: "Zap" },
-    { label: "Rådgiver Playbooks", href: "/advisor-playbooks", icon: "FileText" },
     { label: "Market Intelligence", href: "/reports", icon: "TrendingUp" },
-    { label: "E-post AI", href: "/email", icon: "Mail" },
-    { label: "Kommandosenter", href: "/agents", icon: "Bot" },
     { label: "Analytics", href: "/analytics", icon: "BarChart3" },
+  ],
+  automation: [
+    { label: "Automatisering", href: "/automation", icon: "Zap" },
+    { label: "Kommandosenter", href: "/agents", icon: "Bot" },
+    { label: "E-post AI", href: "/email", icon: "Mail" },
+  ],
+  admin: [
+    { label: "Brands", href: "/brands", icon: "Palette" },
+    { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
+    { label: "Rådgiver Playbooks", href: "/advisor-playbooks", icon: "FileText" },
     { label: "Scanner", href: "/scanner", icon: "ScanLine" },
     { label: "Innstillinger", href: "/settings", icon: "Settings" },
   ],
