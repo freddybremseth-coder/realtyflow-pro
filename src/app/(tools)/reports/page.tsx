@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   Calendar, Clock, ChevronRight, Eye, Mail, Zap, DollarSign,
   Users, Building2, Newspaper, ArrowUpRight, ArrowDownRight, Loader2,
 } from "lucide-react";
+import { AdvisorPlaybooksStudio, type AdvisorMarketContext } from "@/components/advisor/advisor-playbooks-studio";
 
 // ─── Types ───────────────────────────────────────────────────
 interface Report {
@@ -87,6 +88,8 @@ interface SavedInsight {
   sources?: string[];
 }
 
+type ReportsTab = "oversikt" | "rapporter" | "markedsdata" | "ekspertinnhold" | "mottakere";
+
 // ─── Template Config ─────────────────────────────────────────
 const TEMPLATES = [
   { id: "tall-og-trender", name: "Tall og Trender", icon: BarChart3, color: "text-cyan-400", bg: "bg-cyan-500/15", freq: "Annenhver uke" },
@@ -104,7 +107,7 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
-  const [activeTab, setActiveTab] = useState<"oversikt" | "rapporter" | "markedsdata" | "mottakere">("oversikt");
+  const [activeTab, setActiveTab] = useState<ReportsTab>("oversikt");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [portalMode, setPortalMode] = useState<"all" | "selected">("all");
   const [selectedContactEmails, setSelectedContactEmails] = useState<string[]>([]);
@@ -167,6 +170,19 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (
+      requestedTab === "oversikt" ||
+      requestedTab === "rapporter" ||
+      requestedTab === "markedsdata" ||
+      requestedTab === "ekspertinnhold" ||
+      requestedTab === "mottakere"
+    ) {
+      setActiveTab(requestedTab);
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/api/contacts?view=pipeline")
@@ -375,6 +391,82 @@ export default function ReportsPage() {
   // Get template info
   const getTemplate = (id: string) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
 
+  const expertMarketContexts = useMemo<AdvisorMarketContext[]>(() => {
+    const contexts: AdvisorMarketContext[] = [];
+
+    if (snapshot) {
+      const rateLines = [
+        snapshot.eur_nok ? `EUR/NOK: ${snapshot.eur_nok.toFixed(4)}${snapshot.eur_nok_7d_change != null ? ` (${snapshot.eur_nok_7d_change.toFixed(2)}% siste 7 dager)` : ""}` : "",
+        interestRates?.spain?.ecbMainRefinancingRate ? `ECB MRO: ${interestRates.spain.ecbMainRefinancingRate}%` : "",
+        interestRates?.norway?.policyRate ? `Norges Bank: ${interestRates.norway.policyRate}%` : "",
+        interestRates?.spain ? `Estimert spansk lånerente: ${interestRates.spain.estimatedMortgageMin}-${interestRates.spain.estimatedMortgageMax}%` : "",
+        interestRates?.norway ? `Estimert norsk boliglån: ${interestRates.norway.estimatedMortgageMin}-${interestRates.norway.estimatedMortgageMax}%` : "",
+      ].filter(Boolean);
+
+      const newsLines = (snapshot.idealista_news || [])
+        .slice(0, 5)
+        .map((item) => `Idealista: ${item.title} (${item.date})\n${item.summary || ""}\n${item.link}`);
+
+      const insightLines = (snapshot.perplexity_insights || snapshot.raw_data?.perplexityInsights || [])
+        .slice(0, 5)
+        .map((item) => `${item.topic}\n${item.summary}\n${item.details}`);
+
+      contexts.push({
+        id: "snapshot-latest",
+        type: "snapshot",
+        label: "Live markedskontekst: renter, eurokurs og nyheter",
+        title: "Live markedskontekst",
+        summary: rateLines.join(" · ") || "Siste snapshot fra Market Intelligence.",
+        details: [...rateLines, ...newsLines, ...insightLines].join("\n\n"),
+        sources: [
+          { label: "Market Intelligence snapshot", url: "" },
+          ...(snapshot.idealista_news || []).slice(0, 5).map((item) => ({ label: item.title, url: item.link, note: item.date })),
+        ],
+      });
+    }
+
+    savedInsights.slice(0, 20).forEach((insight) => {
+      contexts.push({
+        id: `insight-${insight.id || insight.created_at || insight.topic}`,
+        type: "insight",
+        label: `Analyse: ${insight.topic}`,
+        title: insight.topic,
+        summary: insight.summary,
+        details: insight.details,
+        sources: (insight.sources || []).map((source) => ({ label: source, url: source.startsWith("http") ? source : "" })),
+      });
+    });
+
+    reports.slice(0, 20).forEach((report) => {
+      const sectionsText = (report.sections || [])
+        .map((section) => `${section.heading}\n${String(section.content || "").replace(/<[^>]+>/g, " ")}`)
+        .join("\n\n");
+
+      contexts.push({
+        id: `report-${report.id}`,
+        type: "report",
+        label: `Rapport: ${report.title}`,
+        title: report.title,
+        summary: report.summary || report.subtitle || "",
+        details: [report.content_text, sectionsText].filter(Boolean).join("\n\n"),
+        sources: (report.data_sources || []).map((source) => ({ label: source, url: source.startsWith("http") ? source : "" })),
+      });
+    });
+
+    return contexts;
+  }, [interestRates, reports, savedInsights, snapshot]);
+
+  const switchTab = (tab: ReportsTab) => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === "oversikt") {
+      url.searchParams.delete("tab");
+    } else {
+      url.searchParams.set("tab", tab);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -382,7 +474,7 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Market Intelligence</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Automatiske markedsrapporter med AI-analyse, valutakurser og bransjetrender
+            Markedsdata, renter, eurokurs, rapporter og ekspertinnhold for kundedialog
           </p>
         </div>
         <button
@@ -395,16 +487,24 @@ export default function ReportsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg w-fit">
-        {(["oversikt", "rapporter", "markedsdata", "mottakere"] as const).map(tab => (
+      <div className="flex w-full flex-wrap gap-1 rounded-lg bg-slate-800/50 p-1 sm:w-fit">
+        {(["oversikt", "rapporter", "markedsdata", "ekspertinnhold", "mottakere"] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => switchTab(tab)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            {tab === "oversikt" ? "Oversikt" : tab === "rapporter" ? `Rapporter (${reports.length})` : tab === "markedsdata" ? "Markedsdata" : "Mottakere"}
+            {tab === "oversikt"
+              ? "Oversikt"
+              : tab === "rapporter"
+                ? `Rapporter (${reports.length})`
+                : tab === "markedsdata"
+                  ? "Markedsdata"
+                  : tab === "ekspertinnhold"
+                    ? "Ekspertinnhold"
+                    : "Mottakere"}
           </button>
         ))}
       </div>
@@ -1227,6 +1327,55 @@ export default function ReportsPage() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ═══════════ TAB: EKSPERTINNHOLD ═══════════ */}
+      {activeTab === "ekspertinnhold" && (
+        <div className="space-y-5">
+          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
+                <p className="text-xs font-semibold uppercase tracking-wider text-cyan-200/80">
+                  Fra markedsdata til kundeverdi
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-white">Bruk kvalitetssikret input som grunnlag for ekspertinnhold</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Her henger arbeidsflyten sammen: lim inn og lagre markedsartikler, renter, eurokurs og egne analyser i
+                  Markedsdata-fanen, og bruk denne flaten til å gjøre materialet om til rapporter, artikler og instruksjoner.
+                </p>
+              </div>
+              <Button variant="outline" onClick={() => switchTab("markedsdata")}>
+                <Globe size={14} className="mr-2" />
+                Gå til markedsdata
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                <p className="text-xs text-slate-500">EUR/NOK</p>
+                <p className="mt-1 text-xl font-semibold text-white">{snapshot?.eur_nok?.toFixed(4) || "--"}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                <p className="text-xs text-slate-500">ECB MRO</p>
+                <p className="mt-1 text-xl font-semibold text-white">
+                  {interestRates?.spain?.ecbMainRefinancingRate ? `${interestRates.spain.ecbMainRefinancingRate}%` : "--"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                <p className="text-xs text-slate-500">Norges Bank</p>
+                <p className="mt-1 text-xl font-semibold text-white">
+                  {interestRates?.norway?.policyRate ? `${interestRates.norway.policyRate}%` : "--"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                <p className="text-xs text-slate-500">Lagrede analyser</p>
+                <p className="mt-1 text-xl font-semibold text-white">{savedInsights.length}</p>
+              </div>
+            </div>
+          </div>
+
+          <AdvisorPlaybooksStudio embedded marketContexts={expertMarketContexts} />
         </div>
       )}
 

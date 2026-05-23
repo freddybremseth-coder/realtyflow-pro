@@ -151,7 +151,6 @@ export const SIDEBAR_NAV = {
   admin: [
     { label: "Brands", href: "/brands", icon: "Palette" },
     { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
-    { label: "Rådgiver Playbooks", href: "/advisor-playbooks", icon: "FileText" },
     { label: "Scanner", href: "/scanner", icon: "ScanLine" },
     { label: "Innstillinger", href: "/settings", icon: "Settings" },
   ],
