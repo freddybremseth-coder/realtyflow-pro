@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { downloadImageFile, safeImageFilename } from "@/lib/client/image-files";
 import {
   Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2,
   Clock, Star, RefreshCw, AlertCircle, Send, CheckCircle,
@@ -60,6 +61,7 @@ export default function ImageStudioPage() {
   const [variantInstructions, setVariantInstructions] = useState("");
   const [variantLoading, setVariantLoading] = useState(false);
   const [variantError, setVariantError] = useState("");
+  const [downloadingImage, setDownloadingImage] = useState<string | null>(null);
 
   const sendToContentHub = async (img: GeneratedImage) => {
     setSendingToHub(img.id);
@@ -206,13 +208,19 @@ export default function ImageStudioPage() {
     navigator.clipboard.writeText(text);
   };
 
-  const downloadImage = (imageUrl: string, filename: string) => {
-    const link = document.createElement("a");
-    link.href = imageUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const downloadImage = async (img: GeneratedImage) => {
+    if (!img.imageUrl) return;
+
+    setDownloadingImage(img.id);
+    setError("");
+    try {
+      const filename = safeImageFilename(`${img.brand}-${img.id}.png`, "bilde.png");
+      await downloadImageFile(img.imageUrl, filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke laste ned bildet.");
+    } finally {
+      setDownloadingImage(null);
+    }
   };
 
   return (
@@ -496,9 +504,15 @@ export default function ImageStudioPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => downloadImage(img.imageUrl!, `${img.brand}-${img.id}.png`)}
+                            disabled={downloadingImage === img.id}
+                            onClick={() => downloadImage(img)}
                           >
-                            <Download size={12} className="mr-1" /> Last ned
+                            {downloadingImage === img.id ? (
+                              <Loader2 size={12} className="mr-1 animate-spin" />
+                            ) : (
+                              <Download size={12} className="mr-1" />
+                            )}
+                            Last ned
                           </Button>
                           <Button
                             size="sm"

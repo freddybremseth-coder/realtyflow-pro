@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback } from "react";
 import { Upload, Loader2, X, Image as ImageIcon, Check } from "lucide-react";
 import { Button } from "./button";
+import { prepareImageForUpload } from "@/lib/client/image-files";
 
 interface ImageUploadProps {
   /** Current image URL (controlled) */
@@ -48,23 +49,26 @@ export function ImageUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
   const upload = useCallback(async (file: File) => {
     setError("");
+    setNotice("");
     if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
       setError("Ugyldig filtype. Kun JPG, PNG eller WebP.");
-      return;
-    }
-    if (file.size > maxSizeMB * 1024 * 1024) {
-      setError(`Filen er for stor (maks ${maxSizeMB}MB).`);
       return;
     }
     onFileSelect?.(file);
     setUploading(true);
     try {
+      const prepared = await prepareImageForUpload(file);
+      if (prepared.file.size > maxSizeMB * 1024 * 1024) {
+        setError(`Filen er for stor (maks ${maxSizeMB}MB). Prøv å eksportere bildet som JPG.`);
+        return;
+      }
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", prepared.file);
       if (uploadFields) {
         Object.entries(uploadFields).forEach(([key, fieldValue]) => {
           fd.append(key, fieldValue);
@@ -74,6 +78,9 @@ export function ImageUpload({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Opplasting feilet");
       onChange(data.url || data.publicUrl || data.imageUrl);
+      if (prepared.compressed) {
+        setNotice("Bildet ble optimalisert for trygg opplasting.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -163,6 +170,10 @@ export function ImageUpload({
 
       {error && (
         <div className="text-xs text-red-400">{error}</div>
+      )}
+
+      {notice && !error && (
+        <div className="text-xs text-emerald-400">{notice}</div>
       )}
 
       {allowUrlEntry && !value && (

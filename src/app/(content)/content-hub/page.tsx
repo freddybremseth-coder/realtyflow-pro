@@ -15,6 +15,7 @@ import {
   Palette, ChevronDown, ChevronRight, Play, Pause, X, Inbox, Trash2, Edit3, RefreshCw,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+import { prepareImageForUpload } from "@/lib/client/image-files";
 import { createClient } from "@supabase/supabase-js";
 import ContentCalendar from "@/components/ContentCalendar"
 
@@ -416,23 +417,34 @@ export default function ContentHubPage() {
   }, []);
 
   const attachImageToDraft = useCallback(async (draftId: string, imageUrl: string, thumbnailUrl?: string | null) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    await supabase
-      .from("content_publications")
-      .update({ ai_image_url: imageUrl, thumbnail_url: thumbnailUrl || null, updated_at: new Date().toISOString() })
-      .eq("id", draftId);
-    setDrafts((prev) =>
-      prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl, thumbnail_url: thumbnailUrl || null } : d)
-    );
-    setImagePickerDraft(null);
+    setUploadingImage(draftId);
+    try {
+      const res = await fetch("/api/content-hub/images/attach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, imageUrl, thumbnailUrl }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke koble bildet til utkastet." }));
+      if (!res.ok) throw new Error(data.error || "Kunne ikke koble bildet til utkastet.");
+
+      setDrafts((prev) =>
+        prev.map((d) => d.id === draftId ? { ...d, ai_image_url: imageUrl, thumbnail_url: thumbnailUrl || null } : d)
+      );
+      setImagePickerDraft(null);
+    } catch (err) {
+      console.error("Attach image error:", err);
+      alert(err instanceof Error ? err.message : "Kunne ikke koble bildet til utkastet.");
+    } finally {
+      setUploadingImage(null);
+    }
   }, []);
 
   const handleImageUpload = useCallback(async (draftId: string, file: File) => {
     setUploadingImage(draftId);
     try {
+      const prepared = await prepareImageForUpload(file);
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", prepared.file);
       formData.append("draft_id", draftId);
       formData.append("save_to_bank", "true");
       formData.append("bank_kind", "image");
@@ -444,19 +456,21 @@ export default function ContentHubPage() {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ error: "Opplasting feilet. Bildet kan være for stort." }));
+      if (!res.ok) {
+        throw new Error(data.error || "Opplasting feilet");
+      }
       if (data.url) {
         setDrafts((prev) =>
           prev.map((d) => d.id === draftId ? { ...d, ai_image_url: data.url, thumbnail_url: data.thumbnailUrl || data.url } : d)
         );
         setImagePickerDraft(null);
       } else {
-        console.error("Upload failed:", data.error);
-        alert(data.error || "Opplasting feilet");
+        throw new Error(data.error || "Opplasting feilet");
       }
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Opplasting feilet");
+      alert(err instanceof Error ? err.message : "Opplasting feilet");
     } finally {
       setUploadingImage(null);
     }
