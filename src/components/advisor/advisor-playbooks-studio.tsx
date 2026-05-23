@@ -107,7 +107,7 @@ const defaultDraft: DraftForm = {
   audience: "Norske boligkjøpere som vurderer Spania",
   region: "Costa Blanca",
   readerProblem: "Leseren ønsker å forstå risiko, prisnivå, utleiemuligheter og hva som bør sjekkes før de går videre med boligkjøp.",
-  expertAngle: "Gi en rolig, konkret vurdering som skiller mellom det som er sikkert, det som må undersøkes lokalt, og det som bør avklares med advokat eller gestor.",
+  expertAngle: "Et godt boligkjøp starter med riktig område, dokumentert risiko og en klar plan for bruk, kostnader og neste steg.",
   evidence: "Lokale prisforskjeller mellom kommuner\nRegler for turistutleie varierer etter region, kommune og boligtype\nSameievedtekter, lisenshistorikk og cadastral reference må kontrolleres tidlig",
   sources: "BOE / DOGV Decreto-ley 9/2024 | https://www.boe.es/buscar/doc.php?id=DOGV-r-2024-90168 | VUT-definisjon og regional regulering\nTurisme GVA | https://www.turisme.gva.es/turisme/es/files/pdf/viviendas_turisticas_012.pdf | Registrering, titular og boligdata",
   cta: "Book en konkret gjennomgang av område, boligtype og budsjett før du binder deg til visning eller reservasjon.",
@@ -195,9 +195,33 @@ function buildChecklist(form: DraftForm) {
   ];
 }
 
+function customerFacingAngle(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Vurderingen bør handle om hva som er dokumentert, hva som fortsatt må kontrolleres, og hva dette betyr for valget du skal ta.";
+  }
+
+  if (/^(gi|skriv|lag|forklar|vis|vurder)\b/i.test(trimmed)) {
+    return "Det viktigste er å skille mellom dokumenterte fakta, lokale forhold som må undersøkes, og spørsmål som bør bekreftes av advokat, gestor eller relevant myndighet.";
+  }
+
+  return trimmed;
+}
+
+function formatBulletList(items: string[], fallback: string) {
+  if (!items.length) return `- ${fallback}`;
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
 function buildDraftMessage(form: DraftForm) {
   const evidence = parseLines(form.evidence);
   const sourceLabels = parseSources(form.sources).map((source) => source.label);
+  const expertAngle = customerFacingAngle(form.expertAngle);
+  const evidenceList = formatBulletList(
+    evidence,
+    "Det konkrete datagrunnlaget bør kontrolleres mot område, boligtype og dokumentasjon før beslutning.",
+  );
+  const sourceList = formatBulletList(sourceLabels, "Kilder og datoer bør legges ved før endelig publisering.");
 
   if (form.format === "article") {
     return `${form.title}
@@ -209,10 +233,10 @@ Hvorfor dette er viktig
 ${form.readerProblem}
 
 Min faglige vurdering
-${form.expertAngle}
+${expertAngle}
 
 Dette bør du se nærmere på
-${evidence.map((item) => `- ${item}`).join("\n") || "- Legg inn konkrete observasjoner, tall eller eksempler."}
+${evidenceList}
 
 Hva jeg ofte ser
 Kjøpere som tar gode valg, vurderer ikke bare om boligen er attraktiv. De vurderer om området fungerer gjennom året, om dokumentasjonen tåler kontroll, om kostnadsbildet er realistisk, og om boligen passer den planen de faktisk har.
@@ -224,7 +248,7 @@ Neste steg
 ${form.cta}
 
 Kilder og datagrunnlag
-${sourceLabels.map((item) => `- ${item}`).join("\n") || "- Legg inn kilder før publisering."}`;
+${sourceList}`;
   }
 
   if (form.format === "instruction") {
@@ -234,7 +258,7 @@ Formål
 ${form.readerProblem}
 
 Faglig prinsipp
-${form.expertAngle}
+${expertAngle}
 
 Prosess
 1. Avklar mål, budsjett, tidshorisont og reell bruk.
@@ -244,7 +268,7 @@ Prosess
 5. Oppsummer funn i en kort anbefaling med risiko og neste steg.
 
 Kontrollpunkter
-${evidence.map((item) => `- ${item}`).join("\n") || "- Legg inn kontrollpunkter som må bekreftes."}
+${evidenceList}
 
 Standard formulering
 Basert på det vi vet nå er dette en god retning å undersøke videre, men beslutningen bør først tas når dokumentasjon, lokale regler og praktiske kostnader er kontrollert.
@@ -253,22 +277,22 @@ Neste steg
 ${form.cta}
 
 Kilder og datagrunnlag
-${sourceLabels.map((item) => `- ${item}`).join("\n") || "- Legg inn kilder før bruk."}`;
+${sourceList}`;
   }
 
   return `${form.title}
 
-Kort vurdering
-For deg som vurderer bolig i ${form.region || "Spania"}, er det viktigste ikke å finne den boligen som ser mest attraktiv ut først. Det viktigste er å finne ut hvilken bolig som passer planen din best, og hvilke forhold som må være avklart før du tar neste steg.
+Hovedkonklusjon
+For deg som vurderer bolig i ${form.region || "Spania"}, er det viktigste å finne ut om boligen passer planen din, ikke bare om den virker attraktiv i annonsen. Pris, beliggenhet, dokumentasjon, kostnader og risiko bør vurderes samlet før du går videre.
 
 Din situasjon
 ${form.readerProblem}
 
-Min anbefaling
-${form.expertAngle}
+Min faglige vurdering
+${expertAngle}
 
-Det jeg ville kontrollert før du går videre
-${evidence.map((item) => `- ${item}`).join("\n") || "- Legg inn tall, observasjoner eller funn."}
+Hva datagrunnlaget peker mot
+${evidenceList}
 
 Hva dette betyr i praksis
 En bolig kan være riktig for feriebruk, men svakere som investering. Den kan ha god pris, men være mer krevende å eie, drifte eller selge videre enn den først virker. Derfor bør vurderingen handle om bruk, område, dokumentasjon, kostnader, fleksibilitet og risiko samlet.
@@ -293,7 +317,7 @@ Forbehold
 Dette er rådgivende beslutningsstøtte. Juridiske, skattemessige og kommunale spørsmål må bekreftes av riktig fagperson før endelig beslutning.
 
 Kilder og datagrunnlag
-${sourceLabels.map((item) => `- ${item}`).join("\n") || "- Legg inn kilder før publisering."}`;
+${sourceList}`;
 }
 
 function createDraftPlaybook(form: DraftForm): AdvisorPlaybook {
@@ -346,9 +370,12 @@ function confidenceVariant(confidence?: string) {
 }
 
 function draftActionLabel(format: DraftFormat, hasDraft: boolean) {
-  const noun =
-    format === "report" ? "kundeklar rapport" : format === "article" ? "kundeklar artikkel" : "intern instruks";
-  return `${hasDraft ? "Oppdater" : "Generer"} ${noun}`;
+  const noun = format === "report" ? "rapportmal" : format === "article" ? "artikkelmal" : "instruksmal";
+  return `${hasDraft ? "Oppdater" : "Lag"} enkel ${noun}`;
+}
+
+function isAiGeneratedDraft(playbook: AdvisorPlaybook | null) {
+  return Boolean(playbook?.id?.startsWith("ai-") || playbook?.tags?.includes("market-intelligence"));
 }
 
 type AdvisorPlaybooksStudioProps = {
@@ -449,12 +476,17 @@ export function AdvisorPlaybooksStudio({ embedded = false, marketContexts = [] }
   }
 
   function generateDraft() {
+    if (isAiGeneratedDraft(generatedDraft)) {
+      setHubStatus("AI-utkastet er beholdt. Bruk Skriv med AI fra kontekst for å oppdatere rapporten med samme datagrunnlag.");
+      return;
+    }
+
     const draft = createDraftPlaybook(draftForm);
     setGeneratedDraft(draft);
     setDraftDirty(false);
     setLastGeneratedAt(new Date().toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }));
     setActiveTab("studio");
-    setHubStatus(`${formatLabel(draftForm.format)} er generert som kundeklar tekst og klar for gjennomlesing.`);
+    setHubStatus(`${formatLabel(draftForm.format)}malen er laget. Bruk AI fra kontekst når innholdet skal bygges på markedsdata.`);
   }
 
   async function generateDraftWithAI() {
@@ -829,7 +861,16 @@ export function AdvisorPlaybooksStudio({ embedded = false, marketContexts = [] }
                     {aiGenerating ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Sparkles className="mr-2" size={16} />}
                     Skriv med AI fra kontekst
                   </Button>
-                  <Button onClick={generateDraft}>
+                  <Button
+                    variant={generatedDraft ? "outline" : "secondary"}
+                    onClick={generateDraft}
+                    disabled={isAiGeneratedDraft(generatedDraft)}
+                    title={
+                      isAiGeneratedDraft(generatedDraft)
+                        ? "AI-utkast kan oppdateres med Skriv med AI fra kontekst."
+                        : "Lag en enkel mal uten AI."
+                    }
+                  >
                     <Sparkles className="mr-2" size={16} />
                     {draftActionLabel(draftForm.format, Boolean(generatedDraft))}
                   </Button>
@@ -900,7 +941,9 @@ export function AdvisorPlaybooksStudio({ embedded = false, marketContexts = [] }
                   <>
                     {draftDirty && (
                       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                        Feltene er endret siden sist generering. Trykk på oppdater-knappen for å bygge teksten på nytt.
+                        {isAiGeneratedDraft(generatedDraft)
+                          ? "Feltene er endret siden sist generering. Bruk AI-knappen for å oppdatere teksten med valgt markedskontekst."
+                          : "Feltene er endret siden sist generering. Oppdater malen for å bygge teksten på nytt."}
                       </div>
                     )}
 
