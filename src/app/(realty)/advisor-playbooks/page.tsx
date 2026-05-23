@@ -191,20 +191,23 @@ function buildDraftMessage(form: DraftForm) {
   if (form.format === "article") {
     return `${form.title}
 
-Kort standpunkt
-${form.expertAngle}
+Ingress
+Mange boligkjøpere starter med boligannonsen. Jeg vil heller starte med beslutningen: hva skal boligen faktisk brukes til, hvilken risiko tåler du, og hvilke forhold må være avklart før du går videre?
 
-Hvorfor dette betyr noe for ${form.audience.toLowerCase()}
+Hvorfor dette er viktig
 ${form.readerProblem}
 
-Det viktigste å forstå
+Min faglige vurdering
+${form.expertAngle}
+
+Dette bør du se nærmere på
 ${evidence.map((item) => `- ${item}`).join("\n") || "- Legg inn konkrete observasjoner, tall eller eksempler."}
 
-Min vurdering
-En god eiendomsbeslutning i ${form.region || "markedet"} handler ikke bare om pris. Den handler om bruk, likviditet, dokumentasjon, lokale begrensninger og hva boligen faktisk tåler av planen kjøperen har.
+Hva jeg ofte ser
+Kjøpere som tar gode valg, vurderer ikke bare om boligen er attraktiv. De vurderer om området fungerer gjennom året, om dokumentasjonen tåler kontroll, om kostnadsbildet er realistisk, og om boligen passer den planen de faktisk har.
 
-Praktisk råd
-Før du sammenligner boliger, bør du sammenligne risikoen rundt dem: område, sameie, regulering, tilstand, utleieadgang og kostnader etter kjøp.
+Mitt råd
+Før du sammenligner flere boliger, sammenlign risikoen rundt dem: område, sameie, regulering, teknisk tilstand, utleiemulighet og kostnader etter kjøp.
 
 Neste steg
 ${form.cta}
@@ -244,25 +247,33 @@ ${sourceLabels.map((item) => `- ${item}`).join("\n") || "- Legg inn kilder før 
 
   return `${form.title}
 
-Hovedkonklusjon
-${form.expertAngle}
+Kort vurdering
+For deg som vurderer bolig i ${form.region || "Spania"}, er det viktigste ikke å finne den boligen som ser mest attraktiv ut først. Det viktigste er å finne ut hvilken bolig som passer planen din best, og hvilke forhold som må være avklart før du tar neste steg.
 
-Leserens situasjon
+Din situasjon
 ${form.readerProblem}
 
-Hva datagrunnlaget peker mot
+Min anbefaling
+${form.expertAngle}
+
+Det jeg ville kontrollert før du går videre
 ${evidence.map((item) => `- ${item}`).join("\n") || "- Legg inn tall, observasjoner eller funn."}
 
-Faglig vurdering
-For ${form.audience.toLowerCase()} i ${form.region || "dette markedet"} bør vurderingen handle om mer enn attraktiv pris. Det avgjørende er om boligen passer faktisk bruk, om risikoen er kjent, og om juridiske, skattemessige og praktiske forhold er avklart før kjøper forplikter seg.
+Hva dette betyr i praksis
+En bolig kan være riktig for feriebruk, men svakere som investering. Den kan ha god pris, men være mer krevende å eie, drifte eller selge videre enn den først virker. Derfor bør vurderingen handle om bruk, område, dokumentasjon, kostnader, fleksibilitet og risiko samlet.
 
 Mulighet
-- Bedre beslutning når område, boligtype og forventet bruk vurderes samlet.
-- Mer presis forhandling når svake punkter og dokumentasjon er kjent tidlig.
+- Du kan ta en bedre beslutning når område, boligtype og forventet bruk vurderes samlet.
+- Du får et sterkere grunnlag for forhandling når svake punkter og dokumentasjon er kjent tidlig.
+- Du unngår å bygge kjøpsbeslutningen på generelle råd som ikke er kontrollert mot akkurat denne boligen.
 
 Risiko
-- Regler, sameievedtekter, lisenshistorikk eller lokale forhold kan endre verdien av boligen for akkurat denne kjøperen.
-- Generelle markedsråd kan bli feil hvis de brukes uten kontroll av kommune, bolig og dokumentasjon.
+- Sameievedtekter, lisenshistorikk, lokale regler eller dokumentasjon kan påvirke hvordan boligen faktisk kan brukes.
+- Kostnader, drift og vedlikehold kan gjøre en tilsynelatende rimelig bolig mindre attraktiv over tid.
+- Utleiepotensial bør aldri vurderes uten kontroll av region, kommune, sameie, boligdata og praktisk drift.
+
+Min konklusjon
+Dette er et tema der det lønner seg å være konkret tidlig. Før du binder deg til en visning, reservasjon eller forhandling, bør vi vurdere boligen opp mot bruken din, området, dokumentasjonen og de viktigste risikopunktene.
 
 Anbefalt neste steg
 ${form.cta}
@@ -285,10 +296,10 @@ function createDraftPlaybook(form: DraftForm): AdvisorPlaybook {
     region: form.region,
     status: "draft",
     confidence: sources.length ? "needs_review" : "draft",
-    summary: `${formatLabel(form.format)} for ${form.audience}. Fokus: ${form.readerProblem}`,
+    summary: `Kundeklar ${formatLabel(form.format).toLowerCase()} for ${form.audience}. Fokus: ${form.readerProblem}`,
     customer_message: buildDraftMessage(form),
     internal_notes:
-      "Ekspertinnhold skal kvalitetssikres før publisering: kilder, datoer, lokale regler, forbehold og konkret neste steg.",
+      "Intern kvalitetssjekk før publisering: kontroller kilder, datoer, lokale regler, forbehold og at neste steg er konkret.",
     checklist: buildChecklist(form),
     sources,
     tags: [form.format, "expert-content", "freddy-expertise"],
@@ -323,6 +334,12 @@ function confidenceVariant(confidence?: string) {
   return "secondary";
 }
 
+function draftActionLabel(format: DraftFormat, hasDraft: boolean) {
+  const noun =
+    format === "report" ? "kundeklar rapport" : format === "article" ? "kundeklar artikkel" : "intern instruks";
+  return `${hasDraft ? "Oppdater" : "Generer"} ${noun}`;
+}
+
 export default function AdvisorPlaybooksPage() {
   const [playbooks, setPlaybooks] = useState<AdvisorPlaybook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -338,7 +355,9 @@ export default function AdvisorPlaybooksPage() {
   const [query, setQuery] = useState("");
   const [formatFilter, setFormatFilter] = useState("all");
   const [draftForm, setDraftForm] = useState<DraftForm>(defaultDraft);
-  const [generatedDraft, setGeneratedDraft] = useState<AdvisorPlaybook>(() => createDraftPlaybook(defaultDraft));
+  const [generatedDraft, setGeneratedDraft] = useState<AdvisorPlaybook | null>(null);
+  const [draftDirty, setDraftDirty] = useState(false);
+  const [lastGeneratedAt, setLastGeneratedAt] = useState("");
 
   async function loadPlaybooks() {
     setLoading(true);
@@ -369,7 +388,9 @@ export default function AdvisorPlaybooksPage() {
     const reports = playbooks.filter((item) => inferFormat(item) === "report").length;
     const avgScore = total
       ? Math.round(playbooks.reduce((sum, item) => sum + qualityScore(item), 0) / total)
-      : qualityScore(generatedDraft);
+      : generatedDraft
+        ? qualityScore(generatedDraft)
+        : 0;
 
     return { total, verified, reports, avgScore };
   }, [generatedDraft, playbooks]);
@@ -397,13 +418,16 @@ export default function AdvisorPlaybooksPage() {
 
   function updateDraft<K extends keyof DraftForm>(key: K, value: DraftForm[K]) {
     setDraftForm((current) => ({ ...current, [key]: value }));
+    if (generatedDraft) setDraftDirty(true);
   }
 
   function generateDraft() {
     const draft = createDraftPlaybook(draftForm);
     setGeneratedDraft(draft);
+    setDraftDirty(false);
+    setLastGeneratedAt(new Date().toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }));
     setActiveTab("studio");
-    setHubStatus("Utkastet er strukturert og klart for kvalitetssjekk.");
+    setHubStatus(`${formatLabel(draftForm.format)} er generert som kundeklar tekst og klar for gjennomlesing.`);
   }
 
   async function savePlaybook(playbook: AdvisorPlaybook) {
@@ -662,13 +686,21 @@ export default function AdvisorPlaybooksPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={generateDraft}>
                     <Sparkles className="mr-2" size={16} />
-                    Generer struktur
+                    {draftActionLabel(draftForm.format, Boolean(generatedDraft))}
                   </Button>
-                  <Button variant="outline" onClick={() => copyText("draft", generatedDraft.customer_message || "")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => generatedDraft && copyText("draft", generatedDraft.customer_message || "")}
+                    disabled={!generatedDraft}
+                  >
                     <Clipboard className="mr-2" size={16} />
                     {copied === "draft" ? "Kopiert" : "Kopier utkast"}
                   </Button>
-                  <Button variant="secondary" onClick={() => savePlaybook(generatedDraft)} disabled={saving || tableNotReady}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => generatedDraft && savePlaybook(generatedDraft)}
+                    disabled={saving || tableNotReady || !generatedDraft}
+                  >
                     {saving ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Save className="mr-2" size={16} />}
                     Lagre
                   </Button>
@@ -681,60 +713,90 @@ export default function AdvisorPlaybooksPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <CardTitle>Utkast</CardTitle>
-                    <CardDescription>{generatedDraft.title}</CardDescription>
+                    <CardDescription>
+                      {generatedDraft ? generatedDraft.title : "Ingen tekst generert ennå."}
+                    </CardDescription>
                   </div>
-                  <Badge variant={confidenceVariant(generatedDraft.confidence)}>{generatedDraft.confidence}</Badge>
+                  {generatedDraft ? (
+                    <Badge variant={confidenceVariant(generatedDraft.confidence)}>{generatedDraft.confidence}</Badge>
+                  ) : (
+                    <Badge variant="secondary">venter</Badge>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
-                    <span>Kvalitetsscore</span>
-                    <span>{qualityScore(generatedDraft)}%</span>
-                  </div>
-                  <Progress value={qualityScore(generatedDraft)} />
-                </div>
-
-                <div className="rounded-lg border border-slate-700/50 bg-slate-950/70 p-4">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Publiserbar tekst</p>
-                  <p className="max-h-[520px] overflow-auto whitespace-pre-wrap text-sm leading-7 text-slate-200">
-                    {generatedDraft.customer_message}
-                  </p>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Sjekkliste</p>
-                    <ul className="space-y-2">
-                      {(generatedDraft.checklist || []).slice(0, 6).map((item) => (
-                        <li key={item} className="flex gap-2 text-sm text-slate-300">
-                          <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={15} />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Kilder</p>
-                    <div className="space-y-2">
-                      {(generatedDraft.sources || []).map((source) => (
-                        <a
-                          key={`${source.label}-${source.url}`}
-                          href={source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block rounded-lg border border-slate-700/50 p-2 text-sm text-slate-300 hover:border-cyan-400"
-                        >
-                          <span className="flex items-center gap-2">
-                            {source.label}
-                            {source.url !== "#" && <ExternalLink size={13} />}
-                          </span>
-                        </a>
-                      ))}
+                {!generatedDraft ? (
+                  <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-6">
+                    <div className="flex items-start gap-3">
+                      <FileText className="mt-0.5 shrink-0 text-cyan-300" size={20} />
+                      <div>
+                        <p className="text-sm font-semibold text-white">Klar til å generere kundetekst</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-400">
+                          Fyll inn eller juster feltene til venstre, og trykk på knappen. Da bygges en ny tekst her,
+                          med kundeklar rapport, artikkel eller intern instruks basert på formatet du har valgt.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    {draftDirty && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                        Feltene er endret siden sist generering. Trykk på oppdater-knappen for å bygge teksten på nytt.
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                        <span>Kvalitetsscore</span>
+                        <span>{qualityScore(generatedDraft)}%</span>
+                      </div>
+                      <Progress value={qualityScore(generatedDraft)} />
+                      {lastGeneratedAt && <p className="mt-2 text-xs text-slate-500">Generert kl. {lastGeneratedAt}</p>}
+                    </div>
+
+                    <div className="rounded-lg border border-slate-700/50 bg-slate-950/70 p-4">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Kundeklar tekst</p>
+                      <p className="max-h-[520px] overflow-auto whitespace-pre-wrap text-sm leading-7 text-slate-200">
+                        {generatedDraft.customer_message}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Intern sjekkliste</p>
+                        <ul className="space-y-2">
+                          {(generatedDraft.checklist || []).slice(0, 6).map((item) => (
+                            <li key={item} className="flex gap-2 text-sm text-slate-300">
+                              <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={15} />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-700/50 bg-slate-950/40 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Kilder</p>
+                        <div className="space-y-2">
+                          {(generatedDraft.sources || []).map((source) => (
+                            <a
+                              key={`${source.label}-${source.url}`}
+                              href={source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block rounded-lg border border-slate-700/50 p-2 text-sm text-slate-300 hover:border-cyan-400"
+                            >
+                              <span className="flex items-center gap-2">
+                                {source.label}
+                                {source.url !== "#" && <ExternalLink size={13} />}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
