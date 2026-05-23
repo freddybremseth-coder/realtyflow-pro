@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -194,6 +194,29 @@ function mapCampaignRow(row: CampaignApiRow): CampaignItem {
   };
 }
 
+function parseTagsInput(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/[\s,]+/)
+    .map((tag) => tag.trim().replace(/^#/, ""))
+    .filter(Boolean)
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+}
+
+function imageStyleToApiStyle(style: string) {
+  const lower = style.toLowerCase();
+  if (lower.includes("illustrasjon")) return "illustration";
+  if (lower.includes("minimal")) return "minimal";
+  if (lower.includes("luksus")) return "luxury";
+  return "photo";
+}
+
 const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
 
 ✓ YouTube - Allerede integrert og fungerer. Sterkeste plattform for
@@ -281,9 +304,15 @@ export default function ContentHubPage() {
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [imageStyle, setImageStyle] = useState(IMAGE_STYLES[0]);
+  const [manualImageUrl, setManualImageUrl] = useState("");
+  const [manualImageName, setManualImageName] = useState("");
+  const [manualMediaUploading, setManualMediaUploading] = useState(false);
+  const [imageGenerating, setImageGenerating] = useState(false);
+  const [manualPublishStatus, setManualPublishStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishProgress, setPublishProgress] = useState<PublishProgress[]>([]);
   const [aiGenerating, setAiGenerating] = useState<string | null>(null);
+  const manualMediaInputRef = useRef<HTMLInputElement>(null);
 
   // Campaign state
   const [showCampaignForm, setShowCampaignForm] = useState(false);
@@ -583,6 +612,40 @@ export default function ContentHubPage() {
     }
   }, []);
 
+  const handleManualMediaUpload = useCallback(async (file: File) => {
+    setManualMediaUploading(true);
+    setManualPublishStatus(null);
+    try {
+      const prepared = await prepareImageForUpload(file);
+      const formData = new FormData();
+      formData.append("file", prepared.file);
+      formData.append("save_to_bank", "true");
+      formData.append("bank_kind", "image");
+      formData.append("bank_owner", selectedBrand);
+      formData.append("bank_name", file.name);
+      formData.append("bank_tags", ["content-hub", selectedBrand, selectedContentType].join(","));
+
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({ error: "Opplasting feilet." }));
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Opplasting feilet");
+      }
+      setManualImageUrl(data.url);
+      setManualImageName(file.name);
+      setManualPublishStatus({ type: "success", message: "Bildet er lastet opp og klart for publisering." });
+    } catch (err) {
+      setManualPublishStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Bildet kunne ikke lastes opp.",
+      });
+    } finally {
+      setManualMediaUploading(false);
+    }
+  }, [selectedBrand, selectedContentType]);
+
   const fetchConnectedAccounts = useCallback(async () => {
     try {
       const [legacyRes, oauthRes] = await Promise.allSettled([
@@ -632,11 +695,11 @@ export default function ContentHubPage() {
     }
   }, []);
 
-  const openPublishModal = useCallback((draft: DraftItem) => {
+  const openPublishModal = useCallback((draft: DraftItem, mode: "now" | "schedule" = "now") => {
     setPublishDraft(draft);
     setPublishResults([]);
     setPublishing(false);
-    setScheduleMode("now");
+    setScheduleMode(mode);
     setScheduledAt("");
     setAiRecommendation(null);
     // Pre-select intended platforms from the draft when present. Property
@@ -1091,50 +1154,135 @@ export default function ContentHubPage() {
     setAiGenerating(null);
   }, [selectedBrand, selectedPlatforms, selectedContentType, title, description]);
 
-  const handlePublish = useCallback(async () => {
-    if (selectedPlatforms.length === 0) return;
+  const handleGenerateImage = useCallback(async () => {
+    const prompt = [title, description].filter(Boolean).join("\n\n").trim();
+    const brand = BRANDS.find((b) => b.id === selectedBrand);
+    if (!prompt) {
+      setManualPublishStatus({ type: "error", message: "Skriv tittel eller beskrivelse før du genererer bilde." });
+      return;
+    }
+
+    setImageGenerating(true);
+    setManualPublishStatus(null);
+    try {
+      const res = await fetch("/api/image-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          style: imageStyleToApiStyle(imageStyle),
+          aspectRatio: selectedContentType === "story" || selectedContentType === "reel" ? "9:16" : "4:5",
+          brand: brand?.name || selectedBrand,
+          persist: true,
+          bankKind: "image",
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Bildegenerering feilet." }));
+      if (!res.ok || !data.imageUrl) {
+        throw new Error(data.error || "Bildegenerering feilet.");
+      }
+      setManualImageUrl(data.imageUrl);
+      setManualImageName("AI-generert bilde");
+      setManualPublishStatus({ type: "success", message: "AI-bilde er generert og lagt til i innholdet." });
+    } catch (err) {
+      setManualPublishStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke generere bilde.",
+      });
+    } finally {
+      setImageGenerating(false);
+    }
+  }, [description, imageStyle, selectedBrand, selectedContentType, title]);
+
+  const handlePublish = useCallback(async (mode: "publish" | "schedule" = "publish") => {
+    if (selectedPlatforms.length === 0) {
+      setManualPublishStatus({ type: "error", message: "Velg minst én plattform først." });
+      return;
+    }
+    if (!title.trim() && !description.trim()) {
+      setManualPublishStatus({ type: "error", message: "Skriv tittel eller beskrivelse før du oppretter utkast." });
+      return;
+    }
+
     setIsPublishing(true);
+    setManualPublishStatus(null);
     const progress: PublishProgress[] = selectedPlatforms.map((p) => ({
       platform: p,
       status: "pending",
-      message: "Venter...",
+      message: "Klargjør utkast...",
       progress: 0,
     }));
     setPublishProgress(progress);
 
-    // Simulate SSE-like progress for each platform
-    for (let i = 0; i < selectedPlatforms.length; i++) {
-      const platformId = selectedPlatforms[i];
-      // Uploading
+    try {
       setPublishProgress((prev) =>
-        prev.map((pp) =>
-          pp.platform === platformId
-            ? { ...pp, status: "uploading", message: "Laster opp...", progress: 30 }
-            : pp
-        )
+        prev.map((pp) => ({ ...pp, status: "uploading", message: "Lagrer i Content Hub...", progress: 40 }))
       );
-      await new Promise((r) => setTimeout(r, 800));
-      // Processing
+
+      const parsedTags = parseTagsInput(tags);
+      const brand = BRANDS.find((b) => b.id === selectedBrand);
+      const fallbackTitle = title.trim() || `${brand?.name || selectedBrand} - ${selectedContentType}`;
+      const fallbackDescription = description.trim() || title.trim();
+      const res = await fetch("/api/marketing-kit/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          drafts: [{
+            brand_id: selectedBrand,
+            title: fallbackTitle,
+            description: fallbackDescription,
+            tags: parsedTags,
+            content_type: selectedContentType,
+            status: "draft",
+            ai_image_url: manualImageUrl || undefined,
+            scheduled_platforms: selectedPlatforms,
+            metadata: { platform: selectedPlatforms[0], source: "content-hub-manual" },
+          }],
+          property_id: null,
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke opprette utkast." }));
+      const createdId = data.results?.find((r: { success?: boolean; id?: string }) => r.success && r.id)?.id;
+      if (!res.ok || !data.success || !createdId) {
+        throw new Error(data.error || "Kunne ikke opprette utkast.");
+      }
+
+      const draft: DraftItem = {
+        id: createdId,
+        brand_id: selectedBrand,
+        content_type: selectedContentType,
+        title: fallbackTitle,
+        description: fallbackDescription,
+        tags: parsedTags,
+        ai_generated: false,
+        ai_image_url: manualImageUrl || null,
+        thumbnail_url: manualImageUrl || null,
+        status: "draft",
+        created_at: new Date().toISOString(),
+        scheduled_platforms: selectedPlatforms,
+      };
+
+      setDrafts((prev) => [draft, ...prev]);
       setPublishProgress((prev) =>
-        prev.map((pp) =>
-          pp.platform === platformId
-            ? { ...pp, status: "processing", message: "Behandler...", progress: 70 }
-            : pp
-        )
+        prev.map((pp) => ({ ...pp, status: "done", message: "Utkast opprettet", progress: 100 }))
       );
-      await new Promise((r) => setTimeout(r, 1000));
-      // Done
+      setManualPublishStatus({
+        type: "success",
+        message: mode === "schedule"
+          ? "Utkastet er klart. Velg tidspunkt i planleggingsvinduet."
+          : "Utkastet er klart. Godkjenn publisering i vinduet som åpnes.",
+      });
+      openPublishModal(draft, mode === "schedule" ? "schedule" : "now");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Kunne ikke opprette utkast.";
       setPublishProgress((prev) =>
-        prev.map((pp) =>
-          pp.platform === platformId
-            ? { ...pp, status: "done", message: "Publisert!", progress: 100 }
-            : pp
-        )
+        prev.map((pp) => ({ ...pp, status: "error", message, progress: 100 }))
       );
+      setManualPublishStatus({ type: "error", message });
+    } finally {
+      setIsPublishing(false);
     }
-    await new Promise((r) => setTimeout(r, 500));
-    setIsPublishing(false);
-  }, [selectedPlatforms]);
+  }, [description, manualImageUrl, openPublishModal, selectedBrand, selectedContentType, selectedPlatforms, tags, title]);
 
   const handleStrategySubmit = useCallback(async (message?: string) => {
     const text = message || strategyInput.trim();
@@ -1252,7 +1400,19 @@ export default function ContentHubPage() {
   };
 
   const weekDays = getWeekDays();
-  const dayNames = ["Man", "Tir", "Ons", "Tor", "Fre", "Lor", "Son"];
+  const dayNames = ["Man", "Tir", "Ons", "Tor", "Fre", "Lør", "Søn"];
+  const todayForCalendar = new Date();
+  const monthStart = new Date(todayForCalendar.getFullYear(), todayForCalendar.getMonth(), 1);
+  const monthEnd = new Date(todayForCalendar.getFullYear(), todayForCalendar.getMonth() + 1, 0);
+  const monthOffset = monthStart.getDay() === 0 ? 6 : monthStart.getDay() - 1;
+  const monthDays = Array.from({ length: monthEnd.getDate() }, (_, i) => (
+    new Date(todayForCalendar.getFullYear(), todayForCalendar.getMonth(), i + 1)
+  ));
+  const monthCells: (Date | null)[] = [
+    ...Array.from({ length: monthOffset }, () => null),
+    ...monthDays,
+  ];
+  const monthLabel = monthStart.toLocaleDateString("nb-NO", { month: "long", year: "numeric" });
 
   return (
     <div className="space-y-6">
@@ -2015,15 +2175,63 @@ export default function ContentHubPage() {
                 <CardHeader>
                   <CardTitle className="text-base">Media</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-primary-500/50 transition-colors cursor-pointer">
-                    <Upload size={32} className="mx-auto text-slate-500 mb-3" />
-                    <p className="text-sm text-slate-300 mb-1">Dra og slipp filer her</p>
-                    <p className="text-xs text-slate-500">Bilder, videoer, eller lydfiler</p>
-                    <Button variant="outline" size="sm" className="mt-3">
-                      Velg filer
-                    </Button>
-                  </div>
+                <CardContent className="space-y-3">
+                  <input
+                    ref={manualMediaInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleManualMediaUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  {manualImageUrl ? (
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/50 overflow-hidden">
+                      <img
+                        src={manualImageUrl}
+                        alt={manualImageName || "Valgt bilde"}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full max-h-56 object-cover"
+                      />
+                      <div className="flex items-center justify-between gap-3 p-3">
+                        <p className="text-xs text-slate-400 truncate">{manualImageName || "Valgt bilde"}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setManualImageUrl("");
+                            setManualImageName("");
+                          }}
+                        >
+                          <X size={14} className="mr-1.5" />
+                          Fjern
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-primary-500/50 transition-colors">
+                      <Upload size={32} className="mx-auto text-slate-500 mb-3" />
+                      <p className="text-sm text-slate-300 mb-1">Last opp et bilde til innlegget</p>
+                      <p className="text-xs text-slate-500">JPG, PNG eller WebP. Video håndteres via egne studioer.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => manualMediaInputRef.current?.click()}
+                        disabled={manualMediaUploading}
+                      >
+                        {manualMediaUploading ? (
+                          <Loader2 size={14} className="mr-1.5 animate-spin" />
+                        ) : (
+                          <Upload size={14} className="mr-1.5" />
+                        )}
+                        {manualMediaUploading ? "Laster opp..." : "Velg bilde"}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -2134,9 +2342,18 @@ export default function ContentHubPage() {
                       <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
                     </div>
                   </div>
-                  <Button variant="outline" className="w-full">
-                    <Palette size={14} className="mr-2" />
-                    Generer bilde
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleGenerateImage}
+                    disabled={imageGenerating}
+                  >
+                    {imageGenerating ? (
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                    ) : (
+                      <Palette size={14} className="mr-2" />
+                    )}
+                    {imageGenerating ? "Genererer bilde..." : "Generer bilde"}
                   </Button>
                 </CardContent>
               </Card>
@@ -2144,7 +2361,7 @@ export default function ContentHubPage() {
               {/* Publish Actions */}
               <div className="flex gap-3">
                 <Button
-                  onClick={handlePublish}
+                  onClick={() => handlePublish("publish")}
                   disabled={isPublishing || selectedPlatforms.length === 0}
                   className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700"
                 >
@@ -2153,13 +2370,27 @@ export default function ContentHubPage() {
                   ) : (
                     <Send size={16} className="mr-2" />
                   )}
-                  {isPublishing ? "Publiserer..." : "Publiser na"}
+                  {isPublishing ? "Klargjør..." : "Opprett og publiser"}
                 </Button>
-                <Button variant="outline" disabled={isPublishing}>
+                <Button
+                  variant="outline"
+                  disabled={isPublishing || selectedPlatforms.length === 0}
+                  onClick={() => handlePublish("schedule")}
+                >
                   <Clock size={16} className="mr-2" />
                   Planlegg
                 </Button>
               </div>
+
+              {manualPublishStatus && (
+                <div className={`rounded-lg border px-3 py-2 text-sm ${
+                  manualPublishStatus.type === "success"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    : "border-red-500/30 bg-red-500/10 text-red-200"
+                }`}>
+                  {manualPublishStatus.message}
+                </div>
+              )}
 
               {/* Publish Progress */}
               {publishProgress.length > 0 && (
@@ -2226,8 +2457,18 @@ export default function ContentHubPage() {
                               <Icon size={14} className={platform.color} />
                               <span className="text-xs font-medium text-slate-300">{platform.name}</span>
                             </div>
-                            <div className="bg-slate-800/50 rounded-lg h-24 flex items-center justify-center">
-                              <Image size={24} className="text-slate-600" />
+                            <div className="bg-slate-800/50 rounded-lg h-24 flex items-center justify-center overflow-hidden">
+                              {manualImageUrl ? (
+                                <img
+                                  src={manualImageUrl}
+                                  alt={manualImageName || "Valgt bilde"}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Image size={24} className="text-slate-600" />
+                              )}
                             </div>
                             <p className="text-sm font-medium text-slate-200 line-clamp-1">
                               {title || "Tittel vises her..."}
@@ -2517,7 +2758,7 @@ export default function ContentHubPage() {
                   size="sm"
                   onClick={() => setCalendarView("monthly")}
                 >
-                  Maned
+                  Måned
                 </Button>
               </div>
             </div>
@@ -2561,21 +2802,24 @@ export default function ContentHubPage() {
                 <CardContent className="p-6">
                   <div className="text-center py-12">
                     <Calendar size={48} className="mx-auto text-slate-600 mb-3" />
-                    <p className="text-slate-400">Manedsvisning</p>
+                    <p className="text-slate-400">Månedsvisning</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Viser {calendarEvents.length} planlagte innlegg denne maneden
+                      Viser {calendarEvents.length} planlagte innlegg i {monthLabel}
                     </p>
                     <div className="mt-6 grid grid-cols-7 gap-1">
                       {dayNames.map((d) => (
                         <p key={d} className="text-[10px] text-slate-500 text-center py-1">{d}</p>
                       ))}
-                      {Array.from({ length: 31 }, (_, i) => {
-                        const dayDate = `2026-03-${String(i + 1).padStart(2, "0")}`;
+                      {monthCells.map((day, i) => {
+                        if (!day) {
+                          return <div key={`blank-${i}`} className="py-2" />;
+                        }
+                        const dayDate = day.toISOString().split("T")[0];
                         const hasEvents = calendarEvents.some((e) => e.date === dayDate);
-                        const isToday = i + 1 === new Date().getDate();
+                        const isToday = dayDate === todayForCalendar.toISOString().split("T")[0];
                         return (
                           <div
-                            key={i}
+                            key={dayDate}
                             className={`relative text-center py-2 rounded text-xs cursor-pointer transition-colors ${
                               isToday
                                 ? "bg-primary-500/20 text-primary-300 font-bold"
@@ -2584,7 +2828,7 @@ export default function ContentHubPage() {
                                 : "text-slate-500 hover:bg-slate-800"
                             }`}
                           >
-                            {i + 1}
+                            {day.getDate()}
                             {hasEvents && (
                               <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary-400" />
                             )}
@@ -2604,24 +2848,28 @@ export default function ContentHubPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {calendarEvents.filter((e) => e.status === "planlagt").slice(0, 5).map((event) => (
-                    <div key={event.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-1 h-8 rounded-full"
-                          style={{ backgroundColor: event.brandColor }}
-                        />
-                        <div>
-                          <p className="text-sm text-slate-200">{event.title}</p>
-                          <p className="text-xs text-slate-500">{event.brand} - {event.date} kl. {event.time}</p>
+                  {calendarEvents.filter((e) => e.status === "planlagt").length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-6">Ingen planlagte innlegg ennå.</p>
+                  ) : (
+                    calendarEvents.filter((e) => e.status === "planlagt").slice(0, 5).map((event) => (
+                      <div key={event.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-1 h-8 rounded-full"
+                            style={{ backgroundColor: event.brandColor }}
+                          />
+                          <div>
+                            <p className="text-sm text-slate-200">{event.title}</p>
+                            <p className="text-xs text-slate-500">{event.brand} - {event.date} kl. {event.time}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getPlatformIcon(event.platform)}
+                          {statusBadge(event.status)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {getPlatformIcon(event.platform)}
-                        {statusBadge(event.status)}
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -2713,7 +2961,7 @@ export default function ContentHubPage() {
               </CardHeader>
               <CardContent>
                 {engagementPosts.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Ingen publiserte innlegg med engasjementsdata enna.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">Ingen publiserte innlegg med engasjementsdata ennå.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -2830,7 +3078,7 @@ export default function ContentHubPage() {
               <CardContent>
                 <div className="space-y-2">
                   {topContent.length === 0 ? (
-                    <p className="text-sm text-slate-500 text-center py-6">Ingen publisert innhold enna.</p>
+                    <p className="text-sm text-slate-500 text-center py-6">Ingen publisert innhold ennå.</p>
                   ) : (
                     topContent.map((item, i) => (
                       <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors">
@@ -2871,7 +3119,7 @@ export default function ContentHubPage() {
                     </div>
                     <div>
                       <CardTitle className="text-base">Victoria - CEO AI Agent</CardTitle>
-                      <CardDescription>Strategisk AI-radgiver for alle merkevarer</CardDescription>
+                      <CardDescription>Strategisk AI-rådgiver for alle merkevarer</CardDescription>
                     </div>
                     <div className="ml-auto flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -2913,7 +3161,7 @@ export default function ContentHubPage() {
                     <Input
                       value={strategyInput}
                       onChange={(e) => setStrategyInput(e.target.value)}
-                      placeholder="Spor Victoria om strategi, ytelse eller innholdsplanlegging..."
+                      placeholder="Spør Victoria om strategi, ytelse eller innholdsplanlegging..."
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
@@ -2942,9 +3190,9 @@ export default function ContentHubPage() {
                   {[
                     { label: `Lag vekststrategi for ${currentBrand?.name || "merkevare"}`, query: `Lag vekststrategi for ${currentBrand?.name}` },
                     { label: "Analyser ytelse siste 30 dager", query: "Analyser ytelse siste 30 dager" },
-                    { label: "Foresla neste ukes innhold", query: "Foresla neste ukes innhold" },
-                    { label: "Optimaliser publiseringstidspunkt", query: "Hva er de beste tidspunktene a publisere innhold pa?" },
-                    { label: "Konkurrentanalyse", query: "Gjor en konkurrentanalyse for eiendomsmarkedet i Spania" },
+                    { label: "Foreslå neste ukes innhold", query: "Foreslå neste ukes innhold" },
+                    { label: "Optimaliser publiseringstidspunkt", query: "Hva er de beste tidspunktene å publisere innhold på?" },
+                    { label: "Konkurrentanalyse", query: "Gjør en konkurrentanalyse for eiendomsmarkedet i Spania" },
                   ].map((action, i) => (
                     <button
                       key={i}
