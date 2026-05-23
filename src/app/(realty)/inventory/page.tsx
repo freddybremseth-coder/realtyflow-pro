@@ -82,6 +82,7 @@ const INITIAL_PROPERTIES: Property[] = [
 
 const propertyTypes = ["Alle", "Villa", "Leilighet", "Penthouse", "Rekkehus", "Bungalow", "Finca", "Duplex", "Byggetomt"];
 const WEBSITE_BRANDS = ["zeneco", "pinosoecolife"];
+const REAL_ESTATE_BRANDS = BRANDS.filter((brand) => brand.type === "real_estate");
 const bedroomOptions = ["Alle", "1+", "2+", "3+", "4+", "5+"];
 const priceRanges = ["Alle", "Under €200K", "€200K - €400K", "€400K - €600K", "Over €600K"];
 const gradients = [
@@ -707,12 +708,12 @@ export default function InventoryPage() {
     }
   };
 
-  const generateSoMePost = async (property: Property) => {
+  const generateSoMePost = async (property: Property, brandId = selectedBrand) => {
     setGeneratingSoMe(property.id);
     setSomeSuccess(null);
     try {
       // Use the agent command API to generate a SoMe post
-      const brandObj = BRANDS.find(b => b.id === selectedBrand) || BRANDS[0];
+      const brandObj = BRANDS.find(b => b.id === brandId) || BRANDS[0];
       const prompt = `VIKTIG: Returner KUN selve SoMe-posten. INGEN innledning, INGEN forklaring, INGEN "Her er posten:" eller lignende. Start direkte med postteksten.
 
 Du er en profesjonell eiendomsmarkedsfører for ${brandObj.name}. Skriv en selgende, engasjerende SoMe-post på norsk for denne eiendommen.
@@ -756,7 +757,7 @@ REGLER:
         "eiendom",
         property.type.toLowerCase(),
         property.location.split(",")[0].trim().toLowerCase(),
-        selectedBrand,
+        brandId,
       ].filter(Boolean);
 
       // Create one clear draft per publishing platform. Content Hub will now
@@ -767,7 +768,7 @@ REGLER:
         { platform: "instagram", prefix: "Instagram" },
         { platform: "linkedin", prefix: "LinkedIn" },
       ].map(({ platform, prefix }) => ({
-          brand_id: selectedBrand,
+          brand_id: brandId,
           title: `${prefix}: ${property.title}`,
           description: postContent,
           tags: [platform, ...baseTags],
@@ -780,6 +781,8 @@ REGLER:
             property_id: property.id,
             property_title: property.title,
             property_image: propertyImage,
+            brand_id: brandId,
+            brand_name: brandObj.name,
           },
         }));
 
@@ -999,6 +1002,13 @@ REGLER:
     fromRedsp: properties.filter(p => p.source === "redsp").length,
   };
 
+  const selectedSoMeBrand = REAL_ESTATE_BRANDS.find((brand) => brand.id === selectedBrand) || REAL_ESTATE_BRANDS[0] || BRANDS[0];
+  const handleSelectedBrandChange = (brandId: string) => {
+    setSelectedBrand(brandId);
+    setSomeSuccess(null);
+    setDraftsCreated(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1063,6 +1073,20 @@ REGLER:
               <select value={bedroomFilter} onChange={(e) => setBedroomFilter(e.target.value)}
                 className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-primary-500 focus:outline-none">
                 {bedroomOptions.map(b => <option key={b} value={b}>{b === "Alle" ? "Soverom" : `${b} soverom`}</option>)}
+              </select>
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={14} className="text-purple-300" />
+                <span className="text-xs text-slate-400">SoMe-brand:</span>
+              </div>
+              <select
+                value={selectedBrand}
+                onChange={(e) => handleSelectedBrandChange(e.target.value)}
+                aria-label="Velg merkevare for SoMe-innhold"
+                className="h-10 rounded-lg border border-purple-500/30 bg-slate-800 px-3 text-sm text-slate-100 focus:border-purple-400 focus:outline-none"
+              >
+                {REAL_ESTATE_BRANDS.map((brand) => (
+                  <option key={brand.id} value={brand.id}>{brand.name}</option>
+                ))}
               </select>
               <div className="flex border border-slate-600 rounded-lg overflow-hidden ml-auto">
                 <button onClick={() => setViewMode("grid")} className={`p-2 ${viewMode === "grid" ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:text-slate-200"}`}>
@@ -1130,10 +1154,11 @@ REGLER:
                       size="sm"
                       variant="outline"
                       className="flex-1 text-xs border-purple-500/30 text-purple-300 hover:bg-purple-500/10 hover:text-purple-200"
+                      title={`Lag SoMe-post for ${selectedSoMeBrand.name}`}
                       disabled={generatingSoMe === property.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        generateSoMePost(property);
+                        generateSoMePost(property, selectedSoMeBrand.id);
                       }}
                     >
                       {generatingSoMe === property.id ? (
@@ -1182,9 +1207,9 @@ REGLER:
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    title="Lag SoMe-post"
+                    title={`Lag SoMe-post for ${selectedSoMeBrand.name}`}
                     disabled={generatingSoMe === property.id}
-                    onClick={(e) => { e.stopPropagation(); generateSoMePost(property); }}
+                    onClick={(e) => { e.stopPropagation(); generateSoMePost(property, selectedSoMeBrand.id); }}
                     className="text-purple-400 hover:text-purple-300 disabled:opacity-50"
                   >
                     {generatingSoMe === property.id ? (
@@ -1523,13 +1548,13 @@ REGLER:
 
               {/* Brand Selector */}
               <div className="mb-3">
-                <label className="text-xs text-zinc-400 mb-1 block">Merkevare for innhold:</label>
+                <label className="text-xs text-zinc-400 mb-1 block">Merkevare for innhold og SoMe:</label>
                 <select
                   value={selectedBrand}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
+                  onChange={(e) => handleSelectedBrandChange(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
                 >
-                  {BRANDS.filter(b => b.type === "real_estate").map((b) => (
+                  {REAL_ESTATE_BRANDS.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
@@ -1663,7 +1688,7 @@ REGLER:
               <Button
                 className="w-full mb-3 bg-gradient-to-r from-pink-600 to-orange-500 hover:from-pink-500 hover:to-orange-400 text-white font-medium"
                 disabled={generatingSoMe === showDetailModal.id}
-                onClick={() => generateSoMePost(showDetailModal)}
+                onClick={() => generateSoMePost(showDetailModal, selectedSoMeBrand.id)}
               >
                 {generatingSoMe === showDetailModal.id ? (
                   <Loader2 size={16} className="mr-2 animate-spin" />
@@ -1672,7 +1697,11 @@ REGLER:
                 ) : (
                   <Instagram size={16} className="mr-2" />
                 )}
-                {generatingSoMe === showDetailModal.id ? "Genererer SoMe-innlegg..." : someSuccess === showDetailModal.id ? "Opprettet i Content Hub!" : "Lag SoMe-post"}
+                {generatingSoMe === showDetailModal.id
+                  ? "Genererer SoMe-innlegg..."
+                  : someSuccess === showDetailModal.id
+                    ? "Opprettet i Content Hub!"
+                    : `Lag SoMe-post for ${selectedSoMeBrand.name}`}
               </Button>
 
               <div className="flex items-center gap-2">

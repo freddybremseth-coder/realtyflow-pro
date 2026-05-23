@@ -32,6 +32,7 @@ interface CampaignItem {
   name: string;
   brand: string;
   brandColor: string;
+  brandId: string;
   platforms: string[];
   status: "aktiv" | "planlagt" | "fullfort" | "pauset";
   startDate: string;
@@ -39,6 +40,25 @@ interface CampaignItem {
   posts: number;
   reach: number;
   engagement: number;
+  goal?: string;
+  description?: string;
+  strategySummary?: string;
+}
+
+interface CampaignApiRow {
+  id?: string;
+  brand_id?: string | null;
+  name?: string | null;
+  goal?: string | null;
+  description?: string | null;
+  platforms?: string[] | null;
+  status?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  total_reach?: number | null;
+  total_engagement?: number | null;
+  content_calendar?: unknown;
+  strategy?: unknown;
 }
 
 interface CalendarEvent {
@@ -111,6 +131,68 @@ const IMAGE_STYLES = [
 ];
 
 // Campaigns and calendar are now loaded from database (no mock data)
+
+function mapCampaignStatus(status?: string | null): CampaignItem["status"] {
+  switch (status) {
+    case "active":
+      return "aktiv";
+    case "paused":
+      return "pauset";
+    case "completed":
+      return "fullfort";
+    case "planning":
+    default:
+      return "planlagt";
+  }
+}
+
+function formatCampaignDate(value?: string | null) {
+  if (!value) return "Ikke satt";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ikke satt";
+  return date.toLocaleDateString("nb-NO", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function getStrategySummary(strategy: unknown) {
+  if (!strategy) return "";
+  if (typeof strategy === "string") return strategy.trim();
+  if (typeof strategy !== "object") return "";
+  const obj = strategy as Record<string, unknown>;
+  for (const key of ["summary", "plan", "strategy", "recommendation", "overview"]) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function mapCampaignRow(row: CampaignApiRow): CampaignItem {
+  const brandId = String(row.brand_id || "");
+  const brand = BRANDS.find((b) => b.id === brandId);
+  const calendar = row.content_calendar;
+  const posts = Array.isArray(calendar)
+    ? calendar.length
+    : calendar && typeof calendar === "object" && Array.isArray((calendar as { posts?: unknown[] }).posts)
+      ? ((calendar as { posts: unknown[] }).posts.length)
+      : 0;
+
+  return {
+    id: String(row.id || Math.random().toString(36).slice(2)),
+    name: String(row.name || "Uten navn"),
+    brand: brand?.name || brandId || "Ukjent brand",
+    brandColor: brand?.color || "#64748b",
+    brandId,
+    platforms: Array.isArray(row.platforms) ? row.platforms.map(String) : [],
+    status: mapCampaignStatus(row.status),
+    startDate: formatCampaignDate(row.start_date),
+    endDate: formatCampaignDate(row.end_date),
+    posts,
+    reach: Number(row.total_reach) || 0,
+    engagement: Number(row.total_engagement) || 0,
+    goal: row.goal || "",
+    description: row.description || "",
+    strategySummary: getStrategySummary(row.strategy).slice(0, 280),
+  };
+}
 
 const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
 
@@ -211,6 +293,10 @@ export default function ContentHubPage() {
   const [campaignBrand, setCampaignBrand] = useState(BRANDS[0].id);
   const [campaignPlatforms, setCampaignPlatforms] = useState<string[]>([]);
   const [campaignDuration, setCampaignDuration] = useState("30");
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [campaignBusy, setCampaignBusy] = useState<"create" | "ai" | null>(null);
+  const [campaignStatus, setCampaignStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Calendar state - loaded from database (scheduled posts)
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
@@ -340,6 +426,27 @@ export default function ContentHubPage() {
       setDrafts([]);
     } finally {
       setDraftsLoading(false);
+    }
+  }, []);
+
+  const fetchCampaigns = useCallback(async () => {
+    setCampaignsLoading(true);
+    try {
+      const res = await fetch("/api/campaigns", { cache: "no-store" });
+      const data = await res.json().catch(() => ({ campaigns: [], error: "Kunne ikke lese kampanjer" }));
+      if (!res.ok) {
+        throw new Error(data.error || "Kunne ikke hente kampanjer");
+      }
+      setCampaigns(Array.isArray(data.campaigns) ? data.campaigns.map(mapCampaignRow) : []);
+    } catch (err) {
+      console.error("Failed to fetch campaigns:", err);
+      setCampaigns([]);
+      setCampaignStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke hente kampanjer",
+      });
+    } finally {
+      setCampaignsLoading(false);
     }
   }, []);
 
@@ -823,9 +930,10 @@ export default function ContentHubPage() {
 
   useEffect(() => {
     fetchDrafts();
+    fetchCampaigns();
     fetchConnectedAccounts();
     fetchCalendarEvents();
-  }, [fetchDrafts, fetchConnectedAccounts, fetchCalendarEvents]);
+  }, [fetchDrafts, fetchCampaigns, fetchConnectedAccounts, fetchCalendarEvents]);
 
   // Handlers
   const togglePlatform = useCallback((platformId: string) => {
@@ -839,6 +947,95 @@ export default function ContentHubPage() {
       prev.includes(platformId) ? prev.filter((p) => p !== platformId) : [...prev, platformId]
     );
   }, []);
+
+  const resetCampaignForm = useCallback(() => {
+    setCampaignName("");
+    setCampaignGoal("");
+    setCampaignDesc("");
+    setCampaignPlatforms([]);
+    setCampaignDuration("30");
+  }, []);
+
+  const handleCreateCampaign = useCallback(async (useAI: boolean) => {
+    const name = campaignName.trim();
+    const goal = campaignGoal.trim();
+    const descriptionText = campaignDesc.trim();
+    const days = Number.parseInt(campaignDuration, 10);
+    const durationDays = Number.isFinite(days) && days > 0 ? days : 30;
+
+    if (!name) {
+      setCampaignStatus({ type: "error", message: "Skriv inn kampanjenavn først." });
+      return;
+    }
+    if (!goal) {
+      setCampaignStatus({ type: "error", message: "Legg inn et tydelig mål for kampanjen." });
+      return;
+    }
+    if (campaignPlatforms.length === 0) {
+      setCampaignStatus({ type: "error", message: "Velg minst én plattform for kampanjen." });
+      return;
+    }
+
+    const start = new Date();
+    const end = new Date(start);
+    end.setDate(start.getDate() + durationDays);
+    const brand = BRANDS.find((b) => b.id === campaignBrand);
+
+    setCampaignBusy(useAI ? "ai" : "create");
+    setCampaignStatus(null);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId: campaignBrand,
+          name,
+          goal,
+          description: descriptionText,
+          platforms: campaignPlatforms,
+          contentTypes: ["post", "reel", "article"],
+          targetAudience: brand?.target_audience || "",
+          useAI,
+          startDate: start.toISOString().slice(0, 10),
+          endDate: end.toISOString().slice(0, 10),
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke opprette kampanje" }));
+      if (!res.ok) {
+        throw new Error(data.error || "Kunne ikke opprette kampanje");
+      }
+
+      if (data.campaign) {
+        setCampaigns((prev) => [mapCampaignRow(data.campaign), ...prev]);
+      }
+      await fetchCampaigns();
+      resetCampaignForm();
+      setShowCampaignForm(false);
+      setCampaignStatus({
+        type: "success",
+        message: useAI
+          ? "Victoria har opprettet kampanjen og lagt ved en AI-plan der agenten fikk nok data."
+          : "Kampanjen er opprettet og klar for videre planlegging.",
+      });
+    } catch (err) {
+      console.error("Create campaign failed:", err);
+      setCampaignStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kampanjen kunne ikke opprettes.",
+      });
+    } finally {
+      setCampaignBusy(null);
+    }
+  }, [
+    campaignBrand,
+    campaignDesc,
+    campaignDuration,
+    campaignGoal,
+    campaignName,
+    campaignPlatforms,
+    fetchCampaigns,
+    resetCampaignForm,
+  ]);
 
   const handleAiGenerate = useCallback(async (field: string) => {
     setAiGenerating(field);
@@ -1014,6 +1211,21 @@ export default function ContentHubPage() {
       case "draft": case "utkast": return <Badge variant="outline">Utkast</Badge>;
       case "failed": return <Badge className="bg-red-500/20 text-red-300 border-red-500/30">Feilet</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const campaignStatusBadge = (status: CampaignItem["status"]) => {
+    switch (status) {
+      case "aktiv":
+        return <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">Aktiv</Badge>;
+      case "planlagt":
+        return <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30">Planlegges</Badge>;
+      case "fullfort":
+        return <Badge variant="secondary">Fullført</Badge>;
+      case "pauset":
+        return <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30">Pauset</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
@@ -2074,6 +2286,16 @@ export default function ContentHubPage() {
               </Button>
             </div>
 
+            {campaignStatus && (
+              <div className={`rounded-lg border px-3 py-2 text-sm ${
+                campaignStatus.type === "success"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                  : "border-red-500/30 bg-red-500/10 text-red-200"
+              }`}>
+                {campaignStatus.message}
+              </div>
+            )}
+
             {/* Campaign Form */}
             {showCampaignForm && (
               <Card>
@@ -2107,11 +2329,11 @@ export default function ContentHubPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-400 mb-1.5 block">Mal</label>
+                    <label className="text-xs text-slate-400 mb-1.5 block">Mål</label>
                     <Input
                       value={campaignGoal}
                       onChange={(e) => setCampaignGoal(e.target.value)}
-                      placeholder="F.eks. Oke merkekjennskap med 30%"
+                      placeholder="F.eks. Øke kvalifiserte henvendelser med 30%"
                     />
                   </div>
                   <div>
@@ -2157,15 +2379,31 @@ export default function ContentHubPage() {
                     />
                   </div>
                   <div className="flex gap-3">
-                    <Button className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700">
-                      <Plus size={14} className="mr-2" />
-                      Opprett kampanje
+                    <Button
+                      onClick={() => handleCreateCampaign(false)}
+                      disabled={campaignBusy !== null}
+                      className="bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700"
+                    >
+                      {campaignBusy === "create" ? (
+                        <Loader2 size={14} className="mr-2 animate-spin" />
+                      ) : (
+                        <Plus size={14} className="mr-2" />
+                      )}
+                      {campaignBusy === "create" ? "Oppretter..." : "Opprett kampanje"}
                     </Button>
-                    <Button variant="outline">
-                      <Bot size={14} className="mr-2" />
-                      La Victoria (CEO AI) planlegge
+                    <Button
+                      variant="outline"
+                      onClick={() => handleCreateCampaign(true)}
+                      disabled={campaignBusy !== null}
+                    >
+                      {campaignBusy === "ai" ? (
+                        <Loader2 size={14} className="mr-2 animate-spin" />
+                      ) : (
+                        <Bot size={14} className="mr-2" />
+                      )}
+                      {campaignBusy === "ai" ? "Victoria planlegger..." : "La Victoria (CEO AI) planlegge"}
                     </Button>
-                    <Button variant="ghost" onClick={() => setShowCampaignForm(false)}>
+                    <Button variant="ghost" onClick={() => setShowCampaignForm(false)} disabled={campaignBusy !== null}>
                       Avbryt
                     </Button>
                   </div>
@@ -2173,14 +2411,91 @@ export default function ContentHubPage() {
               </Card>
             )}
 
-            {/* Campaign Cards - placeholder until campaigns feature is built */}
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Target size={32} className="mx-auto text-slate-600 mb-3" />
-                <p className="text-slate-400">Ingen kampanjer opprettet ennå</p>
-                <p className="text-xs text-slate-500 mt-1">Bruk knappen over for å opprette din første kampanje</p>
-              </CardContent>
-            </Card>
+            {campaignsLoading && campaigns.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Loader2 size={28} className="mx-auto text-slate-500 mb-3 animate-spin" />
+                  <p className="text-slate-400">Henter kampanjer...</p>
+                </CardContent>
+              </Card>
+            ) : campaigns.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Target size={32} className="mx-auto text-slate-600 mb-3" />
+                  <p className="text-slate-400">Ingen kampanjer opprettet ennå</p>
+                  <p className="text-xs text-slate-500 mt-1">Bruk knappen over for å opprette din første kampanje</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {campaigns.map((campaign) => (
+                  <Card key={campaign.id}>
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-white truncate">{campaign.name}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: campaign.brandColor }}
+                            />
+                            <span className="text-xs text-slate-400">{campaign.brand}</span>
+                          </div>
+                        </div>
+                        {campaignStatusBadge(campaign.status)}
+                      </div>
+
+                      {campaign.goal && (
+                        <p className="text-sm text-slate-200">{campaign.goal}</p>
+                      )}
+                      {campaign.description && (
+                        <p className="text-xs text-slate-400 line-clamp-3">{campaign.description}</p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        {campaign.platforms.length > 0 ? campaign.platforms.map((platformId) => {
+                          const platform = PLATFORMS.find((p) => p.id === platformId);
+                          return (
+                            <Badge key={platformId} variant="outline" className="gap-1 text-[11px]">
+                              {getPlatformIcon(platformId)}
+                              {platform?.name || platformId}
+                            </Badge>
+                          );
+                        }) : (
+                          <Badge variant="outline" className="text-[11px]">Ingen plattformer</Badge>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-lg bg-slate-900/50 p-2">
+                          <p className="text-slate-500">Periode</p>
+                          <p className="text-slate-200">{campaign.startDate}</p>
+                          <p className="text-slate-500">{campaign.endDate}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-900/50 p-2">
+                          <p className="text-slate-500">Rekkevidde</p>
+                          <p className="text-slate-200">{campaign.reach.toLocaleString("nb-NO")}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-900/50 p-2">
+                          <p className="text-slate-500">Engasjement</p>
+                          <p className="text-slate-200">{campaign.engagement.toLocaleString("nb-NO")}</p>
+                        </div>
+                      </div>
+
+                      {campaign.strategySummary && (
+                        <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-3">
+                          <div className="flex items-center gap-2 text-xs font-medium text-purple-200 mb-1">
+                            <Bot size={13} />
+                            Victoria-plan
+                          </div>
+                          <p className="text-xs text-slate-300 line-clamp-4">{campaign.strategySummary}</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 

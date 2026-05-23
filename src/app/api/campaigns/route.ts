@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { brandId, name, goal, platforms, contentTypes, targetAudience, description } = body;
+    const { brandId, name, goal, platforms, contentTypes, targetAudience, description, startDate, endDate } = body;
 
     if (!brandId || !name) {
       return NextResponse.json({ error: 'brandId and name are required' }, { status: 400 });
@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
         content_types: contentTypes || [],
         target_audience: targetAudience || '',
         status: 'planning',
+        start_date: startDate || new Date().toISOString().slice(0, 10),
+        end_date: endDate || null,
       })
       .select()
       .single();
