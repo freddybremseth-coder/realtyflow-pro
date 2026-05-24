@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,11 +89,26 @@ interface DraftItem {
   ai_generated: boolean;
   ai_image_url: string | null;
   thumbnail_url?: string | null;
+  image_compacted?: boolean;
   status: string;
   created_at: string;
   scheduled_at?: string;
   scheduled_platforms?: string[];
   ai_timing_reasoning?: string;
+}
+
+type ContentHubTab = "utkast" | "publiser" | "kampanjer" | "kalender" | "analytics" | "strategi" | "kunde-pdf";
+type DraftStatusFilter = "all" | "draft" | "scheduled" | "failed";
+
+function toDatetimeLocalValue(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function getDraftDateValue(draft: DraftItem) {
+  return draft.scheduled_at || draft.created_at || "";
 }
 
 function getSupabase() {
@@ -296,6 +311,8 @@ Book en kort gjennomgang slik at vi kan avklare behov, prisnivå og tidslinje.`;
 
 // --- Component ---
 export default function ContentHubPage() {
+  const [activeContentTab, setActiveContentTab] = useState<ContentHubTab>("utkast");
+
   // Publish state
   const [selectedBrand, setSelectedBrand] = useState(BRANDS[0].id);
   const [selectedContentType, setSelectedContentType] = useState("post");
@@ -348,6 +365,7 @@ export default function ContentHubPage() {
   const [draftsLoading, setDraftsLoading] = useState(false);
   const [draftsError, setDraftsError] = useState("");
   const [draftsSourceHost, setDraftsSourceHost] = useState("");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<DraftStatusFilter>("all");
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -356,6 +374,7 @@ export default function ContentHubPage() {
   const [publishDraft, setPublishDraft] = useState<DraftItem | null>(null);
   const [publishPlatforms, setPublishPlatforms] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [hydratingDraftId, setHydratingDraftId] = useState<string | null>(null);
   const [publishResults, setPublishResults] = useState<{platform: string; success: boolean; postUrl?: string; error?: string}[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string; brand_id?: string | null}[]>([]);
 
@@ -438,7 +457,7 @@ export default function ContentHubPage() {
     setDraftsLoading(true);
     setDraftsError("");
     try {
-      const res = await fetch(`/api/content-hub/drafts?limit=100&t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`/api/content-hub/drafts?limit=500&statuses=draft,scheduled,failed&t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json().catch(() => ({ drafts: [], error: "Kunne ikke lese Content Hub-respons" }));
       setDraftsSourceHost(data.supabaseHost || "");
       if (!res.ok) {
@@ -696,11 +715,13 @@ export default function ContentHubPage() {
   }, []);
 
   const openPublishModal = useCallback((draft: DraftItem, mode: "now" | "schedule" = "now") => {
+    setActiveContentTab("utkast");
     setPublishDraft(draft);
     setPublishResults([]);
     setPublishing(false);
+    setHydratingDraftId(draft.image_compacted ? draft.id : null);
     setScheduleMode(mode);
-    setScheduledAt("");
+    setScheduledAt(mode === "schedule" ? toDatetimeLocalValue(draft.scheduled_at) : "");
     setAiRecommendation(null);
     // Pre-select intended platforms from the draft when present. Property
     // SoMe drafts are created per platform, so this avoids publishing an
@@ -715,6 +736,23 @@ export default function ContentHubPage() {
       ? intended.filter((platform) => brandAccounts.includes(platform))
       : brandAccounts;
     setPublishPlatforms(Array.from(new Set(preselected)));
+
+    if (draft.image_compacted) {
+      fetch(`/api/content-hub/drafts?id=${encodeURIComponent(draft.id)}&t=${Date.now()}`, { cache: "no-store" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data?.draft) return;
+          const hydratedDraft = { ...data.draft, image_compacted: false } as DraftItem;
+          setPublishDraft(hydratedDraft);
+          setDrafts((prev) => prev.map((item) => item.id === draft.id ? { ...item, ...hydratedDraft } : item));
+        })
+        .catch((err) => {
+          console.error("Failed to hydrate draft:", err);
+        })
+        .finally(() => {
+          setHydratingDraftId(null);
+        });
+    }
   }, [connectedAccounts, brandMatches]);
 
   const fetchAiRecommendation = useCallback(async () => {
@@ -777,7 +815,9 @@ export default function ContentHubPage() {
           }]);
           // Update draft in local state to show as scheduled
           setDrafts((prev) => prev.map((d) =>
-            d.id === publishDraft.id ? { ...d, status: "scheduled" } : d
+            d.id === publishDraft.id
+              ? { ...d, status: "scheduled", scheduled_at: new Date(scheduledAt).toISOString(), scheduled_platforms: publishPlatforms }
+              : d
           ));
         } else {
           setPublishResults([{ platform: "system", success: false, error: data.error }]);
@@ -838,7 +878,7 @@ export default function ContentHubPage() {
         .select("id, title, brand_id, tags, scheduled_at, published_at, status, created_at")
         .in("status", ["scheduled", "published"])
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(500);
       if (data) {
         const events: CalendarEvent[] = [];
         for (const p of data) {
@@ -921,53 +961,105 @@ export default function ContentHubPage() {
         })));
       }
 
-      // Fetch real engagement data from content_publications + engagement_snapshots
-      const { data: pubsWithEngagement } = await supabase
-        .from("content_publications")
-        .select("id, title, brand_id, tags, published_at, total_likes, total_comments, total_shares, total_views")
-        .eq("status", "published")
-        .order("published_at", { ascending: false })
-        .limit(50);
-
+      // Fetch real engagement data. Use the latest snapshot per
+      // publication/platform and include older tracked posts, not only the
+      // newest 50 publications, otherwise historical likes disappear.
       const { data: snapshots } = await supabase
         .from("engagement_snapshots")
-        .select("publication_id, platform, likes, comments, shares, reach, impressions")
+        .select("publication_id, platform, likes, comments, shares, reach, impressions, snapshot_at")
         .order("snapshot_at", { ascending: false })
-        .limit(500);
+        .limit(1000);
 
-      // Build per-post engagement from snapshots (latest per publication+platform)
-      const snapByPub = new Map<string, { likes: number; comments: number; shares: number; reach: number; impressions: number }>();
+      const latestSnapshotByPubPlatform = new Map<string, {
+        publication_id: string;
+        platform: string;
+        likes: number;
+        comments: number;
+        shares: number;
+        reach: number;
+        impressions: number;
+      }>();
       if (snapshots) {
         for (const snap of snapshots) {
-          const existing = snapByPub.get(snap.publication_id);
-          if (existing) {
-            existing.likes += snap.likes || 0;
-            existing.comments += snap.comments || 0;
-            existing.shares += snap.shares || 0;
-            existing.reach += snap.reach || 0;
-            existing.impressions += snap.impressions || 0;
-          } else {
-            snapByPub.set(snap.publication_id, {
-              likes: snap.likes || 0,
-              comments: snap.comments || 0,
-              shares: snap.shares || 0,
-              reach: snap.reach || 0,
-              impressions: snap.impressions || 0,
-            });
-          }
+          const key = `${snap.publication_id}:${snap.platform || "unknown"}`;
+          if (latestSnapshotByPubPlatform.has(key)) continue;
+          latestSnapshotByPubPlatform.set(key, {
+            publication_id: snap.publication_id,
+            platform: snap.platform || "unknown",
+            likes: snap.likes || 0,
+            comments: snap.comments || 0,
+            shares: snap.shares || 0,
+            reach: snap.reach || 0,
+            impressions: snap.impressions || 0,
+          });
         }
       }
 
-      if (pubsWithEngagement) {
+      const trackedPublicationIds = Array.from(new Set(
+        Array.from(latestSnapshotByPubPlatform.values()).map((snap) => snap.publication_id).filter(Boolean)
+      ));
+
+      const { data: recentPublished } = await supabase
+        .from("content_publications")
+        .select("id, title, brand_id, tags, published_at, created_at, total_likes, total_comments, total_shares, total_views")
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(120);
+
+      let trackedPublications: typeof recentPublished = [];
+      if (trackedPublicationIds.length > 0) {
+        const { data: trackedRows } = await supabase
+          .from("content_publications")
+          .select("id, title, brand_id, tags, published_at, created_at, total_likes, total_comments, total_shares, total_views")
+          .in("id", trackedPublicationIds);
+        trackedPublications = trackedRows || [];
+      }
+
+      const publicationsById = new Map<string, NonNullable<typeof recentPublished>[number]>();
+      for (const pub of [...(recentPublished || []), ...(trackedPublications || [])]) {
+        publicationsById.set(pub.id, pub);
+      }
+
+      const snapshotGroupsByPub = new Map<string, Array<{
+        platform: string;
+        likes: number;
+        comments: number;
+        shares: number;
+        reach: number;
+        impressions: number;
+      }>>();
+      for (const snap of Array.from(latestSnapshotByPubPlatform.values())) {
+        const list = snapshotGroupsByPub.get(snap.publication_id) || [];
+        list.push(snap);
+        snapshotGroupsByPub.set(snap.publication_id, list);
+      }
+
+      const publicationRows = Array.from(publicationsById.values()).sort((a, b) => {
+        const aDate = new Date(a.published_at || a.created_at || 0).getTime();
+        const bDate = new Date(b.published_at || b.created_at || 0).getTime();
+        return bDate - aDate;
+      });
+
+      if (publicationRows.length > 0) {
         let totalLikes = 0, totalComments = 0, totalShares = 0, totalViews = 0, totalReach = 0, totalImpressions = 0;
-        const posts = pubsWithEngagement.map((p) => {
-          const snapData = snapByPub.get(p.id);
-          const likes = (p.total_likes || 0) + (snapData?.likes || 0);
-          const comments = (p.total_comments || 0) + (snapData?.comments || 0);
-          const shares = (p.total_shares || 0) + (snapData?.shares || 0);
-          const views = p.total_views || 0;
-          const reach = snapData?.reach || 0;
-          const impressions = snapData?.impressions || 0;
+        const posts = publicationRows.map((p) => {
+          const snapRows = snapshotGroupsByPub.get(p.id) || [];
+          const snapData = snapRows.reduce(
+            (acc, snap) => ({
+              likes: acc.likes + snap.likes,
+              comments: acc.comments + snap.comments,
+              shares: acc.shares + snap.shares,
+              reach: acc.reach + snap.reach,
+              impressions: acc.impressions + snap.impressions,
+            }),
+            { likes: 0, comments: 0, shares: 0, reach: 0, impressions: 0 },
+          );
+          const likes = (p.total_likes || 0) + snapData.likes;
+          const comments = (p.total_comments || 0) + snapData.comments;
+          const shares = (p.total_shares || 0) + snapData.shares;
+          const impressions = snapData.impressions;
+          const reach = snapData.reach;
+          const views = p.total_views || impressions || reach;
           totalLikes += likes;
           totalComments += comments;
           totalShares += shares;
@@ -978,13 +1070,16 @@ export default function ContentHubPage() {
             id: p.id,
             title: p.title || "Uten tittel",
             brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id,
-            platform: (p.tags && p.tags[0]) || "–",
+            platform: snapRows[0]?.platform || (p.tags && p.tags[0]) || "–",
             published_at: p.published_at || "",
             likes, comments, shares, views, reach, impressions,
           };
         });
         setEngagementPosts(posts);
         setEngagementTotals({ likes: totalLikes, comments: totalComments, shares: totalShares, views: totalViews, reach: totalReach, impressions: totalImpressions });
+      } else {
+        setEngagementPosts([]);
+        setEngagementTotals({ likes: 0, comments: 0, shares: 0, views: 0, reach: 0, impressions: 0 });
       }
     } catch (err) {
       console.error("Failed to fetch calendar events:", err);
@@ -1403,6 +1498,16 @@ export default function ContentHubPage() {
     return <Icon size={14} className={p.color} />;
   };
 
+  const handleCalendarEventOpen = useCallback((event: CalendarEvent) => {
+    const draft = drafts.find((item) => item.id === event.id);
+    if (draft) {
+      openPublishModal(draft, event.status === "planlagt" ? "schedule" : "now");
+      return;
+    }
+    setActiveContentTab("utkast");
+    setDraftStatusFilter(event.status === "planlagt" ? "scheduled" : "all");
+  }, [drafts, openPublishModal]);
+
   // Calendar helper - get days for current week
   const getWeekDays = () => {
     const today = new Date();
@@ -1432,6 +1537,22 @@ export default function ContentHubPage() {
     ...monthDays,
   ];
   const monthLabel = monthStart.toLocaleDateString("nb-NO", { month: "long", year: "numeric" });
+  const draftCounts = useMemo(() => ({
+    all: drafts.length,
+    draft: drafts.filter((draft) => draft.status === "draft").length,
+    scheduled: drafts.filter((draft) => draft.status === "scheduled").length,
+    failed: drafts.filter((draft) => draft.status === "failed").length,
+  }), [drafts]);
+  const visibleDrafts = useMemo(() => {
+    const rows = draftStatusFilter === "all"
+      ? drafts
+      : drafts.filter((draft) => draft.status === draftStatusFilter);
+    return [...rows].sort((a, b) => {
+      const aDate = new Date(getDraftDateValue(a)).getTime();
+      const bDate = new Date(getDraftDateValue(b)).getTime();
+      return (Number.isNaN(bDate) ? 0 : bDate) - (Number.isNaN(aDate) ? 0 : aDate);
+    });
+  }, [draftStatusFilter, drafts]);
 
   return (
     <div className="space-y-6">
@@ -1459,14 +1580,28 @@ export default function ContentHubPage() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer transition-colors hover:border-primary-500/40"
+          onClick={() => {
+            setActiveContentTab("utkast");
+            setDraftStatusFilter("all");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              setActiveContentTab("utkast");
+              setDraftStatusFilter("all");
+            }
+          }}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-400">Totalt innhold</p>
                 <p className="text-2xl font-bold text-white">{statsCount.total}</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  {statsCount.published} publisert, {drafts.length} utkast
+                  {statsCount.published} publisert, {draftCounts.all} aktive utkast
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-primary-500/20">
@@ -1475,7 +1610,15 @@ export default function ContentHubPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer transition-colors hover:border-primary-500/40"
+          onClick={() => setActiveContentTab("analytics")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") setActiveContentTab("analytics");
+          }}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1491,12 +1634,26 @@ export default function ContentHubPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer transition-colors hover:border-emerald-500/40"
+          onClick={() => {
+            setActiveContentTab("utkast");
+            setDraftStatusFilter("draft");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              setActiveContentTab("utkast");
+              setDraftStatusFilter("draft");
+            }
+          }}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-400">Utkast klare</p>
-                <p className="text-2xl font-bold text-white">{drafts.filter((d) => d.status === "draft").length}</p>
+                <p className="text-2xl font-bold text-white">{draftCounts.draft}</p>
                 <p className="text-xs text-slate-400 mt-1">
                   Klare til publisering
                 </p>
@@ -1507,7 +1664,21 @@ export default function ContentHubPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer transition-colors hover:border-amber-500/40"
+          onClick={() => {
+            setActiveContentTab("utkast");
+            setDraftStatusFilter("scheduled");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              setActiveContentTab("utkast");
+              setDraftStatusFilter("scheduled");
+            }
+          }}
+        >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1528,10 +1699,10 @@ export default function ContentHubPage() {
       </div>
 
       {/* Main Tabs */}
-      <Tabs defaultValue="utkast">
+      <Tabs defaultValue="utkast" value={activeContentTab} onValueChange={(value) => setActiveContentTab(value as ContentHubTab)}>
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="utkast" className="flex items-center gap-2">
-            <Inbox size={14} /> Innhold {drafts.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{drafts.length}</Badge>}
+            <Inbox size={14} /> Innhold {draftCounts.all > 0 && <Badge variant="secondary" className="ml-1 text-xs">{draftCounts.all}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="publiser" className="flex items-center gap-2">
             <Send size={14} /> Publiser
@@ -1560,7 +1731,7 @@ export default function ContentHubPage() {
               <div>
                 <h3 className="text-lg font-semibold">AI-genererte utkast</h3>
                 <p className="text-sm text-zinc-400">
-                  Utkast fra Markedsføringskit og AI-agenter. Rediger og publiser.
+                  Utkast, planlagte poster og feilede publiseringer. Rediger, planlegg om eller publiser nå.
                   {draftsSourceHost && <span className="ml-1 text-zinc-500">Supabase: {draftsSourceHost}</span>}
                 </p>
               </div>
@@ -1568,6 +1739,27 @@ export default function ContentHubPage() {
                 {draftsLoading ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
                 Oppdater
               </Button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "all", label: "Alle", count: draftCounts.all },
+                { id: "draft", label: "Utkast", count: draftCounts.draft },
+                { id: "scheduled", label: "Planlagt", count: draftCounts.scheduled },
+                { id: "failed", label: "Feilet", count: draftCounts.failed },
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setDraftStatusFilter(filter.id as DraftStatusFilter)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    draftStatusFilter === filter.id
+                      ? "border-primary-500/50 bg-primary-500/15 text-primary-200"
+                      : "border-slate-700 bg-slate-900/40 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                  }`}
+                >
+                  {filter.label} ({filter.count})
+                </button>
+              ))}
             </div>
 
             {draftsError && (
@@ -1580,19 +1772,19 @@ export default function ContentHubPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 size={24} className="animate-spin text-zinc-400" />
               </div>
-            ) : drafts.length === 0 ? (
+            ) : visibleDrafts.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Inbox size={48} className="text-zinc-600 mb-4" />
-                  <h4 className="text-lg font-medium mb-2">Ingen utkast ennå</h4>
+                  <h4 className="text-lg font-medium mb-2">Ingen innhold i dette filteret</h4>
                   <p className="text-sm text-zinc-400 max-w-md">
-                    Gå til Eiendommer → velg en eiendom → klikk &quot;Generer Markedsføringskit&quot; for å opprette AI-utkast som vises her.
+                    Bytt filter eller opprett nytt innhold fra Content Studio, eiendomskit eller fanen Publiser.
                   </p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid gap-4">
-                {drafts.map((draft) => {
+                {visibleDrafts.map((draft) => {
                   const brand = BRANDS.find((b) => b.id === draft.brand_id);
                   const isEditing = editingDraft === draft.id;
                   return (
@@ -1751,6 +1943,21 @@ export default function ContentHubPage() {
                                   </Button>
                                   <Button
                                     size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => openPublishModal(draft, "schedule")}
+                                  >
+                                    <Clock size={12} className="mr-1" /> Endre tid
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="text-xs bg-green-600 hover:bg-green-700"
+                                    onClick={() => openPublishModal(draft, "now")}
+                                  >
+                                    <Send size={12} className="mr-1" /> Publiser nå
+                                  </Button>
+                                  <Button
+                                    size="sm"
                                     variant="ghost"
                                     className="text-xs text-red-400 hover:text-red-300"
                                     onClick={() => updateDraftStatus(draft.id, "archived")}
@@ -1885,6 +2092,12 @@ export default function ContentHubPage() {
                 <div className="bg-zinc-800 rounded-lg p-3">
                   <p className="text-sm font-medium truncate">{publishDraft.title || "Uten tittel"}</p>
                   <p className="text-xs text-zinc-400 line-clamp-2 mt-1">{publishDraft.description?.substring(0, 120)}...</p>
+                  {hydratingDraftId === publishDraft.id && (
+                    <p className="mt-2 flex items-center gap-2 text-xs text-amber-200">
+                      <Loader2 size={12} className="animate-spin" />
+                      Henter fullversjon før publisering...
+                    </p>
+                  )}
                 </div>
 
                 {/* Platform selection */}
@@ -2090,9 +2303,11 @@ export default function ContentHubPage() {
                       <Button
                         className={`flex-1 ${scheduleMode === "schedule" ? "bg-purple-600 hover:bg-purple-700" : "bg-green-600 hover:bg-green-700"}`}
                         onClick={executePublish}
-                        disabled={publishing || publishPlatforms.length === 0 || (scheduleMode === "schedule" && !scheduledAt)}
+                        disabled={publishing || hydratingDraftId === publishDraft.id || publishPlatforms.length === 0 || (scheduleMode === "schedule" && !scheduledAt)}
                       >
-                        {publishing ? (
+                        {hydratingDraftId === publishDraft.id ? (
+                          <><Loader2 size={14} className="animate-spin mr-2" /> Henter fullversjon...</>
+                        ) : publishing ? (
                           <><Loader2 size={14} className="animate-spin mr-2" /> {scheduleMode === "schedule" ? "Planlegger..." : "Publiserer..."}</>
                         ) : scheduleMode === "schedule" ? (
                           <><Clock size={14} className="mr-1" /> Planlegg til {publishPlatforms.length} plattform{publishPlatforms.length > 1 ? "er" : ""}</>
@@ -2802,6 +3017,7 @@ export default function ContentHubPage() {
                             key={event.id}
                             className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/50 cursor-pointer hover:border-slate-600 transition-colors"
                             style={{ borderLeftColor: event.brandColor, borderLeftWidth: 3 }}
+                            onClick={() => handleCalendarEventOpen(event)}
                           >
                             <p className="text-[10px] text-slate-500">{event.time}</p>
                             <p className="text-xs text-slate-200 line-clamp-2 leading-tight">{event.title}</p>
@@ -2870,8 +3086,12 @@ export default function ContentHubPage() {
                   {calendarEvents.filter((e) => e.status === "planlagt").length === 0 ? (
                     <p className="text-sm text-slate-500 text-center py-6">Ingen planlagte innlegg ennå.</p>
                   ) : (
-                    calendarEvents.filter((e) => e.status === "planlagt").slice(0, 5).map((event) => (
-                      <div key={event.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors cursor-pointer">
+                    calendarEvents.filter((e) => e.status === "planlagt").slice(0, 25).map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-800/50 transition-colors cursor-pointer"
+                        onClick={() => handleCalendarEventOpen(event)}
+                      >
                         <div className="flex items-center gap-3">
                           <div
                             className="w-1 h-8 rounded-full"
@@ -2912,7 +3132,18 @@ export default function ContentHubPage() {
         {/* TAB 4: ANALYTICS */}
         <TabsContent value="analytics">
           <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-white">Ytelsesdashboard</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Ytelsesdashboard</h2>
+                <p className="text-xs text-slate-400">
+                  Viser lagrede plattform-snapshots. Likes og kommentarer oppdateres når engagement-tracker har hentet data fra kanalene.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchCalendarEvents}>
+                <RefreshCw size={14} className="mr-2" />
+                Oppdater analytics
+              </Button>
+            </div>
 
             {/* Aggregate engagement totals */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

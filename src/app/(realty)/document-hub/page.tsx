@@ -309,6 +309,28 @@ export default function DocumentHubPage() {
     fetchDocs();
   }, [fetchDocs]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const template = params.get("template");
+    const incomingTitle = params.get("title");
+    const incomingPrompt = params.get("prompt");
+    if (!template && !incomingTitle && !incomingPrompt) return;
+
+    const matchedTemplate = template && templates.some((item) => item.title === template)
+      ? template
+      : template === CUSTOM_KEY
+        ? CUSTOM_KEY
+        : CUSTOM_KEY;
+
+    selectTemplate(matchedTemplate);
+    if (incomingTitle) setTitle(incomingTitle);
+    if (incomingPrompt) {
+      setCustomPrompt(incomingPrompt);
+      if (!template || template === CUSTOM_KEY) setTopic(CUSTOM_KEY);
+    }
+    setTab("editor");
+  }, []);
+
   async function save(status: DocStatus) {
     if (!draft.trim()) {
       setSavingError("Generer eller skriv et dokument først.");

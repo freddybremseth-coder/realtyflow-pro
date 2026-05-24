@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, FileText, Loader2, Newspaper, Plus, RefreshCw, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -177,6 +177,27 @@ const series = [
   "Olive Oil Quality Checklist",
 ];
 
+const authorityDocumentBlueprints = [
+  {
+    title: "Olive Oil Quality Checklist",
+    template: "__custom__",
+    description: "Lead magnet som kan bygge e-postliste, reader team og Doña Anna-funnel.",
+    prompt: "Lag en profesjonell lead magnet: 7 tegn på at olivenoljen din er lav kvalitet. Den skal være nyttig, praktisk og bygge tillit til Dona Anna.",
+  },
+  {
+    title: "Book Launch Brief",
+    template: "__custom__",
+    description: "Lanseringsdokument for ny bok: målgruppe, vinkel, emnelinjer, CTA og distribusjon.",
+    prompt: "Lag en lanseringsbrief for en Kindle-bok med Amazon-vinkel, e-postsekvens, SoMe-poster og målepunkter.",
+  },
+  {
+    title: "Reader Guide / Bonus PDF",
+    template: "__custom__",
+    description: "Bonusdokument leseren får etter kjøp: mer verdi, bedre reviews og neste steg.",
+    prompt: "Lag en bonus-PDF som følger opp leseren etter kjøp, med praktiske øvelser, sjekklister og naturlig CTA til e-postliste.",
+  },
+];
+
 const authorPlatform = {
   name: "Mediterraneo Vital",
   positioning: "Health, longevity and sustainable living from the Mediterranean olive grove.",
@@ -317,6 +338,15 @@ export default function PublishingHubPage() {
     const active = books.filter((book) => ["launch", "active", "optimize"].includes(String(book.status || ""))).length;
     return { adSpend, royalties, orders, reviews, active };
   }, [books]);
+
+  function openDocumentBlueprint(blueprint: (typeof authorityDocumentBlueprints)[number]) {
+    const params = new URLSearchParams({
+      template: blueprint.template,
+      title: blueprint.title,
+      prompt: blueprint.prompt,
+    });
+    window.location.href = `/document-hub?${params.toString()}`;
+  }
 
   async function loadBooks() {
     setBooksLoading(true);
@@ -1134,6 +1164,41 @@ export default function PublishingHubPage() {
           {hubStatus}
         </div>
       )}
+
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <FileText size={18} className="text-amber-300" />
+                Autoritetsdokumenter
+              </CardTitle>
+              <p className="mt-1 text-sm text-slate-400">
+                Dokumenthub er arbeidsbenken. Publishing Hub samler dokumentene som bygger bokfunnel, lead magnet og ekspertposisjon.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { window.location.href = "/document-hub"; }}>
+              <Newspaper className="mr-2" size={14} />
+              Åpne Dokumenter
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-3">
+            {authorityDocumentBlueprints.map((blueprint) => (
+              <button
+                key={blueprint.title}
+                onClick={() => openDocumentBlueprint(blueprint)}
+                className="rounded-lg border border-slate-700/50 bg-slate-900/60 p-3 text-left transition-colors hover:border-amber-400/50 hover:bg-slate-900"
+              >
+                <p className="text-sm font-semibold text-slate-100">{blueprint.title}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">{blueprint.description}</p>
+                <p className="mt-3 text-xs font-medium text-amber-200">Lag dokument →</p>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-emerald-500/20 bg-emerald-500/5">
         <CardHeader>
