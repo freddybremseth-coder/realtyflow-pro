@@ -130,6 +130,8 @@ const TEMPLATE_RECIPIENTS: Record<string, GeneratedReport['recipients']> = {
   'dona-anna-sesong': 'donaanna',
 };
 
+const DONA_ANNA_TEMPLATE_ID = REPORT_TEMPLATES.E.id;
+
 function templateById(id: string): (typeof REPORT_TEMPLATES)[TemplateKey] | undefined {
   return Object.values(REPORT_TEMPLATES).find((t) => t.id === id);
 }
@@ -138,6 +140,63 @@ function templateKeyById(id: string): TemplateKey | undefined {
   return (Object.keys(REPORT_TEMPLATES) as TemplateKey[]).find(
     (k) => REPORT_TEMPLATES[k].id === id,
   );
+}
+
+function norwegianSeason(date = new Date()): string {
+  const month = date.getMonth();
+  if (month >= 2 && month <= 4) return 'vår';
+  if (month >= 5 && month <= 7) return 'sommer';
+  if (month >= 8 && month <= 10) return 'høst';
+  return 'vinter';
+}
+
+function donaAnnaSeasonTitle(date = new Date()): string {
+  const season = norwegianSeason(date);
+  const year = date.getFullYear();
+  const seasonName = season.charAt(0).toUpperCase() + season.slice(1);
+  return `Dona Anna sesongbrev: ${seasonName} ${year} fra olivengården`;
+}
+
+function looksLikeFinancialOrRealEstateContent(value: string): boolean {
+  return /finansmarked|boligmarked|eiendomsmarked|boligkjøp|boligkjøpere|rente|ecb|eur\/?nok|eurokurs|lånerente|investor|costa blanca/i.test(value);
+}
+
+function buildDonaAnnaFallbackParsed() {
+  const season = norwegianSeason();
+  return {
+    title: donaAnnaSeasonTitle(),
+    subtitle: 'Nytt fra Dona Anna: olivenolje, sesong og enkel middelhavsmat',
+    summary:
+      'Et varmt sesongbrev fra Dona Anna med fokus på olivenolje, gårdsliv, kvalitet og god verdi i hverdagskjøkkenet.',
+    key_metrics: [
+      { label: 'Sesong', value: season },
+      { label: 'Fokus', value: 'Olivenolje' },
+      { label: 'Bruk', value: 'Hverdagsmat' },
+    ],
+    sections: [
+      {
+        heading: 'Hilsen fra gården',
+        content:
+          '<p>Dona Anna handler om ren olivenolje, rolig gårdsliv og smaken av Middelhavet i hverdagen. Dette sesongbrevet skal gjøre det enkelt å forstå hva som skjer på gården akkurat nå, og hvordan oljen kan brukes hjemme.</p>',
+      },
+      {
+        heading: 'Sesongen nå',
+        content:
+          '<p>Fokuset denne sesongen er stell av trærne, kvalitet i produksjonen og god planlegging frem mot neste innhøsting. Målet er en olivenolje som er lett å bruke, ærlig i smaken og gir god verdi både til hverdagsmat og små øyeblikk ved bordet.</p>',
+      },
+      {
+        heading: 'Slik bruker du oljen',
+        content:
+          '<p>Prøv Dona Anna over ristede grønnsaker, salater, godt brød, fisk, pasta eller en enkel tomatrett. Bruk den gjerne til slutt i retten, der aromaen og munnfølelsen kommer best frem.</p>',
+      },
+      {
+        heading: 'Tilgjengelighet',
+        content:
+          '<p>Hold kundene oppdatert på hvilke flasker som er tilgjengelige, hvordan de kan bestille, og om det finnes sesongpakker eller begrensede partier. Vær konkret, men lov aldri mer enn lager og logistikk faktisk kan levere.</p>',
+      },
+    ],
+    data_sources: ['Dona Anna merkevarekontekst', 'Sesongbrev-mal'],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +344,21 @@ export class ReportGenerator {
     const report = this.parseClaudeResponse(rawContent, templateId, template, options);
 
     // Override key_metrics with actual data to prevent AI hallucination
+    if (templateId === DONA_ANNA_TEMPLATE_ID) {
+      report.title = looksLikeFinancialOrRealEstateContent(report.title)
+        ? donaAnnaSeasonTitle()
+        : report.title;
+      report.key_metrics = report.key_metrics?.length
+        ? report.key_metrics.slice(0, 4)
+        : buildDonaAnnaFallbackParsed().key_metrics;
+      report.data_sources = Array.from(new Set([
+        ...(report.data_sources || []),
+        'Dona Anna merkevarekontekst',
+        'Sesongbrev-mal',
+      ]));
+      return report;
+    }
+
     report.key_metrics = [];
     if (marketData.exchangeRates?.length) {
       const eurNok = marketData.exchangeRates.find((r: any) => r.pair === 'EUR/NOK');
@@ -456,6 +530,20 @@ export class ReportGenerator {
     templateId: string,
     options?: { theme?: string; brand?: string },
   ): string {
+    if (templateId === DONA_ANNA_TEMPLATE_ID) {
+      return `Du skriver på vegne av Dona Anna, et varmt og praktisk olivenolje-brand med røtter i Spania.
+
+Regler:
+- Skriv alltid på norsk (bokmål).
+- Dette er IKKE en finansrapport, eiendomsrapport eller investoranalyse.
+- Ikke bruk overskrifter eller metaforer om finansmarked, boligmarked, renter, eurokurs, investorer eller Costa Blanca-boligkjøp.
+- Fokuser på olivenolje, smak, økonomisk smart hverdagsbruk, sesong på gården, kvalitet, bærekraftig drift, tilgjengelighet og enkel kundeverdi.
+- Tonen skal være varm, personlig, ærlig og profesjonell.
+- Ikke påstå sertifiseringer, økologimerker, helseeffekter eller lagerstatus hvis det ikke er eksplisitt oppgitt.
+- Inkluder minst ett konkret brukstips eller en enkel serveringsidé.
+- Svar med ren JSON i formatet beskrevet i brukerens melding.`;
+    }
+
     const base = `Du er Freddy Bremseth, eiendomsekspert i Spania med dyp kunnskap om det spanske boligmarkedet, spesielt langs kysten. Du skriver markedsrapporter for RealtyFlow Pro.
 
 Regler:
@@ -498,14 +586,6 @@ Spesielt for denne rapporten:
 - Analyser brandets posisjon, styrker, svakheter og muligheter.
 - Gi konkrete anbefalinger for neste kvartal.`;
 
-      case REPORT_TEMPLATES.E.id:
-        return `${base}
-
-Spesielt for denne rapporten:
-- Varm, personlig tone. Du skriver fra g\u00e5rden Dona Anna.
-- Fokus p\u00e5 olivenoljeproduksjon, sesong og g\u00e5rdsliv.
-- Inkluder en oppskrift eller et tips.`;
-
       default:
         return base;
     }
@@ -516,13 +596,52 @@ Spesielt for denne rapporten:
     marketData: any,
     options?: { theme?: string; brand?: string },
   ): string {
-    const dataJson = JSON.stringify(marketData, null, 2);
-    const formattedContext = this.formatDataContext(marketData);
     const dateStr = new Date().toLocaleDateString('nb-NO', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     });
+    const season = norwegianSeason();
+
+    if (templateId === DONA_ANNA_TEMPLATE_ID) {
+      return `Dato: ${dateStr}
+Sesong: ${season}
+Brand: Dona Anna
+
+Oppgave:
+Lag et kundeklart sesongbrev for Dona Anna. Brevet skal handle om olivenolje, gårdsliv, smak, kvalitet, tilgjengelighet og hvordan kunden kan bruke oljen økonomisk smart i hverdagen.
+
+Viktig avgrensning:
+- Ikke skriv om finansmarkedet, boligmarkedet, renter, eurokurs, investorer eller eiendom.
+- Ikke bruk tittelen "finansmarkedet blåser vår vei" eller lignende finansspråk.
+- Ikke påstå at oljen er økologisk sertifisert, helbredende eller utsolgt/tilgjengelig hvis det ikke er oppgitt.
+- Skriv som et profesjonelt nyhetsbrev som kan leses av kunder før sending.
+
+Innholdet bør ha:
+- En tittel som starter med "Dona Anna sesongbrev".
+- En kort, varm ingress.
+- 4-6 seksjoner, for eksempel "Hilsen fra gården", "Sesongen nå", "Olivenoljen", "Slik bruker du den", "Tilgjengelighet" og "Neste steg".
+- Ett konkret mat- eller serveringstips.
+- En tydelig, men rolig CTA som passer olivenoljekunder.
+
+Generer rapporten og svar med følgende JSON-struktur (ingen markdown utenfor JSON):
+
+{
+  "title": "Dona Anna sesongbrev: ...",
+  "subtitle": "Undertittel",
+  "summary": "2-3 setninger som oppsummerer brevet",
+  "key_metrics": [
+    { "label": "Metrikk", "value": "Verdi", "change": "valgfritt" }
+  ],
+  "sections": [
+    { "heading": "Seksjonstittel", "content": "Innhold med HTML-formatering tillatt" }
+  ],
+  "data_sources": ["Dona Anna merkevarekontekst", "Sesongbrev-mal"]
+}`;
+    }
+
+    const dataJson = JSON.stringify(marketData, null, 2);
+    const formattedContext = this.formatDataContext(marketData);
 
     return `Dato: ${dateStr}
 
@@ -568,15 +687,37 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
     } catch {
-      // If parsing fails, wrap raw text as a single-section report
-      parsed = {
-        title: template.name,
-        subtitle: new Date().toLocaleDateString('nb-NO'),
-        summary: raw.slice(0, 200),
-        key_metrics: [],
-        sections: [{ heading: template.name, content: raw }],
-        data_sources: [],
-      };
+      if (templateId === DONA_ANNA_TEMPLATE_ID) {
+        parsed = buildDonaAnnaFallbackParsed();
+      } else {
+        // If parsing fails, wrap raw text as a single-section report
+        parsed = {
+          title: template.name,
+          subtitle: new Date().toLocaleDateString('nb-NO'),
+          summary: raw.slice(0, 200),
+          key_metrics: [],
+          sections: [{ heading: template.name, content: raw }],
+          data_sources: [],
+        };
+      }
+    }
+
+    if (templateId === DONA_ANNA_TEMPLATE_ID) {
+      const parsedSections = Array.isArray(parsed.sections) ? parsed.sections : [];
+      const combinedText = [
+        parsed.title,
+        parsed.subtitle,
+        parsed.summary,
+        ...parsedSections.flatMap((section: any) => [section?.heading, section?.content]),
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      if (looksLikeFinancialOrRealEstateContent(combinedText)) {
+        parsed = buildDonaAnnaFallbackParsed();
+      } else if (!String(parsed.title || '').toLowerCase().includes('dona anna')) {
+        parsed.title = donaAnnaSeasonTitle();
+      }
     }
 
     const sections: { heading: string; content: string }[] = parsed.sections ?? [];
@@ -614,6 +755,33 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
     template: (typeof REPORT_TEMPLATES)[TemplateKey],
     options?: { theme?: string; brand?: string },
   ): GeneratedReport {
+    if (templateId === DONA_ANNA_TEMPLATE_ID) {
+      const parsed = buildDonaAnnaFallbackParsed();
+      const contentHtml = parsed.sections
+        .map((s) => `<h2>${s.heading}</h2>\n${s.content}`)
+        .join('\n\n');
+      const contentText = parsed.sections
+        .map((s) => `## ${s.heading}\n${s.content.replace(/<[^>]+>/g, '')}`)
+        .join('\n\n');
+
+      return {
+        id: randomUUID(),
+        template_id: templateId,
+        title: parsed.title,
+        subtitle: parsed.subtitle,
+        content_html: contentHtml,
+        content_text: contentText,
+        summary: parsed.summary,
+        key_metrics: parsed.key_metrics,
+        sections: parsed.sections,
+        theme: options?.theme,
+        brand: options?.brand ?? 'donaanna',
+        recipients: TEMPLATE_RECIPIENTS[templateId] ?? 'donaanna',
+        generated_at: new Date().toISOString(),
+        data_sources: parsed.data_sources,
+      };
+    }
+
     const dateStr = new Date().toLocaleDateString('nb-NO', {
       year: 'numeric',
       month: 'long',
@@ -674,12 +842,20 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
 
   formatForEmail(report: GeneratedReport): { subject: string; html: string } {
     const subject = `${report.title}${report.subtitle ? ' \u2013 ' + report.subtitle : ''}`;
+    const isDonaAnna = report.template_id === DONA_ANNA_TEMPLATE_ID || report.recipients === 'donaanna';
+    const brandLabel = isDonaAnna ? 'Dona Anna' : 'RealtyFlow Pro';
+    const productLabel = isDonaAnna ? 'Sesongbrev' : 'Market Intelligence';
+    const accent = isDonaAnna ? '#f59e0b' : '#22d3ee';
+    const accentBorder = isDonaAnna ? '#d97706' : '#0891b2';
+    const headerGradient = isDonaAnna
+      ? 'linear-gradient(135deg, #1c1917 0%, #78350f 100%)'
+      : 'linear-gradient(135deg, #0f172a 0%, #164e63 100%)';
 
     const metricsCards = report.key_metrics
       .map(
         (m) => `
         <td style="padding: 8px;">
-          <div style="background: #1e293b; border: 1px solid #0891b2; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="background: #1e293b; border: 1px solid ${accentBorder}; border-radius: 8px; padding: 16px; text-align: center;">
             <div style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">
               ${m.label}
             </div>
@@ -703,7 +879,7 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
         (s) => `
         <tr>
           <td style="padding: 24px 32px;">
-            <h2 style="color: #22d3ee; font-size: 20px; font-weight: 600; margin: 0 0 12px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">
+            <h2 style="color: ${accent}; font-size: 20px; font-weight: 600; margin: 0 0 12px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">
               ${s.heading}
             </h2>
             <div style="color: #cbd5e1; font-size: 15px; line-height: 1.7;">
@@ -738,9 +914,9 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #0f172a 0%, #164e63 100%); padding: 32px; text-align: center;">
-              <div style="color: #22d3ee; font-size: 14px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;">
-                RealtyFlow Pro
+            <td style="background: ${headerGradient}; padding: 32px; text-align: center;">
+              <div style="color: ${accent}; font-size: 14px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;">
+                ${brandLabel}
               </div>
               <h1 style="color: #f1f5f9; font-size: 26px; font-weight: 700; margin: 0 0 8px 0;">
                 ${report.title}
@@ -759,7 +935,7 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
           <!-- Summary -->
           <tr>
             <td style="padding: 24px 32px 0;">
-              <p style="color: #e2e8f0; font-size: 16px; line-height: 1.6; margin: 0; font-style: italic; border-left: 3px solid #0891b2; padding-left: 16px;">
+              <p style="color: #e2e8f0; font-size: 16px; line-height: 1.6; margin: 0; font-style: italic; border-left: 3px solid ${accentBorder}; padding-left: 16px;">
                 ${report.summary}
               </p>
             </td>
@@ -788,7 +964,7 @@ Generer en komplett markedsrapport og svar med f\u00f8lgende JSON-struktur (inge
           <tr>
             <td style="padding: 24px 32px; border-top: 1px solid #334155; text-align: center;">
               <p style="color: #64748b; font-size: 12px; margin: 0;">
-                Generated by <span style="color: #22d3ee;">RealtyFlow Pro Market Intelligence</span>
+                Sendt fra <span style="color: ${accent};">${brandLabel} ${productLabel}</span>
               </p>
               <p style="color: #475569; font-size: 11px; margin: 8px 0 0 0;">
                 ${report.data_sources.length > 0 ? 'Kilder: ' + report.data_sources.join(', ') : ''}

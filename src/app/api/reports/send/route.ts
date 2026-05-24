@@ -40,18 +40,21 @@ export async function POST(request: NextRequest) {
 
     // 2. Get recipients - from body, or from recipient list, or fallback
     let recipients = body.recipients as string[] | undefined;
+    const recipientGroup = report.recipients || 'internal';
+    let fallbackRecipientUsed = false;
     if (!recipients || recipients.length === 0) {
       const { data: recipientList } = await supabase
         .from('report_recipients')
         .select('email')
         .eq('active', true)
-        .eq('group_name', report.recipients || 'internal');
+        .eq('group_name', recipientGroup);
 
       recipients = recipientList?.map(r => r.email) || [];
 
       // Fallback to Freddy
       if (recipients.length === 0) {
         recipients = ['freddy@soleada.no'];
+        fallbackRecipientUsed = true;
       }
     }
 
@@ -80,6 +83,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 500 });
     }
 
+    const fromName = report.recipients === 'donaanna' || report.template_id === 'dona-anna-sesong'
+      ? 'Dona Anna'
+      : 'RealtyFlow Pro';
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'RealtyFlow Pro <reports@freddybremseth.com>',
+        from: `${fromName} <reports@freddybremseth.com>`,
         to: recipients,
         subject: emailData.subject,
         html: emailData.html,
@@ -114,6 +121,8 @@ export async function POST(request: NextRequest) {
       success: true,
       emailId: resendResult.id,
       sentTo: recipients,
+      recipientGroup,
+      fallbackRecipientUsed,
     });
   } catch (error) {
     console.error('[Reports Send]', error);

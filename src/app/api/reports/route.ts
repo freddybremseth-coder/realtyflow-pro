@@ -101,6 +101,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (template_id === 'dona-anna-sesong') {
+      brand = 'donaanna';
+    }
+
     // 3. Generate the report with Claude
     const report = await generator.generateReport(template_id, marketData, { theme, brand });
 

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   BarChart3, TrendingUp, Globe, FileText, Send, RefreshCw,
-  Calendar, Clock, ChevronRight, Eye, Mail, Zap, DollarSign,
+  Calendar, Clock, Eye, Mail, Zap, DollarSign,
   Users, Building2, Newspaper, ArrowUpRight, ArrowDownRight, Loader2,
 } from "lucide-react";
 import { AdvisorPlaybooksStudio, type AdvisorMarketContext } from "@/components/advisor/advisor-playbooks-studio";
@@ -99,6 +99,37 @@ const TEMPLATES = [
   { id: "dona-anna-sesong", name: "Dona Anna Sesongbrev", icon: Newspaper, color: "text-orange-400", bg: "bg-orange-500/15", freq: "Kvartalsvis" },
 ];
 
+const RECIPIENT_GROUP_LABELS: Record<string, string> = {
+  all: "alle aktive rapportmottakere",
+  investors: "investorlisten",
+  leads: "aktive leads",
+  internal: "internlisten",
+  donaanna: "Dona Anna-listen",
+  portal_all: "alle portalbrukere",
+  portal_selected: "valgte portalbrukere",
+};
+
+function getRecipientDescription(report?: Pick<Report, "recipients"> | null) {
+  const group = report?.recipients || "internal";
+  const label = RECIPIENT_GROUP_LABELS[group] || group;
+  if (group === "donaanna") {
+    return `${label} (olivenoljekunder og grossister). Hvis listen er tom, brukes Freddy som fallback.`;
+  }
+  return `${label}. Hvis listen er tom, brukes Freddy som fallback.`;
+}
+
+function isOffBrandDonaAnnaReport(report: Report) {
+  if (report.template_id !== "dona-anna-sesong") return false;
+  const text = [
+    report.title,
+    report.subtitle,
+    report.summary,
+    report.content_text,
+    ...(report.sections || []).flatMap(section => [section.heading, section.content]),
+  ].filter(Boolean).join(" ");
+  return /finansmarked|boligmarked|eiendomsmarked|boligkjøp|rente|ecb|eur\/?nok|eurokurs|investor|costa blanca/i.test(text);
+}
+
 // ─── Component ───────────────────────────────────────────────
 export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
@@ -106,6 +137,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
+  const [sendStatus, setSendStatus] = useState<{ reportId: string; type: "success" | "error" | "info"; message: string } | null>(null);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [activeTab, setActiveTab] = useState<ReportsTab>("oversikt");
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -197,6 +229,7 @@ export default function ReportsPage() {
   // Generate a report
   const handleGenerate = async (templateId: string) => {
     setGenerating(templateId);
+    setSendStatus(null);
     try {
       const res = await fetch("/api/reports", {
         method: "POST",
@@ -209,6 +242,11 @@ export default function ReportsPage() {
           setReports(prev => [data.report, ...prev]);
           setSelectedReport(data.report);
           setReportApproved(false);
+          setPortalStatus("idle");
+          setActiveTab("rapporter");
+          const url = new URL(window.location.href);
+          url.searchParams.set("tab", "rapporter");
+          window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
         }
       }
     } catch (err) {
@@ -219,20 +257,44 @@ export default function ReportsPage() {
 
   // Send a report via email
   const handleSend = async (reportId: string) => {
+    const report = reports.find(r => r.id === reportId) || selectedReport;
     setSending(reportId);
+    setSendStatus({
+      reportId,
+      type: "info",
+      message: `Sender e-post til ${getRecipientDescription(report)}`
+    });
     try {
       const res = await fetch("/api/reports/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reportId }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Kunne ikke sende rapporten.");
+      }
       if (res.ok) {
         setReports(prev =>
-          prev.map(r => r.id === reportId ? { ...r, sent_at: new Date().toISOString() } : r)
+          prev.map(r => r.id === reportId ? { ...r, sent_at: new Date().toISOString(), sent_to: data.sentTo || r.sent_to } : r)
         );
+        if (selectedReport?.id === reportId) {
+          setSelectedReport(prev => prev ? { ...prev, sent_at: new Date().toISOString(), sent_to: data.sentTo || prev.sent_to } : prev);
+        }
+        const sentTo = Array.isArray(data.sentTo) && data.sentTo.length > 0 ? data.sentTo.join(", ") : getRecipientDescription(report);
+        setSendStatus({
+          reportId,
+          type: "success",
+          message: `Rapporten er sendt til ${sentTo}${data.fallbackRecipientUsed ? " fordi mottakerlisten var tom" : ""}.`
+        });
       }
     } catch (err) {
       console.error("Failed to send:", err);
+      setSendStatus({
+        reportId,
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke sende rapporten."
+      });
     }
     setSending(null);
   };
@@ -470,7 +532,7 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Market Intelligence</h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -479,7 +541,7 @@ export default function ReportsPage() {
         </div>
         <button
           onClick={fetchData}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors text-sm"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white sm:w-auto"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           Oppdater
@@ -487,12 +549,12 @@ export default function ReportsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex w-full flex-wrap gap-1 rounded-lg bg-slate-800/50 p-1 sm:w-fit">
+      <div className="grid w-full grid-cols-2 gap-1 rounded-lg bg-slate-800/50 p-1 sm:flex sm:w-fit sm:flex-wrap">
         {(["oversikt", "rapporter", "markedsdata", "ekspertinnhold", "mottakere"] as const).map(tab => (
           <button
             key={tab}
             onClick={() => switchTab(tab)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            className={`rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
               activeTab === tab ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
             }`}
           >
@@ -816,43 +878,41 @@ export default function ReportsPage() {
                   <Card
                     key={report.id}
                     className="hover:border-slate-600 transition-colors cursor-pointer"
-                    onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); }}
+                    onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); setSendStatus(null); }}
                   >
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                         <div className={`w-9 h-9 rounded-lg ${tmpl.bg} flex items-center justify-center flex-shrink-0`}>
                           <Icon size={16} className={tmpl.color} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-white truncate">{report.title}</h3>
+                          <h3 className="text-sm font-medium leading-snug text-white">{report.title}</h3>
                           <p className="text-xs text-slate-500 mt-0.5">
                             {tmpl.name} · {formatDate(report.generated_at)} kl. {formatTime(report.generated_at)}
                           </p>
+                          {(report.summary || report.subtitle) && (
+                            <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">
+                              {report.summary || report.subtitle}
+                            </p>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {report.sent_at ? (
+                        <div className="flex items-center gap-2 sm:flex-shrink-0">
+                          {report.sent_at && (
                             <Badge variant="success" className="text-[10px]">
                               <Mail size={10} className="mr-1" /> Sendt
                             </Badge>
-                          ) : (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleSend(report.id); }}
-                              disabled={sending === report.id}
-                              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                            >
-                              {sending === report.id ? (
-                                <RefreshCw size={10} className="animate-spin" />
-                              ) : (
-                                <Send size={10} />
-                              )}
-                              Send
-                            </button>
                           )}
-                          <ChevronRight size={14} className="text-slate-600" />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); setSendStatus(null); switchTab("rapporter"); }}
+                            className="ml-auto flex items-center gap-1 rounded bg-slate-700 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:text-white sm:ml-0"
+                          >
+                            <Eye size={12} />
+                            Se resultat
+                          </button>
                         </div>
                       </div>
                       {report.key_metrics && report.key_metrics.length > 0 && (
-                        <div className="flex gap-4 mt-3 pt-3 border-t border-slate-700/50">
+                        <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-slate-700/50">
                           {report.key_metrics.slice(0, 4).map((m, i) => (
                             <div key={i} className="text-xs">
                               <span className="text-slate-500">{m.label}: </span>
@@ -877,9 +937,9 @@ export default function ReportsPage() {
 
       {/* ═══════════ TAB: RAPPORTER ═══════════ */}
       {activeTab === "rapporter" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
           {/* Report List */}
-          <div className="lg:col-span-1 space-y-2">
+          <div className="order-2 space-y-2 lg:order-1 lg:col-span-1">
             {reports.map(report => {
               const tmpl = getTemplate(report.template_id);
               const Icon = tmpl.icon;
@@ -887,21 +947,26 @@ export default function ReportsPage() {
               return (
                 <div
                   key={report.id}
-                  onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); }}
+                  onClick={() => { setSelectedReport(report); setReportApproved(false); setPortalStatus("idle"); setSendStatus(null); }}
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                     isSelected
                       ? "border-cyan-500/50 bg-cyan-500/5"
                       : "border-slate-700/50 bg-slate-800/30 hover:border-slate-600"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <Icon size={14} className={tmpl.color} />
-                    <span className="text-sm text-white font-medium truncate">{report.title}</span>
+                  <div className="flex items-start gap-2">
+                    <Icon size={14} className={`${tmpl.color} mt-0.5 shrink-0`} />
+                    <span className="text-sm font-medium leading-snug text-white">{report.title}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] text-slate-500">{formatDate(report.generated_at)}</span>
                     {report.sent_at && <Badge variant="success" className="text-[9px] py-0">Sendt</Badge>}
                   </div>
+                  {(report.summary || report.subtitle) && (
+                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-400">
+                      {report.summary || report.subtitle}
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -911,22 +976,22 @@ export default function ReportsPage() {
           </div>
 
           {/* Report Preview */}
-          <div className="lg:col-span-2">
+          <div className="order-1 lg:order-2 lg:col-span-2">
             {selectedReport ? (
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <CardTitle>{selectedReport.title}</CardTitle>
                       {selectedReport.subtitle && (
                         <p className="text-sm text-slate-400 mt-1">{selectedReport.subtitle}</p>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                       <button
                         onClick={() => publishToPortal(selectedReport.id)}
                         disabled={!reportApproved || portalPublishing === selectedReport.id || (portalMode === "selected" && selectedContactEmails.length === 0)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-sm transition-colors disabled:opacity-50"
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
                       >
                         {portalPublishing === selectedReport.id ? (
                           <RefreshCw size={14} className="animate-spin" />
@@ -939,20 +1004,39 @@ export default function ReportsPage() {
                         <button
                           onClick={() => handleSend(selectedReport.id)}
                           disabled={sending === selectedReport.id}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 text-sm transition-colors"
+                          title={`Sender til ${getRecipientDescription(selectedReport)}`}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500/10 px-3 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
                         >
                           {sending === selectedReport.id ? (
                             <RefreshCw size={14} className="animate-spin" />
                           ) : (
                             <Send size={14} />
                           )}
-                          Send rapport
+                          Send e-post
                         </button>
                       )}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {isOffBrandDonaAnnaReport(selectedReport) && (
+                    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+                      <p className="text-sm font-medium text-amber-200">
+                        Denne eldre Dona Anna-rapporten ser ut til å ha fått finans-/eiendomsvinkel.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                        Generer en ny versjon for å bruke den oppdaterte olivenolje- og sesongbrevmalen.
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={() => handleGenerate("dona-anna-sesong")}
+                        disabled={Boolean(generating)}
+                        className="mt-3 bg-amber-600 hover:bg-amber-500"
+                      >
+                        {generating === "dona-anna-sesong" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Lager ny...</> : "Generer nytt Dona Anna-brev"}
+                      </Button>
+                    </div>
+                  )}
                   <div className="mb-6 rounded-lg border border-slate-700/40 bg-slate-900/50 p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Publisering</span>
@@ -971,6 +1055,9 @@ export default function ReportsPage() {
                       {selectedReport.recipients === "portal_all" && <Badge variant="success" className="text-[10px]">Synlig for alle portalbrukere</Badge>}
                       {selectedReport.recipients === "portal_selected" && <Badge variant="success" className="text-[10px]">Synlig for {selectedReport.sent_to?.length || 0}</Badge>}
                     </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-400">
+                      E-postknappen sender til {getRecipientDescription(selectedReport)}
+                    </p>
                     <label className="mt-3 flex items-start gap-2 text-xs text-slate-300">
                       <input
                         checked={reportApproved}
@@ -1005,6 +1092,17 @@ export default function ReportsPage() {
                     )}
                     {portalStatus === "saved" && <p className="mt-2 text-xs text-emerald-300">Rapporten er lagt under Dokumenter på Min side.</p>}
                     {portalStatus === "error" && <p className="mt-2 text-xs text-red-300">Kunne ikke publisere rapporten.</p>}
+                    {sendStatus?.reportId === selectedReport.id && (
+                      <p className={`mt-2 text-xs ${
+                        sendStatus.type === "success"
+                          ? "text-emerald-300"
+                          : sendStatus.type === "error"
+                            ? "text-red-300"
+                            : "text-cyan-300"
+                      }`}>
+                        {sendStatus.message}
+                      </p>
+                    )}
                   </div>
 
                   {/* Key Metrics */}
@@ -1041,7 +1139,7 @@ export default function ReportsPage() {
                         <div key={i}>
                           <h3 className="text-sm font-semibold text-white mb-2">{section.heading}</h3>
                           <div
-                            className="text-sm text-slate-300 leading-relaxed prose prose-invert prose-sm max-w-none"
+                            className="prose prose-invert prose-sm max-w-none break-words text-sm leading-relaxed text-slate-300"
                             dangerouslySetInnerHTML={{ __html: section.content }}
                           />
                         </div>
@@ -1049,11 +1147,11 @@ export default function ReportsPage() {
                     </div>
                   ) : selectedReport.content_html ? (
                     <div
-                      className="text-sm text-slate-300 leading-relaxed prose prose-invert prose-sm max-w-none"
+                      className="prose prose-invert prose-sm max-w-none break-words text-sm leading-relaxed text-slate-300"
                       dangerouslySetInnerHTML={{ __html: selectedReport.content_html }}
                     />
                   ) : selectedReport.content_text ? (
-                    <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                    <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-300">
                       {selectedReport.content_text}
                     </div>
                   ) : (
@@ -1061,8 +1159,8 @@ export default function ReportsPage() {
                   )}
 
                   {/* Footer */}
-                  <div className="mt-6 pt-4 border-t border-slate-700/50 flex items-center justify-between">
-                    <div className="text-xs text-slate-500">
+                  <div className="mt-6 flex flex-col gap-2 border-t border-slate-700/50 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs leading-5 text-slate-500">
                       Generert {formatDate(selectedReport.generated_at)} kl. {formatTime(selectedReport.generated_at)}
                       {selectedReport.data_sources && selectedReport.data_sources.length > 0 && (
                         <span> · Kilder: {selectedReport.data_sources.join(", ")}</span>
@@ -1071,6 +1169,7 @@ export default function ReportsPage() {
                     {selectedReport.sent_at && (
                       <div className="text-xs text-emerald-400">
                         Sendt {formatDate(selectedReport.sent_at)}
+                        {selectedReport.sent_to?.length ? ` til ${selectedReport.sent_to.join(", ")}` : ""}
                       </div>
                     )}
                   </div>
