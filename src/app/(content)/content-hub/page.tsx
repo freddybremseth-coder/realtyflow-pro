@@ -97,6 +97,23 @@ interface DraftItem {
   ai_timing_reasoning?: string;
 }
 
+interface WebsiteCmsDestination {
+  id: string;
+  label: string;
+  path: string;
+  contentType: string;
+}
+
+interface WebsiteCmsTarget {
+  id: string;
+  name: string;
+  website: string;
+  webhookConfigured: boolean;
+  publishingMode: "direct" | "queue";
+  defaultDestinationId: string;
+  destinations: WebsiteCmsDestination[];
+}
+
 type ContentHubTab = "utkast" | "publiser" | "kampanjer" | "kalender" | "analytics" | "strategi" | "kunde-pdf";
 type DraftStatusFilter = "all" | "draft" | "scheduled" | "failed";
 
@@ -377,6 +394,12 @@ export default function ContentHubPage() {
   const [hydratingDraftId, setHydratingDraftId] = useState<string | null>(null);
   const [publishResults, setPublishResults] = useState<{platform: string; success: boolean; postUrl?: string; error?: string}[]>([]);
   const [connectedAccounts, setConnectedAccounts] = useState<{platform: string; account_name: string; brand: string; brand_id?: string | null}[]>([]);
+  const [websiteTargets, setWebsiteTargets] = useState<WebsiteCmsTarget[]>([]);
+  const [websiteDraft, setWebsiteDraft] = useState<DraftItem | null>(null);
+  const [websiteBrandId, setWebsiteBrandId] = useState("");
+  const [websiteDestinationId, setWebsiteDestinationId] = useState("");
+  const [websitePublishing, setWebsitePublishing] = useState(false);
+  const [websitePublishMessage, setWebsitePublishMessage] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Image picker state
   const [imagePickerDraft, setImagePickerDraft] = useState<string | null>(null);
@@ -385,6 +408,19 @@ export default function ContentHubPage() {
 
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
+  const selectedWebsiteTarget = useMemo(
+    () => websiteTargets.find((target) => target.id === websiteBrandId) || websiteTargets[0] || null,
+    [websiteBrandId, websiteTargets],
+  );
+  const selectedWebsiteDestination = useMemo(() => {
+    if (!selectedWebsiteTarget) return null;
+    return (
+      selectedWebsiteTarget.destinations.find((destination) => destination.id === websiteDestinationId) ||
+      selectedWebsiteTarget.destinations.find((destination) => destination.id === selectedWebsiteTarget.defaultDestinationId) ||
+      selectedWebsiteTarget.destinations[0] ||
+      null
+    );
+  }, [selectedWebsiteTarget, websiteDestinationId]);
 
   // -------------------------------------------------------------------
   // Customer-PDF state — pick several properties matching a buyer's
@@ -755,6 +791,85 @@ export default function ContentHubPage() {
     }
   }, [connectedAccounts, brandMatches]);
 
+  const openWebsiteModal = useCallback((draft: DraftItem) => {
+    setActiveContentTab("utkast");
+    setWebsiteDraft(draft);
+    setWebsitePublishMessage(null);
+    setHydratingDraftId(draft.image_compacted ? draft.id : null);
+
+    const matchingTarget = websiteTargets.find((target) => target.id === draft.brand_id) || websiteTargets[0];
+    if (matchingTarget) {
+      setWebsiteBrandId(matchingTarget.id);
+      setWebsiteDestinationId(matchingTarget.defaultDestinationId || matchingTarget.destinations[0]?.id || "");
+    }
+
+    if (draft.image_compacted) {
+      fetch(`/api/content-hub/drafts?id=${encodeURIComponent(draft.id)}&t=${Date.now()}`, { cache: "no-store" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data?.draft) return;
+          const hydratedDraft = { ...data.draft, image_compacted: false } as DraftItem;
+          setWebsiteDraft(hydratedDraft);
+          setDrafts((prev) => prev.map((item) => item.id === draft.id ? { ...item, ...hydratedDraft } : item));
+        })
+        .catch((err) => {
+          console.error("Failed to hydrate draft for website:", err);
+        })
+        .finally(() => {
+          setHydratingDraftId(null);
+        });
+    }
+  }, [websiteTargets]);
+
+  const publishDraftToWebsite = useCallback(async () => {
+    if (!websiteDraft || !selectedWebsiteTarget || !selectedWebsiteDestination) return;
+    if (!websiteDraft.description?.trim() && !websiteDraft.title?.trim()) {
+      setWebsitePublishMessage({ type: "error", message: "Utkastet mangler innhold." });
+      return;
+    }
+
+    setWebsitePublishing(true);
+    setWebsitePublishMessage(null);
+    try {
+      const res = await fetch("/api/website-cms/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: selectedWebsiteTarget.id,
+          destination_id: selectedWebsiteDestination.id,
+          title: websiteDraft.title || "Uten tittel",
+          content: websiteDraft.description || websiteDraft.title || "",
+          image_url: websiteDraft.ai_image_url || websiteDraft.thumbnail_url || undefined,
+          tags: websiteDraft.tags || [],
+          status: "published",
+          source_type: "content_publication",
+          source_id: websiteDraft.id,
+          ai_generated: websiteDraft.ai_generated,
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke lese website-respons." }));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Publisering til nettside feilet.");
+      }
+
+      const targetText = `${selectedWebsiteTarget.name} -> ${selectedWebsiteDestination.label}`;
+      setWebsitePublishMessage({
+        type: "success",
+        message: data.websitePublished
+          ? `Publisert til ${targetText}${data.externalUrl ? `: ${data.externalUrl}` : "."}`
+          : `Klargjort for ${targetText}. ${data.warning || "Ligger som website-draft i Content Hub."}`,
+      });
+      if (!data.websitePublished) void fetchDrafts();
+    } catch (err) {
+      setWebsitePublishMessage({
+        type: "error",
+        message: err instanceof Error ? err.message : "Ukjent feil ved website-publisering.",
+      });
+    } finally {
+      setWebsitePublishing(false);
+    }
+  }, [fetchDrafts, selectedWebsiteDestination, selectedWebsiteTarget, websiteDraft]);
+
   const fetchAiRecommendation = useCallback(async () => {
     if (!publishDraft || publishPlatforms.length === 0) return;
     setLoadingAiTime(true);
@@ -1092,6 +1207,35 @@ export default function ContentHubPage() {
     fetchConnectedAccounts();
     fetchCalendarEvents();
   }, [fetchDrafts, fetchCampaigns, fetchConnectedAccounts, fetchCalendarEvents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/website-cms/targets")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const targets = Array.isArray(data.targets) ? data.targets : [];
+        setWebsiteTargets(targets);
+        if (targets.length > 0) {
+          setWebsiteBrandId((current) => current || targets[0].id);
+          setWebsiteDestinationId((current) => current || targets[0].defaultDestinationId || targets[0].destinations?.[0]?.id || "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setWebsiteTargets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedWebsiteTarget) return;
+    const exists = selectedWebsiteTarget.destinations.some((destination) => destination.id === websiteDestinationId);
+    if (!exists) {
+      setWebsiteDestinationId(selectedWebsiteTarget.defaultDestinationId || selectedWebsiteTarget.destinations[0]?.id || "");
+    }
+  }, [selectedWebsiteTarget, websiteDestinationId]);
 
   useEffect(() => {
     const refreshDrafts = () => {
@@ -1919,6 +2063,14 @@ export default function ContentHubPage() {
                                   </Button>
                                   <Button
                                     size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => openWebsiteModal(draft)}
+                                  >
+                                    <Globe size={12} className="mr-1" /> Nettside
+                                  </Button>
+                                  <Button
+                                    size="sm"
                                     variant="ghost"
                                     className="text-xs text-zinc-500"
                                     onClick={() => updateDraftStatus(draft.id, "archived")}
@@ -1955,6 +2107,14 @@ export default function ContentHubPage() {
                                     onClick={() => openPublishModal(draft, "now")}
                                   >
                                     <Send size={12} className="mr-1" /> Publiser nå
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    onClick={() => openWebsiteModal(draft)}
+                                  >
+                                    <Globe size={12} className="mr-1" /> Nettside
                                   </Button>
                                   <Button
                                     size="sm"
@@ -2072,6 +2232,105 @@ export default function ContentHubPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {websiteDraft && (
+            <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !websitePublishing && setWebsiteDraft(null)}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Publiser til nettside</h3>
+                  {!websitePublishing && (
+                    <button onClick={() => setWebsiteDraft(null)} className="text-zinc-400 hover:text-white">
+                      <X size={20} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="bg-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-medium truncate">{websiteDraft.title || "Uten tittel"}</p>
+                  <p className="text-xs text-zinc-400 line-clamp-3 mt-1">{websiteDraft.description?.substring(0, 220)}...</p>
+                  {hydratingDraftId === websiteDraft.id && (
+                    <p className="mt-2 flex items-center gap-2 text-xs text-amber-200">
+                      <Loader2 size={12} className="animate-spin" />
+                      Henter fullversjon før publisering...
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-zinc-400 mb-1 block">Brand</label>
+                    <select
+                      value={selectedWebsiteTarget?.id || ""}
+                      onChange={(e) => setWebsiteBrandId(e.target.value)}
+                      className="w-full h-10 rounded-lg border border-zinc-600 bg-zinc-900 px-3 text-sm text-zinc-100"
+                      disabled={websitePublishing}
+                    >
+                      {websiteTargets.map((target) => (
+                        <option key={target.id} value={target.id}>
+                          {target.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-400 mb-1 block">Plassering</label>
+                    <select
+                      value={selectedWebsiteDestination?.id || ""}
+                      onChange={(e) => setWebsiteDestinationId(e.target.value)}
+                      className="w-full h-10 rounded-lg border border-zinc-600 bg-zinc-900 px-3 text-sm text-zinc-100"
+                      disabled={websitePublishing || !selectedWebsiteTarget}
+                    >
+                      {(selectedWebsiteTarget?.destinations || []).map((destination) => (
+                        <option key={destination.id} value={destination.id}>
+                          {destination.label} ({destination.path})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedWebsiteTarget && (
+                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+                    {selectedWebsiteTarget.webhookConfigured
+                      ? `Direkte publisering er satt opp for ${selectedWebsiteTarget.name}.`
+                      : `Webhook mangler for ${selectedWebsiteTarget.name}. RealtyFlow lagrer saken som website-klar draft.`}
+                  </div>
+                )}
+
+                {websitePublishMessage && (
+                  <div className={`rounded-lg border p-3 text-sm ${
+                    websitePublishMessage.type === "success"
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                      : "border-red-500/20 bg-red-500/10 text-red-200"
+                  }`}>
+                    {websitePublishMessage.message}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setWebsiteDraft(null)}
+                    disabled={websitePublishing}
+                  >
+                    Lukk
+                  </Button>
+                  <Button
+                    className="flex-1 bg-cyan-600 hover:bg-cyan-700"
+                    onClick={publishDraftToWebsite}
+                    disabled={websitePublishing || hydratingDraftId === websiteDraft.id || !selectedWebsiteTarget || !selectedWebsiteDestination}
+                  >
+                    {websitePublishing ? (
+                      <><Loader2 size={14} className="animate-spin mr-2" /> Publiserer...</>
+                    ) : (
+                      <><Globe size={14} className="mr-1" /> Publiser til nettside</>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

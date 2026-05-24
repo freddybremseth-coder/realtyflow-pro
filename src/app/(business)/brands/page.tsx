@@ -36,6 +36,10 @@ interface BrandSettings {
   agent_bio: string;
   // Optional area description shown on the prospect's "Om området" page.
   area_blurb: string;
+  // Website CMS bridge used by Documenthub/Publishing Hub.
+  websiteCmsWebhookUrl: string;
+  websiteCmsWebhookSecret: string;
+  websiteCmsDestinationsText: string;
 }
 
 interface BrandEntry {
@@ -72,6 +76,9 @@ const emptySettings: BrandSettings = {
   agent_phone: "",
   agent_bio: "",
   area_blurb: "",
+  websiteCmsWebhookUrl: "",
+  websiteCmsWebhookSecret: "",
+  websiteCmsDestinationsText: "",
 };
 
 const typeColors: Record<string, string> = {
@@ -999,6 +1006,58 @@ export default function BrandsPage() {
                       }
                       placeholder="sk-..."
                     />
+                  </div>
+                </div>
+
+                {/* Website CMS */}
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+                    <Globe size={16} className="text-cyan-400" />
+                    Website CMS
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Brukes når Dokumenthub eller Publishing Hub skal publisere artikler, guider og blogginnlegg til brandets nettside.
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Publiserings-webhook
+                      </label>
+                      <Input
+                        value={selectedBrand.settings.websiteCmsWebhookUrl}
+                        onChange={(e) => updateSettings("websiteCmsWebhookUrl", e.target.value)}
+                        placeholder="https://donaanna.com/api/realtyflow/publish"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Hvis denne mangler, lagres innholdet som website-klar draft i Content Hub.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Hemmelig nøkkel for webhook
+                      </label>
+                      <Input
+                        type="password"
+                        value={selectedBrand.settings.websiteCmsWebhookSecret}
+                        onChange={(e) => updateSettings("websiteCmsWebhookSecret", e.target.value)}
+                        placeholder="Valgfri delt nøkkel"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 mb-1 block">
+                        Publiseringsmål (ett per linje)
+                      </label>
+                      <textarea
+                        value={selectedBrand.settings.websiteCmsDestinationsText}
+                        onChange={(e) => updateSettings("websiteCmsDestinationsText", e.target.value)}
+                        rows={4}
+                        placeholder={"Magasin|/magasin|magazine|magasin\nArtikler|/artikler|article|artikler\nBlogg|/blogg|post|blogg"}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Format: navn|sti|type|id. Tomt felt bruker standardmål for brandet.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

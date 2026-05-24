@@ -9,6 +9,7 @@ import {
   Clock,
   Eye,
   FileText,
+  Globe,
   Mail,
   Newspaper,
   Pencil,
@@ -157,6 +158,23 @@ const CUSTOM_KEY = "__custom__";
 type DocStatus = "draft" | "published" | "archived";
 type DocChannel = "portal" | "email" | "newsletter" | "knowledge_base" | "attachment";
 
+type WebsiteCmsDestination = {
+  id: string;
+  label: string;
+  path: string;
+  contentType: string;
+};
+
+type WebsiteCmsTarget = {
+  id: string;
+  name: string;
+  website: string;
+  webhookConfigured: boolean;
+  publishingMode: "direct" | "queue";
+  defaultDestinationId: string;
+  destinations: WebsiteCmsDestination[];
+};
+
 type ArchiveDoc = {
   id: string;
   title: string;
@@ -225,6 +243,11 @@ export default function DocumentHubPage() {
   const [savingError, setSavingError] = useState<string | null>(null);
   const [savingSuccess, setSavingSuccess] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [cmsTargets, setCmsTargets] = useState<WebsiteCmsTarget[]>([]);
+  const [cmsBrandId, setCmsBrandId] = useState("");
+  const [cmsDestinationId, setCmsDestinationId] = useState("");
+  const [websitePublishing, setWebsitePublishing] = useState(false);
+  const [websiteResult, setWebsiteResult] = useState<string | null>(null);
 
   // Archive
   const [docs, setDocs] = useState<ArchiveDoc[]>([]);
@@ -233,6 +256,19 @@ export default function DocumentHubPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | DocStatus>("all");
 
   const isCustom = topic === CUSTOM_KEY;
+  const selectedCmsTarget = useMemo(
+    () => cmsTargets.find((target) => target.id === cmsBrandId) || cmsTargets[0] || null,
+    [cmsBrandId, cmsTargets],
+  );
+  const selectedCmsDestination = useMemo(() => {
+    if (!selectedCmsTarget) return null;
+    return (
+      selectedCmsTarget.destinations.find((destination) => destination.id === cmsDestinationId) ||
+      selectedCmsTarget.destinations.find((destination) => destination.id === selectedCmsTarget.defaultDestinationId) ||
+      selectedCmsTarget.destinations[0] ||
+      null
+    );
+  }, [cmsDestinationId, selectedCmsTarget]);
 
   function selectTemplate(value: string) {
     setTopic(value);
@@ -254,6 +290,7 @@ export default function DocumentHubPage() {
     setSavingError(null);
     setSavingSuccess(null);
     setGenerateError(null);
+    setWebsiteResult(null);
   }
 
   async function generate() {
@@ -308,6 +345,35 @@ export default function DocumentHubPage() {
   useEffect(() => {
     fetchDocs();
   }, [fetchDocs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/website-cms/targets")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const targets = Array.isArray(data.targets) ? data.targets : [];
+        setCmsTargets(targets);
+        if (targets.length > 0) {
+          setCmsBrandId((current) => current || targets[0].id);
+          setCmsDestinationId((current) => current || targets[0].defaultDestinationId || targets[0].destinations?.[0]?.id || "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCmsTargets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCmsTarget) return;
+    const exists = selectedCmsTarget.destinations.some((destination) => destination.id === cmsDestinationId);
+    if (!exists) {
+      setCmsDestinationId(selectedCmsTarget.defaultDestinationId || selectedCmsTarget.destinations[0]?.id || "");
+    }
+  }, [cmsDestinationId, selectedCmsTarget]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -394,6 +460,59 @@ export default function DocumentHubPage() {
     }
   }
 
+  async function publishToWebsite() {
+    if (!draft.trim()) {
+      setSavingError("Generer eller skriv innhold først.");
+      return;
+    }
+    if (!approved) {
+      setSavingError("Du må kvalitetssikre innholdet før publisering til nettside.");
+      return;
+    }
+    if (!selectedCmsTarget || !selectedCmsDestination) {
+      setSavingError("Velg brand og publiseringsmål for nettside.");
+      return;
+    }
+
+    setWebsitePublishing(true);
+    setSavingError(null);
+    setSavingSuccess(null);
+    setWebsiteResult(null);
+    try {
+      const res = await fetch("/api/website-cms/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: selectedCmsTarget.id,
+          destination_id: selectedCmsDestination.id,
+          title,
+          content: draft,
+          audience,
+          status: "published",
+          source_type: "document",
+          source_id: editingId,
+          ai_generated: true,
+          tags: [topic === CUSTOM_KEY ? "custom" : topic],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke publisere til nettside");
+
+      const targetText = `${selectedCmsTarget.name} → ${selectedCmsDestination.label}`;
+      if (data.websitePublished) {
+        setSavingSuccess(`Publisert til ${targetText}.`);
+        setWebsiteResult(data.externalUrl ? `Live: ${data.externalUrl}` : "Nettsiden bekreftet publisering.");
+      } else {
+        setSavingSuccess(`Klargjort for ${targetText} i Content Hub.`);
+        setWebsiteResult(data.warning || "Webhook mangler, så innholdet ligger klart som website-draft.");
+      }
+    } catch (err: unknown) {
+      setSavingError(err instanceof Error ? err.message : "Ukjent feil");
+    } finally {
+      setWebsitePublishing(false);
+    }
+  }
+
   function loadIntoEditor(doc: ArchiveDoc) {
     setEditingId(doc.id);
     setTitle(doc.title);
@@ -407,6 +526,7 @@ export default function DocumentHubPage() {
     setCustomPrompt(doc.sourceTopic && doc.sourceTopic !== "custom" ? doc.sourceTopic : "");
     setSavingError(null);
     setSavingSuccess(null);
+    setWebsiteResult(null);
     setTab("editor");
   }
 
@@ -716,6 +836,70 @@ export default function DocumentHubPage() {
                 </Button>
               </div>
 
+              <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-4">
+                <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <Globe size={16} className="text-cyan-300" />
+                      Publiser til brand-nettside
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Velg brand og hvor saken skal ligge på nettstedet.
+                    </p>
+                  </div>
+                  {selectedCmsTarget && (
+                    <span className="text-xs text-slate-400">
+                      {selectedCmsTarget.webhookConfigured ? "Direkte publisering" : "Lagrer som website-draft"}
+                    </span>
+                  )}
+                </div>
+                <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
+                    <select
+                      className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                      value={selectedCmsTarget?.id || ""}
+                      onChange={(e) => setCmsBrandId(e.target.value)}
+                    >
+                      {cmsTargets.map((target) => (
+                        <option key={target.id} value={target.id}>
+                          {target.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-300 mb-1 block">Plassering</label>
+                    <select
+                      className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                      value={selectedCmsDestination?.id || ""}
+                      onChange={(e) => setCmsDestinationId(e.target.value)}
+                      disabled={!selectedCmsTarget}
+                    >
+                      {(selectedCmsTarget?.destinations || []).map((destination) => (
+                        <option key={destination.id} value={destination.id}>
+                          {destination.label} ({destination.path})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      className="w-full md:w-auto"
+                      disabled={!draft || !approved || websitePublishing || !selectedCmsTarget || !selectedCmsDestination}
+                      onClick={publishToWebsite}
+                    >
+                      {websitePublishing ? (
+                        <Bot size={16} className="mr-2 animate-spin" />
+                      ) : (
+                        <Globe size={16} className="mr-2" />
+                      )}
+                      {websitePublishing ? "Publiserer..." : "Publiser til nettside"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {savingError && (
                 <p className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
                   {savingError}
@@ -724,6 +908,11 @@ export default function DocumentHubPage() {
               {savingSuccess && (
                 <p className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">
                   {savingSuccess}
+                </p>
+              )}
+              {websiteResult && (
+                <p className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-sm text-cyan-200">
+                  {websiteResult}
                 </p>
               )}
             </CardContent>
