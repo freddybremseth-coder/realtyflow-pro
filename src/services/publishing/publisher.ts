@@ -194,6 +194,131 @@ export async function publishToInstagram(
   };
 }
 
+interface LinkedInImageAsset {
+  asset: string;
+  contentType: string;
+}
+
+function parseDataImageUrl(imageUrl: string): { buffer: Buffer; contentType: string } | null {
+  const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    contentType: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+function linkedinImageProxyUrl(imageUrl: string) {
+  if (imageUrl.startsWith("data:") || imageUrl.includes("images.weserv.nl")) return imageUrl;
+  const clean = imageUrl.replace(/^https?:\/\//, "");
+  return `https://images.weserv.nl/?url=${encodeURIComponent(clean)}&output=jpg`;
+}
+
+async function downloadLinkedInImage(imageUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
+  const dataImage = parseDataImageUrl(imageUrl);
+  if (dataImage) return dataImage;
+
+  async function fetchImage(url: string) {
+    const res = await fetch(url, {
+      headers: {
+        Accept: "image/jpeg,image/png,image/gif,image/*;q=0.8,*/*;q=0.5",
+        "User-Agent": "RealtyFlowPro/1.0",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!res.ok) {
+      throw new Error(`LinkedIn kunne ikke hente bildet (${res.status}).`);
+    }
+
+    const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return { buffer, contentType };
+  }
+
+  let image = await fetchImage(imageUrl);
+  if (!["image/jpeg", "image/png", "image/gif"].includes(image.contentType)) {
+    image = await fetchImage(linkedinImageProxyUrl(imageUrl));
+  }
+
+  if (!["image/jpeg", "image/png", "image/gif"].includes(image.contentType)) {
+    throw new Error("LinkedIn støtter bare JPG, PNG og GIF for bildeposter.");
+  }
+
+  if (image.buffer.length > 20 * 1024 * 1024) {
+    throw new Error("LinkedIn-bildet er for stort. Bruk et bilde under 20 MB.");
+  }
+
+  return image;
+}
+
+async function uploadImageToLinkedIn(
+  accessToken: string,
+  owner: string,
+  imageUrl: string,
+): Promise<LinkedInImageAsset> {
+  const image = await downloadLinkedInImage(imageUrl);
+
+  const registerRes = await fetch("https://api.linkedin.com/v2/assets?action=registerUpload", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0",
+    },
+    body: JSON.stringify({
+      registerUploadRequest: {
+        owner,
+        recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+        serviceRelationships: [
+          {
+            identifier: "urn:li:userGeneratedContent",
+            relationshipType: "OWNER",
+          },
+        ],
+        supportedUploadMechanism: ["SYNCHRONOUS_UPLOAD"],
+      },
+    }),
+  });
+
+  if (!registerRes.ok) {
+    const errText = await registerRes.text();
+    throw new Error(`LinkedIn bildeopplasting kunne ikke registreres: ${errText}`);
+  }
+
+  const registerData = await registerRes.json();
+  const value = registerData?.value;
+  const uploadRequest = value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"];
+  const uploadUrl = uploadRequest?.uploadUrl;
+  const asset = value?.asset;
+
+  if (!uploadUrl || !asset) {
+    throw new Error("LinkedIn returnerte ikke uploadUrl eller media asset.");
+  }
+
+  const uploadHeaders: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": image.contentType,
+  };
+  for (const [key, value] of Object.entries(uploadRequest.headers || {})) {
+    if (typeof value === "string") uploadHeaders[key] = value;
+  }
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: uploadHeaders,
+    body: new Blob([new Uint8Array(image.buffer)], { type: image.contentType }),
+  });
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`LinkedIn bildeopplasting feilet: ${errText || uploadRes.statusText}`);
+  }
+
+  return { asset, contentType: image.contentType };
+}
+
 // ─── LinkedIn Publisher ───────────────────────────────────────────
 export async function publishToLinkedIn(
   accessToken: string,
@@ -202,18 +327,25 @@ export async function publishToLinkedIn(
   imageUrl?: string,
 ): Promise<PublishResult> {
   const author = accountId.startsWith("urn:") ? accountId : `urn:li:person:${accountId}`;
-  // LinkedIn UGC API requires an uploaded media URN when shareMediaCategory=IMAGE.
-  // We currently don't run the LinkedIn media-upload flow, so publish as a
-  // plain text post and append the image URL when one is present.
-  const text = imageUrl ? `${content}\n\n${imageUrl}` : content;
+  const imageAsset = imageUrl ? await uploadImageToLinkedIn(accessToken, author, imageUrl) : null;
 
   const postBody: Record<string, unknown> = {
     author,
     lifecycleState: "PUBLISHED",
     specificContent: {
       "com.linkedin.ugc.ShareContent": {
-        shareCommentary: { text },
-        shareMediaCategory: "NONE",
+        shareCommentary: { text: content },
+        shareMediaCategory: imageAsset ? "IMAGE" : "NONE",
+        ...(imageAsset
+          ? {
+              media: [
+                {
+                  status: "READY",
+                  media: imageAsset.asset,
+                },
+              ],
+            }
+          : {}),
       },
     },
     visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
