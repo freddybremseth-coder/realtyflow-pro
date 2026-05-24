@@ -8,12 +8,22 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-function createTemporaryPassword() {
+function createTemporaryPassword(prefix = "Realty") {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const random = Array.from(crypto.getRandomValues(new Uint8Array(12)))
     .map((value) => alphabet[value % alphabet.length])
     .join("");
-  return `Zeneco-${random}!1`;
+  return `${prefix}-${random}!1`;
+}
+
+function firstText(...values: unknown[]) {
+  return values.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function passwordPrefix(brandId: string) {
+  if (brandId === "pinosoecolife") return "Pinoso";
+  if (brandId === "zeneco") return "Zeneco";
+  return "Realty";
 }
 
 async function findAuthUserByEmail(supabase: any, email: string) {
@@ -40,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const { data: contact, error: contactError } = await supabase
     .from("contacts")
-    .select("id,name,email,phone,brand_id,source,pipeline_status")
+    .select("id,name,email,phone,brand_id,brand,source,pipeline_status")
     .eq("id", contactId)
     .single();
 
@@ -52,10 +62,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Contact needs an email address before portal access can be granted" }, { status: 400 });
   }
 
-  const temporaryPassword = createTemporaryPassword();
+  const brandId = firstText(contact.brand_id, contact.brand, "zeneco");
+  const temporaryPassword = createTemporaryPassword(passwordPrefix(brandId));
   const userMetadata = {
       contact_id: contact.id,
-      brand_id: contact.brand_id || "zeneco",
+      brand_id: brandId,
       name: contact.name,
       role: "customer",
       must_change_password: true,
@@ -88,7 +99,7 @@ export async function POST(request: NextRequest) {
         auth_user_id: authResult.data.user?.id || existingUser?.id || null,
         email: contact.email,
         name: contact.name || null,
-        brand_id: contact.brand_id || "zeneco",
+        brand_id: brandId,
         role: "customer",
         status: "invited",
         invited_at: now,
@@ -134,6 +145,9 @@ export async function POST(request: NextRequest) {
     success: true,
     portalUser: portalUser || null,
     temporaryPassword,
+    passwordDelivery: "manual",
+    emailSent: false,
+    note: "Midlertidig passord er generert, men ikke sendt automatisk til kunden.",
     warning: portalWarning,
   });
 }

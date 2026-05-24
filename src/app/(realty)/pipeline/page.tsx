@@ -1540,7 +1540,7 @@ export default function PipelinePage() {
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-semibold text-emerald-300">Min side</p>
-                        <p className="text-[11px] text-slate-400">Lag midlertidig passord til Zen Eco Homes-portalen.</p>
+                        <p className="text-[11px] text-slate-400">Lag midlertidig passord. Det sendes ikke automatisk til kunden.</p>
                       </div>
                       <Button
                         size="sm"
@@ -1558,7 +1558,7 @@ export default function PipelinePage() {
                     </div>
                     {portalInviteStatus === "sent" && (
                       <div className="space-y-1">
-                        <p className="text-[11px] text-emerald-300">Tilgang er opprettet for {selectedLead.email}.</p>
+                        <p className="text-[11px] text-emerald-300">Tilgang er opprettet for {selectedLead.email}. Del passordet manuelt med kunden.</p>
                         {portalTemporaryPassword && (
                           <div className="rounded-md border border-emerald-500/20 bg-slate-950/40 p-2">
                             <p className="text-[10px] text-slate-400">Midlertidig passord kunden skal bytte ved første innlogging:</p>

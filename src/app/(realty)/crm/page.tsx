@@ -10,7 +10,8 @@ import {
   MessageSquare, Calendar, Eye, Pencil,
   Users, Filter, ArrowUpDown, X, Send,
   ArrowRight, Bot, Clock, CheckCircle2,
-  Sparkles, Loader2, Undo2,
+  Sparkles, Loader2, Undo2, UserCheck,
+  KeyRound, FileUp, Home, MapPinned, RefreshCw,
 } from "lucide-react";
 
 type CustomerStatus = "ACTIVE" | "VIP" | "INACTIVE";
@@ -29,6 +30,7 @@ interface Customer {
   name: string;
   email: string;
   phone: string;
+  brandId?: string;
   status: CustomerStatus;
   type: CustomerType;
   preferredLocation: string;
@@ -38,6 +40,60 @@ interface Customer {
   interactions: Interaction[];
   avatar: string;
   nextStep?: string;
+}
+
+interface PortalUser {
+  id?: string;
+  status?: string;
+  invited_at?: string;
+  last_login_at?: string | null;
+  brand_id?: string;
+}
+
+interface PortalMessage {
+  id: string;
+  sender_type: "customer" | "admin" | "system";
+  sender_name?: string | null;
+  body: string;
+  created_at: string;
+  read_by_customer_at?: string | null;
+}
+
+interface PortalDocument {
+  id: string;
+  title: string;
+  summary?: string;
+  recipients?: string;
+  sent_to?: string[];
+  published_at?: string | null;
+  generated_at?: string | null;
+  created_at?: string | null;
+}
+
+interface PortalSuggestion {
+  id: string;
+  title?: string;
+  title_no?: string;
+  title_en?: string;
+  name?: string;
+  ref?: string;
+  location?: string;
+  town?: string;
+  municipality?: string;
+  price?: number;
+  area?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  match_score?: number;
+}
+
+interface PortalAdminData {
+  portalUser: PortalUser | null;
+  messages: PortalMessage[];
+  documents: PortalDocument[];
+  properties: PortalSuggestion[];
+  plots: PortalSuggestion[];
+  warnings?: string[];
 }
 
 const initialCustomers: Customer[] = [
@@ -129,7 +185,49 @@ const PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
   { value: "NEGOTIATION", label: "Forhandling (Pipeline)" },
 ];
 
-const emptyCustomer = { name: "", email: "", phone: "", type: "BUYER" as CustomerType, pipelineStage: "CUSTOMER" as PipelineStage, location: "", budget: "", notes: "" };
+const BRAND_OPTIONS = [
+  { value: "zeneco", label: "Zen Eco Homes" },
+  { value: "pinosoecolife", label: "Pinoso Eco Life" },
+  { value: "soleada", label: "Soleada" },
+];
+
+function brandLabel(brandId?: string | null) {
+  return BRAND_OPTIONS.find((brand) => brand.value === brandId)?.label || brandId || "Zen Eco Homes";
+}
+
+const emptyCustomer = { name: "", email: "", phone: "", brandId: "zeneco", type: "BUYER" as CustomerType, pipelineStage: "CUSTOMER" as PipelineStage, location: "", budget: "", notes: "" };
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Ikke registrert";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("nb-NO", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatPrice(value?: unknown) {
+  if (!value || !Number.isFinite(Number(value))) return "";
+  return `€${Number(value).toLocaleString("nb-NO")}`;
+}
+
+function suggestionTitle(item: PortalSuggestion, fallback: string) {
+  return item.title_no || item.title || item.title_en || item.name || item.ref || fallback;
+}
+
+function parseEmailDraft(value: string, customerName: string) {
+  const lines = value.split(/\r?\n/);
+  const subjectLine = lines.find((line) => /^subject|^emne/i.test(line.trim()));
+  const subject = subjectLine
+    ? subjectLine.replace(/^subject\s*:|^emne\s*:/i, "").trim()
+    : `Oppfølging fra RealtyFlow`;
+  const body = subjectLine
+    ? lines.filter((line) => line !== subjectLine).join("\n").replace(/^body\s*:|^tekst\s*:/i, "").trim()
+    : value.trim();
+
+  return {
+    subject: subject || `Oppfølging til ${customerName}`,
+    bodyText: body || value.trim(),
+  };
+}
 
 export default function CRMPage() {
   const [customers, setCustomers] = useState(initialCustomers);
@@ -147,8 +245,21 @@ export default function CRMPage() {
   const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
   const [dbLoaded, setDbLoaded] = useState(false);
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", budget: "", preferredLocation: "", notes: "", status: "ACTIVE" as CustomerStatus, type: "BUYER" as CustomerType });
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", brandId: "zeneco", budget: "", preferredLocation: "", notes: "", status: "ACTIVE" as CustomerStatus, type: "BUYER" as CustomerType });
+  const [portalAdmin, setPortalAdmin] = useState<PortalAdminData | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalActionLoading, setPortalActionLoading] = useState<string | null>(null);
+  const [portalStatus, setPortalStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [portalTemporaryPassword, setPortalTemporaryPassword] = useState("");
+  const [portalMessage, setPortalMessage] = useState("");
+  const [portalDocTitle, setPortalDocTitle] = useState("Områdeguide og neste steg");
+  const [portalDocPrompt, setPortalDocPrompt] = useState("");
+  const [portalDocDraft, setPortalDocDraft] = useState("");
+  const [portalDocApproved, setPortalDocApproved] = useState(false);
+  const [portalDocGenerating, setPortalDocGenerating] = useState(false);
 
   // Load customers from database
   const loadCustomers = useCallback(async () => {
@@ -161,6 +272,7 @@ export default function CRMPage() {
           name: c.name || '',
           email: c.email || '',
           phone: c.phone || '',
+          brandId: c.brand_id || c.brand || 'zeneco',
           status: mapPipelineToCustomerStatus(c.pipeline_status),
           type: ((c.type || 'buyer').toUpperCase() as CustomerType),
           preferredLocation: c.preferred_location || c.interested_in || '',
@@ -180,6 +292,45 @@ export default function CRMPage() {
   }, []);
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
+
+  const loadPortalAdmin = useCallback(async (customer: Customer | null) => {
+    if (!customer?.id || !customer.email) {
+      setPortalAdmin(null);
+      return;
+    }
+    setPortalLoading(true);
+    try {
+      const res = await fetch(`/api/crm/portal-admin?contactId=${encodeURIComponent(customer.id)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke hente Min side-data");
+      setPortalAdmin({
+        portalUser: data.portalUser || null,
+        messages: data.messages || [],
+        documents: data.documents || [],
+        properties: data.properties || [],
+        plots: data.plots || [],
+        warnings: data.warnings || [],
+      });
+    } catch (err) {
+      setPortalAdmin(null);
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke hente Min side-data",
+      });
+    } finally {
+      setPortalLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setPortalStatus(null);
+    setPortalTemporaryPassword("");
+    setPortalMessage("");
+    setPortalDocDraft("");
+    setPortalDocApproved(false);
+    setEmailStatus(null);
+    loadPortalAdmin(selectedCustomer);
+  }, [loadPortalAdmin, selectedCustomer]);
 
   function mapPipelineToCustomerStatus(status: string): CustomerStatus {
     switch (status) {
@@ -238,6 +389,7 @@ export default function CRMPage() {
       name: selectedCustomer.name,
       email: selectedCustomer.email,
       phone: selectedCustomer.phone,
+      brandId: selectedCustomer.brandId || "zeneco",
       budget: selectedCustomer.budget || "",
       preferredLocation: selectedCustomer.preferredLocation,
       notes: selectedCustomer.notes,
@@ -254,6 +406,7 @@ export default function CRMPage() {
       name: editForm.name,
       email: editForm.email,
       phone: editForm.phone,
+      brandId: editForm.brandId,
       budget: editForm.budget || undefined,
       preferredLocation: editForm.preferredLocation,
       notes: editForm.notes,
@@ -273,6 +426,7 @@ export default function CRMPage() {
           name: updated.name,
           email: updated.email,
           phone: updated.phone,
+          brand_id: updated.brandId,
           budget: updated.budget,
           preferred_location: updated.preferredLocation,
           notes: updated.notes,
@@ -297,6 +451,7 @@ export default function CRMPage() {
       name: newCustomer.name,
       email: newCustomer.email,
       phone: newCustomer.phone,
+      brand_id: newCustomer.brandId,
       type: newCustomer.type.toLowerCase(), // DB uses lowercase: buyer, seller, investor
       pipeline_status: pipelineStatus,
       preferred_location: newCustomer.location,
@@ -332,6 +487,7 @@ export default function CRMPage() {
       const customer: Customer = {
         id: customerId,
         name: newCustomer.name, email: newCustomer.email, phone: newCustomer.phone,
+        brandId: newCustomer.brandId,
         status: pipelineStatus === 'VIP' ? 'VIP' : 'ACTIVE',
         type: newCustomer.type, preferredLocation: newCustomer.location,
         budget: newCustomer.budget || undefined, lastContact: now.split("T")[0],
@@ -375,7 +531,201 @@ export default function CRMPage() {
     }
   };
 
-  const sendEmail = () => { addInteraction("email", emailContent); setEmailContent(""); setShowEmailModal(false); };
+  const sendEmail = async () => {
+    if (!selectedCustomer || !emailContent.trim()) return;
+    setEmailSending(true);
+    setEmailStatus(null);
+    const parsed = parseEmailDraft(emailContent, selectedCustomer.name);
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: selectedCustomer.brandId || "zeneco",
+          to: selectedCustomer.email,
+          subject: parsed.subject,
+          body_text: parsed.bodyText,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Kunne ikke sende e-post.");
+      addInteraction("email", `E-post sendt: ${parsed.subject}\n${parsed.bodyText}`);
+      setEmailContent("");
+      setShowEmailModal(false);
+      setEmailStatus({ type: "success", message: `E-post sendt til ${selectedCustomer.email}.` });
+    } catch (err) {
+      setEmailStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke sende e-post.",
+      });
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const inviteSelectedCustomerToPortal = async () => {
+    if (!selectedCustomer) return;
+    setPortalActionLoading("invite");
+    setPortalStatus(null);
+    setPortalTemporaryPassword("");
+    try {
+      const res = await fetch("/api/portal/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: selectedCustomer.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke opprette portaltilgang.");
+      setPortalTemporaryPassword(data.temporaryPassword || "");
+      setPortalStatus({
+        type: "success",
+        message: "Portaltilgang er opprettet. Passordet er ikke sendt automatisk, så del det kontrollert med kunden.",
+      });
+      await loadPortalAdmin(selectedCustomer);
+      await loadCustomers();
+    } catch (err) {
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke opprette portaltilgang.",
+      });
+    } finally {
+      setPortalActionLoading(null);
+    }
+  };
+
+  const sendPortalMessage = async () => {
+    if (!selectedCustomer || !portalMessage.trim()) return;
+    setPortalActionLoading("message");
+    setPortalStatus(null);
+    try {
+      const res = await fetch("/api/crm/portal-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "message",
+          contactId: selectedCustomer.id,
+          message: portalMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke sende melding til Min side.");
+      setPortalMessage("");
+      setPortalStatus({ type: "success", message: "Melding sendt til kundens Min side." });
+      await loadPortalAdmin(selectedCustomer);
+      await loadCustomers();
+    } catch (err) {
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke sende melding til Min side.",
+      });
+    } finally {
+      setPortalActionLoading(null);
+    }
+  };
+
+  const generatePortalDocument = async () => {
+    if (!selectedCustomer) return;
+    setPortalDocGenerating(true);
+    setPortalStatus(null);
+    setPortalDocApproved(false);
+    try {
+      const title = portalDocTitle.trim() || "Kundedokument";
+      const res = await fetch("/api/documents/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          audience: `${selectedCustomer.name} (${typeLabel(selectedCustomer.type)})`,
+          customPrompt: [
+            `Kunde: ${selectedCustomer.name}`,
+            `E-post: ${selectedCustomer.email}`,
+            `Brand: ${brandLabel(selectedCustomer.brandId)}`,
+            `Type: ${typeLabel(selectedCustomer.type)}`,
+            `Område/interesse: ${selectedCustomer.preferredLocation || "Ikke spesifisert"}`,
+            selectedCustomer.budget ? `Budsjett: ${selectedCustomer.budget}` : "",
+            selectedCustomer.notes ? `CRM-notater: ${selectedCustomer.notes}` : "",
+            portalDocPrompt ? `Ønsket vinkling: ${portalDocPrompt}` : "",
+            "Dokumentet skal kunne publiseres direkte til kundens Min side.",
+          ].filter(Boolean).join("\n"),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke generere dokument.");
+      setPortalDocDraft(String(data.markdown || ""));
+    } catch (err) {
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke generere dokument.",
+      });
+    } finally {
+      setPortalDocGenerating(false);
+    }
+  };
+
+  const publishPortalDocument = async () => {
+    if (!selectedCustomer || !portalDocDraft.trim()) return;
+    if (!portalDocApproved) {
+      setPortalStatus({ type: "error", message: "Kvalitetssjekk og godkjenn dokumentet før publisering." });
+      return;
+    }
+    setPortalActionLoading("document");
+    setPortalStatus(null);
+    try {
+      const res = await fetch("/api/crm/portal-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "publish_document",
+          contactId: selectedCustomer.id,
+          title: portalDocTitle || "Kundedokument",
+          content: portalDocDraft,
+          sourceTopic: "CRM kundedokument",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke publisere dokument.");
+      setPortalStatus({ type: "success", message: "Dokument publisert til kundens Min side." });
+      await loadPortalAdmin(selectedCustomer);
+      await loadCustomers();
+    } catch (err) {
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke publisere dokument.",
+      });
+    } finally {
+      setPortalActionLoading(null);
+    }
+  };
+
+  const sharePortalSuggestion = async (kind: "property" | "plot", itemId: string) => {
+    if (!selectedCustomer) return;
+    const action = kind === "property" ? "share_property" : "share_plot";
+    setPortalActionLoading(`${action}:${itemId}`);
+    setPortalStatus(null);
+    try {
+      const res = await fetch("/api/crm/portal-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, contactId: selectedCustomer.id, itemId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke publisere forslag.");
+      setPortalStatus({
+        type: "success",
+        message: `${kind === "property" ? "Boligforslag" : "Tomteforslag"} publisert til kundens Min side.`,
+      });
+      await loadPortalAdmin(selectedCustomer);
+      await loadCustomers();
+    } catch (err) {
+      setPortalStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Kunne ikke publisere forslag.",
+      });
+    } finally {
+      setPortalActionLoading(null);
+    }
+  };
+
   const logCall = () => { addInteraction("call", callNotes); setCallNotes(""); setShowCallLog(false); };
   const bookMeeting = () => { addInteraction("meeting", `Møte ${meetingData.date} kl ${meetingData.time}: ${meetingData.notes}`); setMeetingData({ date: "", time: "", notes: "" }); setShowMeetingModal(false); };
 
@@ -407,6 +757,11 @@ export default function CRMPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">E-post</label><Input placeholder="epost@example.com" value={newCustomer.email} onChange={(e) => setNewCustomer((p) => ({ ...p, email: e.target.value }))} /></div>
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">Telefon</label><Input placeholder="+47 xxx xx xxx" value={newCustomer.phone} onChange={(e) => setNewCustomer((p) => ({ ...p, phone: e.target.value }))} /></div>
+                </div>
+                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
+                  <select value={newCustomer.brandId} onChange={(e) => setNewCustomer((p) => ({ ...p, brandId: e.target.value }))} className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    {BRAND_OPTIONS.map((brand) => <option key={brand.value} value={brand.value}>{brand.label}</option>)}
+                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">Type</label>
@@ -440,10 +795,18 @@ export default function CRMPage() {
                 <h2 className="text-lg font-semibold text-white">E-post til {selectedCustomer.name}</h2>
                 <Button variant="ghost" size="icon" onClick={() => setShowEmailModal(false)}><X size={18} /></Button>
               </div>
-              <p className="text-xs text-slate-400 mb-2">Til: {selectedCustomer.email}</p>
+              <p className="text-xs text-slate-400 mb-2">Til: {selectedCustomer.email} · Fra brand: {brandLabel(selectedCustomer.brandId)}</p>
               <textarea value={emailContent} onChange={(e) => setEmailContent(e.target.value)} placeholder="Skriv din melding..." className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-40 resize-none mb-3" />
+              {emailStatus && (
+                <p className={`mb-3 rounded-lg border p-2 text-xs ${emailStatus.type === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-red-500/20 bg-red-500/10 text-red-300"}`}>
+                  {emailStatus.message}
+                </p>
+              )}
               <div className="flex gap-2">
-                <Button onClick={sendEmail} className="flex-1" disabled={!emailContent}><Send size={16} className="mr-1" />Send e-post</Button>
+                <Button onClick={sendEmail} className="flex-1" disabled={!emailContent || emailSending}>
+                  {emailSending ? <Loader2 size={16} className="mr-1 animate-spin" /> : <Send size={16} className="mr-1" />}
+                  Send e-post
+                </Button>
                 <Button variant="outline" onClick={generateAiDraft} disabled={aiDraftLoading}>
                   {aiDraftLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 </Button>
@@ -505,6 +868,11 @@ export default function CRMPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">E-post</label><Input type="email" value={editForm.email} onChange={(e) => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">Telefon</label><Input value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                </div>
+                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
+                  <select value={editForm.brandId} onChange={(e) => setEditForm(f => ({ ...f, brandId: e.target.value }))} className="w-full h-10 rounded-md border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    {BRAND_OPTIONS.map((brand) => <option key={brand.value} value={brand.value}>{brand.label}</option>)}
+                  </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">Budsjett</label><Input placeholder="€200K - €400K" value={editForm.budget} onChange={(e) => setEditForm(f => ({ ...f, budget: e.target.value }))} /></div>
@@ -594,6 +962,7 @@ export default function CRMPage() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Mail size={14} className="text-slate-500" />{selectedCustomer.email}</div>
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Phone size={14} className="text-slate-500" />{selectedCustomer.phone}</div>
+                    <div className="flex items-center gap-2 text-sm text-slate-300"><Building2 size={14} className="text-slate-500" />Brand: {brandLabel(selectedCustomer.brandId)}</div>
                     <div className="flex items-center gap-2 text-sm text-slate-300"><Building2 size={14} className="text-slate-500" />{selectedCustomer.preferredLocation}</div>
                     <div className="flex items-center gap-2 text-sm text-amber-300"><Clock size={14} className="text-slate-500" />Siste kontakt: {selectedCustomer.lastContact || "Ikke logget"}</div>
                     {selectedCustomer.budget && <div className="flex items-center gap-2 text-sm text-emerald-400"><span className="text-slate-500 text-xs">Budsjett:</span>{selectedCustomer.budget}</div>}
@@ -639,6 +1008,221 @@ export default function CRMPage() {
                       <Undo2 size={12} className="mr-1" />Pipeline
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Min side admin */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <KeyRound size={14} className="text-emerald-400" />
+                      Min side-admin
+                    </CardTitle>
+                    <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => loadPortalAdmin(selectedCustomer)} disabled={portalLoading}>
+                      {portalLoading ? <Loader2 size={12} className="mr-1 animate-spin" /> : <RefreshCw size={12} className="mr-1" />}
+                      Oppdater
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!selectedCustomer.email ? (
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
+                      Kunden må ha e-postadresse før Min side kan brukes.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold text-emerald-300">Portaltilgang</p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                              {portalAdmin?.portalUser
+                                ? `Status: ${portalAdmin.portalUser.status || "ukjent"} · Invitert ${formatDateTime(portalAdmin.portalUser.invited_at)} · Sist innlogget ${formatDateTime(portalAdmin.portalUser.last_login_at)}`
+                                : "Ikke opprettet ennå."}
+                            </p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                              Knappen lager eller nullstiller passordet. Det sendes ikke automatisk til kunden.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 text-xs hover:bg-emerald-500"
+                            onClick={inviteSelectedCustomerToPortal}
+                            disabled={portalActionLoading === "invite"}
+                          >
+                            {portalActionLoading === "invite" ? <Loader2 size={12} className="mr-1 animate-spin" /> : <UserCheck size={12} className="mr-1" />}
+                            {portalAdmin?.portalUser ? "Nytt passord" : "Lag passord"}
+                          </Button>
+                        </div>
+                        {portalTemporaryPassword && (
+                          <div className="mt-3 rounded-md border border-emerald-500/20 bg-slate-950/50 p-2">
+                            <p className="text-[10px] text-slate-400">Midlertidig passord som må deles manuelt og byttes ved første innlogging:</p>
+                            <code className="break-all text-xs text-emerald-200">{portalTemporaryPassword}</code>
+                          </div>
+                        )}
+                      </div>
+
+                      {portalStatus && (
+                        <p className={`rounded-lg border p-3 text-xs ${portalStatus.type === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-red-500/20 bg-red-500/10 text-red-300"}`}>
+                          {portalStatus.message}
+                        </p>
+                      )}
+
+                      {portalAdmin?.warnings && portalAdmin.warnings.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+                          {portalAdmin.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Dokumenter</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{portalAdmin?.documents.length || 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Meldinger</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{portalAdmin?.messages.length || 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Forslag</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{(portalAdmin?.properties.length || 0) + (portalAdmin?.plots.length || 0)}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-slate-300">Send melding til Min side</p>
+                        <textarea
+                          value={portalMessage}
+                          onChange={(e) => setPortalMessage(e.target.value)}
+                          placeholder="Skriv en kort melding kunden ser inne på Min side..."
+                          className="h-24 w-full resize-none rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-100 outline-none focus:border-emerald-500"
+                        />
+                        <Button size="sm" onClick={sendPortalMessage} disabled={!portalMessage.trim() || portalActionLoading === "message"} className="w-full bg-emerald-600 hover:bg-emerald-500">
+                          {portalActionLoading === "message" ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Send size={12} className="mr-1" />}
+                          Send til Min side
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold text-slate-300">Forslag til kunden</p>
+                        <div className="space-y-2">
+                          {(portalAdmin?.properties || []).slice(0, 4).map((property) => (
+                            <div key={property.id} className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3">
+                              <div className="flex items-start gap-2">
+                                <Home size={14} className="mt-0.5 shrink-0 text-cyan-400" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium leading-5 text-white">{suggestionTitle(property, "Boligforslag")}</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {[property.location || property.town || property.municipality, formatPrice(property.price), property.bedrooms ? `${property.bedrooms} sov.` : ""].filter(Boolean).join(" · ")}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 shrink-0 text-[11px]"
+                                  onClick={() => sharePortalSuggestion("property", property.id)}
+                                  disabled={portalActionLoading === `share_property:${property.id}`}
+                                >
+                                  {portalActionLoading === `share_property:${property.id}` ? <Loader2 size={11} className="mr-1 animate-spin" /> : <FileUp size={11} className="mr-1" />}
+                                  Send
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {(portalAdmin?.plots || []).slice(0, 3).map((plot) => (
+                            <div key={plot.id} className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3">
+                              <div className="flex items-start gap-2">
+                                <MapPinned size={14} className="mt-0.5 shrink-0 text-lime-400" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium leading-5 text-white">{suggestionTitle(plot, "Tomteforslag")}</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {[plot.municipality || plot.location, formatPrice(plot.price), plot.area ? `${Number(plot.area).toLocaleString("nb-NO")} m²` : ""].filter(Boolean).join(" · ")}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 shrink-0 text-[11px]"
+                                  onClick={() => sharePortalSuggestion("plot", plot.id)}
+                                  disabled={portalActionLoading === `share_plot:${plot.id}`}
+                                >
+                                  {portalActionLoading === `share_plot:${plot.id}` ? <Loader2 size={11} className="mr-1 animate-spin" /> : <FileUp size={11} className="mr-1" />}
+                                  Send
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {!portalLoading && (!portalAdmin || (portalAdmin.properties.length === 0 && portalAdmin.plots.length === 0)) && (
+                            <p className="rounded-lg border border-slate-700/40 bg-slate-900/40 p-3 text-xs text-slate-500">
+                              Ingen boliger eller tomter funnet å foreslå ennå.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-slate-700/40 bg-slate-900/30 p-3">
+                        <p className="text-xs font-semibold text-slate-300">Generer dokument til Min side</p>
+                        <Input value={portalDocTitle} onChange={(e) => setPortalDocTitle(e.target.value)} placeholder="Tittel, f.eks. Områdeguide for Pinoso" />
+                        <textarea
+                          value={portalDocPrompt}
+                          onChange={(e) => setPortalDocPrompt(e.target.value)}
+                          placeholder="Vinkling, område, boliger/tomter eller spørsmål dokumentet skal svare på..."
+                          className="h-24 w-full resize-y rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-100 outline-none focus:border-emerald-500"
+                        />
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Button size="sm" variant="outline" onClick={generatePortalDocument} disabled={portalDocGenerating}>
+                            {portalDocGenerating ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Sparkles size={12} className="mr-1" />}
+                            Generer
+                          </Button>
+                          <Button size="sm" onClick={publishPortalDocument} disabled={!portalDocDraft.trim() || portalActionLoading === "document"} className="bg-emerald-600 hover:bg-emerald-500">
+                            {portalActionLoading === "document" ? <Loader2 size={12} className="mr-1 animate-spin" /> : <FileUp size={12} className="mr-1" />}
+                            Publiser
+                          </Button>
+                        </div>
+                        {portalDocDraft && (
+                          <>
+                            <textarea
+                              value={portalDocDraft}
+                              onChange={(e) => { setPortalDocDraft(e.target.value); setPortalDocApproved(false); }}
+                              className="max-h-80 min-h-48 w-full resize-y whitespace-pre-wrap rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-xs leading-6 text-slate-200 outline-none focus:border-emerald-500"
+                            />
+                            <label className="flex items-start gap-2 text-xs text-slate-300">
+                              <input type="checkbox" checked={portalDocApproved} onChange={(e) => setPortalDocApproved(e.target.checked)} />
+                              <span>Jeg har lest gjennom og godkjent dokumentet for denne kunden.</span>
+                            </label>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-slate-300">Siste meldinger</p>
+                          <div className="space-y-2">
+                            {(portalAdmin?.messages || []).slice(0, 4).map((message) => (
+                              <div key={message.id} className="rounded-lg bg-slate-900/40 p-2">
+                                <p className="text-[11px] text-slate-500">{message.sender_type === "customer" ? "Kunde" : "Admin"} · {formatDateTime(message.created_at)}</p>
+                                <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-300">{message.body}</p>
+                              </div>
+                            ))}
+                            {(!portalAdmin || portalAdmin.messages.length === 0) && <p className="text-xs text-slate-500">Ingen meldinger ennå.</p>}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-slate-300">Dokumenter på Min side</p>
+                          <div className="space-y-2">
+                            {(portalAdmin?.documents || []).slice(0, 4).map((doc) => (
+                              <div key={doc.id} className="rounded-lg bg-slate-900/40 p-2">
+                                <p className="text-xs font-medium leading-5 text-white">{doc.title}</p>
+                                <p className="text-[11px] text-slate-500">{formatDateTime(doc.published_at || doc.generated_at || doc.created_at)}</p>
+                              </div>
+                            ))}
+                            {(!portalAdmin || portalAdmin.documents.length === 0) && <p className="text-xs text-slate-500">Ingen dokumenter publisert ennå.</p>}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 
