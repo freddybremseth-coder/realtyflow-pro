@@ -19,7 +19,7 @@ function getSupabaseHost() {
   }
 }
 
-const fullSelect = [
+const baseColumns = [
   "id",
   "brand_id",
   "content_type",
@@ -28,27 +28,15 @@ const fullSelect = [
   "tags",
   "ai_generated",
   "ai_image_url",
-  "thumbnail_url",
   "status",
   "created_at",
   "scheduled_at",
-  "scheduled_platforms",
-].join(", ");
+];
 
-const fallbackSelect = [
-  "id",
-  "brand_id",
-  "content_type",
-  "title",
-  "description",
-  "tags",
-  "ai_generated",
-  "ai_image_url",
-  "thumbnail_url",
-  "status",
-  "created_at",
-  "scheduled_at",
-].join(", ");
+const fullSelect = [...baseColumns, "thumbnail_url", "scheduled_platforms"].join(", ");
+const noPlatformsSelect = [...baseColumns, "thumbnail_url"].join(", ");
+const noThumbnailSelect = [...baseColumns, "scheduled_platforms"].join(", ");
+const minimalSelect = baseColumns.join(", ");
 
 export async function GET(request: NextRequest) {
   const supabase = getSupabase();
@@ -80,15 +68,43 @@ export async function GET(request: NextRequest) {
   }
 
   const initialResult = await runQuery(fullSelect);
-  let data = initialResult.data as Record<string, unknown>[] | null;
+  let data = initialResult.data as unknown as Record<string, unknown>[] | null;
   let error = initialResult.error as { message: string } | null;
   let usedFallback = false;
+  let missingThumbnail = false;
+  let missingPlatforms = false;
 
-  if (error && /scheduled_platforms|schema cache|column/i.test(error.message)) {
-    const fallback = await runQuery(fallbackSelect);
-    data = (fallback.data as unknown as Record<string, unknown>[] | null)?.map((row) => ({ ...row, scheduled_platforms: [] })) ?? null;
-    error = fallback.error as { message: string } | null;
-    usedFallback = true;
+  const isMissingColumn = (msg: string, col: string) =>
+    new RegExp(`column[^\\n]*${col}[^\\n]*does not exist|${col}[^\\n]*schema cache`, "i").test(msg);
+
+  if (error) {
+    missingThumbnail = isMissingColumn(error.message, "thumbnail_url");
+    missingPlatforms = isMissingColumn(error.message, "scheduled_platforms");
+    let nextSelect: string | null = null;
+    if (missingThumbnail && missingPlatforms) nextSelect = minimalSelect;
+    else if (missingThumbnail) nextSelect = noThumbnailSelect;
+    else if (missingPlatforms) nextSelect = noPlatformsSelect;
+
+    if (nextSelect) {
+      const fallback = await runQuery(nextSelect);
+      data = (fallback.data as unknown as Record<string, unknown>[] | null)?.map((row) => ({
+        ...row,
+        ...(missingThumbnail ? { thumbnail_url: null } : {}),
+        ...(missingPlatforms ? { scheduled_platforms: [] } : {}),
+      })) ?? null;
+      error = fallback.error as { message: string } | null;
+      usedFallback = true;
+
+      if (error && (missingThumbnail || missingPlatforms)) {
+        const minimal = await runQuery(minimalSelect);
+        data = (minimal.data as unknown as Record<string, unknown>[] | null)?.map((row) => ({
+          ...row,
+          thumbnail_url: null,
+          scheduled_platforms: [],
+        })) ?? null;
+        error = minimal.error as { message: string } | null;
+      }
+    }
   }
 
   if (error) {

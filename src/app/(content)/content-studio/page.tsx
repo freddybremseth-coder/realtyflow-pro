@@ -52,7 +52,29 @@ interface HistoryEntry {
   tone: string;
   prompt: string;
   content: string;
+  perPlatform?: Record<string, string>;
   createdAt: Date;
+}
+
+type StoredHistoryEntry = Omit<HistoryEntry, "createdAt"> & { createdAt: string };
+
+const CONTENT_STUDIO_HISTORY_KEY = "realtyflow.contentStudio.history.v1";
+
+function hydrateHistoryEntry(entry: Partial<StoredHistoryEntry>): HistoryEntry | null {
+  if (!entry?.id || !entry.content) return null;
+  const createdAt = entry.createdAt ? new Date(entry.createdAt) : new Date();
+
+  return {
+    id: String(entry.id),
+    brand: String(entry.brand || BRANDS[0].name),
+    platforms: Array.isArray(entry.platforms) ? entry.platforms.map(String) : [],
+    contentType: String(entry.contentType || "post"),
+    tone: String(entry.tone || "Profesjonell"),
+    prompt: String(entry.prompt || ""),
+    content: String(entry.content),
+    perPlatform: entry.perPlatform && typeof entry.perPlatform === "object" ? entry.perPlatform : undefined,
+    createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+  };
 }
 
 interface Contact {
@@ -122,9 +144,11 @@ export default function ContentStudioPage() {
   const [generatedPerPlatform, setGeneratedPerPlatform] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savingToHub, setSavingToHub] = useState(false);
   const [savedToHub, setSavedToHub] = useState(false);
+  const [hubSaveSummary, setHubSaveSummary] = useState<{ count: number; savedAt: string } | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   // Tab state
@@ -159,6 +183,33 @@ export default function ContentStudioPage() {
   const currentBrand = BRANDS.find((b) => b.id === selectedBrand) ?? BRANDS[0];
   const nlCurrentBrand = BRANDS.find((b) => b.id === nlBrand) ?? BRANDS[0];
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CONTENT_STUDIO_HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const restored = parsed
+        .map((entry) => hydrateHistoryEntry(entry))
+        .filter((entry): entry is HistoryEntry => Boolean(entry))
+        .slice(0, 20);
+      setHistory(restored);
+    } catch (err) {
+      console.warn("[Content Studio] Could not restore local history:", err);
+    } finally {
+      setHistoryLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!historyLoaded) return;
+    try {
+      window.localStorage.setItem(CONTENT_STUDIO_HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+    } catch (err) {
+      console.warn("[Content Studio] Could not persist local history:", err);
+    }
+  }, [history, historyLoaded]);
+
   const togglePlatform = (id: string) => {
     setSelectedPlatforms((prev) =>
       prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
@@ -170,6 +221,8 @@ export default function ContentStudioPage() {
     setIsGenerating(true);
     setGeneratedContent("");
     setGeneratedPerPlatform({});
+    setSavedToHub(false);
+    setHubSaveSummary(null);
 
     const results: Record<string, string> = {};
 
@@ -233,6 +286,7 @@ export default function ContentStudioPage() {
       tone: selectedTone,
       prompt,
       content: combined,
+      perPlatform: results,
       createdAt: new Date(),
     };
     setHistory((prev) => [entry, ...prev].slice(0, 20));
@@ -249,9 +303,18 @@ export default function ContentStudioPage() {
     if (!generatedContent) return;
     setSavingToHub(true);
     setSavedToHub(false);
+    setHubSaveSummary(null);
     try {
       // Create one draft per platform with only that platform's content
-      const drafts = Object.entries(generatedPerPlatform).map(([pid, content]) => {
+      const drafts: Array<{
+        brand_id: string;
+        content_type: string;
+        title: string;
+        description: string;
+        tags: string[];
+        scheduled_platforms: string[];
+        metadata: { source: string; platform?: string };
+      }> = Object.entries(generatedPerPlatform).map(([pid, content]) => {
         const platformName = platforms.find((p) => p.id === pid)?.name ?? pid;
         return {
           brand_id: selectedBrand,
@@ -259,6 +322,11 @@ export default function ContentStudioPage() {
           title: `${currentBrand.name} – ${selectedContentType} (${platformName})`,
           description: content,
           tags: [pid],
+          scheduled_platforms: [pid],
+          metadata: {
+            source: "content-studio",
+            platform: pid,
+          },
         };
       });
 
@@ -270,6 +338,10 @@ export default function ContentStudioPage() {
           title: `${currentBrand.name} – ${selectedContentType}`,
           description: generatedContent,
           tags: selectedPlatforms,
+          scheduled_platforms: selectedPlatforms,
+          metadata: {
+            source: "content-studio",
+          },
         });
       }
 
@@ -280,8 +352,10 @@ export default function ContentStudioPage() {
       });
       const result = await res.json();
       if (res.ok && result.drafts_created > 0) {
+        const count = Number(result.drafts_created) || drafts.length;
         setSavedToHub(true);
-        setTimeout(() => setSavedToHub(false), 3000);
+        setHubSaveSummary({ count, savedAt: new Date().toISOString() });
+        setTimeout(() => setSavedToHub(false), 5000);
       } else {
         console.error("[Content Studio] Save failed:", result);
         alert(`Kunne ikke lagre til Content Hub: ${result.error || result.results?.map((r: { error?: string }) => r.error).filter(Boolean).join(', ') || 'Ukjent feil'}`);
@@ -301,6 +375,9 @@ export default function ContentStudioPage() {
     setSelectedTone(entry.tone);
     setPrompt(entry.prompt);
     setGeneratedContent(entry.content);
+    setGeneratedPerPlatform(entry.perPlatform || {});
+    setHubSaveSummary(null);
+    setSavedToHub(false);
     setShowHistory(false);
   };
 
@@ -573,7 +650,7 @@ export default function ContentStudioPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Wand2 className="text-purple-400" size={28} />
@@ -928,7 +1005,7 @@ export default function ContentStudioPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">Generert innhold</CardTitle>
                 {generatedContent && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -961,7 +1038,7 @@ export default function ContentStudioPage() {
                       size="sm"
                       onClick={handleSaveToHub}
                       disabled={savingToHub}
-                      className={`text-xs ${savedToHub ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                      className={`text-xs whitespace-nowrap ${savedToHub ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
                     >
                       {savingToHub ? (
                         <><Loader2 size={12} className="mr-1 animate-spin" /> Lagrer...</>
@@ -1016,6 +1093,21 @@ export default function ContentStudioPage() {
                       {selectedTone}
                     </Badge>
                   </div>
+
+                  {hubSaveSummary && (
+                    <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="flex items-center gap-2">
+                        <CheckCircle2 size={15} className="text-emerald-300" />
+                        {hubSaveSummary.count} utkast er lagret i Content Hub.
+                      </span>
+                      <a
+                        href={`/content-hub?refresh=${encodeURIComponent(hubSaveSummary.savedAt)}`}
+                        className="text-xs font-medium text-emerald-200 underline underline-offset-4 hover:text-emerald-100"
+                      >
+                        Åpne Content Hub
+                      </a>
+                    </div>
+                  )}
 
                   {Object.keys(generatedPerPlatform).length > 1 ? (
                     <div className="space-y-3">

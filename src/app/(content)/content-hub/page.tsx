@@ -438,8 +438,8 @@ export default function ContentHubPage() {
     setDraftsLoading(true);
     setDraftsError("");
     try {
-      const res = await fetch("/api/content-hub/drafts?limit=100", { cache: "no-store" });
-      const data = await res.json();
+      const res = await fetch(`/api/content-hub/drafts?limit=100&t=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({ drafts: [], error: "Kunne ikke lese Content Hub-respons" }));
       setDraftsSourceHost(data.supabaseHost || "");
       if (!res.ok) {
         throw new Error(data.error || "Kunne ikke hente Content Hub-utkast");
@@ -997,6 +997,25 @@ export default function ContentHubPage() {
     fetchConnectedAccounts();
     fetchCalendarEvents();
   }, [fetchDrafts, fetchCampaigns, fetchConnectedAccounts, fetchCalendarEvents]);
+
+  useEffect(() => {
+    const refreshDrafts = () => {
+      void fetchDrafts();
+    };
+    const refreshVisibleDrafts = () => {
+      if (document.visibilityState === "visible") {
+        void fetchDrafts();
+      }
+    };
+
+    window.addEventListener("focus", refreshDrafts);
+    document.addEventListener("visibilitychange", refreshVisibleDrafts);
+
+    return () => {
+      window.removeEventListener("focus", refreshDrafts);
+      document.removeEventListener("visibilitychange", refreshVisibleDrafts);
+    };
+  }, [fetchDrafts]);
 
   // Handlers
   const togglePlatform = useCallback((platformId: string) => {
