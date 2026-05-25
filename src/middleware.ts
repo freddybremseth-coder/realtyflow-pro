@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/api/public/booking-leads",
   "/api/public/booking-config",
   "/api/public/booking-availability",
+  "/api/public/website-content",
   "/api/portal/preferences",
   "/api/portal/documents",
   "/api/portal/messages",
