@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
+import { getDefaultWebsiteCmsSettings, getWebsiteCmsPreset } from "@/lib/website-cms";
 import {
   Palette, Globe, Mail, Phone, Youtube, Instagram, Linkedin,
   Settings, Plus, X, Pencil, Trash2, Check, Upload, Loader2,
@@ -81,6 +82,13 @@ const emptySettings: BrandSettings = {
   websiteCmsDestinationsText: "",
 };
 
+function defaultSettingsForBrand(brandId: string): BrandSettings {
+  return {
+    ...emptySettings,
+    ...getDefaultWebsiteCmsSettings(brandId),
+  };
+}
+
 const typeColors: Record<string, string> = {
   real_estate: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
   saas: "bg-violet-500/20 text-violet-300 border-violet-500/30",
@@ -105,7 +113,7 @@ const typeLabels: Record<string, string> = {
 
 export default function BrandsPage() {
   const [brands, setBrands] = useState<BrandEntry[]>(
-    BRANDS.map((b) => ({ ...b, settings: { ...emptySettings } }))
+    BRANDS.map((b) => ({ ...b, settings: defaultSettingsForBrand(b.id) }))
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -258,7 +266,7 @@ export default function BrandsPage() {
       tone: newBrand.tone,
       target_audience: newBrand.target_audience,
       specialties: specialtiesArr,
-      settings: { ...emptySettings },
+      settings: defaultSettingsForBrand(id),
     };
     setBrands((prev) => [...prev, brandEntry]);
 
@@ -355,7 +363,7 @@ export default function BrandsPage() {
                       tone: s.tone || b.tone,
                       target_audience: s.target_audience || b.target_audience,
                       specialties: s.specialties || b.specialties,
-                      settings: { ...emptySettings, ...s },
+                      settings: { ...defaultSettingsForBrand(b.id), ...s },
                     }
                   : b;
               });
@@ -373,7 +381,7 @@ export default function BrandsPage() {
                   tone: (s.tone as string) || '',
                   target_audience: (s.target_audience as string) || '',
                   specialties: (s.specialties as string[]) || [],
-                  settings: { ...emptySettings, ...(s as Record<string, string>) },
+                  settings: { ...defaultSettingsForBrand(brandId), ...(s as Record<string, string>) },
                 });
               }
             }
@@ -1019,6 +1027,21 @@ export default function BrandsPage() {
                     Brukes når Dokumenthub eller Publishing Hub skal publisere artikler, guider og blogginnlegg til brandets nettside.
                   </p>
                   <div className="space-y-3">
+                    {(() => {
+                      const preset = getWebsiteCmsPreset(selectedBrand.id);
+                      return (
+                        <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-[11px] text-slate-300">
+                          <div className="font-medium text-white">
+                            Aktiv modus: {preset.usesFeed ? "RealtyFlow feed" : "Direkte webhook"}
+                          </div>
+                          <div className="mt-1 text-slate-400">
+                            {preset.usesFeed
+                              ? "Dette brandet henter publisert nettsideinnhold fra RealtyFlow sin offentlige content-feed."
+                              : "Dette brandet mottar publisering direkte via nettsidens eget webhook-endepunkt."}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div>
                       <label className="text-[11px] text-slate-400 mb-1 block">
                         Publiserings-webhook

@@ -18,6 +18,12 @@ export type WebsiteCmsConfig = {
   webhookSecret: string;
 };
 
+export type WebsiteCmsPreset = {
+  webhookUrl: string;
+  usesFeed: boolean;
+  defaultDestinationId?: string;
+};
+
 const DEFAULT_DESTINATIONS: WebsiteCmsDestination[] = [
   { id: "blogg", label: "Blogg", path: "/blogg", contentType: "post" },
   { id: "artikler", label: "Artikler", path: "/artikler", contentType: "article" },
@@ -66,6 +72,34 @@ const BRAND_DESTINATIONS: Record<string, WebsiteCmsDestination[]> = {
     { id: "bokressurser", label: "Bokressurser", path: "/bokressurser", contentType: "guide" },
     { id: "leadmagneter", label: "Lead magnets", path: "/lead-magnets", contentType: "page" },
   ],
+};
+
+const BRAND_PRESETS: Record<string, WebsiteCmsPreset> = {
+  donaanna: {
+    webhookUrl: "https://www.donaanna.com/api/realtyflow/publish",
+    usesFeed: false,
+    defaultDestinationId: "magasin",
+  },
+  zeneco: {
+    webhookUrl: "https://www.zenecohomes.com/api/realtyflow/publish",
+    usesFeed: false,
+    defaultDestinationId: "magasin",
+  },
+  pinosoecolife: {
+    webhookUrl: "https://www.pinosoecolife.com/api/realtyflow/publish",
+    usesFeed: false,
+    defaultDestinationId: "magasin",
+  },
+  freddyb: {
+    webhookUrl: "",
+    usesFeed: true,
+    defaultDestinationId: "artikler",
+  },
+  chatgenius: {
+    webhookUrl: "",
+    usesFeed: true,
+    defaultDestinationId: "artikler",
+  },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -178,6 +212,24 @@ export function getDefaultWebsiteDestinations(brandId: string) {
   return BRAND_DESTINATIONS[brandId] || DEFAULT_DESTINATIONS;
 }
 
+export function getWebsiteCmsPreset(brandId: string): WebsiteCmsPreset {
+  return BRAND_PRESETS[brandId] || {
+    webhookUrl: "",
+    usesFeed: true,
+    defaultDestinationId: getDefaultWebsiteDestinations(brandId)[0]?.id || "artikler",
+  };
+}
+
+export function getDefaultWebsiteCmsSettings(brandId: string) {
+  const preset = getWebsiteCmsPreset(brandId);
+  return {
+    websiteCmsWebhookUrl: preset.webhookUrl,
+    websiteCmsWebhookSecret: "",
+    websiteCmsDestinationsText: destinationsToLines(getDefaultWebsiteDestinations(brandId)),
+    websiteCmsDefaultDestination: preset.defaultDestinationId || getDefaultWebsiteDestinations(brandId)[0]?.id || "artikler",
+  };
+}
+
 export function resolveWebsiteCmsConfig(
   brandId: string,
   rawSettings?: Record<string, unknown> | null,
@@ -187,6 +239,7 @@ export function resolveWebsiteCmsConfig(
   const settings = rawSettings || {};
   const nested = isRecord(settings.website_cms) ? settings.website_cms : {};
   const suffix = envSuffix(brandId);
+  const preset = getWebsiteCmsPreset(brandId);
   const customDestinations = [
     ...normalizeDestinations(nested.destinations),
     ...parseDestinationLines(settings.websiteCmsDestinationsText),
@@ -198,6 +251,7 @@ export function resolveWebsiteCmsConfig(
   const defaultDestinationId = String(
     nested.default_destination ||
       settings.websiteCmsDefaultDestination ||
+      preset.defaultDestinationId ||
       destinations[0]?.id ||
       "artikler",
   );
@@ -211,6 +265,7 @@ export function resolveWebsiteCmsConfig(
     webhookUrl: String(
       nested.webhook_url ||
         settings.websiteCmsWebhookUrl ||
+        preset.webhookUrl ||
         envValue(`REALTYFLOW_CMS_WEBHOOK_${suffix}`, `WEBSITE_CMS_WEBHOOK_${suffix}`),
     ),
     webhookSecret: String(
