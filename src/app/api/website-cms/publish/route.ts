@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
     ? websitePublished
       ? "published"
       : "failed"
-    : "draft";
+    : "published";
 
   const now = new Date().toISOString();
   const publicationPayload: Record<string, unknown> = {
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
     ? websitePublished
       ? ""
       : `Publisering til nettsiden feilet: ${websiteError || "ukjent feil"}`
-    : "Ingen website-webhook er konfigurert for brandet. Saken er lagret som website-klar draft i Content Hub.";
+    : "Brandet bruker RealtyFlow sin innebygde website-feed. Saken er publisert og klar for nettsiden.";
 
   return NextResponse.json({
     success: true,
