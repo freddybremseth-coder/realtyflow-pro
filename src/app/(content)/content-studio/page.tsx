@@ -12,7 +12,7 @@ import {
   Music, RefreshCw, Send, Clock, FileText, Video,
   BookOpen, Clapperboard, History, Upload, Image,
   Mail, Users, Filter, Search, Building2, MapPin,
-  Eye, ChevronDown, X, Plus, Newspaper,
+  Eye, ChevronDown, X, Plus, Newspaper, Globe,
 } from "lucide-react";
 import { BRANDS, LEAD_STATUSES } from "@/lib/constants";
 
@@ -24,6 +24,7 @@ const platforms = [
   { id: "youtube", name: "YouTube", icon: Youtube, color: "text-red-400" },
   { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400" },
   { id: "pinterest", name: "Pinterest", icon: Target, color: "text-rose-400" },
+  { id: "website", name: "Nettside", icon: Globe, color: "text-cyan-400" },
 ];
 
 const contentTypes = [

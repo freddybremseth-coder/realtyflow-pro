@@ -155,6 +155,7 @@ const PLATFORMS = [
   { id: "linkedin", name: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500/20" },
   { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500/20" },
   { id: "pinterest", name: "Pinterest", icon: Target, color: "text-rose-400", bg: "bg-rose-500/20" },
+  { id: "website", name: "Nettside", icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/20" },
 ];
 
 const IMAGE_STYLES = [
@@ -421,6 +422,9 @@ export default function ContentHubPage() {
       null
     );
   }, [selectedWebsiteTarget, websiteDestinationId]);
+  const hasWebsiteTargetForBrand = useCallback((brandId: string) => {
+    return websiteTargets.some((target) => target.id === brandId);
+  }, [websiteTargets]);
 
   // -------------------------------------------------------------------
   // Customer-PDF state — pick several properties matching a buyer's
@@ -765,12 +769,13 @@ export default function ContentHubPage() {
     const brandAccounts = connectedAccounts
       .filter((a) => brandMatches(a.brand, draft.brand_id, a.brand_id))
       .map((a) => a.platform);
+    const websiteAvailable = hasWebsiteTargetForBrand(draft.brand_id);
     const intended = Array.isArray(draft.scheduled_platforms) && draft.scheduled_platforms.length > 0
       ? draft.scheduled_platforms
-      : draft.tags?.filter((tag) => ["facebook", "instagram", "linkedin", "pinterest", "tiktok"].includes(String(tag).toLowerCase())) || [];
+      : draft.tags?.filter((tag) => ["facebook", "instagram", "linkedin", "pinterest", "tiktok", "website"].includes(String(tag).toLowerCase())) || [];
     const preselected = intended.length > 0
-      ? intended.filter((platform) => brandAccounts.includes(platform))
-      : brandAccounts;
+      ? intended.filter((platform) => platform === "website" ? websiteAvailable : brandAccounts.includes(platform))
+      : [...brandAccounts, ...(websiteAvailable ? ["website"] : [])];
     setPublishPlatforms(Array.from(new Set(preselected)));
 
     if (draft.image_compacted) {
@@ -789,7 +794,7 @@ export default function ContentHubPage() {
           setHydratingDraftId(null);
         });
     }
-  }, [connectedAccounts, brandMatches]);
+  }, [connectedAccounts, brandMatches, hasWebsiteTargetForBrand]);
 
   const openWebsiteModal = useCallback((draft: DraftItem) => {
     setActiveContentTab("utkast");
@@ -875,6 +880,74 @@ export default function ContentHubPage() {
     }
   }, [fetchDrafts, selectedWebsiteDestination, selectedWebsiteTarget, websiteDraft]);
 
+  const publishDraftViaWebsiteChannel = useCallback(async (draft: DraftItem) => {
+    const target = websiteTargets.find((item) => item.id === draft.brand_id) || websiteTargets[0] || null;
+    if (!target) {
+      return {
+        success: false,
+        result: {
+          platform: "website",
+          success: false,
+          error: "Ingen nettside er satt opp for dette brandet.",
+        },
+      };
+    }
+
+    const destination =
+      target.destinations.find((item) => item.id === target.defaultDestinationId) ||
+      target.destinations[0] ||
+      null;
+    if (!destination) {
+      return {
+        success: false,
+        result: {
+          platform: "website",
+          success: false,
+          error: "Brandet mangler nettside-destinasjon.",
+        },
+      };
+    }
+
+    const response = await fetch("/api/website-cms/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand_id: target.id,
+        destination_id: destination.id,
+        title: draft.title || "Uten tittel",
+        content: draft.description || draft.title || "",
+        image_url: draft.ai_image_url || draft.thumbnail_url || undefined,
+        tags: draft.tags || [],
+        status: "published",
+        source_type: "content_publication",
+        source_id: draft.id,
+        ai_generated: draft.ai_generated,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({ error: "Kunne ikke lese website-respons." }));
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        result: {
+          platform: "website",
+          success: false,
+          error: data.error || "Publisering til nettside feilet.",
+        },
+      };
+    }
+
+    const postUrl = typeof data.externalUrl === "string" ? data.externalUrl : undefined;
+    return {
+      success: true,
+      result: {
+        platform: "website",
+        success: true,
+        postUrl,
+      },
+    };
+  }, [websiteTargets]);
+
   const fetchAiRecommendation = useCallback(async () => {
     if (!publishDraft || publishPlatforms.length === 0) return;
     setLoadingAiTime(true);
@@ -913,6 +986,9 @@ export default function ContentHubPage() {
     setPublishResults([]);
 
     try {
+      const includesWebsite = publishPlatforms.includes("website");
+      const socialPlatforms = publishPlatforms.filter((platform) => platform !== "website");
+
       if (scheduleMode === "schedule" && scheduledAt) {
         // Schedule for future
         const res = await fetch("/api/schedule", {
@@ -943,26 +1019,43 @@ export default function ContentHubPage() {
           setPublishResults([{ platform: "system", success: false, error: data.error }]);
         }
       } else {
-        // Publish now
-        const res = await fetch("/api/publish", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            draft_id: publishDraft.id,
-            platforms: publishPlatforms,
-            content: publishDraft.description || "",
-            title: publishDraft.title || "",
-            brand_id: publishDraft.brand_id,
-            image_url: publishDraft.ai_image_url || undefined,
-          }),
-        });
-        const data = await res.json();
-        const results = data.results?.length
-          ? data.results
-          : [{ platform: "system", success: false, error: data.error || "Ingen respons fra publiseringstjenesten" }];
-        setPublishResults(results);
+        const aggregatedResults: {platform: string; success: boolean; postUrl?: string; error?: string}[] = [];
+        let anySuccess = false;
 
-        if (data.success) {
+        if (socialPlatforms.length > 0) {
+          const res = await fetch("/api/publish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              draft_id: publishDraft.id,
+              platforms: socialPlatforms,
+              content: publishDraft.description || "",
+              title: publishDraft.title || "",
+              brand_id: publishDraft.brand_id,
+              image_url: publishDraft.ai_image_url || undefined,
+            }),
+          });
+          const data = await res.json();
+          const socialResults = data.results?.length
+            ? data.results
+            : [{ platform: "system", success: false, error: data.error || "Ingen respons fra publiseringstjenesten" }];
+          aggregatedResults.push(...socialResults);
+          anySuccess = anySuccess || Boolean(data.success);
+        }
+
+        if (includesWebsite) {
+          const websiteOutcome = await publishDraftViaWebsiteChannel(publishDraft);
+          aggregatedResults.push(websiteOutcome.result);
+          anySuccess = anySuccess || websiteOutcome.success;
+        }
+
+        if (aggregatedResults.length === 0) {
+          aggregatedResults.push({ platform: "system", success: false, error: "Ingen plattformer valgt." });
+        }
+
+        setPublishResults(aggregatedResults);
+
+        if (anySuccess) {
           setDrafts((prev) => prev.filter((d) => d.id !== publishDraft.id));
         }
       }
@@ -971,7 +1064,7 @@ export default function ContentHubPage() {
     } finally {
       setPublishing(false);
     }
-  }, [publishDraft, publishPlatforms, scheduleMode, scheduledAt, aiRecommendation]);
+  }, [publishDraft, publishPlatforms, scheduleMode, scheduledAt, aiRecommendation, publishDraftViaWebsiteChannel]);
 
   // Stats counters (from all statuses)
   const [statsCount, setStatsCount] = useState({ total: 0, published: 0, failed: 0, scheduled: 0 });
@@ -2364,7 +2457,7 @@ export default function ContentHubPage() {
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !publishing && setPublishDraft(null)}>
               <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Publiser til sosiale medier</h3>
+                  <h3 className="text-lg font-semibold">Publiser innhold</h3>
                   {!publishing && (
                     <button onClick={() => setPublishDraft(null)} className="text-zinc-400 hover:text-white">
                       <X size={20} />
@@ -2393,10 +2486,13 @@ export default function ContentHubPage() {
                       { id: "linkedin", name: "LinkedIn", icon: Link, color: "text-sky-400", bg: "bg-sky-500/20" },
                       { id: "pinterest", name: "Pinterest", icon: Target, color: "text-rose-400", bg: "bg-rose-500/20" },
                       { id: "tiktok", name: "TikTok", icon: Music, color: "text-emerald-400", bg: "bg-emerald-500/20" },
+                      { id: "website", name: "Nettside", icon: Globe, color: "text-cyan-400", bg: "bg-cyan-500/20" },
                     ].map((p) => {
-                      const isConnected = connectedAccounts.some(
-                        (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id, a.brand_id)
-                      );
+                      const isConnected = p.id === "website"
+                        ? hasWebsiteTargetForBrand(publishDraft.brand_id)
+                        : connectedAccounts.some(
+                            (a) => a.platform === p.id && brandMatches(a.brand, publishDraft.brand_id, a.brand_id)
+                          );
                       const isSelected = publishPlatforms.includes(p.id);
                       return (
                         <button
@@ -2422,20 +2518,26 @@ export default function ContentHubPage() {
                             <span className="text-[10px] text-red-400">Ikke koblet</span>
                           )}
                           {isConnected && (
-                            <span className="text-[10px] text-green-400">Tilkoblet</span>
+                            <span className="text-[10px] text-green-400">{p.id === "website" ? "Klar" : "Tilkoblet"}</span>
                           )}
                         </button>
                       );
                     })}
                   </div>
 
-                  {connectedAccounts.filter((a) => brandMatches(a.brand, publishDraft.brand_id, a.brand_id)).length === 0 && (
+                  {connectedAccounts.filter((a) => brandMatches(a.brand, publishDraft.brand_id, a.brand_id)).length === 0 && !hasWebsiteTargetForBrand(publishDraft.brand_id) && (
                     <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                       <p className="text-xs text-yellow-300">
                         Ingen kontoer koblet til for dette brandet. Gå til{" "}
                         <a href="/settings" className="underline font-medium">Innstillinger → Sosiale Medier</a>{" "}
                         og koble til Facebook/Instagram/LinkedIn via OAuth.
                       </p>
+                    </div>
+                  )}
+
+                  {publishPlatforms.includes("website") && selectedWebsiteTarget && (
+                    <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+                      Nettside publiseres til {selectedWebsiteTarget.name} {"->"} {selectedWebsiteDestination?.label || "standardplassering"}.
                     </div>
                   )}
                 </div>
@@ -2667,14 +2769,21 @@ export default function ContentHubPage() {
                       {PLATFORMS.map((p) => {
                         const Icon = p.icon;
                         const isSelected = selectedPlatforms.includes(p.id);
+                        const isAvailable = p.id === "website" ? hasWebsiteTargetForBrand(selectedBrand) : true;
                         return (
                           <button
                             key={p.id}
-                            onClick={() => togglePlatform(p.id)}
+                            onClick={() => {
+                              if (!isAvailable) return;
+                              togglePlatform(p.id);
+                            }}
+                            disabled={!isAvailable}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                               isSelected
                                 ? `${p.bg} ${p.color} border border-current/30`
-                                : "bg-slate-700/50 text-slate-400 border border-slate-600/50 hover:bg-slate-700"
+                                : isAvailable
+                                  ? "bg-slate-700/50 text-slate-400 border border-slate-600/50 hover:bg-slate-700"
+                                  : "bg-slate-800/50 text-slate-600 border border-slate-700/50 opacity-60 cursor-not-allowed"
                             }`}
                           >
                             <Icon size={16} />
