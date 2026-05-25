@@ -36,6 +36,14 @@ function isMissingColumn(message: string) {
   return /column[^\n]*(does not exist|schema cache)|Could not find the '[^']+' column/i.test(message);
 }
 
+function stripOptionalPublicationColumns(payload: Record<string, unknown>) {
+  const minimalPayload = { ...payload };
+  delete minimalPayload.scheduled_platforms;
+  delete minimalPayload.last_publish_error;
+  delete minimalPayload.publish_attempts;
+  return minimalPayload;
+}
+
 async function insertPublication(
   supabase: SupabaseClient,
   payload: Record<string, unknown>,
@@ -54,11 +62,7 @@ async function insertPublication(
     return { data: null, error: { message: first.error.message }, usedFallback: false };
   }
 
-  const minimalPayload = { ...payload };
-  delete minimalPayload.scheduled_platforms;
-  delete minimalPayload.last_publish_error;
-  delete minimalPayload.publish_attempts;
-
+  const minimalPayload = stripOptionalPublicationColumns(payload);
   const fallback = await supabase
     .from("content_publications")
     .insert(minimalPayload)
@@ -67,6 +71,54 @@ async function insertPublication(
 
   if (fallback.error) return { data: null, error: { message: fallback.error.message }, usedFallback: true };
   return { data: fallback.data as Record<string, unknown>, error: null, usedFallback: true };
+}
+
+async function updatePublication(
+  supabase: SupabaseClient,
+  publicationId: string,
+  payload: Record<string, unknown>,
+): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null; usedFallback: boolean }> {
+  const first = await supabase
+    .from("content_publications")
+    .update(payload)
+    .eq("id", publicationId)
+    .select("id, title, status, created_at")
+    .maybeSingle();
+
+  if (!first.error) {
+    return first.data
+      ? { data: first.data as Record<string, unknown>, error: null, usedFallback: false }
+      : { data: null, error: { message: "Fant ikke Content Hub-utkastet som skulle oppdateres." }, usedFallback: false };
+  }
+
+  if (!isMissingColumn(first.error.message)) {
+    return { data: null, error: { message: first.error.message }, usedFallback: false };
+  }
+
+  const minimalPayload = stripOptionalPublicationColumns(payload);
+  const fallback = await supabase
+    .from("content_publications")
+    .update(minimalPayload)
+    .eq("id", publicationId)
+    .select("id, title, status, created_at")
+    .maybeSingle();
+
+  if (fallback.error) return { data: null, error: { message: fallback.error.message }, usedFallback: true };
+  return fallback.data
+    ? { data: fallback.data as Record<string, unknown>, error: null, usedFallback: true }
+    : { data: null, error: { message: "Fant ikke Content Hub-utkastet som skulle oppdateres." }, usedFallback: true };
+}
+
+async function savePublicationState(
+  supabase: SupabaseClient,
+  sourceType: string,
+  sourceId: string,
+  payload: Record<string, unknown>,
+) {
+  if (sourceType === "content_publication" && sourceId) {
+    return updatePublication(supabase, sourceId, payload);
+  }
+  return insertPublication(supabase, payload);
 }
 
 async function postToWebsite(
@@ -212,7 +264,7 @@ export async function POST(request: NextRequest) {
     last_publish_error: websiteError || null,
   };
 
-  const insertResult = await insertPublication(supabase, publicationPayload);
+  const insertResult = await savePublicationState(supabase, sourceType, sourceId, publicationPayload);
   if (insertResult.error) {
     return NextResponse.json({ error: insertResult.error.message }, { status: 500 });
   }

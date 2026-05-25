@@ -859,7 +859,12 @@ export default function ContentHubPage() {
           ? `Publisert til ${targetText}${data.externalUrl ? `: ${data.externalUrl}` : "."}`
           : `Klargjort for ${targetText}. ${data.warning || "Ligger som website-draft i Content Hub."}`,
       });
-      if (!data.websitePublished) void fetchDrafts();
+      if (data.websitePublished) {
+        setDrafts((prev) => prev.filter((draft) => draft.id !== websiteDraft.id));
+        void fetchDrafts();
+      } else {
+        void fetchDrafts();
+      }
     } catch (err) {
       setWebsitePublishMessage({
         type: "error",
@@ -1934,7 +1939,7 @@ export default function ContentHubPage() {
                   return (
                     <Card key={draft.id} className="border-zinc-800">
                       <CardContent className="p-4">
-                        <div className="flex items-start gap-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
                               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand?.color || "#888" }} />
@@ -2005,13 +2010,13 @@ export default function ContentHubPage() {
                           </div>
 
                           {!isEditing && (
-                            <div className="flex flex-col gap-1">
+                            <div className="grid grid-cols-2 gap-2 sm:flex sm:min-w-[132px] sm:flex-col sm:gap-1">
                               {draft.status === "draft" && (
                                 <>
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => {
                                       setEditingDraft(draft.id);
                                       setEditTitle(draft.title || "");
@@ -2023,7 +2028,7 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => {
                                       setImagePickerDraft(draft.id);
                                       fetchAvailableImages(draft.brand_id);
@@ -2034,7 +2039,7 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     disabled={uploadingImage === draft.id}
                                     onClick={() => {
                                       const input = document.createElement("input");
@@ -2056,7 +2061,7 @@ export default function ContentHubPage() {
                                   </Button>
                                   <Button
                                     size="sm"
-                                    className="text-xs bg-green-600 hover:bg-green-700"
+                                    className="text-xs justify-start bg-green-600 hover:bg-green-700"
                                     onClick={() => openPublishModal(draft)}
                                   >
                                     <Send size={12} className="mr-1" /> Publiser
@@ -2064,15 +2069,15 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => openWebsiteModal(draft)}
                                   >
-                                    <Globe size={12} className="mr-1" /> Nettside
+                                    <Globe size={12} className="mr-1" /> Publiser til nett
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="text-xs text-zinc-500"
+                                    className="text-xs justify-start text-zinc-500"
                                     onClick={() => updateDraftStatus(draft.id, "archived")}
                                   >
                                     <Trash2 size={12} className="mr-1" /> Forkast
@@ -2084,7 +2089,7 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => {
                                       setEditingDraft(draft.id);
                                       setEditTitle(draft.title || "");
@@ -2096,14 +2101,14 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => openPublishModal(draft, "schedule")}
                                   >
                                     <Clock size={12} className="mr-1" /> Endre tid
                                   </Button>
                                   <Button
                                     size="sm"
-                                    className="text-xs bg-green-600 hover:bg-green-700"
+                                    className="text-xs justify-start bg-green-600 hover:bg-green-700"
                                     onClick={() => openPublishModal(draft, "now")}
                                   >
                                     <Send size={12} className="mr-1" /> Publiser nå
@@ -2111,15 +2116,15 @@ export default function ContentHubPage() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs justify-start"
                                     onClick={() => openWebsiteModal(draft)}
                                   >
-                                    <Globe size={12} className="mr-1" /> Nettside
+                                    <Globe size={12} className="mr-1" /> Publiser til nett
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="text-xs text-red-400 hover:text-red-300"
+                                    className="text-xs justify-start text-red-400 hover:text-red-300"
                                     onClick={() => updateDraftStatus(draft.id, "archived")}
                                   >
                                     <Trash2 size={12} className="mr-1" /> Slett
@@ -2238,7 +2243,7 @@ export default function ContentHubPage() {
 
           {websiteDraft && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => !websitePublishing && setWebsiteDraft(null)}>
-              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Publiser til nettside</h3>
                   {!websitePublishing && (
@@ -2251,6 +2256,25 @@ export default function ContentHubPage() {
                 <div className="bg-zinc-800 rounded-lg p-3">
                   <p className="text-sm font-medium truncate">{websiteDraft.title || "Uten tittel"}</p>
                   <p className="text-xs text-zinc-400 line-clamp-3 mt-1">{websiteDraft.description?.substring(0, 220)}...</p>
+                  {websiteDraft.ai_image_url ? (
+                    <div className="mt-3 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950">
+                      <img
+                        src={websiteDraft.thumbnail_url || websiteDraft.ai_image_url}
+                        alt={websiteDraft.title || "Valgt bilde"}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-36 w-full object-cover"
+                      />
+                      <div className="flex items-center gap-2 px-3 py-2 text-xs text-emerald-200">
+                        <CheckCircle size={12} />
+                        Bildet følger med til nettsiden.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                      Ingen bilde er valgt. Lukk vinduet og bruk "Velg bilde" eller "Last opp bilde" hvis artikkelen skal ha bilde.
+                    </div>
+                  )}
                   {hydratingDraftId === websiteDraft.id && (
                     <p className="mt-2 flex items-center gap-2 text-xs text-amber-200">
                       <Loader2 size={12} className="animate-spin" />
