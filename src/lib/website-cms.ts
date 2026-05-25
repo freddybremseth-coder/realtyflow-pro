@@ -104,17 +104,21 @@ export function parseDestinationLines(value: unknown): WebsiteCmsDestination[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
+    .filter((line) => !/^https?:\/\//i.test(line))
     .map((line) => {
       const [labelPart, pathPart, typePart, idPart] = line.split("|").map((part) => part.trim());
       const label = labelPart || "Artikler";
+      if (/^https?:\/\//i.test(label)) return null;
       const id = idPart || slugifyCmsTitle(label) || "artikler";
+      if (!id || /^https?/i.test(id)) return null;
       return {
         id,
         label,
-        path: cleanPath(pathPart || `/${id}`),
+        path: /^https?:\/\//i.test(pathPart || "") ? `/${id}` : cleanPath(pathPart || `/${id}`),
         contentType: safeContentType(typePart || "article"),
       };
-    });
+    })
+    .filter((item): item is WebsiteCmsDestination => Boolean(item));
 }
 
 export function destinationsToLines(destinations: WebsiteCmsDestination[]) {
@@ -130,11 +134,15 @@ function normalizeDestinations(value: unknown) {
       if (!isRecord(item)) return null;
       const label = String(item.label || item.name || "").trim();
       if (!label) return null;
+      if (/^https?:\/\//i.test(label)) return null;
       const id = String(item.id || slugifyCmsTitle(label)).trim();
+      if (!id || /^https?/i.test(id)) return null;
       const destination: WebsiteCmsDestination = {
         id,
         label,
-        path: cleanPath(String(item.path || `/${id}`)),
+        path: /^https?:\/\//i.test(String(item.path || ""))
+          ? `/${id}`
+          : cleanPath(String(item.path || `/${id}`)),
         contentType: safeContentType(String(item.contentType || item.type || "article")),
       };
       if (item.description) destination.description = String(item.description);
