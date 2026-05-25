@@ -115,7 +115,7 @@ interface WebsiteCmsTarget {
 }
 
 type ContentHubTab = "utkast" | "publiser" | "kampanjer" | "kalender" | "analytics" | "strategi" | "kunde-pdf";
-type DraftStatusFilter = "all" | "draft" | "scheduled" | "failed";
+type DraftStatusFilter = "all" | "draft" | "scheduled" | "published" | "failed";
 
 function toDatetimeLocalValue(value?: string | null) {
   if (!value) return "";
@@ -497,7 +497,7 @@ export default function ContentHubPage() {
     setDraftsLoading(true);
     setDraftsError("");
     try {
-      const res = await fetch(`/api/content-hub/drafts?limit=500&statuses=draft,scheduled,failed&t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`/api/content-hub/drafts?limit=500&statuses=draft,scheduled,published,failed&t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json().catch(() => ({ drafts: [], error: "Kunne ikke lese Content Hub-respons" }));
       setDraftsSourceHost(data.supabaseHost || "");
       if (!res.ok) {
@@ -1783,6 +1783,7 @@ export default function ContentHubPage() {
     all: drafts.length,
     draft: drafts.filter((draft) => draft.status === "draft").length,
     scheduled: drafts.filter((draft) => draft.status === "scheduled").length,
+    published: drafts.filter((draft) => draft.status === "published").length,
     failed: drafts.filter((draft) => draft.status === "failed").length,
   }), [drafts]);
   const visibleDrafts = useMemo(() => {
@@ -1973,7 +1974,7 @@ export default function ContentHubPage() {
               <div>
                 <h3 className="text-lg font-semibold">AI-genererte utkast</h3>
                 <p className="text-sm text-zinc-400">
-                  Utkast, planlagte poster og feilede publiseringer. Rediger, planlegg om eller publiser nå.
+                  Utkast, planlagte poster, publiserte saker og feilede publiseringer. Rediger, planlegg om eller publiser nå.
                   {draftsSourceHost && <span className="ml-1 text-zinc-500">Supabase: {draftsSourceHost}</span>}
                 </p>
               </div>
@@ -1984,12 +1985,13 @@ export default function ContentHubPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {[
-                { id: "all", label: "Alle", count: draftCounts.all },
-                { id: "draft", label: "Utkast", count: draftCounts.draft },
-                { id: "scheduled", label: "Planlagt", count: draftCounts.scheduled },
-                { id: "failed", label: "Feilet", count: draftCounts.failed },
-              ].map((filter) => (
+                {[
+                  { id: "all", label: "Alle", count: draftCounts.all },
+                  { id: "draft", label: "Utkast", count: draftCounts.draft },
+                  { id: "scheduled", label: "Planlagt", count: draftCounts.scheduled },
+                  { id: "published", label: "Publisert", count: draftCounts.published },
+                  { id: "failed", label: "Feilet", count: draftCounts.failed },
+                ].map((filter) => (
                 <button
                   key={filter.id}
                   onClick={() => setDraftStatusFilter(filter.id as DraftStatusFilter)}
