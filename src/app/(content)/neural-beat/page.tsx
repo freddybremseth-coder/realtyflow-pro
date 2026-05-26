@@ -59,15 +59,33 @@ interface YouTubeVideo {
   viewsPerDay?: number;
 }
 
-const REMASTER_FREDDY_OAUTH_URL = '/api/oauth/google?brand=remasterfreddy';
+const DEFAULT_YOUTUBE_OAUTH_URL = '/api/oauth/google?brand=remasterfreddy&return_to=/settings?tab=sosiale-medier';
 
 function isYoutubeReconnectError(error?: string) {
   return /invalid_grant|token.*utløpt|tilbakekalt|reconnect|koble.*youtube|refresh token/i.test(error || '');
 }
 
+function extractReconnectUrl(error?: string) {
+  const text = String(error || '');
+  const pathMatch = text.match(/(\/api\/oauth\/google\?brand=[^\s"']+)/i);
+  if (pathMatch?.[1]) return pathMatch[1];
+
+  const brandMatch = text.match(/brand\s+"([^"]+)"/i);
+  if (brandMatch?.[1]) {
+    return `/api/oauth/google?brand=${encodeURIComponent(brandMatch[1])}&return_to=/settings?tab=sosiale-medier`;
+  }
+
+  return DEFAULT_YOUTUBE_OAUTH_URL;
+}
+
 function youtubeErrorMessage(error?: string) {
   if (isYoutubeReconnectError(error)) {
-    return 'YouTube-tilkoblingen for Re-Master Freddy er utløpt. Koble Google/YouTube til på nytt, og kjør videoen igjen.';
+    const text = String(error || '');
+    const brandMatch = text.match(/YouTube-token for (.+?) \(([^)]+)\) er/i);
+    if (brandMatch?.[1]) {
+      return `YouTube-tilkoblingen for ${brandMatch[1]} er utløpt eller tilbakekalt. Koble Google/YouTube til på nytt, og kjør videoen igjen.`;
+    }
+    return 'YouTube-tilkoblingen er utløpt eller tilbakekalt. Koble Google/YouTube til på nytt, og kjør videoen igjen.';
   }
   return error || 'Ukjent feil. Sjekk stegene i Re-Master Freddy.';
 }
@@ -1665,10 +1683,10 @@ export default function NeuralBeatPage() {
                                 {youtubeErrorMessage(pipelineStatus.error)}
                               </div>
                               {isYoutubeReconnectError(pipelineStatus.error) && (
-                                <a href={REMASTER_FREDDY_OAUTH_URL} className="mt-3 inline-flex">
+                                <a href={extractReconnectUrl(pipelineStatus.error)} className="mt-3 inline-flex">
                                   <Button size="sm" className="bg-red-600 hover:bg-red-500">
                                     <Youtube className="mr-2 h-4 w-4" />
-                                    Koble Re-Master Freddy til YouTube på nytt
+                                    Koble til YouTube på nytt
                                   </Button>
                                 </a>
                               )}
