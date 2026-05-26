@@ -19,6 +19,10 @@ const PUBLIC_PATHS = [
   "/api/portal/messages",
   "/api/chatbot",
   "/api/health",
+  "/api/oauth/google",
+  "/api/oauth/google/callback",
+  "/api/oauth/google/finalize",
+  "/oauth/select",
 ];
 
 function isPublicPath(pathname: string) {
@@ -89,7 +93,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("next", pathname);
+  const nextPath = `${pathname}${request.nextUrl.search || ""}`;
+  loginUrl.searchParams.set("next", nextPath);
   return NextResponse.redirect(loginUrl);
 }
 
