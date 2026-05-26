@@ -4,6 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -25,10 +31,17 @@ function firstImage(mediaUrls: string[] | null, aiImageUrl: string | null) {
   return mediaUrls?.find(Boolean) || aiImageUrl || null;
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
+
 export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase er ikke konfigurert" }, { status: 503 });
+    return NextResponse.json({ error: "Supabase er ikke konfigurert" }, { status: 503, headers: CORS_HEADERS });
   }
 
   const brandId = asCleanString(request.nextUrl.searchParams.get("brand"));
@@ -37,7 +50,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") || 24), 100);
 
   if (!brandId) {
-    return NextResponse.json({ error: "brand er påkrevd" }, { status: 400 });
+    return NextResponse.json({ error: "brand er påkrevd" }, { status: 400, headers: CORS_HEADERS });
   }
 
   let query = supabase
@@ -60,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query;
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: CORS_HEADERS });
   }
 
   const items = (data || []).map((row) => {
@@ -84,8 +97,8 @@ export async function GET(request: NextRequest) {
   });
 
   if (slug) {
-    return NextResponse.json({ item: items[0] || null });
+    return NextResponse.json({ item: items[0] || null }, { headers: CORS_HEADERS });
   }
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items }, { headers: CORS_HEADERS });
 }
