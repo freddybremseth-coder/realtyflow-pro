@@ -504,7 +504,7 @@ export default function DocumentHubPage() {
         setWebsiteResult(data.externalUrl ? `Live: ${data.externalUrl}` : "Nettsiden bekreftet publisering.");
       } else {
         setSavingSuccess(`Klargjort for ${targetText} i Content Hub.`);
-        setWebsiteResult(data.warning || "Webhook mangler, så innholdet ligger klart som website-draft.");
+        setWebsiteResult(data.warning || "Innholdet er klart for nettsiden.");
       }
     } catch (err: unknown) {
       setSavingError(err instanceof Error ? err.message : "Ukjent feil");
@@ -849,7 +849,7 @@ export default function DocumentHubPage() {
                   </div>
                   {selectedCmsTarget && (
                     <span className="text-xs text-slate-400">
-                      {selectedCmsTarget.webhookConfigured ? "Direkte publisering" : "Lagrer som website-draft"}
+                      {selectedCmsTarget.webhookConfigured ? "Direkte publisering" : "Publiserer via RealtyFlow-feed"}
                     </span>
                   )}
                 </div>

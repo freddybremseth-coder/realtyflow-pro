@@ -862,7 +862,7 @@ export default function ContentHubPage() {
         type: "success",
         message: data.websitePublished
           ? `Publisert til ${targetText}${data.externalUrl ? `: ${data.externalUrl}` : "."}`
-          : `Klargjort for ${targetText}. ${data.warning || "Ligger som website-draft i Content Hub."}`,
+          : `Klargjort for ${targetText}. ${data.warning || "Saken ligger klar for nettsiden."}`,
       });
       if (data.websitePublished) {
         setDrafts((prev) => prev.filter((draft) => draft.id !== websiteDraft.id));
@@ -2415,7 +2415,7 @@ export default function ContentHubPage() {
                   <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">
                     {selectedWebsiteTarget.webhookConfigured
                       ? `Direkte publisering er satt opp for ${selectedWebsiteTarget.name}.`
-                      : `Webhook mangler for ${selectedWebsiteTarget.name}. RealtyFlow lagrer saken som website-klar draft.`}
+                      : `${selectedWebsiteTarget.name} bruker RealtyFlow sin innebygde website-feed. Saken publiseres til nettsiden uten egen webhook.`}
                   </div>
                 )}
 

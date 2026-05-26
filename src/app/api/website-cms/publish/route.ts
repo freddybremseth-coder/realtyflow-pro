@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
     publishedAt: new Date().toISOString(),
   };
 
-  let websitePublished = false;
+  let websitePublished = !config.webhookUrl;
   let websiteError = "";
   let websiteResponse: Record<string, unknown> = {};
 
@@ -272,7 +272,10 @@ export async function POST(request: NextRequest) {
   const externalUrl =
     asCleanString(websiteResponse.url) ||
     asCleanString(websiteResponse.external_url) ||
-    asCleanString(websiteResponse.permalink);
+    asCleanString(websiteResponse.permalink) ||
+    (config.website && destination.path
+      ? `${config.website.replace(/\/$/, "")}${destination.path}/${slug}`
+      : "");
 
   const warning = config.webhookUrl
     ? websitePublished
@@ -282,7 +285,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    mode: config.webhookUrl ? "direct" : "queue",
+    mode: config.webhookUrl ? "direct" : "feed",
     websitePublished,
     externalUrl,
     warning,

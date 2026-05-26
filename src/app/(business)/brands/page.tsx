@@ -1052,7 +1052,7 @@ export default function BrandsPage() {
                         placeholder="https://donaanna.com/api/realtyflow/publish"
                       />
                       <p className="text-[10px] text-slate-500 mt-1">
-                        Hvis denne mangler, lagres innholdet som website-klar draft i Content Hub.
+                        Hvis denne mangler, bruker brandet RealtyFlow sin innebygde website-feed i stedet for direkte webhook.
                       </p>
                     </div>
                     <div>
