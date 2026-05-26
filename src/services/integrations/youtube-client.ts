@@ -1,6 +1,7 @@
 import { youtube, type youtube_v3 } from '@googleapis/youtube';
 import { OAuth2Client } from 'google-auth-library';
 import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
+import { BRANDS } from '@/lib/constants';
 import { Readable } from 'stream';
 
 // Cache per (brandId, token) so we can re-use OAuth clients but also invalidate
@@ -16,6 +17,11 @@ const BRAND_TOKEN_ALIASES: Record<string, string[]> = {
   neuralbeat: ['remasterfreddy'],
   remasterfreddy: ['neuralbeat'],
 };
+
+function getBrandDisplayName(brandId?: string) {
+  const normalized = `${brandId || ''}`.trim().toLowerCase();
+  return BRANDS.find((brand) => brand.id.toLowerCase() === normalized)?.name || brandId || 'ukjent brand';
+}
 
 function sanitizeToken(raw: unknown): string {
   if (typeof raw !== 'string') return '';
@@ -221,8 +227,9 @@ async function runWithTokenFallback<T>(
     }
   }
   if (options?.requireBrandToken && brandId && lastErr && isInvalidGrantError(lastErr)) {
+    const brandName = getBrandDisplayName(brandId);
     throw new Error(
-      `YouTube-token for brand "${brandId}" er utløpt eller tilbakekalt (invalid_grant). Koble Re-Master Freddy til Google/YouTube på nytt: /api/oauth/google?brand=${brandId}`,
+      `YouTube-token for ${brandName} (${brandId}) er utløpt eller tilbakekalt (invalid_grant). Koble dette brandet til Google/YouTube på nytt: /api/oauth/google?brand=${brandId}&return_to=/settings?tab=sosiale-medier`,
     );
   }
   throw lastErr ?? new Error('All YouTube refresh tokens failed with invalid_grant');
