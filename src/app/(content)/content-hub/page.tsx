@@ -542,8 +542,27 @@ export default function ContentHubPage() {
     const supabase = getSupabase();
     if (!supabase) return;
     await supabase.from("content_publications").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
-    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    setDrafts((prev) => (
+      status === "archived"
+        ? prev.filter((d) => d.id !== id)
+        : prev.map((d) => d.id === id ? { ...d, status } : d)
+    ));
   }, []);
+
+  const deleteDraft = useCallback(async (id: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const confirmed = window.confirm("Slette denne saken permanent? Dette kan ikke angres.");
+    if (!confirmed) return;
+    const { error } = await supabase.from("content_publications").delete().eq("id", id);
+    if (error) {
+      alert(error.message || "Kunne ikke slette saken.");
+      return;
+    }
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    if (publishDraft?.id === id) setPublishDraft(null);
+    if (websiteDraft?.id === id) setWebsiteDraft(null);
+  }, [publishDraft?.id, websiteDraft?.id]);
 
   const saveDraftEdit = useCallback(async (id: string) => {
     const supabase = getSupabase();
@@ -2234,6 +2253,38 @@ export default function ContentHubPage() {
                                 >
                                   <RefreshCw size={12} className="mr-1" /> Prøv igjen
                                 </Button>
+                              )}
+                              {draft.status === "published" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs justify-start"
+                                    onClick={() => {
+                                      setEditingDraft(draft.id);
+                                      setEditTitle(draft.title || "");
+                                      setEditDescription(draft.description || "");
+                                    }}
+                                  >
+                                    <Edit3 size={12} className="mr-1" /> Rediger
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs justify-start"
+                                    onClick={() => updateDraftStatus(draft.id, "draft")}
+                                  >
+                                    <RefreshCw size={12} className="mr-1" /> Trekk tilbake
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-xs justify-start text-red-400 hover:text-red-300"
+                                    onClick={() => deleteDraft(draft.id)}
+                                  >
+                                    <Trash2 size={12} className="mr-1" /> Slett
+                                  </Button>
+                                </>
                               )}
                             </div>
                           )}
