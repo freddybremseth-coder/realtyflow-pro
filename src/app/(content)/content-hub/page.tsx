@@ -425,6 +425,9 @@ export default function ContentHubPage() {
   const hasWebsiteTargetForBrand = useCallback((brandId: string) => {
     return websiteTargets.some((target) => target.id === brandId);
   }, [websiteTargets]);
+  const getWebsiteTargetForBrand = useCallback((brandId: string) => {
+    return websiteTargets.find((target) => target.id === brandId) || null;
+  }, [websiteTargets]);
 
   // -------------------------------------------------------------------
   // Customer-PDF state — pick several properties matching a buyer's
@@ -541,40 +544,108 @@ export default function ContentHubPage() {
   const updateDraftStatus = useCallback(async (id: string, status: string) => {
     const supabase = getSupabase();
     if (!supabase) return;
-    await supabase.from("content_publications").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    const draft = drafts.find((item) => item.id === id);
+    const isWebsitePublication = draft?.content_type?.startsWith("website_");
+    const target = draft ? getWebsiteTargetForBrand(draft.brand_id) : null;
+
+    if (draft && isWebsitePublication && target?.publishingMode === "direct" && status === "draft") {
+      const res = await fetch("/api/website-cms/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "unpublish",
+          publication_id: id,
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke trekke tilbake nettsideartikkelen." }));
+      if (!res.ok || !data.success) {
+        alert(data.error || "Kunne ikke trekke tilbake nettsideartikkelen.");
+        return;
+      }
+    } else {
+      await supabase.from("content_publications").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    }
+
     setDrafts((prev) => (
       status === "archived"
         ? prev.filter((d) => d.id !== id)
         : prev.map((d) => d.id === id ? { ...d, status } : d)
     ));
-  }, []);
+  }, [drafts, getWebsiteTargetForBrand]);
 
   const deleteDraft = useCallback(async (id: string) => {
     const supabase = getSupabase();
     if (!supabase) return;
     const confirmed = window.confirm("Slette denne saken permanent? Dette kan ikke angres.");
     if (!confirmed) return;
-    const { error } = await supabase.from("content_publications").delete().eq("id", id);
-    if (error) {
-      alert(error.message || "Kunne ikke slette saken.");
-      return;
+    const draft = drafts.find((item) => item.id === id);
+    const isWebsitePublication = draft?.content_type?.startsWith("website_");
+    const target = draft ? getWebsiteTargetForBrand(draft.brand_id) : null;
+
+    let handledByWebsiteManager = false;
+    if (draft && isWebsitePublication && target?.publishingMode === "direct") {
+      const res = await fetch("/api/website-cms/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          publication_id: id,
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke slette nettsideartikkelen." }));
+      if (!res.ok || !data.success) {
+        alert(data.error || "Kunne ikke slette nettsideartikkelen.");
+        return;
+      }
+      handledByWebsiteManager = true;
+    }
+
+    if (!handledByWebsiteManager) {
+      const { error } = await supabase.from("content_publications").delete().eq("id", id);
+      if (error) {
+        alert(error.message || "Kunne ikke slette saken.");
+        return;
+      }
     }
     setDrafts((prev) => prev.filter((d) => d.id !== id));
     if (publishDraft?.id === id) setPublishDraft(null);
     if (websiteDraft?.id === id) setWebsiteDraft(null);
-  }, [publishDraft?.id, websiteDraft?.id]);
+  }, [drafts, getWebsiteTargetForBrand, publishDraft?.id, websiteDraft?.id]);
 
   const saveDraftEdit = useCallback(async (id: string) => {
     const supabase = getSupabase();
     if (!supabase) return;
-    await supabase.from("content_publications").update({
-      title: editTitle,
-      description: editDescription,
-      updated_at: new Date().toISOString(),
-    }).eq("id", id);
+    const draft = drafts.find((item) => item.id === id);
+    const isWebsitePublication = draft?.content_type?.startsWith("website_");
+    const target = draft ? getWebsiteTargetForBrand(draft.brand_id) : null;
+
+    if (draft && isWebsitePublication && target?.publishingMode === "direct" && draft.status === "published") {
+      const res = await fetch("/api/website-cms/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          publication_id: id,
+          title: editTitle,
+          content: editDescription,
+        }),
+      });
+      const data = await res.json().catch(() => ({ error: "Kunne ikke oppdatere nettsideartikkelen." }));
+      if (!res.ok || !data.success) {
+        alert(data.error || "Kunne ikke oppdatere nettsideartikkelen.");
+        return;
+      }
+    } else {
+      await supabase.from("content_publications").update({
+        title: editTitle,
+        description: editDescription,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+    }
+
     setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, title: editTitle, description: editDescription } : d));
     setEditingDraft(null);
-  }, [editTitle, editDescription]);
+  }, [drafts, editTitle, editDescription, getWebsiteTargetForBrand]);
 
   // Normalize brand IDs for matching (zen-eco, zeneco, zen-eco-homes → zeneco)
   const normalizeBrand = useCallback((b: string) => {
