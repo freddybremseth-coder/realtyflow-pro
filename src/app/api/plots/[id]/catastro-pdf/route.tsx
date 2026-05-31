@@ -81,6 +81,12 @@ function formatEuro(value?: number) {
   return new Intl.NumberFormat("nb-NO", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }
 
+function formatArea(value?: string | number | null) {
+  const numeric = Number(value || 0);
+  if (!numeric || numeric <= 0 || Number.isNaN(numeric)) return "Ikke oppgitt";
+  return `${numeric.toLocaleString("nb-NO")} m²`;
+}
+
 function formatKm(value: number) {
   return `${value.toFixed(value < 10 ? 1 : 0).replace(".", ",")} km`;
 }
@@ -198,6 +204,7 @@ async function imageUrlToDataUri(url: string) {
     const response = await fetch(url, { headers: { "User-Agent": "RealtyFlow-Catastro-PDF/1.0" } });
     if (!response.ok) return "";
     const contentType = response.headers.get("content-type") || "image/png";
+    if (!contentType.startsWith("image/")) return "";
     const arrayBuffer = await response.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString("base64");
     return `data:${contentType};base64,${base64}`;
@@ -226,7 +233,21 @@ async function getCatastroMapImageDataUri(lat?: number, lng?: number) {
   return imageUrlToDataUri(url.toString());
 }
 
-async function getOverviewMapImageDataUri(lat?: number, lng?: number) {
+async function getGoogleStaticMapImageDataUri(lat?: number, lng?: number) {
+  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!lat || !lng || !key) return "";
+  const url = new URL("https://maps.googleapis.com/maps/api/staticmap");
+  url.searchParams.set("center", `${lat},${lng}`);
+  url.searchParams.set("zoom", "12");
+  url.searchParams.set("size", "900x520");
+  url.searchParams.set("scale", "2");
+  url.searchParams.set("maptype", "roadmap");
+  url.searchParams.set("markers", `color:red|label:T|${lat},${lng}`);
+  url.searchParams.set("key", key);
+  return imageUrlToDataUri(url.toString());
+}
+
+async function getOpenStreetMapStaticImageDataUri(lat?: number, lng?: number) {
   if (!lat || !lng) return "";
   const url = new URL("https://staticmap.openstreetmap.de/staticmap.php");
   url.searchParams.set("center", `${lat},${lng}`);
@@ -235,6 +256,10 @@ async function getOverviewMapImageDataUri(lat?: number, lng?: number) {
   url.searchParams.set("maptype", "mapnik");
   url.searchParams.set("markers", `${lat},${lng},red-pushpin`);
   return imageUrlToDataUri(url.toString());
+}
+
+async function getOverviewMapImageDataUri(lat?: number, lng?: number) {
+  return (await getGoogleStaticMapImageDataUri(lat, lng)) || (await getOpenStreetMapStaticImageDataUri(lat, lng));
 }
 
 const styles = StyleSheet.create({
@@ -257,6 +282,9 @@ const styles = StyleSheet.create({
   notes: { fontSize: 10, lineHeight: 1.45, color: "#344054" },
   map: { width: "100%", height: 230, objectFit: "cover", borderRadius: 8, border: "1px solid #d0d5dd" },
   overviewMap: { width: "100%", height: 245, objectFit: "cover", borderRadius: 8, border: "1px solid #d0d5dd" },
+  mapPlaceholder: { height: 118, padding: 16, borderRadius: 8, border: "1px solid #d0d5dd", backgroundColor: "#f7f8f9" },
+  placeholderTitle: { fontSize: 12, fontWeight: 700, color: "#101828", marginBottom: 5 },
+  placeholderText: { fontSize: 9.5, color: "#667085", lineHeight: 1.45 },
   smallText: { fontSize: 9, lineHeight: 1.35, color: "#667085", marginTop: 8 },
   footer: { marginTop: 12, paddingTop: 10, borderTop: "1px solid #eaecf0", color: "#667085", fontSize: 8.5, lineHeight: 1.4 },
   link: { color: "#175cd3", fontSize: 9.5, lineHeight: 1.4 },
@@ -320,8 +348,8 @@ function PlotPdf({
           <View style={styles.body}>
             <View style={styles.grid}>
               <View style={styles.card}><Text style={styles.cardLabel}>Pris</Text><Text style={styles.cardValue}>{formatEuro(plot.price)}</Text></View>
-              <View style={styles.card}><Text style={styles.cardLabel}>Areal RealtyFlow</Text><Text style={styles.cardValue}>{Number(plot.area || 0).toLocaleString("nb-NO")} m²</Text></View>
-              <View style={styles.cardLast}><Text style={styles.cardLabel}>Areal Catastro</Text><Text style={styles.cardValue}>{details.area ? `${Number(details.area).toLocaleString("nb-NO")} m²` : "Ikke oppgitt"}</Text></View>
+              <View style={styles.card}><Text style={styles.cardLabel}>Areal RealtyFlow</Text><Text style={styles.cardValue}>{formatArea(plot.area)}</Text></View>
+              <View style={styles.cardLast}><Text style={styles.cardLabel}>Areal Catastro</Text><Text style={styles.cardValue}>{formatArea(details.area)}</Text></View>
             </View>
             <DataRow label="Beliggenhet" value={plot.location || details.location} />
             <DataRow label="Municipio" value={details.municipality || plot.municipality} />
@@ -330,17 +358,24 @@ function PlotPdf({
           </View>
         </View>
 
-        {overviewMapImage && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Område og beliggenhet</Text>
-            <View style={styles.body}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Område og beliggenhet</Text>
+          <View style={styles.body}>
+            {overviewMapImage ? (
               <Image src={overviewMapImage} style={styles.overviewMap} />
-              <DistanceCards items={distances} />
-              {mapsUrl && <Text style={styles.link}>Google Maps: {mapsUrl}</Text>}
-              <Text style={styles.smallText}>Avstander er estimert i luftlinje og brukes kun som rask orientering for kunde.</Text>
-            </View>
+            ) : (
+              <View style={styles.mapPlaceholder}>
+                <Text style={styles.placeholderTitle}>Områdekart kunne ikke hentes automatisk</Text>
+                <Text style={styles.placeholderText}>
+                  Bruk Google Maps-lenken under for å åpne tomten direkte i kart. Dersom du legger inn GOOGLE_MAPS_API_KEY i Vercel, kan rapporten generere et Google Static Maps-bilde her.
+                </Text>
+              </View>
+            )}
+            <DistanceCards items={distances} />
+            {mapsUrl && <Text style={styles.link}>Google Maps: {mapsUrl}</Text>}
+            <Text style={styles.smallText}>Avstander er estimert i luftlinje og brukes kun som rask orientering for kunde.</Text>
           </View>
-        )}
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Datos descriptivos del inmueble</Text>
