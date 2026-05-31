@@ -1,5 +1,5 @@
-import TomtebaseCatastroWorkspace from "@/components/tomtebase/TomtebaseCatastroWorkspace";
+import TomtebaseCatastroWorkspaceV2 from "@/components/tomtebase/TomtebaseCatastroWorkspaceV2";
 
 export default function TomtebasePage() {
-  return <TomtebaseCatastroWorkspace />;
+  return <TomtebaseCatastroWorkspaceV2 />;
 }
