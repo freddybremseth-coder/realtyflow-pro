@@ -27,6 +27,11 @@ type CatastroDetails = {
   rawError?: string;
 };
 
+type DistanceItem = {
+  label: string;
+  km: number;
+};
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -76,10 +81,19 @@ function formatEuro(value?: number) {
   return new Intl.NumberFormat("nb-NO", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 }
 
+function formatKm(value: number) {
+  return `${value.toFixed(value < 10 ? 1 : 0).replace(".", ",")} km`;
+}
+
 function catastroUrl(refcat?: string) {
   const url = new URL(CATASTRO_MAP_URL);
   if (refcat) url.searchParams.set("refcat", refcat);
   return url.toString();
+}
+
+function googleMapsUrl(lat?: number, lng?: number) {
+  if (!lat || !lng) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
 function coordinateLookupUrl(lat: number, lng: number) {
@@ -96,6 +110,42 @@ function detailsLookupUrl(refcat: string) {
   url.searchParams.set("Municipio", "");
   url.searchParams.set("RC", refcat);
   return url.toString();
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const r = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const referencePoints = [
+  { label: "Alicante flyplass", lat: 38.2822, lng: -0.5582, type: "airport" },
+  { label: "Murcia flyplass", lat: 37.8030, lng: -1.1250, type: "airport" },
+  { label: "Valencia flyplass", lat: 39.4893, lng: -0.4816, type: "airport" },
+  { label: "Alicante sentrum", lat: 38.3452, lng: -0.4810, type: "city" },
+  { label: "Elche sentrum", lat: 38.2699, lng: -0.7126, type: "city" },
+  { label: "Benidorm sentrum", lat: 38.5411, lng: -0.1225, type: "city" },
+  { label: "Torrevieja sentrum", lat: 37.9847, lng: -0.6822, type: "city" },
+  { label: "Playa del Postiguet", lat: 38.3456, lng: -0.4760, type: "beach" },
+  { label: "Playa de Arenales del Sol", lat: 38.2479, lng: -0.5184, type: "beach" },
+  { label: "Playa de San Juan", lat: 38.3688, lng: -0.4105, type: "beach" },
+  { label: "Playa de Levante, Benidorm", lat: 38.5369, lng: -0.1114, type: "beach" },
+];
+
+function getDistanceItems(lat?: number, lng?: number): DistanceItem[] {
+  if (!lat || !lng) return [];
+  const grouped = ["airport", "city", "beach"].map((type) => {
+    return referencePoints
+      .filter((point) => point.type === type)
+      .map((point) => ({ label: point.label, km: haversineKm(lat, lng, point.lat, point.lng) }))
+      .sort((a, b) => a.km - b.km)[0];
+  });
+  return grouped.filter(Boolean).slice(0, 3) as DistanceItem[];
 }
 
 async function discoverRefFromCoordinates(lat?: number, lng?: number) {
@@ -143,9 +193,22 @@ async function fetchCatastroDetails(refcat?: string): Promise<CatastroDetails> {
   }
 }
 
-async function getMapImageDataUri(lat?: number, lng?: number) {
+async function imageUrlToDataUri(url: string) {
+  try {
+    const response = await fetch(url, { headers: { "User-Agent": "RealtyFlow-Catastro-PDF/1.0" } });
+    if (!response.ok) return "";
+    const contentType = response.headers.get("content-type") || "image/png";
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return "";
+  }
+}
+
+async function getCatastroMapImageDataUri(lat?: number, lng?: number) {
   if (!lat || !lng) return "";
-  const delta = 0.004;
+  const delta = 0.0012;
   const bbox = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
   const url = new URL(CATASTRO_WMS_URL);
   url.searchParams.set("SERVICE", "WMS");
@@ -160,15 +223,18 @@ async function getMapImageDataUri(lat?: number, lng?: number) {
   url.searchParams.set("FORMAT", "image/png");
   url.searchParams.set("TRANSPARENT", "FALSE");
 
-  try {
-    const response = await fetch(url.toString());
-    if (!response.ok) return "";
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
-    return `data:image/png;base64,${base64}`;
-  } catch {
-    return "";
-  }
+  return imageUrlToDataUri(url.toString());
+}
+
+async function getOverviewMapImageDataUri(lat?: number, lng?: number) {
+  if (!lat || !lng) return "";
+  const url = new URL("https://staticmap.openstreetmap.de/staticmap.php");
+  url.searchParams.set("center", `${lat},${lng}`);
+  url.searchParams.set("zoom", "11");
+  url.searchParams.set("size", "900x520");
+  url.searchParams.set("maptype", "mapnik");
+  url.searchParams.set("markers", `${lat},${lng},red-pushpin`);
+  return imageUrlToDataUri(url.toString());
 }
 
 const styles = StyleSheet.create({
@@ -183,14 +249,17 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", borderBottom: "1px solid #edf0f3", paddingVertical: 7 },
   label: { width: "35%", color: "#667085", fontSize: 10 },
   value: { width: "65%", color: "#101828", fontSize: 10.5, fontWeight: 600, lineHeight: 1.35 },
-  grid: { flexDirection: "row", gap: 10 },
-  card: { flex: 1, backgroundColor: "#f7f8f9", padding: 12, borderRadius: 8 },
+  grid: { flexDirection: "row" },
+  card: { flex: 1, backgroundColor: "#f7f8f9", padding: 12, borderRadius: 8, marginRight: 8 },
+  cardLast: { flex: 1, backgroundColor: "#f7f8f9", padding: 12, borderRadius: 8 },
   cardLabel: { fontSize: 8, color: "#667085", textTransform: "uppercase", marginBottom: 5 },
   cardValue: { fontSize: 13, color: "#101828", fontWeight: 700 },
   notes: { fontSize: 10, lineHeight: 1.45, color: "#344054" },
   map: { width: "100%", height: 230, objectFit: "cover", borderRadius: 8, border: "1px solid #d0d5dd" },
+  overviewMap: { width: "100%", height: 245, objectFit: "cover", borderRadius: 8, border: "1px solid #d0d5dd" },
+  smallText: { fontSize: 9, lineHeight: 1.35, color: "#667085", marginTop: 8 },
   footer: { marginTop: 12, paddingTop: 10, borderTop: "1px solid #eaecf0", color: "#667085", fontSize: 8.5, lineHeight: 1.4 },
-  link: { color: "#175cd3", fontSize: 9.5 },
+  link: { color: "#175cd3", fontSize: 9.5, lineHeight: 1.4 },
 });
 
 function DataRow({ label, value }: { label: string; value?: string | number | null }) {
@@ -202,9 +271,38 @@ function DataRow({ label, value }: { label: string; value?: string | number | nu
   );
 }
 
-function PlotPdf({ plot, details, mapImage }: { plot: PlotRecord; details: CatastroDetails; mapImage?: string }) {
+function DistanceCards({ items }: { items: DistanceItem[] }) {
+  if (!items.length) return null;
+  return (
+    <View style={[styles.grid, { marginTop: 10 }]}>
+      {items.map((item, index) => (
+        <View key={item.label} style={index === items.length - 1 ? styles.cardLast : styles.card}>
+          <Text style={styles.cardLabel}>{item.label}</Text>
+          <Text style={styles.cardValue}>{formatKm(item.km)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function PlotPdf({
+  plot,
+  details,
+  catastroMapImage,
+  overviewMapImage,
+  distances,
+}: {
+  plot: PlotRecord;
+  details: CatastroDetails;
+  catastroMapImage?: string;
+  overviewMapImage?: string;
+  distances: DistanceItem[];
+}) {
   const refcat = details.refcat || extractRef(plot);
   const generatedAt = new Date().toLocaleDateString("nb-NO");
+  const lat = Number(plot.lat || 0);
+  const lng = Number(plot.lng || 0);
+  const mapsUrl = googleMapsUrl(lat, lng);
 
   return (
     <Document>
@@ -218,48 +316,59 @@ function PlotPdf({ plot, details, mapImage }: { plot: PlotRecord; details: Catas
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Datos descriptivos del inmueble</Text>
-          <View style={styles.body}>
-            <DataRow label="Referencia catastral" value={refcat} />
-            <DataRow label="Localización" value={details.location || plot.location} />
-            <DataRow label="Municipio" value={details.municipality || plot.municipality} />
-            <DataRow label="Provincia" value={details.province} />
-            <DataRow label="Polígono" value={details.polygon || polygonFromRef(refcat || "")} />
-            <DataRow label="Parcela" value={details.parcel || parcelFromRef(refcat || "")} />
-            <DataRow label="Uso principal" value={details.use} />
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Información comercial</Text>
+          <Text style={styles.sectionTitle}>Nøkkelinformasjon</Text>
           <View style={styles.body}>
             <View style={styles.grid}>
               <View style={styles.card}><Text style={styles.cardLabel}>Pris</Text><Text style={styles.cardValue}>{formatEuro(plot.price)}</Text></View>
               <View style={styles.card}><Text style={styles.cardLabel}>Areal RealtyFlow</Text><Text style={styles.cardValue}>{Number(plot.area || 0).toLocaleString("nb-NO")} m²</Text></View>
-              <View style={styles.card}><Text style={styles.cardLabel}>Areal Catastro</Text><Text style={styles.cardValue}>{details.area ? `${Number(details.area).toLocaleString("nb-NO")} m²` : "Ikke oppgitt"}</Text></View>
+              <View style={styles.cardLast}><Text style={styles.cardLabel}>Areal Catastro</Text><Text style={styles.cardValue}>{details.area ? `${Number(details.area).toLocaleString("nb-NO")} m²` : "Ikke oppgitt"}</Text></View>
             </View>
+            <DataRow label="Beliggenhet" value={plot.location || details.location} />
+            <DataRow label="Municipio" value={details.municipality || plot.municipality} />
             <DataRow label="Regulering" value={plot.zoning} />
-            <DataRow label="Vann" value={plot.water ? "Ja" : "Ikke oppgitt"} />
-            <DataRow label="Strøm" value={plot.electricity ? "Ja" : "Ikke oppgitt"} />
-            <DataRow label="Veiadgang" value={plot.road_access || plot.roadAccess ? "Ja" : "Ikke oppgitt"} />
-            <DataRow label="GPS" value={plot.lat && plot.lng ? `${plot.lat}, ${plot.lng}` : "Ikke oppgitt"} />
+            <DataRow label="GPS" value={lat && lng ? `${lat}, ${lng}` : "Ikke oppgitt"} />
           </View>
         </View>
 
-        {mapImage && (
+        {overviewMapImage && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Parcela catastral / kartutsnitt</Text>
+            <Text style={styles.sectionTitle}>Område og beliggenhet</Text>
             <View style={styles.body}>
-              <Image src={mapImage} style={styles.map} />
+              <Image src={overviewMapImage} style={styles.overviewMap} />
+              <DistanceCards items={distances} />
+              {mapsUrl && <Text style={styles.link}>Google Maps: {mapsUrl}</Text>}
+              <Text style={styles.smallText}>Avstander er estimert i luftlinje og brukes kun som rask orientering for kunde.</Text>
             </View>
           </View>
         )}
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Datos descriptivos del inmueble</Text>
+          <View style={styles.body}>
+            <DataRow label="Referencia catastral" value={refcat} />
+            <DataRow label="Localización" value={details.location || plot.location} />
+            <DataRow label="Provincia" value={details.province} />
+            <DataRow label="Polígono" value={details.polygon || polygonFromRef(refcat || "")} />
+            <DataRow label="Parcela" value={details.parcel || parcelFromRef(refcat || "")} />
+            <DataRow label="Uso principal" value={details.use} />
+            <DataRow label="Vann" value={plot.water ? "Ja" : "Ikke oppgitt"} />
+            <DataRow label="Strøm" value={plot.electricity ? "Ja" : "Ikke oppgitt"} />
+            <DataRow label="Veiadgang" value={plot.road_access || plot.roadAccess ? "Ja" : "Ikke oppgitt"} />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Catastro og parcelutsnitt</Text>
+          <View style={styles.body}>
+            {catastroMapImage ? <Image src={catastroMapImage} style={styles.map} /> : <Text style={styles.notes}>Catastro-kartutsnitt kunne ikke hentes automatisk.</Text>}
+            <Text style={styles.link}>Catastro: {catastroUrl(refcat)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notater</Text>
           <View style={styles.body}>
             <Text style={styles.notes}>{plot.notes || "Ingen notater registrert."}</Text>
-            <Text style={styles.link}>{catastroUrl(refcat)}</Text>
           </View>
         </View>
 
@@ -278,12 +387,27 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   const { data: plot, error } = await supabase.from("land_plots").select("*").eq("id", params.id).single();
   if (error || !plot) return NextResponse.json({ error: error?.message || "Plot not found" }, { status: 404 });
 
+  const lat = Number(plot.lat || 0);
+  const lng = Number(plot.lng || 0);
   let refcat = extractRef(plot);
-  if (!refcat) refcat = await discoverRefFromCoordinates(Number(plot.lat), Number(plot.lng));
+  if (!refcat) refcat = await discoverRefFromCoordinates(lat, lng);
 
   const details = await fetchCatastroDetails(refcat);
-  const mapImage = await getMapImageDataUri(Number(plot.lat), Number(plot.lng));
-  const pdfBlob = await pdf(<PlotPdf plot={plot} details={{ ...details, refcat: details.refcat || refcat }} mapImage={mapImage} />).toBlob();
+  const [catastroMapImage, overviewMapImage] = await Promise.all([
+    getCatastroMapImageDataUri(lat, lng),
+    getOverviewMapImageDataUri(lat, lng),
+  ]);
+  const distances = getDistanceItems(lat, lng);
+
+  const pdfBlob = await pdf(
+    <PlotPdf
+      plot={plot}
+      details={{ ...details, refcat: details.refcat || refcat }}
+      catastroMapImage={catastroMapImage}
+      overviewMapImage={overviewMapImage}
+      distances={distances}
+    />,
+  ).toBlob();
   const arrayBuffer = await pdfBlob.arrayBuffer();
   const filename = `${String(plot.plot_number || "tomt").replace(/[^a-z0-9-_]+/gi, "-")}-catastro.pdf`;
 
