@@ -11,6 +11,7 @@ import {
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, KeyRound, LogOut, Menu, X, BookOpen,
+  Database,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -18,7 +19,7 @@ const iconMap: Record<string, React.ElementType> = {
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
-  BookOpen,
+  BookOpen, Database,
 };
 
 const sectionLabels: Record<string, string> = {

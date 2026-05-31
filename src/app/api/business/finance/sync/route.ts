@@ -42,6 +42,28 @@ function getOliviaSupabase() {
   return createClient(url, key) as any;
 }
 
+function getOliviaSchemaCandidates() {
+  const configured = String(process.env.OLIVIA_SCHEMA || "").trim();
+  const ordered = [configured, "olivia", "public"].filter(Boolean);
+  return Array.from(new Set(ordered));
+}
+
+async function queryOliviaTable(
+  supabase: any,
+  table: string,
+  options?: { orderBy?: string; ascending?: boolean },
+) {
+  let lastError: any = null;
+  for (const schemaName of getOliviaSchemaCandidates()) {
+    let query = supabase.schema(schemaName).from(table).select("*");
+    if (options?.orderBy) query = query.order(options.orderBy, { ascending: options.ascending ?? false });
+    const { data, error } = await query;
+    if (!error) return { data: data || [], error: null, schema: schemaName };
+    lastError = error;
+  }
+  return { data: [], error: lastError, schema: null };
+}
+
 function eventDate(value?: unknown) {
   if (!value) return new Date().toISOString().slice(0, 10);
   return String(value).slice(0, 10);
@@ -57,9 +79,9 @@ async function loadOliviaEvents() {
   if (!supabase) return { events: [] as FinancialEvent[], warnings: ["Olivia Supabase not configured"] };
 
   const [harvestRes, expenseRes, subsidyRes] = await Promise.allSettled([
-    supabase.from("harvest_records").select("*").order("harvest_date", { ascending: false }),
-    supabase.from("farm_expenses").select("*").order("date", { ascending: false }),
-    supabase.from("subsidy_income").select("*").order("date", { ascending: false }),
+    queryOliviaTable(supabase, "harvest_records", { orderBy: "harvest_date", ascending: false }),
+    queryOliviaTable(supabase, "farm_expenses", { orderBy: "date", ascending: false }),
+    queryOliviaTable(supabase, "subsidy_income", { orderBy: "date", ascending: false }),
   ]);
 
   const warnings: string[] = [];
