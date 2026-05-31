@@ -202,10 +202,9 @@ export function classifyPropertyForBrands(property: RealtyRecord): MatchResult[]
 
 export function plotMatchesBrand(plot: RealtyRecord, rawBrandId: string): boolean {
   const brandId = normalizeBrandId(rawBrandId);
-  if (brandId !== "pinosoecolife") return true;
+  if (brandId === "pinosoecolife") return true;
+  if (brandId === "zeneco") return true;
 
-  const text = collectSearchText(plot);
-  const locationMatch = includesAny(text, PINOSO_LOCATION_TERMS);
-  const coastalMatch = includesAny(text, COASTAL_EXCLUSION_TERMS);
-  return Boolean(locationMatch && !coastalMatch);
+  const explicitBrand = plot.brand_id || plot.brand ? normalizeBrandId(String(plot.brand_id || plot.brand || "")) : "";
+  return !explicitBrand || explicitBrand === brandId;
 }
