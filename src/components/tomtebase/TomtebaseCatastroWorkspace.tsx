@@ -118,24 +118,48 @@ function matchesPolygonParcel(plot: LandPlot, polygon: string, parcel: string) {
     (!selectedParcel || normalizeNumber(getParcel(plot)) === selectedParcel || ref.includes(selectedParcel.padStart(5, "0")));
 }
 
+function ButtonLink({ href, children, className = "", variant }: { href: string; children: React.ReactNode; className?: string; variant?: "outline" }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="block">
+      <Button variant={variant} className={`w-full ${className}`}>{children}</Button>
+    </a>
+  );
+}
+
 function LeafletMap({ plots, selectedId, onSelectPlot, catastroEnabled }: { plots: LandPlot[]; selectedId: string | null; onSelectPlot: (plot: LandPlot) => void; catastroEnabled: boolean }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const catastroLayerRef = useRef<any>(null);
+  const lastFitKeyRef = useRef<string>("");
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
+
     const initMap = async () => {
       const L = (await import("leaflet")).default;
       const map = L.map(mapRef.current!, { center: [38.4, -0.9], zoom: 10, scrollWheelZoom: true });
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "OpenStreetMap", maxZoom: 19 }).addTo(map);
-      const catastro = L.tileLayer.wms(CATASTRO_WMS_URL, { layers: "Catastro", format: "image/png", transparent: true, version: "1.1.1", attribution: "Dirección General del Catastro", maxZoom: 22 });
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "OpenStreetMap",
+        maxZoom: 19,
+      }).addTo(map);
+
+      const catastro = L.tileLayer.wms(CATASTRO_WMS_URL, {
+        layers: "Catastro",
+        format: "image/png",
+        transparent: true,
+        version: "1.1.1",
+        attribution: "Dirección General del Catastro",
+        maxZoom: 22,
+      });
+
       catastroLayerRef.current = catastro;
       if (catastroEnabled) catastro.addTo(map);
       mapInstanceRef.current = map;
       setTimeout(() => map.invalidateSize(), 100);
     };
+
     initMap();
     return () => {
       if (mapInstanceRef.current) {
@@ -155,42 +179,60 @@ function LeafletMap({ plots, selectedId, onSelectPlot, catastroEnabled }: { plot
 
   useEffect(() => {
     if (!mapInstanceRef.current) return;
+
     const updateMarkers = async () => {
       const L = (await import("leaflet")).default;
       const map = mapInstanceRef.current;
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
-      const validPlots = plots.filter((plot) => Number(plot.lat) && Number(plot.lng));
+
+      const validPlots = plots.filter((plot) => Number.isFinite(plot.lat) && Number.isFinite(plot.lng) && plot.lat !== 0 && plot.lng !== 0);
+
       validPlots.forEach((plot) => {
         const isSelected = plot.id === selectedId;
-        const zoneColor = zoningConfig[plot.zoning]?.color || "#94a3b8";
+        const zoneColor = zoningConfig[plot.zoning]?.color || "#22d3ee";
         const refcat = getCatastroRef(plot);
-        const icon = L.divIcon({
-          className: "custom-marker",
-          html: `<div style="width:${isSelected ? 30 : 22}px;height:${isSelected ? 30 : 22}px;background:${zoneColor};border:3px solid ${isSelected ? "#fff" : "rgba(0,0,0,.35)"};border-radius:999px;box-shadow:0 8px 22px rgba(0,0,0,.35);cursor:pointer;"></div>`,
-          iconSize: [isSelected ? 30 : 22, isSelected ? 30 : 22],
-          iconAnchor: [isSelected ? 15 : 11, isSelected ? 15 : 11],
-        });
-        const marker = L.marker([plot.lat, plot.lng], { icon }).addTo(map);
-        marker.bindTooltip(`<strong>${plot.plotNumber}</strong><br>${plot.location || plot.municipality}<br>${plot.area.toLocaleString("nb-NO")} m² · ${formatEuro(plot.price)}${refcat ? `<br>Catastro: ${refcat}` : ""}<br><em>Klikk for å se tomtedetaljer</em>`, { direction: "top", offset: [0, -12], sticky: true });
+        const radius = isSelected ? 11 : 7;
+
+        const marker = L.circleMarker([plot.lat, plot.lng], {
+          radius,
+          color: isSelected ? "#ffffff" : "#0f172a",
+          weight: isSelected ? 4 : 2,
+          fillColor: zoneColor,
+          fillOpacity: 0.95,
+          opacity: 1,
+          pane: "markerPane",
+        }).addTo(map);
+
+        marker.bringToFront();
+        marker.bindTooltip(
+          `<strong>${plot.plotNumber}</strong><br>${plot.location || plot.municipality}<br>${plot.area.toLocaleString("nb-NO")} m² · ${formatEuro(plot.price)}${refcat ? `<br>Catastro: ${refcat}` : ""}<br><em>Klikk for å se tomtedetaljer</em>`,
+          { direction: "top", sticky: true },
+        );
         marker.on("click", () => onSelectPlot(plot));
         markersRef.current.push(marker);
       });
-      if (validPlots.length > 0) {
+
+      const fitKey = validPlots.map((plot) => plot.id).join("|");
+      if (validPlots.length > 0 && fitKey !== lastFitKeyRef.current) {
         const bounds = L.latLngBounds(validPlots.map((plot) => [plot.lat, plot.lng]));
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        lastFitKeyRef.current = fitKey;
       }
     };
+
     updateMarkers();
   }, [plots, selectedId, onSelectPlot]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
     const selected = plots.find((plot) => plot.id === selectedId);
-    if (map && selected?.lat && selected?.lng) map.flyTo([selected.lat, selected.lng], Math.max(map.getZoom(), 16), { duration: 0.6 });
+    if (map && selected?.lat && selected?.lng) {
+      map.flyTo([selected.lat, selected.lng], Math.max(map.getZoom(), 14), { duration: 0.45 });
+    }
   }, [selectedId, plots]);
 
-  return <div ref={mapRef} className="w-full h-full rounded-lg" />;
+  return <div ref={mapRef} className="w-full h-full min-h-[600px] rounded-lg" />;
 }
 
 function InfoTile({ label, value }: { label: string; value: string }) {
@@ -202,7 +244,41 @@ function SelectedPlotPanel({ plot, onClose }: { plot: LandPlot | null; onClose: 
   const refcat = getCatastroRef(plot);
   const polygon = getPolygon(plot);
   const parcel = getParcel(plot);
-  return <Card className="border-cyan-500/30 shadow-xl shadow-cyan-950/20"><CardContent className="p-4 space-y-4"><div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold text-white text-xl leading-tight">{plot.plotNumber}</h2><p className="text-xs text-slate-400 flex items-center gap-1 mt-1"><MapPin size={12} />{plot.location || plot.municipality || "Ukjent sted"}</p></div><button onClick={onClose} className="text-slate-400 hover:text-white">×</button></div><Badge className={zoningConfig[plot.zoning]?.className || zoningConfig.rustico.className}>{zoningConfig[plot.zoning]?.label || plot.zoning}</Badge><div className="grid grid-cols-2 gap-3"><div className="bg-slate-950/60 rounded-xl p-3 text-center border border-slate-700/70"><p className="text-xl font-bold text-white">{plot.area.toLocaleString("nb-NO")}</p><p className="text-xs text-slate-400">m²</p></div><div className="bg-slate-950/60 rounded-xl p-3 text-center border border-slate-700/70"><p className="text-xl font-bold text-emerald-400">{formatEuro(plot.price)}</p><p className="text-xs text-slate-400">Pris</p></div></div><div className="grid grid-cols-2 gap-2 text-xs"><InfoTile label="Polígono" value={polygon || "Ikke oppgitt"} /><InfoTile label="Parcela" value={parcel || "Ikke oppgitt"} /><InfoTile label="Vann" value={plot.water ? "Ja" : "Ikke oppgitt"} /><InfoTile label="Strøm" value={plot.electricity ? "Ja" : "Ikke oppgitt"} /><InfoTile label="Vei" value={plot.roadAccess ? "Ja" : "Ikke oppgitt"} /><InfoTile label="GPS" value={plot.lat && plot.lng ? `${plot.lat.toFixed(5)}, ${plot.lng.toFixed(5)}` : "Ikke oppgitt"} /></div>{refcat && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3"><p className="text-[10px] uppercase tracking-wide text-amber-300 font-bold">Referencia catastral</p><p className="text-sm text-white font-mono mt-1 break-all">{refcat}</p></div>}{plot.notes && <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-line">{plot.notes}</p>}<div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-700/60"><Button asChild className="w-full bg-cyan-600 hover:bg-cyan-500"><a href={`/api/plots/${plot.id}/catastro-pdf`} target="_blank" rel="noopener noreferrer"><Download size={15} className="mr-2" />Last ned PDF med all info</a></Button>{refcat ? <Button asChild variant="outline" className="w-full"><a href={catastroUrl(refcat)} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} className="mr-2" />Åpne i Catastro</a></Button> : <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-400">Ingen Catastro-referanse funnet. Legg inn Cadastral Number i notater for presis Catastro-lenke og PDF.</div>}<Button asChild variant="outline" className="w-full"><a href={`https://www.google.com/maps?q=${plot.lat},${plot.lng}`} target="_blank" rel="noopener noreferrer"><MapPin size={15} className="mr-2" />Åpne GPS i Google Maps</a></Button></div><div className="pt-3 border-t border-slate-700/60"><PlotAssetsPanel plotId={plot.id} /></div></CardContent></Card>;
+
+  return (
+    <Card className="border-cyan-500/30 shadow-xl shadow-cyan-950/20">
+      <CardContent className="p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-white text-xl leading-tight">{plot.plotNumber}</h2>
+            <p className="text-xs text-slate-400 flex items-center gap-1 mt-1"><MapPin size={12} />{plot.location || plot.municipality || "Ukjent sted"}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">×</button>
+        </div>
+        <Badge className={zoningConfig[plot.zoning]?.className || zoningConfig.rustico.className}>{zoningConfig[plot.zoning]?.label || plot.zoning}</Badge>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-slate-950/60 rounded-xl p-3 text-center border border-slate-700/70"><p className="text-xl font-bold text-white">{plot.area.toLocaleString("nb-NO")}</p><p className="text-xs text-slate-400">m²</p></div>
+          <div className="bg-slate-950/60 rounded-xl p-3 text-center border border-slate-700/70"><p className="text-xl font-bold text-emerald-400">{formatEuro(plot.price)}</p><p className="text-xs text-slate-400">Pris</p></div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <InfoTile label="Polígono" value={polygon || "Ikke oppgitt"} />
+          <InfoTile label="Parcela" value={parcel || "Ikke oppgitt"} />
+          <InfoTile label="Vann" value={plot.water ? "Ja" : "Ikke oppgitt"} />
+          <InfoTile label="Strøm" value={plot.electricity ? "Ja" : "Ikke oppgitt"} />
+          <InfoTile label="Vei" value={plot.roadAccess ? "Ja" : "Ikke oppgitt"} />
+          <InfoTile label="GPS" value={plot.lat && plot.lng ? `${plot.lat.toFixed(5)}, ${plot.lng.toFixed(5)}` : "Ikke oppgitt"} />
+        </div>
+        {refcat && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3"><p className="text-[10px] uppercase tracking-wide text-amber-300 font-bold">Referencia catastral</p><p className="text-sm text-white font-mono mt-1 break-all">{refcat}</p></div>}
+        {plot.notes && <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-line">{plot.notes}</p>}
+        <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-700/60">
+          <ButtonLink href={`/api/plots/${plot.id}/catastro-pdf`} className="bg-cyan-600 hover:bg-cyan-500"><Download size={15} className="mr-2" />Last ned PDF med all info</ButtonLink>
+          {refcat ? <ButtonLink href={catastroUrl(refcat)} variant="outline"><ExternalLink size={15} className="mr-2" />Åpne i Catastro</ButtonLink> : <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-400">Ingen Catastro-referanse funnet. Legg inn Cadastral Number i notater for presis Catastro-lenke og PDF.</div>}
+          <ButtonLink href={`https://www.google.com/maps?q=${plot.lat},${plot.lng}`} variant="outline"><MapPin size={15} className="mr-2" />Åpne GPS i Google Maps</ButtonLink>
+        </div>
+        <div className="pt-3 border-t border-slate-700/60"><PlotAssetsPanel plotId={plot.id} /></div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function StatCard({ label, value, tone = "text-white" }: { label: string; value: string | number; tone?: string }) {
@@ -239,5 +315,5 @@ export default function TomtebaseCatastroWorkspace() {
   const handleSelectPlot = useCallback((plot: LandPlot) => setSelectedPlot(plot), []);
   const stats = { total: filtered.length, withCatastro: filtered.filter((plot) => getCatastroRef(plot) || getPolygon(plot) || getParcel(plot)).length, withCoords: filtered.filter((plot) => plot.lat && plot.lng).length };
 
-  return <div className="space-y-4"><div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3"><div><h1 className="text-2xl font-bold text-white">Tomtebase</h1><p className="text-sm text-slate-400">Klikk på en markør for å se riktig tomt til høyre, åpne Catastro eller laste ned PDF-rapport.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" onClick={() => setShowFilters((value) => !value)}><Filter size={14} className="mr-1.5" />{showFilters ? "Skjul filter" : "Vis filter"}</Button><Button variant={catastroEnabled ? "default" : "outline"} size="sm" onClick={() => setCatastroEnabled((value) => !value)}><Navigation size={14} className="mr-1.5" />{catastroEnabled ? "Catastro på" : "Catastro av"}</Button>{selectedPlot && <Button asChild size="sm" className="bg-cyan-600 hover:bg-cyan-500"><a href={`/api/plots/${selectedPlot.id}/catastro-pdf`} target="_blank" rel="noopener noreferrer"><Download size={14} className="mr-1.5" />PDF valgt tomt</a></Button>}</div></div><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><StatCard label="Tomter vist" value={stats.total} /><StatCard label="Catastro / polígono / parcela" value={stats.withCatastro} tone="text-amber-300" /><StatCard label="Med kartposisjon" value={stats.withCoords} tone="text-cyan-300" /><StatCard label="Kartlag" value="WMS" tone="text-emerald-300" /></div><Card><CardContent className="p-3 space-y-3"><div className="grid grid-cols-1 md:grid-cols-5 gap-3"><div className="relative md:col-span-2"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input placeholder="Søk tomt, sted, Catastro-ref eller notat" value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" /></div><Input placeholder="Polígono" value={filterPolygon} onChange={(e) => setFilterPolygon(e.target.value)} inputMode="numeric" /><Input placeholder="Parcela" value={filterParcel} onChange={(e) => setFilterParcel(e.target.value)} inputMode="numeric" /><select value={filterZoning} onChange={(e) => setFilterZoning(e.target.value)} className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"><option value="alle">Alle reguleringer</option><option value="rustico">Rústico</option><option value="urbano">Urbano</option><option value="urbanizable">Urbanizable</option></select></div>{showFilters && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-700"><Input type="number" placeholder="Min areal m²" value={filterMinArea} onChange={(e) => setFilterMinArea(e.target.value)} /><Input type="number" placeholder="Maks pris €" value={filterMaxPrice} onChange={(e) => setFilterMaxPrice(e.target.value)} /></div>}</CardContent></Card><div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4" style={{ minHeight: "680px" }}><div className="rounded-xl overflow-hidden border border-slate-700 relative bg-slate-900">{loading ? <div className="h-full min-h-[600px] flex items-center justify-center text-slate-400">Laster tomter...</div> : <LeafletMap plots={filtered} selectedId={selectedPlot?.id || null} onSelectPlot={handleSelectPlot} catastroEnabled={catastroEnabled} />}</div><div className="space-y-3 xl:max-h-[680px] xl:overflow-y-auto pr-1"><SelectedPlotPanel plot={selectedPlot} onClose={() => setSelectedPlot(null)} /><Card><CardContent className="p-3"><p className="text-xs font-semibold text-slate-400 mb-2">Tomter i filteret</p><div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">{filtered.map((plot) => <button key={plot.id} onClick={() => setSelectedPlot(plot)} className={`w-full text-left p-2.5 rounded-lg border transition-all ${selectedPlot?.id === plot.id ? "border-cyan-500/60 bg-slate-800" : "border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/60"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-medium text-white truncate">{plot.plotNumber}</span><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zoningConfig[plot.zoning]?.color || "#94a3b8" }} /></div><div className="flex items-center justify-between gap-2 mt-0.5"><span className="text-xs text-slate-400 truncate">{plot.location || plot.municipality}</span><span className="text-xs text-emerald-400 flex-shrink-0">{formatEuro(plot.price)}</span></div></button>)}</div></CardContent></Card></div></div></div>;
+  return <div className="space-y-4"><div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3"><div><h1 className="text-2xl font-bold text-white">Tomtebase</h1><p className="text-sm text-slate-400">Klikk på en markør for å se riktig tomt til høyre, åpne Catastro eller laste ned PDF-rapport.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" onClick={() => setShowFilters((value) => !value)}><Filter size={14} className="mr-1.5" />{showFilters ? "Skjul filter" : "Vis filter"}</Button><Button variant={catastroEnabled ? "default" : "outline"} size="sm" onClick={() => setCatastroEnabled((value) => !value)}><Navigation size={14} className="mr-1.5" />{catastroEnabled ? "Catastro på" : "Catastro av"}</Button>{selectedPlot && <a href={`/api/plots/${selectedPlot.id}/catastro-pdf`} target="_blank" rel="noopener noreferrer"><Button size="sm" className="bg-cyan-600 hover:bg-cyan-500"><Download size={14} className="mr-1.5" />PDF valgt tomt</Button></a>}</div></div><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><StatCard label="Tomter vist" value={stats.total} /><StatCard label="Catastro / polígono / parcela" value={stats.withCatastro} tone="text-amber-300" /><StatCard label="Med kartposisjon" value={stats.withCoords} tone="text-cyan-300" /><StatCard label="Kartlag" value="WMS" tone="text-emerald-300" /></div><Card><CardContent className="p-3 space-y-3"><div className="grid grid-cols-1 md:grid-cols-5 gap-3"><div className="relative md:col-span-2"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input placeholder="Søk tomt, sted, Catastro-ref eller notat" value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" /></div><Input placeholder="Polígono" value={filterPolygon} onChange={(e) => setFilterPolygon(e.target.value)} inputMode="numeric" /><Input placeholder="Parcela" value={filterParcel} onChange={(e) => setFilterParcel(e.target.value)} inputMode="numeric" /><select value={filterZoning} onChange={(e) => setFilterZoning(e.target.value)} className="h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"><option value="alle">Alle reguleringer</option><option value="rustico">Rústico</option><option value="urbano">Urbano</option><option value="urbanizable">Urbanizable</option></select></div>{showFilters && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-700"><Input type="number" placeholder="Min areal m²" value={filterMinArea} onChange={(e) => setFilterMinArea(e.target.value)} /><Input type="number" placeholder="Maks pris €" value={filterMaxPrice} onChange={(e) => setFilterMaxPrice(e.target.value)} /></div>}</CardContent></Card><div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4" style={{ minHeight: "680px" }}><div className="rounded-xl overflow-hidden border border-slate-700 relative bg-slate-900 min-h-[600px]">{loading ? <div className="h-full min-h-[600px] flex items-center justify-center text-slate-400">Laster tomter...</div> : <LeafletMap plots={filtered} selectedId={selectedPlot?.id || null} onSelectPlot={handleSelectPlot} catastroEnabled={catastroEnabled} />}</div><div className="space-y-3 xl:max-h-[680px] xl:overflow-y-auto pr-1"><SelectedPlotPanel plot={selectedPlot} onClose={() => setSelectedPlot(null)} /><Card><CardContent className="p-3"><p className="text-xs font-semibold text-slate-400 mb-2">Tomter i filteret</p><div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">{filtered.map((plot) => <button key={plot.id} onClick={() => setSelectedPlot(plot)} className={`w-full text-left p-2.5 rounded-lg border transition-all ${selectedPlot?.id === plot.id ? "border-cyan-500/60 bg-slate-800" : "border-slate-700/50 bg-slate-900/50 hover:bg-slate-800/60"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-medium text-white truncate">{plot.plotNumber}</span><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: zoningConfig[plot.zoning]?.color || "#94a3b8" }} /></div><div className="flex items-center justify-between gap-2 mt-0.5"><span className="text-xs text-slate-400 truncate">{plot.location || plot.municipality}</span><span className="text-xs text-emerald-400 flex-shrink-0">{formatEuro(plot.price)}</span></div></button>)}</div></CardContent></Card></div></div></div>;
 }
