@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
+import { isLikelyBot } from "@/lib/spam";
 import {
   getSequenceForBrand,
   renderTemplate,
@@ -41,26 +42,6 @@ export interface NurtureRunResult {
   failed: number;
   skipped: number;
   flaggedSpam: number;
-}
-
-/**
- * Grov bot-/spamdeteksjon for å beskytte avsenderomdømmet.
- * Fanger de vanligste søppelinnsendingene:
- *  - Gmail "punktum-triks": mange punktum i lokaldelen (gmail ignorerer dem).
- *  - Tilfeldige navn uten mellomrom med mange store bokstaver midt i ordet.
- * Konservativt – ekte navn som "Maria" eller "David Brooks" går klar.
- */
-export function isLikelyBot(name: string, email: string): boolean {
-  const local = String(email || "").split("@")[0] || "";
-  const dotCount = (local.match(/\./g) || []).length;
-  if (dotCount >= 4) return true;
-
-  const trimmed = String(name || "").trim();
-  if (!trimmed.includes(" ") && trimmed.length >= 12) {
-    const midUppercase = (trimmed.slice(1).match(/[A-Z]/g) || []).length;
-    if (midUppercase >= 3) return true;
-  }
-  return false;
 }
 
 function daysSince(iso: string | null | undefined): number {

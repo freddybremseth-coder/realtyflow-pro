@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isLikelyBot } from "@/lib/spam";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -56,6 +57,12 @@ export async function POST(request: NextRequest) {
   const email = cleanText(body.email, 200).toLowerCase();
   if (!name || !email || !isEmail(email)) {
     return NextResponse.json({ error: "Valid name and email are required" }, { status: 400 });
+  }
+
+  // Avvis åpenbar bot/spam stille (samme svar som honeypot), så søppel ikke
+  // havner i CRM og forurenser nurture/avsenderomdømme.
+  if (isLikelyBot(name, email)) {
+    return NextResponse.json({ success: true, accepted: false });
   }
 
   const supabase = getSupabase();
