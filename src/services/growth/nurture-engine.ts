@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 import { isLikelyBot } from "@/lib/spam";
 import {
-  getSequenceForBrand,
+  resolveSequence,
   renderTemplate,
   type NurtureSequence,
   type NurtureStep,
@@ -90,7 +90,7 @@ export async function runNurtureCycle(
   let query = supabase
     .from("contacts")
     .select(
-      "id, name, email, brand_id, brand, pipeline_status, nurture_status, property_interest, created_at, nurture_enrolled_at"
+      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, property_interest, created_at, nurture_enrolled_at"
     )
     .order("created_at", { ascending: false })
     .limit(Math.max(limit, 1000));
@@ -105,7 +105,7 @@ export async function runNurtureCycle(
 
   for (const contact of contacts || []) {
     const cBrand: string = contact.brand_id || contact.brand || "";
-    const sequence = getSequenceForBrand(cBrand);
+    const sequence = resolveSequence(cBrand, contact.source);
     if (!sequence) continue;
 
     const status = String(contact.pipeline_status || "").toUpperCase();

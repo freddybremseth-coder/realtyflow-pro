@@ -213,10 +213,200 @@ PS: Vil du ikke høre mer, svar "stopp" – helt greit.`,
   ],
 };
 
+// Tysk velkomst-sekvens (leads fra /de med source=zenecohomes-de).
+const ZENECO_DE: NurtureSequence = {
+  id: "zeneco-buyer-de-v1",
+  brandId: "zeneco",
+  brandName: "Zen Eco Homes",
+  advisor: "Freddy Bremseth",
+  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  mode: "welcome",
+  eligibleStatuses: ["NEW", "CONTACT", ""],
+  steps: [
+    {
+      id: "welcome",
+      dayOffset: 0,
+      channel: "email",
+      subject: "Danke, {name} – ein Rat, bevor Sie Immobilien ansehen",
+      text: `Hallo {name},
+
+danke für Ihre Anfrage zu einer Immobilie in Spanien. Ich bin Freddy Bremseth, Immobilienberater an der Costa Blanca, und habe vielen internationalen Käufern bei genau diesem Schritt geholfen.
+
+Das Wichtigste zuerst: Die meisten sehen sich Immobilien an, bevor sie wissen, WO sie wohnen möchten. Die Costa Blanca ist groß – manche Orte passen besser zu manchen Menschen als zu anderen, je nach Persönlichkeit und gewünschtem Alltag. Ich kenne die Regionen gut und helfe Ihnen gern, herauszufinden, was zu Ihnen passt.
+
+Antworten Sie einfach kurz: Was ist Ihnen am wichtigsten? Ich lese jede Antwort selbst.
+
+Herzliche Grüße
+Freddy Bremseth
+{brand}`,
+    },
+    {
+      id: "right-place",
+      dayOffset: 2,
+      channel: "email",
+      subject: "{name}, so finden Sie den richtigen Ort",
+      text: `Hallo {name},
+
+hier ist, was den meisten hilft, den richtigen Ort zu finden – nicht nur eine schöne Immobilie:
+
+1. Welchen Alltag wünschen Sie sich? Ruhiges Dorf oder lebendige Küstenstadt?
+2. Was zählt am meisten – Sonne und Aussicht, Strandnähe oder Ruhe und Grün?
+3. Praktisch: Nähe zum Flughafen, gute Ärzte und ein internationales Umfeld.
+4. Ganzjährig oder als Ferienimmobilie? Das ändert, welche Regionen passen.
+5. Was das Budget tatsächlich bietet – das variiert stark je Region.
+
+Möchten Sie, dass ich passende Orte für Sie vorschlage? Antworten Sie mit ein paar Stichworten zu Ihren Wünschen.
+
+Freddy
+{brand}`,
+    },
+    {
+      id: "matching",
+      dayOffset: 5,
+      channel: "email",
+      subject: "{name}, machen wir den Traum konkret",
+      text: `Hallo {name},
+
+wenn wir die passende Region kennen, wird der Rest leicht. Dann finden wir die Immobilie, die zu Ihrem Leben passt – nicht nur ein schönes Inserat.
+
+Erzählen Sie mir kurz von Ihrem Vorhaben – Budget, und ob es Ferienimmobilie, Vermietung oder Hauptwohnsitz sein soll – dann erstelle ich eine kurze, persönliche Auswahl. Keine 200 Anzeigen, sondern die 3–5, die wirklich passen.
+
+Antworten Sie einfach auf diese E-Mail.
+
+Freddy
+{brand}`,
+    },
+    {
+      id: "book-call",
+      dayOffset: 9,
+      channel: "email",
+      subject: "{name}, ein kurzes Gespräch für mehr Klarheit",
+      text: `Hallo {name},
+
+der einfachste nächste Schritt ist ein kurzes, freundliches Videogespräch. In 15 Minuten erhalten Sie:
+– Vorschläge für Regionen, die zu Ihnen passen
+– ein realistisches Bild, was Ihr Budget dort ermöglicht
+– Antworten auf Ihre wichtigsten Fragen – ganz unverbindlich
+
+Buchen Sie einen passenden Termin hier: {booking_url}
+Oder antworten Sie mit ein paar Zeitvorschlägen.
+
+Herzliche Grüße
+Freddy Bremseth
+{brand}`,
+    },
+  ],
+};
+
+// Engelsk velkomst-sekvens (leads fra /en med source=zenecohomes-en).
+const ZENECO_EN: NurtureSequence = {
+  id: "zeneco-buyer-en-v1",
+  brandId: "zeneco",
+  brandName: "Zen Eco Homes",
+  advisor: "Freddy Bremseth",
+  bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  mode: "welcome",
+  eligibleStatuses: ["NEW", "CONTACT", ""],
+  steps: [
+    {
+      id: "welcome",
+      dayOffset: 0,
+      channel: "email",
+      subject: "Thanks, {name} – one tip before you look at properties",
+      text: `Hi {name},
+
+thank you for your enquiry about property in Spain. I'm Freddy Bremseth, a property advisor on the Costa Blanca, and I've helped many international buyers through exactly this step.
+
+First things first: most people look at properties before they know WHERE they want to live. The Costa Blanca is large – some places suit some people better than others, depending on personality and the daily life you want. I know the areas well and would be glad to help you work out what fits you.
+
+Just reply with one thing: what matters most to you right now? I read every reply myself.
+
+Kind regards
+Freddy Bremseth
+{brand}`,
+    },
+    {
+      id: "right-place",
+      dayOffset: 2,
+      channel: "email",
+      subject: "{name}, how to find the right place to live",
+      text: `Hi {name},
+
+here's what helps most people find the right place – not just a nice property:
+
+1. What daily life do you dream of? A quiet village or a lively coastal town?
+2. What matters most – sun and views, walking distance to the beach, or green and calm?
+3. Practical: proximity to the airport, good healthcare and an international community.
+4. Year-round or a holiday home? That changes which areas truly fit.
+5. What your budget actually buys – it varies a lot by area.
+
+Would you like me to suggest areas that fit you? Reply with a few words about what you have in mind.
+
+Freddy
+{brand}`,
+    },
+    {
+      id: "matching",
+      dayOffset: 5,
+      channel: "email",
+      subject: "{name}, let's make the dream concrete",
+      text: `Hi {name},
+
+once we know the right area, the rest is the fun part. Then we find the property that matches the life you picture – not just a nice listing.
+
+Tell me a little about your plan – budget, and whether it's a holiday home, rental or main residence – and I'll put together a short, personal shortlist. Not 200 listings, but the 3–5 that actually fit.
+
+Just reply to this email.
+
+Freddy
+{brand}`,
+    },
+    {
+      id: "book-call",
+      dayOffset: 9,
+      channel: "email",
+      subject: "{name}, a 15-minute call to clarify your plans",
+      text: `Hi {name},
+
+the easiest next step is a short, friendly video call. In 15 minutes you'll get:
+– suggestions for areas that fit you
+– a realistic picture of what your budget allows there
+– answers to your main questions – with no obligation
+
+Book a time that suits you here: {booking_url}
+Or reply with a couple of times that work for you.
+
+Kind regards
+Freddy Bremseth
+{brand}`,
+    },
+  ],
+};
+
+// Registry: nøkkel er brandId eller "brandId:locale" for språk-spesifikke sekvenser.
 export const NURTURE_SEQUENCES: Record<string, NurtureSequence> = {
   zeneco: ZENECO,
+  "zeneco:de": ZENECO_DE,
+  "zeneco:en": ZENECO_EN,
   soleada: SOLEADA_REACTIVATION,
 };
+
+/** Utled språk fra lead-kilden (zenecohomes-de / -en, ellers norsk). */
+export function localeFromSource(source?: string | null): "no" | "de" | "en" {
+  const s = String(source || "").toLowerCase();
+  if (/(^|[-_:])de$/.test(s) || s.includes("zenecohomes-de")) return "de";
+  if (/(^|[-_:])en$/.test(s) || s.includes("zenecohomes-en")) return "en";
+  return "no";
+}
+
+/** Velg sekvens ut fra merke + kilde (språk). Faller tilbake til merkets standard. */
+export function resolveSequence(brandId: string, source?: string | null): NurtureSequence | null {
+  const locale = localeFromSource(source);
+  if (locale !== "no" && NURTURE_SEQUENCES[`${brandId}:${locale}`]) {
+    return NURTURE_SEQUENCES[`${brandId}:${locale}`];
+  }
+  return NURTURE_SEQUENCES[brandId] || null;
+}
 
 export function getSequenceForBrand(brandId: string): NurtureSequence | null {
   return NURTURE_SEQUENCES[brandId] || null;
