@@ -20,16 +20,27 @@ export async function sendBrandEmail(
     subject: string;
     bodyText: string;
     bodyHtml?: string;
+    /** Eksplisitt avsenderadresse når et merke har flere konfig-rader
+     *  (f.eks. pinosoecolife: freddy@ vs post@). */
+    fromAddress?: string;
   }
 ): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
-  const { data: config, error: configError } = await supabase
+  // Duplikat-trygt: et merke kan ha flere aktive konfig-rader. Velg eksplisitt
+  // adresse hvis oppgitt, ellers den sist oppdaterte (aldri .single()-krasj).
+  let configQuery = supabase
     .from("brand_email_configs")
     .select("*")
     .eq("brand_id", params.brandId)
-    .eq("is_active", true)
-    .single();
+    .eq("is_active", true);
+  if (params.fromAddress) {
+    configQuery = configQuery.eq("email_address", params.fromAddress);
+  }
+  const { data: configs } = await configQuery
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  const config = configs?.[0];
 
-  if (configError || !config) {
+  if (!config) {
     return { success: false, skipped: true, error: "No active email config for brand" };
   }
 

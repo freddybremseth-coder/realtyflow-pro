@@ -29,6 +29,9 @@ export interface NurtureSequence {
   brandName: string;
   advisor: string;
   bookingUrl: string;
+  /** Eksplisitt avsenderadresse når merket har flere e-postkonfig-rader.
+   *  F.eks. pinosoecolife skal sende som freddy@pinosoecolife.com. */
+  fromAddress?: string;
   /**
    * welcome      = ferske leads, tidsregning fra created_at (lead nettopp inn).
    * reactivation = sovende leads, tidsregning fra innmeldingsdato (nurture_enrolled_at),

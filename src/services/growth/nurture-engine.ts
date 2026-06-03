@@ -222,6 +222,7 @@ export async function runNurtureCycle(
       to: [contact.email],
       subject,
       bodyText,
+      fromAddress: sequence.fromAddress,
     });
 
     if (send.success) {
