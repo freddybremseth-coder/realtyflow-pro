@@ -41,6 +41,27 @@ export interface NurtureRunResult {
   sent: number;
   failed: number;
   skipped: number;
+  flaggedSpam: number;
+}
+
+/**
+ * Grov bot-/spamdeteksjon for å beskytte avsenderomdømmet.
+ * Fanger de vanligste søppelinnsendingene:
+ *  - Gmail "punktum-triks": mange punktum i lokaldelen (gmail ignorerer dem).
+ *  - Tilfeldige navn uten mellomrom med mange store bokstaver midt i ordet.
+ * Konservativt – ekte navn som "Maria" eller "David Brooks" går klar.
+ */
+export function isLikelyBot(name: string, email: string): boolean {
+  const local = String(email || "").split("@")[0] || "";
+  const dotCount = (local.match(/\./g) || []).length;
+  if (dotCount >= 4) return true;
+
+  const trimmed = String(name || "").trim();
+  if (!trimmed.includes(" ") && trimmed.length >= 12) {
+    const midUppercase = (trimmed.slice(1).match(/[A-Z]/g) || []).length;
+    if (midUppercase >= 3) return true;
+  }
+  return false;
 }
 
 function daysSince(iso: string | null | undefined): number {
@@ -78,6 +99,7 @@ export async function runNurtureCycle(
     sent: 0,
     failed: 0,
     skipped: 0,
+    flaggedSpam: 0,
   };
 
   const cutoff = new Date(Date.now() - maxAgeDays * DAY_MS).toISOString();
@@ -109,6 +131,21 @@ export async function runNurtureCycle(
 
     if (!hasEmail) continue;
     if (nurtureStatus !== "active") continue;
+
+    // Beskytt avsenderomdømmet: aldri send til åpenbar spam/bot.
+    if (isLikelyBot(contact.name, contact.email)) {
+      result.flaggedSpam += 1;
+      if (!dryRun) {
+        // Sett på pause (ikke slett) så de kan gjennomgås, og ikke
+        // prosesseres på nytt hver kjøring.
+        await supabase
+          .from("contacts")
+          .update({ nurture_status: "paused" })
+          .eq("id", contact.id);
+      }
+      continue;
+    }
+
     if (!NURTURE_ELIGIBLE_STATUSES.has(status)) {
       // Leadet har gått videre – fullfør nurture stille.
       if (!dryRun) {
