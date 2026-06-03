@@ -26,16 +26,30 @@ export interface NurtureStep {
 export interface NurtureSequence {
   id: string;
   brandId: string;
+  brandName: string;
   advisor: string;
   bookingUrl: string;
+  /**
+   * welcome      = ferske leads, tidsregning fra created_at (lead nettopp inn).
+   * reactivation = sovende leads, tidsregning fra innmeldingsdato (nurture_enrolled_at),
+   *                med daglig innmeldingstak slik at vi ikke masse-sender.
+   */
+  mode: "welcome" | "reactivation";
+  /** Hvilke pipeline-statuser som er kvalifisert for denne sekvensen. */
+  eligibleStatuses: string[];
+  /** Kun reactivation: maks antall NYE innmeldinger per kjøring (daglig bolk). */
+  maxNewEnrollmentsPerRun?: number;
   steps: NurtureStep[];
 }
 
 const ZENECO: NurtureSequence = {
   id: "zeneco-buyer-v1",
   brandId: "zeneco",
+  brandName: "Zen Eco Homes",
   advisor: "Freddy Bremseth",
   bookingUrl: "https://appointment.chatgenius.pro/zeneco",
+  mode: "welcome",
+  eligibleStatuses: ["NEW", "CONTACT", ""],
   steps: [
     {
       id: "welcome",
@@ -113,8 +127,81 @@ Freddy Bremseth
   ],
 };
 
+// Reaktivering av sovende Soleada-leads (kom inn ~april 2026, fikk lite oppfølging).
+// Varsom: starter tidsregning ved innmelding, maks 25 nye per dag, tydelig avmelding.
+const SOLEADA_REACTIVATION: NurtureSequence = {
+  id: "soleada-reactivation-v1",
+  brandId: "soleada",
+  brandName: "Soleada",
+  advisor: "Freddy Bremseth",
+  bookingUrl: "https://appointment.chatgenius.pro/freddy",
+  mode: "reactivation",
+  eligibleStatuses: ["NEW", ""],
+  maxNewEnrollmentsPerRun: 25,
+  steps: [
+    {
+      id: "reconnect",
+      dayOffset: 0,
+      channel: "email",
+      subject: "{name}, er du fortsatt på jakt etter bolig i Spania?",
+      text: `Hei {name},
+
+Vi var i kontakt om bolig i Spania tidligere i år, og jeg vil bare høre: er det fortsatt aktuelt for deg?
+
+Jeg er Freddy Bremseth, norsk eiendomsrådgiver på Costa Blanca. Hvis du fortsatt vurderer, hjelper jeg deg gjerne videre – helt uforpliktende. Markedet har beveget seg litt siden sist, så jeg kan gi deg et oppdatert bilde.
+
+Svar gjerne kort på denne e-posten: er du fortsatt interessert, eller skal jeg legge saken til side?
+
+Vennlig hilsen
+Freddy Bremseth
+{brand}
+
+PS: Er det ikke aktuelt lenger, svar "stopp", så hører du ikke mer fra meg.`,
+    },
+    {
+      id: "right-place",
+      dayOffset: 3,
+      channel: "email",
+      subject: "{name}, det de fleste glemmer før de kjøper i Spania",
+      text: `Hei {name},
+
+Hvis du fortsatt går med tanken om bolig i Spania, er her det jeg skulle ønske flere tenkte på først:
+
+De fleste ser på boliger de liker før de vet HVOR de skal bo. Costa Blanca er stort, og noen steder passer bedre for noen enn for andre – det kommer an på hvem du er og hva slags hverdag du ønsker deg. Jeg er lokalkjent i de fleste områdene og har skrevet egne dokumenter om dem.
+
+Vil du at jeg ser på hva som passer for nettopp deg? Svar med litt om hva du ser for deg, så kommer jeg med forslag.
+
+Freddy
+{brand}
+
+PS: Vil du ikke ha flere e-poster, svar "stopp".`,
+    },
+    {
+      id: "soft-call",
+      dayOffset: 7,
+      channel: "email",
+      subject: "En kort prat, {name}?",
+      text: `Hei {name},
+
+Jeg lover å ikke mase – dette er siste e-post fra meg hvis jeg ikke hører noe.
+
+Skulle du fortsatt være nysgjerrig på bolig i Spania, tar vi gjerne en kort, uforpliktende videoprat. På 15 minutter får du et ærlig bilde av hva som er mulig for deg akkurat nå.
+
+Book et tidspunkt her: {booking_url}
+Eller svar på denne e-posten med et par tidspunkt som passer.
+
+Vennlig hilsen
+Freddy Bremseth
+{brand}
+
+PS: Vil du ikke høre mer, svar "stopp" – helt greit.`,
+    },
+  ],
+};
+
 export const NURTURE_SEQUENCES: Record<string, NurtureSequence> = {
   zeneco: ZENECO,
+  soleada: SOLEADA_REACTIVATION,
 };
 
 export function getSequenceForBrand(brandId: string): NurtureSequence | null {

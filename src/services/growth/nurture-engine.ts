@@ -7,9 +7,8 @@ import {
   type NurtureStep,
 } from "@/services/growth/nurture-sequences";
 
-// Kun helt ferske leads skal nurtures. Så snart de er kvalifisert / i samtale /
-// tapt, tar mennesket over og automatikken stopper.
-const NURTURE_ELIGIBLE_STATUSES = new Set(["NEW", "CONTACT", ""]);
+// Hvilke statuser som nurtures avgjøres per sekvens (sequence.eligibleStatuses).
+// Så snart et lead er kvalifisert / i samtale / vunnet / tapt, tar mennesket over.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -102,16 +101,16 @@ export async function runNurtureCycle(
     flaggedSpam: 0,
   };
 
-  const cutoff = new Date(Date.now() - maxAgeDays * DAY_MS).toISOString();
+  // Teller nye innmeldinger per sekvens denne kjøringen (for daglig bolk-tak).
+  const enrollCounts = new Map<string, number>();
 
   let query = supabase
     .from("contacts")
     .select(
       "id, name, email, brand_id, brand, pipeline_status, nurture_status, property_interest, created_at, nurture_enrolled_at"
     )
-    .gte("created_at", cutoff)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(Math.max(limit, 1000));
 
   if (brandId) query = query.eq("brand_id", brandId);
 
@@ -146,7 +145,7 @@ export async function runNurtureCycle(
       continue;
     }
 
-    if (!NURTURE_ELIGIBLE_STATUSES.has(status)) {
+    if (!sequence.eligibleStatuses.includes(status)) {
       // Leadet har gått videre – fullfør nurture stille.
       if (!dryRun) {
         await supabase
@@ -156,6 +155,10 @@ export async function runNurtureCycle(
       }
       continue;
     }
+
+    // Velkomst-modus gjelder kun ferske leads; gamle leads i et velkomst-merke
+    // skal ikke plutselig få en "velkommen". Reaktivering har ingen aldersgrense.
+    if (sequence.mode === "welcome" && daysSince(contact.created_at) > maxAgeDays) continue;
 
     result.eligible += 1;
 
@@ -169,16 +172,37 @@ export async function runNurtureCycle(
 
     const sentStepIds = new Set((events || []).map((e) => String(e.step_id)));
 
-    const anchor = contact.nurture_enrolled_at || contact.created_at;
+    const isReactivation = sequence.mode === "reactivation";
+    const alreadyEnrolled = !!contact.nurture_enrolled_at;
+    const isNewEnrollment = isReactivation && !alreadyEnrolled;
+
+    // Daglig bolk-tak: begrens antall NYE reaktiverings-innmeldinger per kjøring.
+    if (isNewEnrollment) {
+      const cap = sequence.maxNewEnrollmentsPerRun ?? 25;
+      if ((enrollCounts.get(sequence.id) ?? 0) >= cap) {
+        result.skipped += 1;
+        continue;
+      }
+    }
+
+    // Anker for tidsregning: reaktivering teller fra innmelding (nå for nye),
+    // velkomst teller fra da leadet kom inn (created_at).
+    const anchor = isReactivation
+      ? contact.nurture_enrolled_at || new Date().toISOString()
+      : contact.nurture_enrolled_at || contact.created_at;
     const ageDays = daysSince(anchor);
     const step = nextDueStep(sequence, ageDays, sentStepIds);
     if (!step) continue;
+
+    if (isNewEnrollment) {
+      enrollCounts.set(sequence.id, (enrollCounts.get(sequence.id) ?? 0) + 1);
+    }
 
     const ctx = {
       name: contact.name,
       area: contact.property_interest,
       advisor: sequence.advisor,
-      brand: cBrand === "zeneco" ? "Zen Eco Homes" : cBrand,
+      brand: sequence.brandName,
       booking_url: sequence.bookingUrl,
     };
     const subject = renderTemplate(step.subject, ctx);
@@ -196,7 +220,6 @@ export async function runNurtureCycle(
 
     if (dryRun) {
       result.planned.push(planned);
-      result.skipped += 1;
       await supabase.from("lead_nurture_events").insert({
         contact_id: contact.id,
         brand_id: cBrand,
@@ -243,7 +266,7 @@ export async function runNurtureCycle(
         .update({
           last_ai_followup: now,
           nurture_sequence: sequence.id,
-          nurture_enrolled_at: contact.nurture_enrolled_at || contact.created_at,
+          nurture_enrolled_at: contact.nurture_enrolled_at || anchor,
           pipeline_status: status === "NEW" || status === "" ? "CONTACT" : status,
           updated_at: now,
         })
