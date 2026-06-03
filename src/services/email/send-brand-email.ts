@@ -1,0 +1,75 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { decryptPassword } from "@/services/email/crypto";
+import { sendEmail, type SmtpConfig } from "@/services/email/smtp-sender";
+
+/**
+ * Send a one-off email from a brand's configured SMTP account.
+ *
+ * Encapsulates the same brand_email_configs lookup + decrypt + sendEmail +
+ * email_messages logging that /api/email/send does, so the nurture engine
+ * (and any future automation) can send without duplicating that logic.
+ *
+ * Returns { skipped: true } when the brand has no active SMTP config — the
+ * caller decides whether that is an error or just a no-op.
+ */
+export async function sendBrandEmail(
+  supabase: SupabaseClient,
+  params: {
+    brandId: string;
+    to: string[];
+    subject: string;
+    bodyText: string;
+    bodyHtml?: string;
+  }
+): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
+  const { data: config, error: configError } = await supabase
+    .from("brand_email_configs")
+    .select("*")
+    .eq("brand_id", params.brandId)
+    .eq("is_active", true)
+    .single();
+
+  if (configError || !config) {
+    return { success: false, skipped: true, error: "No active email config for brand" };
+  }
+
+  const password = decryptPassword(config.encrypted_password, config.encryption_iv);
+
+  const smtpConfig: SmtpConfig = {
+    host: config.smtp_host,
+    port: config.smtp_port,
+    secure: config.smtp_secure,
+    email: config.email_address,
+    password,
+    displayName: config.display_name || undefined,
+  };
+
+  const result = await sendEmail(smtpConfig, {
+    to: params.to,
+    subject: params.subject,
+    bodyText: params.bodyText,
+    bodyHtml: params.bodyHtml,
+  });
+
+  if (!result.success) {
+    return { success: false, error: result.error || "Send failed" };
+  }
+
+  // Log as an outbound message so it shows up in the brand inbox/thread view.
+  await supabase.from("email_messages").insert({
+    brand_id: params.brandId,
+    message_id: result.messageId || null,
+    thread_id: result.messageId || null,
+    direction: "outbound",
+    from_address: config.email_address,
+    from_name: config.display_name || null,
+    to_addresses: params.to,
+    subject: params.subject,
+    body_text: params.bodyText,
+    body_html: params.bodyHtml || null,
+    is_read: true,
+    received_at: new Date().toISOString(),
+  });
+
+  return { success: true, messageId: result.messageId };
+}

@@ -87,6 +87,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
+  // Vercel Cron sender "Authorization: Bearer <CRON_SECRET>" automatisk når
+  // CRON_SECRET er satt. Slipp gjennom cron-ruter som bærer riktig token, slik
+  // at de faktisk kjører i produksjon (uten dette redirectes de til /login).
+  // Hver cron-rute verifiserer CRON_SECRET på nytt internt, så dette er trygt.
+  const cronSecret = process.env.CRON_SECRET;
+  const isCronPath = pathname.startsWith("/api/cron") || pathname === "/api/neural-beat/cron";
+  if (isCronPath && cronSecret && request.headers.get("authorization") === `Bearer ${cronSecret}`) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   const isAllowed = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (isAllowed) {
     return NextResponse.next({ request: { headers: requestHeaders } });
