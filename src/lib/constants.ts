@@ -145,6 +145,7 @@ export const SIDEBAR_NAV = {
   ],
   automation: [
     { label: "Automatisering", href: "/automation", icon: "Zap" },
+    { label: "Lead Nurture", href: "/automation/nurture", icon: "Sparkles" },
     { label: "Kommandosenter", href: "/agents", icon: "Bot" },
     { label: "E-post AI", href: "/email", icon: "Mail" },
   ],
