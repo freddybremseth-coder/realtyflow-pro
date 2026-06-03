@@ -81,7 +81,11 @@ export default function NurtureOverviewPage() {
       const res = await fetch(url, { cache: "no-store" });
       const j = await res.json();
       if (j.skipped) {
-        setMessage(`Hoppet over (${j.reason}). Sett CRON_SAFE_MODE_ALLOW_PATHS=/api/cron/lead-nurture for å kjøre.`);
+        const why = j.reason ? ` (${j.reason})` : "";
+        setMessage(
+          `Hoppet over${why}. Nødbryteren CRON_SAFE_MODE er på – sett env-variabelen ` +
+            `CRON_SAFE_MODE_ALLOW_PATHS=/api/cron/lead-nurture i Vercel for å kjøre denne cronen.`,
+        );
       } else {
         setMessage(
           `Dry-run ${brand || "alle"}: skannet ${j.scanned}, kvalifiserte ${j.eligible}, planlagt ${
