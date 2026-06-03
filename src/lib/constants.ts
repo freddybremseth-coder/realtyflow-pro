@@ -131,6 +131,7 @@ export const SIDEBAR_NAV = {
   ],
   content: [
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
+    { label: "Publisert innhold (CMS)", href: "/website-cms", icon: "Globe" },
     { label: "Content Hub", href: "/content-hub", icon: "FileText" },
     { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
     { label: "Ad Campaigns", href: "/ad-campaigns", icon: "Target" },
