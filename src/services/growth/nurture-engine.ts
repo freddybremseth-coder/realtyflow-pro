@@ -20,6 +20,8 @@ export interface NurtureRunOptions {
   limit?: number;
   /** Behandle leads laget de siste N dager (eldre er "kalde"). */
   maxAgeDays?: number;
+  /** Kjør kun for én bestemt e-postadresse (for å teste/dry-run utvalgte). */
+  email?: string;
 }
 
 export interface NurturePlannedSend {
@@ -69,7 +71,7 @@ export async function runNurtureCycle(
   supabase: SupabaseClient,
   options: NurtureRunOptions
 ): Promise<NurtureRunResult> {
-  const { dryRun, brandId, limit = 50, maxAgeDays = 21 } = options;
+  const { dryRun, brandId, limit = 50, maxAgeDays = 21, email } = options;
 
   const result: NurtureRunResult = {
     dryRun,
@@ -94,6 +96,7 @@ export async function runNurtureCycle(
     .limit(Math.max(limit, 1000));
 
   if (brandId) query = query.eq("brand_id", brandId);
+  if (email) query = query.eq("email", email.trim().toLowerCase());
 
   const { data: contacts, error } = await query;
   if (error) throw new Error(`contacts query failed: ${error.message}`);
@@ -218,11 +221,12 @@ export async function runNurtureCycle(
 
     // LIVE: send via merkets SMTP
     const send = await sendBrandEmail(supabase, {
-      brandId: cBrand,
+      brandId: sequence.sendBrandId || cBrand,
       to: [contact.email],
       subject,
       bodyText,
       fromAddress: sequence.fromAddress,
+      fromName: sequence.fromName,
     });
 
     if (send.success) {

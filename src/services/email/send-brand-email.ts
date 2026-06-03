@@ -23,6 +23,10 @@ export async function sendBrandEmail(
     /** Eksplisitt avsenderadresse når et merke har flere konfig-rader
      *  (f.eks. pinosoecolife: freddy@ vs post@). */
     fromAddress?: string;
+    /** Overstyr visningsnavn i Fra-feltet. Brukes når vi sender via ett merkes
+     *  SMTP, men vil fremstå som et annet (f.eks. Soleada-leads sendt fra
+     *  freddy@zenecohomes.com, men signert "Freddy Bremseth – Soleada.no"). */
+    fromName?: string;
   }
 ): Promise<{ success: boolean; skipped?: boolean; messageId?: string; error?: string }> {
   // Duplikat-trygt: et merke kan ha flere aktive konfig-rader. Velg eksplisitt
@@ -52,7 +56,7 @@ export async function sendBrandEmail(
     secure: config.smtp_secure,
     email: config.email_address,
     password,
-    displayName: config.display_name || undefined,
+    displayName: params.fromName || config.display_name || undefined,
   };
 
   const result = await sendEmail(smtpConfig, {
@@ -73,7 +77,7 @@ export async function sendBrandEmail(
     thread_id: result.messageId || null,
     direction: "outbound",
     from_address: config.email_address,
-    from_name: config.display_name || null,
+    from_name: params.fromName || config.display_name || null,
     to_addresses: params.to,
     subject: params.subject,
     body_text: params.bodyText,

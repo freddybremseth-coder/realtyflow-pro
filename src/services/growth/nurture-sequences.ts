@@ -32,6 +32,13 @@ export interface NurtureSequence {
   /** Eksplisitt avsenderadresse når merket har flere e-postkonfig-rader.
    *  F.eks. pinosoecolife skal sende som freddy@pinosoecolife.com. */
   fromAddress?: string;
+  /** Send via ET ANNET merkes SMTP-konto enn kontaktens merke. Brukes når vi
+   *  ikke kan sende fra merkets eget domene (soleada.no), men fra et vi kan
+   *  (freddy@zenecohomes.com). Default: kontaktens eget merke. */
+  sendBrandId?: string;
+  /** Overstyr visningsnavn i Fra-feltet (f.eks. "Freddy Bremseth – Soleada.no"
+   *  selv om vi sender via zenecohomes-kontoen). */
+  fromName?: string;
   /**
    * welcome      = ferske leads, tidsregning fra created_at (lead nettopp inn).
    * reactivation = sovende leads, tidsregning fra innmeldingsdato (nurture_enrolled_at),
@@ -135,12 +142,16 @@ Freddy Bremseth
 const SOLEADA_REACTIVATION: NurtureSequence = {
   id: "soleada-reactivation-v1",
   brandId: "soleada",
-  brandName: "Soleada",
+  brandName: "Soleada.no",
   advisor: "Freddy Bremseth",
   bookingUrl: "https://appointment.chatgenius.pro/freddy",
   mode: "reactivation",
   eligibleStatuses: ["NEW", ""],
   maxNewEnrollmentsPerRun: 25,
+  // Vi kan ikke sende fra soleada.no – send via zenecohomes-kontoen, men
+  // fremstå som Soleada.no (disse kundene kjenner Freddy fra Soleada).
+  sendBrandId: "zeneco",
+  fromName: "Freddy Bremseth – Soleada.no",
   steps: [
     {
       id: "reconnect",
@@ -149,7 +160,7 @@ const SOLEADA_REACTIVATION: NurtureSequence = {
       subject: "{name}, er du fortsatt på jakt etter bolig i Spania?",
       text: `Hei {name},
 
-Vi var i kontakt om bolig i Spania tidligere i år, og jeg vil bare høre: er det fortsatt aktuelt for deg?
+Vi var i kontakt via Soleada.no om bolig i Spania tidligere i år, og jeg vil bare høre: er det fortsatt aktuelt for deg? (Jeg svarer deg fra min e-post i Zen Eco Homes.)
 
 Jeg er Freddy Bremseth, norsk eiendomsrådgiver på Costa Blanca. Hvis du fortsatt vurderer, hjelper jeg deg gjerne videre – helt uforpliktende. Markedet har beveget seg litt siden sist, så jeg kan gi deg et oppdatert bilde.
 

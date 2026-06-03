@@ -50,9 +50,10 @@ async function handle(request: NextRequest) {
 
   const brandId = searchParams.get("brand") || undefined;
   const limit = Number(searchParams.get("limit") || 50) || 50;
+  const email = searchParams.get("email") || undefined;
 
   try {
-    const result = await runNurtureCycle(supabase, { dryRun, brandId, limit });
+    const result = await runNurtureCycle(supabase, { dryRun, brandId, limit, email });
 
     // Logg kjøringen i automation_logs hvis tabellen finnes (best effort).
     await supabase
