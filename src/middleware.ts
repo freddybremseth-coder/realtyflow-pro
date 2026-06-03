@@ -82,6 +82,8 @@ export async function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
+  // Sikkerhet: fjern evt. forfalsket verdi. Settes kun når cookie er verifisert.
+  requestHeaders.delete("x-admin-authenticated");
 
   if (isPublicPath(pathname)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
@@ -99,6 +101,7 @@ export async function middleware(request: NextRequest) {
 
   const isAllowed = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (isAllowed) {
+    requestHeaders.set("x-admin-authenticated", "true");
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

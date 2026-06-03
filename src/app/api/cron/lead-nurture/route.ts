@@ -17,9 +17,19 @@ function getSupabase() {
 }
 
 async function handle(request: NextRequest) {
-  // 1. Verifiser CRON_SECRET (samme mønster som øvrige crons)
-  const authHeader = request.headers.get("authorization");
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const { searchParams } = new URL(request.url);
+
+  // 1. Autorisering – tre gyldige måter:
+  //    a) Vercel-cron: Authorization: Bearer <CRON_SECRET>
+  //    b) Innlogget admin (middleware setter x-admin-authenticated etter
+  //       verifisert cookie) – så du kan kjøre dry-run rett i nettleseren
+  //    c) ?key=<CRON_SECRET> som fallback for curl
+  const secret = process.env.CRON_SECRET;
+  const authHeader = request.headers.get("authorization") || "";
+  const keyParam = searchParams.get("key") || "";
+  const isAdmin = request.headers.get("x-admin-authenticated") === "true";
+  const secretOk = !!secret && (authHeader === `Bearer ${secret}` || keyParam === secret);
+  if (!isAdmin && !secretOk) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -33,7 +43,6 @@ async function handle(request: NextRequest) {
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
   const liveEnv = String(process.env.NURTURE_LIVE || "").toLowerCase() === "true";
   const liveQuery = searchParams.get("live") === "1";
   const forceDry = searchParams.get("dry") === "1";
