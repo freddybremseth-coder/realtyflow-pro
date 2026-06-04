@@ -57,6 +57,7 @@ export default function WebsiteCmsPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Post | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -124,6 +125,21 @@ export default function WebsiteCmsPage() {
     if (res.ok) {
       setEditing(null);
       await load();
+    }
+  }
+
+  async function uploadImage(file: File) {
+    setUploading(true);
+    setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/website-posts/upload", { method: "POST", body: fd });
+      const j = await res.json();
+      if (res.ok) setEditing((e) => (e ? { ...e, image_url: j.url } : e));
+      else setMsg(`Opplasting feilet: ${j.error}`);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -255,8 +271,25 @@ export default function WebsiteCmsPage() {
                 </label>
                 <label className="block text-sm">
                   <span className="text-slate-400 flex items-center gap-1"><ImageIcon className="w-3.5 h-3.5" /> Bilde-URL</span>
-                  <Input value={editing.image_url || ""} onChange={(e) => set({ image_url: e.target.value })} placeholder="https://…" />
+                  <Input value={editing.image_url || ""} onChange={(e) => set({ image_url: e.target.value })} placeholder="https://… eller last opp under" />
                 </label>
+                <div className="text-sm flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadImage(f);
+                    }}
+                    className="text-xs text-slate-400 file:mr-3 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-slate-200"
+                  />
+                  {uploading && (
+                    <span className="text-cyan-400 text-xs inline-flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Laster opp…
+                    </span>
+                  )}
+                </div>
                 {editing.image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={editing.image_url} alt="" className="rounded-lg max-h-40 border border-white/10" />
