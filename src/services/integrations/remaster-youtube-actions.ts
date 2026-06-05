@@ -3,10 +3,16 @@ import { OAuth2Client } from "google-auth-library";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 
-const BRAND_ID = "remasterfreddy";
+const BRAND_IDS = ["remasterfreddy", "neuralbeat"];
 
 async function getVerifiedClient() {
-  const channels = await getChannelsByBrand(BRAND_ID, "youtube");
+  const channelLists = await Promise.all(
+    BRAND_IDS.map((brandId) => getChannelsByBrand(brandId, "youtube")),
+  );
+  const channels = channelLists.flat().filter(
+    (channel, index, all) => all.findIndex((item) => item.id === channel.id) === index,
+  );
+
   if (channels.length === 0) {
     throw new Error("Re-Master Freddy har ingen aktiv YouTube-kanaltilkobling.");
   }
@@ -26,7 +32,11 @@ async function getVerifiedClient() {
       const verified = mine.data.items?.[0];
       if (!verified?.id) continue;
       if (channel.external_id && channel.external_id !== verified.id) continue;
-      return { client, channelId: verified.id, channelTitle: verified.snippet?.title || channel.display_name };
+      return {
+        client,
+        channelId: verified.id,
+        channelTitle: verified.snippet?.title || channel.display_name,
+      };
     } catch {
       continue;
     }
