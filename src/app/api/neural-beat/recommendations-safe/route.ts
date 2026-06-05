@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GET as getLegacyRecommendations } from "@/app/api/neural-beat/recommendations/route";
 import {
   buildRemasterActionFingerprint,
+  findRemasterActionByFingerprint,
   listRemasterActionHistory,
   recordCompletedRemasterAction,
   recordPlannedRemasterAction,
@@ -114,13 +115,14 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const existingResult = await recordCompletedRemasterAction(action, context, { preflight: true });
-      if (existingResult.duplicate) {
+      const fingerprint = buildRemasterActionFingerprint(action);
+      const existing = await findRemasterActionByFingerprint(fingerprint);
+      if (existing?.status === "completed" || existing?.status === "published") {
         return NextResponse.json(
           {
             error: "Dette metadata-tiltaket er allerede utført.",
             duplicate: true,
-            history: existingResult.action,
+            history: existing,
           },
           { status: 409 },
         );
