@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * POST /api/neural-beat/upload
- * Returns a signed upload URL for Supabase Storage.
- * The client then uploads the MP3 directly to that URL (bypasses Vercel 4.5MB limit).
+ * Returns a short-lived signed upload URL for Supabase Storage.
+ * The service role key is never returned to the browser.
  * Body: { fileName: string }
  */
 export async function POST(request: NextRequest) {
   try {
     const { fileName } = await request.json();
 
-    if (!fileName) {
+    if (!fileName || typeof fileName !== 'string') {
       return NextResponse.json({ error: 'fileName is required' }, { status: 400 });
     }
 
@@ -24,39 +24,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const storagePath = `neural-beat/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-180);
+    const storagePath = `neural-beat/${Date.now()}-${safeFileName}`;
 
-    // Create a signed upload URL (valid for 10 minutes)
-    const res = await fetch(
+    const signedUrlResponse = await fetch(
       `${supabaseUrl}/storage/v1/object/upload/sign/assets/${storagePath}`,
       {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${serviceKey}`,
+          apikey: serviceKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ expiresIn: 600 }),
+        cache: 'no-store',
       }
     );
 
-    if (!res.ok) {
-      // Fallback: return a direct upload URL with service key token
-      // This works because the service_role key bypasses RLS
-      return NextResponse.json({
-        uploadUrl: `${supabaseUrl}/storage/v1/object/assets/${storagePath}`,
-        token: serviceKey,
-        publicUrl: `${supabaseUrl}/storage/v1/object/public/assets/${storagePath}`,
-        method: 'direct',
+    const signedData = await signedUrlResponse.json().catch(() => ({}));
+
+    if (!signedUrlResponse.ok || !signedData.url || !signedData.token) {
+      console.error('[NeuralBeatUpload] Could not create signed upload URL', {
+        status: signedUrlResponse.status,
+        message: signedData.message || signedData.error || 'Unknown Supabase Storage error',
       });
+      return NextResponse.json(
+        { error: 'Could not create a secure upload URL. Try again.' },
+        { status: 502 }
+      );
     }
 
-    const data = await res.json();
-
     return NextResponse.json({
-      uploadUrl: `${supabaseUrl}/storage/v1${data.url}`,
-      token: data.token || serviceKey,
+      uploadUrl: `${supabaseUrl}/storage/v1${signedData.url}`,
+      token: signedData.token,
       publicUrl: `${supabaseUrl}/storage/v1/object/public/assets/${storagePath}`,
       method: 'signed',
+      expiresIn: 600,
     });
   } catch (error) {
     return NextResponse.json(
