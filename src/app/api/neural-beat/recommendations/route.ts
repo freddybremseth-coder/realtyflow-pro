@@ -8,16 +8,15 @@ import {
 } from "@/services/integrations/youtube-client";
 import { createClient } from "@supabase/supabase-js";
 
+const YOUTUBE_BRAND_ID = "remasterfreddy";
+
 /** Extract JSON from AI response that may contain markdown, preamble text, etc. */
 function extractJSON(text: string): Record<string, unknown> {
-  // 1. Try direct parse
   try { return JSON.parse(text.trim()); } catch { /* continue */ }
 
-  // 2. Strip markdown code fences
   const stripped = text.replace(/```(?:json)?\s*\n?/g, "").trim();
   try { return JSON.parse(stripped); } catch { /* continue */ }
 
-  // 3. Find the outermost { ... } block
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -34,19 +33,16 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-/**
- * GET /api/neural-beat/recommendations
- *
- * Generates concrete, executable AI recommendations for the Neural Beat channel.
- * Each recommendation has an action that can be executed via POST.
- */
 export async function GET() {
   try {
     if (!ytConfigured()) {
       return NextResponse.json({ error: "YouTube ikke konfigurert" }, { status: 503 });
     }
 
-    const [channel, videos] = await Promise.all([getChannelInfo("neuralbeat"), listVideos(50, "neuralbeat")]);
+    const [channel, videos] = await Promise.all([
+      getChannelInfo(YOUTUBE_BRAND_ID),
+      listVideos(50, YOUTUBE_BRAND_ID),
+    ]);
 
     const now = Date.now();
     const videosWithStats = videos.map((v) => {
@@ -54,7 +50,6 @@ export async function GET() {
       return { ...v, viewsPerDay: Math.round(v.viewCount / daysSince), daysSince: Math.round(daysSince) };
     });
 
-    // Find videos that could benefit from optimization
     const lowPerformers = videosWithStats
       .filter((v) => v.viewsPerDay < 5 && v.daysSince > 7)
       .sort((a, b) => a.viewsPerDay - b.viewsPerDay)
@@ -66,7 +61,6 @@ export async function GET() {
       .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
       .slice(0, 5);
 
-    // Analyze tags/titles patterns
     const allTitles = videos.map((v) => v.title);
     const avgViews = videos.length > 0 ? Math.round(videos.reduce((s, v) => s + v.viewCount, 0) / videos.length) : 0;
     const totalViews = videos.reduce((s, v) => s + v.viewCount, 0);
@@ -116,7 +110,7 @@ Return ONLY valid JSON:
         "currentTitle": "current title if changing",
         "newTitle": "optimized title if type is optimize_title",
         "newDescription": "optimized description if type is optimize_description",
-        "newTags": ["tag1", "tag2"] ,
+        "newTags": ["tag1", "tag2"],
         "details": "specific instructions for strategy/schedule/content actions"
       }
     }
@@ -141,7 +135,6 @@ RULES:
 - Think like MrBeast's team but for a music channel`,
     });
 
-    // Calculate a basic health score from raw data as fallback
     const subsCount = channel.subscriberCount || 0;
     const rawScore = Math.min(100, Math.round(
       (subsCount > 1000 ? 20 : subsCount > 100 ? 10 : 5) +
@@ -153,7 +146,6 @@ RULES:
     let parsed: Record<string, unknown> | null = null;
     try {
       parsed = extractJSON(aiResult);
-      // Ensure channelHealth always has a valid score
       if (parsed.channelHealth) {
         const ch = parsed.channelHealth as Record<string, unknown>;
         if (!ch.score || ch.score === 0) ch.score = rawScore;
@@ -162,7 +154,6 @@ RULES:
       console.warn("[Neural Beat Recommendations] AI JSON parse failed, generating data-driven recommendations");
     }
 
-    // If AI parsing succeeded and has recommendations, use them
     const aiRecs = parsed?.recommendations as unknown[] | undefined;
     if (aiRecs && Array.isArray(aiRecs) && aiRecs.length > 0) {
       return NextResponse.json({
@@ -172,11 +163,9 @@ RULES:
       });
     }
 
-    // ── Data-driven fallback recommendations ──────────────────────────
     const fallbackRecs: Record<string, unknown>[] = [];
     let recCounter = 1;
 
-    // 1. Optimize underperforming video titles with SEO keywords
     for (const v of lowPerformers.slice(0, 3)) {
       const hasKeywords = /lofi|chill|beats|relaxing|study|ambient|trap|hip hop/i.test(v.title);
       if (!hasKeywords) {
@@ -198,7 +187,6 @@ RULES:
           },
         });
       } else {
-        // Even if title has keywords, check if tags are missing
         const vid = v as any;
         if (!vid.tags || vid.tags.length < 5) {
           fallbackRecs.push({
@@ -222,7 +210,6 @@ RULES:
       }
     }
 
-    // 2. Add tags to videos missing them
     for (const v of videosWithStats.slice(0, 3)) {
       const vid = v as any;
       if (!vid.tags || vid.tags.length < 3) {
@@ -246,7 +233,6 @@ RULES:
       }
     }
 
-    // 3. Strategy: analyze top performers and replicate
     if (topPerformers.length > 0) {
       const topTitles = topPerformers.slice(0, 3).map((v) => `"${v.title}"`).join(', ');
       fallbackRecs.push({
@@ -265,80 +251,18 @@ RULES:
       });
     }
 
-    // 4. Upload schedule
     fallbackRecs.push({
       id: `rec_${recCounter++}`,
       type: 'upload_schedule',
-      priority: 'high',
-      title: 'Sett opp fast opplastingsplan: 3x per uke',
-      description: `Konsistens er nøkkelen til YouTube-vekst. Med ${channel.videoCount} videoer og ${channel.subscriberCount} abonnenter trenger kanalen regelmessig nytt innhold.`,
-      impact: 'Kanaler med fast plan vokser 3-5x raskere enn uregelmessige kanaler.',
+      priority: 'medium',
+      title: 'Følg en fast publiseringsplan',
+      description: 'Publiser på faste dager og tidspunkter, slik at publikum og YouTube-algoritmen lærer kanalrytmen.',
+      impact: 'Bedre konsistens kan øke tilbakevendende seere og anbefalingstrafikk.',
       effort: 'medium',
       action: {
         type: 'schedule',
         videoId: null,
-        details: 'Last opp mandag, onsdag og fredag kl 18:00 CET. Bruk YouTube Studio planleggeren for å forhåndsplanlegge.',
-      },
-    });
-
-    // 5. Shorts strategy
-    fallbackRecs.push({
-      id: `rec_${recCounter++}`,
-      type: 'shorts',
-      priority: 'high',
-      title: 'Start med YouTube Shorts for rask vekst',
-      description: 'YouTube Shorts er den raskeste veien til nye abonnenter i 2026. Lag 30-60 sekunders klipp av dine beste beats med visuelt engasjerende bakgrunner.',
-      impact: 'Shorts kan gi 10-100x flere visninger enn vanlige videoer og driver abonnenter til hovedkanalen.',
-      effort: 'easy',
-      action: {
-        type: 'create_content',
-        videoId: null,
-        details: 'Lag 5 Shorts denne uken: ta de beste 30-sekundersklippene fra eksisterende spor, legg til visualizer/waveform-animasjon, og bruk trending hashtags som #shorts #lofi #chillbeats.',
-      },
-    });
-
-    // 6. Engagement - Actually update descriptions on videos that have short descriptions
-    const ctaText = '\n\n🎵 Enjoying this beat? Hit like and subscribe for daily chill beats! 💬 Comment what vibe you want to hear next!\n\n¿Te gusta este beat? ¡Dale a like y suscríbete para beats chill diarios! 💬 ¡Comenta qué tipo de vibra quieres escuchar la próxima vez!\n\n🏷️ #ReMasterFreddy #AIMusic #ChillBeats #StudyMusic #LoFi #EDM #ElectronicMusic';
-    const shortDescVideos = videosWithStats.filter((v: any) => {
-      const desc = v.description || '';
-      return desc.length < 200 || !desc.includes('subscribe');
-    }).slice(0, 3);
-    for (const v of shortDescVideos) {
-      const vid = v as any;
-      const currentDesc = vid.description || v.title;
-      fallbackRecs.push({
-        id: `rec_${recCounter++}`,
-        type: 'engagement',
-        priority: 'medium',
-        title: `Legg til CTA i beskrivelsen: "${v.title.slice(0, 40)}..."`,
-        description: `Engasjementsraten er ${engagementRate}%. Denne videoen har en kort beskrivelse uten CTA.`,
-        impact: 'CTAs øker likes/kommentarer med 20-40%, som øker algoritme-synlighet.',
-        effort: 'easy',
-        action: {
-          type: 'update_metadata',
-          videoId: v.id,
-          currentTitle: v.title,
-          newTitle: null,
-          newDescription: `${currentDesc}${ctaText}`,
-          newTags: null,
-          details: null,
-        },
-      });
-    }
-
-    // 7. Playlist strategy
-    fallbackRecs.push({
-      id: `rec_${recCounter++}`,
-      type: 'playlist_strategy',
-      priority: 'medium',
-      title: 'Organiser videoer i tematiske spillelister',
-      description: 'Spillelister øker seertid dramatisk. Grupper videoene etter stemning: Study, Sleep, Workout, Chill, Focus.',
-      impact: 'Spillelister kan øke gjennomsnittlig seertid med 40-80%.',
-      effort: 'easy',
-      action: {
-        type: 'strategy',
-        videoId: null,
-        details: 'Opprett spillelister: "🎓 Study & Focus Beats", "😴 Sleep & Relax", "💪 Workout Energy", "☕ Morning Chill", "🌙 Late Night Vibes"',
+        details: 'Publiser 2-3 videoer per uke. Test tirsdag og torsdag kl. 18:00 samt søndag kl. 12:00 i fire uker.',
       },
     });
 
@@ -346,145 +270,86 @@ RULES:
       recommendations: fallbackRecs,
       channelHealth: {
         score: rawScore,
-        trend: avgViews > 50 ? 'up' : 'stable',
-        summary: `Kanalen har ${channel.subscriberCount} abonnenter, ${channel.videoCount} videoer og ${engagementRate}% engasjement. Anbefalingene er basert på dataanalyse av dine ${videos.length} videoer.`,
+        trend: 'stable',
+        summary: `Kanalen har ${channel.subscriberCount} abonnenter, ${videos.length} analyserte videoer og ${avgViews} gjennomsnittlige visninger per video.`,
       },
       quickWins: [
-        `Optimaliser titler på de ${lowPerformers.length} svakeste videoene med søkbare nøkkelord`,
-        'Legg til tags (lofi, chill, study beats) på alle videoer som mangler dem',
-        'Lag din første YouTube Short fra et eksisterende spor',
-        'Opprett tematiske spillelister for å øke seertid',
+        'Oppdater titler og tags på videoer med lav visningstakt.',
+        'Bruk faste thumbnail-maler med sterk kontrast og kort tekst.',
+        'Legg ut nye videoer på konsekvente dager og klokkeslett.',
       ],
       weeklyGoals: [
-        'Last opp 3 nye spor med SEO-optimaliserte titler',
-        'Publiser 5 YouTube Shorts med beste beats-klipp',
-        'Oppdater beskrivelsen på 5 eldre videoer med CTA',
-        `Nå ${channel.subscriberCount + 10} abonnenter`,
+        'Publiser minst to nye videoer.',
+        'Optimaliser metadata på tre eldre videoer.',
+        'Følg opp visninger per dag på de fem nyeste videoene.',
       ],
       channel,
       stats: { avgViews, engagementRate: parseFloat(engagementRate), totalViews, videoCount: videos.length },
     });
   } catch (error) {
-    console.error("[Neural Beat Recommendations] Error:", error);
+    console.error("[Neural Beat Recommendations] GET error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "Failed to generate recommendations" },
+      { status: 500 },
     );
   }
 }
 
-/**
- * POST /api/neural-beat/recommendations
- *
- * Execute a specific recommendation action (e.g., update video metadata on YouTube)
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const { action } = await req.json();
+    const { action } = await request.json();
     if (!action) {
       return NextResponse.json({ error: "No action provided" }, { status: 400 });
     }
 
-    const supabase = getSupabase();
-
-    switch (action.type) {
-      case "update_metadata": {
-        if (!action.videoId) throw new Error("Mangler videoId");
-        if (!ytConfigured()) throw new Error("YouTube ikke konfigurert");
-
-        const updates: Record<string, unknown> = {};
-        if (action.newTitle) updates.title = action.newTitle;
-        if (action.newDescription) updates.description = action.newDescription;
-        if (action.newTags) updates.tags = action.newTags;
-
-        if (Object.keys(updates).length === 0) {
-          throw new Error("Ingen endringer å gjøre");
-        }
-
-        await updateVideoMetadata(
-          action.videoId,
-          updates as { title?: string; description?: string; tags?: string[] },
-          "neuralbeat",
-        );
-
-        // Log the action
-        if (supabase) {
-          try {
-            await supabase.from("growth_actions").insert({
-              brand: "neural-beat",
-              action_type: "youtube_metadata_update",
-              description: `Oppdatert metadata for video ${action.videoId}: ${action.newTitle || ""}`,
-              status: "completed",
-              result: JSON.stringify(updates),
-            });
-          } catch { /* silent */ }
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: `Oppdatert YouTube-video: ${action.newTitle || action.videoId}`,
-          updates,
-        });
+    if (action.type === "update_metadata") {
+      if (!action.videoId) {
+        return NextResponse.json({ error: "Mangler videoId" }, { status: 400 });
       }
-
-      case "create_content": {
-        // Generate content plan and save to growth_actions
-        const contentPlan = await askClaude(
-          `Lag detaljert innholdsplan: ${action.details}`,
-          {
-            maxTokens: 1500,
-            model: "sonnet",
-            systemPrompt: "Du er en YouTube-innholdsstrateg for Re-Master Freddy (AI-musikk). Lag en konkret, handlingsrettet plan på norsk.",
-          }
-        );
-
-        if (supabase) {
-          try {
-            await supabase.from("growth_actions").insert({
-              brand: "neural-beat",
-              action_type: "content_plan",
-              description: action.details,
-              status: "planned",
-              result: contentPlan,
-            });
-          } catch { /* silent */ }
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: "Innholdsplan opprettet",
-          plan: contentPlan,
-        });
-      }
-
-      case "strategy":
-      case "schedule": {
-        // Save strategy/schedule as growth action
-        if (supabase) {
-          try {
-            await supabase.from("growth_actions").insert({
-              brand: "neural-beat",
-              action_type: action.type === "strategy" ? "strategy_update" : "schedule_update",
-              description: action.details,
-              status: "planned",
-            });
-          } catch { /* silent */ }
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: `${action.type === "strategy" ? "Strategi" : "Opplastingsplan"} lagret`,
-        });
-      }
-
-      default:
-        return NextResponse.json({ error: `Ukjent handlingstype: ${action.type}` }, { status: 400 });
+      const updates: { title?: string; description?: string; tags?: string[] } = {};
+      if (action.newTitle) updates.title = action.newTitle;
+      if (action.newDescription) updates.description = action.newDescription;
+      if (action.newTags) updates.tags = action.newTags;
+      await updateVideoMetadata(action.videoId, updates, YOUTUBE_BRAND_ID);
+      return NextResponse.json({ success: true, message: "Metadata oppdatert", updates });
     }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase ikke konfigurert" }, { status: 503 });
+    }
+
+    const plan = typeof action.details === "string" ? action.details.trim() : "";
+    if (!plan) {
+      return NextResponse.json({ error: "Tiltaket mangler detaljer" }, { status: 400 });
+    }
+
+    const { error } = await supabase.from("growth_actions").insert({
+      source: "remasterfreddy_recommendations",
+      action_type: String(action.type || "strategy"),
+      title: plan.slice(0, 160),
+      description: plan,
+      status: "planned",
+      priority: "medium",
+      metadata: {
+        brand_id: YOUTUBE_BRAND_ID,
+        video_id: action.videoId || null,
+      },
+    });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Tiltaket er lagret som en planlagt veksthandling i RealtyFlow.",
+      plan,
+    });
   } catch (error) {
-    console.error("[Neural Beat Recommendations] Execute error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Ukjent feil" },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "Recommendation execution failed" },
+      { status: 500 },
     );
   }
 }
