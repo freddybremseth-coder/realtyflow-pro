@@ -56,7 +56,7 @@ function normalizeSettings(value: unknown): RemasterAutopilotSettings {
   };
 }
 
-async function loadRawSettings() {
+async function loadRawSettings(): Promise<Record<string, unknown>> {
   const { baseUrl, key } = restConfig();
   const params = new URLSearchParams({
     select: "settings",
@@ -85,7 +85,7 @@ export async function saveRemasterAutopilotSettings(
   next: Partial<RemasterAutopilotSettings>,
   updatedBy = "freddy.bremseth@gmail.com",
 ) {
-  const currentRaw = await loadRawSettings().catch(() => ({}));
+  const currentRaw: Record<string, unknown> = await loadRawSettings().catch(() => ({} as Record<string, unknown>));
   const current = normalizeSettings(currentRaw[SETTINGS_KEY]);
   const mode = normalizeMode(next.mode || current.mode);
   const normalized: RemasterAutopilotSettings = normalizeSettings({
