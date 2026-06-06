@@ -117,7 +117,11 @@ export default function OAuthSelectPage() {
       if (body.orphaned) {
         target.searchParams.set("oauth_orphaned", String(body.orphaned));
       }
-      router.replace(target.pathname + target.search);
+      if (target.origin === window.location.origin) {
+        router.replace(target.pathname + target.search);
+      } else {
+        window.location.assign(target.toString());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
       setSubmittingId(null);

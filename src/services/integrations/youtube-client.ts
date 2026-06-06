@@ -18,6 +18,14 @@ const BRAND_TOKEN_ALIASES: Record<string, string[]> = {
   remasterfreddy: ['neuralbeat'],
 };
 
+function reconnectUrlForBrand(brandId: string) {
+  const normalized = brandId.toLowerCase().replace(/[-_.\s]/g, '');
+  const returnTo = normalized === 'remasterfreddy' || normalized === 'neuralbeat'
+    ? (process.env.REMASTER_ADMIN_URL || process.env.NEXT_PUBLIC_REMASTER_ADMIN_URL || 'https://remasterfreddy.vercel.app/admin')
+    : '/settings?tab=sosiale-medier';
+  return `/api/oauth/google?brand=${encodeURIComponent(brandId)}&return_to=${encodeURIComponent(returnTo)}`;
+}
+
 function getBrandDisplayName(brandId?: string) {
   const normalized = `${brandId || ''}`.trim().toLowerCase();
   return BRANDS.find((brand) => brand.id.toLowerCase() === normalized)?.name || brandId || 'ukjent brand';
@@ -229,7 +237,7 @@ async function runWithTokenFallback<T>(
   if (options?.requireBrandToken && brandId && lastErr && isInvalidGrantError(lastErr)) {
     const brandName = getBrandDisplayName(brandId);
     throw new Error(
-      `YouTube-token for ${brandName} (${brandId}) er utløpt eller tilbakekalt (invalid_grant). Koble dette brandet til Google/YouTube på nytt: /api/oauth/google?brand=${brandId}&return_to=/settings?tab=sosiale-medier`,
+      `YouTube-token for ${brandName} (${brandId}) er utløpt eller tilbakekalt (invalid_grant). Koble dette brandet til Google/YouTube på nytt: ${reconnectUrlForBrand(brandId)}`,
     );
   }
   throw lastErr ?? new Error('All YouTube refresh tokens failed with invalid_grant');
