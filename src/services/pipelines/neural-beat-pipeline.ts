@@ -29,7 +29,11 @@ import { createClient } from '@supabase/supabase-js';
 // select the Re-Master Freddy channel on the Google consent screen if it
 // ever falls out of sync. Env var overrides for flexibility in preview deploys.
 const NEURAL_BEAT_BRAND_ID = process.env.NEURAL_BEAT_BRAND_ID || 'remasterfreddy';
-const NEURAL_BEAT_RECONNECT_URL = 'https://realtyflow.chatgenius.pro/api/oauth/google?brand=remasterfreddy';
+const REMASTER_ADMIN_URL =
+  process.env.REMASTER_ADMIN_URL ||
+  process.env.NEXT_PUBLIC_REMASTER_ADMIN_URL ||
+  'https://remasterfreddy.vercel.app/admin';
+const NEURAL_BEAT_RECONNECT_URL = `https://realtyflow.chatgenius.pro/api/oauth/google?brand=remasterfreddy&return_to=${encodeURIComponent(REMASTER_ADMIN_URL)}`;
 
 const STEP_NAMES = [
   'Update Status to Processing',
