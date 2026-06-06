@@ -85,6 +85,19 @@ export async function middleware(request: NextRequest) {
   // Sikkerhet: fjern evt. forfalsket verdi. Settes kun når cookie er verifisert.
   requestHeaders.delete("x-admin-authenticated");
 
+  // Den gamle Neural Beat-siden kunne masseutføre alle AI-anbefalinger, inkludert
+  // YouTube-metadata, uten individuell godkjenning. GET-analyse er fortsatt tillatt,
+  // men alle utførende kall må gå gjennom recommendations-safe og Re-Master Admin.
+  if (pathname === "/api/neural-beat/recommendations" && request.method === "POST") {
+    return NextResponse.json(
+      {
+        error: "Den gamle masseutføringen er deaktivert. Godkjenn tiltak individuelt i Re-Master Admin.",
+        reason: "legacy_autopilot_disabled",
+      },
+      { status: 409 },
+    );
+  }
+
   if (isPublicPath(pathname)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
