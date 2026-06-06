@@ -34,8 +34,21 @@ interface AutopilotRecommendation {
 
 function authorizeMigration(request: NextRequest) {
   const expected = process.env.REALTYFLOW_MIGRATION_SECRET;
-  if (!expected) return true;
-  return (request.headers.get("x-remaster-migration-secret") || "") === expected;
+  if (!expected) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Re-Master migration secret is not configured",
+    };
+  }
+  if ((request.headers.get("x-remaster-migration-secret") || "") !== expected) {
+    return {
+      ok: false,
+      status: 401,
+      error: "Unauthorized migration client",
+    };
+  }
+  return { ok: true };
 }
 
 function priorityRank(priority?: RemasterPriority) {
@@ -101,8 +114,9 @@ async function loadRecommendations(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!authorizeMigration(request)) {
-    return NextResponse.json({ error: "Unauthorized migration client" }, { status: 401 });
+  const authorization = authorizeMigration(request);
+  if (!authorization.ok) {
+    return NextResponse.json({ error: authorization.error }, { status: authorization.status });
   }
 
   const settings = await getRemasterAutopilotSettings();
