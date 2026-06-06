@@ -136,7 +136,7 @@ export const SIDEBAR_NAV = {
     { label: "Bilde Studio", href: "/image-studio", icon: "Image" },
     { label: "Ad Campaigns", href: "/ad-campaigns", icon: "Target" },
     { label: "YouTube Studio", href: "/youtube-studio", icon: "Youtube" },
-    { label: "Re-Master Freddy", href: "/neural-beat", icon: "Music" },
+    { label: "Re-Master Freddy", href: "/remaster-freddy", icon: "Music" },
   ],
   growth: [
     { label: "Publishing Hub", href: "/publishing", icon: "BookOpen" },
