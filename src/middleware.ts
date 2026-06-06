@@ -25,6 +25,17 @@ const PUBLIC_PATHS = [
   "/oauth/select",
 ];
 
+const REMASTER_PROXY_PATHS = [
+  "/api/neural-beat",
+  "/api/neural-beat/analytics",
+  "/api/neural-beat/autopilot-run",
+  "/api/neural-beat/autopilot-settings",
+  "/api/neural-beat/image-bank",
+  "/api/neural-beat/recommendations-safe",
+  "/api/neural-beat/upload",
+  "/api/youtube/status",
+];
+
 function isPublicPath(pathname: string) {
   return (
     pathname.startsWith("/_next") ||
@@ -32,6 +43,10 @@ function isPublicPath(pathname: string) {
     pathname === "/robots.txt" ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
   );
+}
+
+function isRemasterProxyPath(pathname: string) {
+  return REMASTER_PROXY_PATHS.includes(pathname);
 }
 
 function base64UrlToBytes(value: string) {
@@ -96,6 +111,15 @@ export async function middleware(request: NextRequest) {
       },
       { status: 409 },
     );
+  }
+
+  const migrationSecret = process.env.REALTYFLOW_MIGRATION_SECRET;
+  if (
+    migrationSecret &&
+    isRemasterProxyPath(pathname) &&
+    request.headers.get("x-remaster-migration-secret") === migrationSecret
+  ) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   if (isPublicPath(pathname)) {
