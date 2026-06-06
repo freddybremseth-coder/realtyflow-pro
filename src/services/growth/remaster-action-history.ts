@@ -1,5 +1,4 @@
 import { createHash } from "crypto";
-import { createClient } from "@supabase/supabase-js";
 
 export type RemasterActionType = "update_metadata" | "create_content" | "strategy" | "schedule";
 export type RemasterPriority = "critical" | "high" | "medium" | "low";
@@ -42,16 +41,35 @@ export interface RemasterActionHistoryRow {
 
 const BRAND_ID = "remasterfreddy";
 const PLATFORM = "youtube";
+const HISTORY_COLUMNS = "id,brand,action_type,platform,content,hypothesis,expected_outcome,priority,status,learnings,executed_at,reviewed_at,created_at,updated_at";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+function restConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new Error("Supabase is not configured for Re-Master action history");
+    throw new Error("Supabase service configuration is missing for Re-Master action history");
   }
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return { baseUrl: `${url}/rest/v1/growth_actions`, key };
+}
+
+function restHeaders(key: string, prefer?: string) {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
+}
+
+async function parseRows(response: Response, operation: string): Promise<RemasterActionHistoryRow[]> {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = body && typeof body === "object" && "message" in body
+      ? String((body as { message?: unknown }).message || operation)
+      : operation;
+    throw new Error(`${operation}: ${message}`);
+  }
+  return Array.isArray(body) ? body as RemasterActionHistoryRow[] : [];
 }
 
 function normalizedAction(action: RemasterRecommendationAction) {
@@ -109,19 +127,38 @@ function learningsPayload(
   });
 }
 
-export async function findRemasterActionByFingerprint(fingerprint: string) {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("growth_actions")
-    .select("id,brand,action_type,platform,content,hypothesis,expected_outcome,priority,status,learnings,executed_at,reviewed_at,created_at,updated_at")
-    .eq("brand", BRAND_ID)
-    .eq("hypothesis", fingerprint)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+function valuesForAction(
+  action: RemasterRecommendationAction,
+  context: RemasterActionContext,
+  fingerprint: string,
+) {
+  return {
+    brand: BRAND_ID,
+    action_type: action.type,
+    platform: PLATFORM,
+    content: actionContent(action, context),
+    hypothesis: fingerprint,
+    expected_outcome: context.impact?.trim() || "",
+    priority: priorityValue(context.priority),
+    learnings: learningsPayload(action, context),
+  };
+}
 
-  if (error) throw new Error(`Could not check Re-Master action history: ${error.message}`);
-  return (data || null) as RemasterActionHistoryRow | null;
+export async function findRemasterActionByFingerprint(fingerprint: string) {
+  const { baseUrl, key } = restConfig();
+  const params = new URLSearchParams({
+    select: HISTORY_COLUMNS,
+    brand: `eq.${BRAND_ID}`,
+    hypothesis: `eq.${fingerprint}`,
+    order: "created_at.desc",
+    limit: "1",
+  });
+  const response = await fetch(`${baseUrl}?${params.toString()}`, {
+    headers: restHeaders(key),
+    cache: "no-store",
+  });
+  const rows = await parseRows(response, "Could not check Re-Master action history");
+  return rows[0] || null;
 }
 
 export async function recordPlannedRemasterAction(
@@ -134,26 +171,19 @@ export async function recordPlannedRemasterAction(
     return { duplicate: true, fingerprint, action: existing };
   }
 
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("growth_actions")
-    .insert({
-      brand: BRAND_ID,
-      action_type: action.type,
-      platform: PLATFORM,
-      content: actionContent(action, context),
-      hypothesis: fingerprint,
-      expected_outcome: context.impact?.trim() || "",
-      priority: priorityValue(context.priority),
+  const { baseUrl, key } = restConfig();
+  const response = await fetch(baseUrl, {
+    method: "POST",
+    headers: restHeaders(key, "return=representation"),
+    body: JSON.stringify({
+      ...valuesForAction(action, context, fingerprint),
       status: "planned",
       reviewed_at: new Date().toISOString(),
-      learnings: learningsPayload(action, context),
-    })
-    .select("id,brand,action_type,platform,content,hypothesis,expected_outcome,priority,status,learnings,executed_at,reviewed_at,created_at,updated_at")
-    .single();
-
-  if (error) throw new Error(`Could not record planned Re-Master action: ${error.message}`);
-  return { duplicate: false, fingerprint, action: data as RemasterActionHistoryRow };
+    }),
+  });
+  const rows = await parseRows(response, "Could not record planned Re-Master action");
+  if (!rows[0]) throw new Error("Could not record planned Re-Master action: no row returned");
+  return { duplicate: false, fingerprint, action: rows[0] };
 }
 
 export async function recordCompletedRemasterAction(
@@ -167,45 +197,42 @@ export async function recordCompletedRemasterAction(
     return { duplicate: true, fingerprint, action: existing };
   }
 
-  const supabase = getSupabase();
-  const values = {
-    brand: BRAND_ID,
-    action_type: action.type,
-    platform: PLATFORM,
-    content: actionContent(action, context),
-    hypothesis: fingerprint,
-    expected_outcome: context.impact?.trim() || "",
-    priority: priorityValue(context.priority),
-    status: "completed" as const,
-    reviewed_at: existing?.reviewed_at || new Date().toISOString(),
-    executed_at: new Date().toISOString(),
+  const now = new Date().toISOString();
+  const payload = {
+    ...valuesForAction(action, context, fingerprint),
+    status: "completed",
+    reviewed_at: existing?.reviewed_at || now,
+    executed_at: now,
     learnings: learningsPayload(action, context, result),
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
-
-  const query = existing
-    ? supabase.from("growth_actions").update(values).eq("id", existing.id)
-    : supabase.from("growth_actions").insert(values);
-
-  const { data, error } = await query
-    .select("id,brand,action_type,platform,content,hypothesis,expected_outcome,priority,status,learnings,executed_at,reviewed_at,created_at,updated_at")
-    .single();
-
-  if (error) throw new Error(`Could not record completed Re-Master action: ${error.message}`);
-  return { duplicate: false, fingerprint, action: data as RemasterActionHistoryRow };
+  const { baseUrl, key } = restConfig();
+  const requestUrl = existing
+    ? `${baseUrl}?${new URLSearchParams({ id: `eq.${existing.id}` }).toString()}`
+    : baseUrl;
+  const response = await fetch(requestUrl, {
+    method: existing ? "PATCH" : "POST",
+    headers: restHeaders(key, "return=representation"),
+    body: JSON.stringify(payload),
+  });
+  const rows = await parseRows(response, "Could not record completed Re-Master action");
+  if (!rows[0]) throw new Error("Could not record completed Re-Master action: no row returned");
+  return { duplicate: false, fingerprint, action: rows[0] };
 }
 
 export async function listRemasterActionHistory(limit = 50) {
-  const supabase = getSupabase();
+  const { baseUrl, key } = restConfig();
   const safeLimit = Math.max(1, Math.min(limit, 100));
-  const { data, error } = await supabase
-    .from("growth_actions")
-    .select("id,brand,action_type,platform,content,hypothesis,expected_outcome,priority,status,learnings,executed_at,reviewed_at,created_at,updated_at")
-    .eq("brand", BRAND_ID)
-    .eq("platform", PLATFORM)
-    .order("created_at", { ascending: false })
-    .limit(safeLimit);
-
-  if (error) throw new Error(`Could not load Re-Master action history: ${error.message}`);
-  return (data || []) as RemasterActionHistoryRow[];
+  const params = new URLSearchParams({
+    select: HISTORY_COLUMNS,
+    brand: `eq.${BRAND_ID}`,
+    platform: `eq.${PLATFORM}`,
+    order: "created_at.desc",
+    limit: String(safeLimit),
+  });
+  const response = await fetch(`${baseUrl}?${params.toString()}`, {
+    headers: restHeaders(key),
+    cache: "no-store",
+  });
+  return parseRows(response, "Could not load Re-Master action history");
 }
