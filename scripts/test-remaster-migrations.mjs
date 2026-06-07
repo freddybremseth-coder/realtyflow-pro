@@ -14,6 +14,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260607145538_remaster_user_image_bank_contract.sql",
   ),
+  remasterJobCore: path.join(
+    repoRoot,
+    "supabase/migrations/20260607173023_remaster_pipeline_jobs_core.sql",
+  ),
 };
 
 function assert(condition, message) {
@@ -60,10 +64,31 @@ async function withClient(fn) {
   }
 }
 
+async function createTestClient() {
+  const client = new Client({
+    connectionString: getDatabaseUrl(),
+    application_name: "remaster_migration_integration_parallel",
+  });
+  await client.connect();
+  await client.query("set statement_timeout = '30s'");
+  await client.query("set lock_timeout = '5s'");
+  return client;
+}
+
 async function resetPublicSchema(client) {
   await client.query("drop schema if exists public cascade");
   await client.query("create schema public");
   await client.query("grant all on schema public to public");
+}
+
+async function assertRejectsQuery(client, sql, message) {
+  let rejected = false;
+  try {
+    await client.query(sql);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, message);
 }
 
 async function applyMigration(client, filePath) {
@@ -430,9 +455,335 @@ async function testUserImageBankContract() {
   });
 }
 
+async function insertRemasterJob(client, overrides = {}) {
+  const job = {
+    brand: "remasterfreddy",
+    song_id: `song-${Math.random().toString(36).slice(2)}`,
+    status: "queued",
+    pipeline_step: "pending",
+    input_version: "input-v1",
+    input_config: { test: true },
+    idempotency_key: `remaster_pipeline:${Math.random().toString(16).slice(2).padEnd(64, "0").slice(0, 64)}`,
+    retry_count: 0,
+    max_retries: 3,
+    retry_classification: "unknown",
+    ...overrides,
+  };
+
+  const { rows } = await client.query(
+    `
+      insert into public.remaster_pipeline_jobs (
+        brand,
+        song_id,
+        status,
+        pipeline_step,
+        input_version,
+        input_config,
+        idempotency_key,
+        retry_count,
+        max_retries,
+        retry_classification,
+        next_retry_at,
+        lease_token,
+        lease_owner,
+        lease_expires_at,
+        youtube_upload_started_at,
+        youtube_video_id,
+        youtube_url
+      )
+      values (
+        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+      )
+      returning *
+    `,
+    [
+      job.brand,
+      job.song_id,
+      job.status,
+      job.pipeline_step,
+      job.input_version,
+      JSON.stringify(job.input_config),
+      job.idempotency_key,
+      job.retry_count,
+      job.max_retries,
+      job.retry_classification,
+      job.next_retry_at || null,
+      job.lease_token || null,
+      job.lease_owner || null,
+      job.lease_expires_at || null,
+      job.youtube_upload_started_at || null,
+      job.youtube_video_id || null,
+      job.youtube_url || null,
+    ],
+  );
+  return rows[0];
+}
+
+async function verifyRemasterJobCoreContract(client) {
+  const jobColumns = await getColumns(client, "remaster_pipeline_jobs");
+  for (const [name, expected] of Object.entries({
+    id: { data_type: "uuid" },
+    brand: { data_type: "text" },
+    song_id: { data_type: "text" },
+    status: { data_type: "text" },
+    pipeline_step: { data_type: "text" },
+    progress: { data_type: "integer" },
+    input_version: { data_type: "text" },
+    input_config: { data_type: "jsonb" },
+    idempotency_key: { data_type: "text" },
+    retry_count: { data_type: "integer" },
+    max_retries: { data_type: "integer" },
+    retry_classification: { data_type: "text" },
+    next_retry_at: { data_type: "timestamp with time zone" },
+    lease_token: { data_type: "uuid" },
+    lease_owner: { data_type: "text" },
+    lease_expires_at: { data_type: "timestamp with time zone" },
+    heartbeat_at: { data_type: "timestamp with time zone" },
+    youtube_upload_started_at: { data_type: "timestamp with time zone" },
+    youtube_video_id: { data_type: "text" },
+    youtube_url: { data_type: "text" },
+    manual_review_required: { data_type: "boolean" },
+    created_at: { data_type: "timestamp with time zone" },
+    updated_at: { data_type: "timestamp with time zone" },
+  })) {
+    await assertColumn(jobColumns, name, expected);
+  }
+
+  const eventColumns = await getColumns(client, "remaster_pipeline_job_events");
+  for (const [name, expected] of Object.entries({
+    id: { data_type: "uuid" },
+    job_id: { data_type: "uuid" },
+    event_sequence: { data_type: "bigint" },
+    event_type: { data_type: "text" },
+    level: { data_type: "text" },
+    status: { data_type: "text" },
+    pipeline_step: { data_type: "text" },
+    details: { data_type: "jsonb" },
+    created_at: { data_type: "timestamp with time zone" },
+  })) {
+    await assertColumn(eventColumns, name, expected);
+  }
+
+  const jobConstraints = await getTableConstraints(client, "remaster_pipeline_jobs");
+  for (const constraintName of [
+    "remaster_pipeline_jobs_status_check",
+    "remaster_pipeline_jobs_step_check",
+    "remaster_pipeline_jobs_retry_classification_check",
+    "remaster_pipeline_jobs_progress_check",
+    "remaster_pipeline_jobs_retry_count_check",
+    "remaster_pipeline_jobs_youtube_url_check",
+  ]) {
+    assert(jobConstraints.has(constraintName), `Missing ${constraintName}.`);
+  }
+
+  const { rows: indexRows } = await client.query(
+    "select indexname from pg_indexes where schemaname = 'public' and tablename = 'remaster_pipeline_jobs'",
+  );
+  const indexNames = new Set(indexRows.map((row) => row.indexname));
+  for (const indexName of [
+    "idx_remaster_pipeline_jobs_active_idempotency",
+    "idx_remaster_pipeline_jobs_status_created",
+    "idx_remaster_pipeline_jobs_brand_song_created",
+    "idx_remaster_pipeline_jobs_lease",
+  ]) {
+    assert(indexNames.has(indexName), `Missing ${indexName}.`);
+  }
+
+  const { rows: rlsRows } = await client.query(`
+    select relname, relrowsecurity
+    from pg_class
+    where oid in ('public.remaster_pipeline_jobs'::regclass, 'public.remaster_pipeline_job_events'::regclass)
+    order by relname
+  `);
+  assert(rlsRows.every((row) => row.relrowsecurity === true), "RLS is not enabled for all job tables.");
+
+  const { rows: policyRows } = await client.query(`
+    select count(*)::int as count
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('remaster_pipeline_jobs', 'remaster_pipeline_job_events')
+      and (
+        lower(coalesce(qual, '')) in ('true', '(true)')
+        or lower(coalesce(with_check, '')) in ('true', '(true)')
+      )
+  `);
+  assert(policyRows[0].count === 0, "Migration must not create open Re-Master job policies.");
+}
+
+async function testRemasterJobCore() {
+  await withClient(async (client) => {
+    process.stdout.write("  Scenario: empty database\n");
+    await resetPublicSchema(client);
+    await applyMigration(client, migrationFiles.remasterJobCore);
+    await verifyRemasterJobCoreContract(client);
+
+    process.stdout.write("  Scenario: idempotence\n");
+    await applyMigration(client, migrationFiles.remasterJobCore);
+    await verifyRemasterJobCoreContract(client);
+
+    process.stdout.write("  Scenario: constraints\n");
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.remaster_pipeline_jobs (
+          song_id,
+          status,
+          pipeline_step,
+          input_version,
+          idempotency_key
+        )
+        values ('song-invalid', 'render_video', 'pending', 'v1', 'remaster_pipeline:invalid')
+      `,
+      "Invalid lifecycle status was accepted.",
+    );
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.remaster_pipeline_jobs (
+          song_id,
+          status,
+          pipeline_step,
+          input_version,
+          idempotency_key,
+          progress
+        )
+        values ('song-invalid', 'queued', 'pending', 'v1', 'remaster_pipeline:invalid-progress', 120)
+      `,
+      "Invalid progress was accepted.",
+    );
+
+    process.stdout.write("  Scenario: active duplicate protection\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const duplicateKey = "remaster_pipeline:" + "a".repeat(64);
+    await insertRemasterJob(client, { idempotency_key: duplicateKey, status: "queued" });
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.remaster_pipeline_jobs (song_id, input_version, idempotency_key)
+        values ('song-duplicate', 'v1', '${duplicateKey}')
+      `,
+      "Active duplicate idempotency key was accepted.",
+    );
+    await client.query("update public.remaster_pipeline_jobs set status = 'completed' where idempotency_key = $1", [
+      duplicateKey,
+    ]);
+    await insertRemasterJob(client, { idempotency_key: duplicateKey, status: "queued" });
+
+    process.stdout.write("  Scenario: concurrent claimers\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const claimable = await insertRemasterJob(client);
+    const firstClient = await createTestClient();
+    const secondClient = await createTestClient();
+    try {
+      const [first, second] = await Promise.all([
+        firstClient.query("select * from public.claim_remaster_pipeline_job('worker-a')"),
+        secondClient.query("select * from public.claim_remaster_pipeline_job('worker-b')"),
+      ]);
+      const totalClaims = first.rows.length + second.rows.length;
+      assert(totalClaims === 1, `Expected one concurrent claim, got ${totalClaims}.`);
+      const claimed = first.rows[0] || second.rows[0];
+      assert(claimed.id === claimable.id, "Concurrent claim returned the wrong job.");
+
+      process.stdout.write("  Scenario: lease token required\n");
+      const wrongHeartbeat = await client.query(
+        "select * from public.heartbeat_remaster_pipeline_job($1, $2::uuid)",
+        [claimed.id, "00000000-0000-0000-0000-000000000000"],
+      );
+      assert(wrongHeartbeat.rows.length === 0, "Heartbeat succeeded with the wrong lease token.");
+      const correctHeartbeat = await client.query(
+        "select * from public.heartbeat_remaster_pipeline_job($1, $2::uuid)",
+        [claimed.id, claimed.lease_token],
+      );
+      assert(correctHeartbeat.rows.length === 1, "Heartbeat failed with the correct lease token.");
+    } finally {
+      await firstClient.end();
+      await secondClient.end();
+    }
+
+    process.stdout.write("  Scenario: lease expiry recovery\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const expiredJob = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "expired-worker",
+      lease_token: "11111111-1111-1111-1111-111111111111",
+      lease_expires_at: "2026-01-01T00:00:00.000Z",
+    });
+    const recovered = await client.query("select * from public.claim_remaster_pipeline_job('recovery-worker')");
+    assert(recovered.rows[0]?.id === expiredJob.id, "Expired safe lease was not recovered.");
+
+    process.stdout.write("  Scenario: retry limit\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    await insertRemasterJob(client, {
+      status: "waiting_retry",
+      retry_count: 3,
+      max_retries: 3,
+      next_retry_at: "2026-01-01T00:00:00.000Z",
+    });
+    const retryLimited = await client.query("select * from public.claim_remaster_pipeline_job('retry-worker')");
+    assert(retryLimited.rows.length === 0, "Retry-limited job was claimed.");
+    const retryable = await insertRemasterJob(client, {
+      status: "waiting_retry",
+      retry_count: 1,
+      max_retries: 3,
+      next_retry_at: "2026-01-01T00:00:00.000Z",
+    });
+    const retryClaim = await client.query("select * from public.claim_remaster_pipeline_job('retry-worker')");
+    assert(retryClaim.rows[0]?.id === retryable.id, "Retryable waiting job was not claimed.");
+
+    process.stdout.write("  Scenario: ambiguous YouTube upload is not auto-claimed\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "expired-uploader",
+      lease_token: "22222222-2222-2222-2222-222222222222",
+      lease_expires_at: "2026-01-01T00:00:00.000Z",
+      youtube_upload_started_at: "2026-06-07T10:00:00.000Z",
+    });
+    const ambiguousClaim = await client.query("select * from public.claim_remaster_pipeline_job('safe-worker')");
+    assert(ambiguousClaim.rows.length === 0, "Ambiguous YouTube upload was auto-claimed.");
+
+    process.stdout.write("  Scenario: YouTube ID can resume without re-upload decision\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const uploadedJob = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "expired-uploader",
+      lease_token: "33333333-3333-3333-3333-333333333333",
+      lease_expires_at: "2026-01-01T00:00:00.000Z",
+      youtube_upload_started_at: "2026-06-07T10:00:00.000Z",
+      youtube_video_id: "yt-123",
+      youtube_url: "https://youtube.com/watch?v=yt-123",
+    });
+    const uploadedClaim = await client.query("select * from public.claim_remaster_pipeline_job('resume-worker')");
+    assert(uploadedClaim.rows[0]?.id === uploadedJob.id, "Job with stored YouTube ID could not resume.");
+
+    process.stdout.write("  Scenario: event order\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const eventJob = await insertRemasterJob(client);
+    await client.query(
+      "select public.append_remaster_pipeline_job_event($1, 'step_started', 'info', 'running', 'download_audio', 'Download started', '{}'::jsonb)",
+      [eventJob.id],
+    );
+    await client.query(
+      "select public.append_remaster_pipeline_job_event($1, 'step_completed', 'info', 'running', 'download_audio', 'Download completed', '{}'::jsonb)",
+      [eventJob.id],
+    );
+    const events = await client.query(
+      "select event_type, event_sequence from public.remaster_pipeline_job_events where job_id = $1 order by event_sequence",
+      [eventJob.id],
+    );
+    assert.deepEqual(
+      events.rows.map((row) => row.event_type),
+      ["step_started", "step_completed"],
+      "Events are not ordered by durable sequence.",
+    );
+    assert(events.rows[0].event_sequence < events.rows[1].event_sequence, "Event sequence did not increase.");
+  });
+}
+
 const tests = new Map([
   ["growth-actions-fingerprint", testGrowthActionsFingerprintIndex],
   ["user-image-bank-contract", testUserImageBankContract],
+  ["remaster-job-core", testRemasterJobCore],
 ]);
 
 async function main() {
