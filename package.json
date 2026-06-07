@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "schema:contract:remaster": "node scripts/check-remaster-schema-contract.mjs"
+    "schema:contract:remaster": "node scripts/check-remaster-schema-contract.mjs",
+    "test:observability": "tsx --test src/lib/observability.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -56,6 +57,7 @@
     "pg": "^8.20.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }
