@@ -1,0 +1,42 @@
+name: Re-Master schema contract
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/remaster-schema-contract.yml"
+      - "scripts/check-remaster-schema-contract.mjs"
+      - "supabase/migrations/**"
+      - "docs/supabase-migration-drift-audit-2026-06-07.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/remaster-schema-contract.yml"
+      - "scripts/check-remaster-schema-contract.mjs"
+      - "supabase/migrations/**"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Run contract when database URL is configured
+        if: env.SUPABASE_DB_URL != ''
+        run: npm run schema:contract:remaster
+      - name: Skip without database URL
+        if: env.SUPABASE_DB_URL == ''
+        run: |
+          echo "SUPABASE_DB_URL is not configured; skipping live schema contract."

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "schema:contract:remaster": "node scripts/check-remaster-schema-contract.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
