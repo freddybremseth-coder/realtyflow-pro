@@ -12,6 +12,17 @@ This was a read-only audit. No production data was changed, no migration was app
 - Queried metadata only. Token values, song contents, image rows, and user rows were not selected.
 - Checked Supabase changelog before the audit. The relevant operational note is that newer Supabase projects may not expose new public tables through the Data API automatically; future hotfixes must explicitly consider grants/RLS/Data API exposure instead of assuming table creation is enough.
 
+## CI safety model
+
+PR checks must never run PR-modified code with a production database connection string.
+
+This PR therefore separates the checks:
+
+- `Re-Master schema contract - static` runs on `pull_request` and only executes `node --check scripts/check-remaster-schema-contract.mjs` plus a whitespace diff check. It does not receive `SUPABASE_DB_URL`, `POSTGRES_URL`, or `DATABASE_URL`.
+- `Re-Master schema contract - production` runs only on `push` to `main` or manual `workflow_dispatch`. It is attached to the protected GitHub Environment `production-schema-audit` and runs the live database contract only after the dedicated read-only `SUPABASE_DB_URL` is configured.
+
+Important: the first green PR workflow for this audit was not proof that the live production database contract had run if `SUPABASE_DB_URL` was absent. A missing database secret must be a hard failure in the production workflow, not a green skip.
+
 ## Executive summary
 
 Production is usable for the current Re-Master flow: the critical Re-Master tables and columns now exist, including `public.user_image_bank`.
@@ -351,7 +362,8 @@ This PR adds:
 
 - `scripts/check-remaster-schema-contract.mjs`
 - `npm run schema:contract:remaster`
-- `.github/workflows/remaster-schema-contract.yml`
+- `.github/workflows/remaster-schema-contract-static.yml`
+- `.github/workflows/remaster-schema-contract-production.yml`
 
 The script is read-only and checks:
 
@@ -360,14 +372,28 @@ The script is read-only and checks:
 - RLS enabled on critical tables
 - required storage buckets: `assets`, `neural-beat`, `content-images`
 - optional warnings for `thumbnails`, archive columns, and `genre_images` enrichment columns
+- a database-user guard when `SCHEMA_CONTRACT_EXPECTED_DB_USER` is set
 
-It does not print credentials. It requires one of:
+The script does not print credentials, connection strings, database passwords, service-role keys, OAuth tokens, or raw error objects. Database failures are reduced to controlled messages and an optional Postgres error code.
+
+For local/manual use it requires one of:
 
 - `SUPABASE_DB_URL`
 - `POSTGRES_URL`
 - `DATABASE_URL`
 
-CI skips the live contract if `SUPABASE_DB_URL` is not configured. To make it a blocking deployment control, add a GitHub secret named `SUPABASE_DB_URL` for a protected Supabase connection string.
+The production workflow must use `SUPABASE_DB_URL`. Missing `SUPABASE_DB_URL` is a hard failure in the production workflow. The PR static workflow intentionally does not run a live database check and does not receive any database URL.
+
+The script sets these session guards after connecting:
+
+```sql
+set default_transaction_read_only = on;
+set statement_timeout = '30s';
+set lock_timeout = '5s';
+set idle_in_transaction_session_timeout = '30s';
+```
+
+These guards are defense in depth. The primary security boundary must still be a dedicated read-only database credential.
 
 Run locally:
 
@@ -381,11 +407,96 @@ To make optional archive drift fail the check:
 REMASTER_SCHEMA_STRICT_ARCHIVE=1 SUPABASE_DB_URL="postgresql://..." npm run schema:contract:remaster
 ```
 
+### GitHub Environment setup
+
+Create a protected environment named `production-schema-audit` in GitHub:
+
+1. Open repository settings for `freddybremseth-coder/realtyflow-pro`.
+2. Go to `Settings` -> `Environments`.
+3. Create environment `production-schema-audit`.
+4. Add required reviewers for deployments to this environment.
+5. Enable prevent self-review if available.
+6. Restrict deployment branches to `main` only.
+7. Add an environment secret named `SUPABASE_DB_URL` after the dedicated read-only database user exists.
+
+Do not add a broad production Postgres URL as a repository-level `SUPABASE_DB_URL`. If such a repository secret already exists, remove it or replace it with the dedicated read-only credential before enabling the live contract.
+
+The production workflow also sets:
+
+```yaml
+SCHEMA_CONTRACT_EXPECTED_DB_USER: remaster_schema_contract
+```
+
+If a different read-only role name is chosen, update the workflow and documentation together.
+
+### Dedicated read-only database user
+
+Create the database user manually in Supabase using an admin connection. Do not commit the password or connection string.
+
+Recommended role shape:
+
+```sql
+create role remaster_schema_contract login password '<generate-a-strong-password>';
+
+grant connect on database postgres to remaster_schema_contract;
+grant usage on schema public to remaster_schema_contract;
+grant usage on schema storage to remaster_schema_contract;
+
+-- Needed only for bucket-id existence checks. Do not grant SELECT on public app tables.
+grant select on storage.buckets to remaster_schema_contract;
+
+alter role remaster_schema_contract set default_transaction_read_only = on;
+alter role remaster_schema_contract set statement_timeout = '30s';
+alter role remaster_schema_contract set lock_timeout = '5s';
+alter role remaster_schema_contract set idle_in_transaction_session_timeout = '30s';
+```
+
+The contract script reads table, column, index, constraint, and RLS metadata from `pg_catalog`/metadata views and should not need `SELECT` on `public.oauth_tokens`, `public.songs`, `public.growth_actions`, or other application-data tables.
+
+If RLS on `storage.buckets` blocks the bucket-id metadata check, add a narrow read policy for this role only:
+
+```sql
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'buckets'
+      and policyname = 'schema_contract_read_buckets'
+  ) then
+    create policy schema_contract_read_buckets
+      on storage.buckets
+      for select
+      to remaster_schema_contract
+      using (true);
+  end if;
+end $$;
+```
+
+Do not grant this role:
+
+- `INSERT`, `UPDATE`, or `DELETE`
+- `CREATE`, `ALTER`, or `DROP`
+- policy-management privileges
+- `BYPASSRLS`
+- `SELECT` on OAuth-token rows or application-data tables
+
+### CI rollback and disable plan
+
+The audit PR has no database rollback because it applies no database changes.
+
+To disable the production contract without touching the database:
+
+1. Remove or pause `.github/workflows/remaster-schema-contract-production.yml` in a follow-up PR.
+2. Remove the `SUPABASE_DB_URL` environment secret from `production-schema-audit`.
+3. Keep the static PR workflow in place so contract-script syntax still receives PR coverage.
+
 ## 10. Recommended next steps
 
 1. Review this audit PR and merge it without database changes.
 2. Decide whether `user_image_bank` should intentionally remain service-role-only with no RLS policy. That is the safest current shape.
 3. Create a small additive hotfix PR for archive columns and `thumbnails` bucket only if those features are needed now.
 4. Create a separate migration-history reconciliation plan. Do not mark all 40 missing migrations as applied until each has been compared to production.
-5. Add `SUPABASE_DB_URL` as a GitHub secret so the contract test becomes a live deployment check.
+5. Create the `production-schema-audit` GitHub Environment and configure the dedicated read-only `SUPABASE_DB_URL` environment secret.
 6. Address high-risk general Supabase advisors separately, especially disabled RLS on `chatbot_sessions`, `engagement_snapshots`, and `scheduling_insights`.

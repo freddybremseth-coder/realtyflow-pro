@@ -18,6 +18,7 @@ if (!connectionString) {
 }
 
 const strictArchive = process.env.REMASTER_SCHEMA_STRICT_ARCHIVE === "1";
+const expectedDbUser = process.env.SCHEMA_CONTRACT_EXPECTED_DB_USER;
 
 const requiredColumns = {
   "public.user_image_bank": [
@@ -182,6 +183,18 @@ const optionalBuckets = ["thumbnails"];
 const warnings = [];
 const failures = [];
 
+class SchemaContractError extends Error {
+  constructor(phase, cause) {
+    super(phase);
+    this.name = "SchemaContractError";
+    this.phase = phase;
+    this.code =
+      cause && typeof cause === "object" && "code" in cause
+        ? String(cause.code)
+        : undefined;
+  }
+}
+
 function splitTableName(qualifiedName) {
   const [schema, table] = qualifiedName.split(".");
   return { schema, table };
@@ -192,15 +205,29 @@ async function fetchRows(client, query, params = []) {
   return result.rows;
 }
 
+async function checkExpectedDbUser(client) {
+  if (!expectedDbUser) return;
+
+  const rows = await fetchRows(client, "select current_user as current_user");
+  if (rows[0]?.current_user !== expectedDbUser) {
+    throw new SchemaContractError("identity");
+  }
+}
+
 async function checkColumns(client, contract, severity = "failure") {
   const qualifiedTables = Object.keys(contract);
   const rows = await fetchRows(
     client,
     `
-      select table_schema, table_name, column_name
-      from information_schema.columns
-      where (table_schema || '.' || table_name) = any($1)
-      order by table_schema, table_name, ordinal_position
+      select n.nspname as table_schema, c.relname as table_name, a.attname as column_name
+      from pg_attribute a
+      join pg_class c on c.oid = a.attrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      where (n.nspname || '.' || c.relname) = any($1)
+        and c.relkind in ('r', 'p')
+        and a.attnum > 0
+        and not a.attisdropped
+      order by n.nspname, c.relname, a.attnum
     `,
     [qualifiedTables],
   );
@@ -251,9 +278,12 @@ async function checkIndexes(client) {
   const rows = await fetchRows(
     client,
     `
-      select schemaname, tablename, indexname
-      from pg_indexes
-      where (schemaname || '.' || tablename) = any($1)
+      select n.nspname as schemaname, t.relname as tablename, i.relname as indexname
+      from pg_index x
+      join pg_class i on i.oid = x.indexrelid
+      join pg_class t on t.oid = x.indrelid
+      join pg_namespace n on n.oid = t.relnamespace
+      where (n.nspname || '.' || t.relname) = any($1)
     `,
     [Object.keys(requiredIndexes)],
   );
@@ -293,17 +323,29 @@ async function main() {
     application_name: "remaster-schema-contract",
   });
 
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (error) {
+    throw new SchemaContractError("connection", error);
+  }
+
   try {
     await client.query("set default_transaction_read_only = on");
+    await client.query("set statement_timeout = '30s'");
+    await client.query("set lock_timeout = '5s'");
+    await client.query("set idle_in_transaction_session_timeout = '30s'");
+    await checkExpectedDbUser(client);
     await checkColumns(client, requiredColumns);
     await checkRls(client);
     await checkIndexes(client);
     await checkBuckets(client);
     await checkColumns(client, optionalArchiveColumns, strictArchive ? "failure" : "warning");
     await checkColumns(client, optionalNeuralBeatColumns, "warning");
+  } catch (error) {
+    if (error instanceof SchemaContractError) throw error;
+    throw new SchemaContractError("query", error);
   } finally {
-    await client.end();
+    await client.end().catch(() => undefined);
   }
 
   console.log("Re-Master schema contract check");
@@ -315,7 +357,28 @@ async function main() {
   if (failures.length > 0) process.exit(1);
 }
 
+function reportControlledError(error) {
+  if (error instanceof SchemaContractError) {
+    if (error.phase === "connection") {
+      console.error("Schema contract connection failed.");
+    } else if (error.phase === "identity") {
+      console.error("Schema contract connected with an unexpected database user.");
+    } else if (error.code === "57014") {
+      console.error("Schema contract query timed out.");
+    } else if (error.code === "55P03") {
+      console.error("Schema contract lock timed out.");
+    } else {
+      console.error("Schema contract query failed.");
+    }
+
+    if (error.code) console.error(`Postgres error code: ${error.code}`);
+    return;
+  }
+
+  console.error("Schema contract failed.");
+}
+
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  reportControlledError(error);
   process.exit(1);
 });

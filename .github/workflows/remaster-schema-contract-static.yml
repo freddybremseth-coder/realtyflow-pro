@@ -1,0 +1,40 @@
+name: Re-Master schema contract - static
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/remaster-schema-contract-static.yml"
+      - ".github/workflows/remaster-schema-contract-production.yml"
+      - "scripts/check-remaster-schema-contract.mjs"
+      - "supabase/migrations/**"
+      - "docs/supabase-migration-drift-audit-2026-06-07.md"
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Static schema-contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_DB_URL: ""
+      POSTGRES_URL: ""
+      DATABASE_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check contract script syntax
+        run: node --check scripts/check-remaster-schema-contract.mjs
+      - name: Check whitespace in PR diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git diff --check "origin/$BASE_REF...HEAD"
