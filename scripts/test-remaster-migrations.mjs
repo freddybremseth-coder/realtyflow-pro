@@ -960,7 +960,10 @@ async function testRemasterJobCore() {
       JSON.stringify(events.rows.map((row) => row.event_type)) === JSON.stringify(["step_started", "step_completed"]),
       "Events are not ordered by durable sequence.",
     );
-    assert(events.rows[0].event_sequence < events.rows[1].event_sequence, "Event sequence did not increase.");
+    assert(
+      BigInt(events.rows[0].event_sequence) < BigInt(events.rows[1].event_sequence),
+      "Event sequence did not increase.",
+    );
     const correlation = await client.query(
       "select correlation_id from public.remaster_pipeline_job_events where job_id = $1 order by event_sequence limit 1",
       [eventJob.id],
