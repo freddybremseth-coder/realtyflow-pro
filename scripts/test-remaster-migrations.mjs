@@ -398,15 +398,15 @@ async function testUserImageBankContract() {
     await client.query(`
       with duplicate as (select gen_random_uuid() as id)
       insert into public.user_image_bank (id, owner, url, kind, tags, created_at, use_count, archive_status)
-      select id, 'duplicate-a', 'https://example.test/a.png', 'image', '{}', now(), 0, 'active' from duplicate
+      select id, 'duplicate-a', 'https://example.test/a.png', 'image', '{}'::text[], now(), 0, 'active' from duplicate
       union all
-      select id, 'duplicate-b', 'https://example.test/b.png', 'logo', '{}', now(), 0, 'active' from duplicate
+      select id, 'duplicate-b', 'https://example.test/b.png', 'logo', '{}'::text[], now(), 0, 'active' from duplicate
       union all
-      select gen_random_uuid(), 'bad-kind', 'https://example.test/bad-kind.png', 'poster', '{}', now(), 0, 'active'
+      select gen_random_uuid(), 'bad-kind', 'https://example.test/bad-kind.png', 'poster', '{}'::text[], now(), 0, 'active'
       union all
-      select gen_random_uuid(), 'negative-count', 'https://example.test/negative.png', 'thumbnail', '{}', now(), -1, 'active'
+      select gen_random_uuid(), 'negative-count', 'https://example.test/negative.png', 'thumbnail', '{}'::text[], now(), -1, 'active'
       union all
-      select null, null, null, null, null, null, null, null
+      select null::uuid, null::text, null::text, null::text, null::text[], null::timestamptz, null::integer, null::text
     `);
     await applyMigration(client, migrationFiles.userImageBankContract);
     await verifyUserImageBankContract(client, { expectStrict: false });
