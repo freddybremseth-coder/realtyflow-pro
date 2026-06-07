@@ -124,7 +124,7 @@ async function getTableConstraints(client, tableName) {
         convalidated,
         pg_get_constraintdef(oid) as definition
       from pg_constraint
-      where conrelid = format('public.%I', $1)::regclass
+      where conrelid = format('public.%I', $1::text)::regclass
       order by conname
     `,
     [tableName],
