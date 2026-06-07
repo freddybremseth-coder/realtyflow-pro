@@ -151,6 +151,7 @@ const requiredIndexes = {
     "idx_user_image_bank_owner",
     "idx_user_image_bank_kind",
     "idx_user_image_bank_created_at",
+    "idx_user_image_bank_owner_kind_created",
   ],
   "public.songs": [
     "idx_songs_brand",
@@ -165,6 +166,13 @@ const requiredIndexes = {
   ],
   "public.oauth_tokens": ["idx_oauth_tokens_expires_at"],
   "public.oauth_states": ["idx_oauth_states_expires_at", "idx_oauth_states_brand_platform"],
+};
+
+const requiredConstraints = {
+  "public.user_image_bank": [
+    "user_image_bank_kind_check",
+    "user_image_bank_use_count_check",
+  ],
 };
 
 const requiredBuckets = ["assets", "neural-beat", "content-images"];
@@ -300,6 +308,31 @@ async function checkIndexes(client) {
   }
 }
 
+async function checkConstraints(client) {
+  const rows = await fetchRows(
+    client,
+    `
+      select n.nspname as schemaname, t.relname as tablename, c.conname as constraintname
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+      where (n.nspname || '.' || t.relname) = any($1)
+    `,
+    [Object.keys(requiredConstraints)],
+  );
+  const existing = new Set(
+    rows.map((row) => `${row.schemaname}.${row.tablename}.${row.constraintname}`),
+  );
+
+  for (const [qualifiedTable, constraints] of Object.entries(requiredConstraints)) {
+    for (const constraintName of constraints) {
+      if (!existing.has(`${qualifiedTable}.${constraintName}`)) {
+        failures.push(`${qualifiedTable} is missing constraint ${constraintName}`);
+      }
+    }
+  }
+}
+
 async function checkBuckets(client) {
   const rows = await fetchRows(
     client,
@@ -338,6 +371,7 @@ async function main() {
     await checkColumns(client, requiredColumns);
     await checkRls(client);
     await checkIndexes(client);
+    await checkConstraints(client);
     await checkBuckets(client);
     await checkColumns(client, optionalArchiveColumns, strictArchive ? "failure" : "warning");
     await checkColumns(client, optionalNeuralBeatColumns, "warning");
