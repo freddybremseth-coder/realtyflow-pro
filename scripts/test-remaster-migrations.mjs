@@ -474,6 +474,8 @@ async function insertRemasterJob(client, overrides = {}) {
     max_retries: 3,
     retry_classification: "unknown",
     cancel_requested_at: null,
+    manual_review_required: false,
+    manual_review_reason: null,
     ...overrides,
   };
 
@@ -497,10 +499,12 @@ async function insertRemasterJob(client, overrides = {}) {
         cancel_requested_at,
         youtube_upload_started_at,
         youtube_video_id,
-        youtube_url
+        youtube_url,
+        manual_review_required,
+        manual_review_reason
       )
       values (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
       )
       returning *
     `,
@@ -523,6 +527,8 @@ async function insertRemasterJob(client, overrides = {}) {
       job.youtube_upload_started_at || null,
       job.youtube_video_id || null,
       job.youtube_url || null,
+      job.manual_review_required,
+      job.manual_review_reason || null,
     ],
   );
   return rows[0];
