@@ -1,0 +1,49 @@
+name: Re-Master migration integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/remaster-migration-integration.yml"
+      - "scripts/test-remaster-migrations.mjs"
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-integration:
+    name: Isolated Postgres migration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: remaster_migration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d remaster_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MIGRATION_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/remaster_migration_test
+      SUPABASE_DB_URL: ""
+      POSTGRES_URL: ""
+      DATABASE_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Run explicit migration integration tests
+        run: npm run test:migrations -- growth-actions-fingerprint

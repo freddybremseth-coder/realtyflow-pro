@@ -44,6 +44,23 @@ This migration uses normal `create index if not exists`. The production table cu
 
 For a future large `growth_actions` table, use a separately reviewed rollout plan for `create index concurrently`, because concurrent index creation has different transaction and failure semantics and may not be safe in every migration runner mode.
 
+## Isolated migration test
+
+The PR includes a GitHub Actions integration test that uses an isolated PostgreSQL 17 service container. It never receives production database secrets and runs only the explicit `growth-actions-fingerprint` migration test.
+
+The test creates a minimal `public.growth_actions` table, inserts representative rows, applies the migration twice, verifies the partial predicate, verifies the index is not unique, and verifies rollback with:
+
+```sql
+drop index if exists public.idx_growth_actions_remaster_fingerprint;
+```
+
+Local usage requires a disposable local database:
+
+```bash
+MIGRATION_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/remaster_migration_test \
+  npm run test:migrations -- growth-actions-fingerprint
+```
+
 ## Rollback
 
 ```sql
