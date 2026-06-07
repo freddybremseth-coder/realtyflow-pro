@@ -74,7 +74,7 @@ async function getIndexDetails(client, indexName) {
         i.indisunique,
         pg_get_indexdef(i.indexrelid) as indexdef,
         pg_get_expr(i.indpred, i.indrelid) as predicate,
-        array_agg(a.attname order by ord.ordinality) as columns
+        json_agg(a.attname order by ord.ordinality)::text as columns_json
       from pg_class idx
       join pg_index i on i.indexrelid = idx.oid
       join pg_class tbl on tbl.oid = i.indrelid
@@ -117,9 +117,10 @@ async function testGrowthActionsFingerprintIndex() {
 
     const index = await getIndexDetails(client, "idx_growth_actions_remaster_fingerprint");
     assert(index.indisunique === false, "Fingerprint index must not be unique.");
+    const indexColumns = JSON.parse(index.columns_json);
     assert(
-      JSON.stringify(index.columns) === JSON.stringify(["brand", "platform", "hypothesis"]),
-      `Unexpected index columns: ${JSON.stringify(index.columns)}`,
+      JSON.stringify(indexColumns) === JSON.stringify(["brand", "platform", "hypothesis"]),
+      `Unexpected index columns: ${JSON.stringify(indexColumns)}`,
     );
     assert(
       index.predicate.includes("(brand = 'remasterfreddy'::text)") &&
