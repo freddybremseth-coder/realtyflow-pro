@@ -415,7 +415,7 @@ Create a protected environment named `production-schema-audit` in GitHub:
 2. Go to `Settings` -> `Environments`.
 3. Create environment `production-schema-audit`.
 4. Add required reviewers for deployments to this environment.
-5. Enable prevent self-review if available.
+5. Enable prevent self-review only if at least one additional trusted reviewer can approve runs.
 6. Restrict deployment branches to `main` only.
 7. Add an environment secret named `SUPABASE_DB_URL` after the dedicated read-only database user exists.
 
