@@ -29,6 +29,7 @@ create table if not exists public.remaster_pipeline_jobs (
   started_at timestamptz,
   completed_at timestamptz,
   cancelled_at timestamptz,
+  cancel_requested_at timestamptz,
   youtube_upload_started_at timestamptz,
   youtube_video_id text,
   youtube_url text,
@@ -60,6 +61,7 @@ alter table public.remaster_pipeline_jobs add column if not exists heartbeat_at 
 alter table public.remaster_pipeline_jobs add column if not exists started_at timestamptz;
 alter table public.remaster_pipeline_jobs add column if not exists completed_at timestamptz;
 alter table public.remaster_pipeline_jobs add column if not exists cancelled_at timestamptz;
+alter table public.remaster_pipeline_jobs add column if not exists cancel_requested_at timestamptz;
 alter table public.remaster_pipeline_jobs add column if not exists youtube_upload_started_at timestamptz;
 alter table public.remaster_pipeline_jobs add column if not exists youtube_video_id text;
 alter table public.remaster_pipeline_jobs add column if not exists youtube_url text;
@@ -169,6 +171,7 @@ create table if not exists public.remaster_pipeline_job_events (
   pipeline_step text,
   message text,
   details jsonb not null default '{}'::jsonb,
+  correlation_id uuid,
   created_at timestamptz not null default now()
 );
 
@@ -181,6 +184,7 @@ alter table public.remaster_pipeline_job_events add column if not exists status 
 alter table public.remaster_pipeline_job_events add column if not exists pipeline_step text;
 alter table public.remaster_pipeline_job_events add column if not exists message text;
 alter table public.remaster_pipeline_job_events add column if not exists details jsonb default '{}'::jsonb;
+alter table public.remaster_pipeline_job_events add column if not exists correlation_id uuid;
 alter table public.remaster_pipeline_job_events add column if not exists created_at timestamptz default now();
 
 do $$
@@ -288,6 +292,106 @@ create trigger trg_remaster_pipeline_jobs_updated_at
   for each row
   execute function public.set_remaster_pipeline_job_updated_at();
 
+create or replace function public.remaster_pipeline_job_status_transition_is_valid(
+  p_from text,
+  p_to text
+)
+returns boolean
+language sql
+immutable
+as $$
+  select p_from = p_to
+    or (
+      p_from = 'queued'
+      and p_to in ('running', 'cancelled')
+    )
+    or (
+      p_from = 'running'
+      and p_to in ('waiting_retry', 'completed', 'failed', 'cancelled')
+    )
+    or (
+      p_from = 'waiting_retry'
+      and p_to in ('queued', 'cancelled')
+    )
+    or (
+      p_from = 'failed'
+      and p_to = 'queued'
+    );
+$$;
+
+create or replace function public.remaster_pipeline_job_step_transition_is_valid(
+  p_from text,
+  p_to text
+)
+returns boolean
+language sql
+immutable
+as $$
+  select array_position(array[
+    'pending',
+    'download_audio',
+    'analyze_song',
+    'generate_metadata',
+    'prepare_images',
+    'render_video',
+    'compose_thumbnail',
+    'upload_youtube',
+    'set_thumbnail',
+    'add_playlist',
+    'persist_results',
+    'completed'
+  ], p_to) >= array_position(array[
+    'pending',
+    'download_audio',
+    'analyze_song',
+    'generate_metadata',
+    'prepare_images',
+    'render_video',
+    'compose_thumbnail',
+    'upload_youtube',
+    'set_thumbnail',
+    'add_playlist',
+    'persist_results',
+    'completed'
+  ], p_from);
+$$;
+
+create or replace function public.append_remaster_pipeline_job_event(
+  p_job_id uuid,
+  p_event_type text,
+  p_level text default 'info',
+  p_status text default null,
+  p_pipeline_step text default null,
+  p_message text default null,
+  p_details jsonb default '{}'::jsonb,
+  p_correlation_id uuid default null
+)
+returns public.remaster_pipeline_job_events
+language sql
+as $$
+  insert into public.remaster_pipeline_job_events (
+    job_id,
+    event_type,
+    level,
+    status,
+    pipeline_step,
+    message,
+    details,
+    correlation_id
+  )
+  values (
+    p_job_id,
+    p_event_type,
+    p_level,
+    p_status,
+    p_pipeline_step,
+    p_message,
+    coalesce(p_details, '{}'::jsonb),
+    p_correlation_id
+  )
+  returning *;
+$$;
+
 create or replace function public.claim_remaster_pipeline_job(
   p_worker_id text,
   p_lease_token uuid default gen_random_uuid(),
@@ -296,22 +400,37 @@ create or replace function public.claim_remaster_pipeline_job(
 returns setof public.remaster_pipeline_jobs
 language sql
 as $$
-  with candidate as (
+  with retry_ready as (
+    update public.remaster_pipeline_jobs jobs
+    set
+      status = 'queued',
+      next_retry_at = null,
+      retry_classification = 'unknown'
+    where jobs.status = 'waiting_retry'
+      and jobs.retry_count < jobs.max_retries
+      and (jobs.next_retry_at is null or jobs.next_retry_at <= now())
+      and jobs.manual_review_required = false
+      and jobs.retry_classification not in ('manual_review', 'not_retryable')
+      and not (
+        jobs.youtube_upload_started_at is not null
+        and jobs.youtube_video_id is null
+      )
+    returning jobs.id
+  ),
+  candidate as (
     select id
     from public.remaster_pipeline_jobs
     where (
       status = 'queued'
-      or (
-        status = 'waiting_retry'
-        and retry_count < max_retries
-        and (next_retry_at is null or next_retry_at <= now())
-      )
       or (
         status = 'running'
         and lease_expires_at is not null
         and lease_expires_at < now()
       )
     )
+    and manual_review_required = false
+    and retry_classification not in ('manual_review', 'not_retryable')
+    and cancel_requested_at is null
     and not (
       youtube_upload_started_at is not null
       and youtube_video_id is null
@@ -328,14 +447,8 @@ as $$
     lease_expires_at = now() + make_interval(secs => greatest(1, p_lease_seconds)),
     heartbeat_at = now(),
     started_at = coalesce(jobs.started_at, now()),
-    retry_classification = case
-      when jobs.retry_classification = 'manual_review' then jobs.retry_classification
-      else 'unknown'
-    end,
-    manual_review_required = case
-      when jobs.retry_classification = 'manual_review' then jobs.manual_review_required
-      else false
-    end
+    retry_classification = 'unknown',
+    manual_review_required = false
   where jobs.id in (select id from candidate)
   returning jobs.*;
 $$;
@@ -346,49 +459,542 @@ create or replace function public.heartbeat_remaster_pipeline_job(
   p_lease_seconds integer default 300
 )
 returns setof public.remaster_pipeline_jobs
-language sql
+language plpgsql
 as $$
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status <> 'running' then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_token is distinct from p_lease_token then
+    raise exception '%', 'LEASE_TOKEN_INVALID' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_expires_at is null or v_job.lease_expires_at <= now() then
+    raise exception '%', 'LEASE_EXPIRED' using errcode = 'P0001';
+  end if;
+
+  return query
   update public.remaster_pipeline_jobs jobs
   set
     heartbeat_at = now(),
     lease_expires_at = now() + make_interval(secs => greatest(1, p_lease_seconds))
   where jobs.id = p_job_id
-    and jobs.lease_token = p_lease_token
-    and jobs.status = 'running'
   returning jobs.*;
+end;
 $$;
 
-create or replace function public.append_remaster_pipeline_job_event(
+create or replace function public.transition_remaster_pipeline_job(
   p_job_id uuid,
-  p_event_type text,
-  p_level text default 'info',
-  p_status text default null,
+  p_expected_status text,
+  p_next_status text,
   p_pipeline_step text default null,
-  p_message text default null,
-  p_details jsonb default '{}'::jsonb
+  p_progress integer default null,
+  p_retry_classification text default null,
+  p_next_retry_at timestamptz default null,
+  p_error_code text default null,
+  p_error_message text default null,
+  p_lease_token uuid default null,
+  p_require_lease boolean default false,
+  p_event_type text default 'job_transitioned',
+  p_event_message text default null,
+  p_event_details jsonb default '{}'::jsonb,
+  p_correlation_id uuid default null
 )
-returns public.remaster_pipeline_job_events
-language sql
+returns setof public.remaster_pipeline_jobs
+language plpgsql
 as $$
-  insert into public.remaster_pipeline_job_events (
-    job_id,
-    event_type,
-    level,
-    status,
-    pipeline_step,
-    message,
-    details
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status <> p_expected_status then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if not public.remaster_pipeline_job_status_transition_is_valid(v_job.status, p_next_status) then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if p_pipeline_step is not null
+    and not public.remaster_pipeline_job_step_transition_is_valid(v_job.pipeline_step, p_pipeline_step) then
+    raise exception '%', 'INVALID_PIPELINE_STEP_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if p_require_lease then
+    if p_lease_token is null or v_job.lease_token is distinct from p_lease_token then
+      raise exception '%', 'LEASE_TOKEN_INVALID' using errcode = 'P0001';
+    end if;
+
+    if v_job.lease_expires_at is null or v_job.lease_expires_at <= now() then
+      raise exception '%', 'LEASE_EXPIRED' using errcode = 'P0001';
+    end if;
+  end if;
+
+  if p_next_status = 'waiting_retry' then
+    if v_job.youtube_upload_started_at is not null and v_job.youtube_video_id is null then
+      raise exception '%', 'YOUTUBE_UPLOAD_AMBIGUOUS' using errcode = 'P0001';
+    end if;
+
+    if v_job.retry_count >= v_job.max_retries then
+      raise exception '%', 'RETRY_LIMIT_REACHED' using errcode = 'P0001';
+    end if;
+  end if;
+
+  return query
+  with updated as (
+    update public.remaster_pipeline_jobs jobs
+    set
+      status = p_next_status,
+      pipeline_step = coalesce(p_pipeline_step, case when p_next_status = 'completed' then 'completed' else jobs.pipeline_step end),
+      progress = coalesce(p_progress, case when p_next_status = 'completed' then 100 else jobs.progress end),
+      retry_count = case when p_next_status = 'waiting_retry' then jobs.retry_count + 1 else jobs.retry_count end,
+      retry_classification = coalesce(
+        p_retry_classification,
+        case
+          when p_next_status = 'waiting_retry' then 'retryable'
+          when p_next_status = 'failed' then 'not_retryable'
+          else jobs.retry_classification
+        end
+      ),
+      next_retry_at = case when p_next_status = 'waiting_retry' then p_next_retry_at else null end,
+      error_code = p_error_code,
+      error_message = p_error_message,
+      completed_at = case when p_next_status = 'completed' then now() else jobs.completed_at end,
+      cancelled_at = case when p_next_status = 'cancelled' then now() else jobs.cancelled_at end,
+      lease_token = case when p_next_status in ('waiting_retry', 'completed', 'failed', 'cancelled') then null else jobs.lease_token end,
+      lease_owner = case when p_next_status in ('waiting_retry', 'completed', 'failed', 'cancelled') then null else jobs.lease_owner end,
+      lease_expires_at = case when p_next_status in ('waiting_retry', 'completed', 'failed', 'cancelled') then null else jobs.lease_expires_at end,
+      heartbeat_at = case when p_next_status in ('waiting_retry', 'completed', 'failed', 'cancelled') then null else jobs.heartbeat_at end
+    where jobs.id = p_job_id
+    returning jobs.*
+  ),
+  event as (
+    insert into public.remaster_pipeline_job_events (
+      job_id,
+      event_type,
+      level,
+      status,
+      pipeline_step,
+      message,
+      details,
+      correlation_id
+    )
+    select
+      updated.id,
+      coalesce(p_event_type, 'job_transitioned'),
+      case when p_next_status = 'failed' then 'error' else 'info' end,
+      updated.status,
+      updated.pipeline_step,
+      p_event_message,
+      coalesce(p_event_details, '{}'::jsonb),
+      p_correlation_id
+    from updated
+    where p_event_type is not null
+    returning id
   )
-  values (
-    p_job_id,
-    p_event_type,
-    p_level,
-    p_status,
-    p_pipeline_step,
-    p_message,
-    coalesce(p_details, '{}'::jsonb)
+  select * from updated;
+end;
+$$;
+
+create or replace function public.mark_remaster_youtube_upload_started(
+  p_job_id uuid,
+  p_lease_token uuid,
+  p_correlation_id uuid default null
+)
+returns setof public.remaster_pipeline_jobs
+language plpgsql
+as $$
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status <> 'running' then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_token is distinct from p_lease_token then
+    raise exception '%', 'LEASE_TOKEN_INVALID' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_expires_at is null or v_job.lease_expires_at <= now() then
+    raise exception '%', 'LEASE_EXPIRED' using errcode = 'P0001';
+  end if;
+
+  if v_job.cancel_requested_at is not null then
+    raise exception '%', 'CANCELLATION_REQUIRES_MANUAL_REVIEW' using errcode = 'P0001';
+  end if;
+
+  if v_job.youtube_video_id is not null then
+    raise exception '%', 'YOUTUBE_VIDEO_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  if v_job.youtube_upload_started_at is not null then
+    raise exception '%', 'YOUTUBE_UPLOAD_AMBIGUOUS' using errcode = 'P0001';
+  end if;
+
+  return query
+  with updated as (
+    update public.remaster_pipeline_jobs jobs
+    set
+      pipeline_step = 'upload_youtube',
+      youtube_upload_started_at = now()
+    where jobs.id = p_job_id
+    returning jobs.*
+  ),
+  event as (
+    insert into public.remaster_pipeline_job_events (
+      job_id,
+      event_type,
+      level,
+      status,
+      pipeline_step,
+      message,
+      details,
+      correlation_id
+    )
+    select
+      updated.id,
+      'youtube_upload_started',
+      'info',
+      updated.status,
+      updated.pipeline_step,
+      'YouTube upload started',
+      '{}'::jsonb,
+      p_correlation_id
+    from updated
+    returning id
   )
-  returning *;
+  select * from updated;
+end;
+$$;
+
+create or replace function public.record_remaster_youtube_video(
+  p_job_id uuid,
+  p_lease_token uuid,
+  p_youtube_video_id text,
+  p_youtube_url text,
+  p_correlation_id uuid default null
+)
+returns setof public.remaster_pipeline_jobs
+language plpgsql
+as $$
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status <> 'running' then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_token is distinct from p_lease_token then
+    raise exception '%', 'LEASE_TOKEN_INVALID' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_expires_at is null or v_job.lease_expires_at <= now() then
+    raise exception '%', 'LEASE_EXPIRED' using errcode = 'P0001';
+  end if;
+
+  if v_job.youtube_video_id is not null and v_job.youtube_video_id <> p_youtube_video_id then
+    raise exception '%', 'YOUTUBE_VIDEO_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  if v_job.youtube_upload_started_at is null and v_job.youtube_video_id is null then
+    raise exception '%', 'YOUTUBE_UPLOAD_NOT_STARTED' using errcode = 'P0001';
+  end if;
+
+  return query
+  with updated as (
+    update public.remaster_pipeline_jobs jobs
+    set
+      youtube_video_id = p_youtube_video_id,
+      youtube_url = coalesce(jobs.youtube_url, p_youtube_url)
+    where jobs.id = p_job_id
+    returning jobs.*
+  ),
+  event as (
+    insert into public.remaster_pipeline_job_events (
+      job_id,
+      event_type,
+      level,
+      status,
+      pipeline_step,
+      message,
+      details,
+      correlation_id
+    )
+    select
+      updated.id,
+      'youtube_video_recorded',
+      'info',
+      updated.status,
+      updated.pipeline_step,
+      'YouTube video recorded',
+      jsonb_build_object('youtubeVideoId', p_youtube_video_id),
+      p_correlation_id
+    from updated
+    returning id
+  )
+  select * from updated;
+end;
+$$;
+
+create or replace function public.release_remaster_pipeline_job_lease(
+  p_job_id uuid,
+  p_lease_token uuid,
+  p_correlation_id uuid default null
+)
+returns setof public.remaster_pipeline_jobs
+language plpgsql
+as $$
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status <> 'running' then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_token is distinct from p_lease_token then
+    raise exception '%', 'LEASE_TOKEN_INVALID' using errcode = 'P0001';
+  end if;
+
+  if v_job.lease_expires_at is null or v_job.lease_expires_at <= now() then
+    raise exception '%', 'LEASE_EXPIRED' using errcode = 'P0001';
+  end if;
+
+  return query
+  with updated as (
+    update public.remaster_pipeline_jobs jobs
+    set
+      lease_token = null,
+      lease_owner = null,
+      lease_expires_at = null,
+      heartbeat_at = null
+    where jobs.id = p_job_id
+    returning jobs.*
+  ),
+  event as (
+    insert into public.remaster_pipeline_job_events (
+      job_id,
+      event_type,
+      level,
+      status,
+      pipeline_step,
+      message,
+      details,
+      correlation_id
+    )
+    select
+      updated.id,
+      'lease_released',
+      'info',
+      updated.status,
+      updated.pipeline_step,
+      'Worker lease released',
+      '{}'::jsonb,
+      p_correlation_id
+    from updated
+    returning id
+  )
+  select * from updated;
+end;
+$$;
+
+create or replace function public.request_remaster_pipeline_job_cancel(
+  p_job_id uuid,
+  p_reason text,
+  p_correlation_id uuid default null
+)
+returns setof public.remaster_pipeline_jobs
+language plpgsql
+as $$
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+  v_event_type text;
+  v_event_level text;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where id = p_job_id
+  for update;
+
+  if not found then
+    raise exception '%', 'JOB_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  if v_job.status in ('completed', 'cancelled') then
+    return query select * from public.remaster_pipeline_jobs where id = p_job_id;
+    return;
+  end if;
+
+  if v_job.youtube_upload_started_at is not null or v_job.youtube_video_id is not null then
+    v_event_type := 'cancellation_requires_manual_review';
+    v_event_level := 'warn';
+
+    return query
+    with updated as (
+      update public.remaster_pipeline_jobs jobs
+      set
+        manual_review_required = true,
+        retry_classification = 'manual_review',
+        manual_review_reason = coalesce(p_reason, 'Cancellation requested after YouTube side effect.')
+      where jobs.id = p_job_id
+      returning jobs.*
+    ),
+    event as (
+      insert into public.remaster_pipeline_job_events (
+        job_id,
+        event_type,
+        level,
+        status,
+        pipeline_step,
+        message,
+        details,
+        correlation_id
+      )
+      select
+        updated.id,
+        v_event_type,
+        v_event_level,
+        updated.status,
+        updated.pipeline_step,
+        'Cancellation requires manual review',
+        jsonb_build_object('code', 'CANCELLATION_REQUIRES_MANUAL_REVIEW'),
+        p_correlation_id
+      from updated
+      returning id
+    )
+    select * from updated;
+    return;
+  end if;
+
+  if v_job.status in ('queued', 'waiting_retry') then
+    return query
+    with updated as (
+      update public.remaster_pipeline_jobs jobs
+      set
+        status = 'cancelled',
+        cancelled_at = now(),
+        manual_review_reason = p_reason
+      where jobs.id = p_job_id
+      returning jobs.*
+    ),
+    event as (
+      insert into public.remaster_pipeline_job_events (
+        job_id,
+        event_type,
+        level,
+        status,
+        pipeline_step,
+        message,
+        details,
+        correlation_id
+      )
+      select
+        updated.id,
+        'job_cancelled',
+        'info',
+        updated.status,
+        updated.pipeline_step,
+        'Job cancelled before worker side effects',
+        '{}'::jsonb,
+        p_correlation_id
+      from updated
+      returning id
+    )
+    select * from updated;
+    return;
+  end if;
+
+  if v_job.status = 'running' then
+    return query
+    with updated as (
+      update public.remaster_pipeline_jobs jobs
+      set
+        cancel_requested_at = coalesce(jobs.cancel_requested_at, now()),
+        manual_review_reason = p_reason
+      where jobs.id = p_job_id
+      returning jobs.*
+    ),
+    event as (
+      insert into public.remaster_pipeline_job_events (
+        job_id,
+        event_type,
+        level,
+        status,
+        pipeline_step,
+        message,
+        details,
+        correlation_id
+      )
+      select
+        updated.id,
+        'cancellation_requested',
+        'warn',
+        updated.status,
+        updated.pipeline_step,
+        'Cancellation requested for running job',
+        '{}'::jsonb,
+        p_correlation_id
+      from updated
+      returning id
+    )
+    select * from updated;
+    return;
+  end if;
+
+  raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+end;
 $$;
 
 comment on table public.remaster_pipeline_jobs is

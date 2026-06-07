@@ -81,12 +81,18 @@ async function resetPublicSchema(client) {
   await client.query("grant all on schema public to public");
 }
 
-async function assertRejectsQuery(client, sql, message) {
+async function assertRejectsQuery(client, sql, message, expectedMessage) {
   let rejected = false;
   try {
     await client.query(sql);
-  } catch {
+  } catch (error) {
     rejected = true;
+    if (expectedMessage) {
+      assert(
+        error instanceof Error && error.message.includes(expectedMessage),
+        `${message} Expected error message to include ${expectedMessage}.`,
+      );
+    }
   }
   assert(rejected, message);
 }
@@ -467,6 +473,7 @@ async function insertRemasterJob(client, overrides = {}) {
     retry_count: 0,
     max_retries: 3,
     retry_classification: "unknown",
+    cancel_requested_at: null,
     ...overrides,
   };
 
@@ -487,12 +494,13 @@ async function insertRemasterJob(client, overrides = {}) {
         lease_token,
         lease_owner,
         lease_expires_at,
+        cancel_requested_at,
         youtube_upload_started_at,
         youtube_video_id,
         youtube_url
       )
       values (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       )
       returning *
     `,
@@ -511,6 +519,7 @@ async function insertRemasterJob(client, overrides = {}) {
       job.lease_token || null,
       job.lease_owner || null,
       job.lease_expires_at || null,
+      job.cancel_requested_at || null,
       job.youtube_upload_started_at || null,
       job.youtube_video_id || null,
       job.youtube_url || null,
@@ -539,6 +548,7 @@ async function verifyRemasterJobCoreContract(client) {
     lease_owner: { data_type: "text" },
     lease_expires_at: { data_type: "timestamp with time zone" },
     heartbeat_at: { data_type: "timestamp with time zone" },
+    cancel_requested_at: { data_type: "timestamp with time zone" },
     youtube_upload_started_at: { data_type: "timestamp with time zone" },
     youtube_video_id: { data_type: "text" },
     youtube_url: { data_type: "text" },
@@ -558,7 +568,9 @@ async function verifyRemasterJobCoreContract(client) {
     level: { data_type: "text" },
     status: { data_type: "text" },
     pipeline_step: { data_type: "text" },
+    message: { data_type: "text" },
     details: { data_type: "jsonb" },
+    correlation_id: { data_type: "uuid" },
     created_at: { data_type: "timestamp with time zone" },
   })) {
     await assertColumn(eventColumns, name, expected);
@@ -685,11 +697,12 @@ async function testRemasterJobCore() {
       assert(claimed.id === claimable.id, "Concurrent claim returned the wrong job.");
 
       process.stdout.write("  Scenario: lease token required\n");
-      const wrongHeartbeat = await client.query(
-        "select * from public.heartbeat_remaster_pipeline_job($1, $2::uuid)",
-        [claimed.id, "00000000-0000-0000-0000-000000000000"],
+      await assertRejectsQuery(
+        client,
+        `select * from public.heartbeat_remaster_pipeline_job('${claimed.id}', '00000000-0000-0000-0000-000000000000'::uuid)`,
+        "Heartbeat succeeded with the wrong lease token.",
+        "LEASE_TOKEN_INVALID",
       );
-      assert(wrongHeartbeat.rows.length === 0, "Heartbeat succeeded with the wrong lease token.");
       const correctHeartbeat = await client.query(
         "select * from public.heartbeat_remaster_pipeline_job($1, $2::uuid)",
         [claimed.id, claimed.lease_token],
@@ -710,6 +723,12 @@ async function testRemasterJobCore() {
     });
     const recovered = await client.query("select * from public.claim_remaster_pipeline_job('recovery-worker')");
     assert(recovered.rows[0]?.id === expiredJob.id, "Expired safe lease was not recovered.");
+    await assertRejectsQuery(
+      client,
+      `select * from public.heartbeat_remaster_pipeline_job('${expiredJob.id}', '11111111-1111-1111-1111-111111111111'::uuid)`,
+      "Old lease token could heartbeat after recovery.",
+      "LEASE_TOKEN_INVALID",
+    );
 
     process.stdout.write("  Scenario: retry limit\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
@@ -729,6 +748,45 @@ async function testRemasterJobCore() {
     });
     const retryClaim = await client.query("select * from public.claim_remaster_pipeline_job('retry-worker')");
     assert(retryClaim.rows[0]?.id === retryable.id, "Retryable waiting job was not claimed.");
+
+    process.stdout.write("  Scenario: manual-review and not-retryable jobs are not claimed\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    await insertRemasterJob(client, { manual_review_required: true });
+    await insertRemasterJob(client, { retry_classification: "manual_review" });
+    await insertRemasterJob(client, { retry_classification: "not_retryable" });
+    const blockedClaim = await client.query("select * from public.claim_remaster_pipeline_job('blocked-worker')");
+    assert(blockedClaim.rows.length === 0, "Manual-review or not-retryable job was claimed.");
+
+    process.stdout.write("  Scenario: stale worker cannot mutate after lease expiry\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const staleJob = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "stale-worker",
+      lease_token: "44444444-4444-4444-4444-444444444444",
+      lease_expires_at: "2026-01-01T00:00:00.000Z",
+    });
+    await assertRejectsQuery(
+      client,
+      `select * from public.mark_remaster_youtube_upload_started('${staleJob.id}', '44444444-4444-4444-4444-444444444444'::uuid)`,
+      "Stale worker marked YouTube upload after lease expiry.",
+      "LEASE_EXPIRED",
+    );
+    await assertRejectsQuery(
+      client,
+      `select * from public.transition_remaster_pipeline_job('${staleJob.id}', 'running', 'completed', null, null, null, null, null, null, '44444444-4444-4444-4444-444444444444'::uuid, true)`,
+      "Stale worker transitioned job after lease expiry.",
+      "LEASE_EXPIRED",
+    );
+
+    process.stdout.write("  Scenario: invalid transition is rejected atomically\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const invalidTransitionJob = await insertRemasterJob(client, { status: "queued" });
+    await assertRejectsQuery(
+      client,
+      `select * from public.transition_remaster_pipeline_job('${invalidTransitionJob.id}', 'queued', 'completed')`,
+      "Invalid queued -> completed transition succeeded.",
+      "INVALID_JOB_TRANSITION",
+    );
 
     process.stdout.write("  Scenario: ambiguous YouTube upload is not auto-claimed\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
@@ -756,12 +814,133 @@ async function testRemasterJobCore() {
     const uploadedClaim = await client.query("select * from public.claim_remaster_pipeline_job('resume-worker')");
     assert(uploadedClaim.rows[0]?.id === uploadedJob.id, "Job with stored YouTube ID could not resume.");
 
+    process.stdout.write("  Scenario: cancel race before and after upload start\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const cancelBeforeUpload = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "55555555-5555-5555-5555-555555555555",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    const cancelRequest = await client.query(
+      "select * from public.request_remaster_pipeline_job_cancel($1, 'stop before upload', $2::uuid)",
+      [cancelBeforeUpload.id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"],
+    );
+    assert(cancelRequest.rows[0].status === "running", "Running job was directly cancelled while worker may run.");
+    assert(cancelRequest.rows[0].cancel_requested_at, "Running job did not store cancel_requested_at.");
+    await assertRejectsQuery(
+      client,
+      `select * from public.mark_remaster_youtube_upload_started('${cancelBeforeUpload.id}', '55555555-5555-5555-5555-555555555555'::uuid)`,
+      "Upload started after cancellation was requested.",
+      "CANCELLATION_REQUIRES_MANUAL_REVIEW",
+    );
+
+    const cancelAfterUpload = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "66666666-6666-6666-6666-666666666666",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    await client.query(
+      "select * from public.mark_remaster_youtube_upload_started($1, $2::uuid)",
+      [cancelAfterUpload.id, "66666666-6666-6666-6666-666666666666"],
+    );
+    const afterUploadCancel = await client.query(
+      "select * from public.request_remaster_pipeline_job_cancel($1, 'stop after upload', null)",
+      [cancelAfterUpload.id],
+    );
+    assert(afterUploadCancel.rows[0].manual_review_required === true, "Cancel after upload did not require manual review.");
+    assert(
+      afterUploadCancel.rows[0].retry_classification === "manual_review",
+      "Cancel after upload did not mark manual_review classification.",
+    );
+
+    process.stdout.write("  Scenario: YouTube checkpoints are write-once\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const youtubeJob = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "77777777-7777-7777-7777-777777777777",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    await client.query(
+      "select * from public.mark_remaster_youtube_upload_started($1, $2::uuid, $3::uuid)",
+      [youtubeJob.id, "77777777-7777-7777-7777-777777777777", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
+    );
+    await assertRejectsQuery(
+      client,
+      `select * from public.mark_remaster_youtube_upload_started('${youtubeJob.id}', '77777777-7777-7777-7777-777777777777'::uuid)`,
+      "Double upload-start was accepted.",
+      "YOUTUBE_UPLOAD_AMBIGUOUS",
+    );
+    const recordedVideo = await client.query(
+      "select * from public.record_remaster_youtube_video($1, $2::uuid, 'yt-abc', 'https://youtube.com/watch?v=yt-abc', $3::uuid)",
+      [youtubeJob.id, "77777777-7777-7777-7777-777777777777", "cccccccc-cccc-cccc-cccc-cccccccccccc"],
+    );
+    assert(recordedVideo.rows[0].youtube_video_id === "yt-abc", "YouTube video ID was not stored.");
+    const idempotentVideo = await client.query(
+      "select * from public.record_remaster_youtube_video($1, $2::uuid, 'yt-abc', 'https://youtube.com/watch?v=yt-abc', null)",
+      [youtubeJob.id, "77777777-7777-7777-7777-777777777777"],
+    );
+    assert(idempotentVideo.rows[0].youtube_video_id === "yt-abc", "Same YouTube ID was not idempotent.");
+    await assertRejectsQuery(
+      client,
+      `select * from public.record_remaster_youtube_video('${youtubeJob.id}', '77777777-7777-7777-7777-777777777777'::uuid, 'yt-other', 'https://youtube.com/watch?v=yt-other')`,
+      "Different YouTube ID overwrote stored ID.",
+      "YOUTUBE_VIDEO_CONFLICT",
+    );
+
+    process.stdout.write("  Scenario: release lease requires correct lease\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const releaseJob = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "88888888-8888-8888-8888-888888888888",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    await assertRejectsQuery(
+      client,
+      `select * from public.release_remaster_pipeline_job_lease('${releaseJob.id}', '00000000-0000-0000-0000-000000000000'::uuid)`,
+      "Lease release succeeded with wrong token.",
+      "LEASE_TOKEN_INVALID",
+    );
+    const released = await client.query(
+      "select * from public.release_remaster_pipeline_job_lease($1, $2::uuid, $3::uuid)",
+      [releaseJob.id, "88888888-8888-8888-8888-888888888888", "dddddddd-dddd-dddd-dddd-dddddddddddd"],
+    );
+    assert(released.rows[0].lease_token === null, "Lease token was not cleared on release.");
+
+    process.stdout.write("  Scenario: transition event stores correlation ID and consistent state\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const transitionJob = await insertRemasterJob(client, {
+      status: "running",
+      pipeline_step: "persist_results",
+      lease_owner: "worker",
+      lease_token: "99999999-9999-9999-9999-999999999999",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    const completed = await client.query(
+      "select * from public.transition_remaster_pipeline_job($1, 'running', 'completed', 'completed', null, null, null, null, null, $2::uuid, true, 'job_completed', 'Job completed', '{}'::jsonb, $3::uuid)",
+      [transitionJob.id, "99999999-9999-9999-9999-999999999999", "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"],
+    );
+    assert(completed.rows[0].status === "completed", "Transition did not complete the job.");
+    const transitionEvents = await client.query(
+      "select status, pipeline_step, correlation_id from public.remaster_pipeline_job_events where job_id = $1 order by event_sequence desc limit 1",
+      [transitionJob.id],
+    );
+    assert(transitionEvents.rows[0].status === "completed", "Transition event status is inconsistent.");
+    assert(transitionEvents.rows[0].pipeline_step === "completed", "Transition event step is inconsistent.");
+    assert(
+      transitionEvents.rows[0].correlation_id === "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      "Transition event correlation_id was not stored.",
+    );
+
     process.stdout.write("  Scenario: event order\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
     const eventJob = await insertRemasterJob(client);
     await client.query(
-      "select public.append_remaster_pipeline_job_event($1, 'step_started', 'info', 'running', 'download_audio', 'Download started', '{}'::jsonb)",
-      [eventJob.id],
+      "select public.append_remaster_pipeline_job_event($1, 'step_started', 'info', 'running', 'download_audio', 'Download started', '{}'::jsonb, $2::uuid)",
+      [eventJob.id, "ffffffff-ffff-ffff-ffff-ffffffffffff"],
     );
     await client.query(
       "select public.append_remaster_pipeline_job_event($1, 'step_completed', 'info', 'running', 'download_audio', 'Download completed', '{}'::jsonb)",
@@ -776,6 +955,11 @@ async function testRemasterJobCore() {
       "Events are not ordered by durable sequence.",
     );
     assert(events.rows[0].event_sequence < events.rows[1].event_sequence, "Event sequence did not increase.");
+    const correlation = await client.query(
+      "select correlation_id from public.remaster_pipeline_job_events where job_id = $1 order by event_sequence limit 1",
+      [eventJob.id],
+    );
+    assert(correlation.rows[0].correlation_id === "ffffffff-ffff-ffff-ffff-ffffffffffff", "Event correlation ID was not stored.");
   });
 }
 

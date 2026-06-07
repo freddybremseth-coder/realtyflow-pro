@@ -4,13 +4,14 @@ import type {
   RemasterPipelineStep,
   RemasterRetryClassification,
 } from "./remaster-job-types";
+import { RemasterJobError } from "./remaster-job-errors";
 
 const STATUS_TRANSITIONS: Record<RemasterPipelineJobStatus, RemasterPipelineJobStatus[]> = {
   queued: ["running", "cancelled"],
   running: ["waiting_retry", "completed", "failed", "cancelled"],
-  waiting_retry: ["running", "failed", "cancelled"],
+  waiting_retry: ["queued", "cancelled"],
   completed: [],
-  failed: ["waiting_retry"],
+  failed: ["queued"],
   cancelled: [],
 };
 
@@ -33,7 +34,7 @@ export function canTransitionStatus(
   from: RemasterPipelineJobStatus,
   to: RemasterPipelineJobStatus,
 ): boolean {
-  return STATUS_TRANSITIONS[from]?.includes(to) || false;
+  return from === to || STATUS_TRANSITIONS[from]?.includes(to) || false;
 }
 
 export function assertValidStatusTransition(
@@ -41,7 +42,10 @@ export function assertValidStatusTransition(
   to: RemasterPipelineJobStatus,
 ): void {
   if (!canTransitionStatus(from, to)) {
-    throw new Error(`Invalid Re-Master job status transition: ${from} -> ${to}`);
+    throw new RemasterJobError(
+      "INVALID_JOB_TRANSITION",
+      `Invalid Re-Master job status transition: ${from} -> ${to}`,
+    );
   }
 }
 
@@ -54,7 +58,10 @@ export function assertValidPipelineStepTransition(
   to: RemasterPipelineStep,
 ): void {
   if (!canAdvancePipelineStep(from, to)) {
-    throw new Error(`Invalid Re-Master pipeline step transition: ${from} -> ${to}`);
+    throw new RemasterJobError(
+      "INVALID_PIPELINE_STEP_TRANSITION",
+      `Invalid Re-Master pipeline step transition: ${from} -> ${to}`,
+    );
   }
 }
 
@@ -79,7 +86,7 @@ export function classifyRetry(job: Pick<
 export function classifyCancellation(job: Pick<
   RemasterPipelineJobRow,
   "status" | "youtube_upload_started_at" | "youtube_video_id"
->): "allowed" | "already_terminal" | "manual_review_required" {
+>): "cancel_now" | "request_stop" | "already_terminal" | "manual_review_required" {
   if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
     return "already_terminal";
   }
@@ -88,7 +95,11 @@ export function classifyCancellation(job: Pick<
     return "manual_review_required";
   }
 
-  return "allowed";
+  if (job.status === "running") {
+    return "request_stop";
+  }
+
+  return "cancel_now";
 }
 
 export function classifyExistingJobForCreate(

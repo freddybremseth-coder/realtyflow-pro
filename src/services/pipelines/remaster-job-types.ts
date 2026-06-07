@@ -58,6 +58,7 @@ export interface RemasterPipelineJobRow {
   started_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  cancel_requested_at: string | null;
   youtube_upload_started_at: string | null;
   youtube_video_id: string | null;
   youtube_url: string | null;
@@ -77,6 +78,7 @@ export interface RemasterPipelineJobEventRow {
   pipeline_step: RemasterPipelineStep | null;
   message: string | null;
   details: Record<string, unknown>;
+  correlation_id: string | null;
   created_at: string;
 }
 
@@ -110,4 +112,26 @@ export interface RemasterPipelineCreateJobResult {
   job: RemasterPipelineJobRow;
   duplicate: boolean;
   idempotencyKey: string;
+}
+
+export interface RemasterPipelineTransitionUpdates {
+  pipelineStep?: RemasterPipelineStep;
+  progress?: number;
+  retryClassification?: RemasterRetryClassification;
+  nextRetryAt?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface RemasterPipelineTransitionInput {
+  jobId: string;
+  expectedStatus: RemasterPipelineJobStatus;
+  nextStatus: RemasterPipelineJobStatus;
+  updates?: RemasterPipelineTransitionUpdates;
+  leaseToken?: string;
+  requireLease?: boolean;
+  eventType?: string;
+  eventMessage?: string | null;
+  eventDetails?: Record<string, unknown>;
+  correlationId?: string | null;
 }

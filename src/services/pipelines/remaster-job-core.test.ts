@@ -5,6 +5,7 @@ import {
   canonicalRemasterPipelineInput,
   stableStringify,
 } from "./remaster-job-idempotency";
+import { RemasterPipelineJobRepository } from "./remaster-job-repository";
 import {
   assertValidPipelineStepTransition,
   assertValidStatusTransition,
@@ -14,6 +15,7 @@ import {
   classifyRetry,
   isYoutubeUploadAmbiguous,
 } from "./remaster-job-state";
+import { RemasterJobError } from "./remaster-job-errors";
 import type { RemasterPipelineIdempotencyInput, RemasterPipelineJobRow } from "./remaster-job-types";
 
 function idempotencyInput(overrides: Partial<RemasterPipelineIdempotencyInput> = {}): RemasterPipelineIdempotencyInput {
@@ -59,6 +61,7 @@ function job(overrides: Partial<RemasterPipelineJobRow> = {}): RemasterPipelineJ
     started_at: null,
     completed_at: null,
     cancelled_at: null,
+    cancel_requested_at: null,
     youtube_upload_started_at: null,
     youtube_video_id: null,
     youtube_url: null,
@@ -67,6 +70,25 @@ function job(overrides: Partial<RemasterPipelineJobRow> = {}): RemasterPipelineJ
     created_at: "2026-06-07T00:00:00.000Z",
     updated_at: "2026-06-07T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+function fakeSupabase(responses: Array<{ data?: unknown; error?: unknown }>) {
+  function builder() {
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      in: () => chain,
+      order: () => chain,
+      insert: () => chain,
+      limit: () => Promise.resolve(responses.shift() || { data: null, error: null }),
+      single: () => Promise.resolve(responses.shift() || { data: null, error: null }),
+    };
+    return chain;
+  }
+
+  return {
+    from: () => builder(),
   };
 }
 
@@ -107,6 +129,20 @@ test("classifies create policy for active and completed existing jobs", () => {
   assert.equal(classifyExistingJobForCreate("failed"), "create");
 });
 
+test("returns existing active job when concurrent create hits unique idempotency index", async () => {
+  const duplicate = job({ status: "running", idempotency_key: buildRemasterPipelineIdempotencyKey(idempotencyInput()) });
+  const repository = new RemasterPipelineJobRepository(fakeSupabase([
+    { data: [], error: null },
+    { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } },
+    { data: [duplicate], error: null },
+  ]) as any);
+
+  const result = await repository.createJob(idempotencyInput());
+
+  assert.equal(result.duplicate, true);
+  assert.equal(result.job.id, duplicate.id);
+});
+
 test("preserves slideshow order in canonical idempotency input", () => {
   const input = canonicalRemasterPipelineInput(idempotencyInput({
     slideshowImages: ["b.png", "a.png"],
@@ -118,12 +154,16 @@ test("preserves slideshow order in canonical idempotency input", () => {
 test("allows valid lifecycle and step transitions", () => {
   assert.doesNotThrow(() => assertValidStatusTransition("queued", "running"));
   assert.doesNotThrow(() => assertValidStatusTransition("running", "waiting_retry"));
+  assert.doesNotThrow(() => assertValidStatusTransition("waiting_retry", "queued"));
   assert.doesNotThrow(() => assertValidStatusTransition("running", "completed"));
+  assert.doesNotThrow(() => assertValidStatusTransition("failed", "queued"));
   assert.doesNotThrow(() => assertValidPipelineStepTransition("render_video", "upload_youtube"));
 });
 
 test("rejects invalid lifecycle and step transitions", () => {
   assert.throws(() => assertValidStatusTransition("completed", "running"));
+  assert.throws(() => assertValidStatusTransition("waiting_retry", "running"));
+  assert.throws(() => assertValidStatusTransition("failed", "waiting_retry"));
   assert.throws(() => assertValidStatusTransition("cancelled", "queued"));
   assert.throws(() => assertValidPipelineStepTransition("upload_youtube", "render_video"));
 });
@@ -145,10 +185,22 @@ test("blocks duplicate YouTube upload decisions after side effects", () => {
 });
 
 test("allows cancellation before upload and requires manual review after upload starts", () => {
-  assert.equal(classifyCancellation(job({ status: "queued" })), "allowed");
+  assert.equal(classifyCancellation(job({ status: "queued" })), "cancel_now");
+  assert.equal(classifyCancellation(job({ status: "running" })), "request_stop");
   assert.equal(
     classifyCancellation(job({ youtube_upload_started_at: "2026-06-07T10:00:00.000Z" })),
     "manual_review_required",
   );
   assert.equal(classifyCancellation(job({ status: "completed", youtube_video_id: "abc123" })), "already_terminal");
+});
+
+test("throws stable domain errors for invalid state-machine input", () => {
+  assert.throws(
+    () => assertValidStatusTransition("completed", "running"),
+    (error) => error instanceof RemasterJobError && error.code === "INVALID_JOB_TRANSITION",
+  );
+  assert.throws(
+    () => assertValidPipelineStepTransition("upload_youtube", "render_video"),
+    (error) => error instanceof RemasterJobError && error.code === "INVALID_PIPELINE_STEP_TRANSITION",
+  );
 });
