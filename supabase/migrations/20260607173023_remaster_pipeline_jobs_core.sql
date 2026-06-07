@@ -398,36 +398,22 @@ create or replace function public.claim_remaster_pipeline_job(
   p_lease_seconds integer default 300
 )
 returns setof public.remaster_pipeline_jobs
-language sql
+language plpgsql
 as $$
-  with retry_ready as (
-    update public.remaster_pipeline_jobs jobs
-    set
-      status = 'queued',
-      next_retry_at = null,
-      retry_classification = 'unknown'
-    where jobs.status = 'waiting_retry'
-      and jobs.retry_count < jobs.max_retries
-      and (jobs.next_retry_at is null or jobs.next_retry_at <= now())
-      and jobs.manual_review_required = false
-      and jobs.retry_classification not in ('manual_review', 'not_retryable')
-      and not (
-        jobs.youtube_upload_started_at is not null
-        and jobs.youtube_video_id is null
-      )
-    returning jobs.id
-  ),
-  candidate as (
-    select id
-    from public.remaster_pipeline_jobs
-    where (
-      status = 'queued'
-      or (
-        status = 'running'
-        and lease_expires_at is not null
-        and lease_expires_at < now()
-      )
+declare
+  v_job public.remaster_pipeline_jobs%rowtype;
+begin
+  select *
+  into v_job
+  from public.remaster_pipeline_jobs
+  where (
+    status = 'queued'
+    or (
+      status = 'running'
+      and lease_expires_at is not null
+      and lease_expires_at < now()
     )
+  )
     and manual_review_required = false
     and retry_classification not in ('manual_review', 'not_retryable')
     and cancel_requested_at is null
@@ -435,10 +421,42 @@ as $$
       youtube_upload_started_at is not null
       and youtube_video_id is null
     )
+  order by created_at asc
+  for update skip locked
+  limit 1;
+
+  if not found then
+    select *
+    into v_job
+    from public.remaster_pipeline_jobs
+    where status = 'waiting_retry'
+      and retry_count < max_retries
+      and (next_retry_at is null or next_retry_at <= now())
+      and manual_review_required = false
+      and retry_classification not in ('manual_review', 'not_retryable')
+      and cancel_requested_at is null
+      and not (
+        youtube_upload_started_at is not null
+        and youtube_video_id is null
+      )
     order by created_at asc
     for update skip locked
-    limit 1
-  )
+    limit 1;
+
+    if not found then
+      return;
+    end if;
+
+    update public.remaster_pipeline_jobs jobs
+    set
+      status = 'queued',
+      next_retry_at = null,
+      retry_classification = 'unknown'
+    where jobs.id = v_job.id
+    returning jobs.* into v_job;
+  end if;
+
+  return query
   update public.remaster_pipeline_jobs jobs
   set
     status = 'running',
@@ -449,8 +467,9 @@ as $$
     started_at = coalesce(jobs.started_at, now()),
     retry_classification = 'unknown',
     manual_review_required = false
-  where jobs.id in (select id from candidate)
+  where jobs.id = v_job.id
   returning jobs.*;
+end;
 $$;
 
 create or replace function public.heartbeat_remaster_pipeline_job(
