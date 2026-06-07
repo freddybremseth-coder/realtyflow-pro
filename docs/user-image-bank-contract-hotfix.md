@@ -40,18 +40,31 @@ The migration is additive and idempotent:
 
 The migration intentionally does not create the old permissive `user_image_bank_service_all` policy. Re-Master accesses the image bank through protected server APIs and the service role.
 
-## Validation
+## Isolated migration test matrix
 
-Recommended validation before applying to production:
+This PR extends the `Re-Master migration integration` workflow. The workflow uses an isolated PostgreSQL 17 service container, receives no production database secrets, and runs only explicit migration tests.
 
-1. Run the migration against an empty local/test database.
-2. Run the migration against a test database with a partial `public.user_image_bank` table.
-3. Run the migration twice and verify it remains idempotent.
-4. Run:
+The `user-image-bank-contract` test covers:
+
+| Scenario | Verification |
+| --- | --- |
+| Empty database | Creates the table, all columns, defaults, NOT NULL where safe, primary key, constraints, indexes, RLS, and no open policy. |
+| Partial legacy table | Adds missing columns, preserves existing row data, and keeps compatible existing column types. |
+| Production-like table | Completes without adding unexpected columns or changing the compatible production contract. |
+| Idempotence | Applies the migration again against the same database and verifies the contract still holds. |
+| Incompatible existing data | Keeps invalid existing rows, leaves check constraints `NOT VALID` when needed, skips unsafe PK/NOT NULL enforcement, and does not delete or rewrite data. |
+
+Local usage requires a disposable local database:
+
+```bash
+MIGRATION_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/remaster_migration_test \
+  npm run test:migrations -- user-image-bank-contract
+```
+
+Also run:
 
 ```bash
 node --check scripts/check-remaster-schema-contract.mjs
-npm run schema:contract:remaster
 git diff --check
 NODE_OPTIONS=--max-old-space-size=4096 npm run build
 ```
@@ -62,15 +75,8 @@ The live `schema:contract:remaster` check must use the dedicated read-only `rema
 
 If this migration has not been applied, rollback is a git revert.
 
-If it has been applied to a database where `user_image_bank` existed before the migration, rollback should be conservative:
+After the migration has been applied to an environment that already matched the production contract, normally no database rollback is needed.
 
-```sql
-drop index if exists public.idx_user_image_bank_owner_kind_created;
-drop index if exists public.idx_user_image_bank_created_at;
-drop index if exists public.idx_user_image_bank_kind;
-drop index if exists public.idx_user_image_bank_owner;
-alter table if exists public.user_image_bank drop constraint if exists user_image_bank_kind_check;
-alter table if exists public.user_image_bank drop constraint if exists user_image_bank_use_count_check;
-```
+Do not blindly drop indexes, constraints, columns, or policies as rollback. Those objects may have existed before this repository migration. Only remove an object if the deployment record proves this migration created it in that specific environment and removing it is approved.
 
 Do not drop `public.user_image_bank` in production without explicit approval, because it may contain uploaded Re-Master assets.
