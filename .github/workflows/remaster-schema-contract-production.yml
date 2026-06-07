@@ -1,0 +1,56 @@
+name: Re-Master schema contract - production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/remaster-schema-contract-production.yml"
+      - "scripts/check-remaster-schema-contract.mjs"
+      - "supabase/migrations/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remaster-schema-contract-production
+  cancel-in-progress: false
+
+jobs:
+  production:
+    name: Production schema-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production-schema-audit
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SCHEMA_CONTRACT_EXPECTED_DB_USER: remaster_schema_contract
+    steps:
+      - name: Verify trusted ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Production schema contract must run from refs/heads/main." >&2
+            exit 1
+          fi
+      - name: Verify required database secret
+        run: |
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "SUPABASE_DB_URL is not configured in the production-schema-audit environment." >&2
+            exit 1
+          fi
+      - name: Checkout trusted main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --silent
+      - name: Run production schema contract
+        run: npm run schema:contract:remaster
