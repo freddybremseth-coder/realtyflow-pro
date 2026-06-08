@@ -53,6 +53,8 @@ Events return:
 
 Every response includes an `x-correlation-id` header and `correlationId` body field. API correlation IDs are RealtyFlow-safe strings; repository event calls derive a stable UUID for the database `correlation_id uuid` column.
 
+The route handler creates or reads the request correlation ID once, passes the same value into auth/repository context, and uses that same value for the response header, response body, error envelope, and derived event UUID.
+
 ## Validation and Limits
 
 `POST /api/neural-beat/jobs` validates:
@@ -68,6 +70,27 @@ Every response includes an `x-correlation-id` header and `correlationId` body fi
 - max retries, 0 to 10
 
 JSON bodies are limited to 32 KB. Write routes have a small in-memory per-identity rate limit as a minimum safety guard. This is not a durable distributed rate-limit system; add platform or database-backed rate limiting before exposing this to broader traffic.
+
+## Schema Readiness
+
+The durable job core schema is intentionally not applied to production by this API PR. If production is missing `remaster_pipeline_jobs`, `remaster_pipeline_job_events`, or the job-core RPC functions, route errors are mapped to:
+
+```text
+JOB_SCHEMA_NOT_READY
+HTTP 503
+```
+
+The client response must not include raw Postgres error codes, table names, function names, SQL, stack traces, connection strings, or secrets.
+
+Recommended production order:
+
+1. Merge the protected API routes.
+2. Apply the reviewed durable job-core migration through the controlled production migration path.
+3. Verify the tables, indexes, RLS/RPC privileges, and RPC functions with the schema-contract/migration checks.
+4. Enable API callers and later Re-Master UI that use these routes.
+5. Roll back by disabling callers/UI first; if the schema has not been applied, the API remains inert and returns `JOB_SCHEMA_NOT_READY`.
+
+The browser cannot enable the missing schema or bypass this readiness behavior.
 
 ## Retry and Cancel Rules
 

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   try {
     assertSafeJobId(params.id);
-    const { repository } = await getRouteContext(request, "get");
+    const { repository } = await getRouteContext(request, "get", 30, correlationId);
     const job = assertRemasterJob(await repository.getJob(params.id));
 
     return jsonOk({ job: toJobDto(job) }, 200, correlationId);

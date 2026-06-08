@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   try {
     assertSafeJobId(params.id);
-    const { repository } = await getRouteContext(request, "events");
+    const { repository } = await getRouteContext(request, "events", 30, correlationId);
     assertRemasterJob(await repository.getJob(params.id));
     const query = parseEventsQuery(request.nextUrl.searchParams);
     const events = await repository.listEvents({

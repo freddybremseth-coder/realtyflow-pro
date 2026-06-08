@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NextRequest } from "next/server";
 import { createAdminSession } from "../../lib/admin-auth";
 import { createErrorEnvelope } from "../../lib/observability";
+import { GET as getJobs, POST as createJob } from "../../app/api/neural-beat/jobs/route";
+import { GET as getJob } from "../../app/api/neural-beat/jobs/[id]/route";
+import { POST as retryJob } from "../../app/api/neural-beat/jobs/[id]/retry/route";
 import {
   assertCanManualRetry,
   authorizeRemasterJobRequest,
@@ -13,9 +17,11 @@ import {
   parseListQuery,
   resetRemasterJobRateLimits,
   assertRateLimit,
+  setRemasterJobRepositoryFactoryForTests,
   toCorrelationUuid,
   toEventDtos,
   toJobDto,
+  type RemasterJobApiRepository,
 } from "./remaster-job-api";
 import { RemasterJobError } from "./remaster-job-errors";
 import type { RemasterPipelineJobEventRow, RemasterPipelineJobRow } from "./remaster-job-types";
@@ -112,6 +118,57 @@ function validCreateBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function request(
+  url: string,
+  {
+    method = "GET",
+    body,
+    headers: headerValues = {},
+  }: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
+) {
+  return new NextRequest(url, {
+    method,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...headerValues,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+function mockRepository(overrides: Partial<RemasterJobApiRepository> = {}): RemasterJobApiRepository {
+  return {
+    async createJob() {
+      return { job: job(), duplicate: false, idempotencyKey: "key" };
+    },
+    async listJobs() {
+      return [job()];
+    },
+    async getJob() {
+      return job();
+    },
+    async listEvents() {
+      return [event()];
+    },
+    async manualRetry() {
+      return job({ status: "queued", retry_classification: "unknown" });
+    },
+    async requestCancel() {
+      return job({ status: "running", cancel_requested_at: "2026-06-08T00:00:00.000Z" });
+    },
+    ...overrides,
+  };
+}
+
+test.afterEach(() => {
+  setRemasterJobRepositoryFactoryForTests(null);
+  resetRemasterJobRateLimits();
+});
+
 test("rejects unauthenticated and wrong-admin requests", async () => {
   process.env.REALTYFLOW_SESSION_SECRET = "test-session-secret";
   process.env.REALTYFLOW_ADMIN_EMAILS = "freddy.bremseth@gmail.com";
@@ -127,6 +184,167 @@ test("rejects unauthenticated and wrong-admin requests", async () => {
     () => authorizeRemasterJobRequest({ headers: headers(), cookies: cookies(wrongAdmin) }),
     (error: unknown) => error instanceof Error && error.message === "Authentication required",
   );
+});
+
+test("route rejects unauthenticated request with safe envelope", async () => {
+  delete process.env.REALTYFLOW_MIGRATION_SECRET;
+  process.env.REALTYFLOW_SESSION_SECRET = "test-session-secret";
+  const response = await getJobs(request("https://realtyflow.test/api/neural-beat/jobs", {
+    headers: { "x-correlation-id": VALID_CORRELATION_ID },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("x-correlation-id"), VALID_CORRELATION_ID);
+  assert.equal(body.error.code, "AUTH_REQUIRED");
+  assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
+});
+
+test("route rejects invalid Re-Master migration secret with 403", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  const response = await getJobs(request("https://realtyflow.test/api/neural-beat/jobs", {
+    headers: {
+      "x-remaster-migration-secret": "wrong",
+      "x-correlation-id": VALID_CORRELATION_ID,
+    },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "ADMIN_FORBIDDEN");
+});
+
+test("route allows valid server auth with repository mock", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  setRemasterJobRepositoryFactoryForTests(() => mockRepository());
+
+  const response = await getJobs(request("https://realtyflow.test/api/neural-beat/jobs?limit=5", {
+    headers: {
+      "x-remaster-migration-secret": "server-secret",
+      "x-correlation-id": VALID_CORRELATION_ID,
+    },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.correlationId, VALID_CORRELATION_ID);
+  assert.equal(response.headers.get("x-correlation-id"), VALID_CORRELATION_ID);
+  assert.equal(body.jobs[0].songId, "song-1");
+});
+
+test("route creates jobs with fixed Re-Master brand and consistent correlation ID", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  let capturedBrand: string | null = null;
+  setRemasterJobRepositoryFactoryForTests(() => mockRepository({
+    async createJob(input) {
+      capturedBrand = input.brand;
+      return { job: job(), duplicate: false, idempotencyKey: "key" };
+    },
+  }));
+
+  const response = await createJob(request("https://realtyflow.test/api/neural-beat/jobs", {
+    method: "POST",
+    body: validCreateBody({ brand: "client-controlled-brand" }),
+    headers: {
+      "x-remaster-migration-secret": "server-secret",
+      "x-correlation-id": VALID_CORRELATION_ID,
+    },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(response.headers.get("x-correlation-id"), VALID_CORRELATION_ID);
+  assert.equal(body.correlationId, VALID_CORRELATION_ID);
+  assert.equal(capturedBrand, "remasterfreddy");
+  assert.equal(body.duplicate, false);
+});
+
+test("route response and event UUID derive from the same incoming correlation ID", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  let capturedCorrelationUuid: string | null = null;
+  setRemasterJobRepositoryFactoryForTests(() => mockRepository({
+    async getJob() {
+      return job({ status: "failed" });
+    },
+    async manualRetry(input) {
+      capturedCorrelationUuid = input.correlationId || null;
+      return job({ status: "queued" });
+    },
+  }));
+
+  const response = await retryJob(
+    request("https://realtyflow.test/api/neural-beat/jobs/11111111-1111-4111-8111-111111111111/retry", {
+      method: "POST",
+      headers: {
+        "x-remaster-migration-secret": "server-secret",
+        "x-correlation-id": VALID_CORRELATION_ID,
+      },
+    }) as any,
+    { params: { id: "11111111-1111-4111-8111-111111111111" } },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-correlation-id"), VALID_CORRELATION_ID);
+  assert.equal(body.correlationId, VALID_CORRELATION_ID);
+  assert.equal(capturedCorrelationUuid, toCorrelationUuid(VALID_CORRELATION_ID));
+});
+
+test("route maps missing job schema to 503 without raw database details", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  setRemasterJobRepositoryFactoryForTests(() => mockRepository({
+    async getJob() {
+      throw {
+        code: "42P01",
+        message: 'relation "public.remaster_pipeline_jobs" does not exist',
+      };
+    },
+  }));
+
+  const response = await getJob(
+    request("https://realtyflow.test/api/neural-beat/jobs/11111111-1111-4111-8111-111111111111", {
+      headers: {
+        "x-remaster-migration-secret": "server-secret",
+        "x-correlation-id": VALID_CORRELATION_ID,
+      },
+    }) as any,
+    { params: { id: "11111111-1111-4111-8111-111111111111" } },
+  );
+  const body = await response.json();
+  const serialized = JSON.stringify(body);
+
+  assert.equal(response.status, 503);
+  assert.equal(body.error.code, "JOB_SCHEMA_NOT_READY");
+  assert.equal(body.error.message, "Re-Master job schema is not ready");
+  assert.equal(serialized.includes("remaster_pipeline_jobs"), false);
+  assert.equal(serialized.includes("42P01"), false);
+});
+
+test("route hides raw repository errors and secrets", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "server-secret";
+  setRemasterJobRepositoryFactoryForTests(() => mockRepository({
+    async getJob() {
+      throw new Error("database failed with postgres://user:password@example.supabase.co/db");
+    },
+  }));
+
+  const response = await getJob(
+    request("https://realtyflow.test/api/neural-beat/jobs/11111111-1111-4111-8111-111111111111", {
+      headers: {
+        "x-remaster-migration-secret": "server-secret",
+        "x-correlation-id": VALID_CORRELATION_ID,
+      },
+    }) as any,
+    { params: { id: "11111111-1111-4111-8111-111111111111" } },
+  );
+  const body = await response.json();
+  const serialized = JSON.stringify(body);
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, "INTERNAL_ERROR");
+  assert.equal(body.error.message, "Internal server error");
+  assert.equal(serialized.includes("password@example"), false);
+  assert.equal(serialized.includes("postgres://"), false);
 });
 
 test("allows valid Re-Master server auth and admin session auth", async () => {

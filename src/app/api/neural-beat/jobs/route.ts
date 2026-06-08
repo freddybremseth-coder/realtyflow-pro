@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const correlationId = getOrCreateCorrelationId(request.headers);
 
   try {
-    const { repository } = await getRouteContext(request, "list");
+    const { repository } = await getRouteContext(request, "list", 30, correlationId);
     const query = parseListQuery(request.nextUrl.searchParams);
     const jobs = await repository.listJobs({
       brand: "remasterfreddy",
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   const correlationId = getOrCreateCorrelationId(request.headers);
 
   try {
-    const { repository } = await getRouteContext(request, "create", 20);
+    const { repository } = await getRouteContext(request, "create", 20, correlationId);
     const body = await readJsonBody(request, correlationId);
     const input = parseCreateJobBody(body);
     const result = await repository.createJob(input);

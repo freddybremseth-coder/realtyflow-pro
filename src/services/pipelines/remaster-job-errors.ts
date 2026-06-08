@@ -6,6 +6,7 @@ export const REMASTER_JOB_ERROR_CODES = [
   "LEASE_EXPIRED",
   "LEASE_TOKEN_INVALID",
   "JOB_DUPLICATE_ACTIVE",
+  "JOB_SCHEMA_NOT_READY",
   "JOB_NOT_FOUND",
   "RETRY_LIMIT_REACHED",
   "YOUTUBE_UPLOAD_AMBIGUOUS",
@@ -31,8 +32,35 @@ export function isRemasterJobErrorCode(value: unknown): value is RemasterJobErro
   return typeof value === "string" && (REMASTER_JOB_ERROR_CODES as readonly string[]).includes(value);
 }
 
+export function isSchemaNotReadyError(error: unknown) {
+  const source = error as { message?: string; code?: string; details?: string; hint?: string } | null;
+  const code = String(source?.code || "");
+  const text = [source?.message, source?.details, source?.hint].filter(Boolean).join(" ").toLowerCase();
+
+  return (
+    code === "42P01" ||
+    code === "42883" ||
+    code === "3F000" ||
+    code === "PGRST202" ||
+    code === "PGRST205" ||
+    /relation .*remaster_pipeline_jobs.* does not exist/.test(text) ||
+    /relation .*remaster_pipeline_job_events.* does not exist/.test(text) ||
+    /function .*remaster_.* does not exist/.test(text) ||
+    /could not find .*remaster_.* function/.test(text) ||
+    /schema .* does not exist/.test(text)
+  );
+}
+
 export function toRemasterJobError(error: unknown, fallbackCode: RemasterJobErrorCode): RemasterJobError {
   if (error instanceof RemasterJobError) return error;
+
+  if (isSchemaNotReadyError(error)) {
+    return new RemasterJobError(
+      "JOB_SCHEMA_NOT_READY",
+      "Re-Master job schema is not ready",
+      "not_retryable",
+    );
+  }
 
   const source = error as { message?: string; code?: string } | null;
   const message = source?.message || fallbackCode;

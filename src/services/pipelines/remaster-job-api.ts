@@ -11,7 +11,7 @@ import {
 } from "../../lib/observability";
 import { verifyAdminSession } from "../../lib/admin-auth";
 import { createServerClient } from "../../lib/supabase/server";
-import { RemasterJobError } from "./remaster-job-errors";
+import { isSchemaNotReadyError, RemasterJobError } from "./remaster-job-errors";
 import { RemasterPipelineJobRepository } from "./remaster-job-repository";
 import {
   REMASTER_PIPELINE_STATUSES,
@@ -128,6 +128,19 @@ export interface RemasterJobApiRepository {
   requestCancel(jobId: string, reason: string, correlationId?: string | null): Promise<RemasterPipelineJobRow>;
 }
 
+export interface RemasterJobRouteContext {
+  correlationId: string;
+  correlationUuid: string;
+  auth: RemasterJobAuthContext;
+  repository: RemasterJobApiRepository;
+}
+
+let repositoryFactoryForTests: (() => RemasterJobApiRepository) | null = null;
+
+export function setRemasterJobRepositoryFactoryForTests(factory: (() => RemasterJobApiRepository) | null) {
+  repositoryFactoryForTests = factory;
+}
+
 const urlSchema = z.string().trim().url().max(2048);
 const optionalUrlSchema = z.union([urlSchema, z.null()]).optional();
 
@@ -199,9 +212,12 @@ export function jsonOk(body: Record<string, unknown>, status: number, correlatio
 }
 
 export function apiErrorStatus(error: unknown) {
+  if (isSchemaNotReadyError(error)) return 503;
   if (error instanceof RemasterJobApiError) return error.status;
   if (error instanceof RemasterJobError) {
     switch (error.code) {
+      case "JOB_SCHEMA_NOT_READY":
+        return 503;
       case "JOB_NOT_FOUND":
         return 404;
       case "LEASE_EXPIRED":
@@ -224,6 +240,7 @@ export function apiErrorStatus(error: unknown) {
 }
 
 export function apiErrorCode(error: unknown): ApiErrorCode {
+  if (isSchemaNotReadyError(error)) return "JOB_SCHEMA_NOT_READY";
   if (error instanceof RemasterJobApiError) return error.code;
   if (error instanceof RemasterJobError) return error.code;
   return "INTERNAL_ERROR";
@@ -234,12 +251,17 @@ export function jsonError(error: unknown, correlationId: string) {
   const code = apiErrorCode(error);
   const message = error instanceof Error ? error.message : "Internal server error";
   const details = error instanceof RemasterJobApiError ? error.details : undefined;
+  const safeMessage = code === "JOB_SCHEMA_NOT_READY"
+    ? "Re-Master job schema is not ready"
+    : status >= 500
+      ? "Internal server error"
+      : message;
 
   return NextResponse.json(
     createErrorEnvelope({
       correlationId,
       code,
-      message: status >= 500 ? "Internal server error" : message,
+      message: safeMessage,
       status,
       details,
       retryable: status >= 500 ? "unknown" : "not_retryable",
@@ -473,14 +495,20 @@ export function classifyCancelResponse(job: RemasterPipelineJobRow) {
 }
 
 export function getRepository(): RemasterJobApiRepository {
+  if (repositoryFactoryForTests) return repositoryFactoryForTests();
+
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new RemasterJobApiError("SUPABASE_NOT_CONFIGURED", "Supabase service role is not configured", 503);
   }
   return new RemasterPipelineJobRepository(createServerClient());
 }
 
-export async function getRouteContext(request: NextRequest, action: string, writeLimit = 30) {
-  const correlationId = getOrCreateCorrelationId(request.headers);
+export async function getRouteContext(
+  request: NextRequest,
+  action: string,
+  writeLimit = 30,
+  correlationId = getOrCreateCorrelationId(request.headers),
+): Promise<RemasterJobRouteContext> {
   const auth = await authorizeRemasterJobRequest(request);
   if (["create", "retry", "cancel"].includes(action)) {
     assertRateLimit(auth.identity, action, writeLimit);

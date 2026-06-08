@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   try {
     assertSafeJobId(params.id);
-    const { repository, correlationUuid } = await getRouteContext(request, "cancel", 10);
+    const { repository, correlationUuid } = await getRouteContext(request, "cancel", 10, correlationId);
     assertRemasterJob(await repository.getJob(params.id));
     const body = await readJsonBody(request, correlationId);
     const parsed = cancelBodySchema.safeParse(body);

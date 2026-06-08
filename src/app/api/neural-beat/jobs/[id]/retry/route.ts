@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   try {
     assertSafeJobId(params.id);
-    const { repository, correlationUuid } = await getRouteContext(request, "retry", 10);
+    const { repository, correlationUuid } = await getRouteContext(request, "retry", 10, correlationId);
     const existing = assertRemasterJob(await repository.getJob(params.id));
     assertCanManualRetry(existing);
     const job = assertRemasterJob(await repository.manualRetry({
