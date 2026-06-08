@@ -36,6 +36,10 @@ const REMASTER_PROXY_PATHS = [
   "/api/youtube/status",
 ];
 
+const REMASTER_PROXY_PREFIXES = [
+  "/api/neural-beat/jobs",
+];
+
 function isPublicPath(pathname: string) {
   return (
     pathname.startsWith("/_next") ||
@@ -46,7 +50,10 @@ function isPublicPath(pathname: string) {
 }
 
 function isRemasterProxyPath(pathname: string) {
-  return REMASTER_PROXY_PATHS.includes(pathname);
+  return (
+    REMASTER_PROXY_PATHS.includes(pathname) ||
+    REMASTER_PROXY_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+  );
 }
 
 function base64UrlToBytes(value: string) {

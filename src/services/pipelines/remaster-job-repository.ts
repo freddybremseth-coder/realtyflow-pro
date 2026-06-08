@@ -9,6 +9,7 @@ import type {
   RemasterPipelineCreateJobResult,
   RemasterPipelineJobEventRow,
   RemasterPipelineJobRow,
+  RemasterPipelineJobStatus,
   RemasterPipelineStep,
   RemasterPipelineTransitionInput,
 } from "./remaster-job-types";
@@ -132,7 +133,7 @@ export class RemasterPipelineJobRepository {
     );
   }
 
-  async listJobs(input: { brand?: string; songId?: string; limit?: number } = {}) {
+  async listJobs(input: { brand?: string; songId?: string; status?: RemasterPipelineJobStatus; limit?: number } = {}) {
     let query = this.supabase
       .from("remaster_pipeline_jobs")
       .select(JOB_COLUMNS)
@@ -141,10 +142,28 @@ export class RemasterPipelineJobRepository {
 
     if (input.brand) query = query.eq("brand", input.brand);
     if (input.songId) query = query.eq("song_id", input.songId);
+    if (input.status) query = query.eq("status", input.status);
 
     const { data, error } = await query;
     if (error) throw toRemasterJobError(error, "JOB_NOT_FOUND");
     return (data || []) as RemasterPipelineJobRow[];
+  }
+
+  async listEvents(input: { jobId: string; limit?: number; afterSequence?: number }) {
+    let query = this.supabase
+      .from("remaster_pipeline_job_events")
+      .select("*")
+      .eq("job_id", input.jobId)
+      .order("event_sequence", { ascending: true })
+      .limit(Math.max(1, Math.min(200, input.limit || 100)));
+
+    if (typeof input.afterSequence === "number" && Number.isFinite(input.afterSequence)) {
+      query = query.gt("event_sequence", input.afterSequence);
+    }
+
+    const { data, error } = await query;
+    if (error) throw toRemasterJobError(error, "JOB_NOT_FOUND");
+    return (data || []) as RemasterPipelineJobEventRow[];
   }
 
   async claimNext(workerId: string, leaseSeconds = 300) {
