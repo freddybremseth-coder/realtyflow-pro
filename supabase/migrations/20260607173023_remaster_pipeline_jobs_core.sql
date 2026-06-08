@@ -307,7 +307,7 @@ as $$
     )
     or (
       p_from = 'running'
-      and p_to in ('waiting_retry', 'completed', 'failed', 'cancelled')
+      and p_to in ('waiting_retry', 'completed', 'failed')
     )
     or (
       p_from = 'waiting_retry'
@@ -581,6 +581,10 @@ begin
     end if;
   end if;
 
+  if v_job.status = 'running' and p_next_status = 'cancelled' then
+    raise exception '%', 'INVALID_JOB_TRANSITION' using errcode = 'P0001';
+  end if;
+
   return query
   with updated as (
     update public.remaster_pipeline_jobs jobs
@@ -680,6 +684,10 @@ begin
 
   if v_job.youtube_upload_started_at is not null then
     raise exception '%', 'YOUTUBE_UPLOAD_AMBIGUOUS' using errcode = 'P0001';
+  end if;
+
+  if not public.remaster_pipeline_job_step_transition_is_valid(v_job.pipeline_step, 'upload_youtube') then
+    raise exception '%', 'INVALID_PIPELINE_STEP_TRANSITION' using errcode = 'P0001';
   end if;
 
   return query
@@ -831,40 +839,24 @@ begin
   end if;
 
   return query
-  with updated as (
-    update public.remaster_pipeline_jobs jobs
-    set
-      lease_token = null,
-      lease_owner = null,
-      lease_expires_at = null,
-      heartbeat_at = null
-    where jobs.id = p_job_id
-    returning jobs.*
-  ),
-  event as (
-    insert into public.remaster_pipeline_job_events (
-      job_id,
-      event_type,
-      level,
-      status,
-      pipeline_step,
-      message,
-      details,
-      correlation_id
-    )
-    select
-      updated.id,
-      'lease_released',
-      'info',
-      updated.status,
-      updated.pipeline_step,
-      'Worker lease released',
-      '{}'::jsonb,
-      p_correlation_id
-    from updated
-    returning id
-  )
-  select * from updated;
+  select *
+  from public.transition_remaster_pipeline_job(
+    p_job_id,
+    'running',
+    'waiting_retry',
+    null,
+    null,
+    'retryable',
+    now(),
+    null,
+    null,
+    p_lease_token,
+    true,
+    'lease_released',
+    'Worker lease released',
+    '{}'::jsonb,
+    p_correlation_id
+  );
 end;
 $$;
 
@@ -1021,3 +1013,34 @@ comment on table public.remaster_pipeline_jobs is
 
 comment on table public.remaster_pipeline_job_events is
   'Ordered durable Re-Master pipeline job events and safe diagnostics.';
+
+do $$
+declare
+  v_function regprocedure;
+  v_functions regprocedure[] := array[
+    'public.append_remaster_pipeline_job_event(uuid, text, text, text, text, text, jsonb, uuid)'::regprocedure,
+    'public.claim_remaster_pipeline_job(text, uuid, integer)'::regprocedure,
+    'public.heartbeat_remaster_pipeline_job(uuid, uuid, integer)'::regprocedure,
+    'public.transition_remaster_pipeline_job(uuid, text, text, text, integer, text, timestamptz, text, text, uuid, boolean, text, text, jsonb, uuid)'::regprocedure,
+    'public.mark_remaster_youtube_upload_started(uuid, uuid, uuid)'::regprocedure,
+    'public.record_remaster_youtube_video(uuid, uuid, text, text, uuid)'::regprocedure,
+    'public.release_remaster_pipeline_job_lease(uuid, uuid, uuid)'::regprocedure,
+    'public.request_remaster_pipeline_job_cancel(uuid, text, uuid)'::regprocedure
+  ];
+begin
+  foreach v_function in array v_functions loop
+    execute format('revoke execute on function %s from public', v_function);
+
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('revoke execute on function %s from anon', v_function);
+    end if;
+
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+      execute format('revoke execute on function %s from authenticated', v_function);
+    end if;
+
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute format('grant execute on function %s to service_role', v_function);
+    end if;
+  end loop;
+end $$;

@@ -162,6 +162,7 @@ test("allows valid lifecycle and step transitions", () => {
 
 test("rejects invalid lifecycle and step transitions", () => {
   assert.throws(() => assertValidStatusTransition("completed", "running"));
+  assert.throws(() => assertValidStatusTransition("running", "cancelled"));
   assert.throws(() => assertValidStatusTransition("waiting_retry", "running"));
   assert.throws(() => assertValidStatusTransition("failed", "waiting_retry"));
   assert.throws(() => assertValidStatusTransition("cancelled", "queued"));

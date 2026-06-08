@@ -8,7 +8,7 @@ import { RemasterJobError } from "./remaster-job-errors";
 
 const STATUS_TRANSITIONS: Record<RemasterPipelineJobStatus, RemasterPipelineJobStatus[]> = {
   queued: ["running", "cancelled"],
-  running: ["waiting_retry", "completed", "failed", "cancelled"],
+  running: ["waiting_retry", "completed", "failed"],
   waiting_retry: ["queued", "cancelled"],
   completed: [],
   failed: ["queued"],

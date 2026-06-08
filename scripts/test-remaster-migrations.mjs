@@ -81,6 +81,25 @@ async function resetPublicSchema(client) {
   await client.query("grant all on schema public to public");
 }
 
+async function ensureSupabaseTestRoles(client) {
+  await client.query(`
+    do $$
+    begin
+      if not exists (select 1 from pg_roles where rolname = 'anon') then
+        create role anon nologin;
+      end if;
+
+      if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+        create role authenticated nologin;
+      end if;
+
+      if not exists (select 1 from pg_roles where rolname = 'service_role') then
+        create role service_role nologin;
+      end if;
+    end $$;
+  `);
+}
+
 async function assertRejectsQuery(client, sql, message, expectedMessage) {
   let rejected = false;
   try {
@@ -626,12 +645,59 @@ async function verifyRemasterJobCoreContract(client) {
       )
   `);
   assert(policyRows[0].count === 0, "Migration must not create open Re-Master job policies.");
+
+  await verifyRemasterJobFunctionPrivileges(client);
+}
+
+async function verifyRemasterJobFunctionPrivileges(client) {
+  const { rows } = await client.query(`
+    with checked(function_name) as (
+      values
+        ('public.append_remaster_pipeline_job_event(uuid, text, text, text, text, text, jsonb, uuid)'::regprocedure),
+        ('public.claim_remaster_pipeline_job(text, uuid, integer)'::regprocedure),
+        ('public.heartbeat_remaster_pipeline_job(uuid, uuid, integer)'::regprocedure),
+        ('public.transition_remaster_pipeline_job(uuid, text, text, text, integer, text, timestamptz, text, text, uuid, boolean, text, text, jsonb, uuid)'::regprocedure),
+        ('public.mark_remaster_youtube_upload_started(uuid, uuid, uuid)'::regprocedure),
+        ('public.record_remaster_youtube_video(uuid, uuid, text, text, uuid)'::regprocedure),
+        ('public.release_remaster_pipeline_job_lease(uuid, uuid, uuid)'::regprocedure),
+        ('public.request_remaster_pipeline_job_cancel(uuid, text, uuid)'::regprocedure)
+    ),
+    grants as (
+      select
+        checked.function_name::text as function_name,
+        acl.grantee,
+        roles.rolname,
+        acl.privilege_type
+      from checked
+      join pg_proc functions on functions.oid = checked.function_name::oid
+      cross join lateral aclexplode(coalesce(functions.proacl, acldefault('f', functions.proowner))) as acl
+      left join pg_roles roles on roles.oid = acl.grantee
+    )
+    select
+      function_name,
+      coalesce(bool_or(grantee = 0 and privilege_type = 'EXECUTE'), false) as public_execute,
+      coalesce(bool_or(rolname = 'anon' and privilege_type = 'EXECUTE'), false) as anon_execute,
+      coalesce(bool_or(rolname = 'authenticated' and privilege_type = 'EXECUTE'), false) as authenticated_execute,
+      coalesce(bool_or(rolname = 'service_role' and privilege_type = 'EXECUTE'), false) as service_role_execute
+    from grants
+    group by function_name
+    order by function_name
+  `);
+
+  assert(rows.length === 8, `Expected 8 Re-Master RPC privilege rows, got ${rows.length}.`);
+  for (const row of rows) {
+    assert(row.public_execute === false, `${row.function_name} grants EXECUTE to PUBLIC.`);
+    assert(row.anon_execute === false, `${row.function_name} grants EXECUTE to anon.`);
+    assert(row.authenticated_execute === false, `${row.function_name} grants EXECUTE to authenticated.`);
+    assert(row.service_role_execute === true, `${row.function_name} does not grant EXECUTE to service_role.`);
+  }
 }
 
 async function testRemasterJobCore() {
   await withClient(async (client) => {
     process.stdout.write("  Scenario: empty database\n");
     await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
     await applyMigration(client, migrationFiles.remasterJobCore);
     await verifyRemasterJobCoreContract(client);
 
@@ -794,6 +860,35 @@ async function testRemasterJobCore() {
       "INVALID_JOB_TRANSITION",
     );
 
+    process.stdout.write("  Scenario: generic transition cannot bypass cancellation policy\n");
+    await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const genericCancelBeforeUpload = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "12121212-1212-1212-1212-121212121212",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    await assertRejectsQuery(
+      client,
+      `select * from public.transition_remaster_pipeline_job('${genericCancelBeforeUpload.id}', 'running', 'cancelled', null, null, null, null, null, null, '12121212-1212-1212-1212-121212121212'::uuid, true)`,
+      "Generic running -> cancelled transition succeeded before upload.",
+      "INVALID_JOB_TRANSITION",
+    );
+
+    const genericCancelAfterUpload = await insertRemasterJob(client, {
+      status: "running",
+      lease_owner: "worker",
+      lease_token: "13131313-1313-1313-1313-131313131313",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+      youtube_upload_started_at: "2026-06-07T10:00:00.000Z",
+    });
+    await assertRejectsQuery(
+      client,
+      `select * from public.transition_remaster_pipeline_job('${genericCancelAfterUpload.id}', 'running', 'cancelled', null, null, null, null, null, null, '13131313-1313-1313-1313-131313131313'::uuid, true)`,
+      "Generic running -> cancelled transition succeeded after upload start.",
+      "INVALID_JOB_TRANSITION",
+    );
+
     process.stdout.write("  Scenario: ambiguous YouTube upload is not auto-claimed\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
     await insertRemasterJob(client, {
@@ -863,6 +958,20 @@ async function testRemasterJobCore() {
 
     process.stdout.write("  Scenario: YouTube checkpoints are write-once\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");
+    const laterStepJob = await insertRemasterJob(client, {
+      status: "running",
+      pipeline_step: "set_thumbnail",
+      lease_owner: "worker",
+      lease_token: "14141414-1414-1414-1414-141414141414",
+      lease_expires_at: "2999-01-01T00:00:00.000Z",
+    });
+    await assertRejectsQuery(
+      client,
+      `select * from public.mark_remaster_youtube_upload_started('${laterStepJob.id}', '14141414-1414-1414-1414-141414141414'::uuid)`,
+      "YouTube upload start moved a later pipeline step backward.",
+      "INVALID_PIPELINE_STEP_TRANSITION",
+    );
+
     const youtubeJob = await insertRemasterJob(client, {
       status: "running",
       lease_owner: "worker",
@@ -914,7 +1023,24 @@ async function testRemasterJobCore() {
       "select * from public.release_remaster_pipeline_job_lease($1, $2::uuid, $3::uuid)",
       [releaseJob.id, "88888888-8888-8888-8888-888888888888", "dddddddd-dddd-dddd-dddd-dddddddddddd"],
     );
+    assert(released.rows[0].status === "waiting_retry", "Lease release did not move job out of running.");
     assert(released.rows[0].lease_token === null, "Lease token was not cleared on release.");
+    assert(released.rows[0].lease_expires_at === null, "Lease expiry was not cleared on release.");
+    const orphanedRunning = await client.query(
+      "select count(*)::int as count from public.remaster_pipeline_jobs where id = $1 and status = 'running' and lease_token is null and lease_expires_at is null",
+      [releaseJob.id],
+    );
+    assert(orphanedRunning.rows[0].count === 0, "Lease release created an orphaned running job.");
+    const releaseEvent = await client.query(
+      "select event_type, status, correlation_id from public.remaster_pipeline_job_events where job_id = $1 order by event_sequence desc limit 1",
+      [releaseJob.id],
+    );
+    assert(releaseEvent.rows[0].event_type === "lease_released", "Lease release did not write a release event.");
+    assert(releaseEvent.rows[0].status === "waiting_retry", "Lease release event did not store the next status.");
+    assert(
+      releaseEvent.rows[0].correlation_id === "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      "Lease release event did not store correlation ID.",
+    );
 
     process.stdout.write("  Scenario: transition event stores correlation ID and consistent state\n");
     await client.query("truncate public.remaster_pipeline_job_events, public.remaster_pipeline_jobs cascade");

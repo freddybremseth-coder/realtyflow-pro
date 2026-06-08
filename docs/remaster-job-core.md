@@ -108,9 +108,13 @@ Worker mutations require a current, non-expired lease. Job ID plus lease token i
 
 Stale workers receive stable domain codes such as `LEASE_EXPIRED` or `LEASE_TOKEN_INVALID`.
 
+The job-core RPC functions revoke `EXECUTE` from `PUBLIC`, `anon`, and `authenticated`, and grant `EXECUTE` only to `service_role`. Re-Master must call them through protected server-side code, not directly from browser clients.
+
 ## Atomic transitions
 
 `public.transition_remaster_pipeline_job` locks the current row, verifies `expectedStatus`, validates lifecycle and pipeline-step transitions, validates the lease when required, updates the job, and writes a durable event in the same transaction.
+
+Generic transitions cannot cancel a `running` job. Running-job cancellation must go through `public.request_remaster_pipeline_job_cancel` so YouTube side-effect policy is enforced consistently.
 
 The server-only repository wraps this as:
 
@@ -152,6 +156,18 @@ Cancellation is atomic and based on the current database row:
 - after `youtube_upload_started_at` or `youtube_video_id`, cancellation marks `manual_review_required` and `retry_classification = 'manual_review'`.
 - `completed` and `cancelled` are left unchanged.
 
+## Lease Release
+
+`releaseLease` is a controlled worker handoff, not a raw lease clear.
+
+`public.release_remaster_pipeline_job_lease` requires a valid, non-expired lease and atomically transitions:
+
+```text
+running -> waiting_retry
+```
+
+It clears the lease, writes a `lease_released` event, and sets the retry to become claimable immediately. It must never leave `status = running` with null lease fields.
+
 ## YouTube side-effect checkpoints
 
 The model stores:
@@ -167,6 +183,7 @@ Rules:
 - If `youtube_video_id` exists, future retry logic must not call `videos.insert` again.
 - If upload started but no ID was saved, automatic claim/retry is blocked and the job requires manual review.
 - `markYoutubeUploadStarted` requires a valid lease and only succeeds when `youtube_upload_started_at` and `youtube_video_id` are both null.
+- `markYoutubeUploadStarted` cannot move the pipeline step backward to `upload_youtube` after a later step has been recorded.
 - `recordYoutubeVideo` requires a valid lease, allows the same YouTube ID idempotently, and rejects a different ID with `YOUTUBE_VIDEO_CONFLICT`.
 
 ## Events
@@ -209,10 +226,14 @@ Isolated PostgreSQL migration tests cover:
 - ambiguous YouTube upload not auto-claimed
 - stored YouTube ID can resume safely
 - cancel/request-cancel race before and after upload start
+- generic running -> cancelled rejection
 - double upload-start rejection
+- upload-start step invariant
 - same YouTube ID idempotency
 - different YouTube ID conflict
 - lease release token enforcement
+- lease release cannot orphan a running job
+- RPC function execute privileges
 - transition event consistency
 - event correlation ID storage
 - event ordering
