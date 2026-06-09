@@ -120,6 +120,7 @@ test('createSong writes canonical Re-Master brand and artist by default', async 
 
   await createSong({
     title: 'Canonical Write',
+    artist: 'Client Artist',
     audioUrl: 'https://example.test/canonical.mp3',
     brand: 'other-brand',
   } as never);
@@ -134,7 +135,7 @@ test('createRecord ignores arbitrary client brand input', async () => {
 
   await createRecord('songs', {
     title: 'Legacy Create',
-    artist: undefined,
+    artist: 'Client Artist',
     audioUrl: 'https://example.test/legacy.mp3',
     brand: 'not-remaster',
   });

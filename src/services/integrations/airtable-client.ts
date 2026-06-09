@@ -147,7 +147,7 @@ export async function createSong(fields: {
     .from('songs')
     .insert({
       name: fields.title,
-      artist: fields.artist || REMASTER_CANONICAL_SONG_ARTIST,
+      artist: REMASTER_CANONICAL_SONG_ARTIST,
       file_url: fields.audioUrl,
       status: 'ready',
       brand: REMASTER_CANONICAL_SONG_BRAND,
