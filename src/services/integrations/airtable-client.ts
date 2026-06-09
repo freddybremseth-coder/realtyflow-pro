@@ -11,6 +11,14 @@ import type { SongRecord, AirtableRecord, AirtableBrandVideoRecord } from '@/lib
 // Re-export AirtableSongRecord alias so existing imports still work
 export type { SongRecord as AirtableSongRecord } from '@/lib/types';
 
+export const REMASTER_CANONICAL_SONG_BRAND = 'remasterfreddy';
+export const REMASTER_CANONICAL_SONG_ARTIST = 'Re-Master Freddy';
+export const REMASTER_LEGACY_SONG_BRANDS = ['neural-beat', 'neuralbeat'] as const;
+export const REMASTER_SONG_READ_BRANDS = [
+  REMASTER_CANONICAL_SONG_BRAND,
+  ...REMASTER_LEGACY_SONG_BRANDS,
+] as const;
+
 // ─── Supabase client (singleton) ───────────────────────────────────────
 
 let _supabase: SupabaseClient | null = null;
@@ -23,6 +31,13 @@ function getSupabase(): SupabaseClient {
     _supabase = createClient(url, key);
   }
   return _supabase;
+}
+
+export function __setSupabaseClientForTests(client: SupabaseClient | null): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('__setSupabaseClientForTests is only available in test mode');
+  }
+  _supabase = client;
 }
 
 // ─── Supabase row → SongRecord mapping ─────────────────────────────────
@@ -59,7 +74,7 @@ function rowToSongRecord(row: SongsRow): SongRecord {
   return {
     id: row.id,
     title: row.name || '',
-    artist: row.artist || 'Neural Beat',
+    artist: row.artist || REMASTER_CANONICAL_SONG_ARTIST,
     audioUrl: row.file_url || undefined,
     status: (row.status as SongRecord['status']) || 'ready',
     genre: row.genre || row.ai_metadata?.genre || undefined,
@@ -86,6 +101,7 @@ export async function getSongs(maxRecords?: number): Promise<SongRecord[]> {
   let query = supabase
     .from('songs')
     .select('*')
+    .in('brand', [...REMASTER_SONG_READ_BRANDS])
     .order('created_at', { ascending: false });
 
   if (maxRecords) query = query.limit(maxRecords);
@@ -100,6 +116,7 @@ export async function getSongsWithoutYouTube(): Promise<SongRecord[]> {
   const { data, error } = await supabase
     .from('songs')
     .select('*')
+    .in('brand', [...REMASTER_SONG_READ_BRANDS])
     .is('youtube_url', null)
     .order('created_at', { ascending: true });
 
@@ -113,6 +130,7 @@ export async function getSongById(id: string): Promise<SongRecord> {
     .from('songs')
     .select('*')
     .eq('id', id)
+    .in('brand', [...REMASTER_SONG_READ_BRANDS])
     .single();
 
   if (error) throw new Error(`getSongById failed: ${error.message}`);
@@ -129,10 +147,10 @@ export async function createSong(fields: {
     .from('songs')
     .insert({
       name: fields.title,
-      artist: fields.artist || 'Neural Beat',
+      artist: fields.artist || REMASTER_CANONICAL_SONG_ARTIST,
       file_url: fields.audioUrl,
       status: 'ready',
-      brand: 'neural-beat',
+      brand: REMASTER_CANONICAL_SONG_BRAND,
     })
     .select('*')
     .single();
