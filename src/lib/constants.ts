@@ -118,6 +118,7 @@ export const SIDEBAR_NAV = {
   ],
   operations: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
+    { label: "AI Lead Inbox", href: "/lead-intelligence", icon: "Sparkles" },
     { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
     { label: "Booking Admin", href: "/booking-admin", icon: "Calendar" },
     { label: "Kalender", href: "/calendar", icon: "Calendar" },
