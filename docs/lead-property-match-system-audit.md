@@ -377,6 +377,16 @@ Unknown facts must not be treated as satisfied.
 - follow-up actions
 - customer feedback events
 
+The contracts intentionally include:
+
+- explicit maximum lengths and array bounds for model/user-controlled text and lists
+- canonical criterion and property-type registries, with controlled `other`/`unknown` escape hatches
+- currency, language, and country normalizers
+- item-level approval state for buyer profile criteria
+- message draft approval/send invariants
+- property fact verification invariants
+- separate phone lookup normalization and E.164 verification helpers
+
 It also defines feature flag names:
 
 - `REALTYFLOW_LEAD_INTELLIGENCE_ENABLED`
