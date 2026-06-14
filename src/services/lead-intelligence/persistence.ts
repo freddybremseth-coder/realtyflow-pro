@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { z } from "zod";
 import {
   BoundedJsonSchema,
@@ -13,12 +13,14 @@ import {
   inspectPhoneForLeadLookup,
 } from "./contracts";
 import { isLeadIntelligencePersistenceEnabled } from "./feature-flags";
+import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 
 export type LeadIntelligencePersistenceErrorCode =
   | "LEAD_INTELLIGENCE_PERSISTENCE_DISABLED"
   | "AUTH_REQUIRED"
   | "ADMIN_FORBIDDEN"
   | "INVALID_REQUEST"
+  | "LOOKUP_HASH_SECRET_MISSING"
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
   | "DATABASE_ERROR";
 
@@ -47,9 +49,13 @@ export interface QueryClient {
 
 const UUIDSchema = z.string().uuid();
 const IdentityTextSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText);
-const BrandSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.brand);
+const BrandSchema = LeadIntelligenceRealEstateBrandSchema;
 const OptionalTextSchema = z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.longText).nullable();
 const CorrelationIdSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.id);
+const IdempotencyKeySchema = z.string().trim().min(12).max(LEAD_INTELLIGENCE_LIMITS.id);
+
+export const LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV = "REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET";
+export const LEAD_CONTACT_LOOKUP_HASH_PREFIX = "hmac-sha256:v1:";
 
 export const LeadIntakeStatusSchema = z.enum([
   "draft",
@@ -116,7 +122,7 @@ export const CreateLeadIntakeInputSchema = z
   .object({
     brand: BrandSchema,
     source: LeadIntakeSourcePersistenceSchema,
-    rawTextEncryptedOrRestricted: z
+    rawTextRestricted: z
       .string()
       .trim()
       .min(1)
@@ -126,12 +132,14 @@ export const CreateLeadIntakeInputSchema = z
     status: LeadIntakeStatusSchema.default("draft"),
     createdBy: IdentityTextSchema,
     correlationId: CorrelationIdSchema,
+    idempotencyKey: IdempotencyKeySchema,
   })
   .strict();
 
 export const RecordLeadAnalysisRunInputSchema = z
   .object({
     intakeId: UUIDSchema,
+    idempotencyKey: IdempotencyKeySchema,
     promptVersion: IdentityTextSchema,
     model: IdentityTextSchema,
     resultJson: BoundedJsonSchema,
@@ -152,11 +160,11 @@ export const RecordLeadAnalysisRunInputSchema = z
       });
     }
 
-    if (!input.approved && input.approvedAt) {
+    if (!input.approved && (input.approvedBy || input.approvedAt)) {
       ctx.addIssue({
         code: "custom",
-        path: ["approvedAt"],
-        message: "unapproved analysis cannot have approvedAt",
+        path: ["approvedBy"],
+        message: "unapproved analysis cannot have approvedBy or approvedAt",
       });
     }
   });
@@ -248,11 +256,11 @@ export const BuyerProfileCriterionPersistenceSchema = z
       });
     }
 
-    if (criterion.approvalStatus !== "approved" && criterion.approvedAt) {
+    if (criterion.approvalStatus !== "approved" && (criterion.approvedBy || criterion.approvedAt)) {
       ctx.addIssue({
         code: "custom",
-        path: ["approvedAt"],
-        message: "only approved criteria may have approvedAt",
+        path: ["approvedBy"],
+        message: "only approved criteria may have approvedBy and approvedAt",
       });
     }
   });
@@ -288,11 +296,11 @@ export const CreateBuyerProfileInputSchema = z
       });
     }
 
-    if (profile.status !== "approved" && profile.approvedAt) {
+    if (profile.status !== "approved" && (profile.approvedBy || profile.approvedAt)) {
       ctx.addIssue({
         code: "custom",
-        path: ["approvedAt"],
-        message: "only approved profiles may have approvedAt",
+        path: ["approvedBy"],
+        message: "only approved profiles may have approvedBy and approvedAt",
       });
     }
 
@@ -311,6 +319,7 @@ export const CreateBuyerProfileInputSchema = z
 
 export const LeadContactCandidateInputSchema = z
   .object({
+    brand: BrandSchema,
     intakeId: UUIDSchema,
     contactId: UUIDSchema,
     matchType: LeadContactCandidateMatchTypeSchema,
@@ -371,8 +380,6 @@ export function assertLeadIntelligencePersistenceAccess(
   auth: PersistenceAuthContext | null | undefined,
   env: Record<string, string | undefined> = process.env,
 ) {
-  assertLeadIntelligencePersistenceEnabled(env);
-
   if (!auth?.email) {
     throw new LeadIntelligencePersistenceError("AUTH_REQUIRED", "Authentication required", 401);
   }
@@ -381,11 +388,44 @@ export function assertLeadIntelligencePersistenceAccess(
     throw new LeadIntelligencePersistenceError("ADMIN_FORBIDDEN", "Admin access required", 403);
   }
 
+  assertLeadIntelligencePersistenceEnabled(env);
+
   return auth.email.trim().toLowerCase();
 }
 
-export function hashLeadContactLookup(kind: string, value: string) {
-  return `sha256:${createHash("sha256").update(`${kind}:${value}`).digest("hex")}`;
+export function getLeadContactLookupHmacSecret(
+  env: Record<string, string | undefined> = process.env,
+) {
+  const secret = String(env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV] || "").trim();
+  if (secret.length < 32) {
+    throw new LeadIntelligencePersistenceError(
+      "LOOKUP_HASH_SECRET_MISSING",
+      "Lead contact lookup HMAC secret is not configured",
+      500,
+    );
+  }
+  return secret;
+}
+
+export function hashLeadContactLookup(input: {
+  brand: string;
+  kind: string;
+  value: string;
+  secret: string;
+}) {
+  const brand = BrandSchema.parse(input.brand);
+  if (!input.secret || input.secret.length < 32) {
+    throw new LeadIntelligencePersistenceError(
+      "LOOKUP_HASH_SECRET_MISSING",
+      "Lead contact lookup HMAC secret is not configured",
+      500,
+    );
+  }
+
+  const payload = `${brand}|${input.kind}|${input.value}`;
+  return `${LEAD_CONTACT_LOOKUP_HASH_PREFIX}${createHmac("sha256", input.secret)
+    .update(payload)
+    .digest("hex")}`;
 }
 
 export function normalizeEmailForLeadLookup(value: string | null | undefined) {
@@ -443,14 +483,19 @@ function mergeCandidate(
 export function findLeadContactCandidatePreviews(
   suggestion: LeadContactSuggestion,
   contacts: ContactLookupRow[],
+  options: { hmacSecret: string },
 ) {
+  const brand = BrandSchema.parse(suggestion.brand);
+  const hmacSecret = getLeadContactLookupHmacSecret({
+    [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: options.hmacSecret,
+  });
   const phone = inspectPhoneForLeadLookup(suggestion.phone);
   const email = normalizeEmailForLeadLookup(suggestion.email);
   const name = normalizeNameForLeadLookup(suggestion.name);
   const candidates = new Map<string, LeadContactCandidatePreview>();
 
   for (const row of contacts) {
-    if (row.brand && row.brand !== suggestion.brand) continue;
+    if (row.brand && row.brand !== brand) continue;
 
     const rowPhone = inspectPhoneForLeadLookup(row.phone);
     if (phone.normalizedLookup && rowPhone.normalizedLookup === phone.normalizedLookup) {
@@ -463,7 +508,12 @@ export function findLeadContactCandidatePreviews(
             ? "Eksakt verifisert E.164-telefon"
             : "Eksakt telefonoppslag i normalisert lookup-format",
         ],
-        matchValueHash: hashLeadContactLookup("phone", phone.normalizedLookup),
+        matchValueHash: hashLeadContactLookup({
+          brand,
+          kind: "phone",
+          value: phone.normalizedLookup,
+          secret: hmacSecret,
+        }),
       });
     }
 
@@ -474,7 +524,12 @@ export function findLeadContactCandidatePreviews(
         matchType: "exact_email",
         confidence: 0.95,
         reasons: ["Eksakt normalisert e-post"],
-        matchValueHash: hashLeadContactLookup("email", email),
+        matchValueHash: hashLeadContactLookup({
+          brand,
+          kind: "email",
+          value: email,
+          secret: hmacSecret,
+        }),
       });
     }
 
@@ -485,7 +540,12 @@ export function findLeadContactCandidatePreviews(
         matchType: "name_similarity",
         confidence: 0.35,
         reasons: ["Navn matcher, men navn alene krever manuell kontroll"],
-        matchValueHash: hashLeadContactLookup("name", name),
+        matchValueHash: hashLeadContactLookup({
+          brand,
+          kind: "name",
+          value: name,
+          secret: hmacSecret,
+        }),
       });
     }
   }
@@ -543,59 +603,99 @@ export function assertExplicitContactDecision(value: unknown) {
   return parsed.data;
 }
 
+export interface LeadIntelligencePersistenceRepositoryOptions {
+  auth: PersistenceAuthContext | null | undefined;
+  env?: Record<string, string | undefined>;
+}
+
 export class LeadIntelligencePersistenceRepository {
-  constructor(private readonly db: QueryClient) {}
+  constructor(
+    private readonly db: QueryClient,
+    private readonly options: LeadIntelligencePersistenceRepositoryOptions,
+  ) {}
+
+  private assertCanWrite() {
+    return assertLeadIntelligencePersistenceAccess(this.options.auth, this.options.env);
+  }
 
   async createIntake(input: CreateLeadIntakeInput) {
+    this.assertCanWrite();
     const data = CreateLeadIntakeInputSchema.parse(input);
-    const { rows } = await this.db.query<{ id: string }>(
+    const { rows } = await this.db.query<{ id: string; duplicate: boolean }>(
       `
-        insert into public.lead_intake_messages (
-          brand,
-          source,
-          raw_text_encrypted_or_restricted,
-          language,
-          status,
-          created_by,
-          correlation_id
+        with inserted as (
+          insert into public.lead_intake_messages (
+            brand,
+            source,
+            raw_text_restricted,
+            language,
+            status,
+            created_by,
+            correlation_id,
+            idempotency_key
+          )
+          values ($1, $2, $3, $4, $5, $6, $7, $8)
+          on conflict (brand, idempotency_key) do nothing
+          returning id, false as duplicate
         )
-        values ($1, $2, $3, $4, $5, $6, $7)
-        returning id
+        select id, duplicate from inserted
+        union all
+        select id, true as duplicate
+        from public.lead_intake_messages
+        where brand = $1
+          and idempotency_key = $8
+          and not exists (select 1 from inserted)
+        limit 1
       `,
       [
         data.brand,
         data.source,
-        data.rawTextEncryptedOrRestricted,
+        data.rawTextRestricted,
         data.language,
         data.status,
         data.createdBy,
         data.correlationId,
+        data.idempotencyKey,
       ],
     );
     return rows[0];
   }
 
   async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
+    this.assertCanWrite();
     const data = RecordLeadAnalysisRunInputSchema.parse(input);
-    const { rows } = await this.db.query<{ id: string }>(
+    const { rows } = await this.db.query<{ id: string; duplicate: boolean }>(
       `
-        insert into public.lead_analysis_runs (
-          intake_id,
-          prompt_version,
-          model,
-          result_json,
-          validation_status,
-          repaired,
-          duration_ms,
-          approved,
-          approved_by,
-          approved_at
+        with inserted as (
+          insert into public.lead_analysis_runs (
+            intake_id,
+            idempotency_key,
+            prompt_version,
+            model,
+            result_json,
+            validation_status,
+            repaired,
+            duration_ms,
+            approved,
+            approved_by,
+            approved_at
+          )
+          values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::timestamptz)
+          on conflict (intake_id, idempotency_key) do nothing
+          returning id, false as duplicate
         )
-        values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::timestamptz)
-        returning id
+        select id, duplicate from inserted
+        union all
+        select id, true as duplicate
+        from public.lead_analysis_runs
+        where intake_id = $1
+          and idempotency_key = $2
+          and not exists (select 1 from inserted)
+        limit 1
       `,
       [
         data.intakeId,
+        data.idempotencyKey,
         data.promptVersion,
         data.model,
         JSON.stringify(data.resultJson),
@@ -611,52 +711,53 @@ export class LeadIntelligencePersistenceRepository {
   }
 
   async createBuyerProfile(input: CreateBuyerProfileInput) {
+    this.assertCanWrite();
     const data = CreateBuyerProfileInputSchema.parse(input);
-    const profileResult = await this.db.query<{ id: string }>(
+    const profileResult = await this.db.query<{ id: string; criterion_count: number }>(
       `
-        insert into public.buyer_profiles (
-          brand,
-          contact_id,
-          intake_id,
-          version,
-          status,
-          purchase_readiness,
-          budget_amount,
-          budget_currency,
-          budget_includes_costs,
-          budget_approximate,
-          location_flexible,
-          summary,
-          created_by,
-          approved_by,
-          approved_at
-        )
-        values ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::timestamptz)
-        returning id
-      `,
-      [
-        data.brand,
-        data.contactId,
-        data.intakeId,
-        data.version,
-        data.status,
-        data.purchaseReadiness,
-        data.budgetAmount,
-        data.budgetCurrency,
-        data.budgetIncludesCosts,
-        data.budgetApproximate,
-        data.locationFlexible,
-        data.summary,
-        data.createdBy,
-        data.approvedBy,
-        data.approvedAt,
-      ],
-    );
-
-    const profileId = profileResult.rows[0].id;
-    for (const criterion of data.criteria) {
-      await this.db.query(
-        `
+        with profile as (
+          insert into public.buyer_profiles (
+            brand,
+            contact_id,
+            intake_id,
+            version,
+            status,
+            purchase_readiness,
+            budget_amount,
+            budget_currency,
+            budget_includes_costs,
+            budget_approximate,
+            location_flexible,
+            summary,
+            created_by,
+            approved_by,
+            approved_at
+          )
+          values ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::timestamptz)
+          returning id
+        ),
+        criteria_input as (
+          select *
+          from jsonb_to_recordset($16::jsonb) as criterion (
+            criterion_type text,
+            key text,
+            other_key text,
+            operator text,
+            value jsonb,
+            weight numeric,
+            severity text,
+            applies_to_property_types text[],
+            source text,
+            source_text text,
+            confidence numeric,
+            customer_confirmed boolean,
+            approval_status text,
+            approved_by text,
+            approved_at timestamptz,
+            active boolean
+          )
+        ),
+        inserted_criteria as (
           insert into public.buyer_profile_criteria (
             buyer_profile_id,
             criterion_type,
@@ -676,43 +777,107 @@ export class LeadIntelligencePersistenceRepository {
             approved_at,
             active
           )
-          values (
-            $1::uuid, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::text[],
-            $10, $11, $12, $13, $14, $15, $16::timestamptz, $17
-          )
-        `,
-        [
-          profileId,
-          criterion.criterionType,
-          criterion.key,
-          criterion.otherKey,
-          criterion.operator,
-          JSON.stringify(criterion.value),
-          criterion.weight,
-          criterion.severity,
-          criterion.appliesToPropertyTypes,
-          criterion.source,
-          criterion.sourceText,
-          criterion.confidence,
-          criterion.customerConfirmed,
-          criterion.approvalStatus,
-          criterion.approvedBy,
-          criterion.approvedAt,
-          criterion.active,
-        ],
-      );
-    }
+          select
+            profile.id,
+            criterion.criterion_type,
+            criterion.key,
+            criterion.other_key,
+            criterion.operator,
+            criterion.value,
+            criterion.weight,
+            criterion.severity,
+            criterion.applies_to_property_types,
+            criterion.source,
+            criterion.source_text,
+            criterion.confidence,
+            criterion.customer_confirmed,
+            criterion.approval_status,
+            criterion.approved_by,
+            criterion.approved_at,
+            criterion.active
+          from profile
+          cross join criteria_input criterion
+          returning id
+        )
+        select profile.id, (select count(*)::int from inserted_criteria) as criterion_count
+        from profile
+      `,
+      [
+        data.brand,
+        data.contactId,
+        data.intakeId,
+        data.version,
+        data.status,
+        data.purchaseReadiness,
+        data.budgetAmount,
+        data.budgetCurrency,
+        data.budgetIncludesCosts,
+        data.budgetApproximate,
+        data.locationFlexible,
+        data.summary,
+        data.createdBy,
+        data.approvedBy,
+        data.approvedAt,
+        JSON.stringify(
+          data.criteria.map((criterion) => ({
+            criterion_type: criterion.criterionType,
+            key: criterion.key,
+            other_key: criterion.otherKey,
+            operator: criterion.operator,
+            value: criterion.value,
+            weight: criterion.weight,
+            severity: criterion.severity,
+            applies_to_property_types: criterion.appliesToPropertyTypes,
+            source: criterion.source,
+            source_text: criterion.sourceText,
+            confidence: criterion.confidence,
+            customer_confirmed: criterion.customerConfirmed,
+            approval_status: criterion.approvalStatus,
+            approved_by: criterion.approvedBy,
+            approved_at: criterion.approvedAt,
+            active: criterion.active,
+          })),
+        ),
+      ],
+    );
 
-    return { id: profileId };
+    const profileId = profileResult.rows[0].id;
+
+    return { id: profileId, criterionCount: profileResult.rows[0].criterion_count };
   }
 
   async recordContactCandidates(candidates: LeadContactCandidateInput[]) {
-    const ids: string[] = [];
-    for (const candidate of candidates) {
-      const data = LeadContactCandidateInputSchema.parse(candidate);
-      const { rows } = await this.db.query<{ id: string }>(
-        `
+    this.assertCanWrite();
+    const data = z.array(LeadContactCandidateInputSchema).parse(candidates);
+    if (data.length === 0) return [];
+
+    const brand = data[0].brand;
+    if (data.some((candidate) => candidate.brand !== brand)) {
+      throw new LeadIntelligencePersistenceError(
+        "INVALID_REQUEST",
+        "Contact candidates in one batch must use the same brand",
+        400,
+      );
+    }
+
+    const { rows } = await this.db.query<{ id: string }>(
+      `
+        with candidate_input as (
+          select *
+          from jsonb_to_recordset($1::jsonb) as candidate (
+            brand text,
+            intake_id uuid,
+            contact_id uuid,
+            match_type text,
+            match_value_hash text,
+            score numeric,
+            reasons jsonb,
+            status text
+          )
+        ),
+        upserted as (
           insert into public.lead_contact_candidates (
+            brand,
             intake_id,
             contact_id,
             match_type,
@@ -721,22 +886,41 @@ export class LeadIntelligencePersistenceRepository {
             reasons,
             status
           )
-          values ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7)
+          select
+            brand,
+            intake_id,
+            contact_id,
+            match_type,
+            match_value_hash,
+            score,
+            reasons,
+            status
+          from candidate_input
+          on conflict (intake_id, match_type, match_value_hash)
+          do update set
+            score = excluded.score,
+            reasons = excluded.reasons,
+            status = excluded.status
           returning id
-        `,
-        [
-          data.intakeId,
-          data.contactId,
-          data.matchType,
-          data.matchValueHash,
-          data.score,
-          JSON.stringify(data.reasons),
-          data.status,
-        ],
-      );
-      ids.push(rows[0].id);
-    }
+        )
+        select id from upserted
+      `,
+      [
+        JSON.stringify(
+          data.map((candidate) => ({
+            brand: candidate.brand,
+            intake_id: candidate.intakeId,
+            contact_id: candidate.contactId,
+            match_type: candidate.matchType,
+            match_value_hash: candidate.matchValueHash,
+            score: candidate.score,
+            reasons: candidate.reasons,
+            status: candidate.status,
+          })),
+        ),
+      ],
+    );
 
-    return ids;
+    return rows.map((row) => row.id);
   }
 }

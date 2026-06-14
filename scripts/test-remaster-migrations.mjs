@@ -1215,21 +1215,25 @@ async function testLeadIntelligencePersistenceFoundation() {
       assert(await tableExists(client, tableName), `public.${tableName} was not created.`);
     }
 
-    await assertTableHasColumns(client, "lead_intake_messages", [
+    const intakeColumns = await assertTableHasColumns(client, "lead_intake_messages", [
       "id",
       "brand",
       "source",
-      "raw_text_encrypted_or_restricted",
+      "raw_text_restricted",
+      "raw_text_retention_until",
+      "redacted_at",
       "language",
       "status",
       "created_by",
       "created_at",
       "updated_at",
       "correlation_id",
+      "idempotency_key",
     ]);
-    await assertTableHasColumns(client, "lead_analysis_runs", [
+    const analysisColumns = await assertTableHasColumns(client, "lead_analysis_runs", [
       "id",
       "intake_id",
+      "idempotency_key",
       "prompt_version",
       "model",
       "result_json",
@@ -1241,7 +1245,7 @@ async function testLeadIntelligencePersistenceFoundation() {
       "approved_at",
       "created_at",
     ]);
-    await assertTableHasColumns(client, "buyer_profiles", [
+    const profileColumns = await assertTableHasColumns(client, "buyer_profiles", [
       "id",
       "brand",
       "contact_id",
@@ -1261,7 +1265,7 @@ async function testLeadIntelligencePersistenceFoundation() {
       "created_at",
       "updated_at",
     ]);
-    await assertTableHasColumns(client, "buyer_profile_criteria", [
+    const criterionColumns = await assertTableHasColumns(client, "buyer_profile_criteria", [
       "id",
       "buyer_profile_id",
       "criterion_type",
@@ -1283,8 +1287,9 @@ async function testLeadIntelligencePersistenceFoundation() {
       "created_at",
       "updated_at",
     ]);
-    await assertTableHasColumns(client, "lead_contact_candidates", [
+    const candidateColumns = await assertTableHasColumns(client, "lead_contact_candidates", [
       "id",
+      "brand",
       "intake_id",
       "contact_id",
       "match_type",
@@ -1295,10 +1300,50 @@ async function testLeadIntelligencePersistenceFoundation() {
       "created_at",
     ]);
 
+    for (const [columns, tableName, criticalColumns] of [
+      [
+        intakeColumns,
+        "lead_intake_messages",
+        ["id", "brand", "source", "status", "created_by", "created_at", "updated_at", "correlation_id", "idempotency_key"],
+      ],
+      [
+        analysisColumns,
+        "lead_analysis_runs",
+        ["id", "intake_id", "idempotency_key", "prompt_version", "model", "result_json", "validation_status", "repaired", "approved", "created_at"],
+      ],
+      [
+        profileColumns,
+        "buyer_profiles",
+        ["id", "brand", "intake_id", "version", "status", "purchase_readiness", "budget_approximate", "location_flexible", "created_by", "created_at", "updated_at"],
+      ],
+      [
+        criterionColumns,
+        "buyer_profile_criteria",
+        ["id", "buyer_profile_id", "criterion_type", "key", "operator", "value", "applies_to_property_types", "source", "customer_confirmed", "approval_status", "active", "created_at", "updated_at"],
+      ],
+      [
+        candidateColumns,
+        "lead_contact_candidates",
+        ["id", "brand", "intake_id", "contact_id", "match_type", "match_value_hash", "score", "reasons", "status", "created_at"],
+      ],
+    ]) {
+      for (const columnName of criticalColumns) {
+        assert(
+          columns.get(columnName).is_nullable === "NO",
+          `Expected public.${tableName}.${columnName} to be NOT NULL.`,
+        );
+      }
+    }
+
     process.stdout.write("  Scenario: constraints, indexes, and RLS are present\n");
     const intakeConstraints = await getTableConstraints(client, "lead_intake_messages");
     assert(intakeConstraints.has("lead_intake_messages_status_check"), "Intake status check is missing.");
     assert(intakeConstraints.has("lead_intake_messages_source_check"), "Intake source check is missing.");
+    assert(intakeConstraints.has("lead_intake_messages_brand_check"), "Intake brand check is missing.");
+    assert(
+      intakeConstraints.has("lead_intake_messages_brand_idempotency_key_key"),
+      "Intake idempotency uniqueness is missing.",
+    );
 
     const analysisConstraints = await getTableConstraints(client, "lead_analysis_runs");
     assert(analysisConstraints.has("lead_analysis_runs_intake_id_fkey"), "Analysis FK is missing.");
@@ -1306,9 +1351,13 @@ async function testLeadIntelligencePersistenceFoundation() {
       analysisConstraints.has("lead_analysis_runs_validation_status_check"),
       "Analysis validation status check is missing.",
     );
+    assert(
+      analysisConstraints.has("lead_analysis_runs_intake_id_idempotency_key_key"),
+      "Analysis idempotency uniqueness is missing.",
+    );
 
     const profileConstraints = await getTableConstraints(client, "buyer_profiles");
-    assert(profileConstraints.has("buyer_profiles_intake_id_fkey"), "Buyer profile FK is missing.");
+    assert(profileConstraints.has("buyer_profiles_intake_brand_fkey"), "Buyer profile brand/intake FK is missing.");
     assert(profileConstraints.has("buyer_profiles_status_check"), "Buyer profile status check is missing.");
     assert(profileConstraints.has("buyer_profiles_approval_check"), "Buyer profile approval check is missing.");
     assert(profileConstraints.has("buyer_profiles_intake_version_key"), "Buyer profile version uniqueness is missing.");
@@ -1325,8 +1374,29 @@ async function testLeadIntelligencePersistenceFoundation() {
     );
 
     const candidateConstraints = await getTableConstraints(client, "lead_contact_candidates");
-    assert(candidateConstraints.has("lead_contact_candidates_intake_id_fkey"), "Candidate FK is missing.");
+    assert(candidateConstraints.has("lead_contact_candidates_intake_brand_fkey"), "Candidate brand/intake FK is missing.");
     assert(candidateConstraints.has("lead_contact_candidates_score_check"), "Candidate score check is missing.");
+    assert(
+      candidateConstraints.has("lead_contact_candidates_intake_match_hash_key"),
+      "Candidate idempotency uniqueness is missing.",
+    );
+
+    for (const [tableName, constraints] of [
+      ["lead_intake_messages", intakeConstraints],
+      ["lead_analysis_runs", analysisConstraints],
+      ["buyer_profiles", profileConstraints],
+      ["buyer_profile_criteria", criterionConstraints],
+      ["lead_contact_candidates", candidateConstraints],
+    ]) {
+      for (const [constraintName, constraint] of constraints) {
+        if (["c", "f"].includes(constraint.contype)) {
+          assert(
+            constraint.convalidated === true,
+            `Expected ${tableName}.${constraintName} to have convalidated=true.`,
+          );
+        }
+      }
+    }
 
     for (const indexName of [
       "idx_lead_intake_messages_brand_status_created",
@@ -1358,13 +1428,14 @@ async function testLeadIntelligencePersistenceFoundation() {
         insert into public.lead_intake_messages (
           brand,
           source,
-          raw_text_encrypted_or_restricted,
+          raw_text_restricted,
           language,
           status,
           created_by,
-          correlation_id
+          correlation_id,
+          idempotency_key
         )
-        values ('soleada', 'phone_call', 'restricted raw note', 'no', 'draft', 'freddy.bremseth@gmail.com', 'rf_test_0123456789abcdef01234567')
+        values ('soleada', 'phone_call', 'restricted raw note', 'no', 'draft', 'freddy.bremseth@gmail.com', 'rf_test_0123456789abcdef01234567', 'intake-key-001')
         returning id
       `,
     );
@@ -1374,6 +1445,7 @@ async function testLeadIntelligencePersistenceFoundation() {
       `
         insert into public.lead_analysis_runs (
           intake_id,
+          idempotency_key,
           prompt_version,
           model,
           result_json,
@@ -1381,7 +1453,7 @@ async function testLeadIntelligencePersistenceFoundation() {
           repaired,
           duration_ms
         )
-        values ($1, 'lead-intelligence-extraction-v1', 'mock', '{"ok": true}'::jsonb, 'valid', false, 120)
+        values ($1, 'analysis-key-001', 'lead-intelligence-extraction-v1', 'mock', '{"ok": true}'::jsonb, 'valid', false, 120)
       `,
       [intakeId],
     );
@@ -1467,6 +1539,7 @@ async function testLeadIntelligencePersistenceFoundation() {
     await client.query(
       `
         insert into public.lead_contact_candidates (
+          brand,
           intake_id,
           contact_id,
           match_type,
@@ -1474,16 +1547,66 @@ async function testLeadIntelligencePersistenceFoundation() {
           score,
           reasons
         )
-        values ($1, gen_random_uuid(), 'exact_phone', repeat('a', 64), 0.98, '["masked exact phone"]'::jsonb)
+        values ('soleada', $1, gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('a', 64), 0.98, '["masked exact phone"]'::jsonb)
       `,
       [intakeId],
+    );
+
+    process.stdout.write("  Scenario: idempotent retry does not duplicate intake or candidates\n");
+    const duplicateIntake = await client.query(
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          raw_text_restricted,
+          language,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'retry raw note', 'no', 'draft', 'freddy.bremseth@gmail.com', 'rf_test_retry_0123456789abcdef', 'intake-key-001')
+        on conflict (brand, idempotency_key) do nothing
+        returning id
+      `,
+    );
+    assert(duplicateIntake.rows.length === 0, "Duplicate intake idempotency key inserted a second row.");
+
+    const beforeCandidates = await client.query(
+      "select count(*)::int as count from public.lead_contact_candidates where intake_id = $1",
+      [intakeId],
+    );
+    await client.query(
+      `
+        insert into public.lead_contact_candidates (
+          brand,
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons
+        )
+        values ('soleada', $1, gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('a', 64), 0.98, '["same candidate"]'::jsonb)
+        on conflict (intake_id, match_type, match_value_hash)
+        do update set score = excluded.score, reasons = excluded.reasons
+      `,
+      [intakeId],
+    );
+    const afterCandidates = await client.query(
+      "select count(*)::int as count from public.lead_contact_candidates where intake_id = $1",
+      [intakeId],
+    );
+    assert(
+      afterCandidates.rows[0].count === beforeCandidates.rows[0].count,
+      "Idempotent candidate retry inserted a duplicate row.",
     );
 
     await assertRejectsQuery(
       client,
       `
-        insert into public.lead_intake_messages (brand, source, status, created_by)
-        values ('soleada', 'phone_call', 'bad_status', 'freddy.bremseth@gmail.com')
+        insert into public.lead_intake_messages (brand, source, status, created_by, correlation_id, idempotency_key)
+        values ('soleada', 'phone_call', 'bad_status', 'freddy.bremseth@gmail.com', 'rf_bad_0123456789abcdef012345', 'intake-key-bad')
       `,
       "Invalid intake status was accepted.",
       "lead_intake_messages_status_check",
@@ -1503,6 +1626,24 @@ async function testLeadIntelligencePersistenceFoundation() {
         values ('soleada', '${intakeId}', 2, 'approved', 'ready_to_buy', 'freddy.bremseth@gmail.com')
       `,
       "Approved buyer profile without approver was accepted.",
+      "buyer_profiles_approval_check",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          created_by,
+          approved_by
+        )
+        values ('soleada', '${intakeId}', 2, 'draft', 'ready_to_buy', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com')
+      `,
+      "Draft buyer profile with stale approved_by was accepted.",
       "buyer_profiles_approval_check",
     );
 
@@ -1568,6 +1709,7 @@ async function testLeadIntelligencePersistenceFoundation() {
       client,
       `
         insert into public.lead_contact_candidates (
+          brand,
           intake_id,
           contact_id,
           match_type,
@@ -1575,7 +1717,25 @@ async function testLeadIntelligencePersistenceFoundation() {
           score,
           reasons
         )
-        values ('${intakeId}', gen_random_uuid(), 'exact_phone', repeat('b', 64), 1.5, '[]'::jsonb)
+        values ('zeneco', '${intakeId}', gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('c', 64), 0.9, '[]'::jsonb)
+      `,
+      "Cross-brand contact candidate was accepted.",
+      "lead_contact_candidates_intake_brand_fkey",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.lead_contact_candidates (
+          brand,
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons
+        )
+        values ('soleada', '${intakeId}', gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('b', 64), 1.5, '[]'::jsonb)
       `,
       "Candidate score above 1 was accepted.",
       "lead_contact_candidates_score_check",
@@ -1632,6 +1792,20 @@ async function testLeadIntelligencePersistenceFoundation() {
       "authenticated can execute trigger function.",
     );
     assert(functionPrivilegeRows.rows[0].service_execute === true, "service_role cannot execute trigger function.");
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+
+    process.stdout.write("  Scenario: incompatible pre-existing schema fails closed\n");
+    await client.query("create table public.lead_intake_messages (id text)");
+    await assertRejectsQuery(
+      client,
+      `select 1; ${await fs.readFile(migrationFiles.leadIntelligencePersistence, "utf8")}`,
+      "Migration accepted an incompatible partial legacy table.",
+      "LEAD_INTELLIGENCE_SCHEMA_INCOMPATIBLE",
+    );
   });
 }
 

@@ -4,6 +4,8 @@ import {
   ContactLinkDecisionSchema,
   CreateBuyerProfileInputSchema,
   CreateLeadIntakeInputSchema,
+  LEAD_CONTACT_LOOKUP_HASH_PREFIX,
+  LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV,
   LeadIntelligencePersistenceError,
   LeadIntelligencePersistenceRepository,
   RecordLeadAnalysisRunInputSchema,
@@ -19,6 +21,7 @@ const intakeId = "11111111-1111-4111-8111-111111111111";
 const profileId = "22222222-2222-4222-8222-222222222222";
 const contactId = "33333333-3333-4333-8333-333333333333";
 const approvedAt = "2026-06-14T12:00:00.000Z";
+const hmacSecret = "test-secret-with-at-least-thirty-two-bytes";
 
 class CaptureDb implements QueryClient {
   queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
@@ -32,7 +35,19 @@ class CaptureDb implements QueryClient {
 function persistenceEnv(enabled = true) {
   return {
     REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED: enabled ? "true" : "false",
+    [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: hmacSecret,
   };
+}
+
+function adminAuth() {
+  return { email: "freddy.bremseth@gmail.com", isAdmin: true };
+}
+
+function repository(db: QueryClient = new CaptureDb(), env = persistenceEnv()) {
+  return new LeadIntelligencePersistenceRepository(db, {
+    auth: adminAuth(),
+    env,
+  });
 }
 
 function approvedCriterion(overrides: Record<string, unknown> = {}) {
@@ -107,15 +122,105 @@ test("unauthenticated and non-admin persistence writes are rejected", () => {
   );
 });
 
+test("repository write boundary rejects before DB query when auth/admin/flag fail", async () => {
+  const missingAuthDb = new CaptureDb();
+  const missingAuthRepo = new LeadIntelligencePersistenceRepository(missingAuthDb, {
+    auth: null,
+    env: persistenceEnv(),
+  });
+
+  await assert.rejects(
+    () =>
+      missingAuthRepo.createIntake({
+        brand: "soleada",
+        source: "phone_call",
+        rawTextRestricted: "Restricted raw note",
+        language: "no",
+        status: "draft",
+        createdBy: "freddy.bremseth@gmail.com",
+        correlationId: "rf_mi7v4zk0_0123456789abcdef01234567",
+        idempotencyKey: "intake-key-001",
+      }),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "AUTH_REQUIRED",
+  );
+  assert.equal(missingAuthDb.queries.length, 0);
+
+  const nonAdminDb = new CaptureDb();
+  const nonAdminRepo = new LeadIntelligencePersistenceRepository(nonAdminDb, {
+    auth: { email: "agent@example.com", isAdmin: false },
+    env: persistenceEnv(),
+  });
+
+  await assert.rejects(
+    () =>
+      nonAdminRepo.createIntake({
+        brand: "soleada",
+        source: "phone_call",
+        rawTextRestricted: "Restricted raw note",
+        language: "no",
+        status: "draft",
+        createdBy: "freddy.bremseth@gmail.com",
+        correlationId: "rf_mi7v4zk0_0123456789abcdef01234567",
+        idempotencyKey: "intake-key-002",
+      }),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "ADMIN_FORBIDDEN",
+  );
+  assert.equal(nonAdminDb.queries.length, 0);
+
+  const flagOffDb = new CaptureDb();
+  const flagOffRepo = new LeadIntelligencePersistenceRepository(flagOffDb, {
+    auth: adminAuth(),
+    env: persistenceEnv(false),
+  });
+
+  await assert.rejects(
+    () =>
+      flagOffRepo.createIntake({
+        brand: "soleada",
+        source: "phone_call",
+        rawTextRestricted: "Restricted raw note",
+        language: "no",
+        status: "draft",
+        createdBy: "freddy.bremseth@gmail.com",
+        correlationId: "rf_mi7v4zk0_0123456789abcdef01234567",
+        idempotencyKey: "intake-key-003",
+      }),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "LEAD_INTELLIGENCE_PERSISTENCE_DISABLED",
+  );
+  assert.equal(flagOffDb.queries.length, 0);
+});
+
 test("invalid intake and missing correlation ID are rejected before repository write", () => {
   const invalid = CreateLeadIntakeInputSchema.safeParse({
     brand: "soleada",
     source: "fax",
-    rawTextEncryptedOrRestricted: "short note",
+    rawTextRestricted: "short note",
     language: "no",
     status: "draft",
     createdBy: "freddy.bremseth@gmail.com",
     correlationId: "",
+    idempotencyKey: "intake-key-invalid",
+  });
+
+  assert.equal(invalid.success, false);
+});
+
+test("unknown brand is rejected in persistence contracts", () => {
+  const invalid = CreateLeadIntakeInputSchema.safeParse({
+    brand: "neuralbeat",
+    source: "phone_call",
+    rawTextRestricted: "short note",
+    language: "no",
+    status: "draft",
+    createdBy: "freddy.bremseth@gmail.com",
+    correlationId: "rf_mi7v4zk0_0123456789abcdef01234567",
+    idempotencyKey: "intake-key-brand",
   });
 
   assert.equal(invalid.success, false);
@@ -124,6 +229,7 @@ test("invalid intake and missing correlation ID are rejected before repository w
 test("analysis run schema does not accept provider raw output", () => {
   const result = RecordLeadAnalysisRunInputSchema.safeParse({
     intakeId,
+    idempotencyKey: "analysis-key-001",
     promptVersion: "lead-intelligence-extraction-v1",
     model: "mock",
     resultJson: { ok: true },
@@ -144,20 +250,22 @@ test("analysis run schema does not accept provider raw output", () => {
 
 test("repository stores correlation ID and never writes provider raw output column", async () => {
   const db = new CaptureDb();
-  const repo = new LeadIntelligencePersistenceRepository(db);
+  const repo = repository(db);
 
   await repo.createIntake({
     brand: "soleada",
     source: "phone_call",
-    rawTextEncryptedOrRestricted: "Encrypted or restricted raw note",
+    rawTextRestricted: "Restricted raw note",
     language: "no",
     status: "draft",
     createdBy: "freddy.bremseth@gmail.com",
     correlationId: "rf_mi7v4zk0_0123456789abcdef01234567",
+    idempotencyKey: "intake-key-004",
   });
 
   await repo.recordAnalysisRun({
     intakeId,
+    idempotencyKey: "analysis-key-002",
     promptVersion: "lead-intelligence-extraction-v1",
     model: "mock",
     resultJson: { summary: "safe validated DTO only" },
@@ -189,6 +297,49 @@ test("approved profile requires item-level approval for every active criterion",
       ),
     );
   }
+});
+
+test("non-approved rows cannot keep approvedBy or approvedAt", () => {
+  const analysis = RecordLeadAnalysisRunInputSchema.safeParse({
+    intakeId,
+    idempotencyKey: "analysis-key-003",
+    promptVersion: "lead-intelligence-extraction-v1",
+    model: "mock",
+    resultJson: { ok: true },
+    validationStatus: "valid",
+    repaired: false,
+    durationMs: 120,
+    approved: false,
+    approvedBy: "freddy.bremseth@gmail.com",
+    approvedAt: null,
+  });
+  assert.equal(analysis.success, false);
+
+  const profile = CreateBuyerProfileInputSchema.safeParse(
+    profileInput({
+      status: "draft",
+      approvedBy: "freddy.bremseth@gmail.com",
+      approvedAt: null,
+      criteria: [approvedCriterion()],
+    }),
+  );
+  assert.equal(profile.success, false);
+
+  const criterion = CreateBuyerProfileInputSchema.safeParse(
+    profileInput({
+      status: "draft",
+      approvedBy: null,
+      approvedAt: null,
+      criteria: [
+        approvedCriterion({
+          approvalStatus: "pending",
+          approvedBy: "freddy.bremseth@gmail.com",
+          approvedAt: null,
+        }),
+      ],
+    }),
+  );
+  assert.equal(criterion.success, false);
 });
 
 test("rejected criterion cannot remain active and approved criterion stores approver", () => {
@@ -237,6 +388,7 @@ test("existing contact candidate search masks PII and never overwrites contacts"
         email: "kunde@example.com",
       },
     ],
+    { hmacSecret },
   );
 
   assert.equal(candidates.length, 1);
@@ -244,12 +396,22 @@ test("existing contact candidate search masks PII and never overwrites contacts"
   assert.equal(candidates[0].matchType, "exact_phone");
   assert(!candidates[0].maskedPhone?.includes("90174714"));
   assert(!candidates[0].maskedEmail?.includes("kunde"));
-  assert.equal(candidates[0].matchValueHash, hashLeadContactLookup("phone", "+4790174714"));
+  assert.equal(
+    candidates[0].matchValueHash,
+    hashLeadContactLookup({
+      brand: "soleada",
+      kind: "phone",
+      value: "+4790174714",
+      secret: hmacSecret,
+    }),
+  );
+  assert(candidates[0].matchValueHash.startsWith(LEAD_CONTACT_LOOKUP_HASH_PREFIX));
 
   const db = new CaptureDb();
-  const repo = new LeadIntelligencePersistenceRepository(db);
+  const repo = repository(db);
   await repo.recordContactCandidates([
     {
+      brand: "soleada",
       intakeId,
       contactId,
       matchType: candidates[0].matchType,
@@ -267,6 +429,7 @@ test("exact email candidate is found and name-only candidate stays weak/manual",
   const exactEmail = findLeadContactCandidatePreviews(
     { brand: "soleada", email: "KUNDE@EXAMPLE.COM" },
     [{ contactId, brand: "soleada", name: "Kunde", email: "kunde@example.com" }],
+    { hmacSecret },
   );
   assert.equal(exactEmail[0].matchType, "exact_email");
   assert.equal(exactEmail[0].confidence, 0.95);
@@ -274,6 +437,7 @@ test("exact email candidate is found and name-only candidate stays weak/manual",
   const nameOnly = findLeadContactCandidatePreviews(
     { brand: "soleada", name: "Emmadale" },
     [{ contactId, brand: "soleada", name: "Emmadale" }],
+    { hmacSecret },
   );
   assert.equal(nameOnly[0].matchType, "name_similarity");
   assert.equal(nameOnly[0].confidence, 0.35);
@@ -297,11 +461,96 @@ test("multiple candidates require manual selection and brand isolation is enforc
         phone: "+4790174714",
       },
     ],
+    { hmacSecret },
   );
 
   assert.equal(candidates.length, 2);
   assert.equal(requiresManualContactSelection(candidates), true);
   assert(!candidates.some((candidate) => candidate.contactId === "55555555-5555-4555-8555-555555555555"));
+});
+
+test("HMAC lookup hash is stable per secret and changes with a different secret", () => {
+  const first = hashLeadContactLookup({
+    brand: "soleada",
+    kind: "email",
+    value: "kunde@example.com",
+    secret: hmacSecret,
+  });
+  const second = hashLeadContactLookup({
+    brand: "soleada",
+    kind: "email",
+    value: "kunde@example.com",
+    secret: hmacSecret,
+  });
+  const rotated = hashLeadContactLookup({
+    brand: "soleada",
+    kind: "email",
+    value: "kunde@example.com",
+    secret: "another-test-secret-with-enough-length",
+  });
+
+  assert.equal(first, second);
+  assert.notEqual(first, rotated);
+  assert(first.startsWith(LEAD_CONTACT_LOOKUP_HASH_PREFIX));
+});
+
+test("HMAC lookup hash fails closed without dedicated secret", () => {
+  assert.throws(
+    () =>
+      findLeadContactCandidatePreviews(
+        { brand: "soleada", email: "kunde@example.com" },
+        [{ contactId, brand: "soleada", name: "Kunde", email: "kunde@example.com" }],
+        { hmacSecret: "" },
+      ),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "LOOKUP_HASH_SECRET_MISSING",
+  );
+});
+
+test("cross-brand contact candidate batch is rejected before DB query", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+
+  await assert.rejects(
+    () =>
+      repo.recordContactCandidates([
+        {
+          brand: "soleada",
+          intakeId,
+          contactId,
+          matchType: "exact_phone",
+          matchValueHash: hashLeadContactLookup({
+            brand: "soleada",
+            kind: "phone",
+            value: "+4790174714",
+            secret: hmacSecret,
+          }),
+          score: 0.98,
+          reasons: ["exact phone"],
+          status: "suggested",
+        },
+        {
+          brand: "zeneco",
+          intakeId,
+          contactId: "44444444-4444-4444-8444-444444444444",
+          matchType: "name_similarity",
+          matchValueHash: hashLeadContactLookup({
+            brand: "zeneco",
+            kind: "name",
+            value: "emmadale",
+            secret: hmacSecret,
+          }),
+          score: 0.35,
+          reasons: ["name"],
+          status: "suggested",
+        },
+      ]),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "INVALID_REQUEST",
+  );
+  assert.equal(db.queries.length, 0);
 });
 
 test("contact creation and linking require explicit user action", () => {
@@ -322,10 +571,52 @@ test("contact creation and linking require explicit user action", () => {
 
 test("persistence layer has no email sending or property matching side effects", async () => {
   const db = new CaptureDb();
-  const repo = new LeadIntelligencePersistenceRepository(db);
+  const repo = repository(db);
 
   await repo.createBuyerProfile(profileInput());
 
   const allSql = db.queries.map((query) => query.sql).join("\n");
   assert(!/send|email_draft|property_match|shortlist/i.test(allSql));
+});
+
+test("createBuyerProfile uses one atomic SQL statement for profile and criteria", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+
+  const result = await repo.createBuyerProfile(
+    profileInput({
+      criteria: [
+        approvedCriterion({ key: "bedrooms", value: 2 }),
+        approvedCriterion({ key: "has_lift", value: true, operator: "eq" }),
+        approvedCriterion({ key: "floor_position", value: "top_floor", operator: "eq" }),
+      ],
+    }),
+  );
+
+  assert.equal(result.id, intakeId);
+  assert.equal(db.queries.length, 1);
+  assert(db.queries[0].sql.includes("with profile as"));
+  assert(db.queries[0].sql.includes("inserted_criteria as"));
+});
+
+test("invalid criterion in profile prevents any DB query and cannot create partial profile", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+
+  await assert.rejects(() =>
+    repo.createBuyerProfile(
+      profileInput({
+        criteria: [
+          approvedCriterion(),
+          approvedCriterion({
+            criterionType: "preference",
+            weight: null,
+            key: "terrace_area_m2",
+          }),
+          approvedCriterion(),
+        ],
+      }),
+    ),
+  );
+  assert.equal(db.queries.length, 0);
 });

@@ -29,11 +29,14 @@ Persistence is disabled by default.
 ```text
 REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=false
 REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false
+REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET=<server-only secret, at least 32 chars>
 REALTYFLOW_PROPERTY_MATCHING_ENABLED=false
 REALTYFLOW_AUTO_SEND_ENABLED=false
 ```
 
 `REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED` is checked server-side only. The browser cannot enable persistence. Production must not enable this flag until the migration is reviewed, applied through the agreed production migration workflow, and smoke-tested.
+
+`REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET` is required before contact candidate writes. There is no production fallback to plain SHA-256 because phone numbers and emails are low-entropy PII.
 
 ## Migration
 
@@ -55,11 +58,20 @@ The migration does not modify `public.leads`, `public.contacts`, property tables
 
 ## Data Handling
 
-`lead_intake_messages.raw_text_encrypted_or_restricted` is deliberately named to force a retention decision before production activation. If raw text is stored, it must be server-mediated, brand-isolated, hidden from broad UI responses, and governed by retention rules.
+`lead_intake_messages.raw_text_restricted` stores plaintext if PR 3B chooses to persist original intake text. The name is deliberately not `encrypted`: application-level encryption is not implemented in PR 3A. Before production persistence is enabled, PR 3B must either avoid raw-text persistence by default or implement an approved retention policy.
+
+Raw text retention rules for this foundation:
+
+- raw text must only be written server-side after Freddy approval
+- raw text must not be included in broad list responses
+- raw text must not be logged
+- `raw_text_retention_until` should be set when raw text is retained
+- `redacted_at` should be set when raw text is removed or replaced with `[REDACTED]`
+- production activation must define who can view raw text and when it is purged
 
 `lead_analysis_runs` stores validated structured result JSON only. It does not include a provider raw-output column.
 
-`lead_contact_candidates` stores hashed lookup values, candidate IDs, scores, and safe reasons. It does not store full phone numbers or email addresses.
+`lead_contact_candidates` stores HMAC-SHA256 lookup values with a versioned prefix (`hmac-sha256:v1:`), candidate IDs, scores, and safe reasons. It does not store full phone numbers or email addresses. The HMAC payload includes `brand|kind|normalizedValue` so the same phone or email cannot be trivially correlated across brands without the server-side secret.
 
 ## RLS And Access
 
@@ -74,8 +86,11 @@ No browser policies are created. In particular, the migration does not create an
 Persistence validation requires:
 
 - approved analysis runs must have `approvedBy` and `approvedAt`
+- unapproved analysis runs must have both `approvedBy` and `approvedAt` as null
 - approved buyer profiles must have `approvedBy` and `approvedAt`
+- unapproved buyer profiles must have both `approvedBy` and `approvedAt` as null
 - approved buyer profiles cannot contain active criteria that are not item-approved
+- unapproved criteria must have both `approvedBy` and `approvedAt` as null
 - rejected criteria cannot remain active
 - contact linking or contact creation requires explicit Freddy approval
 
@@ -91,6 +106,8 @@ The server-side helper can produce masked candidates from existing contact rows:
 
 Multiple candidates and name-only candidates require manual selection. The helper returns masked phone/email values and hashed lookup values only.
 
+Contact candidate batches are idempotent on `(intake_id, match_type, match_value_hash)`. Retrying the same candidate batch updates the safe preview fields rather than creating duplicate rows.
+
 ## Tests
 
 Run:
@@ -101,6 +118,15 @@ npm run test:migrations -- lead-intelligence-persistence
 ```
 
 The migration integration test uses an isolated PostgreSQL service/container through `MIGRATION_TEST_DATABASE_URL`. It refuses production-style environment variables such as `SUPABASE_DB_URL`, `POSTGRES_URL`, and `DATABASE_URL`.
+
+The migration test also checks:
+
+- all check/FK constraints have `convalidated=true`
+- critical columns are `NOT NULL`
+- incompatible pre-existing partial tables fail closed
+- no open RLS policies are created
+- HMAC-formatted candidate hashes are required
+- idempotent retry does not duplicate intake or contact candidates
 
 ## Rollback And Disable
 
