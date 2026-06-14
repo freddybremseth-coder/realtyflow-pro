@@ -210,7 +210,7 @@ test("customer prompt injection remains customer data and cannot add extra schem
 });
 
 test("repairs nearly-valid JSON exactly once", async () => {
-  const { provider } = providerReturning("{ invalid json", emmadaleOutput());
+  const { provider, prompts } = providerReturning("{ invalid json with +47 90 17 47 14 and test@example.com", emmadaleOutput());
   const analysis = await analyzeLeadIntake(
     { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: null },
     { correlationId: CORRELATION_ID, provider },
@@ -218,6 +218,12 @@ test("repairs nearly-valid JSON exactly once", async () => {
 
   assert.equal(analysis.meta.repaired, true);
   assert.equal(analysis.result.contact.email, null);
+  assert.equal(prompts.length, 2);
+  assert.equal(prompts[1].prompt.includes("+47 90 17 47 14"), false);
+  assert.equal(prompts[1].prompt.includes("test@example.com"), false);
+  assert.equal(prompts[1].prompt.includes("[PHONE_1]"), true);
+  assert.equal(prompts[1].prompt.includes("invalid json"), false);
+  assert.equal(prompts[1].prompt.includes("Validation issues:"), true);
 });
 
 test("rejects output after one failed repair without leaking raw provider response", async () => {

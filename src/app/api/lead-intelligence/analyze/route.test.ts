@@ -118,6 +118,22 @@ function emmadaleProvider(): LeadIntelligenceProvider {
   };
 }
 
+function trackingProvider() {
+  let calls = 0;
+  const provider: LeadIntelligenceProvider = {
+    async generate(input) {
+      calls += 1;
+      return emmadaleProvider().generate(input);
+    },
+  };
+  return {
+    provider,
+    getCalls() {
+      return calls;
+    },
+  };
+}
+
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
   return `realtyflow_admin=${await createAdminSession(email)}`;
 }
@@ -168,6 +184,15 @@ test("feature flag off rejects analysis safely", async () => {
   assert.equal(body.error.code, "LEAD_INTELLIGENCE_DISABLED");
 });
 
+test("unauthenticated request returns auth error before feature flag check", async () => {
+  delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED;
+  const response = await POST(request(validBody()) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "AUTH_REQUIRED");
+});
+
 test("unauthenticated request is rejected with safe envelope", async () => {
   const response = await POST(request(validBody()) as any);
   const body = await response.json();
@@ -175,6 +200,44 @@ test("unauthenticated request is rejected with safe envelope", async () => {
   assert.equal(response.status, 401);
   assert.equal(body.error.code, "AUTH_REQUIRED");
   assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
+});
+
+test("valid real-estate brand is allowed and provider is called once", async () => {
+  const tracker = trackingProvider();
+  setLeadIntelligenceProviderForTests(tracker.provider);
+
+  const response = await POST(request(validBody({ brand: "soleada" }), { cookie: await adminCookie() }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.result.contact.name, "Emmadale");
+  assert.equal(tracker.getCalls(), 1);
+});
+
+test("unknown brand is rejected before provider call", async () => {
+  const tracker = trackingProvider();
+  setLeadIntelligenceProviderForTests(tracker.provider);
+
+  const response = await POST(request(validBody({ brand: "unknown-brand" }), { cookie: await adminCookie() }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(tracker.getCalls(), 0);
+});
+
+test("manipulative brand string is rejected before provider call", async () => {
+  const tracker = trackingProvider();
+  setLeadIntelligenceProviderForTests(tracker.provider);
+
+  const response = await POST(
+    request(validBody({ brand: "soleada; DROP TABLE leads" }), { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(tracker.getCalls(), 0);
 });
 
 test("invalid body, empty text, and too-long text are rejected", async () => {

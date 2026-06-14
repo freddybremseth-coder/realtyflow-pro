@@ -18,7 +18,6 @@ export const LEAD_INTELLIGENCE_MODEL = "claude-sonnet-4-structured-json";
 export const LEAD_INTELLIGENCE_MIN_INPUT_LENGTH = 12;
 export const LEAD_INTELLIGENCE_MAX_REQUEST_BYTES = 18 * 1024;
 export const LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS = 30_000;
-export const LEAD_INTELLIGENCE_MAX_PROVIDER_TEXT = 24_000;
 
 export const LeadIntakeSourceSchema = z.enum([
   "phone_call",
@@ -331,23 +330,28 @@ function buildExtractionPrompt(input: LeadIntelligenceAnalyzeRequest, sanitizedT
 }
 
 function buildRepairPrompt(params: {
-  prompt: string;
-  invalidOutput: string;
+  input: LeadIntelligenceAnalyzeRequest;
+  sanitizedText: string;
   issues: ReturnType<typeof summarizeValidationError>;
 }) {
   return [
     "Repair the previous JSON output so it exactly matches the required schema.",
     "Do not add facts. Do not remove sourceText evidence unless it is invalid.",
     "Return only one JSON object and no markdown.",
+    "The customer text below is already pseudonymized. Keep phone/email placeholders as placeholders.",
+    `Source: ${params.input.source}`,
+    `Brand: ${params.input.brand}`,
+    `Optional language hint: ${params.input.language || "unknown"}`,
+    `Canonical property types: ${CANONICAL_PROPERTY_TYPES.join(", ")}`,
+    `Canonical criterion keys: ${CANONICAL_CRITERION_KEYS.join(", ")}`,
     "",
     "Validation issues:",
     JSON.stringify(params.issues),
     "",
-    "Original extraction prompt:",
-    params.prompt.slice(0, 8000),
-    "",
-    "Invalid output:",
-    params.invalidOutput.slice(0, LEAD_INTELLIGENCE_MAX_PROVIDER_TEXT),
+    "Pseudonymized customer text:",
+    "<customer_text>",
+    params.sanitizedText,
+    "</customer_text>",
   ].join("\n");
 }
 
@@ -456,7 +460,11 @@ export async function analyzeLeadIntake(
       const issues = summarizeValidationError(validationError);
       const repair = await callProvider(provider, {
         systemPrompt,
-        prompt: buildRepairPrompt({ prompt, invalidOutput: first.text, issues }),
+        prompt: buildRepairPrompt({
+          input: normalizedInput,
+          sanitizedText: pseudonymized.text,
+          issues,
+        }),
         timeoutMs,
       });
       repaired = true;

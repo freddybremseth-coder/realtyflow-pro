@@ -5,6 +5,7 @@ import {
   getOrCreateCorrelationId,
 } from "@/lib/observability";
 import { verifyAdminSession } from "@/lib/admin-auth";
+import { BRANDS } from "@/lib/constants";
 import { assertLeadIntelligenceRateLimit } from "@/services/lead-intelligence/api-guards";
 import { LEAD_INTELLIGENCE_LIMITS } from "@/services/lead-intelligence/contracts";
 import {
@@ -18,6 +19,10 @@ import { isLeadIntelligenceEnabled } from "@/services/lead-intelligence/feature-
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const ALLOWED_LEAD_INTELLIGENCE_BRANDS = new Set(
+  BRANDS.filter((brand) => brand.type === "real_estate").map((brand) => brand.id),
+);
 
 function responseHeaders(correlationId: string) {
   return {
@@ -96,6 +101,13 @@ function parseBody(body: unknown) {
       })),
     });
   }
+
+  if (!ALLOWED_LEAD_INTELLIGENCE_BRANDS.has(parsed.data.brand)) {
+    throw new LeadIntelligenceError("INVALID_REQUEST", "Lead Intelligence brand is not allowed", 400, {
+      field: "brand",
+    });
+  }
+
   return parsed.data;
 }
 
@@ -103,6 +115,8 @@ export async function POST(request: NextRequest) {
   const correlationId = getOrCreateCorrelationId(request.headers);
 
   try {
+    const identity = await authorizeRequest(request);
+
     if (!isLeadIntelligenceEnabled()) {
       throw new LeadIntelligenceError(
         "LEAD_INTELLIGENCE_DISABLED",
@@ -111,7 +125,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const identity = await authorizeRequest(request);
     assertLeadIntelligenceRateLimit(identity);
     const body = await readJsonBody(request);
     const input = parseBody(body);

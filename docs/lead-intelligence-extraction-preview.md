@@ -28,6 +28,14 @@ Rollback: set `REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=false` or remove the environ
 
 The route uses the existing RealtyFlow admin session cookie and `verifyAdminSession`. Unauthenticated calls return `AUTH_REQUIRED`. The route is not added to public middleware paths.
 
+Authentication is checked before the feature flag. This keeps disabled previews from revealing feature state to unauthenticated callers.
+
+## Brand allowlist
+
+The API does not trust the UI brand selector. `POST /api/lead-intelligence/analyze` allows only existing RealtyFlow brands where `type = real_estate`.
+
+Unknown, manipulated, or non-real-estate brand IDs return `INVALID_REQUEST` before any provider call is made.
+
 ## Provider and prompt version
 
 The server-side service uses the existing AI provider abstraction (`askClaude`) with structured JSON instructions and final validation through `ExtractedLeadSchema`.
@@ -84,7 +92,7 @@ Flow:
 3. Canonical normalizers run for property types, criterion keys, currency, language, and country.
 4. Placeholder values are restored from request memory.
 5. `ExtractedLeadSchema` validates the full object.
-6. If validation fails, the service can make one bounded repair call with only validation summaries and the sanitized prompt.
+6. If validation fails, the service can make one bounded repair call with validation summaries and the pseudonymized customer text only.
 7. If repair fails, the UI receives `AI_INVALID_OUTPUT`.
 
 No partial output is persisted.
