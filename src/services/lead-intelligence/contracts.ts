@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const LEAD_INTELLIGENCE_FEATURE_FLAGS = {
   leadIntelligence: "REALTYFLOW_LEAD_INTELLIGENCE_ENABLED",
+  leadIntelligencePersistence: "REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED",
   propertyMatching: "REALTYFLOW_PROPERTY_MATCHING_ENABLED",
   autoSend: "REALTYFLOW_AUTO_SEND_ENABLED",
 } as const;

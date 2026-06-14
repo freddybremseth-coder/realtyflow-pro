@@ -18,6 +18,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260607173023_remaster_pipeline_jobs_core.sql",
   ),
+  leadIntelligencePersistence: path.join(
+    repoRoot,
+    "supabase/migrations/20260614164309_lead_intelligence_persistence_foundation.sql",
+  ),
 };
 
 function assert(condition, message) {
@@ -1098,10 +1102,544 @@ async function testRemasterJobCore() {
   });
 }
 
+async function tableExists(client, tableName) {
+  const { rows } = await client.query("select to_regclass($1) as oid", [`public.${tableName}`]);
+  return rows[0].oid === tableName;
+}
+
+async function assertTableHasColumns(client, tableName, columnNames) {
+  const columns = await getColumns(client, tableName);
+  for (const columnName of columnNames) {
+    assert(columns.has(columnName), `Missing public.${tableName}.${columnName}.`);
+  }
+  return columns;
+}
+
+async function assertLeadIntelligenceRlsClosed(client) {
+  const tables = [
+    "lead_intake_messages",
+    "lead_analysis_runs",
+    "buyer_profiles",
+    "buyer_profile_criteria",
+    "lead_contact_candidates",
+  ];
+
+  for (const tableName of tables) {
+    const { rows } = await client.query(
+      `
+        select relrowsecurity
+        from pg_class
+        where oid = format('public.%I', $1::text)::regclass
+      `,
+      [tableName],
+    );
+    assert(rows[0].relrowsecurity === true, `RLS is not enabled on public.${tableName}.`);
+
+    const { rows: policyRows } = await client.query(
+      `
+        select count(*)::int as count
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = $1
+      `,
+      [tableName],
+    );
+    assert(policyRows[0].count === 0, `public.${tableName} should not create browser policies.`);
+
+    const { rows: openPolicies } = await client.query(
+      `
+        select count(*)::int as count
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = $1
+          and (
+            lower(coalesce(qual, '')) in ('true', '(true)')
+            or lower(coalesce(with_check, '')) in ('true', '(true)')
+          )
+      `,
+      [tableName],
+    );
+    assert(openPolicies[0].count === 0, `public.${tableName} has an open policy.`);
+
+    const { rows: grants } = await client.query(
+      `
+        select
+          has_table_privilege('anon', format('public.%I', $1::text), 'select') as anon_select,
+          has_table_privilege('authenticated', format('public.%I', $1::text), 'select') as authenticated_select,
+          has_table_privilege('service_role', format('public.%I', $1::text), 'select') as service_select,
+          has_table_privilege('service_role', format('public.%I', $1::text), 'insert') as service_insert
+      `,
+      [tableName],
+    );
+    const { rows: publicGrants } = await client.query(
+      `
+        select count(*)::int as count
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) as acl
+        where n.nspname = 'public'
+          and c.relname = $1
+          and acl.grantee = 0
+          and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+      `,
+      [tableName],
+    );
+    assert(publicGrants[0].count === 0, `PUBLIC has table access on public.${tableName}.`);
+    assert(grants[0].anon_select === false, `anon unexpectedly has SELECT on public.${tableName}.`);
+    assert(
+      grants[0].authenticated_select === false,
+      `authenticated unexpectedly has SELECT on public.${tableName}.`,
+    );
+    assert(grants[0].service_select === true, `service_role lacks SELECT on public.${tableName}.`);
+    assert(grants[0].service_insert === true, `service_role lacks INSERT on public.${tableName}.`);
+  }
+}
+
+async function testLeadIntelligencePersistenceFoundation() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+
+    process.stdout.write("  Scenario: applies to empty DB and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    const expectedTables = [
+      "lead_intake_messages",
+      "lead_analysis_runs",
+      "buyer_profiles",
+      "buyer_profile_criteria",
+      "lead_contact_candidates",
+    ];
+    for (const tableName of expectedTables) {
+      assert(await tableExists(client, tableName), `public.${tableName} was not created.`);
+    }
+
+    await assertTableHasColumns(client, "lead_intake_messages", [
+      "id",
+      "brand",
+      "source",
+      "raw_text_encrypted_or_restricted",
+      "language",
+      "status",
+      "created_by",
+      "created_at",
+      "updated_at",
+      "correlation_id",
+    ]);
+    await assertTableHasColumns(client, "lead_analysis_runs", [
+      "id",
+      "intake_id",
+      "prompt_version",
+      "model",
+      "result_json",
+      "validation_status",
+      "repaired",
+      "duration_ms",
+      "approved",
+      "approved_by",
+      "approved_at",
+      "created_at",
+    ]);
+    await assertTableHasColumns(client, "buyer_profiles", [
+      "id",
+      "brand",
+      "contact_id",
+      "intake_id",
+      "version",
+      "status",
+      "purchase_readiness",
+      "budget_amount",
+      "budget_currency",
+      "budget_includes_costs",
+      "budget_approximate",
+      "location_flexible",
+      "summary",
+      "created_by",
+      "approved_by",
+      "approved_at",
+      "created_at",
+      "updated_at",
+    ]);
+    await assertTableHasColumns(client, "buyer_profile_criteria", [
+      "id",
+      "buyer_profile_id",
+      "criterion_type",
+      "key",
+      "other_key",
+      "operator",
+      "value",
+      "weight",
+      "severity",
+      "applies_to_property_types",
+      "source",
+      "source_text",
+      "confidence",
+      "customer_confirmed",
+      "approval_status",
+      "approved_by",
+      "approved_at",
+      "active",
+      "created_at",
+      "updated_at",
+    ]);
+    await assertTableHasColumns(client, "lead_contact_candidates", [
+      "id",
+      "intake_id",
+      "contact_id",
+      "match_type",
+      "match_value_hash",
+      "score",
+      "reasons",
+      "status",
+      "created_at",
+    ]);
+
+    process.stdout.write("  Scenario: constraints, indexes, and RLS are present\n");
+    const intakeConstraints = await getTableConstraints(client, "lead_intake_messages");
+    assert(intakeConstraints.has("lead_intake_messages_status_check"), "Intake status check is missing.");
+    assert(intakeConstraints.has("lead_intake_messages_source_check"), "Intake source check is missing.");
+
+    const analysisConstraints = await getTableConstraints(client, "lead_analysis_runs");
+    assert(analysisConstraints.has("lead_analysis_runs_intake_id_fkey"), "Analysis FK is missing.");
+    assert(
+      analysisConstraints.has("lead_analysis_runs_validation_status_check"),
+      "Analysis validation status check is missing.",
+    );
+
+    const profileConstraints = await getTableConstraints(client, "buyer_profiles");
+    assert(profileConstraints.has("buyer_profiles_intake_id_fkey"), "Buyer profile FK is missing.");
+    assert(profileConstraints.has("buyer_profiles_status_check"), "Buyer profile status check is missing.");
+    assert(profileConstraints.has("buyer_profiles_approval_check"), "Buyer profile approval check is missing.");
+    assert(profileConstraints.has("buyer_profiles_intake_version_key"), "Buyer profile version uniqueness is missing.");
+
+    const criterionConstraints = await getTableConstraints(client, "buyer_profile_criteria");
+    assert(
+      criterionConstraints.has("buyer_profile_criteria_buyer_profile_id_fkey"),
+      "Criterion FK is missing.",
+    );
+    assert(criterionConstraints.has("buyer_profile_criteria_key_check"), "Criterion key check is missing.");
+    assert(
+      criterionConstraints.has("buyer_profile_criteria_approval_check"),
+      "Criterion approval check is missing.",
+    );
+
+    const candidateConstraints = await getTableConstraints(client, "lead_contact_candidates");
+    assert(candidateConstraints.has("lead_contact_candidates_intake_id_fkey"), "Candidate FK is missing.");
+    assert(candidateConstraints.has("lead_contact_candidates_score_check"), "Candidate score check is missing.");
+
+    for (const indexName of [
+      "idx_lead_intake_messages_brand_status_created",
+      "idx_lead_analysis_runs_intake_created",
+      "idx_buyer_profiles_brand_status_created",
+      "idx_buyer_profile_criteria_profile_type_active",
+      "idx_lead_contact_candidates_intake_status_score",
+      "idx_lead_contact_candidates_lookup",
+    ]) {
+      await getIndexDetails(client, indexName);
+    }
+
+    await assertLeadIntelligenceRlsClosed(client);
+
+    const rawOutputColumn = await client.query(
+      `
+        select count(*)::int as count
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'lead_analysis_runs'
+          and column_name in ('provider_raw_output', 'raw_provider_output', 'raw_output')
+      `,
+    );
+    assert(rawOutputColumn.rows[0].count === 0, "Provider raw output must not be persisted.");
+
+    process.stdout.write("  Scenario: valid rows insert and invalid contracts are rejected\n");
+    const intake = await client.query(
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          raw_text_encrypted_or_restricted,
+          language,
+          status,
+          created_by,
+          correlation_id
+        )
+        values ('soleada', 'phone_call', 'restricted raw note', 'no', 'draft', 'freddy.bremseth@gmail.com', 'rf_test_0123456789abcdef01234567')
+        returning id
+      `,
+    );
+    const intakeId = intake.rows[0].id;
+
+    await client.query(
+      `
+        insert into public.lead_analysis_runs (
+          intake_id,
+          prompt_version,
+          model,
+          result_json,
+          validation_status,
+          repaired,
+          duration_ms
+        )
+        values ($1, 'lead-intelligence-extraction-v1', 'mock', '{"ok": true}'::jsonb, 'valid', false, 120)
+      `,
+      [intakeId],
+    );
+
+    const profile = await client.query(
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values (
+          'soleada',
+          $1,
+          1,
+          'approved',
+          'ready_to_buy',
+          440000,
+          'EUR',
+          true,
+          true,
+          true,
+          'Approved buyer profile',
+          'freddy.bremseth@gmail.com',
+          'freddy.bremseth@gmail.com',
+          now()
+        )
+        returning id
+      `,
+      [intakeId],
+    );
+    const profileId = profile.rows[0].id;
+
+    await client.query(
+      `
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          operator,
+          value,
+          applies_to_property_types,
+          source,
+          source_text,
+          confidence,
+          customer_confirmed,
+          approval_status,
+          approved_by,
+          approved_at,
+          active
+        )
+        values (
+          $1,
+          'hard_requirement',
+          'bedrooms',
+          'gte',
+          '2'::jsonb,
+          array['apartment']::text[],
+          'ai_suggestion',
+          'Minst 2 soverom.',
+          0.9,
+          false,
+          'approved',
+          'freddy.bremseth@gmail.com',
+          now(),
+          true
+        )
+      `,
+      [profileId],
+    );
+
+    await client.query(
+      `
+        insert into public.lead_contact_candidates (
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons
+        )
+        values ($1, gen_random_uuid(), 'exact_phone', repeat('a', 64), 0.98, '["masked exact phone"]'::jsonb)
+      `,
+      [intakeId],
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.lead_intake_messages (brand, source, status, created_by)
+        values ('soleada', 'phone_call', 'bad_status', 'freddy.bremseth@gmail.com')
+      `,
+      "Invalid intake status was accepted.",
+      "lead_intake_messages_status_check",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          created_by
+        )
+        values ('soleada', '${intakeId}', 2, 'approved', 'ready_to_buy', 'freddy.bremseth@gmail.com')
+      `,
+      "Approved buyer profile without approver was accepted.",
+      "buyer_profiles_approval_check",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          operator,
+          value,
+          source,
+          approval_status,
+          active
+        )
+        values (
+          '${profileId}',
+          'hard_requirement',
+          'bedrooms',
+          'gte',
+          '2'::jsonb,
+          'ai_suggestion',
+          'rejected',
+          true
+        )
+      `,
+      "Rejected active criterion was accepted.",
+      "buyer_profile_criteria_approval_check",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          other_key,
+          operator,
+          value,
+          source,
+          approval_status,
+          active
+        )
+        values (
+          '${profileId}',
+          'hard_requirement',
+          'unknown_new_key',
+          null,
+          'eq',
+          'true'::jsonb,
+          'ai_suggestion',
+          'pending',
+          true
+        )
+      `,
+      "Unknown canonical criterion key was accepted.",
+      "buyer_profile_criteria_key_check",
+    );
+
+    await assertRejectsQuery(
+      client,
+      `
+        insert into public.lead_contact_candidates (
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons
+        )
+        values ('${intakeId}', gen_random_uuid(), 'exact_phone', repeat('b', 64), 1.5, '[]'::jsonb)
+      `,
+      "Candidate score above 1 was accepted.",
+      "lead_contact_candidates_score_check",
+    );
+
+    process.stdout.write("  Scenario: updated_at trigger is scoped to Lead Intelligence tables\n");
+    const triggerRows = await client.query(
+      `
+        select tgname, tgrelid::regclass::text as table_name
+        from pg_trigger
+        where tgname in (
+          'trg_lead_intake_messages_updated_at',
+          'trg_buyer_profiles_updated_at',
+          'trg_buyer_profile_criteria_updated_at'
+        )
+        order by tgname
+      `,
+    );
+    assert(triggerRows.rows.length === 3, "Expected three Lead Intelligence updated_at triggers.");
+    assert(
+      triggerRows.rows.every((row) =>
+        [
+          "lead_intake_messages",
+          "public.lead_intake_messages",
+          "buyer_profiles",
+          "public.buyer_profiles",
+          "buyer_profile_criteria",
+          "public.buyer_profile_criteria",
+        ].includes(row.table_name),
+      ),
+      "Lead Intelligence trigger attached to unexpected table.",
+    );
+
+    const publicFunctionPrivilegeRows = await client.query(`
+      select count(*)::int as count
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) as acl
+      where n.nspname = 'public'
+        and p.proname = 'set_lead_intelligence_updated_at'
+        and acl.grantee = 0
+        and acl.privilege_type = 'EXECUTE'
+    `);
+    const functionPrivilegeRows = await client.query(`
+      select
+        has_function_privilege('anon', 'public.set_lead_intelligence_updated_at()', 'execute') as anon_execute,
+        has_function_privilege('authenticated', 'public.set_lead_intelligence_updated_at()', 'execute') as authenticated_execute,
+        has_function_privilege('service_role', 'public.set_lead_intelligence_updated_at()', 'execute') as service_execute
+    `);
+    assert(publicFunctionPrivilegeRows.rows[0].count === 0, "PUBLIC can execute trigger function.");
+    assert(functionPrivilegeRows.rows[0].anon_execute === false, "anon can execute trigger function.");
+    assert(
+      functionPrivilegeRows.rows[0].authenticated_execute === false,
+      "authenticated can execute trigger function.",
+    );
+    assert(functionPrivilegeRows.rows[0].service_execute === true, "service_role cannot execute trigger function.");
+  });
+}
+
 const tests = new Map([
   ["growth-actions-fingerprint", testGrowthActionsFingerprintIndex],
   ["user-image-bank-contract", testUserImageBankContract],
   ["remaster-job-core", testRemasterJobCore],
+  ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
 ]);
 
 async function main() {
