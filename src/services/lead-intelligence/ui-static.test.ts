@@ -59,3 +59,12 @@ test("Lead Intelligence preview sends stable criterion fingerprints instead of a
   assert.equal(source.includes("fingerprint: criterion.fingerprint"), true);
   assert.equal(source.includes("index: criterion.index"), false);
 });
+
+test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("Identisk review var allerede lagret."), true);
+  assert.equal(source.includes("Ny lagring:"), true);
+  assert.equal(source.includes("Duplicate:"), true);
+  assert.equal(source.includes("Conflict:"), true);
+});

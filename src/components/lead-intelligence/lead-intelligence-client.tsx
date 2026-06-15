@@ -75,9 +75,14 @@ interface ReviewSaveResponse {
   ok: true;
   correlationId: string;
   result: {
+    status: {
+      newlySaved: boolean;
+      duplicate: boolean;
+      conflict: boolean;
+    };
     intake: { id: string; duplicate: boolean };
     analysisRun: { id: string; duplicate: boolean };
-    buyerProfile: { id: string; criterionCount: number };
+    buyerProfile: { id: string; criterionCount: number; duplicate: boolean };
     contactCandidates: {
       recorded: number;
       selectedContactId: string | null;
@@ -988,12 +993,19 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                       <div className="flex items-start gap-2">
                         <Users className="mt-0.5 h-4 w-4 text-emerald-300" />
                         <div>
-                          <p className="font-semibold">Review lagret uten eksterne sideeffekter.</p>
+                          <p className="font-semibold">
+                            {saveResult.result.status.duplicate
+                              ? "Identisk review var allerede lagret."
+                              : "Review lagret uten eksterne sideeffekter."}
+                          </p>
                           <p className="mt-1 text-emerald-100/80">
                             Intake {saveResult.result.intake.id} · Buyer profile {saveResult.result.buyerProfile.id} ·
                             kriterier {saveResult.result.buyerProfile.criterionCount}
                           </p>
                           <p className="mt-1 text-xs text-emerald-100/70">
+                            Ny lagring: {saveResult.result.status.newlySaved ? "ja" : "nei"} ·
+                            Duplicate: {saveResult.result.status.duplicate ? "ja" : "nei"} ·
+                            Conflict: {saveResult.result.status.conflict ? "ja" : "nei"} ·
                             E-post sendt: nei · Property matching: nei · Kontakt opprettet: nei
                           </p>
                         </div>

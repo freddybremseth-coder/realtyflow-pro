@@ -5,12 +5,18 @@ import { createAdminSession } from "@/lib/admin-auth";
 import { POST as reviewPost } from "./route";
 import { POST as candidatesPost } from "../contact-candidates/route";
 import { resetLeadIntelligenceRateLimitsForTests } from "@/services/lead-intelligence/api-guards";
-import { leadIntelligenceCriterionFingerprint } from "@/services/lead-intelligence/review";
+import {
+  LeadIntelligenceReviewError,
+  leadIntelligenceCriterionFingerprint,
+} from "@/services/lead-intelligence/review";
 import {
   LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV,
   type QueryClient,
 } from "@/services/lead-intelligence/persistence";
-import { verifySelectedContactCandidateWithDb } from "@/services/lead-intelligence/server-runtime";
+import {
+  leadIntelligenceJsonError,
+  verifySelectedContactCandidateWithDb,
+} from "@/services/lead-intelligence/server-runtime";
 
 const VALID_CORRELATION_ID = "rf_mi7v4zk0_0123456789abcdef01234567";
 const contactId = "44444444-4444-4444-8444-444444444444";
@@ -384,4 +390,22 @@ test("server-side contact verification rejects deleted, cross-brand, and stale c
       ),
     /no longer matches/,
   );
+});
+
+test("review conflict uses safe error envelope with correlation ID", async () => {
+  const response = leadIntelligenceJsonError(
+    new LeadIntelligenceReviewError(
+      "REVIEW_CONFLICT",
+      "This review idempotency seed was already used for a different reviewed payload",
+      409,
+      { conflict: true },
+    ),
+    VALID_CORRELATION_ID,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "REVIEW_CONFLICT");
+  assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
+  assert.equal(body.error.details.conflict, true);
 });

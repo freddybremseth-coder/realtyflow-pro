@@ -53,6 +53,7 @@ const BrandSchema = LeadIntelligenceRealEstateBrandSchema;
 const OptionalTextSchema = z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.longText).nullable();
 const CorrelationIdSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.id);
 const IdempotencyKeySchema = z.string().trim().min(12).max(LEAD_INTELLIGENCE_LIMITS.id);
+const ReviewPayloadHashSchema = z.string().regex(/^sha256:v1:[0-9a-f]{64}$/);
 
 export const LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV = "REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET";
 export const LEAD_CONTACT_LOOKUP_HASH_PREFIX = "hmac-sha256:v1:";
@@ -144,6 +145,7 @@ export const RecordLeadAnalysisRunInputSchema = z
     promptVersion: IdentityTextSchema,
     model: IdentityTextSchema,
     resultJson: BoundedJsonSchema,
+    reviewPayloadHash: ReviewPayloadHashSchema.optional(),
     validationStatus: LeadAnalysisValidationStatusSchema.default("valid"),
     repaired: z.boolean().default(false),
     durationMs: z.number().int().nonnegative().nullable(),
@@ -667,7 +669,19 @@ export class LeadIntelligencePersistenceRepository {
   async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
     this.assertCanWrite();
     const data = RecordLeadAnalysisRunInputSchema.parse(input);
-    const { rows } = await this.db.query<{ id: string; duplicate: boolean }>(
+    const reviewPayloadHash =
+      data.reviewPayloadHash ||
+      (data.resultJson &&
+      typeof data.resultJson === "object" &&
+      !Array.isArray(data.resultJson) &&
+      typeof (data.resultJson as { reviewPayloadHash?: unknown }).reviewPayloadHash === "string"
+        ? (data.resultJson as { reviewPayloadHash: string }).reviewPayloadHash
+        : null);
+    const { rows } = await this.db.query<{
+      id: string;
+      duplicate: boolean;
+      payload_hash_matches: boolean;
+    }>(
       `
         with inserted as (
           insert into public.lead_analysis_runs (
@@ -685,11 +699,14 @@ export class LeadIntelligencePersistenceRepository {
           )
           values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::timestamptz)
           on conflict (intake_id, idempotency_key) do nothing
-          returning id, false as duplicate
+          returning id, false as duplicate, true as payload_hash_matches
         )
-        select id, duplicate from inserted
+        select id, duplicate, payload_hash_matches from inserted
         union all
-        select id, true as duplicate
+        select
+          id,
+          true as duplicate,
+          coalesce(result_json ->> 'reviewPayloadHash' = $12, false) as payload_hash_matches
         from public.lead_analysis_runs
         where intake_id = $1
           and idempotency_key = $2
@@ -708,9 +725,14 @@ export class LeadIntelligencePersistenceRepository {
         data.approved,
         data.approvedBy,
         data.approvedAt,
+        reviewPayloadHash,
       ],
     );
-    return rows[0];
+    return {
+      id: rows[0].id,
+      duplicate: Boolean(rows[0].duplicate),
+      payloadHashMatches: Boolean(rows[0].payload_hash_matches),
+    };
   }
 
   async createBuyerProfile(input: CreateBuyerProfileInput) {

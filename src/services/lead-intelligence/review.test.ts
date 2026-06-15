@@ -5,6 +5,7 @@ import {
   LeadIntelligenceReviewError,
   saveLeadIntelligenceReview,
   stableLeadIntelligenceIdempotencyKey,
+  stableLeadIntelligenceReviewPayloadHash,
   type LeadIntelligenceReviewRepository,
 } from "./review";
 import type {
@@ -19,6 +20,16 @@ const profileId = "33333333-3333-4333-8333-333333333333";
 const contactId = "44444444-4444-4444-8444-444444444444";
 const correlationId = "rf_mi7v4zk0_0123456789abcdef01234567";
 const approvedAt = new Date("2026-06-14T12:00:00.000Z");
+const serverContactCandidate = {
+  contactId,
+  name: "Emmadale",
+  maskedPhone: "+47***14",
+  maskedEmail: null,
+  matchType: "exact_phone" as const,
+  confidence: 0.98,
+  reasons: ["Eksakt verifisert E.164-telefon"],
+  matchValueHash: "hmac-sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+};
 
 function extractedLead() {
   return {
@@ -173,7 +184,7 @@ class CaptureRepository implements LeadIntelligenceReviewRepository {
 
   async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
     this.analysisRuns.push(input);
-    return { id: analysisRunId, duplicate: false };
+    return { id: analysisRunId, duplicate: false, payloadHashMatches: true };
   }
 
   async recordContactCandidates(input: LeadContactCandidateInput[]) {
@@ -187,20 +198,61 @@ class CaptureRepository implements LeadIntelligenceReviewRepository {
   }
 }
 
+class StatefulRepository extends CaptureRepository {
+  private intake: { id: string; key: string } | null = null;
+  private analysis: { id: string; key: string; payloadHash: string | null } | null = null;
+  private profile: { id: string; intakeId: string; criterionCount: number } | null = null;
+
+  override async createIntake(input: any) {
+    this.intakes.push(input);
+    if (this.intake && this.intake.key === input.idempotencyKey) {
+      return { id: this.intake.id, duplicate: true };
+    }
+    this.intake = { id: intakeId, key: input.idempotencyKey };
+    return { id: intakeId, duplicate: false };
+  }
+
+  override async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
+    this.analysisRuns.push(input);
+    const payloadHash =
+      input.reviewPayloadHash ||
+      (input.resultJson &&
+      typeof input.resultJson === "object" &&
+      !Array.isArray(input.resultJson) &&
+      typeof (input.resultJson as { reviewPayloadHash?: unknown }).reviewPayloadHash === "string"
+        ? (input.resultJson as { reviewPayloadHash: string }).reviewPayloadHash
+        : null);
+    if (this.analysis && this.analysis.key === input.idempotencyKey) {
+      return {
+        id: this.analysis.id,
+        duplicate: true,
+        payloadHashMatches: this.analysis.payloadHash === payloadHash,
+      };
+    }
+    this.analysis = { id: analysisRunId, key: input.idempotencyKey, payloadHash };
+    return { id: analysisRunId, duplicate: false, payloadHashMatches: true };
+  }
+
+  override async createBuyerProfile(input: CreateBuyerProfileInput) {
+    if (this.profile && this.profile.intakeId === input.intakeId) {
+      return {
+        id: this.profile.id,
+        criterionCount: this.profile.criterionCount,
+        duplicate: true,
+      };
+    }
+    this.profiles.push(input);
+    this.profile = {
+      id: profileId,
+      intakeId: input.intakeId,
+      criterionCount: input.criteria.length,
+    };
+    return { id: profileId, criterionCount: input.criteria.length, duplicate: false };
+  }
+}
+
 test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approved profile", async () => {
   const repo = new CaptureRepository();
-  const serverContactCandidates = [
-    {
-      contactId,
-      name: "Emmadale",
-      maskedPhone: "+47***14",
-      maskedEmail: null,
-      matchType: "exact_phone" as const,
-      confidence: 0.98,
-      reasons: ["Eksakt verifisert E.164-telefon"],
-      matchValueHash: "hmac-sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    },
-  ];
   const result = await saveLeadIntelligenceReview({
     request: baseRequest({
       contactDecision: {
@@ -210,7 +262,7 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
       },
     }),
     repository: repo,
-    serverContactCandidates,
+    serverContactCandidates: [serverContactCandidate],
     approvedBy: "Freddy.Bremseth@gmail.com",
     now: approvedAt,
   });
@@ -221,6 +273,10 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
   assert.equal(repo.intakes.length, 1);
   assert.equal(repo.analysisRuns[0].approved, true);
   assert.equal(repo.analysisRuns[0].approvedBy, "freddy.bremseth@gmail.com");
+  assert.equal(
+    (repo.analysisRuns[0].resultJson as { reviewPayloadHash?: string }).reviewPayloadHash,
+    repo.analysisRuns[0].reviewPayloadHash,
+  );
   assert.equal(repo.candidates[0][0].status, "selected");
   assert.equal(repo.profiles[0].contactId, contactId);
   assert.equal(repo.profiles[0].status, "approved");
@@ -342,7 +398,7 @@ test("idempotent duplicate save returns existing records without duplicate crite
 
     override async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
       this.analysisRuns.push(input);
-      return { id: analysisRunId, duplicate: true };
+      return { id: analysisRunId, duplicate: true, payloadHashMatches: true };
     }
 
     override async createBuyerProfile(input: CreateBuyerProfileInput) {
@@ -363,6 +419,135 @@ test("idempotent duplicate save returns existing records without duplicate crite
   assert.equal(result.analysisRun.duplicate, true);
   assert.equal(result.buyerProfile.duplicate, true);
   assert.equal(result.contactCandidates.duplicate, true);
+});
+
+test("identical review request twice returns same IDs without duplicate criteria or candidates", async () => {
+  const repo = new StatefulRepository();
+  const first = await saveLeadIntelligenceReview({
+    request: baseRequest({
+      contactDecision: {
+        action: "connect_existing",
+        contactId,
+        explicitApproval: true,
+      },
+    }),
+    repository: repo,
+    serverContactCandidates: [serverContactCandidate],
+    approvedBy: "freddy.bremseth@gmail.com",
+    now: approvedAt,
+  });
+  const second = await saveLeadIntelligenceReview({
+    request: baseRequest({
+      contactDecision: {
+        action: "connect_existing",
+        contactId,
+        explicitApproval: true,
+      },
+    }),
+    repository: repo,
+    serverContactCandidates: [serverContactCandidate],
+    approvedBy: "freddy.bremseth@gmail.com",
+    now: approvedAt,
+  });
+
+  assert.deepEqual(
+    {
+      intake: second.intake.id,
+      analysis: second.analysisRun.id,
+      profile: second.buyerProfile.id,
+    },
+    {
+      intake: first.intake.id,
+      analysis: first.analysisRun.id,
+      profile: first.buyerProfile.id,
+    },
+  );
+  assert.equal(second.status.newlySaved, false);
+  assert.equal(second.status.duplicate, true);
+  assert.equal(second.status.conflict, false);
+  assert.equal(repo.profiles.length, 1);
+  assert.equal(repo.candidates.length, 1);
+});
+
+async function assertReviewConflict(input: {
+  first?: Record<string, unknown>;
+  second: Record<string, unknown>;
+  serverContactCandidates?: typeof serverContactCandidate[];
+}) {
+  const repo = new StatefulRepository();
+  await saveLeadIntelligenceReview({
+    request: baseRequest(input.first || {}),
+    repository: repo,
+    serverContactCandidates: input.serverContactCandidates || [],
+    approvedBy: "freddy.bremseth@gmail.com",
+    now: approvedAt,
+  });
+  const profilesBefore = repo.profiles.length;
+  const candidatesBefore = repo.candidates.length;
+
+  await assert.rejects(
+    () =>
+      saveLeadIntelligenceReview({
+        request: baseRequest(input.second),
+        repository: repo,
+        serverContactCandidates: input.serverContactCandidates || [],
+        approvedBy: "freddy.bremseth@gmail.com",
+        now: approvedAt,
+      }),
+    (error) =>
+      error instanceof LeadIntelligenceReviewError &&
+      error.code === "REVIEW_CONFLICT" &&
+      error.status === 409 &&
+      error.details?.conflict === true,
+  );
+
+  assert.equal(repo.profiles.length, profilesBefore);
+  assert.equal(repo.candidates.length, candidatesBefore);
+}
+
+test("changed analysis with same seed returns REVIEW_CONFLICT and preserves existing profile", async () => {
+  const changed = extractedLead();
+  changed.summary = "Changed reviewed summary.";
+  await assertReviewConflict({
+    second: {
+      analysis: changed,
+      reviewedCriteria: reviewedCriteriaFor(changed),
+    },
+  });
+});
+
+test("changed criterion approval with same seed returns REVIEW_CONFLICT", async () => {
+  const changedReviews = reviewedCriteriaFor(extractedLead());
+  changedReviews[0] = {
+    ...changedReviews[0],
+    approvalStatus: "rejected",
+    customerConfirmed: false,
+  };
+  await assertReviewConflict({
+    second: {
+      reviewedCriteria: changedReviews,
+    },
+  });
+});
+
+test("changed contact decision with same seed returns REVIEW_CONFLICT", async () => {
+  await assertReviewConflict({
+    first: {
+      contactDecision: {
+        action: "connect_existing",
+        contactId,
+        explicitApproval: true,
+      },
+    },
+    second: {
+      contactDecision: {
+        action: "create_new",
+        contactId: null,
+        explicitApproval: true,
+      },
+    },
+    serverContactCandidates: [serverContactCandidate],
+  });
 });
 
 test("idempotent review can resume after a partial intake-only write", async () => {
@@ -401,4 +586,32 @@ test("stable idempotency keys are deterministic and exclude transient ordering",
   });
 
   assert.equal(first, second);
+});
+
+test("review payload hash changes when approved payload changes", () => {
+  const base = stableLeadIntelligenceReviewPayloadHash({
+    brand: "soleada",
+    source: "phone_call",
+    analysis: extractedLead(),
+    reviewedCriteria: reviewedCriteriaFor(),
+    contactDecision: { action: "continue_without_contact", contactId: null },
+    promptVersion: "lead-intelligence-extraction-v1",
+  });
+  const changed = stableLeadIntelligenceReviewPayloadHash({
+    brand: "soleada",
+    source: "phone_call",
+    analysis: extractedLead(),
+    reviewedCriteria: [
+      {
+        ...reviewedCriteriaFor()[0],
+        approvalStatus: "rejected",
+      },
+      ...reviewedCriteriaFor().slice(1),
+    ],
+    contactDecision: { action: "continue_without_contact", contactId: null },
+    promptVersion: "lead-intelligence-extraction-v1",
+  });
+
+  assert.match(base, /^sha256:v1:[0-9a-f]{64}$/);
+  assert.notEqual(base, changed);
 });

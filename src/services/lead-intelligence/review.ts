@@ -139,7 +139,11 @@ export interface LeadIntelligenceReviewRepository {
     correlationId: string;
     idempotencyKey: string;
   }): Promise<{ id: string; duplicate?: boolean }>;
-  recordAnalysisRun(input: RecordLeadAnalysisRunInput): Promise<{ id: string; duplicate?: boolean }>;
+  recordAnalysisRun(input: RecordLeadAnalysisRunInput): Promise<{
+    id: string;
+    duplicate?: boolean;
+    payloadHashMatches?: boolean;
+  }>;
   recordContactCandidates(candidates: LeadContactCandidateInput[]): Promise<string[]>;
   createBuyerProfile(input: CreateBuyerProfileInput): Promise<{
     id: string;
@@ -164,6 +168,11 @@ export function stableLeadIntelligenceIdempotencyKey(prefix: string, value: unkn
   const canonical = stableReviewJson(value);
   const hash = createHash("sha256").update(canonical).digest("hex");
   return `${prefix}:${hash}`;
+}
+
+export function stableLeadIntelligenceReviewPayloadHash(value: unknown) {
+  const canonical = stableReviewJson(value);
+  return `sha256:v1:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
 function flattenCriteria(analysis: ExtractedLead): FlattenedCriterion[] {
@@ -318,10 +327,19 @@ export async function saveLeadIntelligenceReview(input: {
   const decision = assertContactDecision(request, input.serverContactCandidates);
   const idempotencySeed = request.idempotencySeed || request.correlationId;
   const contactId = decision.action === "connect_existing" ? decision.contactId : null;
-  const intakeKey = stableLeadIntelligenceIdempotencyKey("lead-intake-v1", {
+  const reviewPayloadHash = stableLeadIntelligenceReviewPayloadHash({
     brand: request.brand,
     source: request.source,
-    rawText: request.rawText,
+    analysis: request.analysis,
+    reviewedCriteria: request.reviewedCriteria,
+    contactDecision: {
+      action: decision.action,
+      contactId,
+    },
+    promptVersion: request.analysisMeta.promptVersion,
+  });
+  const intakeKey = stableLeadIntelligenceIdempotencyKey("lead-intake-v1", {
+    brand: request.brand,
     idempotencySeed,
   });
   const analysisKey = stableLeadIntelligenceIdempotencyKey("lead-analysis-v1", {
@@ -347,7 +365,12 @@ export async function saveLeadIntelligenceReview(input: {
     idempotencyKey: analysisKey,
     promptVersion: request.analysisMeta.promptVersion,
     model: request.analysisMeta.model,
-    resultJson: request.analysis,
+    resultJson: {
+      schemaVersion: "lead-intelligence-review-save-v1",
+      reviewPayloadHash,
+      analysis: request.analysis,
+    },
+    reviewPayloadHash,
     validationStatus: "valid",
     repaired: request.analysisMeta.repaired,
     durationMs: request.analysisMeta.durationMs,
@@ -356,20 +379,14 @@ export async function saveLeadIntelligenceReview(input: {
     approvedAt,
   });
 
-  const candidateInputs = input.serverContactCandidates.map((candidate) => ({
-    brand: request.brand,
-    intakeId: intake.id,
-    contactId: candidate.contactId,
-    matchType: candidate.matchType,
-    matchValueHash: candidate.matchValueHash,
-    score: candidate.confidence,
-    reasons: candidate.reasons,
-    status:
-      decision.action === "connect_existing" && candidate.contactId === decision.contactId
-        ? ("selected" as z.infer<typeof LeadContactCandidateStatusSchema>)
-        : ("suggested" as z.infer<typeof LeadContactCandidateStatusSchema>),
-  }));
-  const candidateIds = await input.repository.recordContactCandidates(candidateInputs);
+  if (analysisRun.duplicate && analysisRun.payloadHashMatches !== true) {
+    throw new LeadIntelligenceReviewError(
+      "REVIEW_CONFLICT",
+      "This review idempotency seed was already used for a different reviewed payload",
+      409,
+      { conflict: true },
+    );
+  }
 
   const profile = await input.repository.createBuyerProfile({
     brand: request.brand,
@@ -394,8 +411,31 @@ export async function saveLeadIntelligenceReview(input: {
       approvedAt,
     }),
   });
+  const profileDuplicate = Boolean(profile.duplicate);
+
+  const candidateInputs = input.serverContactCandidates.map((candidate) => ({
+    brand: request.brand,
+    intakeId: intake.id,
+    contactId: candidate.contactId,
+    matchType: candidate.matchType,
+    matchValueHash: candidate.matchValueHash,
+    score: candidate.confidence,
+    reasons: candidate.reasons,
+    status:
+      decision.action === "connect_existing" && candidate.contactId === decision.contactId
+        ? ("selected" as z.infer<typeof LeadContactCandidateStatusSchema>)
+        : ("suggested" as z.infer<typeof LeadContactCandidateStatusSchema>),
+  }));
+  const candidateIds = profileDuplicate
+    ? []
+    : await input.repository.recordContactCandidates(candidateInputs);
 
   return {
+    status: {
+      newlySaved: !profileDuplicate,
+      duplicate: profileDuplicate,
+      conflict: false,
+    },
     intake: {
       id: intake.id,
       duplicate: Boolean(intake.duplicate),
@@ -406,7 +446,7 @@ export async function saveLeadIntelligenceReview(input: {
     },
     buyerProfile: {
       ...profile,
-      duplicate: Boolean(profile.duplicate),
+      duplicate: profileDuplicate,
     },
     contactCandidates: {
       recorded: candidateIds.length,
@@ -414,7 +454,7 @@ export async function saveLeadIntelligenceReview(input: {
       decision: decision.action,
       createdContact: false,
       linkedContact: decision.action === "connect_existing",
-      duplicate: Boolean(profile.duplicate),
+      duplicate: profileDuplicate,
     },
   };
 }

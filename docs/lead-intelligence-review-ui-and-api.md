@@ -93,7 +93,9 @@ If Freddy changes brand, contact fields, raw text, or the edited analysis after 
 
 Existing contact rows are never updated by this PR.
 
-Review save uses stable idempotency keys for intake, analysis run, and buyer profile creation. Repeating the same request returns existing rows and does not create duplicate criteria or duplicate contact candidate records.
+Review save uses stable idempotency keys for intake, analysis run, and buyer profile creation. The idempotency key is seed-based, while the approved review payload is protected by a separate canonical `sha256:v1` payload hash stored in the analysis run JSON. The payload hash covers brand, source, approved analysis, reviewed criteria and approval state, customer confirmation, contact decision, selected contact ID, and prompt version.
+
+Repeating the same seed with the same payload hash returns existing rows with `duplicate=true` and does not create duplicate criteria or contact candidate records. Reusing the same seed with a different review payload returns `REVIEW_CONFLICT` (`409`) before profile or candidate writes continue. Correlation ID alone is not treated as proof that the review payload is identical.
 
 ## Activation Order
 

@@ -269,7 +269,12 @@ test("repository stores correlation ID and never writes provider raw output colu
     idempotencyKey: "analysis-key-002",
     promptVersion: "lead-intelligence-extraction-v1",
     model: "mock",
-    resultJson: { summary: "safe validated DTO only" },
+    resultJson: {
+      schemaVersion: "lead-intelligence-review-save-v1",
+      reviewPayloadHash: "sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      analysis: { summary: "safe validated DTO only" },
+    },
+    reviewPayloadHash: "sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     validationStatus: "valid",
     repaired: false,
     durationMs: 120,
@@ -283,6 +288,11 @@ test("repository stores correlation ID and never writes provider raw output colu
   assert(db.queries[0].values?.includes("rf_mi7v4zk0_0123456789abcdef01234567"));
   assert.equal(db.queries[0].values?.[2], "Restricted raw note");
   assert.equal(db.queries[0].values?.[3], null);
+  assert(db.queries[1].sql.includes("result_json ->> 'reviewPayloadHash' = $12"));
+  assert.equal(
+    db.queries[1].values?.at(-1),
+    "sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  );
   assert(!db.queries.some((query) => /provider_raw|raw_output/i.test(query.sql)));
 });
 
