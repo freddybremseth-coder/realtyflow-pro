@@ -14,12 +14,16 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Kopier JSON"), true);
   assert.equal(source.includes("Start på nytt"), true);
   assert.equal(source.includes("Analyser på nytt"), true);
+  assert.equal(source.includes("Lagre intake og kjøperprofil"), true);
+  assert.equal(source.includes("Vis kontaktkandidater"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
+  assert.equal(source.includes("E-post sendt: nei"), true);
+  assert.equal(source.includes("Property matching: nei"), true);
 });
 
-test("Lead Intelligence preview does not call CRM, lead, email, or database endpoints", async () => {
+test("Lead Intelligence preview does not call CRM, lead, email, property, or Supabase endpoints directly", async () => {
   const source = await readFile(clientPath, "utf8");
   const forbidden = [
     "/api/contacts",
@@ -35,4 +39,32 @@ test("Lead Intelligence preview does not call CRM, lead, email, or database endp
   }
 
   assert.equal(source.includes("/api/lead-intelligence/analyze"), true);
+  assert.equal(source.includes("/api/lead-intelligence/contact-candidates"), true);
+  assert.equal(source.includes("/api/lead-intelligence/review"), true);
+});
+
+test("Lead Intelligence preview clears stale candidates before review save", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("const clearContactCandidates = () =>"), true);
+  assert.equal(source.includes("setContactCandidates([]);"), true);
+  assert.equal(source.includes("setSelectedContactId(null);"), true);
+  assert.equal(source.includes("          contactCandidates,\n          reviewedCriteria"), false);
+});
+
+test("Lead Intelligence preview sends stable criterion fingerprints instead of array indexes", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("criterionReviewFingerprint"), true);
+  assert.equal(source.includes("fingerprint: criterion.fingerprint"), true);
+  assert.equal(source.includes("index: criterion.index"), false);
+});
+
+test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("Identisk review var allerede lagret."), true);
+  assert.equal(source.includes("Ny lagring:"), true);
+  assert.equal(source.includes("Duplicate:"), true);
+  assert.equal(source.includes("Conflict:"), true);
 });
