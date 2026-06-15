@@ -128,6 +128,7 @@ export const CreateLeadIntakeInputSchema = z
       .min(1)
       .max(LEAD_INTELLIGENCE_LIMITS.bodyText)
       .nullable(),
+    rawTextRetentionUntil: z.string().datetime().nullable().optional(),
     language: LanguageCodeSchema.optional().nullable(),
     status: LeadIntakeStatusSchema.default("draft"),
     createdBy: IdentityTextSchema,
@@ -628,13 +629,14 @@ export class LeadIntelligencePersistenceRepository {
             brand,
             source,
             raw_text_restricted,
+            raw_text_retention_until,
             language,
             status,
             created_by,
             correlation_id,
             idempotency_key
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8)
+          values ($1, $2, $3, $4::timestamptz, $5, $6, $7, $8, $9)
           on conflict (brand, idempotency_key) do nothing
           returning id, false as duplicate
         )
@@ -643,7 +645,7 @@ export class LeadIntelligencePersistenceRepository {
         select id, true as duplicate
         from public.lead_intake_messages
         where brand = $1
-          and idempotency_key = $8
+          and idempotency_key = $9
           and not exists (select 1 from inserted)
         limit 1
       `,
@@ -651,6 +653,7 @@ export class LeadIntelligencePersistenceRepository {
         data.brand,
         data.source,
         data.rawTextRestricted,
+        data.rawTextRetentionUntil || null,
         data.language,
         data.status,
         data.createdBy,
@@ -713,9 +716,19 @@ export class LeadIntelligencePersistenceRepository {
   async createBuyerProfile(input: CreateBuyerProfileInput) {
     this.assertCanWrite();
     const data = CreateBuyerProfileInputSchema.parse(input);
-    const profileResult = await this.db.query<{ id: string; criterion_count: number }>(
+    const profileResult = await this.db.query<{
+      id: string;
+      criterion_count: number;
+      duplicate: boolean;
+    }>(
       `
-        with profile as (
+        with existing_profile as (
+          select id
+          from public.buyer_profiles
+          where intake_id = $3::uuid
+            and version = $4
+        ),
+        profile as (
           insert into public.buyer_profiles (
             brand,
             contact_id,
@@ -733,8 +746,18 @@ export class LeadIntelligencePersistenceRepository {
             approved_by,
             approved_at
           )
-          values ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::timestamptz)
-          returning id
+          select $1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::timestamptz
+          where not exists (select 1 from existing_profile)
+          on conflict (intake_id, version) do nothing
+          returning id, false as duplicate
+        ),
+        selected_profile as (
+          select id, duplicate from profile
+          union all
+          select id, true as duplicate
+          from existing_profile
+          where not exists (select 1 from profile)
+          limit 1
         ),
         criteria_input as (
           select *
@@ -778,7 +801,7 @@ export class LeadIntelligencePersistenceRepository {
             active
           )
           select
-            profile.id,
+            selected_profile.id,
             criterion.criterion_type,
             criterion.key,
             criterion.other_key,
@@ -795,12 +818,23 @@ export class LeadIntelligencePersistenceRepository {
             criterion.approved_by,
             criterion.approved_at,
             criterion.active
-          from profile
+          from selected_profile
           cross join criteria_input criterion
+          where selected_profile.duplicate is false
           returning id
         )
-        select profile.id, (select count(*)::int from inserted_criteria) as criterion_count
-        from profile
+        select
+          selected_profile.id,
+          selected_profile.duplicate,
+          case
+            when selected_profile.duplicate is true then (
+              select count(*)::int
+              from public.buyer_profile_criteria
+              where buyer_profile_id = selected_profile.id
+            )
+            else (select count(*)::int from inserted_criteria)
+          end as criterion_count
+        from selected_profile
       `,
       [
         data.brand,
@@ -843,7 +877,11 @@ export class LeadIntelligencePersistenceRepository {
 
     const profileId = profileResult.rows[0].id;
 
-    return { id: profileId, criterionCount: profileResult.rows[0].criterion_count };
+    return {
+      id: profileId,
+      criterionCount: profileResult.rows[0].criterion_count || 0,
+      duplicate: Boolean(profileResult.rows[0].duplicate),
+    };
   }
 
   async recordContactCandidates(candidates: LeadContactCandidateInput[]) {

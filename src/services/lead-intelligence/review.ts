@@ -21,10 +21,19 @@ import {
   type LeadContactCandidatePreview,
   type RecordLeadAnalysisRunInput,
 } from "./persistence";
+import {
+  criterionReviewFingerprint,
+  stableReviewJson,
+} from "./review-shared";
 
 export type LeadIntelligenceReviewErrorCode =
   | "INVALID_REQUEST"
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
+  | "CONTACT_CANDIDATE_STALE"
+  | "CONTACT_BRAND_MISMATCH"
+  | "REVIEW_CONFLICT"
+  | "REVIEW_ALREADY_SAVED"
+  | "PERSISTENCE_SCHEMA_NOT_READY"
   | "DATABASE_ERROR";
 
 export class LeadIntelligenceReviewError extends Error {
@@ -74,7 +83,7 @@ export const LeadIntelligenceCriterionReviewSchema = z
       "exclusion",
       "missing_information",
     ]),
-    index: z.number().int().nonnegative().max(LEAD_INTELLIGENCE_LIMITS.criteria),
+    fingerprint: z.string().trim().min(12).max(LEAD_INTELLIGENCE_LIMITS.mediumText),
     approvalStatus: z.enum(["approved", "rejected"]),
     customerConfirmed: z.boolean().default(false),
   })
@@ -98,9 +107,6 @@ export const LeadIntelligenceReviewSaveRequestSchema = z
       })
       .strict(),
     contactDecision: ContactLinkDecisionSchema,
-    contactCandidates: z
-      .array(LeadIntelligenceCandidatePreviewSchema)
-      .max(LEAD_INTELLIGENCE_LIMITS.matchReasons),
     reviewedCriteria: z
       .array(LeadIntelligenceCriterionReviewSchema)
       .max(LEAD_INTELLIGENCE_LIMITS.criteria * 4),
@@ -126,6 +132,7 @@ export interface LeadIntelligenceReviewRepository {
     brand: string;
     source: z.infer<typeof LeadIntakeSourcePersistenceSchema>;
     rawTextRestricted: string | null;
+    rawTextRetentionUntil?: string | null;
     language: string | null | undefined;
     status: "approved";
     createdBy: string;
@@ -134,22 +141,11 @@ export interface LeadIntelligenceReviewRepository {
   }): Promise<{ id: string; duplicate?: boolean }>;
   recordAnalysisRun(input: RecordLeadAnalysisRunInput): Promise<{ id: string; duplicate?: boolean }>;
   recordContactCandidates(candidates: LeadContactCandidateInput[]): Promise<string[]>;
-  createBuyerProfile(input: CreateBuyerProfileInput): Promise<{ id: string; criterionCount: number }>;
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
+  createBuyerProfile(input: CreateBuyerProfileInput): Promise<{
+    id: string;
+    criterionCount: number;
+    duplicate?: boolean;
+  }>;
 }
 
 type CriterionKind =
@@ -165,7 +161,7 @@ interface FlattenedCriterion {
 }
 
 export function stableLeadIntelligenceIdempotencyKey(prefix: string, value: unknown) {
-  const canonical = stableJson(value);
+  const canonical = stableReviewJson(value);
   const hash = createHash("sha256").update(canonical).digest("hex");
   return `${prefix}:${hash}`;
 }
@@ -195,8 +191,12 @@ function flattenCriteria(analysis: ExtractedLead): FlattenedCriterion[] {
   ];
 }
 
-function reviewKey(criterionType: string, index: number) {
-  return `${criterionType}:${index}`;
+export function leadIntelligenceCriterionFingerprint(criterion: FlattenedCriterion) {
+  return criterionReviewFingerprint({
+    criterionType: criterion.criterionType,
+    index: criterion.index,
+    item: criterion.item,
+  });
 }
 
 function buildCriteria(input: {
@@ -207,7 +207,7 @@ function buildCriteria(input: {
 }): CreateBuyerProfileInput["criteria"] {
   const reviews = new Map<string, LeadIntelligenceCriterionReview>();
   for (const review of input.reviewedCriteria) {
-    const key = reviewKey(review.criterionType, review.index);
+    const key = review.fingerprint;
     if (reviews.has(key)) {
       throw new LeadIntelligenceReviewError("INVALID_REQUEST", "Duplicate criterion review", 400, {
         criterion: key,
@@ -217,11 +217,19 @@ function buildCriteria(input: {
   }
 
   return flattenCriteria(input.analysis).map((criterion) => {
-    const review = reviews.get(reviewKey(criterion.criterionType, criterion.index));
+    const fingerprint = leadIntelligenceCriterionFingerprint(criterion);
+    const review = reviews.get(fingerprint);
     if (!review) {
       throw new LeadIntelligenceReviewError("INVALID_REQUEST", "All criteria require item-level review", 400, {
         criterionType: criterion.criterionType,
-        index: criterion.index,
+        fingerprint,
+      });
+    }
+
+    if (review.criterionType !== criterion.criterionType) {
+      throw new LeadIntelligenceReviewError("INVALID_REQUEST", "Criterion review fingerprint/type mismatch", 400, {
+        criterionType: criterion.criterionType,
+        fingerprint,
       });
     }
 
@@ -278,18 +286,19 @@ function buildCriteria(input: {
 
 function assertContactDecision(
   request: LeadIntelligenceReviewSaveRequest,
+  serverCandidates: LeadContactCandidatePreview[],
 ) {
   const decision = request.contactDecision;
   if (decision.action !== "connect_existing") return decision;
 
-  const selected = request.contactCandidates.find(
+  const selected = serverCandidates.find(
     (candidate) => candidate.contactId === decision.contactId,
   );
   if (!selected) {
     throw new LeadIntelligenceReviewError(
-      "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION",
-      "Selected contact must be one of the reviewed contact candidates",
-      400,
+      "CONTACT_CANDIDATE_STALE",
+      "Selected contact candidate is stale or no longer matches the reviewed contact details",
+      409,
     );
   }
 
@@ -299,13 +308,14 @@ function assertContactDecision(
 export async function saveLeadIntelligenceReview(input: {
   request: unknown;
   repository: LeadIntelligenceReviewRepository;
+  serverContactCandidates: LeadContactCandidatePreview[];
   approvedBy: string;
   now?: Date;
 }) {
   const request = LeadIntelligenceReviewSaveRequestSchema.parse(input.request);
   const approvedBy = input.approvedBy.trim().toLowerCase();
   const approvedAt = (input.now || new Date()).toISOString();
-  const decision = assertContactDecision(request);
+  const decision = assertContactDecision(request, input.serverContactCandidates);
   const idempotencySeed = request.idempotencySeed || request.correlationId;
   const contactId = decision.action === "connect_existing" ? decision.contactId : null;
   const intakeKey = stableLeadIntelligenceIdempotencyKey("lead-intake-v1", {
@@ -317,14 +327,14 @@ export async function saveLeadIntelligenceReview(input: {
   const analysisKey = stableLeadIntelligenceIdempotencyKey("lead-analysis-v1", {
     brand: request.brand,
     promptVersion: request.analysisMeta.promptVersion,
-    analysis: request.analysis,
     idempotencySeed,
   });
 
   const intake = await input.repository.createIntake({
     brand: request.brand,
     source: request.source,
-    rawTextRestricted: request.rawText,
+    rawTextRestricted: null,
+    rawTextRetentionUntil: null,
     language: request.language,
     status: "approved",
     createdBy: approvedBy,
@@ -346,7 +356,7 @@ export async function saveLeadIntelligenceReview(input: {
     approvedAt,
   });
 
-  const candidateInputs = request.contactCandidates.map((candidate) => ({
+  const candidateInputs = input.serverContactCandidates.map((candidate) => ({
     brand: request.brand,
     intakeId: intake.id,
     contactId: candidate.contactId,
@@ -394,13 +404,17 @@ export async function saveLeadIntelligenceReview(input: {
       id: analysisRun.id,
       duplicate: Boolean(analysisRun.duplicate),
     },
-    buyerProfile: profile,
+    buyerProfile: {
+      ...profile,
+      duplicate: Boolean(profile.duplicate),
+    },
     contactCandidates: {
       recorded: candidateIds.length,
       selectedContactId: contactId,
       decision: decision.action,
       createdContact: false,
       linkedContact: decision.action === "connect_existing",
+      duplicate: Boolean(profile.duplicate),
     },
   };
 }

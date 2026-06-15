@@ -5,11 +5,14 @@ import {
   saveLeadIntelligenceReview,
 } from "@/services/lead-intelligence/review";
 import {
+  assertLeadIntelligenceActionRateLimit,
   createLeadIntelligenceRepository,
+  findContactCandidatePreviewsWithDb,
   getLeadIntelligenceRouteContext,
   leadIntelligenceHeaders,
   leadIntelligenceJsonError,
   readJsonBody,
+  verifySelectedContactCandidateWithDb,
   withLeadIntelligenceTransaction,
 } from "@/services/lead-intelligence/server-runtime";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
@@ -23,6 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const context = await getLeadIntelligenceRouteContext(request);
     correlationId = context.correlationId;
+    assertLeadIntelligenceActionRateLimit(context.email, "review");
     const body = await readJsonBody(request, 64 * 1024);
     const parsed = LeadIntelligenceReviewSaveRequestSchema.safeParse({
       ...body,
@@ -37,13 +41,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction(async (client) =>
-      saveLeadIntelligenceReview({
+    const result = await withLeadIntelligenceTransaction(async (client) => {
+      const serverCandidates = await findContactCandidatePreviewsWithDb(client, {
+        brand: parsed.data.brand,
+        contact: parsed.data.analysis.contact,
+      });
+      const selectedCandidate =
+        parsed.data.contactDecision.action === "connect_existing"
+          ? await verifySelectedContactCandidateWithDb(client, {
+              brand: parsed.data.brand,
+              contactId: parsed.data.contactDecision.contactId!,
+              contact: parsed.data.analysis.contact,
+            })
+          : null;
+      const verifiedCandidates =
+        selectedCandidate &&
+        !serverCandidates.some((candidate) => candidate.contactId === selectedCandidate.contactId)
+          ? [selectedCandidate, ...serverCandidates]
+          : serverCandidates;
+
+      return saveLeadIntelligenceReview({
         request: parsed.data,
         repository: createLeadIntelligenceRepository(client, context),
+        serverContactCandidates: verifiedCandidates,
         approvedBy: context.email,
-      }),
-    );
+      });
+    });
 
     return NextResponse.json(
       {

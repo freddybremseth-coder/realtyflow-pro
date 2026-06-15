@@ -21,6 +21,7 @@ import {
 } from "./persistence";
 import { isLeadIntelligenceEnabled, isLeadIntelligencePersistenceEnabled } from "./feature-flags";
 import { LeadIntelligenceReviewError } from "./review";
+import { assertLeadIntelligenceRateLimit } from "./api-guards";
 
 export const LEAD_INTELLIGENCE_DATABASE_URL_ENV = "REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL";
 
@@ -122,14 +123,23 @@ export async function readJsonBody(request: NextRequest, maxBytes = 48 * 1024) {
 }
 
 function getLeadIntelligenceDatabaseUrl() {
-  const url =
-    process.env[LEAD_INTELLIGENCE_DATABASE_URL_ENV] ||
+  const dedicated = process.env[LEAD_INTELLIGENCE_DATABASE_URL_ENV];
+  const isProduction = process.env.VERCEL_ENV === "production";
+  if (isProduction && !dedicated) {
+    throw new LeadIntelligenceReviewError(
+      "PERSISTENCE_SCHEMA_NOT_READY",
+      "Lead Intelligence persistence database is not configured",
+      503,
+    );
+  }
+
+  const url = dedicated ||
     process.env.SUPABASE_DB_URL ||
     process.env.POSTGRES_URL ||
     process.env.DATABASE_URL;
   if (!url) {
-    throw new LeadIntelligencePersistenceError(
-      "DATABASE_ERROR",
+    throw new LeadIntelligenceReviewError(
+      "PERSISTENCE_SCHEMA_NOT_READY",
       "Lead Intelligence persistence database is not configured",
       503,
     );
@@ -167,6 +177,13 @@ export async function withLeadIntelligenceTransaction<T>(
     } catch {
       // Keep rollback errors out of the response; the original error is safer and more useful.
     }
+    if (
+      error instanceof LeadIntelligenceError ||
+      error instanceof LeadIntelligencePersistenceError ||
+      error instanceof LeadIntelligenceReviewError
+    ) {
+      throw error;
+    }
     throw mapDatabaseError(error);
   } finally {
     await client.end().catch(() => undefined);
@@ -187,6 +204,13 @@ export async function withLeadIntelligenceQuery<T>(
     await client.connect();
     return await fn(queryClient(client));
   } catch (error) {
+    if (
+      error instanceof LeadIntelligenceError ||
+      error instanceof LeadIntelligencePersistenceError ||
+      error instanceof LeadIntelligenceReviewError
+    ) {
+      throw error;
+    }
     throw mapDatabaseError(error);
   } finally {
     await client.end().catch(() => undefined);
@@ -199,10 +223,17 @@ function mapDatabaseError(error: unknown) {
       ? String((error as { code?: unknown }).code)
       : "";
   if (["42P01", "42883", "3F000"].includes(code)) {
-    return new LeadIntelligencePersistenceError(
-      "DATABASE_ERROR",
+    return new LeadIntelligenceReviewError(
+      "PERSISTENCE_SCHEMA_NOT_READY",
       "Lead Intelligence persistence schema is not ready",
       503,
+    );
+  }
+  if (["23503", "23505", "23514"].includes(code)) {
+    return new LeadIntelligenceReviewError(
+      "REVIEW_CONFLICT",
+      "Lead Intelligence review could not be saved because the persisted state changed",
+      409,
     );
   }
   return new LeadIntelligencePersistenceError(
@@ -225,46 +256,132 @@ export async function findContactCandidatePreviews(input: {
     [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV],
   });
 
-  return withLeadIntelligenceQuery(async (db) => {
-    const { rows } = await db.query<ContactLookupRow>(
-      `
-        select
-          id::text as "contactId",
-          brand,
-          name,
-          phone,
-          email
-        from public.contacts
-        where brand = $1
-          and (
-            lower(email) = lower($2)
-            or regexp_replace(coalesce(phone, ''), '[^0-9+]', '', 'g') =
-               regexp_replace(coalesce($3, ''), '[^0-9+]', '', 'g')
-            or lower(name) = lower($4)
-          )
-        order by updated_at desc nulls last, created_at desc nulls last
-        limit 25
-      `,
-      [
-        input.brand,
-        input.contact.email || "",
-        input.contact.phone || "",
-        input.contact.name || "",
-      ],
-    );
+  return withLeadIntelligenceQuery((db) =>
+    findContactCandidatePreviewsWithDb(db, input, hmacSecret),
+  );
+}
 
-    return findLeadContactCandidatePreviews(
-      {
-        brand: input.brand,
-        name: input.contact.name,
-        phone: input.contact.phone,
-        email: input.contact.email,
-        country: input.contact.country,
-      },
-      rows,
-      { hmacSecret },
+export async function findContactCandidatePreviewsWithDb(
+  db: QueryClient,
+  input: {
+    brand: string;
+    contact: {
+      name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      country?: string | null;
+    };
+  },
+  hmacSecret = getLeadContactLookupHmacSecret({
+    [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV],
+  }),
+) {
+  const { rows } = await db.query<ContactLookupRow>(
+    `
+      select
+        id::text as "contactId",
+        brand,
+        name,
+        phone,
+        email
+      from public.contacts
+      where brand = $1
+        and (
+          lower(email) = lower($2)
+          or regexp_replace(coalesce(phone, ''), '[^0-9+]', '', 'g') =
+             regexp_replace(coalesce($3, ''), '[^0-9+]', '', 'g')
+          or lower(name) = lower($4)
+        )
+      order by updated_at desc nulls last, created_at desc nulls last
+      limit 25
+    `,
+    [
+      input.brand,
+      input.contact.email || "",
+      input.contact.phone || "",
+      input.contact.name || "",
+    ],
+  );
+
+  return findLeadContactCandidatePreviews(
+    {
+      brand: input.brand,
+      name: input.contact.name,
+      phone: input.contact.phone,
+      email: input.contact.email,
+      country: input.contact.country,
+    },
+    rows,
+    { hmacSecret },
+  );
+}
+
+export async function verifySelectedContactCandidateWithDb(
+  db: QueryClient,
+  input: {
+    brand: string;
+    contactId: string;
+    contact: {
+      name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      country?: string | null;
+    };
+  },
+) {
+  const { rows } = await db.query<ContactLookupRow>(
+    `
+      select
+        id::text as "contactId",
+        brand,
+        name,
+        phone,
+        email
+      from public.contacts
+      where id = $1::uuid
+      limit 1
+    `,
+    [input.contactId],
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new LeadIntelligenceReviewError(
+      "CONTACT_CANDIDATE_STALE",
+      "Selected contact no longer exists",
+      409,
     );
-  });
+  }
+  if (row.brand !== input.brand) {
+    throw new LeadIntelligenceReviewError(
+      "CONTACT_BRAND_MISMATCH",
+      "Selected contact belongs to another brand",
+      409,
+    );
+  }
+
+  const candidates = findLeadContactCandidatePreviews(
+    {
+      brand: input.brand,
+      name: input.contact.name,
+      phone: input.contact.phone,
+      email: input.contact.email,
+      country: input.contact.country,
+    },
+    [row],
+    {
+      hmacSecret: getLeadContactLookupHmacSecret({
+        [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV],
+      }),
+    },
+  );
+  if (!candidates.some((candidate) => candidate.contactId === input.contactId)) {
+    throw new LeadIntelligenceReviewError(
+      "CONTACT_CANDIDATE_STALE",
+      "Selected contact no longer matches the reviewed contact details",
+      409,
+    );
+  }
+  return candidates[0];
 }
 
 export function createLeadIntelligenceRepository(client: QueryClient, context: {
@@ -277,4 +394,8 @@ export function createLeadIntelligenceRepository(client: QueryClient, context: {
     },
     env: process.env,
   });
+}
+
+export function assertLeadIntelligenceActionRateLimit(identity: string, action: string) {
+  assertLeadIntelligenceRateLimit(`${identity}:${action}`);
 }

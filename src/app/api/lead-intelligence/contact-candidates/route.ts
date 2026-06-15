@@ -3,6 +3,7 @@ import {
   LeadIntelligenceContactCandidatesRequestSchema,
 } from "@/services/lead-intelligence/review";
 import {
+  assertLeadIntelligenceActionRateLimit,
   findContactCandidatePreviews,
   getLeadIntelligenceRouteContext,
   leadIntelligenceHeaders,
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const context = await getLeadIntelligenceRouteContext(request);
     correlationId = context.correlationId;
+    assertLeadIntelligenceActionRateLimit(context.email, "contact-candidates");
     const body = await readJsonBody(request, 16 * 1024);
     const parsed = LeadIntelligenceContactCandidatesRequestSchema.safeParse(body);
     if (!parsed.success) {

@@ -42,3 +42,20 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
   assert.equal(source.includes("/api/lead-intelligence/contact-candidates"), true);
   assert.equal(source.includes("/api/lead-intelligence/review"), true);
 });
+
+test("Lead Intelligence preview clears stale candidates before review save", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("const clearContactCandidates = () =>"), true);
+  assert.equal(source.includes("setContactCandidates([]);"), true);
+  assert.equal(source.includes("setSelectedContactId(null);"), true);
+  assert.equal(source.includes("          contactCandidates,\n          reviewedCriteria"), false);
+});
+
+test("Lead Intelligence preview sends stable criterion fingerprints instead of array indexes", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("criterionReviewFingerprint"), true);
+  assert.equal(source.includes("fingerprint: criterion.fingerprint"), true);
+  assert.equal(source.includes("index: criterion.index"), false);
+});

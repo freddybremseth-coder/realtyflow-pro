@@ -135,6 +135,7 @@ test("repository write boundary rejects before DB query when auth/admin/flag fai
         brand: "soleada",
         source: "phone_call",
         rawTextRestricted: "Restricted raw note",
+        rawTextRetentionUntil: null,
         language: "no",
         status: "draft",
         createdBy: "freddy.bremseth@gmail.com",
@@ -278,7 +279,10 @@ test("repository stores correlation ID and never writes provider raw output colu
   });
 
   assert(db.queries[0].sql.includes("correlation_id"));
+  assert(db.queries[0].sql.includes("raw_text_retention_until"));
   assert(db.queries[0].values?.includes("rf_mi7v4zk0_0123456789abcdef01234567"));
+  assert.equal(db.queries[0].values?.[2], "Restricted raw note");
+  assert.equal(db.queries[0].values?.[3], null);
   assert(!db.queries.some((query) => /provider_raw|raw_output/i.test(query.sql)));
 });
 
@@ -595,7 +599,9 @@ test("createBuyerProfile uses one atomic SQL statement for profile and criteria"
 
   assert.equal(result.id, intakeId);
   assert.equal(db.queries.length, 1);
-  assert(db.queries[0].sql.includes("with profile as"));
+  assert(db.queries[0].sql.includes("with existing_profile as"));
+  assert(db.queries[0].sql.includes("on conflict (intake_id, version) do nothing"));
+  assert(db.queries[0].sql.includes("where selected_profile.duplicate is false"));
   assert(db.queries[0].sql.includes("inserted_criteria as"));
 });
 
@@ -619,4 +625,30 @@ test("invalid criterion in profile prevents any DB query and cannot create parti
     ),
   );
   assert.equal(db.queries.length, 0);
+});
+
+test("recordContactCandidates is idempotent through a single upsert batch", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+  await repo.recordContactCandidates([
+    {
+      brand: "soleada",
+      intakeId,
+      contactId,
+      matchType: "exact_phone",
+      matchValueHash: hashLeadContactLookup({
+        brand: "soleada",
+        kind: "phone",
+        value: "+4790174714",
+        secret: hmacSecret,
+      }),
+      score: 0.98,
+      reasons: ["exact phone"],
+      status: "suggested",
+    },
+  ]);
+
+  assert.equal(db.queries.length, 1);
+  assert(db.queries[0].sql.includes("on conflict (intake_id, match_type, match_value_hash)"));
+  assert(db.queries[0].sql.includes("do update set"));
 });

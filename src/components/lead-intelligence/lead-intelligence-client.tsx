@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead, type PhoneLookupNormalization } from "@/services/lead-intelligence/contracts";
+import { criterionReviewFingerprint } from "@/services/lead-intelligence/review-shared";
 
 type Source = "phone_call" | "whatsapp" | "email" | "sms" | "meeting_note" | "other";
 
@@ -83,6 +84,7 @@ interface ReviewSaveResponse {
       decision: "connect_existing" | "create_new" | "continue_without_contact";
       createdContact: false;
       linkedContact: boolean;
+      duplicate?: boolean;
     };
   };
   sideEffects: {
@@ -107,6 +109,7 @@ interface CriterionReviewState {
 
 interface ReviewCriterionRow {
   id: string;
+  fingerprint: string;
   criterionType: CriterionType;
   index: number;
   key: string;
@@ -141,38 +144,70 @@ function flattenReviewCriteria(lead: ExtractedLead | null): ReviewCriterionRow[]
   if (!lead) return [];
 
   return [
-    ...lead.hardRequirements.map((item, index) => ({
-      id: `hard_requirement:${index}`,
-      criterionType: "hard_requirement" as const,
-      index,
-      key: item.key,
-      label: "Absolutt krav",
-      detail: item.sourceText,
-    })),
-    ...lead.preferences.map((item, index) => ({
-      id: `preference:${index}`,
-      criterionType: "preference" as const,
-      index,
-      key: item.key,
-      label: "Sterkt ønske",
-      detail: item.sourceText,
-    })),
-    ...lead.exclusions.map((item, index) => ({
-      id: `exclusion:${index}`,
-      criterionType: "exclusion" as const,
-      index,
-      key: item.key,
-      label: "Avvisningskriterium",
-      detail: item.sourceText,
-    })),
-    ...lead.missingInformation.map((item, index) => ({
-      id: `missing_information:${index}`,
-      criterionType: "missing_information" as const,
-      index,
-      key: item.key,
-      label: "Manglende informasjon",
-      detail: item.question,
-    })),
+    ...lead.hardRequirements.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "hard_requirement",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "hard_requirement" as const,
+        index,
+        key: item.key,
+        label: "Absolutt krav",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.preferences.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "preference",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "preference" as const,
+        index,
+        key: item.key,
+        label: "Sterkt ønske",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.exclusions.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "exclusion",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "exclusion" as const,
+        index,
+        key: item.key,
+        label: "Avvisningskriterium",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.missingInformation.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "missing_information",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "missing_information" as const,
+        index,
+        key: item.key,
+        label: "Manglende informasjon",
+        detail: item.question,
+      };
+    }),
   ];
 }
 
@@ -257,10 +292,18 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
   ).length;
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
 
+  const clearContactCandidates = () => {
+    setContactCandidates([]);
+    setContactCandidateError(null);
+    setContactDecision("continue_without_contact");
+    setSelectedContactId(null);
+  };
+
   const updateEdited = (updater: (current: ExtractedLead) => ExtractedLead) => {
     if (!edited) return;
     const next = updater(edited);
     setEditableJson(prettyJson(next));
+    clearContactCandidates();
   };
 
   const analyze = async () => {
@@ -298,10 +341,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
           ]),
         ),
       );
-      setContactCandidates([]);
-      setContactCandidateError(null);
-      setContactDecision("continue_without_contact");
-      setSelectedContactId(null);
+      clearContactCandidates();
       setSaveError(null);
       setSaveResult(null);
     } catch {
@@ -415,10 +455,9 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
             contactId: contactDecision === "connect_existing" ? selectedContactId : null,
             explicitApproval: true,
           },
-          contactCandidates,
           reviewedCriteria: reviewCriteria.map((criterion) => ({
             criterionType: criterion.criterionType,
-            index: criterion.index,
+            fingerprint: criterion.fingerprint,
             approvalStatus: criterionReviews[criterion.id]?.approvalStatus,
             customerConfirmed: criterionReviews[criterion.id]?.customerConfirmed || false,
           })),
@@ -512,7 +551,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                 <FieldLabel>Brand</FieldLabel>
                 <select
                   value={brand}
-                  onChange={(event) => setBrand(event.target.value)}
+                  onChange={(event) => {
+                    setBrand(event.target.value);
+                    clearContactCandidates();
+                    setSaveResult(null);
+                  }}
                   className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
                 >
                   {realEstateBrands.map((item) => (
@@ -527,7 +570,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
               <FieldLabel>Rå tekst</FieldLabel>
               <textarea
                 value={rawText}
-                onChange={(event) => setRawText(event.target.value)}
+                onChange={(event) => {
+                  setRawText(event.target.value);
+                  clearContactCandidates();
+                  setSaveResult(null);
+                }}
                 maxLength={LEAD_INTELLIGENCE_LIMITS.bodyText}
                 rows={18}
                 className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-primary-500"
@@ -965,7 +1012,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                   </div>
                   <textarea
                     value={editableJson}
-                    onChange={(event) => setEditableJson(event.target.value)}
+                    onChange={(event) => {
+                      setEditableJson(event.target.value);
+                      clearContactCandidates();
+                      setSaveResult(null);
+                    }}
                     rows={18}
                     className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
                   />

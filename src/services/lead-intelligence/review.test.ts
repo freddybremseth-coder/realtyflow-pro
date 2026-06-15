@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  leadIntelligenceCriterionFingerprint,
+  LeadIntelligenceReviewError,
   saveLeadIntelligenceReview,
   stableLeadIntelligenceIdempotencyKey,
   type LeadIntelligenceReviewRepository,
@@ -89,13 +91,14 @@ function extractedLead() {
 }
 
 function baseRequest(overrides: Record<string, unknown> = {}) {
+  const analysis = extractedLead();
   return {
     brand: "soleada",
     source: "phone_call",
     rawText: "Restricted reviewed intake text",
     language: "no",
     correlationId,
-    analysis: extractedLead(),
+    analysis,
     analysisMeta: {
       model: "mock-lead-model",
       promptVersion: "lead-intelligence-extraction-v1",
@@ -107,15 +110,54 @@ function baseRequest(overrides: Record<string, unknown> = {}) {
       contactId: null,
       explicitApproval: true,
     },
-    contactCandidates: [],
-    reviewedCriteria: [
-      { criterionType: "hard_requirement", index: 0, approvalStatus: "approved", customerConfirmed: true },
-      { criterionType: "preference", index: 0, approvalStatus: "approved", customerConfirmed: false },
-      { criterionType: "exclusion", index: 0, approvalStatus: "approved", customerConfirmed: false },
-      { criterionType: "missing_information", index: 0, approvalStatus: "rejected", customerConfirmed: false },
-    ],
+    reviewedCriteria: reviewedCriteriaFor(analysis),
     ...overrides,
   };
+}
+
+function reviewedCriteriaFor(analysis = extractedLead()) {
+  return [
+    {
+      criterionType: "hard_requirement",
+      fingerprint: leadIntelligenceCriterionFingerprint({
+        criterionType: "hard_requirement",
+        index: 0,
+        item: analysis.hardRequirements[0],
+      }),
+      approvalStatus: "approved",
+      customerConfirmed: true,
+    },
+    {
+      criterionType: "preference",
+      fingerprint: leadIntelligenceCriterionFingerprint({
+        criterionType: "preference",
+        index: 0,
+        item: analysis.preferences[0],
+      }),
+      approvalStatus: "approved",
+      customerConfirmed: false,
+    },
+    {
+      criterionType: "exclusion",
+      fingerprint: leadIntelligenceCriterionFingerprint({
+        criterionType: "exclusion",
+        index: 0,
+        item: analysis.exclusions[0],
+      }),
+      approvalStatus: "approved",
+      customerConfirmed: false,
+    },
+    {
+      criterionType: "missing_information",
+      fingerprint: leadIntelligenceCriterionFingerprint({
+        criterionType: "missing_information",
+        index: 0,
+        item: analysis.missingInformation[0],
+      }),
+      approvalStatus: "rejected",
+      customerConfirmed: false,
+    },
+  ];
 }
 
 class CaptureRepository implements LeadIntelligenceReviewRepository {
@@ -147,6 +189,18 @@ class CaptureRepository implements LeadIntelligenceReviewRepository {
 
 test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approved profile", async () => {
   const repo = new CaptureRepository();
+  const serverContactCandidates = [
+    {
+      contactId,
+      name: "Emmadale",
+      maskedPhone: "+47***14",
+      maskedEmail: null,
+      matchType: "exact_phone" as const,
+      confidence: 0.98,
+      reasons: ["Eksakt verifisert E.164-telefon"],
+      matchValueHash: "hmac-sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+  ];
   const result = await saveLeadIntelligenceReview({
     request: baseRequest({
       contactDecision: {
@@ -154,20 +208,9 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
         contactId,
         explicitApproval: true,
       },
-      contactCandidates: [
-        {
-          contactId,
-          name: "Emmadale",
-          maskedPhone: "+47***14",
-          maskedEmail: null,
-          matchType: "exact_phone",
-          confidence: 0.98,
-          reasons: ["Eksakt verifisert E.164-telefon"],
-          matchValueHash: "hmac-sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        },
-      ],
     }),
     repository: repo,
+    serverContactCandidates,
     approvedBy: "Freddy.Bremseth@gmail.com",
     now: approvedAt,
   });
@@ -183,6 +226,8 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
   assert.equal(repo.profiles[0].status, "approved");
   assert.equal(repo.profiles[0].criteria.length, 4);
   assert.equal(repo.profiles[0].criteria[3].active, false);
+  assert.equal((repo.intakes[0] as any).rawTextRestricted, null);
+  assert.equal((repo.intakes[0] as any).rawTextRetentionUntil, null);
 });
 
 test("review save requires every criterion to have item-level approval", async () => {
@@ -191,10 +236,20 @@ test("review save requires every criterion to have item-level approval", async (
       saveLeadIntelligenceReview({
         request: baseRequest({
           reviewedCriteria: [
-            { criterionType: "hard_requirement", index: 0, approvalStatus: "approved", customerConfirmed: true },
+            {
+              criterionType: "hard_requirement",
+              fingerprint: leadIntelligenceCriterionFingerprint({
+                criterionType: "hard_requirement",
+                index: 0,
+                item: extractedLead().hardRequirements[0],
+              }),
+              approvalStatus: "approved",
+              customerConfirmed: true,
+            },
           ],
         }),
         repository: new CaptureRepository(),
+        serverContactCandidates: [],
         approvedBy: "freddy.bremseth@gmail.com",
         now: approvedAt,
       }),
@@ -202,7 +257,7 @@ test("review save requires every criterion to have item-level approval", async (
   );
 });
 
-test("connect_existing must point to a reviewed contact candidate", async () => {
+test("connect_existing must point to a server-verified contact candidate", async () => {
   await assert.rejects(
     () =>
       saveLeadIntelligenceReview({
@@ -212,13 +267,15 @@ test("connect_existing must point to a reviewed contact candidate", async () => 
             contactId,
             explicitApproval: true,
           },
-          contactCandidates: [],
         }),
         repository: new CaptureRepository(),
+        serverContactCandidates: [],
         approvedBy: "freddy.bremseth@gmail.com",
         now: approvedAt,
       }),
-    /Selected contact must be one of the reviewed contact candidates/,
+    (error) =>
+      error instanceof LeadIntelligenceReviewError &&
+      error.code === "CONTACT_CANDIDATE_STALE",
   );
 });
 
@@ -233,6 +290,7 @@ test("create_new decision does not create or link a contact in this phase", asyn
       },
     }),
     repository: repo,
+    serverContactCandidates: [],
     approvedBy: "freddy.bremseth@gmail.com",
     now: approvedAt,
   });
@@ -240,6 +298,94 @@ test("create_new decision does not create or link a contact in this phase", asyn
   assert.equal(result.contactCandidates.createdContact, false);
   assert.equal(result.contactCandidates.linkedContact, false);
   assert.equal(repo.profiles[0].contactId, null);
+});
+
+test("review fingerprints invalidate stale or reordered item-level approvals", async () => {
+  const analysis = extractedLead();
+  const reordered = {
+    ...analysis,
+    hardRequirements: [
+      {
+        key: "has_lift",
+        operator: "eq",
+        value: true,
+        sourceText: "Må være heis om det er opp i etasjene.",
+        confidence: 0.9,
+        appliesToPropertyTypes: ["apartment", "penthouse"],
+      },
+      analysis.hardRequirements[0],
+    ],
+  };
+
+  await assert.rejects(
+    () =>
+      saveLeadIntelligenceReview({
+        request: baseRequest({
+          analysis: reordered,
+          reviewedCriteria: reviewedCriteriaFor(analysis),
+        }),
+        repository: new CaptureRepository(),
+        serverContactCandidates: [],
+        approvedBy: "freddy.bremseth@gmail.com",
+        now: approvedAt,
+      }),
+    /All criteria require item-level review/,
+  );
+});
+
+test("idempotent duplicate save returns existing records without duplicate criteria", async () => {
+  class DuplicateRepository extends CaptureRepository {
+    override async createIntake(input: any) {
+      this.intakes.push(input);
+      return { id: intakeId, duplicate: true };
+    }
+
+    override async recordAnalysisRun(input: RecordLeadAnalysisRunInput) {
+      this.analysisRuns.push(input);
+      return { id: analysisRunId, duplicate: true };
+    }
+
+    override async createBuyerProfile(input: CreateBuyerProfileInput) {
+      this.profiles.push(input);
+      return { id: profileId, criterionCount: input.criteria.length, duplicate: true };
+    }
+  }
+
+  const result = await saveLeadIntelligenceReview({
+    request: baseRequest(),
+    repository: new DuplicateRepository(),
+    serverContactCandidates: [],
+    approvedBy: "freddy.bremseth@gmail.com",
+    now: approvedAt,
+  });
+
+  assert.equal(result.intake.duplicate, true);
+  assert.equal(result.analysisRun.duplicate, true);
+  assert.equal(result.buyerProfile.duplicate, true);
+  assert.equal(result.contactCandidates.duplicate, true);
+});
+
+test("idempotent review can resume after a partial intake-only write", async () => {
+  class PartialIntakeRepository extends CaptureRepository {
+    override async createIntake(input: any) {
+      this.intakes.push(input);
+      return { id: intakeId, duplicate: true };
+    }
+  }
+
+  const repo = new PartialIntakeRepository();
+  const result = await saveLeadIntelligenceReview({
+    request: baseRequest(),
+    repository: repo,
+    serverContactCandidates: [],
+    approvedBy: "freddy.bremseth@gmail.com",
+    now: approvedAt,
+  });
+
+  assert.equal(result.intake.duplicate, true);
+  assert.equal(result.analysisRun.duplicate, false);
+  assert.equal(result.buyerProfile.duplicate, false);
+  assert.equal(repo.profiles.length, 1);
 });
 
 test("stable idempotency keys are deterministic and exclude transient ordering", () => {
