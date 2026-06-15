@@ -9,8 +9,13 @@ import {
   MessageSquareText,
   RefreshCw,
   RotateCcw,
+  Save,
+  Search,
   ShieldCheck,
   Sparkles,
+  UserCheck,
+  Users,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead, type PhoneLookupNormalization } from "@/services/lead-intelligence/contracts";
+import { criterionReviewFingerprint } from "@/services/lead-intelligence/review-shared";
 
 type Source = "phone_call" | "whatsapp" | "email" | "sms" | "meeting_note" | "other";
 
@@ -47,8 +53,73 @@ interface SafeErrorResponse {
   };
 }
 
+interface LeadContactCandidatePreview {
+  contactId: string;
+  name: string | null;
+  maskedPhone: string | null;
+  maskedEmail: string | null;
+  matchType: "exact_phone" | "exact_email" | "name_similarity" | "manual" | "other";
+  confidence: number;
+  reasons: string[];
+  matchValueHash: string;
+}
+
+interface ContactCandidatesResponse {
+  ok: true;
+  correlationId: string;
+  candidates: LeadContactCandidatePreview[];
+  requiresManualSelection: boolean;
+}
+
+interface ReviewSaveResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    status: {
+      newlySaved: boolean;
+      duplicate: boolean;
+      conflict: boolean;
+    };
+    intake: { id: string; duplicate: boolean };
+    analysisRun: { id: string; duplicate: boolean };
+    buyerProfile: { id: string; criterionCount: number; duplicate: boolean };
+    contactCandidates: {
+      recorded: number;
+      selectedContactId: string | null;
+      decision: "connect_existing" | "create_new" | "continue_without_contact";
+      createdContact: false;
+      linkedContact: boolean;
+      duplicate?: boolean;
+    };
+  };
+  sideEffects: {
+    contactsCreated: false;
+    contactUpdated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+  };
+}
+
 interface Props {
   featureEnabled: boolean;
+}
+
+type CriterionType = "hard_requirement" | "preference" | "exclusion" | "missing_information";
+type CriterionApprovalStatus = "pending" | "approved" | "rejected";
+
+interface CriterionReviewState {
+  approvalStatus: CriterionApprovalStatus;
+  customerConfirmed: boolean;
+}
+
+interface ReviewCriterionRow {
+  id: string;
+  fingerprint: string;
+  criterionType: CriterionType;
+  index: number;
+  key: string;
+  label: string;
+  detail: string;
 }
 
 const sourceOptions: Array<{ value: Source; label: string }> = [
@@ -72,6 +143,77 @@ function parseJsonEditor(value: string) {
   } catch (error) {
     return { parsed: null, error: error instanceof Error ? error.message : "Ugyldig JSON" };
   }
+}
+
+function flattenReviewCriteria(lead: ExtractedLead | null): ReviewCriterionRow[] {
+  if (!lead) return [];
+
+  return [
+    ...lead.hardRequirements.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "hard_requirement",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "hard_requirement" as const,
+        index,
+        key: item.key,
+        label: "Absolutt krav",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.preferences.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "preference",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "preference" as const,
+        index,
+        key: item.key,
+        label: "Sterkt ønske",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.exclusions.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "exclusion",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "exclusion" as const,
+        index,
+        key: item.key,
+        label: "Avvisningskriterium",
+        detail: item.sourceText,
+      };
+    }),
+    ...lead.missingInformation.map((item, index) => {
+      const fingerprint = criterionReviewFingerprint({
+        criterionType: "missing_information",
+        index,
+        item,
+      });
+      return {
+        id: fingerprint,
+        fingerprint,
+        criterionType: "missing_information" as const,
+        index,
+        key: item.key,
+        label: "Manglende informasjon",
+        detail: item.question,
+      };
+    }),
+  ];
 }
 
 function badgeForPhone(status: PhoneLookupNormalization["status"]) {
@@ -135,16 +277,38 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
   const [error, setError] = useState<SafeErrorResponse["error"] | null>(null);
   const [editableJson, setEditableJson] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [criterionReviews, setCriterionReviews] = useState<Record<string, CriterionReviewState>>({});
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [contactCandidates, setContactCandidates] = useState<LeadContactCandidatePreview[]>([]);
+  const [contactCandidateError, setContactCandidateError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [contactDecision, setContactDecision] = useState<"connect_existing" | "create_new" | "continue_without_contact">("continue_without_contact");
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
   const phoneBadge = response ? badgeForPhone(response.meta.phoneNormalization.status) : null;
   const remaining = LEAD_INTELLIGENCE_LIMITS.bodyText - rawText.length;
+  const reviewCriteria = useMemo(() => flattenReviewCriteria(edited), [edited]);
+  const reviewedCount = reviewCriteria.filter(
+    (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
+  ).length;
+  const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
+
+  const clearContactCandidates = () => {
+    setContactCandidates([]);
+    setContactCandidateError(null);
+    setContactDecision("continue_without_contact");
+    setSelectedContactId(null);
+  };
 
   const updateEdited = (updater: (current: ExtractedLead) => ExtractedLead) => {
     if (!edited) return;
     const next = updater(edited);
     setEditableJson(prettyJson(next));
+    clearContactCandidates();
   };
 
   const analyze = async () => {
@@ -174,6 +338,17 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
       }
       setResponse(body);
       setEditableJson(prettyJson(body.result));
+      setCriterionReviews(
+        Object.fromEntries(
+          flattenReviewCriteria(body.result).map((criterion) => [
+            criterion.id,
+            { approvalStatus: "pending", customerConfirmed: false },
+          ]),
+        ),
+      );
+      clearContactCandidates();
+      setSaveError(null);
+      setSaveResult(null);
     } catch {
       setError({
         correlationId: "client",
@@ -190,6 +365,13 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
     setError(null);
     setEditableJson("");
     setCopyState("idle");
+    setCriterionReviews({});
+    setContactCandidates([]);
+    setContactCandidateError(null);
+    setContactDecision("continue_without_contact");
+    setSelectedContactId(null);
+    setSaveError(null);
+    setSaveResult(null);
   };
 
   const copyJson = async () => {
@@ -198,6 +380,112 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
       setCopyState("copied");
     } catch {
       setCopyState("failed");
+    }
+  };
+
+  const updateCriterionReview = (id: string, patch: Partial<CriterionReviewState>) => {
+    setCriterionReviews((current) => ({
+      ...current,
+      [id]: {
+        approvalStatus: current[id]?.approvalStatus || "pending",
+        customerConfirmed: current[id]?.customerConfirmed || false,
+        ...patch,
+      },
+    }));
+  };
+
+  const loadContactCandidates = async () => {
+    if (!edited) return;
+    setCandidateLoading(true);
+    setContactCandidateError(null);
+    try {
+      const res = await fetch("/api/lead-intelligence/contact-candidates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          brand,
+          contact: edited.contact,
+        }),
+      });
+      const body = (await res.json()) as ContactCandidatesResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setContactCandidateError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente kontaktkandidater.",
+        });
+        return;
+      }
+      setContactCandidates(body.candidates);
+      setContactDecision("continue_without_contact");
+      setSelectedContactId(null);
+    } catch {
+      setContactCandidateError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte kandidat-API-et.",
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const saveReview = async () => {
+    if (!edited || !response || !allCriteriaReviewed || jsonEditor.error) return;
+    setSaveLoading(true);
+    setSaveError(null);
+    setSaveResult(null);
+
+    try {
+      const res = await fetch("/api/lead-intelligence/review", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": response.correlationId,
+        },
+        body: JSON.stringify({
+          brand,
+          source,
+          rawText,
+          language: language.trim() || null,
+          analysis: edited,
+          analysisMeta: {
+            model: response.meta.model,
+            promptVersion: response.meta.promptVersion,
+            durationMs: response.meta.durationMs,
+            repaired: response.meta.repaired,
+          },
+          contactDecision: {
+            action: contactDecision,
+            contactId: contactDecision === "connect_existing" ? selectedContactId : null,
+            explicitApproval: true,
+          },
+          reviewedCriteria: reviewCriteria.map((criterion) => ({
+            criterionType: criterion.criterionType,
+            fingerprint: criterion.fingerprint,
+            approvalStatus: criterionReviews[criterion.id]?.approvalStatus,
+            customerConfirmed: criterionReviews[criterion.id]?.customerConfirmed || false,
+          })),
+        }),
+      });
+      const body = (await res.json()) as ReviewSaveResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setSaveError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke lagre review.",
+        });
+        return;
+      }
+      setSaveResult(body);
+    } catch {
+      setSaveError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte review-API-et.",
+      });
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -268,7 +556,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                 <FieldLabel>Brand</FieldLabel>
                 <select
                   value={brand}
-                  onChange={(event) => setBrand(event.target.value)}
+                  onChange={(event) => {
+                    setBrand(event.target.value);
+                    clearContactCandidates();
+                    setSaveResult(null);
+                  }}
                   className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
                 >
                   {realEstateBrands.map((item) => (
@@ -283,7 +575,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
               <FieldLabel>Rå tekst</FieldLabel>
               <textarea
                 value={rawText}
-                onChange={(event) => setRawText(event.target.value)}
+                onChange={(event) => {
+                  setRawText(event.target.value);
+                  clearContactCandidates();
+                  setSaveResult(null);
+                }}
                 maxLength={LEAD_INTELLIGENCE_LIMITS.bodyText}
                 rows={18}
                 className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-primary-500"
@@ -466,6 +762,258 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                   <JsonSection title="Manglende informasjon" value={edited.missingInformation} />
                 </div>
 
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                  <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-200">Godkjenn kriterier</h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Hvert krav, ønske og avvisningskriterium må godkjennes eller avvises før buyer profile lagres.
+                        </p>
+                      </div>
+                      <Badge variant={allCriteriaReviewed ? "success" : "secondary"}>
+                        {reviewedCount}/{reviewCriteria.length} vurdert
+                      </Badge>
+                    </div>
+
+                    <div className="max-h-[32rem] space-y-3 overflow-auto pr-1">
+                      {reviewCriteria.map((criterion) => {
+                        const state = criterionReviews[criterion.id] || {
+                          approvalStatus: "pending",
+                          customerConfirmed: false,
+                        };
+                        return (
+                          <div
+                            key={criterion.id}
+                            className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-medium text-slate-200">{criterion.label}</p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {criterion.key} · {criterion.criterionType}
+                                </p>
+                              </div>
+                              <Badge
+                                variant={
+                                  state.approvalStatus === "approved"
+                                    ? "success"
+                                    : state.approvalStatus === "rejected"
+                                      ? "destructive"
+                                      : "secondary"
+                                }
+                              >
+                                {state.approvalStatus === "approved"
+                                  ? "Godkjent"
+                                  : state.approvalStatus === "rejected"
+                                    ? "Avvist"
+                                    : "Venter"}
+                              </Badge>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-300">{criterion.detail}</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant={state.approvalStatus === "approved" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => updateCriterionReview(criterion.id, { approvalStatus: "approved" })}
+                              >
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                                Godkjenn
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={state.approvalStatus === "rejected" ? "destructive" : "outline"}
+                                size="sm"
+                                onClick={() => updateCriterionReview(criterion.id, { approvalStatus: "rejected" })}
+                              >
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Avvis
+                              </Button>
+                              <label className="flex items-center gap-2 text-xs text-slate-400">
+                                <input
+                                  type="checkbox"
+                                  checked={state.customerConfirmed}
+                                  onChange={(event) =>
+                                    updateCriterionReview(criterion.id, { customerConfirmed: event.target.checked })
+                                  }
+                                  className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+                                />
+                                Kunden har bekreftet
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 rounded-lg border border-slate-700/60 bg-slate-950 p-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-200">Kontaktkandidater</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Kandidater vises maskert. Eksisterende kontakt kan velges eksplisitt, men ingen kontakt opprettes automatisk.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={loadContactCandidates}
+                      disabled={candidateLoading || !edited}
+                    >
+                      {candidateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                      Vis kontaktkandidater
+                    </Button>
+
+                    {contactCandidateError && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                        <p className="font-semibold">{contactCandidateError.code}</p>
+                        <p className="mt-1">{contactCandidateError.message}</p>
+                        <p className="mt-2 text-xs text-amber-100/80">
+                          Correlation ID: {contactCandidateError.correlationId}
+                        </p>
+                      </div>
+                    )}
+
+                    {contactCandidates.length === 0 && !contactCandidateError && (
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-400">
+                        Ingen kontaktkandidater hentet ennå.
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {contactCandidates.map((candidate) => (
+                        <label
+                          key={`${candidate.matchType}:${candidate.matchValueHash}:${candidate.contactId}`}
+                          className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
+                        >
+                          <input
+                            type="radio"
+                            name="lead-contact-candidate"
+                            checked={contactDecision === "connect_existing" && selectedContactId === candidate.contactId}
+                            onChange={() => {
+                              setContactDecision("connect_existing");
+                              setSelectedContactId(candidate.contactId);
+                            }}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-slate-200">
+                              {candidate.name || "Uten navn"}
+                            </span>
+                            <span className="mt-1 block text-xs text-slate-500">
+                              {candidate.maskedPhone || "ingen telefon"} · {candidate.maskedEmail || "ingen e-post"}
+                            </span>
+                            <span className="mt-1 block text-xs text-slate-400">
+                              {candidate.matchType} · {Math.round(candidate.confidence * 100)}%
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2 border-t border-slate-800 pt-3">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="radio"
+                          name="lead-contact-decision"
+                          checked={contactDecision === "continue_without_contact"}
+                          onChange={() => {
+                            setContactDecision("continue_without_contact");
+                            setSelectedContactId(null);
+                          }}
+                        />
+                        Fortsett uten koblet kontakt
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="radio"
+                          name="lead-contact-decision"
+                          checked={contactDecision === "create_new"}
+                          onChange={() => {
+                            setContactDecision("create_new");
+                            setSelectedContactId(null);
+                          }}
+                        />
+                        Marker at ny kontakt må opprettes senere
+                      </label>
+                    </div>
+
+                    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-100">
+                      <div className="flex items-start gap-2">
+                        <UserCheck className="mt-0.5 h-4 w-4 text-blue-300" />
+                        <p>
+                          Denne fasen lagrer bare intake, analyse, kandidatstatus og buyer profile. Den sender ikke e-post,
+                          starter ikke matching og oppdaterer ikke eksisterende kontaktdata.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-200">Lagre review</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Lagrer godkjent intake og buyer profile bak server-side feature flag. Ingen kommunikasjon sendes.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={saveReview}
+                      disabled={
+                        saveLoading ||
+                        Boolean(jsonEditor.error) ||
+                        !allCriteriaReviewed ||
+                        (contactDecision === "connect_existing" && !selectedContactId)
+                      }
+                    >
+                      {saveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      Lagre intake og kjøperprofil
+                    </Button>
+                  </div>
+
+                  {!allCriteriaReviewed && (
+                    <p className="mt-3 text-sm text-amber-300">
+                      Alle kriterier må godkjennes eller avvises før lagring.
+                    </p>
+                  )}
+
+                  {saveError && (
+                    <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                      <p className="font-semibold">{saveError.code}</p>
+                      <p className="mt-1">{saveError.message}</p>
+                      <p className="mt-2 text-xs text-red-100/80">Correlation ID: {saveError.correlationId}</p>
+                    </div>
+                  )}
+
+                  {saveResult && (
+                    <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                      <div className="flex items-start gap-2">
+                        <Users className="mt-0.5 h-4 w-4 text-emerald-300" />
+                        <div>
+                          <p className="font-semibold">
+                            {saveResult.result.status.duplicate
+                              ? "Identisk review var allerede lagret."
+                              : "Review lagret uten eksterne sideeffekter."}
+                          </p>
+                          <p className="mt-1 text-emerald-100/80">
+                            Intake {saveResult.result.intake.id} · Buyer profile {saveResult.result.buyerProfile.id} ·
+                            kriterier {saveResult.result.buyerProfile.criterionCount}
+                          </p>
+                          <p className="mt-1 text-xs text-emerald-100/70">
+                            Ny lagring: {saveResult.result.status.newlySaved ? "ja" : "nei"} ·
+                            Duplicate: {saveResult.result.status.duplicate ? "ja" : "nei"} ·
+                            Conflict: {saveResult.result.status.conflict ? "ja" : "nei"} ·
+                            E-post sendt: nei · Property matching: nei · Kontakt opprettet: nei
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-sm font-semibold text-slate-200">Rediger hele AI-forslaget lokalt</h2>
@@ -476,7 +1024,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                   </div>
                   <textarea
                     value={editableJson}
-                    onChange={(event) => setEditableJson(event.target.value)}
+                    onChange={(event) => {
+                      setEditableJson(event.target.value);
+                      clearContactCandidates();
+                      setSaveResult(null);
+                    }}
                     rows={18}
                     className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
                   />
