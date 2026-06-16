@@ -45,6 +45,11 @@ Expected SHA-256 on `main` at the time this plan was written:
 2f25ad8bd79b127bb0f7c0c32c8fd9783fc2893fbba18d6fb3ecde1b0c130794
 ```
 
+At activation time, recompute the checksum from the file at the exact source commit recorded in the activation report. Do not reuse this checksum blindly if `main` has moved. The report must include both:
+
+- source commit
+- SHA-256 from that source commit's migration file
+
 The migration creates:
 
 - `public.lead_intake_messages`
@@ -302,10 +307,20 @@ Expected: the function is `SECURITY INVOKER` (`prosecdef = false`) and the trigg
 
 Production must not use a broad/full-privilege database URL for Lead Intelligence persistence. Create a dedicated runtime role after the schema exists.
 
-Important RLS detail: PR 3A enables RLS on the new tables and creates no broad policies. Plain table grants are therefore not enough for a normal role to read/write the new tables. Use one of these reviewed models:
+Important RLS detail: PR 3A enables RLS on the new tables and creates no broad policies. Plain table grants are therefore not enough for a normal role to read/write the new tables.
 
-1. Preferred for this controlled server-only phase: create a dedicated `BYPASSRLS` runtime role with no DDL privileges and only the table/column grants listed below.
-2. Alternative: create separate role-specific RLS policies in a reviewed migration, then use a normal runtime role.
+Preferred long-term model:
+
+- create a normal runtime role without `BYPASSRLS`
+- add explicit role-specific RLS policies in a separate reviewed migration
+- keep grants limited to the exact runtime operations below
+- keep browser access mediated by server routes
+
+Temporary controlled model:
+
+- a dedicated `BYPASSRLS` runtime role may be used only for a short activation/smoke-test phase
+- the role must have no DDL privileges, no role memberships, a low connection limit, and only the table/column grants listed below
+- activation must include a full effective-privilege audit before any feature flag is enabled
 
 Do not enable the feature if the runtime role cannot be made to access the new tables through one of those two explicit models. Do not fall back to a broad `service_role` or administrator database URL just to make the smoke test pass.
 
@@ -323,7 +338,12 @@ REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL
 
 Privileges should be limited to the operations PR 3B performs:
 
-- `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the five new Lead Intelligence tables.
+- `SELECT`, `INSERT` on:
+  - `public.lead_intake_messages`
+  - `public.lead_analysis_runs`
+  - `public.buyer_profiles`
+  - `public.buyer_profile_criteria`
+- `SELECT`, `INSERT`, `UPDATE` on `public.lead_contact_candidates`
 - column-limited `SELECT` on `public.contacts` for:
   - `id`
   - `brand`
@@ -332,26 +352,34 @@ Privileges should be limited to the operations PR 3B performs:
   - `email`
   - `created_at`
   - `updated_at`
+- no `DELETE`
+- no general `UPDATE` outside `public.lead_contact_candidates`
 - no DDL privileges
 - no access to OAuth tokens, secrets, email provider credentials, Storage metadata beyond unrelated inherited catalog visibility, or unrelated application tables
 
-SQL template for the preferred dedicated runtime role, with password omitted deliberately:
+If future phases need redaction updates, profile edits, contact linking updates, or cleanup deletes, grant those in separate reviewed changes with matching tests.
+
+SQL template for the temporary dedicated `BYPASSRLS` runtime role, with password omitted deliberately:
 
 ```sql
 -- Run only after migration verification and with a generated password supplied out of band.
 create role realtyflow_lead_intelligence_runtime
   login
   bypassrls
+  connection limit 5
   password '<GENERATED_PASSWORD>';
 
 grant usage on schema public to realtyflow_lead_intelligence_runtime;
 
-grant select, insert, update, delete
+grant select, insert
 on public.lead_intake_messages,
    public.lead_analysis_runs,
    public.buyer_profiles,
    public.buyer_profile_criteria,
-   public.lead_contact_candidates
+to realtyflow_lead_intelligence_runtime;
+
+grant select, insert, update
+on public.lead_contact_candidates
 to realtyflow_lead_intelligence_runtime;
 
 grant select (id, brand, name, phone, email, created_at, updated_at)
@@ -371,11 +399,14 @@ Runtime role verification:
 ```sql
 select
   (select rolbypassrls from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') as bypassrls_enabled,
-  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'select,insert,update,delete') as intake_rw,
-  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_analysis_runs', 'select,insert,update,delete') as analysis_rw,
-  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'select,insert,update,delete') as profiles_rw,
-  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profile_criteria', 'select,insert,update,delete') as criteria_rw,
-  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'select,insert,update,delete') as candidates_rw,
+  (select rolconnlimit from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') as connection_limit,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'select,insert') as intake_select_insert,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_analysis_runs', 'select,insert') as analysis_select_insert,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'select,insert') as profiles_select_insert,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profile_criteria', 'select,insert') as criteria_select_insert,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'select,insert,update') as candidates_select_insert_update,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'delete') as intake_delete,
+  has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'update') as profiles_update,
   has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'id', 'select') as contacts_id_select,
   has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'brand', 'select') as contacts_brand_select,
   has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'name', 'select') as contacts_name_select,
@@ -385,6 +416,23 @@ select
   has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'updated_at', 'select') as contacts_updated_at_select;
 ```
 
+Expected: `bypassrls_enabled` is `true` only if the temporary model is approved, `connection_limit` is low, the required grants are true, and the negative probes such as `intake_delete` and `profiles_update` are false.
+
+For the preferred long-term normal-role model, create role-specific policies in a separate reviewed migration and verify `bypassrls_enabled = false`.
+
+Effective-privilege audit required before any temporary `BYPASSRLS` role is used:
+
+- `PUBLIC` grants on schemas, tables, functions, and sequences
+- direct role memberships and inherited memberships
+- schema `USAGE` and `CREATE`
+- table privileges on every exposed schema
+- function `EXECUTE` privileges, especially functions with side effects or `SECURITY DEFINER`
+- sequence privileges
+- default privileges for future tables/functions/sequences
+- access to sensitive tables, including OAuth/token tables, email logs, customer communication logs, Supabase Storage metadata, analytics data, and unrelated CRM/property data
+
+Stop activation if the role has access to sensitive application tables or side-effecting functions beyond the documented Lead Intelligence runtime need.
+
 Also test that the role cannot:
 
 - create a table
@@ -392,6 +440,23 @@ Also test that the role cannot:
 - select OAuth/token tables
 - select unrelated application data
 - access full customer communication logs outside the specific contact columns above
+
+## Runtime Role Lifecycle
+
+Create and operate the runtime role as a narrowly scoped credential:
+
+- no unnecessary role memberships
+- no ownership of schemas, tables, functions, sequences, or views
+- low connection limit, initially `5` or lower unless load testing proves another value is needed
+- rotate the credential after initial activation and then on a defined schedule
+- keep a disable plan ready:
+  - set `REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false`
+  - remove the Vercel environment secret
+  - revoke login or rotate the password
+  - revoke grants only after confirming no smoke-test or audit process is still running
+- scope `REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL` to the exact Vercel project and environment that needs it
+- do not expose the runtime database URL automatically to all preview deployments
+- never store the runtime URL as a repository-level GitHub secret
 
 ## HMAC Secret
 
@@ -414,6 +479,22 @@ Do not print the generated value in logs or activation reports. The same secret 
 Production stays disabled until preview/staging proves the flow.
 
 ### Preview/Staging
+
+Preferred model:
+
+- use a separate staging database with the same reviewed migration applied
+- use staging-only runtime role, HMAC secret, AI-provider credential, and feature flags
+- use synthetic test data only
+
+If preview must use the production database for this activation:
+
+- restrict access to Freddy/admin testers only
+- keep the test window short and record start/end times
+- use synthetic test data only
+- record all test IDs in the activation report
+- turn `REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false` again immediately after the test window
+- document cleanup/retention for test rows before enabling production use
+- do not connect to real contacts until the separate `connect_existing` gate below is approved
 
 Set these server-side variables in the preview/staging environment only:
 
@@ -491,12 +572,8 @@ Review/save steps:
 1. Analyze the fixture.
 2. Edit locally only if needed.
 3. Approve or reject every criterion at item level.
-4. Run contact candidate lookup.
-5. Choose one explicit contact decision:
-   - connect existing only if a server-returned candidate is clearly correct
-   - create new, which records intent only and does not create a contact in PR 3B
-   - continue without contact
-6. Save review.
+4. Choose `continue_without_contact` for the first smoke-test.
+5. Save review.
 
 Expected persistence:
 
@@ -506,8 +583,28 @@ Expected persistence:
 - `buyer_profile_criteria` rows for approved active criteria; rejected criteria inactive
 - zero writes to `public.leads`
 - zero new `public.contacts` rows
+- zero profile `contact_id` for the first smoke-test
 - zero customer-message sends
 - zero property match/shortlist/presentation rows
+
+After the first save succeeds, run contact candidate lookup as a separate read-only smoke-test:
+
+1. Analyze or reuse the same Emmadale contact fields.
+2. Call the contact candidate route.
+3. Confirm masked candidates only.
+4. Confirm no full phone/email leaks to logs or responses beyond the reviewed UI field.
+5. Confirm no `public.contacts` row is inserted or updated.
+6. Confirm candidate HMAC hashes are not exposed to the browser as authoritative save input.
+
+`connect_existing` is a separate gate and must use an explicit test contact:
+
+1. Create or identify a test contact approved for this activation.
+2. Confirm the test contact belongs to the same brand.
+3. Confirm the candidate lookup returns that contact from server-side matching.
+4. Save review with `connect_existing`.
+5. Verify `buyer_profiles.contact_id` references only the explicit test contact.
+6. Verify no existing contact fields were overwritten.
+7. Verify cross-brand or forged contact IDs still fail with safe conflict errors.
 
 ## Duplicate And Conflict Smoke Tests
 
@@ -561,7 +658,7 @@ Timestamp and timezone:
 Supabase project ref:
 Migration file:
 Source commit:
-SHA-256:
+SHA-256 calculated from that source commit:
 Operator:
 Database role used for migration:
 Execution path:
@@ -573,11 +670,22 @@ RLS/policy verification:
 Trigger/function verification:
 Runtime role created:
 Runtime role privilege verification:
+Runtime role lifecycle settings:
+Temporary BYPASSRLS used: yes/no
+Effective-privilege audit result:
+Sensitive table access result:
 HMAC secret configured:
+Vercel project/environment secret scope:
+Preview/staging database model:
+Preview/staging test window:
+Preview/staging test data/cleanup or retention:
 Feature flags configured:
 Migration history result:
 Preview/staging smoke test:
 Emmadale test IDs:
+continue_without_contact smoke result:
+Read-only contact candidate smoke result:
+connect_existing test contact gate result:
 Duplicate test result:
 Conflict test result:
 No email/matching confirmation:
