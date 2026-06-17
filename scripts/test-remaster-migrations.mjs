@@ -1242,19 +1242,45 @@ async function createLeadIntelligenceRuntimeTestObjects(client) {
   `);
 }
 
+async function dropLeadIntelligenceRuntimeTestRole(client) {
+  await client.query(`
+    do $$
+    begin
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_parent') and
+         exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
+        revoke lead_intelligence_runtime_parent from realtyflow_lead_intelligence_runtime;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
+        drop owned by realtyflow_lead_intelligence_runtime;
+      end if;
+    end $$;
+
+    drop role if exists realtyflow_lead_intelligence_runtime;
+    drop role if exists lead_intelligence_runtime_parent;
+  `);
+}
+
 async function queryAsRuntime(client, brand, sql, values = []) {
   await client.query("reset role");
   try {
     await client.query("set role realtyflow_lead_intelligence_runtime");
+    await client.query("begin");
     if (brand === null) {
-      await client.query("select set_config('app.lead_intelligence_brand', '', false)");
+      await client.query("select set_config('app.lead_intelligence_brand', '', true)");
     } else {
-      await client.query("select set_config('app.lead_intelligence_brand', $1, false)", [brand]);
+      await client.query("select set_config('app.lead_intelligence_brand', $1, true)", [brand]);
     }
-    return await client.query(sql, values);
+    const result = await client.query(sql, values);
+    await client.query("commit");
+    return result;
   } finally {
+    try {
+      await client.query("rollback");
+    } catch {
+      // The transaction may already have committed successfully.
+    }
     await client.query("reset role");
-    await client.query("select set_config('app.lead_intelligence_brand', '', false)");
   }
 }
 
@@ -1287,7 +1313,6 @@ async function assertLeadIntelligenceRuntimePolicySet(client) {
     ["lead_contact_candidates", "lead_contact_candidates_runtime_select", "SELECT"],
     ["lead_contact_candidates", "lead_contact_candidates_runtime_insert", "INSERT"],
     ["lead_contact_candidates", "lead_contact_candidates_runtime_update", "UPDATE"],
-    ["contacts", "contacts_lead_intelligence_runtime_select", "SELECT"],
   ];
 
   for (const [tableName, policyName, command] of expectedPolicies) {
@@ -1335,6 +1360,7 @@ async function assertNoPublicRuntimeTableGrants(client) {
     "buyer_profiles",
     "buyer_profile_criteria",
     "lead_contact_candidates",
+    "lead_intelligence_contact_lookup",
   ]) {
     const { rows } = await client.query(
       `
@@ -1988,10 +2014,36 @@ async function testLeadIntelligenceRuntimeRls() {
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
 
+    const publicCreateBefore = await client.query(`
+      select exists (
+        select 1
+        from pg_namespace n
+        cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) acl
+        where n.nspname = 'public'
+          and acl.grantee = 0
+          and acl.privilege_type = 'CREATE'
+      ) as public_create
+    `);
+
     process.stdout.write("  Scenario: applies after PR 3A foundation and is idempotent\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+
+    const publicCreateAfter = await client.query(`
+      select exists (
+        select 1
+        from pg_namespace n
+        cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) acl
+        where n.nspname = 'public'
+          and acl.grantee = 0
+          and acl.privilege_type = 'CREATE'
+      ) as public_create
+    `);
+    assert(
+      publicCreateAfter.rows[0].public_create === publicCreateBefore.rows[0].public_create,
+      "Migration changed global PUBLIC CREATE on schema public.",
+    );
 
     process.stdout.write("  Scenario: runtime role is normal and not privileged\n");
     const runtimeRole = await client.query(`
@@ -2035,8 +2087,10 @@ async function testLeadIntelligenceRuntimeRls() {
         has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'select,insert') as profiles_select_insert,
         has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'update') as profiles_update,
         has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profile_criteria', 'select,insert') as criteria_select_insert,
-        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'select,insert,update') as candidates_select_insert_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'select,insert') as candidates_select_insert,
         has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'delete') as candidates_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as contacts_select,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intelligence_contact_lookup', 'select') as contact_lookup_select,
         has_function_privilege('realtyflow_lead_intelligence_runtime', 'public.set_lead_intelligence_updated_at()', 'execute') as trigger_execute
     `);
     assert(grants.rows[0].schema_usage === true, "Runtime role lacks schema USAGE.");
@@ -2048,28 +2102,27 @@ async function testLeadIntelligenceRuntimeRls() {
     assert(grants.rows[0].profiles_select_insert === true, "Runtime role lacks profile SELECT/INSERT.");
     assert(grants.rows[0].profiles_update === false, "Runtime role can UPDATE profiles.");
     assert(grants.rows[0].criteria_select_insert === true, "Runtime role lacks criteria SELECT/INSERT.");
-    assert(grants.rows[0].candidates_select_insert_update === true, "Runtime role lacks candidate SELECT/INSERT/UPDATE.");
+    assert(grants.rows[0].candidates_select_insert === true, "Runtime role lacks candidate SELECT/INSERT.");
     assert(grants.rows[0].candidates_delete === false, "Runtime role can DELETE candidates.");
+    assert(grants.rows[0].contacts_select === false, "Runtime role can SELECT public.contacts directly.");
+    assert(grants.rows[0].contact_lookup_select === true, "Runtime role lacks contact lookup view SELECT.");
     assert(grants.rows[0].trigger_execute === false, "Runtime role can execute trigger function.");
 
-    const contactsColumnGrants = await client.query(`
+    const candidateUpdateGrants = await client.query(`
       select
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'id', 'select') as id_select,
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'brand', 'select') as brand_select,
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'name', 'select') as name_select,
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'phone', 'select') as phone_select,
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'email', 'select') as email_select,
-        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'secret_note', 'select') as secret_note_select
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'score', 'update') as score_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'reasons', 'update') as reasons_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'status', 'update') as status_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'brand', 'update') as brand_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'intake_id', 'update') as intake_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'contact_id', 'update') as contact_update
     `);
-    assert(contactsColumnGrants.rows[0].id_select === true, "Runtime role lacks contact id SELECT.");
-    assert(contactsColumnGrants.rows[0].brand_select === true, "Runtime role lacks contact brand SELECT.");
-    assert(contactsColumnGrants.rows[0].name_select === true, "Runtime role lacks contact name SELECT.");
-    assert(contactsColumnGrants.rows[0].phone_select === true, "Runtime role lacks contact phone SELECT.");
-    assert(contactsColumnGrants.rows[0].email_select === true, "Runtime role lacks contact email SELECT.");
-    assert(
-      contactsColumnGrants.rows[0].secret_note_select === false,
-      "Runtime role can SELECT unapproved contact columns.",
-    );
+    assert(candidateUpdateGrants.rows[0].score_update === true, "Runtime role cannot update candidate score.");
+    assert(candidateUpdateGrants.rows[0].reasons_update === true, "Runtime role cannot update candidate reasons.");
+    assert(candidateUpdateGrants.rows[0].status_update === true, "Runtime role cannot update candidate status.");
+    assert(candidateUpdateGrants.rows[0].brand_update === false, "Runtime role can update candidate brand.");
+    assert(candidateUpdateGrants.rows[0].intake_update === false, "Runtime role can update candidate intake_id.");
+    assert(candidateUpdateGrants.rows[0].contact_update === false, "Runtime role can update candidate contact_id.");
 
     const sequencePrivilege = await client.query(`
       select has_sequence_privilege(
@@ -2094,7 +2147,7 @@ async function testLeadIntelligenceRuntimeRls() {
     const contactRows = await queryAsRuntime(
       client,
       "soleada",
-      "select id, brand, name, phone, email from public.contacts order by name",
+      "select id, brand, name, phone, email from public.lead_intelligence_contact_lookup order by name",
     );
     assert(contactRows.rows.length === 1, "Runtime role did not enforce contact brand policy.");
     assert(contactRows.rows[0].brand === "soleada", "Runtime role selected a cross-brand contact.");
@@ -2102,10 +2155,37 @@ async function testLeadIntelligenceRuntimeRls() {
     await assertRejectsRuntimeQuery(
       client,
       "soleada",
-      "select secret_note from public.contacts",
-      "Runtime role could read unapproved contact columns.",
+      "select id, brand, name, phone, email from public.contacts",
+      "Runtime role could read contacts directly.",
       "permission denied",
     );
+    await assertRejectsRuntimeQuery(
+      client,
+      null,
+      "insert into public.lead_intake_messages (brand, source, status, created_by, correlation_id, idempotency_key) values ('soleada', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_noctx_0123456789abcdef0123', 'runtime-no-context')",
+      "Runtime role inserted without brand context.",
+      "row-level security",
+    );
+
+    await client.query("alter table public.contacts disable row level security");
+    const contactRowsWithoutContactsRls = await queryAsRuntime(
+      client,
+      "soleada",
+      "select id, brand, name, phone, email from public.lead_intelligence_contact_lookup order by name",
+    );
+    assert(
+      contactRowsWithoutContactsRls.rows.length === 1 &&
+        contactRowsWithoutContactsRls.rows[0].brand === "soleada",
+      "Contact lookup view leaked cross-brand rows when contacts RLS was disabled.",
+    );
+    await client.query("alter table public.contacts enable row level security");
+
+    const rowsAfterCommittedContext = await queryAsRuntime(
+      client,
+      null,
+      "select id from public.lead_intelligence_contact_lookup",
+    );
+    assert(rowsAfterCommittedContext.rows.length === 0, "Brand context leaked between runtime requests.");
 
     const intake = await queryAsRuntime(
       client,
@@ -2326,6 +2406,54 @@ async function testLeadIntelligenceRuntimeRls() {
         "permission denied",
       );
     }
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: repairable existing runtime role is normalized\n");
+    await client.query("create role realtyflow_lead_intelligence_runtime nologin connection limit -1");
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    const { rows } = await client.query(`
+      select rolcanlogin, rolinherit, rolbypassrls, rolconnlimit
+      from pg_roles
+      where rolname = 'realtyflow_lead_intelligence_runtime'
+    `);
+    assert(rows[0].rolcanlogin === true, "Existing NOLOGIN runtime role was not normalized to LOGIN.");
+    assert(rows[0].rolinherit === false, "Existing runtime role was not normalized to NOINHERIT.");
+    assert(rows[0].rolbypassrls === false, "Existing runtime role has BYPASSRLS.");
+    assert(Number(rows[0].rolconnlimit) === 5, "Existing unlimited runtime role was not normalized.");
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: incompatible existing runtime role fails closed\n");
+    await client.query(`
+      create role lead_intelligence_runtime_parent nologin;
+      create role realtyflow_lead_intelligence_runtime login connection limit 5;
+      grant lead_intelligence_runtime_parent to realtyflow_lead_intelligence_runtime;
+    `);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted a role with memberships.",
+      "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
+    );
+
+    await client.query(`
+      revoke lead_intelligence_runtime_parent from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+      drop role lead_intelligence_runtime_parent;
+    `);
   });
 
   await withClient(async (client) => {

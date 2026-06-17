@@ -12,6 +12,7 @@ declare
   missing_columns text[];
   runtime_oid oid;
   membership_count integer;
+  ownership_count integer;
 begin
   foreach target_table in array array[
     'lead_intake_messages',
@@ -130,7 +131,6 @@ begin
         rolsuper
         or rolcreatedb
         or rolcreaterole
-        or rolinherit
         or rolbypassrls
       )
   ) then
@@ -146,9 +146,47 @@ begin
   if membership_count <> 0 then
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has memberships';
   end if;
+
+  select
+    (
+      select count(*)::int from pg_class where relowner = runtime_oid
+    ) + (
+      select count(*)::int from pg_namespace where nspowner = runtime_oid
+    ) + (
+      select count(*)::int from pg_proc where proowner = runtime_oid
+    ) + (
+      select count(*)::int from pg_type where typowner = runtime_oid
+    )
+  into ownership_count;
+
+  if ownership_count <> 0 then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role owns database objects';
+  end if;
+
+  alter role realtyflow_lead_intelligence_runtime
+    login
+    nosuperuser
+    nocreatedb
+    nocreaterole
+    noinherit
+    nobypassrls
+    connection limit 5;
+
+  if exists (
+    select 1
+    from pg_roles
+    where oid = runtime_oid
+      and (
+        not rolcanlogin
+        or rolinherit
+        or rolbypassrls
+        or rolconnlimit <> 5
+      )
+  ) then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role normalization failed';
+  end if;
 end $$;
 
-revoke create on schema public from public;
 revoke all on schema public from realtyflow_lead_intelligence_runtime;
 grant usage on schema public to realtyflow_lead_intelligence_runtime;
 
@@ -158,14 +196,35 @@ revoke all on public.buyer_profiles from realtyflow_lead_intelligence_runtime;
 revoke all on public.buyer_profile_criteria from realtyflow_lead_intelligence_runtime;
 revoke all on public.lead_contact_candidates from realtyflow_lead_intelligence_runtime;
 revoke all on public.contacts from realtyflow_lead_intelligence_runtime;
+drop policy if exists contacts_lead_intelligence_runtime_select on public.contacts;
+
+drop view if exists public.lead_intelligence_contact_lookup;
+create view public.lead_intelligence_contact_lookup
+with (security_barrier = true)
+as
+select
+  id,
+  brand,
+  name,
+  phone,
+  email,
+  created_at,
+  updated_at
+from public.contacts
+where brand = nullif(current_setting('app.lead_intelligence_brand', true), '');
+
+revoke all on public.lead_intelligence_contact_lookup from public;
+revoke all on public.lead_intelligence_contact_lookup from anon;
+revoke all on public.lead_intelligence_contact_lookup from authenticated;
+revoke all on public.lead_intelligence_contact_lookup from realtyflow_lead_intelligence_runtime;
 
 grant select, insert on public.lead_intake_messages to realtyflow_lead_intelligence_runtime;
 grant select, insert on public.lead_analysis_runs to realtyflow_lead_intelligence_runtime;
 grant select, insert on public.buyer_profiles to realtyflow_lead_intelligence_runtime;
 grant select, insert on public.buyer_profile_criteria to realtyflow_lead_intelligence_runtime;
-grant select, insert, update on public.lead_contact_candidates to realtyflow_lead_intelligence_runtime;
-grant select (id, brand, name, phone, email, created_at, updated_at)
-  on public.contacts to realtyflow_lead_intelligence_runtime;
+grant select, insert on public.lead_contact_candidates to realtyflow_lead_intelligence_runtime;
+grant update (score, reasons, status) on public.lead_contact_candidates to realtyflow_lead_intelligence_runtime;
+grant select on public.lead_intelligence_contact_lookup to realtyflow_lead_intelligence_runtime;
 
 revoke all privileges on all sequences in schema public from realtyflow_lead_intelligence_runtime;
 revoke all privileges on function public.set_lead_intelligence_updated_at() from realtyflow_lead_intelligence_runtime;
@@ -320,24 +379,11 @@ create policy lead_contact_candidates_runtime_update
     )
   );
 
-do $$
-begin
-  if (select relrowsecurity from pg_class where oid = 'public.contacts'::regclass) then
-    drop policy if exists contacts_lead_intelligence_runtime_select on public.contacts;
-    create policy contacts_lead_intelligence_runtime_select
-      on public.contacts
-      for select
-      to realtyflow_lead_intelligence_runtime
-      using (
-        brand = nullif(current_setting('app.lead_intelligence_brand', true), '')
-      );
-  else
-    raise notice 'public.contacts RLS is not enabled; runtime role contact access remains column-limited and app SQL must keep server-validated brand predicates.';
-  end if;
-end $$;
-
 comment on role realtyflow_lead_intelligence_runtime is
   'Normal Lead Intelligence runtime role. No BYPASSRLS, no ownership, no DDL. Server must set app.lead_intelligence_brand from validated admin/server context before DB access.';
+
+comment on view public.lead_intelligence_contact_lookup is
+  'Restricted contact lookup surface for Lead Intelligence runtime. Exposes only non-token lookup columns and always filters by server-set app.lead_intelligence_brand, even when contacts RLS is disabled.';
 
 comment on policy lead_intake_messages_runtime_select on public.lead_intake_messages is
   'Lead Intelligence runtime can select intakes only for server-validated app.lead_intelligence_brand.';

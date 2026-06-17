@@ -21,10 +21,11 @@ Included:
 - no `SUPERUSER`, `CREATEDB`, or `CREATEROLE`
 - low connection limit
 - no role memberships
+- no ownership of database objects
 - schema `USAGE` only
 - runtime grants required by PR 3B
 - named RLS policies for Lead Intelligence runtime access
-- optional `contacts` policy when `public.contacts` already has RLS enabled
+- restricted contact lookup view instead of direct `public.contacts` access
 - isolated PostgreSQL migration tests
 
 Not included:
@@ -46,8 +47,15 @@ The runtime role gets only:
 - `SELECT`, `INSERT` on `public.lead_analysis_runs`
 - `SELECT`, `INSERT` on `public.buyer_profiles`
 - `SELECT`, `INSERT` on `public.buyer_profile_criteria`
-- `SELECT`, `INSERT`, `UPDATE` on `public.lead_contact_candidates`
-- column-limited `SELECT` on `public.contacts`:
+- `SELECT`, `INSERT` on `public.lead_contact_candidates`
+- column-limited `UPDATE` on `public.lead_contact_candidates` only for:
+  - `score`
+  - `reasons`
+  - `status`
+- `SELECT` on `public.lead_intelligence_contact_lookup`
+
+The contact lookup view exposes only:
+
   - `id`
   - `brand`
   - `name`
@@ -60,11 +68,16 @@ It does not get:
 
 - `DELETE`
 - general `UPDATE` on intakes, analyses, profiles, or criteria
+- direct `SELECT` on `public.contacts`
 - table ownership
 - DDL privileges
 - function execute privileges
 - sequence privileges
 - access to `public.leads`, email, OAuth, Storage metadata, or other application tables
+
+The migration does not revoke or modify global `PUBLIC` privileges on the `public` schema. It verifies that the runtime role itself has no `CREATE` privilege.
+
+If the runtime role already exists, safe runtime-shape drift such as `NOLOGIN`, `INHERIT`, or an unlimited connection limit is normalized to the reviewed runtime contract. Dangerous pre-existing state fails closed before grants are applied, including `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, role memberships, or owned database objects.
 
 ## Brand Context
 
@@ -81,29 +94,31 @@ Safe server sequence:
 1. Authenticate the RealtyFlow admin session.
 2. Validate the admin is allowed to use Lead Intelligence.
 3. Validate the brand through the server-side allowlist.
-4. Open a database transaction or short-lived connection.
-5. Set the brand context with a parameterized call:
+4. Open a database transaction.
+5. Set the brand context transaction-locally with a parameterized call:
 
 ```sql
 select set_config('app.lead_intelligence_brand', $1, true);
 ```
 
-6. Run the repository queries.
-7. End the transaction/connection.
+6. Run the repository queries in the same transaction.
+7. Commit or roll back the transaction so the local context is cleared.
 
 Do not trust client-sent database session context. The browser may send a brand in the request, but the server must validate it and set `app.lead_intelligence_brand` itself. The browser must never receive the runtime database URL.
 
 ## Contacts
 
-The migration grants only column-limited `SELECT` on `public.contacts`.
+The migration does not grant direct `SELECT` on `public.contacts`.
 
-If `public.contacts` already has RLS enabled, the migration creates a role-specific policy:
+Instead it creates:
 
 ```text
-contacts_lead_intelligence_runtime_select
+public.lead_intelligence_contact_lookup
 ```
 
-If `public.contacts` does not have RLS enabled, the migration does not enable it in this PR because that would be a broader CRM hardening change. In that case, the app route must keep its existing server-validated `where brand = $1` predicate, and a later dedicated contacts-RLS PR should harden the table.
+This view is a narrow server-runtime read surface with only lookup-safe columns. It always filters rows through `app.lead_intelligence_brand`, so cross-brand rows are blocked even if `public.contacts` RLS is disabled. The browser never receives direct database access to this view.
+
+Future CRM hardening should still review and enable explicit `public.contacts` RLS policies, but Lead Intelligence runtime access does not depend on direct contacts-table grants.
 
 ## Rollback
 
@@ -134,9 +149,17 @@ The migration test uses `MIGRATION_TEST_DATABASE_URL` and refuses production-sty
 - candidate upsert works
 - runtime role cannot delete
 - runtime role cannot update profiles or intakes
+- runtime role can update only candidate `score`, `reasons`, and `status`
 - anon/authenticated/PUBLIC have no Lead Intelligence table access
+- global `PUBLIC` `CREATE` on schema `public` is unchanged
+- runtime role has no `CREATE` on schema `public`
 - brand context blocks cross-brand rows
+- contact lookup blocks cross-brand rows with contacts RLS both on and off
+- missing brand context is rejected or returns no rows
+- transaction-local brand context does not leak between reused connections
 - sensitive test tables are inaccessible
 - policies are named and scoped to the runtime role
+- existing repairable runtime role attributes are normalized
+- incompatible existing runtime role membership fails closed
 - migration is idempotent
 - missing or incompatible PR 3A schema fails closed

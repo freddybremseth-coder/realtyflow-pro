@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction(async (client) => {
+    const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
       const serverCandidates = await findContactCandidatePreviewsWithDb(client, {
         brand: parsed.data.brand,
         contact: parsed.data.analysis.contact,

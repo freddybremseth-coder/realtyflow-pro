@@ -22,6 +22,7 @@ import {
 import { isLeadIntelligenceEnabled, isLeadIntelligencePersistenceEnabled } from "./feature-flags";
 import { LeadIntelligenceReviewError } from "./review";
 import { assertLeadIntelligenceRateLimit } from "./api-guards";
+import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 
 export const LEAD_INTELLIGENCE_DATABASE_URL_ENV = "REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL";
 
@@ -153,9 +154,28 @@ function queryClient(client: ClientBase): QueryClient {
   };
 }
 
+export function assertLeadIntelligenceRuntimeBrand(brand: unknown) {
+  const parsed = LeadIntelligenceRealEstateBrandSchema.safeParse(brand);
+  if (!parsed.success) {
+    throw new LeadIntelligenceError("INVALID_REQUEST", "Lead Intelligence brand is not allowed", 400, {
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    });
+  }
+  return parsed.data;
+}
+
+async function setLeadIntelligenceBrandContext(client: ClientBase, brand: string) {
+  await client.query("select set_config('app.lead_intelligence_brand', $1, true)", [brand]);
+}
+
 export async function withLeadIntelligenceTransaction<T>(
+  brand: string,
   fn: (client: QueryClient) => Promise<T>,
 ) {
+  const runtimeBrand = assertLeadIntelligenceRuntimeBrand(brand);
   const { Client } = await import("pg");
   const client = new Client({
     connectionString: getLeadIntelligenceDatabaseUrl(),
@@ -168,6 +188,7 @@ export async function withLeadIntelligenceTransaction<T>(
     await client.query("begin");
     await client.query("set local lock_timeout = '5s'");
     await client.query("set local statement_timeout = '30s'");
+    await setLeadIntelligenceBrandContext(client, runtimeBrand);
     const result = await fn(queryClient(client));
     await client.query("commit");
     return result;
@@ -191,8 +212,10 @@ export async function withLeadIntelligenceTransaction<T>(
 }
 
 export async function withLeadIntelligenceQuery<T>(
+  brand: string,
   fn: (client: QueryClient) => Promise<T>,
 ) {
+  const runtimeBrand = assertLeadIntelligenceRuntimeBrand(brand);
   const { Client } = await import("pg");
   const client = new Client({
     connectionString: getLeadIntelligenceDatabaseUrl(),
@@ -202,8 +225,20 @@ export async function withLeadIntelligenceQuery<T>(
 
   try {
     await client.connect();
-    return await fn(queryClient(client));
+    await client.query("begin");
+    await client.query("set transaction read only");
+    await client.query("set local lock_timeout = '5s'");
+    await client.query("set local statement_timeout = '30s'");
+    await setLeadIntelligenceBrandContext(client, runtimeBrand);
+    const result = await fn(queryClient(client));
+    await client.query("commit");
+    return result;
   } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {
+      // Keep rollback errors out of the response; the original error is safer and more useful.
+    }
     if (
       error instanceof LeadIntelligenceError ||
       error instanceof LeadIntelligencePersistenceError ||
@@ -252,12 +287,13 @@ export async function findContactCandidatePreviews(input: {
     country?: string | null;
   };
 }) {
+  const brand = assertLeadIntelligenceRuntimeBrand(input.brand);
   const hmacSecret = getLeadContactLookupHmacSecret({
     [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV],
   });
 
-  return withLeadIntelligenceQuery((db) =>
-    findContactCandidatePreviewsWithDb(db, input, hmacSecret),
+  return withLeadIntelligenceQuery(brand, (db) =>
+    findContactCandidatePreviewsWithDb(db, { ...input, brand }, hmacSecret),
   );
 }
 
@@ -276,6 +312,7 @@ export async function findContactCandidatePreviewsWithDb(
     [LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV]: process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV],
   }),
 ) {
+  const brand = assertLeadIntelligenceRuntimeBrand(input.brand);
   const { rows } = await db.query<ContactLookupRow>(
     `
       select
@@ -284,19 +321,17 @@ export async function findContactCandidatePreviewsWithDb(
         name,
         phone,
         email
-      from public.contacts
-      where brand = $1
-        and (
-          lower(email) = lower($2)
+      from public.lead_intelligence_contact_lookup
+      where (
+          lower(email) = lower($1)
           or regexp_replace(coalesce(phone, ''), '[^0-9+]', '', 'g') =
-             regexp_replace(coalesce($3, ''), '[^0-9+]', '', 'g')
-          or lower(name) = lower($4)
+             regexp_replace(coalesce($2, ''), '[^0-9+]', '', 'g')
+          or lower(name) = lower($3)
         )
       order by updated_at desc nulls last, created_at desc nulls last
       limit 25
     `,
     [
-      input.brand,
       input.contact.email || "",
       input.contact.phone || "",
       input.contact.name || "",
@@ -305,7 +340,7 @@ export async function findContactCandidatePreviewsWithDb(
 
   return findLeadContactCandidatePreviews(
     {
-      brand: input.brand,
+      brand,
       name: input.contact.name,
       phone: input.contact.phone,
       email: input.contact.email,
@@ -329,6 +364,7 @@ export async function verifySelectedContactCandidateWithDb(
     };
   },
 ) {
+  const brand = assertLeadIntelligenceRuntimeBrand(input.brand);
   const { rows } = await db.query<ContactLookupRow>(
     `
       select
@@ -337,7 +373,7 @@ export async function verifySelectedContactCandidateWithDb(
         name,
         phone,
         email
-      from public.contacts
+      from public.lead_intelligence_contact_lookup
       where id = $1::uuid
       limit 1
     `,
@@ -351,7 +387,7 @@ export async function verifySelectedContactCandidateWithDb(
       409,
     );
   }
-  if (row.brand !== input.brand) {
+  if (row.brand !== brand) {
     throw new LeadIntelligenceReviewError(
       "CONTACT_BRAND_MISMATCH",
       "Selected contact belongs to another brand",
@@ -361,7 +397,7 @@ export async function verifySelectedContactCandidateWithDb(
 
   const candidates = findLeadContactCandidatePreviews(
     {
-      brand: input.brand,
+      brand,
       name: input.contact.name,
       phone: input.contact.phone,
       email: input.contact.email,
