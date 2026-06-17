@@ -14,6 +14,7 @@ import {
   type QueryClient,
 } from "@/services/lead-intelligence/persistence";
 import {
+  findContactCandidatePreviewsWithDb,
   leadIntelligenceJsonError,
   verifySelectedContactCandidateWithDb,
 } from "@/services/lead-intelligence/server-runtime";
@@ -390,6 +391,49 @@ test("server-side contact verification rejects deleted, cross-brand, and stale c
       ),
     /no longer matches/,
   );
+});
+
+test("server-side contact lookup uses restricted view and rejects invalid brand before query", async () => {
+  class CaptureContactDb implements QueryClient {
+    queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
+    async query<T>(sql: string, values?: readonly unknown[]) {
+      this.queries.push({ sql, values });
+      return {
+        rows: [
+          {
+            contactId,
+            brand: "soleada",
+            name: "Emmadale",
+            phone: "+4790174714",
+            email: null,
+          },
+        ] as T[],
+      };
+    }
+  }
+  process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV] = "test-secret-with-at-least-thirty-two-bytes";
+
+  const db = new CaptureContactDb();
+  const candidates = await findContactCandidatePreviewsWithDb(db, {
+    brand: "soleada",
+    contact: { name: "Emmadale", phone: "+4790174714", email: null, country: "NO" },
+  });
+
+  assert.equal(candidates.length, 1);
+  assert.equal(db.queries.length, 1);
+  assert.equal(db.queries[0].sql.includes("public.lead_intelligence_contact_lookup"), true);
+  assert.equal(db.queries[0].sql.includes("from public.contacts"), false);
+
+  const invalidBrandDb = new CaptureContactDb();
+  await assert.rejects(
+    () =>
+      findContactCandidatePreviewsWithDb(invalidBrandDb, {
+        brand: "not-a-real-brand",
+        contact: { name: "Emmadale", phone: "+4790174714", email: null, country: "NO" },
+      }),
+    /Lead Intelligence brand is not allowed/,
+  );
+  assert.equal(invalidBrandDb.queries.length, 0);
 });
 
 test("review conflict uses safe error envelope with correlation ID", async () => {
