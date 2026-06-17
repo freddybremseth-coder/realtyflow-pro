@@ -1232,8 +1232,8 @@ async function createLeadIntelligenceRuntimeTestObjects(client) {
 
     create sequence public.sensitive_sequence;
 
-    create schema storage;
-    create table storage.objects (
+    create schema if not exists storage;
+    create table if not exists storage.objects (
       id uuid primary key default gen_random_uuid(),
       bucket_id text,
       name text,
