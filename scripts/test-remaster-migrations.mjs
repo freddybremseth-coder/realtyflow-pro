@@ -2013,6 +2013,7 @@ async function testLeadIntelligenceRuntimeRls() {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
 
     const publicCreateBefore = await client.query(`
       select exists (
