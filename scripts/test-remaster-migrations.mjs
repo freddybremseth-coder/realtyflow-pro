@@ -2142,10 +2142,10 @@ async function testLeadIntelligenceRuntimeRls() {
           approved_by,
           approved_at
         )
-        values ($1, 'runtime-analysis-001', 'lead-intelligence-extraction-v1', 'mock', '{"reviewPayloadHash":"sha256:v1:' || repeat('a', 64) || '"}'::jsonb, 'valid', false, 10, true, 'freddy.bremseth@gmail.com', now())
+        values ($1, 'runtime-analysis-001', 'lead-intelligence-extraction-v1', 'mock', $2::jsonb, 'valid', false, 10, true, 'freddy.bremseth@gmail.com', now())
         returning id
       `,
-      [intakeId],
+      [intakeId, { reviewPayloadHash: `sha256:v1:${"a".repeat(64)}` }],
     );
     assert(analysis.rows.length === 1, "Runtime role could not insert analysis run.");
 
