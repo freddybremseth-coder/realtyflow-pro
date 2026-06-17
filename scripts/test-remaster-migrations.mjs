@@ -22,6 +22,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260614164309_lead_intelligence_persistence_foundation.sql",
   ),
+  leadIntelligenceRuntimeRls: path.join(
+    repoRoot,
+    "supabase/migrations/20260617130114_lead_intelligence_runtime_rls.sql",
+  ),
 };
 
 function assert(condition, message) {
@@ -1195,6 +1199,175 @@ async function assertLeadIntelligenceRlsClosed(client) {
   }
 }
 
+async function createLeadIntelligenceRuntimeTestObjects(client) {
+  await client.query(`
+    create table public.contacts (
+      id uuid primary key default gen_random_uuid(),
+      brand text not null,
+      name text,
+      phone text,
+      email text,
+      secret_note text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    alter table public.contacts enable row level security;
+
+    create table public.leads (
+      id uuid primary key default gen_random_uuid(),
+      brand text not null,
+      sensitive_note text
+    );
+
+    create table public.email_messages (
+      id uuid primary key default gen_random_uuid(),
+      provider_payload jsonb
+    );
+
+    create table public.oauth_tokens (
+      id uuid primary key default gen_random_uuid(),
+      refresh_token text
+    );
+
+    create sequence public.sensitive_sequence;
+
+    create schema storage;
+    create table storage.objects (
+      id uuid primary key default gen_random_uuid(),
+      bucket_id text,
+      name text,
+      owner text
+    );
+  `);
+}
+
+async function queryAsRuntime(client, brand, sql, values = []) {
+  await client.query("reset role");
+  try {
+    await client.query("set role realtyflow_lead_intelligence_runtime");
+    if (brand === null) {
+      await client.query("select set_config('app.lead_intelligence_brand', '', false)");
+    } else {
+      await client.query("select set_config('app.lead_intelligence_brand', $1, false)", [brand]);
+    }
+    return await client.query(sql, values);
+  } finally {
+    await client.query("reset role");
+    await client.query("select set_config('app.lead_intelligence_brand', '', false)");
+  }
+}
+
+async function assertRejectsRuntimeQuery(client, brand, sql, message, expectedMessage) {
+  let rejected = false;
+  try {
+    await queryAsRuntime(client, brand, sql);
+  } catch (error) {
+    rejected = true;
+    if (expectedMessage) {
+      assert(
+        error instanceof Error && error.message.includes(expectedMessage),
+        `${message} Expected error message to include ${expectedMessage}.`,
+      );
+    }
+  }
+  assert(rejected, message);
+}
+
+async function assertLeadIntelligenceRuntimePolicySet(client) {
+  const expectedPolicies = [
+    ["lead_intake_messages", "lead_intake_messages_runtime_select", "SELECT"],
+    ["lead_intake_messages", "lead_intake_messages_runtime_insert", "INSERT"],
+    ["lead_analysis_runs", "lead_analysis_runs_runtime_select", "SELECT"],
+    ["lead_analysis_runs", "lead_analysis_runs_runtime_insert", "INSERT"],
+    ["buyer_profiles", "buyer_profiles_runtime_select", "SELECT"],
+    ["buyer_profiles", "buyer_profiles_runtime_insert", "INSERT"],
+    ["buyer_profile_criteria", "buyer_profile_criteria_runtime_select", "SELECT"],
+    ["buyer_profile_criteria", "buyer_profile_criteria_runtime_insert", "INSERT"],
+    ["lead_contact_candidates", "lead_contact_candidates_runtime_select", "SELECT"],
+    ["lead_contact_candidates", "lead_contact_candidates_runtime_insert", "INSERT"],
+    ["lead_contact_candidates", "lead_contact_candidates_runtime_update", "UPDATE"],
+    ["contacts", "contacts_lead_intelligence_runtime_select", "SELECT"],
+  ];
+
+  for (const [tableName, policyName, command] of expectedPolicies) {
+    const { rows } = await client.query(
+      `
+        select
+          policyname,
+          cmd,
+          roles::text as roles,
+          qual,
+          with_check
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = $1
+          and policyname = $2
+      `,
+      [tableName, policyName],
+    );
+    assert(rows.length === 1, `Missing policy public.${tableName}.${policyName}.`);
+    assert(rows[0].cmd === command, `Unexpected command for policy ${policyName}.`);
+    assert(
+      rows[0].roles.includes("realtyflow_lead_intelligence_runtime"),
+      `Policy ${policyName} is not scoped to runtime role.`,
+    );
+    assert(
+      !["true", "(true)"].includes(String(rows[0].qual || "").toLowerCase()),
+      `Policy ${policyName} has open USING.`,
+    );
+    assert(
+      !["true", "(true)"].includes(String(rows[0].with_check || "").toLowerCase()),
+      `Policy ${policyName} has open WITH CHECK.`,
+    );
+    assert(
+      String(rows[0].qual || rows[0].with_check || "").includes("lead_intelligence_brand") ||
+        ["lead_analysis_runs", "buyer_profile_criteria"].includes(tableName),
+      `Policy ${policyName} does not reference brand context or a brand-linked parent.`,
+    );
+  }
+}
+
+async function assertNoPublicRuntimeTableGrants(client) {
+  for (const tableName of [
+    "lead_intake_messages",
+    "lead_analysis_runs",
+    "buyer_profiles",
+    "buyer_profile_criteria",
+    "lead_contact_candidates",
+  ]) {
+    const { rows } = await client.query(
+      `
+        select
+          has_table_privilege('anon', format('public.%I', $1::text), 'select') as anon_select,
+          has_table_privilege('anon', format('public.%I', $1::text), 'insert') as anon_insert,
+          has_table_privilege('authenticated', format('public.%I', $1::text), 'select') as authenticated_select,
+          has_table_privilege('authenticated', format('public.%I', $1::text), 'insert') as authenticated_insert
+      `,
+      [tableName],
+    );
+    assert(rows[0].anon_select === false, `anon can SELECT public.${tableName}.`);
+    assert(rows[0].anon_insert === false, `anon can INSERT public.${tableName}.`);
+    assert(rows[0].authenticated_select === false, `authenticated can SELECT public.${tableName}.`);
+    assert(rows[0].authenticated_insert === false, `authenticated can INSERT public.${tableName}.`);
+
+    const { rows: publicRows } = await client.query(
+      `
+        select count(*)::int as count
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) as acl
+        where n.nspname = 'public'
+          and c.relname = $1
+          and acl.grantee = 0
+          and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+      `,
+      [tableName],
+    );
+    assert(publicRows[0].count === 0, `PUBLIC has table privileges on public.${tableName}.`);
+  }
+}
+
 async function testLeadIntelligencePersistenceFoundation() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -1809,11 +1982,399 @@ async function testLeadIntelligencePersistenceFoundation() {
   });
 }
 
+async function testLeadIntelligenceRuntimeRls() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+
+    process.stdout.write("  Scenario: applies after PR 3A foundation and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+
+    process.stdout.write("  Scenario: runtime role is normal and not privileged\n");
+    const runtimeRole = await client.query(`
+      select
+        rolcanlogin,
+        rolsuper,
+        rolcreatedb,
+        rolcreaterole,
+        rolinherit,
+        rolbypassrls,
+        rolconnlimit
+      from pg_roles
+      where rolname = 'realtyflow_lead_intelligence_runtime'
+    `);
+    assert(runtimeRole.rows.length === 1, "Runtime role was not created.");
+    assert(runtimeRole.rows[0].rolcanlogin === true, "Runtime role should be a login role.");
+    assert(runtimeRole.rows[0].rolsuper === false, "Runtime role is superuser.");
+    assert(runtimeRole.rows[0].rolcreatedb === false, "Runtime role can create databases.");
+    assert(runtimeRole.rows[0].rolcreaterole === false, "Runtime role can create roles.");
+    assert(runtimeRole.rows[0].rolinherit === false, "Runtime role unexpectedly inherits memberships.");
+    assert(runtimeRole.rows[0].rolbypassrls === false, "Runtime role has BYPASSRLS.");
+    assert(Number(runtimeRole.rows[0].rolconnlimit) === 5, "Runtime role connection limit is not 5.");
+
+    const membership = await client.query(`
+      select count(*)::int as count
+      from pg_auth_members
+      where member = 'realtyflow_lead_intelligence_runtime'::regrole
+         or roleid = 'realtyflow_lead_intelligence_runtime'::regrole
+    `);
+    assert(membership.rows[0].count === 0, "Runtime role has memberships.");
+
+    process.stdout.write("  Scenario: grants are exactly runtime scoped\n");
+    const grants = await client.query(`
+      select
+        has_schema_privilege('realtyflow_lead_intelligence_runtime', 'public', 'usage') as schema_usage,
+        has_schema_privilege('realtyflow_lead_intelligence_runtime', 'public', 'create') as schema_create,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'select,insert') as intake_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'update') as intake_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intake_messages', 'delete') as intake_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_analysis_runs', 'select,insert') as analysis_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'select,insert') as profiles_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'update') as profiles_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profile_criteria', 'select,insert') as criteria_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'select,insert,update') as candidates_select_insert_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_contact_candidates', 'delete') as candidates_delete,
+        has_function_privilege('realtyflow_lead_intelligence_runtime', 'public.set_lead_intelligence_updated_at()', 'execute') as trigger_execute
+    `);
+    assert(grants.rows[0].schema_usage === true, "Runtime role lacks schema USAGE.");
+    assert(grants.rows[0].schema_create === false, "Runtime role can CREATE in public schema.");
+    assert(grants.rows[0].intake_select_insert === true, "Runtime role lacks intake SELECT/INSERT.");
+    assert(grants.rows[0].intake_update === false, "Runtime role can UPDATE intakes.");
+    assert(grants.rows[0].intake_delete === false, "Runtime role can DELETE intakes.");
+    assert(grants.rows[0].analysis_select_insert === true, "Runtime role lacks analysis SELECT/INSERT.");
+    assert(grants.rows[0].profiles_select_insert === true, "Runtime role lacks profile SELECT/INSERT.");
+    assert(grants.rows[0].profiles_update === false, "Runtime role can UPDATE profiles.");
+    assert(grants.rows[0].criteria_select_insert === true, "Runtime role lacks criteria SELECT/INSERT.");
+    assert(grants.rows[0].candidates_select_insert_update === true, "Runtime role lacks candidate SELECT/INSERT/UPDATE.");
+    assert(grants.rows[0].candidates_delete === false, "Runtime role can DELETE candidates.");
+    assert(grants.rows[0].trigger_execute === false, "Runtime role can execute trigger function.");
+
+    const contactsColumnGrants = await client.query(`
+      select
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'id', 'select') as id_select,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'brand', 'select') as brand_select,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'name', 'select') as name_select,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'phone', 'select') as phone_select,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'email', 'select') as email_select,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'secret_note', 'select') as secret_note_select
+    `);
+    assert(contactsColumnGrants.rows[0].id_select === true, "Runtime role lacks contact id SELECT.");
+    assert(contactsColumnGrants.rows[0].brand_select === true, "Runtime role lacks contact brand SELECT.");
+    assert(contactsColumnGrants.rows[0].name_select === true, "Runtime role lacks contact name SELECT.");
+    assert(contactsColumnGrants.rows[0].phone_select === true, "Runtime role lacks contact phone SELECT.");
+    assert(contactsColumnGrants.rows[0].email_select === true, "Runtime role lacks contact email SELECT.");
+    assert(
+      contactsColumnGrants.rows[0].secret_note_select === false,
+      "Runtime role can SELECT unapproved contact columns.",
+    );
+
+    const sequencePrivilege = await client.query(`
+      select has_sequence_privilege(
+        'realtyflow_lead_intelligence_runtime',
+        'public.sensitive_sequence',
+        'usage'
+      ) as sequence_usage
+    `);
+    assert(sequencePrivilege.rows[0].sequence_usage === false, "Runtime role has sequence usage.");
+
+    await assertNoPublicRuntimeTableGrants(client);
+    await assertLeadIntelligenceRuntimePolicySet(client);
+
+    process.stdout.write("  Scenario: runtime inserts/selects only through server brand context\n");
+    await client.query(`
+      insert into public.contacts (brand, name, phone, email, secret_note)
+      values
+        ('soleada', 'Emmadale', '+4790174714', null, 'private soleada note'),
+        ('zeneco', 'Other Contact', '+34999999999', 'other@example.test', 'private zeneco note')
+    `);
+
+    const contactRows = await queryAsRuntime(
+      client,
+      "soleada",
+      "select id, brand, name, phone, email from public.contacts order by name",
+    );
+    assert(contactRows.rows.length === 1, "Runtime role did not enforce contact brand policy.");
+    assert(contactRows.rows[0].brand === "soleada", "Runtime role selected a cross-brand contact.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select secret_note from public.contacts",
+      "Runtime role could read unapproved contact columns.",
+      "permission denied",
+    );
+
+    const intake = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_runtime_0123456789abcdef0123', 'runtime-intake-001')
+        returning id
+      `,
+    );
+    const intakeId = intake.rows[0].id;
+
+    const analysis = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_analysis_runs (
+          intake_id,
+          idempotency_key,
+          prompt_version,
+          model,
+          result_json,
+          validation_status,
+          repaired,
+          duration_ms,
+          approved,
+          approved_by,
+          approved_at
+        )
+        values ($1, 'runtime-analysis-001', 'lead-intelligence-extraction-v1', 'mock', '{"reviewPayloadHash":"sha256:v1:' || repeat('a', 64) || '"}'::jsonb, 'valid', false, 10, true, 'freddy.bremseth@gmail.com', now())
+        returning id
+      `,
+      [intakeId],
+    );
+    assert(analysis.rows.length === 1, "Runtime role could not insert analysis run.");
+
+    const profile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', $1, 1, 'approved', 'ready_to_buy', 440000, 'EUR', true, true, true, 'Runtime profile', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id
+      `,
+      [intakeId],
+    );
+    const profileId = profile.rows[0].id;
+
+    await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          operator,
+          value,
+          applies_to_property_types,
+          source,
+          source_text,
+          confidence,
+          approval_status,
+          approved_by,
+          approved_at,
+          active
+        )
+        values ($1, 'hard_requirement', 'bedrooms', 'gte', '2'::jsonb, array['apartment']::text[], 'ai_suggestion', 'Minst 2 soverom.', 0.9, 'approved', 'freddy.bremseth@gmail.com', now(), true)
+      `,
+      [profileId],
+    );
+
+    await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_contact_candidates (
+          brand,
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons,
+          status
+        )
+        values ('soleada', $1, gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('d', 64), 0.98, '["first candidate"]'::jsonb, 'suggested')
+        on conflict (intake_id, match_type, match_value_hash)
+        do update set score = excluded.score, reasons = excluded.reasons, status = excluded.status
+      `,
+      [intakeId],
+    );
+    await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_contact_candidates (
+          brand,
+          intake_id,
+          contact_id,
+          match_type,
+          match_value_hash,
+          score,
+          reasons,
+          status
+        )
+        values ('soleada', $1, gen_random_uuid(), 'exact_phone', 'hmac-sha256:v1:' || repeat('d', 64), 0.99, '["updated candidate"]'::jsonb, 'selected')
+        on conflict (intake_id, match_type, match_value_hash)
+        do update set score = excluded.score, reasons = excluded.reasons, status = excluded.status
+      `,
+      [intakeId],
+    );
+    const candidateRows = await queryAsRuntime(
+      client,
+      "soleada",
+      "select score, status from public.lead_contact_candidates where intake_id = $1",
+      [intakeId],
+    );
+    assert(candidateRows.rows.length === 1, "Candidate upsert inserted duplicate rows.");
+    assert(Number(candidateRows.rows[0].score) === 0.99, "Candidate upsert did not update score.");
+    assert(candidateRows.rows[0].status === "selected", "Candidate upsert did not update status.");
+
+    process.stdout.write("  Scenario: forbidden runtime mutations and cross-brand access are blocked\n");
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (brand, source, status, created_by, correlation_id, idempotency_key)
+        values ('zeneco', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_cross_0123456789abcdef0123', 'runtime-cross-brand')
+      `,
+      "Runtime role inserted a cross-brand intake.",
+      "row-level security",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.lead_intake_messages set status = 'approved' where id is not null",
+      "Runtime role updated intakes.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.buyer_profiles set status = 'archived' where id is not null",
+      "Runtime role updated buyer profiles.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "delete from public.lead_contact_candidates where id is not null",
+      "Runtime role deleted candidates.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "create table public.runtime_should_not_create (id uuid)",
+      "Runtime role created a table.",
+      "permission denied",
+    );
+
+    await client.query(`
+      insert into public.lead_intake_messages (
+        brand,
+        source,
+        status,
+        created_by,
+        correlation_id,
+        idempotency_key
+      )
+      values ('zeneco', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_zeneco_0123456789abcdef012', 'zeneco-intake-001')
+    `);
+    const visibleIntakes = await queryAsRuntime(
+      client,
+      "soleada",
+      "select brand from public.lead_intake_messages order by brand",
+    );
+    assert(
+      visibleIntakes.rows.every((row) => row.brand === "soleada"),
+      "Runtime role selected cross-brand Lead Intelligence rows.",
+    );
+
+    process.stdout.write("  Scenario: sensitive application tables stay inaccessible\n");
+    for (const tableName of [
+      "public.leads",
+      "public.email_messages",
+      "public.oauth_tokens",
+      "storage.objects",
+    ]) {
+      await assertRejectsRuntimeQuery(
+        client,
+        "soleada",
+        `select * from ${tableName} limit 1`,
+        `Runtime role could read ${tableName}.`,
+        "permission denied",
+      );
+    }
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+
+    process.stdout.write("  Scenario: missing PR 3A schema fails closed\n");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted missing PR 3A schema.",
+      "LEAD_INTELLIGENCE_RUNTIME_SCHEMA_NOT_READY",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query(`
+      create table public.lead_intake_messages (id uuid primary key default gen_random_uuid());
+      comment on table public.lead_intake_messages is 'Lead Intelligence persistence foundation v1';
+      create table public.lead_analysis_runs (id uuid primary key default gen_random_uuid());
+      comment on table public.lead_analysis_runs is 'Lead Intelligence persistence foundation v1';
+      create table public.buyer_profiles (id uuid primary key default gen_random_uuid());
+      comment on table public.buyer_profiles is 'Lead Intelligence persistence foundation v1';
+      create table public.buyer_profile_criteria (id uuid primary key default gen_random_uuid());
+      comment on table public.buyer_profile_criteria is 'Lead Intelligence persistence foundation v1';
+      create table public.lead_contact_candidates (id uuid primary key default gen_random_uuid());
+      comment on table public.lead_contact_candidates is 'Lead Intelligence persistence foundation v1';
+    `);
+
+    process.stdout.write("  Scenario: incompatible PR 3A schema fails closed\n");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted incompatible PR 3A schema.",
+      "LEAD_INTELLIGENCE_RUNTIME_SCHEMA_INCOMPATIBLE",
+    );
+  });
+}
+
 const tests = new Map([
   ["growth-actions-fingerprint", testGrowthActionsFingerprintIndex],
   ["user-image-bank-contract", testUserImageBankContract],
   ["remaster-job-core", testRemasterJobCore],
   ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
+  ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
 ]);
 
 async function main() {
