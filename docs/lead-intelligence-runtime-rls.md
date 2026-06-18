@@ -123,7 +123,7 @@ Managed Supabase/Postgres allows the reviewed `CREATE ROLE ... LOGIN NOINHERIT N
 
 The corrected migration audits risk instead of counting membership rows:
 
-- Incoming membership where another role is a member of `realtyflow_lead_intelligence_runtime` is not kept. Admin-only incoming memberships with no `INHERIT` and no `SET` option are revoked during migration. Incoming memberships with `INHERIT` or `SET` are stop conditions.
+- Incoming membership where another role is a member of `realtyflow_lead_intelligence_runtime` is treated as creator/admin metadata only when it has no `INHERIT` and no `SET` option. The migration does not rely on revoking this metadata, because managed PostgreSQL can keep it as part of role creation. Incoming memberships with `INHERIT` or `SET` remain stop conditions.
 - Outgoing membership where the runtime role is a member of another role is allowed only when `ADMIN`, `INHERIT`, and `SET` options are all false, the granted role is not elevated, and negative privilege probes prove the runtime role has no effective application access from that membership.
 - The migration still fails closed if membership grants `SUPERUSER`-like escalation, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, DDL, ownership, schema `CREATE`, sequence privileges, direct `contacts` access, sensitive table access, unrelated application-table access, or table privileges outside the reviewed runtime surface.
 - `NOINHERIT` remains mandatory, but it is not the only safety boundary. PostgreSQL membership options are checked directly, including `inherit_option`, `set_option`, and `admin_option`.

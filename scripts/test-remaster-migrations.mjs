@@ -2568,7 +2568,7 @@ async function testLeadIntelligenceRuntimeRls() {
     await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
 
-    process.stdout.write("  Scenario: production-like admin-only creator membership is revoked\n");
+    process.stdout.write("  Scenario: production-like admin-only creator membership passes effective audit\n");
     await client.query(`
       create role lead_intelligence_migration_owner nologin;
       create role realtyflow_lead_intelligence_runtime login connection limit 5;
@@ -2582,8 +2582,41 @@ async function testLeadIntelligenceRuntimeRls() {
       where roleid = 'realtyflow_lead_intelligence_runtime'::regrole
     `);
     assert(
-      incomingRows[0].count === 0,
-      "Runtime migration did not revoke admin-only creator membership.",
+      incomingRows[0].count === 1,
+      "Runtime migration should tolerate one admin-only creator membership.",
+    );
+    const { rows: membershipRows } = await client.query(`
+      select admin_option, inherit_option, set_option
+      from pg_auth_members
+      where roleid = 'realtyflow_lead_intelligence_runtime'::regrole
+        and member = 'lead_intelligence_migration_owner'::regrole
+    `);
+    assert(membershipRows.length === 1, "Expected creator membership to remain visible for audit.");
+    assert(membershipRows[0].admin_option === true, "Creator membership should preserve ADMIN metadata.");
+    assert(membershipRows[0].inherit_option === false, "Creator membership must not inherit runtime privileges.");
+    assert(membershipRows[0].set_option === false, "Creator membership must not allow SET ROLE.");
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await client.query("revoke create on schema public from public");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: incoming runtime membership with SET fails closed\n");
+    await client.query(`
+      create role lead_intelligence_runtime_set_member nologin;
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
+      grant realtyflow_lead_intelligence_runtime to lead_intelligence_runtime_set_member
+        with admin false, inherit false, set true;
+    `);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted incoming membership with SET option.",
+      "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
   });
 

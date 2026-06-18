@@ -671,7 +671,7 @@ Before retrying runtime-RLS activation, run the reviewed read-only diagnostic qu
 docs/lead-intelligence-runtime-membership-diagnostic.sql
 ```
 
-Do not proceed if it shows inherited privileges, `SET ROLE` privileges, admin escalation that cannot be revoked, schema `CREATE`, ownership, direct `contacts` access, sensitive table access, or other application-table/sequence access outside the documented runtime surface.
+Do not proceed if it shows inherited privileges, `SET ROLE` privileges, unsafe outgoing memberships from the runtime role, schema `CREATE`, ownership, direct `contacts` access, sensitive table access, or other application-table/sequence access outside the documented runtime surface. Admin-only creator metadata where another role is a member of `realtyflow_lead_intelligence_runtime` can remain only when it has no `INHERIT`, no `SET`, and the negative privilege probes still show no effective runtime access outside the documented surface.
 
 The second controlled production retry on 2026-06-18 stopped correctly with:
 
@@ -686,6 +686,7 @@ The corrected activation model is:
 - for a new role, create it directly with `LOGIN NOINHERIT NOBYPASSRLS CONNECTION LIMIT 5`
 - for an existing role, audit role attributes first
 - stop if `rolsuper`, `rolbypassrls`, `rolcreatedb`, `rolcreaterole`, `rolinherit`, `NOLOGIN`, unsafe memberships, ownership, schema `CREATE`, direct `contacts` access, sensitive table access, unexpected relation privileges, or sequence privileges are present
+- tolerate only documented creator/admin membership metadata where another role is a member of the runtime role and that membership has no `INHERIT` and no `SET` option
 - attempt only the narrow `ALTER ROLE ... CONNECTION LIMIT 5` normalization when the existing role is otherwise safe
 - treat role timeout settings as best-effort defaults; app connections must still set statement, lock, and idle transaction timeouts
 - do not proceed to credentials, HMAC, Vercel env, feature flags, or smoke-test until runtime-RLS activation and verification are green

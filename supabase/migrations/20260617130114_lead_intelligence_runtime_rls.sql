@@ -202,20 +202,7 @@ begin
         'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role is granted to % with INHERIT or SET option',
         membership_record.member_name;
     end if;
-
-    execute format(
-      'revoke realtyflow_lead_intelligence_runtime from %I',
-      membership_record.member_name
-    );
   end loop;
-
-  if exists (
-    select 1
-    from pg_auth_members
-    where roleid = runtime_oid
-  ) then
-    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has unrevokeable member roles';
-  end if;
 
   select jsonb_agg(
     jsonb_build_object(
