@@ -1246,9 +1246,36 @@ async function dropLeadIntelligenceRuntimeTestRole(client) {
   await client.query(`
     do $$
     begin
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_dangerous_parent') then
+        drop owned by lead_intelligence_runtime_dangerous_parent;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_safe_parent') then
+        drop owned by lead_intelligence_runtime_safe_parent;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_migration_owner') then
+        drop owned by lead_intelligence_migration_owner;
+      end if;
+
       if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_parent') and
          exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
         revoke lead_intelligence_runtime_parent from realtyflow_lead_intelligence_runtime;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_dangerous_parent') and
+         exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
+        revoke lead_intelligence_runtime_dangerous_parent from realtyflow_lead_intelligence_runtime;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_runtime_safe_parent') and
+         exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
+        revoke lead_intelligence_runtime_safe_parent from realtyflow_lead_intelligence_runtime;
+      end if;
+
+      if exists (select 1 from pg_roles where rolname = 'lead_intelligence_migration_owner') and
+         exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
+        revoke realtyflow_lead_intelligence_runtime from lead_intelligence_migration_owner;
       end if;
 
       if exists (select 1 from pg_roles where rolname = 'realtyflow_lead_intelligence_runtime') then
@@ -1256,8 +1283,12 @@ async function dropLeadIntelligenceRuntimeTestRole(client) {
       end if;
     end $$;
 
+    drop table if exists public.runtime_owned_table cascade;
     drop role if exists realtyflow_lead_intelligence_runtime;
     drop role if exists lead_intelligence_runtime_parent;
+    drop role if exists lead_intelligence_runtime_dangerous_parent;
+    drop role if exists lead_intelligence_runtime_safe_parent;
+    drop role if exists lead_intelligence_migration_owner;
   `);
 }
 
@@ -2437,24 +2468,160 @@ async function testLeadIntelligenceRuntimeRls() {
     await dropLeadIntelligenceRuntimeTestRole(client);
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
 
-    process.stdout.write("  Scenario: incompatible existing runtime role fails closed\n");
+    process.stdout.write("  Scenario: production-like admin-only creator membership is revoked\n");
     await client.query(`
-      create role lead_intelligence_runtime_parent nologin;
+      create role lead_intelligence_migration_owner nologin;
       create role realtyflow_lead_intelligence_runtime login connection limit 5;
-      grant lead_intelligence_runtime_parent to realtyflow_lead_intelligence_runtime;
+      grant realtyflow_lead_intelligence_runtime to lead_intelligence_migration_owner
+        with admin true, inherit false, set false;
+    `);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    const { rows: incomingRows } = await client.query(`
+      select count(*)::int as count
+      from pg_auth_members
+      where roleid = 'realtyflow_lead_intelligence_runtime'::regrole
+    `);
+    assert(
+      incomingRows[0].count === 0,
+      "Runtime migration did not revoke admin-only creator membership.",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: harmless noinherit/noset membership can pass effective audit\n");
+    await client.query(`
+      create role lead_intelligence_runtime_safe_parent nologin;
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
+      grant lead_intelligence_runtime_safe_parent to realtyflow_lead_intelligence_runtime
+        with admin false, inherit false, set false;
+    `);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    const { rows: safeMembershipRows } = await client.query(`
+      select admin_option, inherit_option, set_option
+      from pg_auth_members
+      where member = 'realtyflow_lead_intelligence_runtime'::regrole
+        and roleid = 'lead_intelligence_runtime_safe_parent'::regrole
+    `);
+    assert(safeMembershipRows.length === 1, "Safe noinherit/noset membership was unexpectedly removed.");
+    assert(safeMembershipRows[0].admin_option === false, "Safe membership unexpectedly has ADMIN option.");
+    assert(safeMembershipRows[0].inherit_option === false, "Safe membership unexpectedly has INHERIT option.");
+    assert(safeMembershipRows[0].set_option === false, "Safe membership unexpectedly has SET option.");
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select * from public.oauth_tokens limit 1",
+      "Runtime role could read a sensitive table through harmless membership.",
+      "permission denied",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: runtime role as member of dangerous role fails closed\n");
+    await client.query(`
+      create role lead_intelligence_runtime_dangerous_parent nologin createdb;
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
+      grant lead_intelligence_runtime_dangerous_parent to realtyflow_lead_intelligence_runtime
+        with admin false, inherit false, set false;
     `);
     await assertRejectsQuery(
       client,
       await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
-      "Runtime migration accepted a role with memberships.",
+      "Runtime migration accepted membership in a dangerous role.",
+      "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
+    );
+
+    await client.query(`
+      revoke lead_intelligence_runtime_dangerous_parent from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+      drop role lead_intelligence_runtime_dangerous_parent;
+    `);
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: inherited sensitive SELECT through membership fails closed\n");
+    await client.query(`
+      create role lead_intelligence_runtime_parent nologin;
+      grant select on public.oauth_tokens to lead_intelligence_runtime_parent;
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
+      grant lead_intelligence_runtime_parent to realtyflow_lead_intelligence_runtime
+        with admin false, inherit true, set false;
+    `);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted inherited sensitive table access.",
       "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
 
     await client.query(`
       revoke lead_intelligence_runtime_parent from realtyflow_lead_intelligence_runtime;
       drop role realtyflow_lead_intelligence_runtime;
+      drop owned by lead_intelligence_runtime_parent;
       drop role lead_intelligence_runtime_parent;
     `);
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: existing runtime role with ownership fails closed\n");
+    await client.query(`
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
+      create table public.runtime_owned_table (id integer);
+      alter table public.runtime_owned_table owner to realtyflow_lead_intelligence_runtime;
+    `);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted a role that owns database objects.",
+      "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
+    );
+
+    await client.query(`
+      drop table public.runtime_owned_table;
+      drop role realtyflow_lead_intelligence_runtime;
+    `);
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await dropLeadIntelligenceRuntimeTestRole(client);
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+
+    process.stdout.write("  Scenario: existing runtime role with BYPASSRLS fails closed\n");
+    await client.query("create role realtyflow_lead_intelligence_runtime login bypassrls connection limit 5");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceRuntimeRls, "utf8"),
+      "Runtime migration accepted a BYPASSRLS role.",
+      "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
+    );
+
+    await client.query("drop role realtyflow_lead_intelligence_runtime");
   });
 
   await withClient(async (client) => {

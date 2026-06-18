@@ -313,6 +313,7 @@ Preferred long-term model:
 
 - create a normal runtime role without `BYPASSRLS`
 - add explicit role-specific RLS policies in a separate reviewed migration
+- use the corrected membership/effective-privilege audit from the runtime-RLS migration
 - keep grants limited to the exact runtime operations below
 - keep browser access mediated by server routes
 
@@ -423,7 +424,9 @@ For the preferred long-term normal-role model, create role-specific policies in 
 Effective-privilege audit required before any temporary `BYPASSRLS` role is used:
 
 - `PUBLIC` grants on schemas, tables, functions, and sequences
-- direct role memberships and inherited memberships
+- direct role memberships, inherited memberships, `SET ROLE` memberships, and admin memberships
+- documented admin-only creator memberships that the migration can revoke
+- harmless noinherit/noset memberships only if the effective privilege audit is empty
 - schema `USAGE` and `CREATE`
 - table privileges on every exposed schema
 - function `EXECUTE` privileges, especially functions with side effects or `SECURITY DEFINER`
@@ -446,6 +449,7 @@ Also test that the role cannot:
 Create and operate the runtime role as a narrowly scoped credential:
 
 - no unnecessary role memberships
+- no memberships that grant `ADMIN`, `INHERIT`, `SET`, elevated role attributes, ownership, DDL, or effective application-table/sequence access
 - no ownership of schemas, tables, functions, sequences, or views
 - low connection limit, initially `5` or lower unless load testing proves another value is needed
 - rotate the credential after initial activation and then on a defined schedule
@@ -648,6 +652,24 @@ During and after smoke testing, verify:
 - no property matching route is invoked
 - `REALTYFLOW_AUTO_SEND_ENABLED=false`
 - `REALTYFLOW_PROPERTY_MATCHING_ENABLED=false`
+
+## Runtime RLS Activation Correction
+
+The first production attempt on 2026-06-17 stopped during the runtime-RLS migration with:
+
+```text
+LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has memberships
+```
+
+The stop was correct for the reviewed migration, and it rolled back atomically: the runtime role, runtime view, runtime policies, runtime credential, Vercel env vars, feature flags, smoke-test writes, and migration history were not created or modified. PR 3A persistence tables had already been physically applied and verified, and they remained empty.
+
+Before retrying runtime-RLS activation, run the reviewed read-only diagnostic query:
+
+```text
+docs/lead-intelligence-runtime-membership-diagnostic.sql
+```
+
+Do not proceed if it shows inherited privileges, `SET ROLE` privileges, admin escalation that cannot be revoked, schema `CREATE`, ownership, direct `contacts` access, sensitive table access, or other application-table/sequence access outside the documented runtime surface.
 
 ## Activation Report Template
 
