@@ -15,6 +15,8 @@ declare
   unsafe_memberships jsonb;
   unsafe_privileges jsonb;
   membership_record record;
+  role_record record;
+  runtime_connlimit integer;
 begin
   foreach target_table in array array[
     'lead_intake_messages',
@@ -125,18 +127,31 @@ begin
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_MISSING';
   end if;
 
-  if exists (
-    select 1
-    from pg_roles
-    where oid = runtime_oid
-      and (
-        rolsuper
-        or rolcreatedb
-        or rolcreaterole
-        or rolbypassrls
-      )
-  ) then
+  select
+    rolcanlogin,
+    rolsuper,
+    rolcreatedb,
+    rolcreaterole,
+    rolinherit,
+    rolbypassrls,
+    rolconnlimit
+  into role_record
+  from pg_roles
+  where oid = runtime_oid;
+
+  if role_record.rolsuper
+     or role_record.rolcreatedb
+     or role_record.rolcreaterole
+     or role_record.rolbypassrls then
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has elevated attributes';
+  end if;
+
+  if not role_record.rolcanlogin then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role must be LOGIN';
+  end if;
+
+  if role_record.rolinherit then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role must be NOINHERIT';
   end if;
 
   select
@@ -155,27 +170,22 @@ begin
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role owns database objects';
   end if;
 
-  alter role realtyflow_lead_intelligence_runtime
-    login
-    nosuperuser
-    nocreatedb
-    nocreaterole
-    noinherit
-    nobypassrls
-    connection limit 5;
+  if role_record.rolconnlimit <> 5 then
+    begin
+      alter role realtyflow_lead_intelligence_runtime connection limit 5;
+    exception
+      when insufficient_privilege then
+        raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role connection limit is not 5 and could not be normalized';
+    end;
 
-  if exists (
-    select 1
+    select rolconnlimit
+    into runtime_connlimit
     from pg_roles
-    where oid = runtime_oid
-      and (
-        not rolcanlogin
-        or rolinherit
-        or rolbypassrls
-        or rolconnlimit <> 5
-      )
-  ) then
-    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role normalization failed';
+    where oid = runtime_oid;
+
+    if runtime_connlimit <> 5 then
+      raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role connection limit normalization failed';
+    end if;
   end if;
 
   for membership_record in
@@ -192,20 +202,7 @@ begin
         'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role is granted to % with INHERIT or SET option',
         membership_record.member_name;
     end if;
-
-    execute format(
-      'revoke realtyflow_lead_intelligence_runtime from %I',
-      membership_record.member_name
-    );
   end loop;
-
-  if exists (
-    select 1
-    from pg_auth_members
-    where roleid = runtime_oid
-  ) then
-    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has unrevokeable member roles';
-  end if;
 
   select jsonb_agg(
     jsonb_build_object(
@@ -358,12 +355,20 @@ revoke all privileges on function public.set_lead_intelligence_updated_at() from
 revoke all privileges on function public.set_lead_intelligence_updated_at() from anon;
 revoke all privileges on function public.set_lead_intelligence_updated_at() from authenticated;
 
-alter role realtyflow_lead_intelligence_runtime
-  set statement_timeout = '30s';
-alter role realtyflow_lead_intelligence_runtime
-  set lock_timeout = '5s';
-alter role realtyflow_lead_intelligence_runtime
-  set idle_in_transaction_session_timeout = '30s';
+do $$
+begin
+  begin
+    alter role realtyflow_lead_intelligence_runtime
+      set statement_timeout = '30s';
+    alter role realtyflow_lead_intelligence_runtime
+      set lock_timeout = '5s';
+    alter role realtyflow_lead_intelligence_runtime
+      set idle_in_transaction_session_timeout = '30s';
+  exception
+    when insufficient_privilege then
+      raise warning 'LEAD_INTELLIGENCE_RUNTIME_ROLE_SETTINGS_SKIPPED: insufficient privilege to set runtime role timeouts; app connections must set timeouts explicitly';
+  end;
+end $$;
 
 drop policy if exists lead_intake_messages_runtime_select on public.lead_intake_messages;
 create policy lead_intake_messages_runtime_select
@@ -505,8 +510,16 @@ create policy lead_contact_candidates_runtime_update
     )
   );
 
-comment on role realtyflow_lead_intelligence_runtime is
-  'Normal Lead Intelligence runtime role. No BYPASSRLS, no ownership, no DDL. Server must set app.lead_intelligence_brand from validated admin/server context before DB access.';
+do $$
+begin
+  begin
+    comment on role realtyflow_lead_intelligence_runtime is
+      'Normal Lead Intelligence runtime role. No BYPASSRLS, no ownership, no DDL. Server must set app.lead_intelligence_brand from validated admin/server context before DB access.';
+  exception
+    when insufficient_privilege then
+      raise warning 'LEAD_INTELLIGENCE_RUNTIME_ROLE_COMMENT_SKIPPED: insufficient privilege to comment on runtime role';
+  end;
+end $$;
 
 comment on view public.lead_intelligence_contact_lookup is
   'Restricted contact lookup surface for Lead Intelligence runtime. Exposes only non-token lookup columns and always filters by server-set app.lead_intelligence_brand, even when contacts RLS is disabled.';
