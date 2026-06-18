@@ -2755,7 +2755,10 @@ async function testLeadIntelligenceRuntimeRls() {
       "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
 
-    await client.query("drop role realtyflow_lead_intelligence_runtime");
+    await client.query(`
+      revoke create on schema public from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+    `);
   });
 
   await withClient(async (client) => {
@@ -2774,7 +2777,10 @@ async function testLeadIntelligenceRuntimeRls() {
       "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
 
-    await client.query("drop role realtyflow_lead_intelligence_runtime");
+    await client.query(`
+      revoke select on public.contacts from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+    `);
   });
 
   await withClient(async (client) => {
@@ -2793,7 +2799,10 @@ async function testLeadIntelligenceRuntimeRls() {
       "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
 
-    await client.query("drop role realtyflow_lead_intelligence_runtime");
+    await client.query(`
+      revoke select on public.oauth_tokens from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+    `);
   });
 
   await withClient(async (client) => {
@@ -2812,7 +2821,10 @@ async function testLeadIntelligenceRuntimeRls() {
       "LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE",
     );
 
-    await client.query("drop role realtyflow_lead_intelligence_runtime");
+    await client.query(`
+      revoke usage on sequence public.sensitive_sequence from realtyflow_lead_intelligence_runtime;
+      drop role realtyflow_lead_intelligence_runtime;
+    `);
   });
 
   await withClient(async (client) => {
