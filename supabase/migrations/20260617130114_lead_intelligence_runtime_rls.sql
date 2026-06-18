@@ -270,6 +270,25 @@ begin
         c.oid,
         privileges.privilege_name
       )
+      and not (
+        n.nspname = 'public'
+        and (
+          (
+            c.relname in (
+              'lead_intake_messages',
+              'lead_analysis_runs',
+              'buyer_profiles',
+              'buyer_profile_criteria',
+              'lead_contact_candidates'
+            )
+            and privileges.privilege_name in ('SELECT', 'INSERT')
+          )
+          or (
+            c.relname = 'lead_intelligence_contact_lookup'
+            and privileges.privilege_name = 'SELECT'
+          )
+        )
+      )
 
     union all
 

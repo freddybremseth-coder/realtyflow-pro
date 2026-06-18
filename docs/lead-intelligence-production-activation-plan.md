@@ -320,7 +320,7 @@ Preferred long-term model:
 Temporary controlled model:
 
 - a dedicated `BYPASSRLS` runtime role may be used only for a short activation/smoke-test phase
-- the role must have no DDL privileges, no role memberships, a low connection limit, and only the table/column grants listed below
+- the role must have no DDL privileges, no unsafe role memberships, a low connection limit, and only the table/column grants listed below
 - activation must include a full effective-privilege audit before any feature flag is enabled
 
 Do not enable the feature if the runtime role cannot be made to access the new tables through one of those two explicit models. Do not fall back to a broad `service_role` or administrator database URL just to make the smoke test pass.
@@ -426,7 +426,7 @@ Effective-privilege audit required before any temporary `BYPASSRLS` role is used
 - `PUBLIC` grants on schemas, tables, functions, and sequences
 - direct role memberships, inherited memberships, `SET ROLE` memberships, and admin memberships
 - documented admin-only creator memberships that the migration can revoke
-- harmless noinherit/noset memberships only if the effective privilege audit is empty
+- harmless noinherit/noset memberships only if the effective privilege audit stays inside the reviewed runtime surface
 - schema `USAGE` and `CREATE`
 - table privileges on every exposed schema
 - function `EXECUTE` privileges, especially functions with side effects or `SECURITY DEFINER`
