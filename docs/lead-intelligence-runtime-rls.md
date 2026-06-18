@@ -77,7 +77,7 @@ It does not get:
 
 The migration does not revoke or modify global `PUBLIC` privileges on the `public` schema. It verifies that the runtime role itself has no `CREATE` privilege.
 
-If the runtime role already exists, safe runtime-shape drift such as `NOLOGIN`, `INHERIT`, or an unlimited connection limit is normalized to the reviewed runtime contract. Dangerous pre-existing state fails closed before grants are applied, including `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, unsafe role memberships, effective access outside the reviewed runtime surface, schema `CREATE`, sequence access, or owned database objects. The idempotence check permits only the exact reviewed runtime surface from a previous successful migration run: SELECT/INSERT on the five Lead Intelligence tables and SELECT on the contact lookup view.
+If the runtime role already exists, security-sensitive role shape is audited before any grants are applied. `NOLOGIN`, `INHERIT`, `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, unsafe role memberships, effective access outside the reviewed runtime surface, schema `CREATE`, sequence access, or owned database objects are stop conditions. A wrong connection limit is the only role attribute the migration attempts to normalize, and only with `ALTER ROLE ... CONNECTION LIMIT 5`. The idempotence check permits only the exact reviewed runtime surface from a previous successful migration run: SELECT/INSERT on the five Lead Intelligence tables and SELECT on the contact lookup view.
 
 ## Production Activation Halt
 
@@ -98,6 +98,27 @@ At that point:
 
 The likely root cause is PostgreSQL 16+ role-membership metadata around role creation. A non-superuser or managed platform role that creates a role can receive an admin-only membership row for that new role. The previous migration treated every `pg_auth_members` row in either direction as dangerous, even when the membership did not allow inheritance, `SET ROLE`, or effective table/function/sequence privileges.
 
+The second controlled production activation stopped correctly with:
+
+```text
+permission denied to alter role
+```
+
+The failing statement was the broad post-create normalization:
+
+```sql
+alter role realtyflow_lead_intelligence_runtime
+  login
+  nosuperuser
+  nocreatedb
+  nocreaterole
+  noinherit
+  nobypassrls
+  connection limit 5;
+```
+
+Managed Supabase/Postgres allows the reviewed `CREATE ROLE ... LOGIN NOINHERIT NOBYPASSRLS CONNECTION LIMIT 5` path, but does not allow this SQL context to run `ALTER ROLE` clauses that touch superuser/BYPASSRLS-style attributes. The corrected migration therefore uses audit as the security guarantee: dangerous attributes stop activation; they are not blindly normalized.
+
 ## Membership And Effective-Privilege Model
 
 The corrected migration audits risk instead of counting membership rows:
@@ -106,6 +127,7 @@ The corrected migration audits risk instead of counting membership rows:
 - Outgoing membership where the runtime role is a member of another role is allowed only when `ADMIN`, `INHERIT`, and `SET` options are all false, the granted role is not elevated, and negative privilege probes prove the runtime role has no effective application access from that membership.
 - The migration still fails closed if membership grants `SUPERUSER`-like escalation, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, DDL, ownership, schema `CREATE`, sequence privileges, direct `contacts` access, sensitive table access, unrelated application-table access, or table privileges outside the reviewed runtime surface.
 - `NOINHERIT` remains mandatory, but it is not the only safety boundary. PostgreSQL membership options are checked directly, including `inherit_option`, `set_option`, and `admin_option`.
+- Runtime role timeout settings are best-effort role settings. If the SQL context cannot set them, the migration continues after warning; application connections must still set timeouts explicitly. These timeout settings are not the security boundary.
 
 Run the read-only diagnostic query in [Lead Intelligence Runtime Membership Diagnostic](./lead-intelligence-runtime-membership-diagnostic.sql) before retrying production activation. Do not run the runtime migration again if the diagnostic shows effective privileges outside the documented runtime surface.
 
@@ -189,10 +211,14 @@ The migration test uses `MIGRATION_TEST_DATABASE_URL` and refuses production-sty
 - transaction-local brand context does not leak between reused connections
 - sensitive test tables are inaccessible
 - policies are named and scoped to the runtime role
-- existing repairable runtime role attributes are normalized
+- new role is created with safe attributes and no forbidden post-create role normalization
+- existing safe role passes audit
+- wrong connection limit is normalized with a narrow `ALTER ROLE ... CONNECTION LIMIT 5`
+- existing `NOLOGIN`, `INHERIT`, `SUPERUSER`, `CREATEDB`, `CREATEROLE`, and `BYPASSRLS` roles fail closed
+- production-like non-superuser migration runner can apply the migration without `ALTER ROLE ... NOSUPERUSER/NOBYPASSRLS`
 - production-like admin-only creator membership is revoked
 - harmless noinherit/noset membership passes only when effective privileges remain inside the reviewed runtime surface
 - dangerous memberships and inherited sensitive access fail closed
-- ownership and `BYPASSRLS` fail closed
+- ownership, schema `CREATE`, direct `contacts` access, sensitive table access, and sequence privileges fail closed
 - migration is idempotent
 - missing or incompatible PR 3A schema fails closed

@@ -452,6 +452,8 @@ Create and operate the runtime role as a narrowly scoped credential:
 - no memberships that grant `ADMIN`, `INHERIT`, `SET`, elevated role attributes, ownership, DDL, or effective application-table/sequence access
 - no ownership of schemas, tables, functions, sequences, or views
 - low connection limit, initially `5` or lower unless load testing proves another value is needed
+- treat `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE`, `INHERIT`, and `NOLOGIN` on an existing normal runtime role as stop conditions, not as attributes to blindly normalize in managed Supabase
+- only connection limit normalization is attempted by the reviewed runtime-RLS migration; role timeout defaults are best-effort and must also be enforced by app connections
 - rotate the credential after initial activation and then on a defined schedule
 - keep a disable plan ready:
   - set `REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false`
@@ -670,6 +672,23 @@ docs/lead-intelligence-runtime-membership-diagnostic.sql
 ```
 
 Do not proceed if it shows inherited privileges, `SET ROLE` privileges, admin escalation that cannot be revoked, schema `CREATE`, ownership, direct `contacts` access, sensitive table access, or other application-table/sequence access outside the documented runtime surface.
+
+The second controlled production retry on 2026-06-18 stopped correctly with:
+
+```text
+permission denied to alter role
+```
+
+The failing statement attempted to run broad post-create role normalization with `ALTER ROLE ... NOSUPERUSER ... NOBYPASSRLS ...`. Managed Supabase/Postgres does not permit this SQL context to alter those superuser/BYPASSRLS-style role attributes, even when the target value is false.
+
+The corrected activation model is:
+
+- for a new role, create it directly with `LOGIN NOINHERIT NOBYPASSRLS CONNECTION LIMIT 5`
+- for an existing role, audit role attributes first
+- stop if `rolsuper`, `rolbypassrls`, `rolcreatedb`, `rolcreaterole`, `rolinherit`, `NOLOGIN`, unsafe memberships, ownership, schema `CREATE`, direct `contacts` access, sensitive table access, unexpected relation privileges, or sequence privileges are present
+- attempt only the narrow `ALTER ROLE ... CONNECTION LIMIT 5` normalization when the existing role is otherwise safe
+- treat role timeout settings as best-effort defaults; app connections must still set statement, lock, and idle transaction timeouts
+- do not proceed to credentials, HMAC, Vercel env, feature flags, or smoke-test until runtime-RLS activation and verification are green
 
 ## Activation Report Template
 
