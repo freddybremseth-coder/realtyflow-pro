@@ -2445,6 +2445,7 @@ async function testLeadIntelligenceRuntimeRls() {
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
     await dropLeadIntelligenceRuntimeTestRole(client);
+    await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
 
     process.stdout.write("  Scenario: repairable existing runtime role is normalized\n");
@@ -2466,6 +2467,7 @@ async function testLeadIntelligenceRuntimeRls() {
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
     await dropLeadIntelligenceRuntimeTestRole(client);
+    await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
 
     process.stdout.write("  Scenario: production-like admin-only creator membership is revoked\n");
@@ -2492,6 +2494,7 @@ async function testLeadIntelligenceRuntimeRls() {
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
     await dropLeadIntelligenceRuntimeTestRole(client);
+    await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
 
     process.stdout.write("  Scenario: harmless noinherit/noset membership can pass effective audit\n");
