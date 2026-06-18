@@ -2571,7 +2571,7 @@ async function testLeadIntelligenceRuntimeRls() {
     process.stdout.write("  Scenario: production-like admin-only creator membership passes effective audit\n");
     await client.query(`
       create role lead_intelligence_migration_owner nologin;
-      create role realtyflow_lead_intelligence_runtime login connection limit 5;
+      create role realtyflow_lead_intelligence_runtime login noinherit connection limit 5;
       grant realtyflow_lead_intelligence_runtime to lead_intelligence_migration_owner
         with admin true, inherit false, set false;
     `);
