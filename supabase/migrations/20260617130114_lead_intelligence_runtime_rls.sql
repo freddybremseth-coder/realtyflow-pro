@@ -11,8 +11,10 @@ declare
   marker text := 'Lead Intelligence persistence foundation v1';
   missing_columns text[];
   runtime_oid oid;
-  membership_count integer;
   ownership_count integer;
+  unsafe_memberships jsonb;
+  unsafe_privileges jsonb;
+  membership_record record;
 begin
   foreach target_table in array array[
     'lead_intake_messages',
@@ -137,16 +139,6 @@ begin
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has elevated attributes';
   end if;
 
-  select count(*)::int
-  into membership_count
-  from pg_auth_members
-  where member = runtime_oid
-     or roleid = runtime_oid;
-
-  if membership_count <> 0 then
-    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has memberships';
-  end if;
-
   select
     (
       select count(*)::int from pg_class where relowner = runtime_oid
@@ -184,6 +176,140 @@ begin
       )
   ) then
     raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role normalization failed';
+  end if;
+
+  for membership_record in
+    select
+      member_role.rolname as member_name,
+      m.inherit_option,
+      m.set_option
+    from pg_auth_members m
+    join pg_roles member_role on member_role.oid = m.member
+    where m.roleid = runtime_oid
+  loop
+    if membership_record.inherit_option or membership_record.set_option then
+      raise exception
+        'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role is granted to % with INHERIT or SET option',
+        membership_record.member_name;
+    end if;
+
+    execute format(
+      'revoke realtyflow_lead_intelligence_runtime from %I',
+      membership_record.member_name
+    );
+  end loop;
+
+  if exists (
+    select 1
+    from pg_auth_members
+    where roleid = runtime_oid
+  ) then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has unrevokeable member roles';
+  end if;
+
+  select jsonb_agg(
+    jsonb_build_object(
+      'granted_role', granted_role.rolname,
+      'admin_option', m.admin_option,
+      'inherit_option', m.inherit_option,
+      'set_option', m.set_option
+    )
+    order by granted_role.rolname
+  )
+  into unsafe_memberships
+  from pg_auth_members m
+  join pg_roles granted_role on granted_role.oid = m.roleid
+  where m.member = runtime_oid
+    and (
+      m.admin_option
+      or m.inherit_option
+      or m.set_option
+      or granted_role.rolsuper
+      or granted_role.rolcreatedb
+      or granted_role.rolcreaterole
+      or granted_role.rolbypassrls
+    );
+
+  if unsafe_memberships is not null then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has unsafe memberships %', unsafe_memberships;
+  end if;
+
+  select jsonb_agg(
+    jsonb_build_object('kind', kind, 'object', object_name, 'privilege', privilege_name)
+    order by kind, object_name, privilege_name
+  )
+  into unsafe_privileges
+  from (
+    select
+      'schema' as kind,
+      'public' as object_name,
+      'CREATE' as privilege_name
+    where has_schema_privilege('realtyflow_lead_intelligence_runtime', 'public', 'create')
+
+    union all
+
+    select
+      'relation' as kind,
+      format('%I.%I', n.nspname, c.relname) as object_name,
+      privilege_name
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join (values
+      ('SELECT'),
+      ('INSERT'),
+      ('UPDATE'),
+      ('DELETE'),
+      ('TRUNCATE'),
+      ('REFERENCES'),
+      ('TRIGGER')
+    ) privileges(privilege_name)
+    where n.nspname in ('public', 'storage', 'auth', 'vault')
+      and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and has_table_privilege(
+        'realtyflow_lead_intelligence_runtime',
+        c.oid,
+        privileges.privilege_name
+      )
+      and not (
+        n.nspname = 'public'
+        and (
+          (
+            c.relname in (
+              'lead_intake_messages',
+              'lead_analysis_runs',
+              'buyer_profiles',
+              'buyer_profile_criteria',
+              'lead_contact_candidates'
+            )
+            and privileges.privilege_name in ('SELECT', 'INSERT')
+          )
+          or (
+            c.relname = 'lead_intelligence_contact_lookup'
+            and privileges.privilege_name = 'SELECT'
+          )
+        )
+      )
+
+    union all
+
+    select
+      'sequence' as kind,
+      format('%I.%I', n.nspname, c.relname) as object_name,
+      privilege_name
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join (values ('USAGE'), ('SELECT'), ('UPDATE')) privileges(privilege_name)
+    where n.nspname in ('public', 'storage', 'auth', 'vault')
+      and c.relkind = 'S'
+      and has_sequence_privilege(
+        'realtyflow_lead_intelligence_runtime',
+        c.oid,
+        privileges.privilege_name
+      )
+  ) unsafe;
+
+  if unsafe_privileges is not null then
+    raise exception 'LEAD_INTELLIGENCE_RUNTIME_ROLE_INCOMPATIBLE: runtime role has pre-existing effective privileges %', unsafe_privileges;
   end if;
 end $$;
 
