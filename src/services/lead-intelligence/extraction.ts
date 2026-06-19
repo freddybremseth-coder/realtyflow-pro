@@ -249,12 +249,48 @@ export function canonicalizeExtractedLeadCandidate(value: unknown) {
   };
 }
 
+function findBalancedJsonObject(text: string) {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+      if (depth < 0) return null;
+    }
+  }
+
+  return null;
+}
+
 function extractJsonObject(text: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  const candidate = fenced ? fenced[1].trim() : trimmed;
+  const candidate = fenced ? fenced[1].trim() : findBalancedJsonObject(trimmed);
 
-  if (!candidate.startsWith("{") || !candidate.endsWith("}")) {
+  if (!candidate) {
     throw new LeadIntelligenceError("AI_INVALID_OUTPUT", "AI returned non-JSON output", 502, {
       reason: "non_json_output",
     });
@@ -275,14 +311,22 @@ function summarizeValidationError(error: unknown) {
       path: issue.path.join("."),
       code: issue.code,
       message: issue.message,
+      reason: null,
     }));
   }
 
   if (error instanceof LeadIntelligenceError) {
-    return [{ path: "", code: error.code, message: error.message }];
+    const reason =
+      error.details &&
+      typeof error.details === "object" &&
+      "reason" in error.details &&
+      typeof error.details.reason === "string"
+        ? error.details.reason
+        : null;
+    return [{ path: "", code: error.code, message: error.message, reason }];
   }
 
-  return [{ path: "", code: "invalid_output", message: "Invalid structured output" }];
+  return [{ path: "", code: "invalid_output", message: "Invalid structured output", reason: null }];
 }
 
 function validateExtractedLead(candidate: unknown, mappings: PlaceholderMapping[]) {
@@ -502,6 +546,7 @@ export async function analyzeLeadIntake(
       promptVersion: LEAD_INTELLIGENCE_PROMPT_VERSION,
       model,
       fields: issues.map((issue) => issue.path).filter(Boolean),
+      reasons: issues.map((issue) => issue.reason).filter(Boolean),
       code: error instanceof LeadIntelligenceError ? error.code : "AI_INVALID_OUTPUT",
       repaired,
     });
