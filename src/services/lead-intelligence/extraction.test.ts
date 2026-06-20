@@ -155,6 +155,30 @@ function providerReturning(...responses: unknown[]) {
   return { provider, prompts };
 }
 
+function collectEmptyObjectSchemaPaths(schema: unknown, path: string[] = []): string[] {
+  if (!schema || typeof schema !== "object") return [];
+  const current = schema as { type?: unknown; properties?: unknown; items?: unknown };
+  const failures: string[] = [];
+
+  if (current.type === "object") {
+    const propertyCount =
+      current.properties && typeof current.properties === "object"
+        ? Object.keys(current.properties as Record<string, unknown>).length
+        : 0;
+    if (propertyCount === 0) failures.push(path.join(".") || "<root>");
+
+    for (const [key, value] of Object.entries((current.properties || {}) as Record<string, unknown>)) {
+      failures.push(...collectEmptyObjectSchemaPaths(value, [...path, key]));
+    }
+  }
+
+  if (current.type === "array" && current.items) {
+    failures.push(...collectEmptyObjectSchemaPaths(current.items, [...path, "[]"]));
+  }
+
+  return failures;
+}
+
 test.afterEach(() => {
   setLeadIntelligenceProviderForTests(null);
 });
@@ -242,12 +266,63 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
 
   assert.equal(prompts[0].responseMimeType, LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE);
   assert.deepEqual(prompts[0].responseSchema, LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA);
+  assert.deepEqual(collectEmptyObjectSchemaPaths(prompts[0].responseSchema), []);
+  assert.deepEqual(
+    (prompts[0].responseSchema as any).properties.contact.required,
+    ["name", "phone", "email", "language", "country"],
+  );
+  assert.deepEqual(
+    (prompts[0].responseSchema as any).properties.budget.required,
+    ["amount", "currency", "includesCosts", "approximate", "hardLimit"],
+  );
   assert.equal(prompts[0].systemPrompt.includes("Return exactly one JSON object."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return an array."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return multiple JSON objects."), true);
   assert.equal(prompts[0].systemPrompt.includes("Escape inner quotes, backslashes, and line breaks"), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not include trailing commas."), true);
   assert.equal(prompts[0].prompt.includes("The first non-whitespace character must be `{`."), true);
+});
+
+test("normalizes obvious provider string criterion values before validation", async () => {
+  const { provider } = providerReturning(emmadaleOutput({
+    hardRequirements: [
+      {
+        key: "bedrooms",
+        operator: "gte",
+        value: "2",
+        sourceText: "Minst 2 soverom.",
+        confidence: 0.95,
+        appliesToPropertyTypes: ["apartment"],
+      },
+      {
+        key: "has_lift",
+        operator: "eq",
+        value: "true",
+        sourceText: "Må være heis om det er opp i etasjene.",
+        confidence: 0.9,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["hardRequirements"],
+    preferences: [
+      {
+        key: "terrace_area_m2",
+        operator: "gte",
+        value: "20 kvm+",
+        sourceText: "Stor åpen terrasse eventuelt ut fra stue 20 kvm+",
+        confidence: 0.9,
+        weight: 0.82,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["preferences"],
+  }));
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.result.hardRequirements.find((row) => row.key === "bedrooms")?.value, 2);
+  assert.equal(analysis.result.hardRequirements.find((row) => row.key === "has_lift")?.value, true);
+  assert.equal(analysis.result.preferences.find((row) => row.key === "terrace_area_m2")?.value, 20);
 });
 
 test("customer prompt injection remains customer data and cannot add extra schema fields", async () => {
