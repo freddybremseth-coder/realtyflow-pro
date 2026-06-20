@@ -281,6 +281,10 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
   assert.equal(prompts[0].systemPrompt.includes("Escape inner quotes, backslashes, and line breaks"), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not include trailing commas."), true);
   assert.equal(prompts[0].prompt.includes("The first non-whitespace character must be `{`."), true);
+  assert.equal(prompts[0].prompt.includes("Required JSON shape:"), true);
+  assert.equal(prompts[0].prompt.includes("contact: { name, phone, email, language, country }"), true);
+  assert.equal(prompts[0].prompt.includes("budget: { amount, currency, includesCosts, approximate, hardLimit }"), true);
+  assert.equal(prompts[0].prompt.includes("Include every required object field"), true);
 });
 
 test("normalizes obvious provider string criterion values before validation", async () => {
@@ -356,6 +360,8 @@ test("repairs non-JSON first output with a JSON-only repair prompt", async () =>
   assert.equal(prompts.length, 2);
   assert.equal(prompts[1].prompt.includes("Your previous answer was not one valid parseable JSON object."), true);
   assert.equal(prompts[1].prompt.includes("Regenerate the entire object from the pseudonymized customer text."), true);
+  assert.equal(prompts[1].prompt.includes("Required JSON shape:"), true);
+  assert.equal(prompts[1].prompt.includes("purchaseReadiness: { level, confidence, reasoning }"), true);
   assert.equal(prompts[1].prompt.includes("Return exactly one JSON object."), true);
   assert.equal(prompts[1].prompt.includes("+47 90 17 47 14"), false);
   assert.equal(prompts[1].prompt.includes("[PHONE_1]"), true);
