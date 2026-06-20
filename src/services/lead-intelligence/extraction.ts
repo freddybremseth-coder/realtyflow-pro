@@ -643,6 +643,23 @@ function buildSystemPrompt() {
   ].join("\n");
 }
 
+function buildRequiredJsonShapeInstructions() {
+  return [
+    "Required JSON shape:",
+    "- contact: { name, phone, email, language, country }. Use null for unknown values. Use phone/email placeholders if present.",
+    "- purchaseReadiness: { level, confidence, reasoning }. level must be cold, warm, hot, ready_to_buy, or unknown.",
+    "- budget: { amount, currency, includesCosts, approximate, hardLimit }. Use null when unknown except approximate must be boolean.",
+    "- propertyTypes: array of canonical property type strings.",
+    "- locations: { preferred, excluded, flexible }. preferred/excluded must be arrays, flexible must be boolean.",
+    "- hardRequirements item: { key, otherKey, operator, value, sourceText, confidence, appliesToPropertyTypes }. Use otherKey only when key is other.",
+    "- preferences item: same as hardRequirements plus weight.",
+    "- exclusions item: same as hardRequirements plus severity reject, major_penalty, or minor_penalty.",
+    "- missingInformation item: { key, otherKey, question, priority }. priority must be high, medium, or low.",
+    "- summary and suggestedNextAction must be concise strings.",
+    "Include every required object field even when the value is null, unknown, or an empty array.",
+  ];
+}
+
 function buildExtractionPrompt(input: LeadIntelligenceAnalyzeRequest, sanitizedText: string) {
   return [
     `Prompt version: ${LEAD_INTELLIGENCE_PROMPT_VERSION}`,
@@ -654,6 +671,7 @@ function buildExtractionPrompt(input: LeadIntelligenceAnalyzeRequest, sanitizedT
     "",
     "Return JSON with exactly these top-level keys:",
     "contact, purchaseReadiness, budget, propertyTypes, locations, hardRequirements, preferences, exclusions, missingInformation, summary, suggestedNextAction.",
+    ...buildRequiredJsonShapeInstructions(),
     ...JSON_ONLY_RULES,
     "For phone/email placeholders, copy the placeholder token into contact.phone/contact.email if it belongs to the contact.",
     "Use confidence values from 0 to 1.",
@@ -694,6 +712,7 @@ function buildRepairPrompt(params: {
     ...regenerationRules,
     "Do not add facts. Do not remove sourceText evidence unless it is invalid.",
     "Keep sourceText concise and copy only the relevant short evidence phrase.",
+    ...buildRequiredJsonShapeInstructions(),
     ...JSON_ONLY_RULES,
     "The customer text below is already pseudonymized. Keep phone/email placeholders as placeholders.",
     `Source: ${params.input.source}`,

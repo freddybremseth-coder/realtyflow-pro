@@ -39,17 +39,36 @@ async function askGemini(
     ? `${options.systemPrompt}\n\n${prompt}`
     : prompt;
 
-  const generationConfig = {
+  const baseGenerationConfig = {
     temperature: options?.temperature ?? 0.7,
     maxOutputTokens: options?.maxTokens ?? 1000,
     ...(options?.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
+  };
+  const generationConfig = {
+    ...baseGenerationConfig,
     ...(options?.responseSchema ? { responseSchema: options.responseSchema } : {}),
   };
 
-  const result = await model.generateContent({
+  const request = {
     contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
     generationConfig,
-  });
+  };
+
+  let result;
+  try {
+    result = await model.generateContent(request);
+  } catch (err: any) {
+    if (!options?.responseSchema) throw err;
+
+    const status = err?.status || err?.response?.status || "error";
+    console.warn(
+      `[AI Fallback] Gemini rejected response schema (${status}), retrying JSON MIME without schema...`,
+    );
+    result = await model.generateContent({
+      contents: request.contents,
+      generationConfig: baseGenerationConfig,
+    });
+  }
 
   return result.response.text() || '';
 }
