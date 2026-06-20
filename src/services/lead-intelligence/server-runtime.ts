@@ -271,10 +271,13 @@ function mapDatabaseError(error: unknown) {
       409,
     );
   }
-  return new LeadIntelligencePersistenceError(
+  return new LeadIntelligenceReviewError(
     "DATABASE_ERROR",
     "Lead Intelligence persistence operation failed",
     500,
+    {
+      databaseCode: code || "unknown",
+    },
   );
 }
 

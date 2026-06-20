@@ -613,6 +613,9 @@ test("createBuyerProfile uses one atomic SQL statement for profile and criteria"
   assert(db.queries[0].sql.includes("on conflict (intake_id, version) do nothing"));
   assert(db.queries[0].sql.includes("where selected_profile.duplicate is false"));
   assert(db.queries[0].sql.includes("inserted_criteria as"));
+  assert(db.queries[0].sql.includes("applies_to_property_types jsonb"));
+  assert(db.queries[0].sql.includes("jsonb_array_elements_text"));
+  assert(!db.queries[0].sql.includes("applies_to_property_types text[]"));
 });
 
 test("invalid criterion in profile prevents any DB query and cannot create partial profile", async () => {
