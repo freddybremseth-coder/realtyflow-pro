@@ -18,6 +18,20 @@ export const LEAD_INTELLIGENCE_MODEL = "claude-sonnet-4-structured-json";
 export const LEAD_INTELLIGENCE_MIN_INPUT_LENGTH = 12;
 export const LEAD_INTELLIGENCE_MAX_REQUEST_BYTES = 18 * 1024;
 export const LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS = 30_000;
+export const LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE = "application/json";
+
+const JSON_ONLY_RULES = [
+  "Return exactly one JSON object.",
+  "The first non-whitespace character must be `{`.",
+  "The last non-whitespace character must be `}`.",
+  "Do not include markdown.",
+  "Do not include code fences.",
+  "Do not include explanations.",
+  "Do not include preamble or postscript.",
+  "Do not return an array.",
+  "Do not return multiple JSON objects.",
+  "If uncertain, use null, unknown, or empty arrays according to the schema.",
+];
 
 export const LeadIntakeSourceSchema = z.enum([
   "phone_call",
@@ -66,6 +80,8 @@ export class LeadIntelligenceError extends Error {
 export interface LeadIntelligenceProviderResult {
   text: string;
   model?: string;
+  provider?: string;
+  fallbackUsed?: boolean;
 }
 
 export interface LeadIntelligenceProvider {
@@ -73,6 +89,7 @@ export interface LeadIntelligenceProvider {
     systemPrompt: string;
     prompt: string;
     timeoutMs: number;
+    responseMimeType: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE;
   }): Promise<LeadIntelligenceProviderResult>;
 }
 
@@ -249,15 +266,21 @@ export function canonicalizeExtractedLeadCandidate(value: unknown) {
   };
 }
 
-function findBalancedJsonObject(text: string) {
-  const start = text.indexOf("{");
-  if (start < 0) return null;
+interface JsonObjectCandidate {
+  json: string;
+  start: number;
+  end: number;
+}
+
+function findBalancedJsonObjects(text: string) {
+  const candidates: JsonObjectCandidate[] = [];
 
   let depth = 0;
   let inString = false;
   let escaped = false;
+  let start = -1;
 
-  for (let index = start; index < text.length; index += 1) {
+  for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
 
     if (inString) {
@@ -274,34 +297,65 @@ function findBalancedJsonObject(text: string) {
     if (char === "\"") {
       inString = true;
     } else if (char === "{") {
+      if (depth === 0) start = index;
       depth += 1;
     } else if (char === "}") {
+      if (depth === 0) return candidates;
       depth -= 1;
-      if (depth === 0) return text.slice(start, index + 1);
-      if (depth < 0) return null;
+      if (depth === 0 && start >= 0) {
+        candidates.push({ json: text.slice(start, index + 1), start, end: index + 1 });
+        start = -1;
+      }
     }
   }
 
-  return null;
+  return candidates;
+}
+
+function jsonFailure(reason: string, message: string): never {
+  throw new LeadIntelligenceError("AI_INVALID_OUTPUT", message, 502, { reason });
+}
+
+function unwrapFullMarkdownFence(text: string) {
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : text;
 }
 
 function extractJsonObject(text: string) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  const candidate = fenced ? fenced[1].trim() : findBalancedJsonObject(trimmed);
+  const trimmed = unwrapFullMarkdownFence(text.trim());
+  const candidates = findBalancedJsonObjects(trimmed);
 
+  if (candidates.length > 1) {
+    jsonFailure("multiple_json_objects", "AI returned multiple JSON objects");
+  }
+
+  const firstNonWhitespace = trimmed.trimStart()[0];
+  if (firstNonWhitespace === "[") {
+    jsonFailure("json_array_output", "AI returned a JSON array instead of an object");
+  }
+
+  const candidate = candidates[0];
   if (!candidate) {
-    throw new LeadIntelligenceError("AI_INVALID_OUTPUT", "AI returned non-JSON output", 502, {
-      reason: "non_json_output",
-    });
+    if (trimmed.includes("{") || trimmed.includes("}")) {
+      jsonFailure("invalid_json", "AI returned invalid JSON");
+    }
+    jsonFailure("non_json_output", "AI returned non-JSON output");
+  }
+
+  const before = trimmed.slice(0, candidate.start).trim();
+  const after = trimmed.slice(candidate.end).trim();
+  if (before.endsWith("[") || after.startsWith("]")) {
+    jsonFailure("json_array_output", "AI returned a JSON array instead of an object");
   }
 
   try {
-    return JSON.parse(candidate) as unknown;
+    const parsed = JSON.parse(candidate.json) as unknown;
+    if (Array.isArray(parsed)) {
+      jsonFailure("json_array_output", "AI returned a JSON array instead of an object");
+    }
+    return parsed;
   } catch {
-    throw new LeadIntelligenceError("AI_INVALID_OUTPUT", "AI returned invalid JSON", 502, {
-      reason: "invalid_json",
-    });
+    jsonFailure("invalid_json", "AI returned invalid JSON");
   }
 }
 
@@ -346,7 +400,8 @@ function buildSystemPrompt() {
     "Separate hard requirements, preferences, and exclusions.",
     "Use only canonical criterion keys and property types. Use key other plus otherKey only when no canonical key fits.",
     "Include sourceText for important interpretations.",
-    "Return a single JSON object that matches the provided schema shape. Do not return markdown.",
+    "The response must match the provided schema shape.",
+    ...JSON_ONLY_RULES,
   ].join("\n");
 }
 
@@ -361,6 +416,7 @@ function buildExtractionPrompt(input: LeadIntelligenceAnalyzeRequest, sanitizedT
     "",
     "Return JSON with exactly these top-level keys:",
     "contact, purchaseReadiness, budget, propertyTypes, locations, hardRequirements, preferences, exclusions, missingInformation, summary, suggestedNextAction.",
+    ...JSON_ONLY_RULES,
     "For phone/email placeholders, copy the placeholder token into contact.phone/contact.email if it belongs to the contact.",
     "Use confidence values from 0 to 1.",
     "Use operators such as eq, gte, lte, contains, exists, unknown.",
@@ -378,10 +434,20 @@ function buildRepairPrompt(params: {
   sanitizedText: string;
   issues: ReturnType<typeof summarizeValidationError>;
 }) {
+  const reasons = new Set(params.issues.map((issue) => issue.reason).filter(Boolean));
+  const nonJsonRepair = reasons.has("non_json_output")
+    ? [
+        "Your previous answer was not parseable JSON.",
+        "Ignore the formatting of the previous answer.",
+        "Regenerate the entire object from the pseudonymized customer text.",
+      ]
+    : [];
+
   return [
-    "Repair the previous JSON output so it exactly matches the required schema.",
+    "Repair the previous structured output so it exactly matches the required schema.",
+    ...nonJsonRepair,
     "Do not add facts. Do not remove sourceText evidence unless it is invalid.",
-    "Return only one JSON object and no markdown.",
+    ...JSON_ONLY_RULES,
     "The customer text below is already pseudonymized. Keep phone/email placeholders as placeholders.",
     `Source: ${params.input.source}`,
     `Brand: ${params.input.brand}`,
@@ -426,10 +492,11 @@ function getProvider() {
           temperature: 0.1,
           maxTokens: 3000,
           model: "sonnet",
+          responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
         }),
         timeoutMs,
       );
-      return { text, model: LEAD_INTELLIGENCE_MODEL };
+      return { text, model: LEAD_INTELLIGENCE_MODEL, provider: "claude_fallback_chain" };
     },
   } satisfies LeadIntelligenceProvider;
 }
@@ -438,9 +505,16 @@ async function callProvider(provider: LeadIntelligenceProvider, params: {
   systemPrompt: string;
   prompt: string;
   timeoutMs: number;
+  responseMimeType?: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE;
 }) {
   try {
-    return await withTimeout(provider.generate(params), params.timeoutMs);
+    return await withTimeout(
+      provider.generate({
+        ...params,
+        responseMimeType: params.responseMimeType || LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+      }),
+      params.timeoutMs,
+    );
   } catch (error) {
     if (error instanceof LeadIntelligenceError) throw error;
     throw new LeadIntelligenceError("AI_PROVIDER_ERROR", "AI provider failed", 502);
@@ -469,10 +543,19 @@ export async function analyzeLeadIntake(
   const timeoutMs = options.timeoutMs || LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS;
   let repaired = false;
   let model = LEAD_INTELLIGENCE_MODEL;
+  let providerName: string | undefined;
+  let fallbackUsed: boolean | undefined;
 
   try {
-    const first = await callProvider(provider, { systemPrompt, prompt, timeoutMs });
+    const first = await callProvider(provider, {
+      systemPrompt,
+      prompt,
+      timeoutMs,
+      responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+    });
     model = first.model || model;
+    providerName = first.provider || providerName;
+    fallbackUsed = first.fallbackUsed ?? fallbackUsed;
 
     try {
       const candidate = extractJsonObject(first.text);
@@ -483,6 +566,8 @@ export async function analyzeLeadIntake(
         correlationId: options.correlationId,
         promptVersion: LEAD_INTELLIGENCE_PROMPT_VERSION,
         model,
+        provider: providerName,
+        fallbackUsed,
         durationMs,
         repaired,
       });
@@ -510,9 +595,12 @@ export async function analyzeLeadIntake(
           issues,
         }),
         timeoutMs,
+        responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
       });
       repaired = true;
       model = repair.model || model;
+      providerName = repair.provider || providerName;
+      fallbackUsed = repair.fallbackUsed ?? fallbackUsed;
       const repairedCandidate = extractJsonObject(repair.text);
       const result = validateExtractedLead(repairedCandidate, pseudonymized.mappings);
       const durationMs = (options.now?.() ?? Date.now()) - started;
@@ -521,6 +609,8 @@ export async function analyzeLeadIntake(
         correlationId: options.correlationId,
         promptVersion: LEAD_INTELLIGENCE_PROMPT_VERSION,
         model,
+        provider: providerName,
+        fallbackUsed,
         durationMs,
         repaired,
       });
@@ -548,6 +638,8 @@ export async function analyzeLeadIntake(
       fields: issues.map((issue) => issue.path).filter(Boolean),
       reasons: issues.map((issue) => issue.reason).filter(Boolean),
       code: error instanceof LeadIntelligenceError ? error.code : "AI_INVALID_OUTPUT",
+      provider: providerName,
+      fallbackUsed,
       repaired,
     });
 

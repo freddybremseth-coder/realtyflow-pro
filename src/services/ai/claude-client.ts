@@ -2,6 +2,13 @@ import Anthropic from '@anthropic-ai/sdk';
 
 let client: Anthropic | null = null;
 
+interface TextGenerationOptions {
+  temperature?: number;
+  maxTokens?: number;
+  systemPrompt?: string;
+  responseMimeType?: 'application/json';
+}
+
 function getClient(): Anthropic {
   if (!client) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -15,7 +22,7 @@ function getClient(): Anthropic {
 
 async function askGemini(
   prompt: string,
-  options?: { temperature?: number; maxTokens?: number; systemPrompt?: string }
+  options?: TextGenerationOptions
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
@@ -28,12 +35,15 @@ async function askGemini(
     ? `${options.systemPrompt}\n\n${prompt}`
     : prompt;
 
+  const generationConfig = {
+    temperature: options?.temperature ?? 0.7,
+    maxOutputTokens: options?.maxTokens ?? 1000,
+    ...(options?.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
+  };
+
   const result = await model.generateContent({
     contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-    generationConfig: {
-      temperature: options?.temperature ?? 0.7,
-      maxOutputTokens: options?.maxTokens ?? 1000,
-    },
+    generationConfig,
   });
 
   return result.response.text() || '';
@@ -43,7 +53,7 @@ async function askGemini(
 
 async function askOpenAI(
   prompt: string,
-  options?: { temperature?: number; maxTokens?: number; systemPrompt?: string }
+  options?: TextGenerationOptions
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -65,6 +75,9 @@ async function askOpenAI(
       messages,
       temperature: options?.temperature ?? 0.7,
       max_tokens: options?.maxTokens ?? 1000,
+      ...(options?.responseMimeType === 'application/json'
+        ? { response_format: { type: 'json_object' } }
+        : {}),
     }),
   });
 
@@ -91,6 +104,7 @@ export async function askClaude(
     temperature?: number;
     maxTokens?: number;
     systemPrompt?: string;
+    responseMimeType?: 'application/json';
     model?: 'haiku' | 'sonnet';
   }
 ): Promise<string> {
