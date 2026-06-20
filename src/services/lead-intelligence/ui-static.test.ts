@@ -68,3 +68,10 @@ test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", as
   assert.equal(source.includes("Duplicate:"), true);
   assert.equal(source.includes("Conflict:"), true);
 });
+
+test("Lead Intelligence preview surfaces safe review diagnostics", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("saveError.details"), true);
+  assert.equal(source.includes("prettyJson(saveError.details)"), true);
+});

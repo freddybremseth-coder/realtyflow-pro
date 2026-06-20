@@ -86,6 +86,7 @@ export function leadIntelligenceJsonError(error: unknown, correlationId: string)
 
   const retryable = status >= 500 || status === 429 ? "retryable" : "not_retryable";
   const message = status >= 500 ? "Internal server error" : sanitizeErrorMessage(typed.message);
+  logSafeLeadIntelligenceError(error, correlationId, code);
   return NextResponse.json(
     createErrorEnvelope({
       correlationId,
@@ -103,6 +104,22 @@ export function leadIntelligenceJsonError(error: unknown, correlationId: string)
       headers: leadIntelligenceHeaders(correlationId),
     },
   );
+}
+
+function logSafeLeadIntelligenceError(error: unknown, correlationId: string, code: string) {
+  if (!(error instanceof LeadIntelligenceReviewError) || code !== "DATABASE_ERROR") return;
+  const databaseCode =
+    error.details &&
+    typeof error.details.databaseCode === "string" &&
+    /^[0-9A-Z]{5}$/.test(error.details.databaseCode)
+      ? error.details.databaseCode
+      : "unknown";
+
+  console.warn("lead_intelligence_database_error", {
+    correlationId,
+    code,
+    databaseCode,
+  });
 }
 
 export async function readJsonBody(request: NextRequest, maxBytes = 48 * 1024) {

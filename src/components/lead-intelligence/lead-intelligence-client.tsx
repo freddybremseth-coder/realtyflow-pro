@@ -949,8 +949,9 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                       <div className="flex items-start gap-2">
                         <UserCheck className="mt-0.5 h-4 w-4 text-blue-300" />
                         <p>
-                          Denne fasen lagrer bare intake, analyse, kandidatstatus og buyer profile. Den sender ikke e-post,
-                          starter ikke matching og oppdaterer ikke eksisterende kontaktdata.
+                          Denne fasen lagrer bare intake, analyse og buyer profile. Kontaktkandidat lagres kun når
+                          Freddy eksplisitt kobler en eksisterende kontakt. Den sender ikke e-post, starter ikke
+                          matching og oppdaterer ikke eksisterende kontaktdata.
                         </p>
                       </div>
                     </div>
@@ -990,6 +991,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                     <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
                       <p className="font-semibold">{saveError.code}</p>
                       <p className="mt-1">{saveError.message}</p>
+                      {saveError.details && (
+                        <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                          {prettyJson(saveError.details)}
+                        </pre>
+                      )}
                       <p className="mt-2 text-xs text-red-100/80">Correlation ID: {saveError.correlationId}</p>
                     </div>
                   )}

@@ -286,6 +286,24 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
   assert.equal((repo.intakes[0] as any).rawTextRetentionUntil, null);
 });
 
+test("continue_without_contact saves profile without writing contact candidates", async () => {
+  const repo = new CaptureRepository();
+  const result = await saveLeadIntelligenceReview({
+    request: baseRequest(),
+    repository: repo,
+    serverContactCandidates: [serverContactCandidate],
+    approvedBy: "Freddy.Bremseth@gmail.com",
+    now: approvedAt,
+  });
+
+  assert.equal(result.contactCandidates.decision, "continue_without_contact");
+  assert.equal(result.contactCandidates.recorded, 0);
+  assert.equal(result.contactCandidates.linkedContact, false);
+  assert.equal(result.buyerProfile.duplicate, false);
+  assert.equal(repo.candidates.length, 0);
+  assert.equal(repo.profiles[0].contactId, null);
+});
+
 test("review save requires every criterion to have item-level approval", async () => {
   await assert.rejects(
     () =>
