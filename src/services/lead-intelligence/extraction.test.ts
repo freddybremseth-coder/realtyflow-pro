@@ -228,6 +228,21 @@ test("extracts and validates Emmadale fixture with canonical values", async () =
   assert.equal(analysis.meta.repaired, false);
 });
 
+test("normalizes provider contact language aliases before strict validation", async () => {
+  const { provider } = providerReturning(emmadaleOutput({
+    contact: {
+      ...emmadaleOutput().contact,
+      language: "Norwegian Bokmål",
+    },
+  }));
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.result.contact.language, "no");
+});
+
 test("accepts a single valid JSON object wrapped in provider prose", async () => {
   const wrapped = [
     "Here is the structured JSON:",

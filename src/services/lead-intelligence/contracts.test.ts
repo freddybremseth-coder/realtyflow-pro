@@ -231,6 +231,38 @@ test("normalizes currency, language, and country values", () => {
   assert.equal(normalizeCurrencyCode("EURO"), "EUR");
 });
 
+test("normalizes common model language aliases without widening schema", () => {
+  const aliases = [
+    "Norwegian Bokmål",
+    "Norwegian Bokmal",
+    "bokmål",
+    "nor",
+    "nb_NO",
+    "NO (inferred from phone)",
+  ];
+
+  for (const language of aliases) {
+    const parsed = ExtractedLeadSchema.parse({
+      ...emmadaleExtractedLead,
+      contact: {
+        ...emmadaleExtractedLead.contact,
+        language,
+      },
+    });
+    assert.equal(parsed.contact.language, "no");
+  }
+
+  assert.throws(() =>
+    ExtractedLeadSchema.parse({
+      ...emmadaleExtractedLead,
+      contact: {
+        ...emmadaleExtractedLead.contact,
+        language: "customer language probably Scandinavian",
+      },
+    }),
+  );
+});
+
 test("requires unknown property facts to stay explicit in matching inputs", () => {
   const property = NormalizedPropertyForMatchingSchema.parse({
     propertyId: "property-1",

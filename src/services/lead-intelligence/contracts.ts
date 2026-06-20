@@ -258,21 +258,52 @@ export function normalizeLanguageCode(value: unknown): string | null {
   const raw = String(value).trim();
   if (!raw) return null;
 
-  const compact = raw.replace("_", "-").toLowerCase();
+  const withoutParenthetical = raw.replace(/\([^)]*\)/g, " ").trim();
+  const compact = withoutParenthetical.replace(/_/g, "-").toLowerCase();
+  const aliasKey = withoutParenthetical
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
   const aliases: Record<string, string> = {
+    no: "no",
+    "no-no": "no",
     norsk: "no",
     norwegian: "no",
+    norwegian_norsk: "no",
+    norwegian_bokmal: "no",
+    norwegian_bokmaal: "no",
+    norwegian_bokmål: "no",
+    bokmal: "no",
+    bokmaal: "no",
+    bokmål: "no",
+    nor: "no",
     nb: "no",
     "nb-no": "no",
+    nb_no: "no",
+    nn: "no",
+    "nn-no": "no",
+    nn_no: "no",
+    nynorsk: "no",
+    en: "en",
+    "en-gb": "en",
+    "en-us": "en",
     english: "en",
     engelsk: "en",
+    english_engelsk: "en",
+    eng: "en",
+    es: "es",
+    "es-es": "es",
     spanish: "es",
     spansk: "es",
+    spanish_spansk: "es",
     espanol: "es",
     "español": "es",
+    spa: "es",
   };
 
-  return aliases[compact] || compact;
+  return aliases[compact] || aliases[aliasKey] || compact;
 }
 
 export function normalizeCountryCode(value: unknown): string | null {
