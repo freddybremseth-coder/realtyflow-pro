@@ -7,6 +7,8 @@ interface TextGenerationOptions {
   maxTokens?: number;
   systemPrompt?: string;
   responseMimeType?: 'application/json';
+  validateResponse?: (text: string) => boolean;
+  fallbackOnInvalidResponse?: boolean;
 }
 
 function getClient(): Anthropic {
@@ -105,9 +107,20 @@ export async function askClaude(
     maxTokens?: number;
     systemPrompt?: string;
     responseMimeType?: 'application/json';
+    validateResponse?: (text: string) => boolean;
+    fallbackOnInvalidResponse?: boolean;
     model?: 'haiku' | 'sonnet';
   }
 ): Promise<string> {
+  const acceptGeneratedText = (provider: string, text: string, hasNextProvider: boolean) => {
+    if (!options?.validateResponse || options.validateResponse(text)) return text;
+    if (options.fallbackOnInvalidResponse && hasNextProvider) {
+      console.warn(`[AI Fallback] ${provider} returned invalid structured output, trying next provider...`);
+      return null;
+    }
+    return text;
+  };
+
   // Try Anthropic first
   if (process.env.ANTHROPIC_API_KEY) {
     try {
@@ -125,7 +138,12 @@ export async function askClaude(
       });
 
       const textBlock = response.content.find((b) => b.type === 'text');
-      return textBlock?.text || '';
+      const accepted = acceptGeneratedText(
+        'Anthropic',
+        textBlock?.text || '',
+        !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
+      );
+      if (accepted !== null) return accepted;
     } catch (err: any) {
       const msg = err?.message || err?.error?.message || String(err);
       const isCredits = msg.includes('credit balance') || msg.includes('billing') || msg.includes('rate_limit');
@@ -143,7 +161,9 @@ export async function askClaude(
   if (process.env.GEMINI_API_KEY) {
     try {
       console.log('[AI Fallback] Using Gemini');
-      return await askGemini(prompt, options);
+      const text = await askGemini(prompt, options);
+      const accepted = acceptGeneratedText('Gemini', text, !!process.env.OPENAI_API_KEY);
+      if (accepted !== null) return accepted;
     } catch (err: any) {
       console.warn(`[AI Fallback] Gemini failed: ${err?.message || err}`);
     }
@@ -153,7 +173,9 @@ export async function askClaude(
   if (process.env.OPENAI_API_KEY) {
     try {
       console.log('[AI Fallback] Using OpenAI');
-      return await askOpenAI(prompt, options);
+      const text = await askOpenAI(prompt, options);
+      const accepted = acceptGeneratedText('OpenAI', text, false);
+      if (accepted !== null) return accepted;
     } catch (err: any) {
       console.warn(`[AI Fallback] OpenAI failed: ${err?.message || err}`);
     }
