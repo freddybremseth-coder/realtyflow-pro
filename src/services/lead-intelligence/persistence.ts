@@ -738,9 +738,28 @@ export class LeadIntelligencePersistenceRepository {
   async createBuyerProfile(input: CreateBuyerProfileInput) {
     this.assertCanWrite();
     const data = CreateBuyerProfileInputSchema.parse(input);
+    const criteriaPayload = JSON.stringify(
+      data.criteria.map((criterion) => ({
+        criterion_type: criterion.criterionType,
+        key: criterion.key,
+        other_key: criterion.otherKey,
+        operator: criterion.operator,
+        value: criterion.value,
+        weight: criterion.weight,
+        severity: criterion.severity,
+        applies_to_property_types: criterion.appliesToPropertyTypes,
+        source: criterion.source,
+        source_text: criterion.sourceText,
+        confidence: criterion.confidence,
+        customer_confirmed: criterion.customerConfirmed,
+        approval_status: criterion.approvalStatus,
+        approved_by: criterion.approvedBy,
+        approved_at: criterion.approvedAt,
+        active: criterion.active,
+      })),
+    );
     const profileResult = await this.db.query<{
       id: string;
-      criterion_count: number;
       duplicate: boolean;
     }>(
       `
@@ -780,103 +799,10 @@ export class LeadIntelligencePersistenceRepository {
           from existing_profile
           where not exists (select 1 from profile)
           limit 1
-        ),
-        criteria_input as (
-          select
-            criterion_type,
-            key,
-            other_key,
-            operator,
-            value,
-            weight,
-            severity,
-            coalesce(
-              array(
-                select jsonb_array_elements_text(coalesce(applies_to_property_types, '[]'::jsonb))
-              ),
-              '{}'::text[]
-            ) as applies_to_property_types,
-            source,
-            source_text,
-            confidence,
-            customer_confirmed,
-            approval_status,
-            approved_by,
-            approved_at,
-            active
-          from jsonb_to_recordset($16::jsonb) as criterion (
-            criterion_type text,
-            key text,
-            other_key text,
-            operator text,
-            value jsonb,
-            weight numeric,
-            severity text,
-            applies_to_property_types jsonb,
-            source text,
-            source_text text,
-            confidence numeric,
-            customer_confirmed boolean,
-            approval_status text,
-            approved_by text,
-            approved_at timestamptz,
-            active boolean
-          )
-        ),
-        inserted_criteria as (
-          insert into public.buyer_profile_criteria (
-            buyer_profile_id,
-            criterion_type,
-            key,
-            other_key,
-            operator,
-            value,
-            weight,
-            severity,
-            applies_to_property_types,
-            source,
-            source_text,
-            confidence,
-            customer_confirmed,
-            approval_status,
-            approved_by,
-            approved_at,
-            active
-          )
-          select
-            selected_profile.id,
-            criterion.criterion_type,
-            criterion.key,
-            criterion.other_key,
-            criterion.operator,
-            criterion.value,
-            criterion.weight,
-            criterion.severity,
-            criterion.applies_to_property_types,
-            criterion.source,
-            criterion.source_text,
-            criterion.confidence,
-            criterion.customer_confirmed,
-            criterion.approval_status,
-            criterion.approved_by,
-            criterion.approved_at,
-            criterion.active
-          from selected_profile
-          cross join criteria_input criterion
-          where selected_profile.duplicate is false
-          returning id
         )
         select
           selected_profile.id,
-          selected_profile.duplicate,
-          case
-            when selected_profile.duplicate is true then (
-              select count(*)::int
-              from public.buyer_profile_criteria
-              where buyer_profile_id = selected_profile.id
-            )
-            else (select count(*)::int from inserted_criteria)
-          end as criterion_count
+          selected_profile.duplicate
         from selected_profile
       `,
       [
@@ -895,35 +821,120 @@ export class LeadIntelligencePersistenceRepository {
         data.createdBy,
         data.approvedBy,
         data.approvedAt,
-        JSON.stringify(
-          data.criteria.map((criterion) => ({
-            criterion_type: criterion.criterionType,
-            key: criterion.key,
-            other_key: criterion.otherKey,
-            operator: criterion.operator,
-            value: criterion.value,
-            weight: criterion.weight,
-            severity: criterion.severity,
-            applies_to_property_types: criterion.appliesToPropertyTypes,
-            source: criterion.source,
-            source_text: criterion.sourceText,
-            confidence: criterion.confidence,
-            customer_confirmed: criterion.customerConfirmed,
-            approval_status: criterion.approvalStatus,
-            approved_by: criterion.approvedBy,
-            approved_at: criterion.approvedAt,
-            active: criterion.active,
-          })),
-        ),
       ],
     );
 
     const profileId = profileResult.rows[0].id;
+    const duplicate = Boolean(profileResult.rows[0].duplicate);
+    let criterionCount = 0;
+
+    if (duplicate) {
+      const existingCriteria = await this.db.query<{ count: number }>(
+        `
+          select count(*)::int as count
+          from public.buyer_profile_criteria
+          where buyer_profile_id = $1::uuid
+        `,
+        [profileId],
+      );
+      criterionCount = Number(existingCriteria.rows[0]?.count || 0);
+    } else {
+      const criteriaResult = await this.db.query<{ criterion_count: number }>(
+        `
+          with criteria_input as (
+            select
+              criterion_type,
+              key,
+              other_key,
+              operator,
+              value,
+              weight,
+              severity,
+              coalesce(
+                array(
+                  select jsonb_array_elements_text(coalesce(applies_to_property_types, '[]'::jsonb))
+                ),
+                '{}'::text[]
+              ) as applies_to_property_types,
+              source,
+              source_text,
+              confidence,
+              customer_confirmed,
+              approval_status,
+              approved_by,
+              approved_at,
+              active
+            from jsonb_to_recordset($2::jsonb) as criterion (
+              criterion_type text,
+              key text,
+              other_key text,
+              operator text,
+              value jsonb,
+              weight numeric,
+              severity text,
+              applies_to_property_types jsonb,
+              source text,
+              source_text text,
+              confidence numeric,
+              customer_confirmed boolean,
+              approval_status text,
+              approved_by text,
+              approved_at timestamptz,
+              active boolean
+            )
+          ),
+          inserted_criteria as (
+            insert into public.buyer_profile_criteria (
+              buyer_profile_id,
+              criterion_type,
+              key,
+              other_key,
+              operator,
+              value,
+              weight,
+              severity,
+              applies_to_property_types,
+              source,
+              source_text,
+              confidence,
+              customer_confirmed,
+              approval_status,
+              approved_by,
+              approved_at,
+              active
+            )
+            select
+              $1::uuid,
+              criterion.criterion_type,
+              criterion.key,
+              criterion.other_key,
+              criterion.operator,
+              criterion.value,
+              criterion.weight,
+              criterion.severity,
+              criterion.applies_to_property_types,
+              criterion.source,
+              criterion.source_text,
+              criterion.confidence,
+              criterion.customer_confirmed,
+              criterion.approval_status,
+              criterion.approved_by,
+              criterion.approved_at,
+              criterion.active
+            from criteria_input criterion
+            returning id
+          )
+          select count(*)::int as criterion_count from inserted_criteria
+        `,
+        [profileId, criteriaPayload],
+      );
+      criterionCount = Number(criteriaResult.rows[0]?.criterion_count || 0);
+    }
 
     return {
       id: profileId,
-      criterionCount: profileResult.rows[0].criterion_count || 0,
-      duplicate: Boolean(profileResult.rows[0].duplicate),
+      criterionCount,
+      duplicate,
     };
   }
 

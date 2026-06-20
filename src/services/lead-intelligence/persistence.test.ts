@@ -28,7 +28,19 @@ class CaptureDb implements QueryClient {
 
   async query<T>(sql: string, values?: readonly unknown[]) {
     this.queries.push({ sql, values });
-    return { rows: [{ id: this.queries.length === 1 ? intakeId : profileId }] as T[] };
+    if (sql.includes("insert into public.buyer_profile_criteria")) {
+      return { rows: [{ criterion_count: 3 }] as T[] };
+    }
+    if (sql.includes("insert into public.buyer_profiles")) {
+      return { rows: [{ id: profileId, duplicate: false }] as T[] };
+    }
+    if (sql.includes("insert into public.lead_analysis_runs")) {
+      return { rows: [{ id: "55555555-5555-4555-8555-555555555555", duplicate: false, payload_hash_matches: true }] as T[] };
+    }
+    if (sql.includes("insert into public.lead_intake_messages")) {
+      return { rows: [{ id: intakeId, duplicate: false }] as T[] };
+    }
+    return { rows: [{ id: contactId }] as T[] };
   }
 }
 
@@ -593,7 +605,7 @@ test("persistence layer has no email sending or property matching side effects",
   assert(!/send|email_draft|property_match|shortlist/i.test(allSql));
 });
 
-test("createBuyerProfile uses one atomic SQL statement for profile and criteria", async () => {
+test("createBuyerProfile writes profile before criteria so RLS can see the profile", async () => {
   const db = new CaptureDb();
   const repo = repository(db);
 
@@ -607,15 +619,16 @@ test("createBuyerProfile uses one atomic SQL statement for profile and criteria"
     }),
   );
 
-  assert.equal(result.id, intakeId);
-  assert.equal(db.queries.length, 1);
+  assert.equal(result.id, profileId);
+  assert.equal(db.queries.length, 2);
+  assert.equal(result.criterionCount, 3);
   assert(db.queries[0].sql.includes("with existing_profile as"));
   assert(db.queries[0].sql.includes("on conflict (intake_id, version) do nothing"));
-  assert(db.queries[0].sql.includes("where selected_profile.duplicate is false"));
-  assert(db.queries[0].sql.includes("inserted_criteria as"));
-  assert(db.queries[0].sql.includes("applies_to_property_types jsonb"));
-  assert(db.queries[0].sql.includes("jsonb_array_elements_text"));
-  assert(!db.queries[0].sql.includes("applies_to_property_types text[]"));
+  assert(!db.queries[0].sql.includes("buyer_profile_criteria"));
+  assert(db.queries[1].sql.includes("insert into public.buyer_profile_criteria"));
+  assert(db.queries[1].sql.includes("applies_to_property_types jsonb"));
+  assert(db.queries[1].sql.includes("jsonb_array_elements_text"));
+  assert(!db.queries[1].sql.includes("applies_to_property_types text[]"));
 });
 
 test("invalid criterion in profile prevents any DB query and cannot create partial profile", async () => {
