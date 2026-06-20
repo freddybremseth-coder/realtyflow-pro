@@ -21,6 +21,73 @@ export const LEAD_INTELLIGENCE_MAX_REQUEST_BYTES = 18 * 1024;
 export const LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS = 30_000;
 export const LEAD_INTELLIGENCE_PROVIDER_MAX_OUTPUT_TOKENS = 6000;
 export const LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE = "application/json";
+
+const nullableStringSchema = { type: "string", nullable: true };
+const stringSchema = { type: "string" };
+const nullableBooleanSchema = { type: "boolean", nullable: true };
+const booleanSchema = { type: "boolean" };
+const nullableNumberSchema = { type: "number", nullable: true };
+const numberSchema = { type: "number" };
+const propertyTypeSchema = {
+  type: "string",
+  format: "enum",
+  enum: [...CANONICAL_PROPERTY_TYPES],
+};
+const criterionKeySchema = {
+  type: "string",
+  format: "enum",
+  enum: [...CANONICAL_CRITERION_KEYS],
+};
+const criterionOperatorSchema = {
+  type: "string",
+  format: "enum",
+  enum: ["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "exists", "unknown"],
+};
+const criterionValueSchema = {
+  type: "string",
+  nullable: true,
+  description: "Short JSON-compatible criterion value. Use canonical strings for enums and concise values.",
+};
+const propertyTypesArraySchema = {
+  type: "array",
+  maxItems: LEAD_INTELLIGENCE_LIMITS.propertyTypes,
+  items: propertyTypeSchema,
+};
+const criterionBaseProperties = {
+  key: criterionKeySchema,
+  otherKey: nullableStringSchema,
+  operator: criterionOperatorSchema,
+  value: criterionValueSchema,
+  sourceText: stringSchema,
+  confidence: numberSchema,
+  appliesToPropertyTypes: propertyTypesArraySchema,
+};
+const requirementItemSchema = {
+  type: "object",
+  required: ["key", "operator", "value", "sourceText", "confidence"],
+  properties: criterionBaseProperties,
+};
+const preferenceItemSchema = {
+  type: "object",
+  required: ["key", "operator", "value", "sourceText", "confidence", "weight"],
+  properties: {
+    ...criterionBaseProperties,
+    weight: numberSchema,
+  },
+};
+const exclusionItemSchema = {
+  type: "object",
+  required: ["key", "operator", "value", "sourceText", "confidence", "severity"],
+  properties: {
+    ...criterionBaseProperties,
+    severity: {
+      type: "string",
+      format: "enum",
+      enum: ["reject", "major_penalty", "minor_penalty"],
+    },
+  },
+};
+
 export const LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA = {
   type: "object",
   required: [
@@ -37,17 +104,94 @@ export const LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA = {
     "suggestedNextAction",
   ],
   properties: {
-    contact: { type: "object" },
-    purchaseReadiness: { type: "object" },
-    budget: { type: "object" },
-    propertyTypes: { type: "array", items: { type: "string" } },
-    locations: { type: "object" },
-    hardRequirements: { type: "array", items: { type: "object" } },
-    preferences: { type: "array", items: { type: "object" } },
-    exclusions: { type: "array", items: { type: "object" } },
-    missingInformation: { type: "array", items: { type: "object" } },
-    summary: { type: "string" },
-    suggestedNextAction: { type: "string" },
+    contact: {
+      type: "object",
+      required: ["name", "phone", "email", "language", "country"],
+      properties: {
+        name: nullableStringSchema,
+        phone: nullableStringSchema,
+        email: nullableStringSchema,
+        language: nullableStringSchema,
+        country: nullableStringSchema,
+      },
+    },
+    purchaseReadiness: {
+      type: "object",
+      required: ["level", "confidence", "reasoning"],
+      properties: {
+        level: {
+          type: "string",
+          format: "enum",
+          enum: ["cold", "warm", "hot", "ready_to_buy", "unknown"],
+        },
+        confidence: numberSchema,
+        reasoning: stringSchema,
+      },
+    },
+    budget: {
+      type: "object",
+      required: ["amount", "currency", "includesCosts", "approximate", "hardLimit"],
+      properties: {
+        amount: nullableNumberSchema,
+        currency: nullableStringSchema,
+        includesCosts: nullableBooleanSchema,
+        approximate: booleanSchema,
+        hardLimit: nullableBooleanSchema,
+      },
+    },
+    propertyTypes: propertyTypesArraySchema,
+    locations: {
+      type: "object",
+      required: ["preferred", "excluded", "flexible"],
+      properties: {
+        preferred: {
+          type: "array",
+          maxItems: LEAD_INTELLIGENCE_LIMITS.locations,
+          items: stringSchema,
+        },
+        excluded: {
+          type: "array",
+          maxItems: LEAD_INTELLIGENCE_LIMITS.locations,
+          items: stringSchema,
+        },
+        flexible: booleanSchema,
+      },
+    },
+    hardRequirements: {
+      type: "array",
+      maxItems: LEAD_INTELLIGENCE_LIMITS.criteria,
+      items: requirementItemSchema,
+    },
+    preferences: {
+      type: "array",
+      maxItems: LEAD_INTELLIGENCE_LIMITS.criteria,
+      items: preferenceItemSchema,
+    },
+    exclusions: {
+      type: "array",
+      maxItems: LEAD_INTELLIGENCE_LIMITS.criteria,
+      items: exclusionItemSchema,
+    },
+    missingInformation: {
+      type: "array",
+      maxItems: LEAD_INTELLIGENCE_LIMITS.missingInformation,
+      items: {
+        type: "object",
+        required: ["key", "question", "priority"],
+        properties: {
+          key: criterionKeySchema,
+          otherKey: nullableStringSchema,
+          question: stringSchema,
+          priority: {
+            type: "string",
+            format: "enum",
+            enum: ["high", "medium", "low"],
+          },
+        },
+      },
+    },
+    summary: stringSchema,
+    suggestedNextAction: stringSchema,
   },
 } as unknown as ResponseSchema;
 
@@ -256,6 +400,52 @@ function canonicalOtherKey(value: unknown) {
     .slice(0, LEAD_INTELLIGENCE_LIMITS.shortText) || "other";
 }
 
+function normalizeCriterionValue(key: string, value: unknown) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+
+  const numericKeys = new Set([
+    "bedrooms",
+    "bathrooms",
+    "total_budget",
+    "purchase_price",
+    "estimated_total_cost",
+    "terrace_area_m2",
+    "living_area_m2",
+    "plot_area_m2",
+    "distance_to_beach",
+  ]);
+  if (numericKeys.has(key)) {
+    const numberMatch = trimmed.match(/-?\d[\d\s.,]*/);
+    if (numberMatch) {
+      const compact = numberMatch[0].replace(/\s+/g, "");
+      const normalized = compact.includes(",") && !compact.includes(".")
+        ? compact.replace(",", ".")
+        : compact.replace(/[.,](?=\d{3}\b)/g, "");
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+
+  const booleanKeys = new Set([
+    "has_lift",
+    "parking",
+    "pool",
+    "future_building_risk",
+    "view_privacy_loss_risk",
+    "view_obstruction_risk",
+    "stairs",
+  ]);
+  if (booleanKeys.has(key)) {
+    const normalized = trimmed.toLowerCase();
+    if (["true", "yes", "ja", "required", "needed", "må", "must"].includes(normalized)) return true;
+    if (["false", "no", "nei", "not_required", "not needed", "ikke"].includes(normalized)) return false;
+  }
+
+  return value;
+}
+
 function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
   const originalKey = item.key;
   const key = normalizeCriterionKey(originalKey);
@@ -263,6 +453,10 @@ function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
     ...item,
     key,
   };
+
+  if ("value" in item) {
+    next.value = normalizeCriterionValue(key, item.value);
+  }
 
   if (key === "other") {
     next.otherKey = item.otherKey || canonicalOtherKey(originalKey);
