@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { ResponseSchema } from '@google/generative-ai';
 
 let client: Anthropic | null = null;
 
@@ -7,6 +8,7 @@ interface TextGenerationOptions {
   maxTokens?: number;
   systemPrompt?: string;
   responseMimeType?: 'application/json';
+  responseSchema?: ResponseSchema;
   validateResponse?: (text: string) => boolean;
   fallbackOnInvalidResponse?: boolean;
 }
@@ -41,6 +43,7 @@ async function askGemini(
     temperature: options?.temperature ?? 0.7,
     maxOutputTokens: options?.maxTokens ?? 1000,
     ...(options?.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
+    ...(options?.responseSchema ? { responseSchema: options.responseSchema } : {}),
   };
 
   const result = await model.generateContent({
@@ -107,6 +110,7 @@ export async function askClaude(
     maxTokens?: number;
     systemPrompt?: string;
     responseMimeType?: 'application/json';
+    responseSchema?: ResponseSchema;
     validateResponse?: (text: string) => boolean;
     fallbackOnInvalidResponse?: boolean;
     model?: 'haiku' | 'sonnet';
