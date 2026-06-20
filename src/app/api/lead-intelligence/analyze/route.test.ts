@@ -286,6 +286,31 @@ test("raw provider failures are hidden from API response", async () => {
   assert.equal(serialized.includes(EMMADALE_FIXTURE.slice(0, 20)), false);
 });
 
+test("AI invalid output returns safe diagnostics without raw customer data", async () => {
+  setLeadIntelligenceProviderForTests({
+    async generate() {
+      return {
+        model: "mock-bad-json-model",
+        text: "I cannot return JSON for Emmadale +47 90 17 47 14 440000",
+      };
+    },
+  });
+
+  const response = await POST(request(validBody(), { cookie: await adminCookie() }) as any);
+  const body = await response.json();
+  const serialized = JSON.stringify(body);
+
+  assert.equal(response.status, 502);
+  assert.equal(body.error.code, "AI_INVALID_OUTPUT");
+  assert.equal(body.error.message, "AI returned invalid structured output");
+  assert.deepEqual(body.error.details.reasons, ["non_json_output"]);
+  assert.equal(body.error.details.repaired, true);
+  assert.equal(serialized.includes("Emmadale"), false);
+  assert.equal(serialized.includes("90174714"), false);
+  assert.equal(serialized.includes("440000"), false);
+  assert.equal(serialized.includes("I cannot return JSON"), false);
+});
+
 test("rate limit returns stable code", async () => {
   const cookie = await adminCookie();
   for (let index = 0; index < 8; index += 1) {

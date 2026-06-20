@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+  LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
   LeadIntelligenceError,
   analyzeLeadIntake,
   normalizeLeadIntakeText,
@@ -128,13 +129,19 @@ function emmadaleOutput(overrides: Partial<ExtractedLead> = {}): ExtractedLead {
 }
 
 function providerReturning(...responses: unknown[]) {
-  const prompts: Array<{ systemPrompt: string; prompt: string; responseMimeType: string }> = [];
+  const prompts: Array<{
+    systemPrompt: string;
+    prompt: string;
+    responseMimeType: string;
+    responseSchema?: unknown;
+  }> = [];
   const provider: LeadIntelligenceProvider = {
     async generate(input) {
       prompts.push({
         systemPrompt: input.systemPrompt,
         prompt: input.prompt,
         responseMimeType: input.responseMimeType,
+        responseSchema: input.responseSchema,
       });
       const response = responses.shift();
       return {
@@ -234,6 +241,7 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
   );
 
   assert.equal(prompts[0].responseMimeType, LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE);
+  assert.deepEqual(prompts[0].responseSchema, LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA);
   assert.equal(prompts[0].systemPrompt.includes("Return exactly one JSON object."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return an array."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return multiple JSON objects."), true);

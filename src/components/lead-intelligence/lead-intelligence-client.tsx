@@ -50,6 +50,7 @@ interface SafeErrorResponse {
     correlationId: string;
     code: string;
     message: string;
+    details?: Record<string, unknown>;
   };
 }
 
@@ -616,6 +617,11 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
               <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
                 <p className="font-semibold">{error.code}</p>
                 <p className="mt-1">{error.message}</p>
+                {error.details && (
+                  <pre className="mt-3 max-h-40 overflow-auto rounded border border-red-400/20 bg-red-950/30 p-2 text-xs text-red-100/90">
+                    {prettyJson(error.details)}
+                  </pre>
+                )}
                 <p className="mt-2 text-xs text-red-200/80">Correlation ID: {error.correlationId}</p>
               </div>
             )}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ResponseSchema } from "@google/generative-ai";
 import { askClaude } from "@/services/ai/claude-client";
 import {
   CANONICAL_CRITERION_KEYS,
@@ -19,6 +20,35 @@ export const LEAD_INTELLIGENCE_MIN_INPUT_LENGTH = 12;
 export const LEAD_INTELLIGENCE_MAX_REQUEST_BYTES = 18 * 1024;
 export const LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS = 30_000;
 export const LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE = "application/json";
+export const LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA = {
+  type: "object",
+  required: [
+    "contact",
+    "purchaseReadiness",
+    "budget",
+    "propertyTypes",
+    "locations",
+    "hardRequirements",
+    "preferences",
+    "exclusions",
+    "missingInformation",
+    "summary",
+    "suggestedNextAction",
+  ],
+  properties: {
+    contact: { type: "object" },
+    purchaseReadiness: { type: "object" },
+    budget: { type: "object" },
+    propertyTypes: { type: "array", items: { type: "string" } },
+    locations: { type: "object" },
+    hardRequirements: { type: "array", items: { type: "object" } },
+    preferences: { type: "array", items: { type: "object" } },
+    exclusions: { type: "array", items: { type: "object" } },
+    missingInformation: { type: "array", items: { type: "object" } },
+    summary: { type: "string" },
+    suggestedNextAction: { type: "string" },
+  },
+} as unknown as ResponseSchema;
 
 const JSON_ONLY_RULES = [
   "Return exactly one JSON object.",
@@ -90,6 +120,7 @@ export interface LeadIntelligenceProvider {
     prompt: string;
     timeoutMs: number;
     responseMimeType: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE;
+    responseSchema?: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA;
   }): Promise<LeadIntelligenceProviderResult>;
 }
 
@@ -502,6 +533,7 @@ function getProvider() {
           maxTokens: 3000,
           model: "sonnet",
           responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+          responseSchema: LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
           validateResponse: canExtractSingleJsonObject,
           fallbackOnInvalidResponse: true,
         }),
@@ -517,12 +549,14 @@ async function callProvider(provider: LeadIntelligenceProvider, params: {
   prompt: string;
   timeoutMs: number;
   responseMimeType?: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE;
+  responseSchema?: typeof LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA;
 }) {
   try {
     return await withTimeout(
       provider.generate({
         ...params,
         responseMimeType: params.responseMimeType || LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+        responseSchema: params.responseSchema || LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
       }),
       params.timeoutMs,
     );
@@ -563,6 +597,7 @@ export async function analyzeLeadIntake(
       prompt,
       timeoutMs,
       responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+      responseSchema: LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
     });
     model = first.model || model;
     providerName = first.provider || providerName;
@@ -607,6 +642,7 @@ export async function analyzeLeadIntake(
         }),
         timeoutMs,
         responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+        responseSchema: LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
       });
       repaired = true;
       model = repair.model || model;
@@ -642,19 +678,40 @@ export async function analyzeLeadIntake(
     }
   } catch (error) {
     const issues = summarizeValidationError(error);
+    const outputDetails = {
+      fields: issues.map((issue) => issue.path).filter(Boolean),
+      reasons: issues.map((issue) => issue.reason).filter(Boolean),
+      repaired,
+      model,
+      provider: providerName,
+      fallbackUsed,
+    };
     options.logger?.warn?.("lead_intelligence_analysis_failed", {
       correlationId: options.correlationId,
       promptVersion: LEAD_INTELLIGENCE_PROMPT_VERSION,
       model,
-      fields: issues.map((issue) => issue.path).filter(Boolean),
-      reasons: issues.map((issue) => issue.reason).filter(Boolean),
+      fields: outputDetails.fields,
+      reasons: outputDetails.reasons,
       code: error instanceof LeadIntelligenceError ? error.code : "AI_INVALID_OUTPUT",
       provider: providerName,
       fallbackUsed,
       repaired,
     });
 
-    if (error instanceof LeadIntelligenceError) throw error;
-    throw new LeadIntelligenceError("AI_INVALID_OUTPUT", "AI output failed validation", 502);
+    if (error instanceof LeadIntelligenceError) {
+      if (error.code === "AI_INVALID_OUTPUT") {
+        throw new LeadIntelligenceError(error.code, error.message, error.status, {
+          ...(error.details || {}),
+          ...outputDetails,
+        });
+      }
+      throw error;
+    }
+    throw new LeadIntelligenceError(
+      "AI_INVALID_OUTPUT",
+      "AI output failed validation",
+      502,
+      outputDetails,
+    );
   }
 }

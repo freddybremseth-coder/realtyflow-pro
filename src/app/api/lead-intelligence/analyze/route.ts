@@ -32,9 +32,11 @@ function jsonError(error: unknown, correlationId: string) {
     error instanceof LeadIntelligenceError
       ? error
       : new LeadIntelligenceError("INTERNAL_ERROR", "Internal server error", 500);
-  const safeMessage = typed.status >= 500 && typed.code !== "AI_TIMEOUT"
-    ? "Internal server error"
-    : typed.message;
+  const safeMessage = typed.code === "AI_INVALID_OUTPUT"
+    ? "AI returned invalid structured output"
+    : typed.status >= 500 && typed.code !== "AI_TIMEOUT"
+      ? "Internal server error"
+      : typed.message;
 
   return NextResponse.json(
     createErrorEnvelope({
