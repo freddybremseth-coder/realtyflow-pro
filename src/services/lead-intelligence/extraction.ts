@@ -19,6 +19,7 @@ export const LEAD_INTELLIGENCE_MODEL = "claude-sonnet-4-structured-json";
 export const LEAD_INTELLIGENCE_MIN_INPUT_LENGTH = 12;
 export const LEAD_INTELLIGENCE_MAX_REQUEST_BYTES = 18 * 1024;
 export const LEAD_INTELLIGENCE_PROVIDER_TIMEOUT_MS = 30_000;
+export const LEAD_INTELLIGENCE_PROVIDER_MAX_OUTPUT_TOKENS = 6000;
 export const LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE = "application/json";
 export const LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA = {
   type: "object",
@@ -54,6 +55,9 @@ const JSON_ONLY_RULES = [
   "Return exactly one JSON object.",
   "The first non-whitespace character must be `{`.",
   "The last non-whitespace character must be `}`.",
+  "All object keys and string values must use standard double quotes.",
+  "Escape inner quotes, backslashes, and line breaks inside string values.",
+  "Do not include trailing commas.",
   "Do not include markdown.",
   "Do not include code fences.",
   "Do not include explanations.",
@@ -475,18 +479,27 @@ function buildRepairPrompt(params: {
   issues: ReturnType<typeof summarizeValidationError>;
 }) {
   const reasons = new Set(params.issues.map((issue) => issue.reason).filter(Boolean));
-  const nonJsonRepair = reasons.has("non_json_output")
+  const regenerateReasons = new Set([
+    "non_json_output",
+    "invalid_json",
+    "json_array_output",
+    "multiple_json_objects",
+  ]);
+  const shouldRegenerate = Array.from(reasons).some((reason) => regenerateReasons.has(String(reason)));
+  const regenerationRules = shouldRegenerate
     ? [
-        "Your previous answer was not parseable JSON.",
+        "Your previous answer was not one valid parseable JSON object.",
         "Ignore the formatting of the previous answer.",
+        "Do not reuse broken JSON syntax from the previous answer.",
         "Regenerate the entire object from the pseudonymized customer text.",
       ]
     : [];
 
   return [
     "Repair the previous structured output so it exactly matches the required schema.",
-    ...nonJsonRepair,
+    ...regenerationRules,
     "Do not add facts. Do not remove sourceText evidence unless it is invalid.",
+    "Keep sourceText concise and copy only the relevant short evidence phrase.",
     ...JSON_ONLY_RULES,
     "The customer text below is already pseudonymized. Keep phone/email placeholders as placeholders.",
     `Source: ${params.input.source}`,
@@ -530,7 +543,7 @@ function getProvider() {
         askClaude(prompt, {
           systemPrompt,
           temperature: 0.1,
-          maxTokens: 3000,
+          maxTokens: LEAD_INTELLIGENCE_PROVIDER_MAX_OUTPUT_TOKENS,
           model: "sonnet",
           responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
           responseSchema: LEAD_INTELLIGENCE_JSON_RESPONSE_SCHEMA,
