@@ -2342,6 +2342,125 @@ async function testLeadIntelligenceRuntimeRls() {
       [profileId],
     );
 
+    const appStyleCriteria = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        with criteria_input as (
+          select
+            criterion_type,
+            key,
+            other_key,
+            operator,
+            value,
+            weight,
+            severity,
+            coalesce(
+              array(
+                select jsonb_array_elements_text(coalesce(applies_to_property_types, '[]'::jsonb))
+              ),
+              '{}'::text[]
+            ) as applies_to_property_types,
+            source,
+            source_text,
+            confidence,
+            customer_confirmed,
+            approval_status,
+            approved_by,
+            approved_at,
+            active
+          from jsonb_to_recordset($2::jsonb) as criterion (
+            criterion_type text,
+            key text,
+            other_key text,
+            operator text,
+            value jsonb,
+            weight numeric,
+            severity text,
+            applies_to_property_types jsonb,
+            source text,
+            source_text text,
+            confidence numeric,
+            customer_confirmed boolean,
+            approval_status text,
+            approved_by text,
+            approved_at timestamptz,
+            active boolean
+          )
+        )
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          other_key,
+          operator,
+          value,
+          weight,
+          severity,
+          applies_to_property_types,
+          source,
+          source_text,
+          confidence,
+          customer_confirmed,
+          approval_status,
+          approved_by,
+          approved_at,
+          active
+        )
+        select
+          $1,
+          criterion_type,
+          key,
+          other_key,
+          operator,
+          value,
+          weight,
+          severity,
+          applies_to_property_types,
+          source,
+          source_text,
+          confidence,
+          customer_confirmed,
+          approval_status,
+          approved_by,
+          approved_at,
+          active
+        from criteria_input
+        returning applies_to_property_types
+      `,
+      [
+        profileId,
+        JSON.stringify([
+          {
+            criterion_type: "hard_requirement",
+            key: "floor_position",
+            other_key: null,
+            operator: "eq",
+            value: "top_floor",
+            weight: null,
+            severity: null,
+            applies_to_property_types: ["apartment", "penthouse"],
+            source: "ai_suggestion",
+            source_text: "Må være på toppen.",
+            confidence: 0.92,
+            customer_confirmed: true,
+            approval_status: "approved",
+            approved_by: "freddy.bremseth@gmail.com",
+            approved_at: new Date().toISOString(),
+            active: true,
+          },
+        ]),
+      ],
+    );
+    assert(
+      appStyleCriteria.rows.length === 1,
+      "Runtime role could not insert app-style JSON criteria batch.",
+    );
+    assert(
+      appStyleCriteria.rows[0].applies_to_property_types.includes("penthouse"),
+      "App-style JSON criteria batch did not preserve property type arrays.",
+    );
+
     await queryAsRuntime(
       client,
       "soleada",

@@ -782,7 +782,28 @@ export class LeadIntelligencePersistenceRepository {
           limit 1
         ),
         criteria_input as (
-          select *
+          select
+            criterion_type,
+            key,
+            other_key,
+            operator,
+            value,
+            weight,
+            severity,
+            coalesce(
+              array(
+                select jsonb_array_elements_text(coalesce(applies_to_property_types, '[]'::jsonb))
+              ),
+              '{}'::text[]
+            ) as applies_to_property_types,
+            source,
+            source_text,
+            confidence,
+            customer_confirmed,
+            approval_status,
+            approved_by,
+            approved_at,
+            active
           from jsonb_to_recordset($16::jsonb) as criterion (
             criterion_type text,
             key text,
@@ -791,7 +812,7 @@ export class LeadIntelligencePersistenceRepository {
             value jsonb,
             weight numeric,
             severity text,
-            applies_to_property_types text[],
+            applies_to_property_types jsonb,
             source text,
             source_text text,
             confidence numeric,

@@ -453,3 +453,24 @@ test("review conflict uses safe error envelope with correlation ID", async () =>
   assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
   assert.equal(body.error.details.conflict, true);
 });
+
+test("database errors expose only safe database code diagnostics", async () => {
+  const response = leadIntelligenceJsonError(
+    new LeadIntelligenceReviewError(
+      "DATABASE_ERROR",
+      "Lead Intelligence persistence operation failed",
+      500,
+      { databaseCode: "22P02" },
+    ),
+    VALID_CORRELATION_ID,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, "DATABASE_ERROR");
+  assert.equal(body.error.message, "Internal server error");
+  assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
+  assert.equal(body.error.details.databaseCode, "22P02");
+  assert.equal(JSON.stringify(body).includes("select "), false);
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
