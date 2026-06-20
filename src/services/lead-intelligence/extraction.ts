@@ -359,6 +359,15 @@ function extractJsonObject(text: string) {
   }
 }
 
+function canExtractSingleJsonObject(text: string) {
+  try {
+    extractJsonObject(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function summarizeValidationError(error: unknown) {
   if (error instanceof z.ZodError) {
     return error.issues.slice(0, 18).map((issue) => ({
@@ -493,6 +502,8 @@ function getProvider() {
           maxTokens: 3000,
           model: "sonnet",
           responseMimeType: LEAD_INTELLIGENCE_JSON_RESPONSE_MIME_TYPE,
+          validateResponse: canExtractSingleJsonObject,
+          fallbackOnInvalidResponse: true,
         }),
         timeoutMs,
       );
