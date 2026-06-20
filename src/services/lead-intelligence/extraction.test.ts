@@ -245,6 +245,8 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
   assert.equal(prompts[0].systemPrompt.includes("Return exactly one JSON object."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return an array."), true);
   assert.equal(prompts[0].systemPrompt.includes("Do not return multiple JSON objects."), true);
+  assert.equal(prompts[0].systemPrompt.includes("Escape inner quotes, backslashes, and line breaks"), true);
+  assert.equal(prompts[0].systemPrompt.includes("Do not include trailing commas."), true);
   assert.equal(prompts[0].prompt.includes("The first non-whitespace character must be `{`."), true);
 });
 
@@ -277,7 +279,7 @@ test("repairs non-JSON first output with a JSON-only repair prompt", async () =>
   assert.equal(analysis.meta.repaired, true);
   assert.equal(analysis.result.contact.email, null);
   assert.equal(prompts.length, 2);
-  assert.equal(prompts[1].prompt.includes("Your previous answer was not parseable JSON."), true);
+  assert.equal(prompts[1].prompt.includes("Your previous answer was not one valid parseable JSON object."), true);
   assert.equal(prompts[1].prompt.includes("Regenerate the entire object from the pseudonymized customer text."), true);
   assert.equal(prompts[1].prompt.includes("Return exactly one JSON object."), true);
   assert.equal(prompts[1].prompt.includes("+47 90 17 47 14"), false);
@@ -294,6 +296,9 @@ test("repairs nearly-valid JSON exactly once", async () => {
   assert.equal(analysis.meta.repaired, true);
   assert.equal(analysis.result.contact.email, null);
   assert.equal(prompts.length, 2);
+  assert.equal(prompts[1].prompt.includes("Your previous answer was not one valid parseable JSON object."), true);
+  assert.equal(prompts[1].prompt.includes("Do not reuse broken JSON syntax from the previous answer."), true);
+  assert.equal(prompts[1].prompt.includes("Escape inner quotes, backslashes, and line breaks"), true);
   assert.equal(prompts[1].prompt.includes("+47 90 17 47 14"), false);
   assert.equal(prompts[1].prompt.includes("test@example.com"), false);
   assert.equal(prompts[1].prompt.includes("[PHONE_1]"), true);

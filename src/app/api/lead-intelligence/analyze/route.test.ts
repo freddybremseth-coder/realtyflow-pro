@@ -311,6 +311,32 @@ test("AI invalid output returns safe diagnostics without raw customer data", asy
   assert.equal(serialized.includes("I cannot return JSON"), false);
 });
 
+test("AI invalid JSON returns safe diagnostics without raw provider output", async () => {
+  setLeadIntelligenceProviderForTests({
+    async generate() {
+      return {
+        model: "mock-invalid-json-model",
+        text: `{ "contact": { "name": "Emmadale", "phone": "+47 90 17 47 14" `,
+      };
+    },
+  });
+
+  const response = await POST(request(validBody(), { cookie: await adminCookie() }) as any);
+  const body = await response.json();
+  const serialized = JSON.stringify(body);
+
+  assert.equal(response.status, 502);
+  assert.equal(body.error.code, "AI_INVALID_OUTPUT");
+  assert.equal(body.error.message, "AI returned invalid structured output");
+  assert.deepEqual(body.error.details.reasons, ["invalid_json"]);
+  assert.equal(body.error.details.repaired, true);
+  assert.equal(serialized.includes("Emmadale"), false);
+  assert.equal(serialized.includes("90174714"), false);
+  assert.equal(serialized.includes("440000"), false);
+  assert.equal(serialized.includes("mock-invalid-json-model"), true);
+  assert.equal(serialized.includes("{ \"contact\""), false);
+});
+
 test("rate limit returns stable code", async () => {
   const cookie = await adminCookie();
   for (let index = 0; index < 8; index += 1) {
