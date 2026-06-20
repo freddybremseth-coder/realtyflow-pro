@@ -413,6 +413,7 @@ export async function saveLeadIntelligenceReview(input: {
   });
   const profileDuplicate = Boolean(profile.duplicate);
 
+  const shouldRecordContactCandidates = decision.action === "connect_existing";
   const candidateInputs = input.serverContactCandidates.map((candidate) => ({
     brand: request.brand,
     intakeId: intake.id,
@@ -426,7 +427,7 @@ export async function saveLeadIntelligenceReview(input: {
         ? ("selected" as z.infer<typeof LeadContactCandidateStatusSchema>)
         : ("suggested" as z.infer<typeof LeadContactCandidateStatusSchema>),
   }));
-  const candidateIds = profileDuplicate
+  const candidateIds = profileDuplicate || !shouldRecordContactCandidates
     ? []
     : await input.repository.recordContactCandidates(candidateInputs);
 
