@@ -285,6 +285,8 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
   assert.equal(prompts[0].prompt.includes("contact: { name, phone, email, language, country }"), true);
   assert.equal(prompts[0].prompt.includes("budget: { amount, currency, includesCosts, approximate, hardLimit }"), true);
   assert.equal(prompts[0].prompt.includes("Include every required object field"), true);
+  assert.equal(prompts[0].prompt.includes("Use only these operator values exactly"), true);
+  assert.equal(prompts[0].prompt.includes("minimum/at least/20+ => gte"), true);
 });
 
 test("normalizes obvious provider string criterion values before validation", async () => {
@@ -327,6 +329,57 @@ test("normalizes obvious provider string criterion values before validation", as
   assert.equal(analysis.result.hardRequirements.find((row) => row.key === "bedrooms")?.value, 2);
   assert.equal(analysis.result.hardRequirements.find((row) => row.key === "has_lift")?.value, true);
   assert.equal(analysis.result.preferences.find((row) => row.key === "terrace_area_m2")?.value, 20);
+});
+
+test("normalizes provider operator aliases before strict schema validation", async () => {
+  const { provider } = providerReturning(emmadaleOutput({
+    hardRequirements: [
+      {
+        key: "bedrooms",
+        operator: "minimum" as ExtractedLead["hardRequirements"][number]["operator"],
+        value: 2,
+        sourceText: "Minst 2 soverom.",
+        confidence: 0.95,
+        appliesToPropertyTypes: ["apartment"],
+      },
+      {
+        key: "floor_position",
+        operator: "must_be" as ExtractedLead["hardRequirements"][number]["operator"],
+        value: "top_floor",
+        sourceText: "Må være på toppen.",
+        confidence: 0.96,
+        appliesToPropertyTypes: ["apartment", "penthouse"],
+      },
+      {
+        key: "has_lift",
+        operator: "required" as ExtractedLead["hardRequirements"][number]["operator"],
+        value: true,
+        sourceText: "Må være heis om det er opp i etasjene.",
+        confidence: 0.9,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["hardRequirements"],
+    preferences: [
+      {
+        key: "terrace_area_m2",
+        operator: "at least" as ExtractedLead["preferences"][number]["operator"],
+        value: 20,
+        sourceText: "Stor åpen terrasse eventuelt ut fra stue 20 kvm+",
+        confidence: 0.9,
+        weight: 0.82,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["preferences"],
+  }));
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.result.hardRequirements[0].operator, "gte");
+  assert.equal(analysis.result.hardRequirements[1].operator, "eq");
+  assert.equal(analysis.result.hardRequirements[2].operator, "eq");
+  assert.equal(analysis.result.preferences[0].operator, "gte");
 });
 
 test("customer prompt injection remains customer data and cannot add extra schema fields", async () => {
