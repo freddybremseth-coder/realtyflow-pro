@@ -5,13 +5,17 @@ property matching.
 
 ## Scope
 
-`POST /api/lead-intelligence/property-matches/preview` ranks an explicit,
-bounded set of existing `properties` rows against one approved
-`buyer_profiles` row.
+`POST /api/lead-intelligence/property-matches/preview` ranks a bounded set of
+existing `properties` rows against one approved `buyer_profiles` row.
+
+The caller can either:
+
+- ask the server to auto-discover a bounded candidate set from existing
+  inventory; or
+- send explicit property references for a controlled manual test.
 
 It does not:
 
-- search the inventory automatically
 - create leads or contacts
 - persist property matches
 - create shortlists or presentations
@@ -31,6 +35,20 @@ The browser cannot enable it.
 
 ## Request
 
+Automatic discovery:
+
+```json
+{
+  "brand": "soleada",
+  "buyerProfileId": "11111111-1111-4111-8111-111111111111",
+  "autoDiscover": true,
+  "candidateLimit": 120,
+  "maxResults": 10
+}
+```
+
+Explicit references:
+
 ```json
 {
   "brand": "soleada",
@@ -44,6 +62,10 @@ Constraints:
 
 - `brand` must be an allowed real-estate brand
 - `buyerProfileId` must refer to an approved buyer profile for the same brand
+- `autoDiscover` and explicit `propertyReferences` cannot be mixed in the same
+  request
+- automatic discovery reads at most a bounded candidate pool before deterministic
+  ranking; it does not persist the ranked results
 - `propertyReferences` must be unique and can be database UUIDs, `properties.ref`,
   or `properties.external_id` values such as `N8513`
 - at most 20 properties can be evaluated per request
@@ -77,9 +99,12 @@ Buyer profile data is read through the dedicated Lead Intelligence runtime
 database connection in a short read-only transaction with server-set brand
 context.
 
-Inventory rows are read server-side by explicit property reference only. The
-server resolves each reference against `properties.id`, `properties.ref`, and
-`properties.external_id`. The service role key is never sent to the browser.
+Inventory rows are read server-side only. In automatic mode, the server loads a
+bounded candidate set from `properties`, applies website visibility and
+brand-visibility rules where available, and then runs the deterministic matcher.
+In explicit mode, the server resolves each reference against `properties.id`,
+`properties.ref`, and `properties.external_id`. The service role key is never
+sent to the browser.
 
 ## Production Notes
 

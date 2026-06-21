@@ -11,6 +11,7 @@ import { LeadIntelligencePersistenceError } from "@/services/lead-intelligence/p
 import {
   LeadPropertyMatchPreviewRequestSchema,
   loadApprovedLeadMatchProfileWithDb,
+  loadCandidatePropertiesFromSupabase,
   loadPropertiesByReferencesFromSupabase,
   previewLeadPropertyMatchesForProfile,
 } from "@/services/lead-intelligence/property-match-preview";
@@ -86,7 +87,14 @@ export async function POST(request: NextRequest) {
     const result = await previewLeadPropertyMatchesForProfile(
       parsed.data,
       profile,
-      loadPropertiesByReferencesFromSupabase,
+      (brand, propertyReferences) =>
+        parsed.data.autoDiscover
+          ? loadCandidatePropertiesFromSupabase(
+              brand,
+              profile,
+              parsed.data.candidateLimit,
+            )
+          : loadPropertiesByReferencesFromSupabase(brand, propertyReferences),
     );
 
     return NextResponse.json(
