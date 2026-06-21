@@ -13,3 +13,10 @@ export function isLeadIntelligencePersistenceEnabled(
   const raw = env[LEAD_INTELLIGENCE_FEATURE_FLAGS.leadIntelligencePersistence];
   return /^(1|true|yes|on)$/i.test(String(raw || "").trim());
 }
+
+export function isLeadIntelligenceConnectExistingEnabled(
+  env: Record<string, string | undefined> = process.env,
+) {
+  const raw = env[LEAD_INTELLIGENCE_FEATURE_FLAGS.leadIntelligenceConnectExisting];
+  return /^(1|true|yes|on)$/i.test(String(raw || "").trim());
+}

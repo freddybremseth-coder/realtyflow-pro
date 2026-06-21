@@ -263,6 +263,7 @@ test("saveLeadIntelligenceReview writes intake, analysis, candidates, and approv
     }),
     repository: repo,
     serverContactCandidates: [serverContactCandidate],
+    connectExistingEnabled: true,
     approvedBy: "Freddy.Bremseth@gmail.com",
     now: approvedAt,
   });
@@ -292,6 +293,7 @@ test("continue_without_contact saves profile without writing contact candidates"
     request: baseRequest(),
     repository: repo,
     serverContactCandidates: [serverContactCandidate],
+    connectExistingEnabled: true,
     approvedBy: "Freddy.Bremseth@gmail.com",
     now: approvedAt,
   });
@@ -344,12 +346,36 @@ test("connect_existing must point to a server-verified contact candidate", async
         }),
         repository: new CaptureRepository(),
         serverContactCandidates: [],
+        connectExistingEnabled: true,
         approvedBy: "freddy.bremseth@gmail.com",
         now: approvedAt,
       }),
     (error) =>
       error instanceof LeadIntelligenceReviewError &&
       error.code === "CONTACT_CANDIDATE_STALE",
+  );
+});
+
+test("connect_existing is disabled unless the dedicated gate is enabled", async () => {
+  await assert.rejects(
+    () =>
+      saveLeadIntelligenceReview({
+        request: baseRequest({
+          contactDecision: {
+            action: "connect_existing",
+            contactId,
+            explicitApproval: true,
+          },
+        }),
+        repository: new CaptureRepository(),
+        serverContactCandidates: [serverContactCandidate],
+        approvedBy: "freddy.bremseth@gmail.com",
+        now: approvedAt,
+      }),
+    (error) =>
+      error instanceof LeadIntelligenceReviewError &&
+      error.code === "CONTACT_LINKING_DISABLED" &&
+      error.status === 403,
   );
 });
 
@@ -451,6 +477,7 @@ test("identical review request twice returns same IDs without duplicate criteria
     }),
     repository: repo,
     serverContactCandidates: [serverContactCandidate],
+    connectExistingEnabled: true,
     approvedBy: "freddy.bremseth@gmail.com",
     now: approvedAt,
   });
@@ -464,6 +491,7 @@ test("identical review request twice returns same IDs without duplicate criteria
     }),
     repository: repo,
     serverContactCandidates: [serverContactCandidate],
+    connectExistingEnabled: true,
     approvedBy: "freddy.bremseth@gmail.com",
     now: approvedAt,
   });
@@ -497,6 +525,7 @@ async function assertReviewConflict(input: {
     request: baseRequest(input.first || {}),
     repository: repo,
     serverContactCandidates: input.serverContactCandidates || [],
+    connectExistingEnabled: true,
     approvedBy: "freddy.bremseth@gmail.com",
     now: approvedAt,
   });
@@ -509,6 +538,7 @@ async function assertReviewConflict(input: {
         request: baseRequest(input.second),
         repository: repo,
         serverContactCandidates: input.serverContactCandidates || [],
+        connectExistingEnabled: true,
         approvedBy: "freddy.bremseth@gmail.com",
         now: approvedAt,
       }),
