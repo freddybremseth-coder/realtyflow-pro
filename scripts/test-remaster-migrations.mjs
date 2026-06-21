@@ -3110,6 +3110,7 @@ async function testLeadIntelligenceShortlistDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
 
     process.stdout.write("  Scenario: applies after PR 3A/runtime RLS and is idempotent\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
@@ -3313,6 +3314,7 @@ async function testLeadIntelligencePresentationDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
 
     process.stdout.write("  Scenario: applies after shortlist schema and is idempotent\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
@@ -3566,6 +3568,7 @@ async function testLeadIntelligencePresentationDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
 
@@ -3581,6 +3584,7 @@ async function testLeadIntelligencePresentationDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
     await applyMigration(client, migrationFiles.leadIntelligenceShortlistDraft);
