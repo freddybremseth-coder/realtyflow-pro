@@ -31,6 +31,7 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
     "/api/leads",
     "/api/email",
     "/api/properties",
+    "/api/shortlist",
     "/api/neural-beat",
     "supabase",
   ];
@@ -60,9 +61,28 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Valgfritt. Maks 20 eksplisitte eiendomsreferanser"), true);
   assert.equal(source.includes("Aktuelle"), true);
   assert.equal(source.includes("Ingen av de valgte eiendommene er aktuelle uten manuell vurdering."), true);
+  assert.equal(source.includes("Manuell vurdering"), true);
+  assert.equal(source.includes("Aktuell"), true);
+  assert.equal(source.includes("Kanskje"), true);
+  assert.equal(source.includes("Må undersøkes"), true);
+  assert.equal(source.includes("Manuell vurdering lagres ikke"), true);
+  assert.equal(source.includes("lagres ikke som shortlist"), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);
   assert.equal(source.includes("Shortlist opprettet: nei"), true);
   assert.equal(source.includes("propertyMatchingStarted: true"), false);
+});
+
+test("Lead Intelligence match review decisions are local-only preview state", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("type MatchReviewDecision"), true);
+  assert.equal(source.includes("matchReviewDecisions"), true);
+  assert.equal(source.includes("setMatchReviewDecisions({});"), true);
+  assert.equal(source.includes("setMatchReviewDecisions((current) =>"), true);
+  assert.equal(source.includes("value={reviewDecision}"), true);
+  assert.equal(source.includes("Manuell vurdering overstyrer ikke"), false);
+  assert.equal(source.includes("shortlistCreated: true"), false);
+  assert.equal(source.includes("matchesPersisted: true"), false);
 });
 
 test("Lead Intelligence preview clears stale candidates before review save", async () => {
