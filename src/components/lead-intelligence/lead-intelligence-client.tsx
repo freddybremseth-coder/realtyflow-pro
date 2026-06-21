@@ -128,6 +128,9 @@ interface ReviewCriterionRow {
 type PropertyMatchEligibility = "eligible" | "conditional" | "rejected";
 type MatchReviewDecision = "system" | "current" | "maybe" | "needs_research" | "rejected";
 type SelectedShortlistDecision = Exclude<MatchReviewDecision, "system" | "rejected">;
+type SelectedShortlistMatch = PropertyMatchPreviewResponse["result"]["matches"][number] & {
+  decision: SelectedShortlistDecision;
+};
 
 interface PropertyMatchPreviewResponse {
   ok: true;
@@ -254,9 +257,80 @@ function decisionLabelForPresentation(decision: SelectedShortlistDecision) {
   }
 }
 
+function uniquePresentationItems(values: Array<string | null | undefined>, limit = 6) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
+}
+
+function buildShortlistPresentation(lead: ExtractedLead, matches: SelectedShortlistMatch[]) {
+  const contactName = lead.contact.name?.trim() || "kunden";
+  const propertyTypes = lead.propertyTypes.length > 0 ? lead.propertyTypes.join(", ") : "bolig";
+  const locations = lead.locations.preferred.length > 0
+    ? lead.locations.preferred.join(", ")
+    : lead.locations.flexible
+      ? "fleksibelt område"
+      : "område ikke avklart";
+  const budget = lead.budget.amount
+    ? `${formatCurrency(lead.budget.amount)}${lead.budget.includesCosts ? " inkl. omkostninger" : ""}`
+    : "må avklares";
+  const needBullets = uniquePresentationItems([
+    `Boligtype: ${propertyTypes}`,
+    `Område: ${locations}${lead.locations.flexible ? " / nærområde vurderes" : ""}`,
+    `Budsjett: ${budget}`,
+    ...lead.hardRequirements.slice(0, 3).map((criterion) => criterion.sourceText),
+  ]);
+  const verificationBullets = uniquePresentationItems([
+    ...lead.missingInformation.slice(0, 3).map((item) => item.question),
+    ...matches.flatMap((match) => match.questionsToVerify.slice(0, 2)),
+    ...matches.flatMap((match) => match.concerns.slice(0, 2)),
+    "Pris, tilgjengelighet og nøkkelfakta må bekreftes før kunden får endelig anbefaling.",
+  ], 8);
+
+  return {
+    title: `Kundepresentasjon for ${contactName}`,
+    subtitle: `${matches.length} bolig${matches.length === 1 ? "" : "er"} valgt for manuell gjennomgang.`,
+    needBullets,
+    verificationBullets,
+  };
+}
+
+function buildShortlistPresentationText(
+  lead: ExtractedLead,
+  matches: SelectedShortlistMatch[],
+) {
+  const presentation = buildShortlistPresentation(lead, matches);
+  const propertyLines = matches.map((match, index) => {
+    const facts = propertyFactsLine(match);
+    const reasons = match.reasonsForMatch.slice(0, 3).join(" ");
+    const verification = uniquePresentationItems([
+      ...match.concerns.slice(0, 2),
+      ...match.questionsToVerify.slice(0, 2),
+    ], 3).join(" ");
+    return [
+      `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
+      `   Status: ${decisionLabelForPresentation(match.decision)}`,
+      `   Hvorfor den passer: ${reasons || "Matcher deler av behovet."}`,
+      verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
+    ].join("\n");
+  });
+
+  return [
+    presentation.title,
+    presentation.subtitle,
+    "",
+    "Kundens behov:",
+    ...presentation.needBullets.map((item) => `- ${item}`),
+    "",
+    "Boligforslag:",
+    ...propertyLines,
+    "",
+    "Før videre deling må dette avklares:",
+    ...presentation.verificationBullets.map((item) => `- ${item}`),
+  ].join("\n");
+}
+
 function buildShortlistEmailDraft(
   lead: ExtractedLead,
-  matches: Array<PropertyMatchPreviewResponse["result"]["matches"][number] & { decision: SelectedShortlistDecision }>,
+  matches: SelectedShortlistMatch[],
 ) {
   const contactName = lead.contact.name?.trim() || "kunden";
   const locationText = lead.locations.preferred.length > 0
@@ -270,24 +344,26 @@ function buildShortlistEmailDraft(
   const propertyLines = matches.map((match, index) => {
     const facts = propertyFactsLine(match);
     const reasons = match.reasonsForMatch.slice(0, 2).join(" ");
-    const concerns = match.concerns.length > 0
-      ? ` Må avklares: ${match.concerns.slice(0, 2).join(" ")}`
-      : "";
-    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Status: ${decisionLabelForPresentation(match.decision)}\n   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}${concerns}`;
+    const concerns = uniquePresentationItems([
+      ...match.concerns.slice(0, 2),
+      ...match.questionsToVerify.slice(0, 1),
+    ], 3);
+    const link = match.property.publicUrl ? `\n   Link: ${match.property.publicUrl}` : "";
+    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}${concerns.length > 0 ? `\n   Må avklares: ${concerns.join(" ")}` : ""}${link}`;
   });
 
   return {
-    subject: `Boligforslag basert på behovene dine - ${locationText}`,
+    subject: `Boligforslag: ${matches.length} alternativer i ${locationText}`,
     body: [
       `Hei ${contactName},`,
       "",
-      "Jeg har sett på boligene opp mot kriteriene vi har notert så langt.",
+      "Jeg har sett gjennom aktuelle boliger opp mot behovene vi har notert så langt.",
       budgetText,
       "",
-      "Foreløpig shortlist:",
+      "Jeg ville sett nærmere på disse alternativene:",
       ...propertyLines,
       "",
-      "Pris, tilgjengelighet og detaljer må verifiseres før vi går videre.",
+      "Pris, tilgjengelighet og enkelte detaljer må bekreftes før vi går videre.",
       "Gi meg gjerne beskjed om hvilke av disse du ønsker at jeg undersøker nærmere.",
       "",
       "Vennlig hilsen",
@@ -568,6 +644,7 @@ export function LeadIntelligenceClient({
   const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
   const [emailDraftCopyState, setEmailDraftCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [presentationCopyState, setPresentationCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -603,10 +680,18 @@ export function LeadIntelligenceClient({
         const decision = selectedById.get(match.propertyId);
         return decision ? { ...match, decision } : null;
       })
-      .filter((match): match is PropertyMatchPreviewResponse["result"]["matches"][number] & { decision: SelectedShortlistDecision } =>
+      .filter((match): match is SelectedShortlistMatch =>
         Boolean(match),
       );
   }, [propertyMatchResult, selectedShortlistItems]);
+  const shortlistPresentation = useMemo(() => {
+    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
+    return buildShortlistPresentation(edited, selectedShortlistMatches);
+  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
+  const shortlistPresentationText = useMemo(() => {
+    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
+    return buildShortlistPresentationText(edited, selectedShortlistMatches);
+  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
   const shortlistEmailDraft = useMemo(() => {
     if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
     return buildShortlistEmailDraft(edited, selectedShortlistMatches);
@@ -619,6 +704,7 @@ export function LeadIntelligenceClient({
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
     setEmailDraftCopyState("idle");
+    setPresentationCopyState("idle");
   };
 
   const clearContactCandidates = () => {
@@ -871,6 +957,7 @@ export function LeadIntelligenceClient({
       setShortlistSaveError(null);
       setShortlistSaveResult(null);
       setEmailDraftCopyState("idle");
+      setPresentationCopyState("idle");
     } catch {
       setPropertyMatchError({
         correlationId: "client",
@@ -888,6 +975,7 @@ export function LeadIntelligenceClient({
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
     setEmailDraftCopyState("idle");
+    setPresentationCopyState("idle");
 
     try {
       const res = await fetch("/api/lead-intelligence/shortlists", {
@@ -932,6 +1020,16 @@ export function LeadIntelligenceClient({
       setEmailDraftCopyState("copied");
     } catch {
       setEmailDraftCopyState("failed");
+    }
+  };
+
+  const copyPresentationDraft = async () => {
+    if (!shortlistPresentationText) return;
+    try {
+      await navigator.clipboard.writeText(shortlistPresentationText);
+      setPresentationCopyState("copied");
+    } catch {
+      setPresentationCopyState("failed");
     }
   };
 
@@ -1822,6 +1920,7 @@ export function LeadIntelligenceClient({
                                         setShortlistSaveError(null);
                                         setShortlistSaveResult(null);
                                         setEmailDraftCopyState("idle");
+                                        setPresentationCopyState("idle");
                                       }}
                                       className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                                     >
@@ -1896,65 +1995,204 @@ export function LeadIntelligenceClient({
                             </div>
                           )}
 
-                          {shortlistEmailDraft && (
-                            <div className="mt-3 space-y-3 rounded-lg border border-primary-500/30 bg-primary-500/10 p-3">
+                          {shortlistPresentation && shortlistEmailDraft && (
+                            <div className="mt-3 space-y-4 rounded-lg border border-primary-500/30 bg-slate-950/70 p-4">
                               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                 <div>
                                   <p className="flex items-center gap-2 text-sm font-semibold text-primary-100">
                                     <MessageSquareText className="h-4 w-4" />
-                                    Lokalt presentasjons- og e-postutkast
+                                    Profesjonelt presentasjonsutkast
                                   </p>
                                   <p className="mt-1 text-xs text-primary-100/75">
+                                    {shortlistPresentation.title} · {shortlistPresentation.subtitle}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-400">
                                     Dette er bare en preview basert på shortlist-utkastet. Ingen e-post er sendt,
                                     og ingen presentasjon er lagret eller publisert.
                                   </p>
                                 </div>
-                                <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
-                                  <Clipboard className="mr-2 h-4 w-4" />
-                                  Kopier e-postutkast
-                                </Button>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <Button type="button" variant="outline" size="sm" onClick={copyPresentationDraft}>
+                                    <Clipboard className="mr-2 h-4 w-4" />
+                                    Kopier presentasjon
+                                  </Button>
+                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                    <Clipboard className="mr-2 h-4 w-4" />
+                                    Kopier e-postutkast
+                                  </Button>
+                                </div>
                               </div>
 
-                              <div className="grid gap-3 lg:grid-cols-2">
+                              <div className="grid gap-3 lg:grid-cols-3">
                                 <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Valgte boliger
+                                    Kundens behov
                                   </p>
-                                  <div className="mt-3 space-y-2">
-                                    {selectedShortlistMatches.map((match) => (
-                                      <div key={match.propertyId} className="rounded border border-slate-800 bg-slate-950/70 p-2">
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <p className="text-sm font-semibold text-slate-100">{propertyDisplayName(match)}</p>
-                                          <Badge variant={matchReviewDecisionVariant(match.decision)}>
-                                            {decisionLabelForPresentation(match.decision)}
-                                          </Badge>
-                                        </div>
-                                        {propertyFactsLine(match) && (
-                                          <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
-                                        )}
-                                        {match.concerns.length > 0 && (
-                                          <p className="mt-1 text-xs text-amber-200">
-                                            Må avklares: {match.concerns.slice(0, 2).join(" ")}
-                                          </p>
-                                        )}
-                                      </div>
+                                  <ul className="mt-3 space-y-2 text-sm text-slate-200">
+                                    {shortlistPresentation.needBullets.map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                                        <span>{item}</span>
+                                      </li>
                                     ))}
-                                  </div>
+                                  </ul>
                                 </div>
 
                                 <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    E-postutkast
+                                    Før videre deling må dette avklares
                                   </p>
-                                  <p className="mt-3 text-sm font-semibold text-slate-100">{shortlistEmailDraft.subject}</p>
-                                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-200">{shortlistEmailDraft.body}</pre>
-                                  {emailDraftCopyState === "copied" && (
-                                    <p className="mt-2 text-xs text-emerald-300">E-postutkast kopiert.</p>
+                                  <ul className="mt-3 space-y-2 text-sm text-slate-200">
+                                    {shortlistPresentation.verificationBullets.slice(0, 5).map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+
+                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Sikkerhetsstatus
+                                  </p>
+                                  <div className="mt-3 space-y-2 text-sm text-slate-200">
+                                    <p>E-post sendt: nei</p>
+                                    <p>Leads opprettet: nei</p>
+                                    <p>Kontakter opprettet: nei</p>
+                                    <p>Presentasjon publisert: nei</p>
+                                  </div>
+                                  {presentationCopyState === "copied" && (
+                                    <p className="mt-3 text-xs text-emerald-300">Presentasjonstekst kopiert.</p>
                                   )}
-                                  {emailDraftCopyState === "failed" && (
-                                    <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-postutkastet.</p>
+                                  {presentationCopyState === "failed" && (
+                                    <p className="mt-3 text-xs text-red-300">Kunne ikke kopiere presentasjonen.</p>
                                   )}
                                 </div>
+                              </div>
+
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap items-end justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-100">Boligkort</p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      Kortene er et internt utkast Freddy kan kvalitetssikre før noe deles med kunden.
+                                    </p>
+                                  </div>
+                                  <Badge variant="outline">{selectedShortlistMatches.length} valgt</Badge>
+                                </div>
+
+                                <div className="grid gap-3 xl:grid-cols-2">
+                                  {selectedShortlistMatches.map((match) => {
+                                    const verification = uniquePresentationItems([
+                                      ...match.concerns.slice(0, 2),
+                                      ...match.questionsToVerify.slice(0, 2),
+                                    ], 4);
+                                    return (
+                                      <div key={match.propertyId} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+                                        {match.property.primaryImageUrl ? (
+                                          <img
+                                            src={match.property.primaryImageUrl}
+                                            alt={propertyDisplayName(match)}
+                                            className="h-44 w-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="flex h-44 items-center justify-center bg-slate-900 text-sm text-slate-500">
+                                            Ingen bilde i eiendomsdata
+                                          </div>
+                                        )}
+                                        <div className="space-y-3 p-3">
+                                          <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <div>
+                                              <p className="text-sm font-semibold text-slate-100">{propertyDisplayName(match)}</p>
+                                              {propertyFactsLine(match) && (
+                                                <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
+                                              )}
+                                            </div>
+                                            <Badge variant={matchReviewDecisionVariant(match.decision)}>
+                                              {decisionLabelForPresentation(match.decision)}
+                                            </Badge>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2 text-xs">
+                                            <Badge variant="outline">Score {match.score}</Badge>
+                                            <Badge variant="outline">Data {match.dataQualityScore}</Badge>
+                                            <Badge
+                                              variant={
+                                                match.eligibility === "eligible"
+                                                  ? "success"
+                                                  : match.eligibility === "rejected"
+                                                    ? "destructive"
+                                                    : "warning"
+                                              }
+                                            >
+                                              {match.eligibility}
+                                            </Badge>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                              Hvorfor den passer
+                                            </p>
+                                            <ul className="mt-2 space-y-1 text-xs text-slate-200">
+                                              {(match.reasonsForMatch.length > 0 ? match.reasonsForMatch.slice(0, 3) : ["Matcher deler av behovet."]).map((reason) => (
+                                                <li key={reason} className="flex gap-2">
+                                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                                                  <span>{reason}</span>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                              Må avklares
+                                            </p>
+                                            <ul className="mt-2 space-y-1 text-xs text-amber-100">
+                                              {(verification.length > 0
+                                                ? verification
+                                                : ["Pris, tilgjengelighet og nøkkelfakta må bekreftes."]).map((item) => (
+                                                <li key={item} className="flex gap-2">
+                                                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                                                  <span>{item}</span>
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                          {match.property.publicUrl && (
+                                            <a
+                                              href={match.property.publicUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex text-xs font-semibold text-primary-300 hover:text-primary-200"
+                                            >
+                                              Åpne boligside
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      E-postutkast
+                                    </p>
+                                    <p className="mt-3 text-sm font-semibold text-slate-100">{shortlistEmailDraft.subject}</p>
+                                  </div>
+                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                    <Clipboard className="mr-2 h-4 w-4" />
+                                    Kopier e-postutkast
+                                  </Button>
+                                </div>
+                                <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-200">{shortlistEmailDraft.body}</pre>
+                                {emailDraftCopyState === "copied" && (
+                                  <p className="mt-2 text-xs text-emerald-300">E-postutkast kopiert.</p>
+                                )}
+                                {emailDraftCopyState === "failed" && (
+                                  <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-postutkastet.</p>
+                                )}
                               </div>
                             </div>
                           )}
