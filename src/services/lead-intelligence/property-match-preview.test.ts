@@ -13,6 +13,7 @@ const buyerProfileId = "11111111-1111-4111-8111-111111111111";
 const eligiblePropertyId = "22222222-2222-4222-8222-222222222222";
 const rejectedPropertyId = "33333333-3333-4333-8333-333333333333";
 const crossBrandPropertyId = "44444444-4444-4444-8444-444444444444";
+const eligiblePropertyRef = "N8513";
 
 function approvedProfile(): LeadMatchProfile {
   return {
@@ -66,21 +67,32 @@ function approvedProfile(): LeadMatchProfile {
   };
 }
 
-test("property match preview request validates brand, ids, bounds and duplicates", () => {
-  assert.equal(
-    LeadPropertyMatchPreviewRequestSchema.safeParse({
-      brand: "soleada",
-      buyerProfileId,
-      propertyIds: [eligiblePropertyId],
-    }).success,
-    true,
-  );
+test("property match preview request validates brand, references, legacy ids, bounds and duplicates", () => {
+  const refParse = LeadPropertyMatchPreviewRequestSchema.safeParse({
+    brand: "soleada",
+    buyerProfileId,
+    propertyReferences: [eligiblePropertyRef],
+  });
+  assert.equal(refParse.success, true);
+  if (refParse.success) {
+    assert.deepEqual(refParse.data.propertyReferences, [eligiblePropertyRef]);
+  }
+
+  const legacyIdParse = LeadPropertyMatchPreviewRequestSchema.safeParse({
+    brand: "soleada",
+    buyerProfileId,
+    propertyIds: [eligiblePropertyId],
+  });
+  assert.equal(legacyIdParse.success, true);
+  if (legacyIdParse.success) {
+    assert.deepEqual(legacyIdParse.data.propertyReferences, [eligiblePropertyId]);
+  }
 
   assert.equal(
     LeadPropertyMatchPreviewRequestSchema.safeParse({
       brand: "neuralbeat",
       buyerProfileId,
-      propertyIds: [eligiblePropertyId],
+      propertyReferences: [eligiblePropertyRef],
     }).success,
     false,
   );
@@ -89,9 +101,7 @@ test("property match preview request validates brand, ids, bounds and duplicates
     LeadPropertyMatchPreviewRequestSchema.safeParse({
       brand: "soleada",
       buyerProfileId,
-      propertyIds: Array.from({ length: 21 }, (_, index) =>
-        `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-      ),
+      propertyReferences: Array.from({ length: 21 }, (_, index) => `N${String(index).padStart(4, "0")}`),
     }).success,
     false,
   );
@@ -100,7 +110,16 @@ test("property match preview request validates brand, ids, bounds and duplicates
     LeadPropertyMatchPreviewRequestSchema.safeParse({
       brand: "soleada",
       buyerProfileId,
-      propertyIds: [eligiblePropertyId, eligiblePropertyId],
+      propertyReferences: [eligiblePropertyRef, eligiblePropertyRef.toLowerCase()],
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    LeadPropertyMatchPreviewRequestSchema.safeParse({
+      brand: "soleada",
+      buyerProfileId,
+      propertyReferences: ["https://example.com/property"],
     }).success,
     false,
   );
@@ -187,30 +206,34 @@ test("preview ranks explicit property set and returns only safe match DTOs", asy
     {
       brand: "soleada",
       buyerProfileId,
-      propertyIds: [eligiblePropertyId, rejectedPropertyId],
+      propertyReferences: [eligiblePropertyRef, rejectedPropertyId],
     },
     approvedProfile(),
-    async () => [
-      {
-        id: rejectedPropertyId,
-        brand: "soleada",
-        property_type: "apartment",
-        price: 450000,
-        bedrooms: 2,
-        has_lift: true,
-        terrace_area_m2: 30,
-      },
-      {
-        id: eligiblePropertyId,
-        brand: "soleada",
-        property_type: "apartment",
-        price: 360000,
-        bedrooms: 2,
-        has_lift: true,
-        terrace_area_m2: 24,
-        future_building_risk: false,
-      },
-    ],
+    async (_brand, references) => {
+      assert.deepEqual(references, [eligiblePropertyRef, rejectedPropertyId]);
+      return [
+        {
+          id: rejectedPropertyId,
+          brand: "soleada",
+          property_type: "apartment",
+          price: 450000,
+          bedrooms: 2,
+          has_lift: true,
+          terrace_area_m2: 30,
+        },
+        {
+          id: eligiblePropertyId,
+          ref: eligiblePropertyRef,
+          brand: "soleada",
+          property_type: "apartment",
+          price: 360000,
+          bedrooms: 2,
+          has_lift: true,
+          terrace_area_m2: 24,
+          future_building_risk: false,
+        },
+      ];
+    },
   );
 
   assert.equal(result.analyzed, 2);
@@ -227,7 +250,7 @@ test("preview marks missing and cross-brand properties without leaking raw rows"
     {
       brand: "soleada",
       buyerProfileId,
-      propertyIds: [eligiblePropertyId, crossBrandPropertyId],
+      propertyReferences: [eligiblePropertyId, crossBrandPropertyId],
     },
     approvedProfile(),
     async () => [
@@ -251,7 +274,7 @@ test("preview marks missing and cross-brand properties without leaking raw rows"
     ],
   );
 
-  assert.equal(result.missingPropertyIds.length, 0);
+  assert.equal(result.missingPropertyReferences.length, 0);
   assert.deepEqual(result.skippedProperties, [
     { propertyId: crossBrandPropertyId, reason: "PROPERTY_BRAND_MISMATCH" },
   ]);
@@ -266,7 +289,7 @@ test("preview reports unknown buyer profile as stable safe error", async () => {
         {
           brand: "soleada",
           buyerProfileId,
-          propertyIds: [eligiblePropertyId],
+          propertyReferences: [eligiblePropertyRef],
         },
         {
           loadApprovedBuyerProfile: async () => null,

@@ -23,26 +23,47 @@ import {
 
 const UUIDSchema = z.string().uuid();
 const MAX_PROPERTY_MATCH_PREVIEW_ITEMS = 20;
+const PropertyReferenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "property reference must be a UUID or listing reference");
 
 export const LeadPropertyMatchPreviewRequestSchema = z
   .object({
     brand: LeadIntelligenceRealEstateBrandSchema,
     buyerProfileId: UUIDSchema,
-    propertyIds: z
-      .array(UUIDSchema)
-      .min(1)
-      .max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS)
-      .superRefine((ids, ctx) => {
-        if (new Set(ids).size !== ids.length) {
-          ctx.addIssue({
-            code: "custom",
-            message: "propertyIds must be unique",
-          });
-        }
-      }),
+    propertyReferences: z.array(PropertyReferenceSchema).min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
+    propertyIds: z.array(UUIDSchema).min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
     maxResults: z.number().int().min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, ctx) => {
+    const references = request.propertyReferences || request.propertyIds;
+    if (!references || references.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["propertyReferences"],
+        message: "propertyReferences are required",
+      });
+      return;
+    }
+    const normalized = references.map((reference) => normalizePropertyReference(reference));
+    if (new Set(normalized).size !== normalized.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: [request.propertyReferences ? "propertyReferences" : "propertyIds"],
+        message: "property references must be unique",
+      });
+    }
+  })
+  .transform((request) => ({
+    brand: request.brand,
+    buyerProfileId: request.buyerProfileId,
+    propertyReferences: request.propertyReferences || request.propertyIds || [],
+    maxResults: request.maxResults,
+  }));
 
 export type LeadPropertyMatchPreviewRequest = z.infer<typeof LeadPropertyMatchPreviewRequestSchema>;
 
@@ -78,14 +99,14 @@ type RawProperty = Record<string, unknown>;
 
 export interface PropertyMatchPreviewRepository {
   loadApprovedBuyerProfile(brand: string, buyerProfileId: string): Promise<LeadMatchProfile | null>;
-  loadProperties(brand: string, propertyIds: string[]): Promise<RawProperty[]>;
+  loadProperties(brand: string, propertyReferences: string[]): Promise<RawProperty[]>;
 }
 
 export interface PropertyMatchPreviewResult {
   buyerProfileId: string;
   analyzed: number;
   matched: number;
-  missingPropertyIds: string[];
+  missingPropertyReferences: string[];
   skippedProperties: Array<{
     propertyId: string;
     reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
@@ -186,9 +207,9 @@ export async function loadApprovedLeadMatchProfileWithDb(
   return buildLeadMatchProfile(profile, criteria);
 }
 
-export async function loadPropertiesByIdsFromSupabase(
+export async function loadPropertiesByReferencesFromSupabase(
   _brand: string,
-  propertyIds: string[],
+  propertyReferences: string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RawProperty[]> {
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
@@ -207,21 +228,70 @@ export async function loadPropertiesByIdsFromSupabase(
       autoRefreshToken: false,
     },
   });
-  const { data, error } = await supabase
-    .from("properties")
-    .select("*")
-    .in("id", propertyIds)
-    .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
+  const uuidReferences = propertyReferences.filter((reference) => UUIDSchema.safeParse(reference).success);
+  const textReferences = propertyReferences.filter((reference) => !UUIDSchema.safeParse(reference).success);
+  const textVariants = Array.from(
+    new Set(textReferences.flatMap((reference) => [reference, reference.toUpperCase(), reference.toLowerCase()])),
+  );
 
-  if (error) {
-    throw new LeadIntelligenceError(
-      "PROPERTY_MATCHING_UNAVAILABLE",
-      "Property matching inventory lookup failed",
-      503,
-    );
+  const rows = new Map<string, RawProperty>();
+  const addRows = (data: RawProperty[] | null) => {
+    for (const property of data || []) {
+      const id = typeof property.id === "string" ? property.id : "";
+      if (id) rows.set(id, property);
+    }
+  };
+
+  if (uuidReferences.length > 0) {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("*")
+      .in("id", uuidReferences)
+      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
+
+    if (error) {
+      throw new LeadIntelligenceError(
+        "PROPERTY_MATCHING_UNAVAILABLE",
+        "Property matching inventory lookup failed",
+        503,
+      );
+    }
+    addRows((data || []) as RawProperty[]);
   }
 
-  return (data || []) as RawProperty[];
+  if (textVariants.length > 0) {
+    const { data: refData, error: refError } = await supabase
+      .from("properties")
+      .select("*")
+      .in("ref", textVariants)
+      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
+
+    if (refError) {
+      throw new LeadIntelligenceError(
+        "PROPERTY_MATCHING_UNAVAILABLE",
+        "Property matching inventory lookup failed",
+        503,
+      );
+    }
+    addRows((refData || []) as RawProperty[]);
+
+    const { data: externalData, error: externalError } = await supabase
+      .from("properties")
+      .select("*")
+      .in("external_id", textVariants)
+      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
+
+    if (externalError) {
+      throw new LeadIntelligenceError(
+        "PROPERTY_MATCHING_UNAVAILABLE",
+        "Property matching inventory lookup failed",
+        503,
+      );
+    }
+    addRows((externalData || []) as RawProperty[]);
+  }
+
+  return Array.from(rows.values()).slice(0, MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
 }
 
 export async function previewLeadPropertyMatches(
@@ -237,19 +307,21 @@ export async function previewLeadPropertyMatches(
     );
   }
 
-  return previewLeadPropertyMatchesForProfile(request, profile, (brand, propertyIds) =>
-    repository.loadProperties(brand, propertyIds),
+  return previewLeadPropertyMatchesForProfile(request, profile, (brand, propertyReferences) =>
+    repository.loadProperties(brand, propertyReferences),
   );
 }
 
 export async function previewLeadPropertyMatchesForProfile(
   request: LeadPropertyMatchPreviewRequest,
   profile: LeadMatchProfile,
-  loadProperties: (brand: string, propertyIds: string[]) => Promise<RawProperty[]>,
+  loadProperties: (brand: string, propertyReferences: string[]) => Promise<RawProperty[]>,
 ): Promise<PropertyMatchPreviewResult> {
-  const properties = await loadProperties(request.brand, request.propertyIds);
-  const foundIds = new Set(properties.map((property) => String(property.id || "")));
-  const missingPropertyIds = request.propertyIds.filter((id) => !foundIds.has(id));
+  const properties = await loadProperties(request.brand, request.propertyReferences);
+  const foundReferences = new Set(properties.flatMap(propertyReferenceKeys));
+  const missingPropertyReferences = request.propertyReferences.filter(
+    (reference) => !foundReferences.has(normalizePropertyReference(reference)),
+  );
   const matches: PropertyMatch[] = [];
   const skippedProperties: PropertyMatchPreviewResult["skippedProperties"] = [];
 
@@ -267,14 +339,14 @@ export async function previewLeadPropertyMatchesForProfile(
     }
   }
 
-  const maxResults = request.maxResults ?? request.propertyIds.length;
+  const maxResults = request.maxResults ?? request.propertyReferences.length;
   const ranked = rankPropertyMatches(matches).slice(0, maxResults);
 
   return {
     buyerProfileId: profile.buyerProfileId,
     analyzed: properties.length,
     matched: ranked.length,
-    missingPropertyIds,
+    missingPropertyReferences,
     skippedProperties,
     matches: ranked,
     sideEffects: {
@@ -352,4 +424,14 @@ function toNumberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function normalizePropertyReference(reference: string) {
+  return reference.trim().toLowerCase();
+}
+
+function propertyReferenceKeys(property: RawProperty) {
+  return [property.id, property.ref, property.external_id]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => normalizePropertyReference(value));
 }
