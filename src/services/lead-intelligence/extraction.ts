@@ -523,6 +523,70 @@ function normalizeCriterionOperator(value: unknown) {
   return aliases[normalized] || value;
 }
 
+function normalizeConfidenceValue(value: unknown) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return value;
+    if (value >= 0 && value <= 1) return value;
+    if (value > 1 && value <= 100) return value / 100;
+    return value;
+  }
+
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}.,%]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const aliases: Record<string, number> = {
+    low: 0.35,
+    lav: 0.35,
+    medium: 0.6,
+    middels: 0.6,
+    moderate: 0.6,
+    medium_high: 0.75,
+    mediumhigh: 0.75,
+    high: 0.85,
+    hoy: 0.85,
+    høy: 0.85,
+    very_high: 0.95,
+    veryhigh: 0.95,
+    certain: 0.95,
+    sikker: 0.95,
+    uncertain: 0.25,
+    usikker: 0.25,
+    unknown: 0.5,
+    ukjent: 0.5,
+  };
+
+  if (aliases[normalized] !== undefined) return aliases[normalized];
+
+  const numeric = trimmed.match(/-?\d+(?:[.,]\d+)?\s*%?/);
+  if (!numeric) return value;
+
+  const parsed = Number(numeric[0].replace("%", "").replace(",", ".").trim());
+  if (!Number.isFinite(parsed)) return value;
+  if (numeric[0].includes("%")) return parsed / 100;
+  if (parsed >= 0 && parsed <= 1) return parsed;
+  if (parsed > 1 && parsed <= 100) return parsed / 100;
+
+  return value;
+}
+
+function normalizeReasoningValue(value: unknown, fallback: string) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (Array.isArray(value)) {
+    const text = value
+      .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      .join(" ")
+      .trim();
+    if (text) return text;
+  }
+  return fallback;
+}
+
 function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
   const originalKey = item.key;
   const key = normalizeCriterionKey(originalKey);
@@ -533,6 +597,14 @@ function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
 
   if ("operator" in item) {
     next.operator = normalizeCriterionOperator(item.operator);
+  }
+
+  if ("confidence" in item) {
+    next.confidence = normalizeConfidenceValue(item.confidence);
+  }
+
+  if ("weight" in item) {
+    next.weight = normalizeConfidenceValue(item.weight);
   }
 
   if ("value" in item) {
@@ -555,9 +627,21 @@ function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
 export function canonicalizeExtractedLeadCandidate(value: unknown) {
   if (!value || typeof value !== "object") return value;
   const input = value as Record<string, unknown>;
+  const purchaseReadiness =
+    input.purchaseReadiness && typeof input.purchaseReadiness === "object"
+      ? {
+          ...(input.purchaseReadiness as Record<string, unknown>),
+          confidence: normalizeConfidenceValue((input.purchaseReadiness as Record<string, unknown>).confidence),
+          reasoning: normalizeReasoningValue(
+            (input.purchaseReadiness as Record<string, unknown>).reasoning,
+            "Modellen oppga ikke separat begrunnelse for kjøpsstatus.",
+          ),
+        }
+      : input.purchaseReadiness;
 
   return {
     ...input,
+    purchaseReadiness,
     propertyTypes: Array.isArray(input.propertyTypes)
       ? input.propertyTypes.map(normalizePropertyType)
       : input.propertyTypes,
@@ -738,6 +822,7 @@ function buildRequiredJsonShapeInstructions() {
     "- missingInformation item: { key, otherKey, question, priority }. priority must be high, medium, or low.",
     "- summary and suggestedNextAction must be concise strings.",
     "Include every required object field even when the value is null, unknown, or an empty array.",
+    "All confidence and weight values must be numbers from 0 to 1, not percentages or words.",
   ];
 }
 
@@ -755,7 +840,7 @@ function buildExtractionPrompt(input: LeadIntelligenceAnalyzeRequest, sanitizedT
     ...buildRequiredJsonShapeInstructions(),
     ...JSON_ONLY_RULES,
     "For phone/email placeholders, copy the placeholder token into contact.phone/contact.email if it belongs to the contact.",
-    "Use confidence values from 0 to 1.",
+    "Use confidence and weight values as JSON numbers from 0 to 1 only. Do not use words like high/medium/low or strings like 85%.",
     "Use only these operator values exactly: eq, neq, gt, gte, lt, lte, in, not_in, contains, exists, unknown.",
     "Operator mapping examples: minimum/at least/20+ => gte; maximum/up to => lte; must be/is/required => eq; includes/has => contains.",
     "For apartment-only requirements, use appliesToPropertyTypes with apartment and/or penthouse.",

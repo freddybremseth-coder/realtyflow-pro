@@ -302,6 +302,7 @@ test("sends JSON-only instructions and MIME request to provider", async () => {
   assert.equal(prompts[0].prompt.includes("Include every required object field"), true);
   assert.equal(prompts[0].prompt.includes("Use only these operator values exactly"), true);
   assert.equal(prompts[0].prompt.includes("minimum/at least/20+ => gte"), true);
+  assert.equal(prompts[0].prompt.includes("Do not use words like high/medium/low or strings like 85%."), true);
 });
 
 test("normalizes obvious provider string criterion values before validation", async () => {
@@ -395,6 +396,100 @@ test("normalizes provider operator aliases before strict schema validation", asy
   assert.equal(analysis.result.hardRequirements[1].operator, "eq");
   assert.equal(analysis.result.hardRequirements[2].operator, "eq");
   assert.equal(analysis.result.preferences[0].operator, "gte");
+});
+
+test("normalizes provider confidence variants and missing reasoning before strict schema validation", async () => {
+  const { provider } = providerReturning(emmadaleOutput({
+    purchaseReadiness: {
+      level: "ready_to_buy",
+      confidence: "85%" as unknown as ExtractedLead["purchaseReadiness"]["confidence"],
+      reasoning: null as unknown as string,
+    },
+    hardRequirements: [
+      {
+        key: "bedrooms",
+        operator: "gte",
+        value: 2,
+        sourceText: "Minst 2 soverom.",
+        confidence: "high" as unknown as number,
+        appliesToPropertyTypes: ["apartment"],
+      },
+      {
+        key: "floor_position",
+        operator: "eq",
+        value: "top_floor",
+        sourceText: "Må være på toppen.",
+        confidence: 92 as unknown as number,
+        appliesToPropertyTypes: ["apartment", "penthouse"],
+      },
+      {
+        key: "has_lift",
+        operator: "eq",
+        value: true,
+        sourceText: "Må være heis om det er opp i etasjene.",
+        confidence: "0.8" as unknown as number,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["hardRequirements"],
+    preferences: [
+      {
+        key: "terrace_area_m2",
+        operator: "gte",
+        value: 20,
+        sourceText: "Stor åpen terrasse eventuelt ut fra stue 20 kvm+",
+        confidence: "medium-high" as unknown as number,
+        weight: "80%" as unknown as number,
+        appliesToPropertyTypes: ["apartment"],
+      },
+    ] as ExtractedLead["preferences"],
+  }));
+
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.result.purchaseReadiness.confidence, 0.85);
+  assert.equal(
+    analysis.result.purchaseReadiness.reasoning,
+    "Modellen oppga ikke separat begrunnelse for kjøpsstatus.",
+  );
+  assert.equal(analysis.result.hardRequirements[0].confidence, 0.85);
+  assert.equal(analysis.result.hardRequirements[1].confidence, 0.92);
+  assert.equal(analysis.result.hardRequirements[2].confidence, 0.8);
+  assert.equal(analysis.result.preferences[0].confidence, 0.75);
+  assert.equal(analysis.result.preferences[0].weight, 0.8);
+});
+
+test("rejects unsafe confidence text after repair without leaking raw output", async () => {
+  const invalid = emmadaleOutput({
+    purchaseReadiness: {
+      level: "ready_to_buy",
+      confidence: "absolutely guaranteed" as unknown as number,
+      reasoning: "Kunden er kjøpeklar.",
+    },
+  });
+  const { provider } = providerReturning(invalid, invalid);
+  const logs: string[] = [];
+
+  await assert.rejects(
+    () => analyzeLeadIntake({ source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: null }, {
+      correlationId: CORRELATION_ID,
+      provider,
+      logger: {
+        warn(message, details) {
+          logs.push(JSON.stringify({ message, details }));
+        },
+      },
+    }),
+    (error: unknown) => error instanceof LeadIntelligenceError && error.code === "AI_INVALID_OUTPUT",
+  );
+
+  const serialized = logs.join("\n");
+  assert.equal(serialized.includes("purchaseReadiness.confidence"), true);
+  assert.equal(serialized.includes("absolutely guaranteed"), false);
+  assert.equal(serialized.includes("Emmadale"), false);
+  assert.equal(serialized.includes("90174714"), false);
 });
 
 test("customer prompt injection remains customer data and cannot add extra schema fields", async () => {
