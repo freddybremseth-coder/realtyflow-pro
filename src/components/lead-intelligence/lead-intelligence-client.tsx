@@ -304,6 +304,8 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
     setContactCandidateError(null);
     setContactDecision("continue_without_contact");
     setSelectedContactId(null);
+    setSaveError(null);
+    setSaveResult(null);
   };
 
   const updateEdited = (updater: (current: ExtractedLead) => ExtractedLead) => {
@@ -395,6 +397,8 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
         ...patch,
       },
     }));
+    setSaveError(null);
+    setSaveResult(null);
   };
 
   const loadContactCandidates = async () => {
@@ -424,6 +428,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
       setContactCandidatesLoaded(true);
       setContactDecision("continue_without_contact");
       setSelectedContactId(null);
+      setSaveResult(null);
     } catch {
       setContactCandidateError({
         correlationId: "client",
@@ -453,6 +458,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
           source,
           rawText,
           language: language.trim() || null,
+          idempotencySeed: response.correlationId,
           analysis: edited,
           analysisMeta: {
             model: response.meta.model,
@@ -549,7 +555,10 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                 <FieldLabel>Kilde</FieldLabel>
                 <select
                   value={source}
-                  onChange={(event) => setSource(event.target.value as Source)}
+                  onChange={(event) => {
+                    setSource(event.target.value as Source);
+                    clearContactCandidates();
+                  }}
                   className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
                 >
                   {sourceOptions.map((option) => (
@@ -573,7 +582,14 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                   ))}
                 </select>
               </div>
-              <TextInput label="Språk (valgfritt)" value={language} onChange={setLanguage} />
+              <TextInput
+                label="Språk (valgfritt)"
+                value={language}
+                onChange={(value) => {
+                  setLanguage(value);
+                  clearContactCandidates();
+                }}
+              />
             </div>
 
             <div className="space-y-1">
@@ -916,6 +932,8 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                             onChange={() => {
                               setContactDecision("connect_existing");
                               setSelectedContactId(candidate.contactId);
+                              setSaveError(null);
+                              setSaveResult(null);
                             }}
                             className="mt-1 h-4 w-4"
                           />
@@ -943,6 +961,8 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                           onChange={() => {
                             setContactDecision("continue_without_contact");
                             setSelectedContactId(null);
+                            setSaveError(null);
+                            setSaveResult(null);
                           }}
                         />
                         Fortsett uten koblet kontakt
@@ -955,6 +975,8 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                           onChange={() => {
                             setContactDecision("create_new");
                             setSelectedContactId(null);
+                            setSaveError(null);
+                            setSaveResult(null);
                           }}
                         />
                         Marker at ny kontakt må opprettes senere
