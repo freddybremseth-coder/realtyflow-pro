@@ -3111,6 +3111,7 @@ async function testLeadIntelligenceShortlistDraft() {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
 
     process.stdout.write("  Scenario: applies after PR 3A/runtime RLS and is idempotent\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
@@ -3315,6 +3316,7 @@ async function testLeadIntelligencePresentationDraft() {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
 
     process.stdout.write("  Scenario: applies after shortlist schema and is idempotent\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
@@ -3569,6 +3571,7 @@ async function testLeadIntelligencePresentationDraft() {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
 
@@ -3585,6 +3588,7 @@ async function testLeadIntelligencePresentationDraft() {
     await resetPublicSchema(client);
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
     await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
     await applyMigration(client, migrationFiles.leadIntelligenceShortlistDraft);
