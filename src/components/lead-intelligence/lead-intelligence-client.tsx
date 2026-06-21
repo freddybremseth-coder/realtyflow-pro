@@ -62,7 +62,6 @@ interface LeadContactCandidatePreview {
   matchType: "exact_phone" | "exact_email" | "name_similarity" | "manual" | "other";
   confidence: number;
   reasons: string[];
-  matchValueHash: string;
 }
 
 interface ContactCandidatesResponse {
@@ -280,6 +279,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [criterionReviews, setCriterionReviews] = useState<Record<string, CriterionReviewState>>({});
   const [candidateLoading, setCandidateLoading] = useState(false);
+  const [contactCandidatesLoaded, setContactCandidatesLoaded] = useState(false);
   const [contactCandidates, setContactCandidates] = useState<LeadContactCandidatePreview[]>([]);
   const [contactCandidateError, setContactCandidateError] = useState<SafeErrorResponse["error"] | null>(null);
   const [contactDecision, setContactDecision] = useState<"connect_existing" | "create_new" | "continue_without_contact">("continue_without_contact");
@@ -299,6 +299,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
 
   const clearContactCandidates = () => {
+    setContactCandidatesLoaded(false);
     setContactCandidates([]);
     setContactCandidateError(null);
     setContactDecision("continue_without_contact");
@@ -367,6 +368,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
     setEditableJson("");
     setCopyState("idle");
     setCriterionReviews({});
+    setContactCandidatesLoaded(false);
     setContactCandidates([]);
     setContactCandidateError(null);
     setContactDecision("continue_without_contact");
@@ -398,6 +400,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
   const loadContactCandidates = async () => {
     if (!edited) return;
     setCandidateLoading(true);
+    setContactCandidatesLoaded(false);
     setContactCandidateError(null);
     try {
       const res = await fetch("/api/lead-intelligence/contact-candidates", {
@@ -418,6 +421,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
         return;
       }
       setContactCandidates(body.candidates);
+      setContactCandidatesLoaded(true);
       setContactDecision("continue_without_contact");
       setSelectedContactId(null);
     } catch {
@@ -881,16 +885,28 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                       </div>
                     )}
 
-                    {contactCandidates.length === 0 && !contactCandidateError && (
+                    {contactCandidates.length === 0 && !contactCandidateError && !contactCandidatesLoaded && (
                       <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-400">
                         Ingen kontaktkandidater hentet ennå.
+                      </div>
+                    )}
+
+                    {contactCandidates.length === 0 && !contactCandidateError && contactCandidatesLoaded && (
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                        Kandidatoppslag fullført. Ingen matchende kontaktkandidater funnet.
+                      </div>
+                    )}
+
+                    {contactCandidates.length > 0 && !contactCandidateError && contactCandidatesLoaded && (
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
+                        {contactCandidates.length} kontaktkandidat{contactCandidates.length === 1 ? "" : "er"} funnet.
                       </div>
                     )}
 
                     <div className="space-y-2">
                       {contactCandidates.map((candidate) => (
                         <label
-                          key={`${candidate.matchType}:${candidate.matchValueHash}:${candidate.contactId}`}
+                          key={`${candidate.matchType}:${candidate.contactId}`}
                           className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
                         >
                           <input

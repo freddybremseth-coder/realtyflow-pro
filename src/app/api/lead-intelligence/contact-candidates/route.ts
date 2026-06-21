@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   LeadIntelligenceContactCandidatesRequestSchema,
+  redactLeadContactCandidatePreviews,
 } from "@/services/lead-intelligence/review";
 import {
   assertLeadIntelligenceActionRateLimit,
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       {
         ok: true,
         correlationId,
-        candidates,
+        candidates: redactLeadContactCandidatePreviews(candidates),
         requiresManualSelection:
           candidates.length !== 1 || candidates[0]?.matchType === "name_similarity",
       },

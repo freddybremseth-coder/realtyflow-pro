@@ -8,6 +8,7 @@ import { resetLeadIntelligenceRateLimitsForTests } from "@/services/lead-intelli
 import {
   LeadIntelligenceReviewError,
   leadIntelligenceCriterionFingerprint,
+  redactLeadContactCandidatePreviews,
 } from "@/services/lead-intelligence/review";
 import {
   LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV,
@@ -376,6 +377,26 @@ test("contact candidates route rate limits before persistence database access", 
 
   assert.equal(response!.status, 429);
   assert.equal(body.error.code, "RATE_LIMITED");
+});
+
+test("contact candidate response DTO does not expose lookup hash", () => {
+  const candidates = redactLeadContactCandidatePreviews([
+    {
+      contactId,
+      name: "Emmadale",
+      maskedPhone: "+47******14",
+      maskedEmail: null,
+      matchType: "exact_phone",
+      confidence: 0.98,
+      reasons: ["Eksakt telefonoppslag i normalisert lookup-format"],
+      matchValueHash: "hmac-sha256:v1:secret-server-only-hash",
+    },
+  ]);
+
+  assert.equal(candidates.length, 1);
+  assert.equal("matchValueHash" in candidates[0], false);
+  assert.equal(JSON.stringify(candidates).includes("hmac-sha256"), false);
+  assert.equal(candidates[0].contactId, contactId);
 });
 
 test("server-side contact verification rejects deleted, cross-brand, and stale contacts", async () => {
