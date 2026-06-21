@@ -26,6 +26,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260617130114_lead_intelligence_runtime_rls.sql",
   ),
+  leadIntelligenceShortlistDraft: path.join(
+    repoRoot,
+    "supabase/migrations/20260621161521_lead_intelligence_shortlist_draft.sql",
+  ),
 };
 
 function assert(condition, message) {
@@ -3098,12 +3102,216 @@ async function testLeadIntelligenceRuntimeRls() {
   });
 }
 
+async function testLeadIntelligenceShortlistDraft() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+
+    process.stdout.write("  Scenario: applies after PR 3A/runtime RLS and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceShortlistDraft);
+    await applyMigration(client, migrationFiles.leadIntelligenceShortlistDraft);
+
+    for (const tableName of ["lead_property_shortlists", "lead_property_shortlist_items"]) {
+      assert(await tableExists(client, tableName), `public.${tableName} was not created.`);
+      const rls = await client.query(
+        "select relrowsecurity from pg_class where oid = format('public.%I', $1::text)::regclass",
+        [tableName],
+      );
+      assert(rls.rows[0].relrowsecurity === true, `RLS is not enabled for public.${tableName}.`);
+    }
+
+    await assertTableHasColumns(client, "lead_property_shortlists", [
+      "id",
+      "brand",
+      "buyer_profile_id",
+      "status",
+      "title",
+      "idempotency_key",
+      "payload_hash",
+      "correlation_id",
+      "created_by",
+      "created_at",
+      "updated_at",
+    ]);
+    await assertTableHasColumns(client, "lead_property_shortlist_items", [
+      "id",
+      "shortlist_id",
+      "brand",
+      "property_id",
+      "property_reference",
+      "property_title",
+      "property_location",
+      "rank",
+      "decision",
+      "system_eligibility",
+      "score",
+      "data_quality_score",
+      "reasons",
+      "concerns",
+      "questions_to_verify",
+      "selected_by",
+    ]);
+
+    const grants = await client.query(`
+      select
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlists', 'select,insert') as shortlists_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlists', 'update') as shortlists_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlists', 'delete') as shortlists_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlist_items', 'select,insert') as items_select_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlist_items', 'update') as items_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_property_shortlist_items', 'delete') as items_delete,
+        has_table_privilege('anon', 'public.lead_property_shortlists', 'select') as anon_shortlists_select,
+        has_table_privilege('authenticated', 'public.lead_property_shortlists', 'select') as authenticated_shortlists_select,
+        has_table_privilege('anon', 'public.lead_property_shortlist_items', 'select') as anon_items_select,
+        has_table_privilege('authenticated', 'public.lead_property_shortlist_items', 'select') as authenticated_items_select
+    `);
+    assert(grants.rows[0].shortlists_select_insert === true, "Runtime role lacks shortlist SELECT/INSERT.");
+    assert(grants.rows[0].shortlists_update === false, "Runtime role can UPDATE shortlists.");
+    assert(grants.rows[0].shortlists_delete === false, "Runtime role can DELETE shortlists.");
+    assert(grants.rows[0].items_select_insert === true, "Runtime role lacks shortlist item SELECT/INSERT.");
+    assert(grants.rows[0].items_update === false, "Runtime role can UPDATE shortlist items.");
+    assert(grants.rows[0].items_delete === false, "Runtime role can DELETE shortlist items.");
+    assert(grants.rows[0].anon_shortlists_select === false, "anon can SELECT shortlist drafts.");
+    assert(grants.rows[0].authenticated_shortlists_select === false, "authenticated can SELECT shortlist drafts.");
+    assert(grants.rows[0].anon_items_select === false, "anon can SELECT shortlist items.");
+    assert(grants.rows[0].authenticated_items_select === false, "authenticated can SELECT shortlist items.");
+
+    const policies = await client.query(`
+      select polname, polcmd, array(select rolname from pg_roles where oid = any(polroles)) as roles
+      from pg_policy
+      where polrelid in (
+        'public.lead_property_shortlists'::regclass,
+        'public.lead_property_shortlist_items'::regclass
+      )
+      order by polname
+    `);
+    assert(policies.rows.length === 4, "Expected four shortlist runtime RLS policies.");
+    for (const row of policies.rows) {
+      assert(
+        row.roles.includes("realtyflow_lead_intelligence_runtime"),
+        `Policy ${row.polname} is not scoped to runtime role.`,
+      );
+    }
+
+    process.stdout.write("  Scenario: runtime role can insert/select only with matching brand context\n");
+    const intake = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_short_0123456789abcdef0123', 'short-intake-001')
+        returning id
+      `,
+    );
+    const intakeId = intake.rows[0].id;
+    const profile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', $1, 1, 'approved', 'ready_to_buy', 440000, 'EUR', true, true, false, 'Runtime shortlist profile', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id
+      `,
+      [intakeId],
+    );
+    const profileId = profile.rows[0].id;
+    const shortlist = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlists (
+          brand,
+          buyer_profile_id,
+          status,
+          title,
+          idempotency_key,
+          payload_hash,
+          correlation_id,
+          created_by
+        )
+        values ('soleada', $1, 'draft', 'Test shortlist', 'shortlist-idempotency-001', $2, 'rf_short_abcdef0123456789abcdef01', 'freddy.bremseth@gmail.com')
+        returning id
+      `,
+      [profileId, `sha256:v1:${"a".repeat(64)}`],
+    );
+    const shortlistId = shortlist.rows[0].id;
+    const item = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlist_items (
+          shortlist_id,
+          brand,
+          property_id,
+          property_reference,
+          property_title,
+          property_location,
+          rank,
+          decision,
+          system_eligibility,
+          score,
+          data_quality_score,
+          reasons,
+          concerns,
+          questions_to_verify,
+          selected_by
+        )
+        values ($1, 'soleada', '22222222-2222-4222-8222-222222222222', 'N8513', 'Moraira apartment', 'Moraira', 1, 'current', 'eligible', 72, 61, '["Location matches."]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'freddy.bremseth@gmail.com')
+        returning id
+      `,
+      [shortlistId],
+    );
+    assert(item.rows.length === 1, "Runtime role could not insert shortlist item.");
+
+    const crossBrandRows = await queryAsRuntime(
+      client,
+      "zeneco",
+      "select id from public.lead_property_shortlists where id = $1::uuid",
+      [shortlistId],
+    );
+    assert(crossBrandRows.rows.length === 0, "Runtime role leaked cross-brand shortlist.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "delete from public.lead_property_shortlists where id = '00000000-0000-4000-8000-000000000000'",
+      "Runtime role could DELETE shortlists.",
+      "permission denied",
+    );
+  });
+}
+
 const tests = new Map([
   ["growth-actions-fingerprint", testGrowthActionsFingerprintIndex],
   ["user-image-bank-contract", testUserImageBankContract],
   ["remaster-job-core", testRemasterJobCore],
   ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
+  ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
 ]);
 
 async function main() {
