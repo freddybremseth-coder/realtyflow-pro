@@ -580,14 +580,22 @@ function cleanLocationValues(values: string[]) {
   return uniqueLimited(
     values
       .map((value) => value.trim())
+      .map(normalizeKnownLocationAlias)
       .filter((value) => value.length > 0),
     20,
   );
 }
 
+function normalizeKnownLocationAlias(value: string) {
+  const folded = fold(value);
+  if (folded === "moreira") return "Moraira";
+  if (folded === "moraira") return "Moraira";
+  return value;
+}
+
 function locationTextMatches(actual: string, expected: string) {
   const actualFolded = fold(actual);
-  const expectedFolded = fold(expected);
+  const expectedFolded = fold(normalizeKnownLocationAlias(expected));
   return (
     actualFolded === expectedFolded ||
     actualFolded.includes(expectedFolded) ||

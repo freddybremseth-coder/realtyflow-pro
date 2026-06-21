@@ -27,6 +27,15 @@ const MAX_PROPERTY_MATCH_PREVIEW_ITEMS = 20;
 const DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT = 120;
 const MAX_AUTO_PROPERTY_CANDIDATE_LIMIT = 200;
 const AUTO_PROPERTY_SCAN_MULTIPLIER = 4;
+const LOCATION_DISCOVERY_COLUMNS = [
+  "location",
+  "town",
+  "municipality",
+  "area",
+  "title",
+  "title_no",
+  "title_en",
+] as const;
 const PropertyReferenceSchema = z
   .string()
   .trim()
@@ -379,6 +388,12 @@ export async function loadCandidatePropertiesFromSupabase(
     return query.limit(scanLimit);
   };
 
+  const preferredLocationRows = await loadPreferredLocationCandidates(
+    supabase,
+    profile,
+    scanLimit,
+  );
+
   let { data, error } = await runCandidateQuery(true, true);
   if (error && isMissingPropertyReferenceColumnError(error)) {
     logOptionalPropertyReferenceColumnUnavailable("auto_discovery_filter", error);
@@ -393,12 +408,74 @@ export async function loadCandidatePropertiesFromSupabase(
     );
   }
 
+  const broadRows = (data || []) as RawProperty[];
+  const candidateRows =
+    preferredLocationRows.length > 0 && profile.locations.flexible === false
+      ? preferredLocationRows
+      : mergePropertyRows(preferredLocationRows, broadRows);
   const filtered = await filterAutoDiscoveredPropertiesForBrand(
     supabase,
     brand,
-    ((data || []) as RawProperty[]).filter(isWebsiteVisible),
+    candidateRows.filter(isWebsiteVisible),
   );
   return filtered.slice(0, safeCandidateLimit);
+}
+
+async function loadPreferredLocationCandidates(
+  supabase: SupabaseInventoryClient,
+  profile: LeadMatchProfile,
+  scanLimit: number,
+) {
+  const preferredLocations = cleanLocationValues(profile.locations.preferred);
+  if (preferredLocations.length === 0) return [];
+
+  const rows = new Map<string, RawProperty>();
+  const addRows = (data: RawProperty[] | null) => {
+    for (const property of data || []) {
+      const id = typeof property.id === "string" ? property.id : "";
+      if (id) rows.set(id, property);
+    }
+  };
+
+  for (const location of preferredLocations) {
+    const term = location.replace(/[%_]/g, "");
+    if (!term) continue;
+    for (const column of LOCATION_DISCOVERY_COLUMNS) {
+      let query = supabase
+        .from("properties")
+        .select("*")
+        .ilike(column, `%${term}%`)
+        .limit(scanLimit);
+      if (profile.budget.amount) {
+        query = query.lte("price", Math.ceil(profile.budget.amount * 1.15));
+      }
+      const { data, error } = await query;
+      if (error) {
+        if (isMissingPropertyReferenceColumnError(error)) {
+          logOptionalPropertyReferenceColumnUnavailable(`auto_discovery_${column}`, error);
+          continue;
+        }
+        throw new LeadIntelligenceError(
+          "PROPERTY_MATCHING_UNAVAILABLE",
+          "Property matching location lookup failed",
+          503,
+        );
+      }
+      addRows((data || []) as RawProperty[]);
+      if (rows.size >= scanLimit) return Array.from(rows.values()).slice(0, scanLimit);
+    }
+  }
+
+  return Array.from(rows.values()).slice(0, scanLimit);
+}
+
+function mergePropertyRows(primary: RawProperty[], secondary: RawProperty[]) {
+  const rows = new Map<string, RawProperty>();
+  for (const property of [...primary, ...secondary]) {
+    const id = typeof property.id === "string" ? property.id : "";
+    if (id && !rows.has(id)) rows.set(id, property);
+  }
+  return Array.from(rows.values());
 }
 
 export async function previewLeadPropertyMatches(
@@ -573,7 +650,11 @@ function buildLeadMatchProfile(
 
 function parseApprovedAnalysis(resultJson: unknown): ExtractedLead | null {
   if (!resultJson || typeof resultJson !== "object" || Array.isArray(resultJson)) return null;
-  const parsed = ExtractedLeadSchema.safeParse(resultJson);
+  const record = resultJson as Record<string, unknown>;
+  const candidate = record.analysis && typeof record.analysis === "object" && !Array.isArray(record.analysis)
+    ? record.analysis
+    : resultJson;
+  const parsed = ExtractedLeadSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
 }
 
@@ -677,8 +758,19 @@ function locationValuesFromCriterion(value: unknown): string[] {
 
 function cleanLocationValues(values: string[]) {
   return Array.from(
-    new Set(values.map((value) => cleanDisplayText(value)).filter((value): value is string => Boolean(value))),
+    new Set(values.map((value) => normalizeKnownLocationAlias(cleanDisplayText(value))).filter((value): value is string => Boolean(value))),
   ).slice(0, LEAD_INTELLIGENCE_LIMITS.locations);
+}
+
+function normalizeKnownLocationAlias(value: string | null) {
+  if (!value) return null;
+  const folded = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (folded === "moreira") return "Moraira";
+  if (folded === "moraira") return "Moraira";
+  return value;
 }
 
 function toNumberOrNull(value: unknown) {

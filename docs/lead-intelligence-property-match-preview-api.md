@@ -132,6 +132,18 @@ When the area is flexible, the same preference influences the score and
 explanation without automatically rejecting other areas. Unknown property
 location remains a verification question rather than a silent pass.
 
+Approved analysis rows are stored under the reviewed persistence wrapper, so the
+preview loader reads `result_json.analysis` and then validates only that nested
+object against the strict extraction schema. This prevents internal review
+metadata such as `reviewPayloadHash` from causing location context to be
+dropped.
+
+Automatic discovery also runs a bounded location-first inventory lookup when the
+approved profile has preferred areas. For non-flexible area preferences, those
+location candidates are used before falling back to broad inventory; this avoids
+surfacing distant properties as equally eligible when the buyer requested a
+specific area such as Moraira.
+
 ## Production Notes
 
 Do not enable `REALTYFLOW_PROPERTY_MATCHING_ENABLED` in production until the

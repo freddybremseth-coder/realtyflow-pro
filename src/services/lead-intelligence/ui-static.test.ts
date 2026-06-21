@@ -54,6 +54,9 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("propertyReferences"), true);
   assert.equal(source.includes("Finn aktuelle eiendommer automatisk"), true);
   assert.equal(source.includes("autoDiscover: true"), true);
+  assert.equal(source.includes("Foretrukne områder"), true);
+  assert.equal(source.includes("Fleksibel på område"), true);
+  assert.equal(source.includes("textToList(value)"), true);
   assert.equal(source.includes("Valgfritt. Maks 20 eksplisitte eiendomsreferanser"), true);
   assert.equal(source.includes("Aktuelle"), true);
   assert.equal(source.includes("Ingen av de valgte eiendommene er aktuelle uten manuell vurdering."), true);
