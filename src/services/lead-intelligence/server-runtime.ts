@@ -25,6 +25,7 @@ import { assertLeadIntelligenceRateLimit } from "./api-guards";
 import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 
 export const LEAD_INTELLIGENCE_DATABASE_URL_ENV = "REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL";
+export const LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV = "REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_CA_CERT";
 
 export function leadIntelligenceHeaders(correlationId: string) {
   return {
@@ -140,9 +141,9 @@ export async function readJsonBody(request: NextRequest, maxBytes = 48 * 1024) {
   }
 }
 
-function getLeadIntelligenceDatabaseUrl() {
-  const dedicated = process.env[LEAD_INTELLIGENCE_DATABASE_URL_ENV];
-  const isProduction = process.env.VERCEL_ENV === "production";
+function getLeadIntelligenceDatabaseUrl(env: NodeJS.ProcessEnv = process.env) {
+  const dedicated = env[LEAD_INTELLIGENCE_DATABASE_URL_ENV];
+  const isProduction = env.VERCEL_ENV === "production";
   if (isProduction && !dedicated) {
     throw new LeadIntelligenceReviewError(
       "PERSISTENCE_SCHEMA_NOT_READY",
@@ -152,9 +153,9 @@ function getLeadIntelligenceDatabaseUrl() {
   }
 
   const url = dedicated ||
-    process.env.SUPABASE_DB_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.DATABASE_URL;
+    env.SUPABASE_DB_URL ||
+    env.POSTGRES_URL ||
+    env.DATABASE_URL;
   if (!url) {
     throw new LeadIntelligenceReviewError(
       "PERSISTENCE_SCHEMA_NOT_READY",
@@ -163,6 +164,56 @@ function getLeadIntelligenceDatabaseUrl() {
     );
   }
   return url;
+}
+
+function normalizePemCertificate(value: string) {
+  return value.replace(/\\n/g, "\n").trim();
+}
+
+function getSslMode(connectionString: string) {
+  try {
+    return new URL(connectionString).searchParams.get("sslmode")?.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+function withoutPgSslQueryParams(connectionString: string) {
+  try {
+    const parsed = new URL(connectionString);
+    for (const param of ["sslmode", "sslcert", "sslkey", "sslrootcert"]) {
+      parsed.searchParams.delete(param);
+    }
+    return parsed.toString();
+  } catch {
+    return connectionString;
+  }
+}
+
+export function getLeadIntelligencePgClientConfig(env: NodeJS.ProcessEnv = process.env) {
+  const connectionString = getLeadIntelligenceDatabaseUrl(env);
+  const caCert = env[LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV]?.trim();
+  const sslMode = getSslMode(connectionString);
+  const shouldSetExplicitSsl =
+    Boolean(caCert) ||
+    sslMode === "require" ||
+    sslMode === "verify-ca" ||
+    sslMode === "verify-full";
+
+  return {
+    connectionString: shouldSetExplicitSsl
+      ? withoutPgSslQueryParams(connectionString)
+      : connectionString,
+    statement_timeout: 30_000,
+    connectionTimeoutMillis: 5_000,
+    ...(shouldSetExplicitSsl
+      ? {
+          ssl: caCert
+            ? { ca: normalizePemCertificate(caCert) }
+            : { rejectUnauthorized: false },
+        }
+      : {}),
+  };
 }
 
 function queryClient(client: ClientBase): QueryClient {
@@ -194,11 +245,7 @@ export async function withLeadIntelligenceTransaction<T>(
 ) {
   const runtimeBrand = assertLeadIntelligenceRuntimeBrand(brand);
   const { Client } = await import("pg");
-  const client = new Client({
-    connectionString: getLeadIntelligenceDatabaseUrl(),
-    statement_timeout: 30_000,
-    connectionTimeoutMillis: 5_000,
-  });
+  const client = new Client(getLeadIntelligencePgClientConfig());
 
   try {
     await client.connect();
@@ -234,11 +281,7 @@ export async function withLeadIntelligenceQuery<T>(
 ) {
   const runtimeBrand = assertLeadIntelligenceRuntimeBrand(brand);
   const { Client } = await import("pg");
-  const client = new Client({
-    connectionString: getLeadIntelligenceDatabaseUrl(),
-    statement_timeout: 30_000,
-    connectionTimeoutMillis: 5_000,
-  });
+  const client = new Client(getLeadIntelligencePgClientConfig());
 
   try {
     await client.connect();

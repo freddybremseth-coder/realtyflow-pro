@@ -14,7 +14,10 @@ import {
   type QueryClient,
 } from "@/services/lead-intelligence/persistence";
 import {
+  LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV,
+  LEAD_INTELLIGENCE_DATABASE_URL_ENV,
   findContactCandidatePreviewsWithDb,
+  getLeadIntelligencePgClientConfig,
   leadIntelligenceJsonError,
   verifySelectedContactCandidateWithDb,
 } from "@/services/lead-intelligence/server-runtime";
@@ -44,7 +47,8 @@ test.beforeEach(() => {
   process.env.REALTYFLOW_ADMIN_EMAILS = "freddy.bremseth@gmail.com";
   delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED;
   delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED;
-  delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL;
+  delete process.env[LEAD_INTELLIGENCE_DATABASE_URL_ENV];
+  delete process.env[LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV];
   delete process.env.SUPABASE_DB_URL;
   delete process.env.POSTGRES_URL;
   delete process.env.DATABASE_URL;
@@ -280,6 +284,33 @@ test("review route requires dedicated persistence URL in production", async () =
   assert.equal(response.status, 503);
   assert.equal(body.error.code, "PERSISTENCE_SCHEMA_NOT_READY");
   assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("Lead Intelligence runtime pg config maps sslmode require to explicit TLS", () => {
+  const config = getLeadIntelligencePgClientConfig({
+    [LEAD_INTELLIGENCE_DATABASE_URL_ENV]:
+      "postgresql://runtime.project:secret@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require",
+  });
+
+  assert.equal(
+    config.connectionString,
+    "postgresql://runtime.project:secret@aws-1-eu-central-1.pooler.supabase.com:5432/postgres",
+  );
+  assert.deepEqual(config.ssl, { rejectUnauthorized: false });
+});
+
+test("Lead Intelligence runtime pg config uses CA cert without leaking sslmode into pg parser", () => {
+  const config = getLeadIntelligencePgClientConfig({
+    [LEAD_INTELLIGENCE_DATABASE_URL_ENV]:
+      "postgresql://runtime.project:secret@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full",
+    [LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV]:
+      "-----BEGIN CERTIFICATE-----\\nTEST-CA\\n-----END CERTIFICATE-----",
+  });
+
+  assert.equal(config.connectionString.includes("sslmode"), false);
+  assert.deepEqual(config.ssl, {
+    ca: "-----BEGIN CERTIFICATE-----\nTEST-CA\n-----END CERTIFICATE-----",
+  });
 });
 
 test("review route rate limits before persistence database access", async () => {
