@@ -124,3 +124,13 @@ test("Lead Intelligence preview keeps connect_existing behind a server-side gate
   assert.equal(source.includes("Kandidatoppslag er kun read-only nå."), true);
   assert.equal(source.includes("setContactDecision(\"connect_existing\");"), true);
 });
+
+test("Lead Intelligence preview disables persistence actions when persistence is off", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("persistenceEnabled"), true);
+  assert.equal(source.includes("Lagring er deaktivert i dette miljøet."), true);
+  assert.equal(source.includes("Kontaktkandidatoppslag er deaktivert sammen med persistence."), true);
+  assert.equal(source.includes("ingen intake eller buyer profile skrives"), true);
+  assert.equal(source.includes("!persistenceEnabled"), true);
+});
