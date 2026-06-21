@@ -337,6 +337,13 @@ The exact password must be generated outside the repo and never committed, paste
 REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL
 ```
 
+For Supabase pooler URLs, keep SSL enabled. If the runtime encounters certificate-chain verification errors in Node/Postgres, either:
+
+- set `REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_CA_CERT` to the Supabase server root certificate from Database Settings -> SSL Configuration, or
+- use the dashboard-provided pooler URL with `sslmode=require`; the runtime translates that mode to encrypted Node TLS without logging or exposing the connection string.
+
+Do not disable SSL or replace this URL with a broad `postgres`, `service_role`, `SUPABASE_DB_URL`, `POSTGRES_URL`, or `DATABASE_URL` credential.
+
 Privileges should be limited to the operations PR 3B performs:
 
 - `SELECT`, `INSERT` on:
@@ -508,6 +515,7 @@ Set these server-side variables in the preview/staging environment only:
 REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=true
 REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=true
 REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_URL=<dedicated runtime connection string>
+REALTYFLOW_LEAD_INTELLIGENCE_DATABASE_CA_CERT=<optional Supabase server root certificate>
 REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET=<server-only secret>
 REALTYFLOW_PROPERTY_MATCHING_ENABLED=false
 REALTYFLOW_AUTO_SEND_ENABLED=false
