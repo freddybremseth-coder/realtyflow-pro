@@ -7,6 +7,7 @@ import {
   CanonicalPropertyTypeSchema,
   CriterionOperatorSchema,
   CurrencyCodeSchema,
+  ExtractedLeadSchema,
   LEAD_INTELLIGENCE_LIMITS,
   type ExtractedLead,
   type PropertyMatch,
@@ -100,6 +101,7 @@ const persistedCriterionSchema = z
 const persistedProfileSchema = z
   .object({
     id: UUIDSchema,
+    intakeId: UUIDSchema,
     budgetAmount: z.number().nonnegative().nullable(),
     budgetCurrency: CurrencyCodeSchema,
     budgetIncludesCosts: z.boolean().nullable(),
@@ -111,9 +113,27 @@ const persistedProfileSchema = z
 type PersistedCriterion = z.infer<typeof persistedCriterionSchema>;
 type PersistedProfile = z.infer<typeof persistedProfileSchema>;
 type RawProperty = Record<string, unknown>;
+type SafePropertyValue = string | number | boolean | null;
 type SupabasePropertyLookupError = { code?: string | null; message?: string | null };
 type SupabaseInventoryClient = {
   from(table: string): ReturnType<ReturnType<typeof createClient>["from"]>;
+};
+
+export interface PropertyMatchPreviewPropertySummary {
+  id: string;
+  reference: string | null;
+  title: string | null;
+  location: string | null;
+  propertyType: string | null;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  primaryImageUrl: string | null;
+  publicUrl: string | null;
+}
+
+export type PropertyMatchPreviewMatch = PropertyMatch & {
+  property: PropertyMatchPreviewPropertySummary;
 };
 
 export interface PropertyMatchPreviewRepository {
@@ -133,7 +153,7 @@ export interface PropertyMatchPreviewResult {
     propertyId: string;
     reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
   }>;
-  matches: PropertyMatch[];
+  matches: PropertyMatchPreviewMatch[];
   sideEffects: {
     leadsCreated: false;
     contactsCreated: false;
@@ -149,6 +169,7 @@ export async function loadApprovedLeadMatchProfileWithDb(
 ): Promise<LeadMatchProfile | null> {
   const profileResult = await db.query<{
     id: string;
+    intakeId: string;
     budgetAmount: number | string | null;
     budgetCurrency: string | null;
     budgetIncludesCosts: boolean | null;
@@ -158,6 +179,7 @@ export async function loadApprovedLeadMatchProfileWithDb(
     `
       select
         id::text,
+        intake_id::text as "intakeId",
         budget_amount::float8 as "budgetAmount",
         budget_currency as "budgetCurrency",
         budget_includes_costs as "budgetIncludesCosts",
@@ -215,6 +237,20 @@ export async function loadApprovedLeadMatchProfileWithDb(
     locationFlexible: profileRow.locationFlexible ?? true,
   });
 
+  const analysisResult = await db.query<{ resultJson: unknown }>(
+    `
+      select result_json as "resultJson"
+      from public.lead_analysis_runs
+      where intake_id = $1::uuid
+        and approved is true
+        and validation_status = 'valid'
+      order by created_at desc, id desc
+      limit 1
+    `,
+    [profile.intakeId],
+  );
+  const approvedAnalysis = parseApprovedAnalysis(analysisResult.rows[0]?.resultJson);
+
   const criteria = criteriaResult.rows.map((row) =>
     persistedCriterionSchema.parse({
       ...row,
@@ -226,7 +262,7 @@ export async function loadApprovedLeadMatchProfileWithDb(
     }),
   );
 
-  return buildLeadMatchProfile(profile, criteria);
+  return buildLeadMatchProfile(profile, criteria, approvedAnalysis);
 }
 
 export async function loadPropertiesByReferencesFromSupabase(
@@ -405,6 +441,7 @@ export async function previewLeadPropertyMatchesForProfile(
     ? []
     : request.propertyReferences.filter((reference) => !foundReferences.has(normalizePropertyReference(reference)));
   const matches: PropertyMatch[] = [];
+  const propertySummaries = new Map<string, PropertyMatchPreviewPropertySummary>();
   const skippedProperties: PropertyMatchPreviewResult["skippedProperties"] = [];
 
   for (const property of properties) {
@@ -415,14 +452,21 @@ export async function previewLeadPropertyMatchesForProfile(
     }
 
     try {
-      matches.push(matchPropertyToLeadProfile(profile, normalizePropertyForLeadMatching(property)));
+      const match = matchPropertyToLeadProfile(profile, normalizePropertyForLeadMatching(property));
+      matches.push(match);
+      propertySummaries.set(match.propertyId, summarizePropertyForPreview(property, match.propertyId));
     } catch {
       skippedProperties.push({ propertyId, reason: "PROPERTY_NORMALIZATION_FAILED" });
     }
   }
 
   const maxResults = request.maxResults ?? (request.autoDiscover ? 10 : request.propertyReferences.length);
-  const ranked = rankPropertyMatches(matches).slice(0, maxResults);
+  const ranked = rankPropertyMatches(matches)
+    .slice(0, maxResults)
+    .map((match) => ({
+      ...match,
+      property: propertySummaries.get(match.propertyId) ?? fallbackPropertySummary(match.propertyId),
+    }));
 
   return {
     buyerProfileId: profile.buyerProfileId,
@@ -492,7 +536,11 @@ async function filterAutoDiscoveredPropertiesForBrand(
   });
 }
 
-function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCriterion[]): LeadMatchProfile {
+function buildLeadMatchProfile(
+  profile: PersistedProfile,
+  criteria: PersistedCriterion[],
+  approvedAnalysis: ExtractedLead | null = null,
+): LeadMatchProfile {
   return {
     buyerProfileId: profile.id,
     budget: {
@@ -503,11 +551,7 @@ function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCri
       hardLimit: null,
     },
     propertyTypes: derivePropertyTypes(criteria),
-    locations: {
-      preferred: [],
-      excluded: [],
-      flexible: profile.locationFlexible,
-    },
+    locations: deriveLocations(profile, criteria, approvedAnalysis),
     hardRequirements: criteria
       .filter((criterion) => criterion.criterionType === "hard_requirement")
       .filter((criterion) => !isDuplicateBudgetHardRequirement(profile, criterion))
@@ -525,6 +569,12 @@ function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCri
         severity: criterion.severity || "major_penalty",
       })),
   };
+}
+
+function parseApprovedAnalysis(resultJson: unknown): ExtractedLead | null {
+  if (!resultJson || typeof resultJson !== "object" || Array.isArray(resultJson)) return null;
+  const parsed = ExtractedLeadSchema.safeParse(resultJson);
+  return parsed.success ? parsed.data : null;
 }
 
 function criterionToRequirement(criterion: PersistedCriterion): ExtractedLead["hardRequirements"][number] {
@@ -586,6 +636,51 @@ function derivePropertyTypes(criteria: PersistedCriterion[]): ExtractedLead["pro
   return Array.from(values).slice(0, LEAD_INTELLIGENCE_LIMITS.propertyTypes);
 }
 
+function deriveLocations(
+  profile: PersistedProfile,
+  criteria: PersistedCriterion[],
+  approvedAnalysis: ExtractedLead | null,
+): ExtractedLead["locations"] {
+  const preferred = new Set(approvedAnalysis?.locations.preferred ?? []);
+  const excluded = new Set(approvedAnalysis?.locations.excluded ?? []);
+
+  for (const criterion of criteria) {
+    if (criterion.key !== "location") continue;
+    const target = criterion.criterionType === "exclusion" || criterion.operator === "not_in"
+      ? excluded
+      : preferred;
+    for (const value of locationValuesFromCriterion(criterion.value)) {
+      target.add(value);
+    }
+  }
+
+  return {
+    preferred: cleanLocationValues(Array.from(preferred)),
+    excluded: cleanLocationValues(Array.from(excluded)),
+    flexible: profile.locationFlexible,
+  };
+}
+
+function locationValuesFromCriterion(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(locationValuesFromCriterion);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      ...locationValuesFromCriterion(record.value),
+      ...locationValuesFromCriterion(record.area),
+      ...locationValuesFromCriterion(record.location),
+    ];
+  }
+  return [];
+}
+
+function cleanLocationValues(values: string[]) {
+  return Array.from(
+    new Set(values.map((value) => cleanDisplayText(value)).filter((value): value is string => Boolean(value))),
+  ).slice(0, LEAD_INTELLIGENCE_LIMITS.locations);
+}
+
 function toNumberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
@@ -600,6 +695,109 @@ function propertyReferenceKeys(property: RawProperty) {
   return [property.id, property.ref, property.external_id, property.reference]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => normalizePropertyReference(value));
+}
+
+function summarizePropertyForPreview(
+  property: RawProperty,
+  propertyId: string,
+): PropertyMatchPreviewPropertySummary {
+  return {
+    id: propertyId,
+    reference: cleanDisplayText(firstPropertyText(property, ["ref", "reference", "external_id", "source_property_id"])),
+    title: cleanDisplayText(firstPropertyText(property, ["title", "title_no", "title_en", "title_es", "name", "project_name"])),
+    location: cleanDisplayText(firstPropertyText(property, ["location", "town", "municipality", "area"])),
+    propertyType: cleanDisplayText(firstPropertyText(property, ["property_type", "type", "propertyType"])),
+    price: propertyNumber(firstPropertyValue(property, ["price", "price_numeric", "purchase_price"])),
+    bedrooms: propertyNumber(firstPropertyValue(property, ["bedrooms", "beds"])),
+    bathrooms: propertyNumber(firstPropertyValue(property, ["bathrooms", "baths"])),
+    primaryImageUrl: safeUrl(firstImageUrl(firstPropertyValue(property, [
+      "primary_image",
+      "primaryImage",
+      "image",
+      "image_url",
+      "thumbnail_url",
+      "images",
+      "gallery",
+    ]))),
+    publicUrl: safeUrl(firstPropertyText(property, ["url", "listing_url", "public_url", "website_url", "external_url"])),
+  };
+}
+
+function fallbackPropertySummary(propertyId: string): PropertyMatchPreviewPropertySummary {
+  return {
+    id: propertyId,
+    reference: null,
+    title: null,
+    location: null,
+    propertyType: null,
+    price: null,
+    bedrooms: null,
+    bathrooms: null,
+    primaryImageUrl: null,
+    publicUrl: null,
+  };
+}
+
+function firstPropertyValue(property: RawProperty, keys: string[]) {
+  for (const key of keys) {
+    const value = property[key];
+    if (value !== null && value !== undefined && value !== "") return value;
+  }
+  return null;
+}
+
+function firstPropertyText(property: RawProperty, keys: string[]) {
+  const value = firstPropertyValue(property, keys);
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : null;
+}
+
+function cleanDisplayText(value: unknown) {
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/\s+/g, " ");
+  return text.length > 0 ? text.slice(0, LEAD_INTELLIGENCE_LIMITS.mediumText) : null;
+}
+
+function propertyNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value
+      .trim()
+      .replace(/[^\d,.-]/g, "")
+      .replace(/\.(?=\d{3}(\D|$))/g, "")
+      .replace(",", ".");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function firstImageUrl(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstImageUrl(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, SafePropertyValue | SafePropertyValue[]>;
+    return firstImageUrl(record.url ?? record.src ?? record.publicUrl ?? record.thumbnailUrl ?? null);
+  }
+  return null;
+}
+
+function safeUrl(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length > 2048) return null;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export function isMissingPropertyReferenceColumnError(error: SupabasePropertyLookupError) {

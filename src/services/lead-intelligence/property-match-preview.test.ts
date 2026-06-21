@@ -11,6 +11,7 @@ import {
 import type { LeadMatchProfile } from "./property-matching";
 
 const buyerProfileId = "11111111-1111-4111-8111-111111111111";
+const intakeId = "55555555-5555-4555-8555-555555555555";
 const eligiblePropertyId = "22222222-2222-4222-8222-222222222222";
 const rejectedPropertyId = "33333333-3333-4333-8333-333333333333";
 const crossBrandPropertyId = "44444444-4444-4444-8444-444444444444";
@@ -176,11 +177,53 @@ test("loads approved buyer profile as deterministic match profile", async () => 
           rows: [
             {
               id: buyerProfileId,
+              intakeId,
               budgetAmount: 440000,
               budgetCurrency: "EUR",
               budgetIncludesCosts: true,
               budgetApproximate: true,
               locationFlexible: true,
+            },
+          ] as T[],
+        };
+      }
+      if (sql.includes("from public.lead_analysis_runs")) {
+        return {
+          rows: [
+            {
+              resultJson: {
+                contact: {
+                  name: "Test",
+                  phone: null,
+                  email: null,
+                  language: "no",
+                  country: "NO",
+                },
+                purchaseReadiness: {
+                  level: "warm",
+                  confidence: 0.8,
+                  reasoning: "Approved analysis fixture.",
+                },
+                budget: {
+                  amount: 440000,
+                  currency: "EUR",
+                  includesCosts: true,
+                  approximate: true,
+                  hardLimit: null,
+                },
+                propertyTypes: ["apartment"],
+                locations: {
+                  preferred: ["Finestrat"],
+                  excluded: ["Polop"],
+                  flexible: false,
+                },
+                hardRequirements: [],
+                preferences: [],
+                exclusions: [],
+                missingInformation: [],
+                summary: "Wants Finestrat.",
+                suggestedNextAction: "Preview matches.",
+              },
             },
           ] as T[],
         };
@@ -239,6 +282,8 @@ test("loads approved buyer profile as deterministic match profile", async () => 
   assert.equal(profile?.hardRequirements.length, 1);
   assert.equal(profile?.preferences[0].weight, 0.8);
   assert.equal(profile?.exclusions[0].severity, "reject");
+  assert.deepEqual(profile?.locations.preferred, ["Finestrat"]);
+  assert.deepEqual(profile?.locations.excluded, ["Polop"]);
   assert.equal(db.queries.some((sql) => sql.includes("status = 'approved'")), true);
 });
 
@@ -250,6 +295,7 @@ test("loads persisted criteria with buyer-friendly matching normalization", asyn
           rows: [
             {
               id: buyerProfileId,
+              intakeId,
               budgetAmount: 600000,
               budgetCurrency: "EUR",
               budgetIncludesCosts: true,
@@ -258,6 +304,9 @@ test("loads persisted criteria with buyer-friendly matching normalization", asyn
             },
           ] as T[],
         };
+      }
+      if (sql.includes("from public.lead_analysis_runs")) {
+        return { rows: [] as T[] };
       }
       return {
         rows: [
@@ -359,13 +408,18 @@ test("preview ranks explicit property set and returns only safe match DTOs", asy
         {
           id: eligiblePropertyId,
           ref: eligiblePropertyRef,
+          title: "Finestrat top apartment",
+          town: "Finestrat",
           brand: "soleada",
           property_type: "apartment",
           price: 360000,
           bedrooms: 2,
+          bathrooms: 2,
           has_lift: true,
           terrace_area_m2: 24,
           future_building_risk: false,
+          image_url: "https://images.example.test/property.jpg",
+          listing_url: "https://properties.example.test/N8513",
         },
       ];
     },
@@ -376,6 +430,13 @@ test("preview ranks explicit property set and returns only safe match DTOs", asy
   assert.equal(result.matched, 1);
   assert.equal(result.candidateLimit, null);
   assert.equal(result.matches[0].propertyId, eligiblePropertyId);
+  assert.equal(result.matches[0].property.reference, eligiblePropertyRef);
+  assert.equal(result.matches[0].property.title, "Finestrat top apartment");
+  assert.equal(result.matches[0].property.location, "Finestrat");
+  assert.equal(result.matches[0].property.price, 360000);
+  assert.equal(result.matches[0].property.bathrooms, 2);
+  assert.equal(result.matches[0].property.primaryImageUrl, "https://images.example.test/property.jpg");
+  assert.equal(result.matches[0].property.publicUrl, "https://properties.example.test/N8513");
   assert.equal(result.matches[1].eligibility, "rejected");
   assert.equal(result.sideEffects.emailsSent, false);
   assert.equal(result.sideEffects.matchesPersisted, false);
