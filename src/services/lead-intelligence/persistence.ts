@@ -123,6 +123,9 @@ export const LeadContactCandidateStatusSchema = z.enum([
 export const LeadPropertyShortlistStatusSchema = z.enum(["draft", "approved", "archived"]);
 export const LeadPropertyShortlistDecisionSchema = z.enum(["current", "maybe", "needs_research"]);
 export const LeadPropertyShortlistEligibilitySchema = z.enum(["eligible", "conditional", "rejected"]);
+export const LeadCustomerPresentationStatusSchema = z.enum(["draft", "approved", "archived"]);
+export const LeadCustomerMessageDraftStatusSchema = z.enum(["draft", "approved", "cancelled"]);
+export const LeadCustomerMessageChannelSchema = z.enum(["email"]);
 
 export const CreateLeadIntakeInputSchema = z
   .object({
@@ -430,11 +433,133 @@ export const CreateLeadPropertyShortlistInputSchema = z
     }
   });
 
+export const LeadCustomerMessageDraftInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileId: UUIDSchema,
+    shortlistId: UUIDSchema,
+    channel: LeadCustomerMessageChannelSchema.default("email"),
+    status: LeadCustomerMessageDraftStatusSchema.default("draft"),
+    subject: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText),
+    bodyText: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.bodyText),
+    bodyHtml: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.bodyHtml).nullable(),
+    language: LanguageCodeSchema.optional().nullable(),
+    idempotencyKey: IdempotencyKeySchema,
+    payloadHash: ReviewPayloadHashSchema,
+    correlationId: CorrelationIdSchema,
+    createdBy: IdentityTextSchema,
+    approvedBy: IdentityTextSchema.nullable(),
+    approvedAt: z.string().datetime().nullable(),
+    sentAt: z.string().datetime().nullable(),
+    cancelledAt: z.string().datetime().nullable(),
+  })
+  .strict()
+  .superRefine((draft, ctx) => {
+    if (draft.status !== "draft") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "only draft message drafts can be created in this phase",
+      });
+    }
+
+    if (draft.approvedBy || draft.approvedAt || draft.sentAt || draft.cancelledAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "draft message cannot have approval, sent, or cancellation timestamps",
+      });
+    }
+  });
+
+export const CreateLeadCustomerPresentationDraftInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileId: UUIDSchema,
+    shortlistId: UUIDSchema,
+    status: LeadCustomerPresentationStatusSchema.default("draft"),
+    title: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText),
+    presentationJson: BoundedJsonSchema,
+    idempotencyKey: IdempotencyKeySchema,
+    payloadHash: ReviewPayloadHashSchema,
+    correlationId: CorrelationIdSchema,
+    createdBy: IdentityTextSchema,
+    approvedBy: IdentityTextSchema.nullable(),
+    approvedAt: z.string().datetime().nullable(),
+    archivedAt: z.string().datetime().nullable(),
+    messageDraft: LeadCustomerMessageDraftInputSchema,
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.status !== "draft") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "only draft presentations can be created in this phase",
+      });
+    }
+
+    if (input.approvedBy || input.approvedAt || input.archivedAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "draft presentation cannot have approval or archive timestamps",
+      });
+    }
+
+    if (
+      input.messageDraft.brand !== input.brand ||
+      input.messageDraft.buyerProfileId !== input.buyerProfileId ||
+      input.messageDraft.shortlistId !== input.shortlistId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["messageDraft"],
+        message: "message draft must use the same brand, buyer profile, and shortlist",
+      });
+    }
+  });
+
 export type CreateLeadIntakeInput = z.infer<typeof CreateLeadIntakeInputSchema>;
 export type RecordLeadAnalysisRunInput = z.infer<typeof RecordLeadAnalysisRunInputSchema>;
 export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSchema>;
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
 export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
+export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLeadCustomerPresentationDraftInputSchema>;
+
+export interface LeadCustomerPresentationShortlistItemRow {
+  propertyId: string;
+  propertyReference: string | null;
+  propertyTitle: string | null;
+  propertyLocation: string | null;
+  propertyPrice: number | null;
+  propertyBedrooms: number | null;
+  propertyBathrooms: number | null;
+  propertyPrimaryImageUrl: string | null;
+  propertyPublicUrl: string | null;
+  rank: number;
+  decision: z.infer<typeof LeadPropertyShortlistDecisionSchema>;
+  systemEligibility: z.infer<typeof LeadPropertyShortlistEligibilitySchema>;
+  score: number;
+  dataQualityScore: number;
+  reasons: string[];
+  concerns: string[];
+  questionsToVerify: string[];
+}
+
+export interface LeadCustomerPresentationShortlistSnapshot {
+  brand: string;
+  buyerProfileId: string;
+  shortlistId: string;
+  shortlistTitle: string | null;
+  buyerSummary: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  budgetIncludesCosts: boolean | null;
+  budgetApproximate: boolean;
+  locationFlexible: boolean;
+  items: LeadCustomerPresentationShortlistItemRow[];
+}
 
 export interface ContactLookupRow {
   contactId: string;
@@ -1305,6 +1430,296 @@ export class LeadIntelligencePersistenceRepository {
       duplicate: Boolean(shortlist.duplicate),
       payloadHashMatches: true,
       itemCount,
+    };
+  }
+
+  async loadShortlistSnapshotForPresentation(input: {
+    brand: string;
+    buyerProfileId: string;
+    shortlistId: string;
+  }): Promise<LeadCustomerPresentationShortlistSnapshot | null> {
+    this.assertCanWrite();
+    const brand = BrandSchema.parse(input.brand);
+    const buyerProfileId = UUIDSchema.parse(input.buyerProfileId);
+    const shortlistId = UUIDSchema.parse(input.shortlistId);
+
+    const shortlistResult = await this.db.query<{
+      brand: string;
+      buyer_profile_id: string;
+      shortlist_id: string;
+      shortlist_title: string | null;
+      buyer_summary: string | null;
+      budget_amount: string | number | null;
+      budget_currency: string | null;
+      budget_includes_costs: boolean | null;
+      budget_approximate: boolean;
+      location_flexible: boolean;
+    }>(
+      `
+        select
+          shortlist.brand,
+          shortlist.buyer_profile_id::text,
+          shortlist.id::text as shortlist_id,
+          shortlist.title as shortlist_title,
+          profile.summary as buyer_summary,
+          profile.budget_amount,
+          profile.budget_currency,
+          profile.budget_includes_costs,
+          profile.budget_approximate,
+          profile.location_flexible
+        from public.lead_property_shortlists shortlist
+        join public.buyer_profiles profile
+          on profile.id = shortlist.buyer_profile_id
+         and profile.brand = shortlist.brand
+        where shortlist.brand = $1
+          and shortlist.buyer_profile_id = $2::uuid
+          and shortlist.id = $3::uuid
+          and shortlist.status = 'draft'
+          and profile.status = 'approved'
+        limit 1
+      `,
+      [brand, buyerProfileId, shortlistId],
+    );
+    const shortlist = shortlistResult.rows[0];
+    if (!shortlist) return null;
+
+    const itemResult = await this.db.query<{
+      property_id: string;
+      property_reference: string | null;
+      property_title: string | null;
+      property_location: string | null;
+      property_price: string | number | null;
+      property_bedrooms: string | number | null;
+      property_bathrooms: string | number | null;
+      property_primary_image_url: string | null;
+      property_public_url: string | null;
+      rank: number;
+      decision: z.infer<typeof LeadPropertyShortlistDecisionSchema>;
+      system_eligibility: z.infer<typeof LeadPropertyShortlistEligibilitySchema>;
+      score: number;
+      data_quality_score: number;
+      reasons: unknown;
+      concerns: unknown;
+      questions_to_verify: unknown;
+    }>(
+      `
+        select
+          property_id::text,
+          property_reference,
+          property_title,
+          property_location,
+          property_price,
+          property_bedrooms,
+          property_bathrooms,
+          property_primary_image_url,
+          property_public_url,
+          rank,
+          decision,
+          system_eligibility,
+          score,
+          data_quality_score,
+          reasons,
+          concerns,
+          questions_to_verify
+        from public.lead_property_shortlist_items
+        where brand = $1
+          and shortlist_id = $2::uuid
+        order by rank asc
+      `,
+      [brand, shortlistId],
+    );
+
+    const stringArraySchema = z.array(z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText)).max(
+      LEAD_INTELLIGENCE_LIMITS.matchReasons,
+    );
+
+    return {
+      brand,
+      buyerProfileId,
+      shortlistId,
+      shortlistTitle: shortlist.shortlist_title,
+      buyerSummary: shortlist.buyer_summary,
+      budgetAmount: shortlist.budget_amount === null ? null : Number(shortlist.budget_amount),
+      budgetCurrency: shortlist.budget_currency,
+      budgetIncludesCosts: shortlist.budget_includes_costs,
+      budgetApproximate: Boolean(shortlist.budget_approximate),
+      locationFlexible: Boolean(shortlist.location_flexible),
+      items: itemResult.rows.map((row) => ({
+        propertyId: row.property_id,
+        propertyReference: row.property_reference,
+        propertyTitle: row.property_title,
+        propertyLocation: row.property_location,
+        propertyPrice: row.property_price === null ? null : Number(row.property_price),
+        propertyBedrooms: row.property_bedrooms === null ? null : Number(row.property_bedrooms),
+        propertyBathrooms: row.property_bathrooms === null ? null : Number(row.property_bathrooms),
+        propertyPrimaryImageUrl: row.property_primary_image_url,
+        propertyPublicUrl: row.property_public_url,
+        rank: Number(row.rank),
+        decision: LeadPropertyShortlistDecisionSchema.parse(row.decision),
+        systemEligibility: LeadPropertyShortlistEligibilitySchema.parse(row.system_eligibility),
+        score: Number(row.score),
+        dataQualityScore: Number(row.data_quality_score),
+        reasons: stringArraySchema.parse(row.reasons),
+        concerns: stringArraySchema.parse(row.concerns),
+        questionsToVerify: stringArraySchema.parse(row.questions_to_verify),
+      })),
+    };
+  }
+
+  async createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput) {
+    this.assertCanWrite();
+    const data = CreateLeadCustomerPresentationDraftInputSchema.parse(input);
+    const presentationResult = await this.db.query<{
+      id: string;
+      duplicate: boolean;
+      payload_hash_matches: boolean;
+    }>(
+      `
+        with inserted as (
+          insert into public.lead_customer_presentations (
+            brand,
+            buyer_profile_id,
+            shortlist_id,
+            status,
+            title,
+            presentation_json,
+            idempotency_key,
+            payload_hash,
+            correlation_id,
+            created_by,
+            approved_by,
+            approved_at,
+            archived_at
+          )
+          values ($1, $2::uuid, $3::uuid, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12::timestamptz, $13::timestamptz)
+          on conflict (brand, idempotency_key) do nothing
+          returning id, false as duplicate, true as payload_hash_matches
+        )
+        select id, duplicate, payload_hash_matches from inserted
+        union all
+        select
+          id,
+          true as duplicate,
+          payload_hash = $8 as payload_hash_matches
+        from public.lead_customer_presentations
+        where brand = $1
+          and idempotency_key = $7
+          and not exists (select 1 from inserted)
+        limit 1
+      `,
+      [
+        data.brand,
+        data.buyerProfileId,
+        data.shortlistId,
+        data.status,
+        data.title,
+        JSON.stringify(data.presentationJson),
+        data.idempotencyKey,
+        data.payloadHash,
+        data.correlationId,
+        data.createdBy,
+        data.approvedBy,
+        data.approvedAt,
+        data.archivedAt,
+      ],
+    );
+    const presentation = presentationResult.rows[0];
+    if (!presentation) {
+      throw new LeadIntelligencePersistenceError(
+        "DATABASE_ERROR",
+        "Lead customer presentation draft could not be created",
+        500,
+      );
+    }
+
+    if (!presentation.payload_hash_matches) {
+      return {
+        presentationId: presentation.id,
+        messageDraftId: null,
+        duplicate: true,
+        payloadHashMatches: false,
+      };
+    }
+
+    const draft = data.messageDraft;
+    const messageResult = await this.db.query<{
+      id: string;
+      duplicate: boolean;
+      payload_hash_matches: boolean;
+    }>(
+      `
+        with inserted as (
+          insert into public.lead_customer_message_drafts (
+            brand,
+            presentation_id,
+            buyer_profile_id,
+            shortlist_id,
+            channel,
+            status,
+            subject,
+            body_text,
+            body_html,
+            language,
+            idempotency_key,
+            payload_hash,
+            correlation_id,
+            created_by,
+            approved_by,
+            approved_at,
+            sent_at,
+            cancelled_at
+          )
+          values ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::timestamptz, $17::timestamptz, $18::timestamptz)
+          on conflict (brand, idempotency_key) do nothing
+          returning id, false as duplicate, true as payload_hash_matches
+        )
+        select id, duplicate, payload_hash_matches from inserted
+        union all
+        select
+          id,
+          true as duplicate,
+          payload_hash = $12 as payload_hash_matches
+        from public.lead_customer_message_drafts
+        where brand = $1
+          and idempotency_key = $11
+          and not exists (select 1 from inserted)
+        limit 1
+      `,
+      [
+        draft.brand,
+        presentation.id,
+        draft.buyerProfileId,
+        draft.shortlistId,
+        draft.channel,
+        draft.status,
+        draft.subject,
+        draft.bodyText,
+        draft.bodyHtml,
+        draft.language || null,
+        draft.idempotencyKey,
+        draft.payloadHash,
+        draft.correlationId,
+        draft.createdBy,
+        draft.approvedBy,
+        draft.approvedAt,
+        draft.sentAt,
+        draft.cancelledAt,
+      ],
+    );
+    const message = messageResult.rows[0];
+    if (!message) {
+      throw new LeadIntelligencePersistenceError(
+        "DATABASE_ERROR",
+        "Lead customer message draft could not be created",
+        500,
+      );
+    }
+
+    return {
+      presentationId: presentation.id,
+      messageDraftId: message.id,
+      duplicate: Boolean(presentation.duplicate && message.duplicate),
+      payloadHashMatches: Boolean(message.payload_hash_matches),
     };
   }
 }

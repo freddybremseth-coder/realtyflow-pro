@@ -19,6 +19,7 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Forhåndsvis valgte eiendommer"), true);
   assert.equal(source.includes("Lagre shortlist-utkast"), true);
   assert.equal(source.includes("Profesjonelt presentasjonsutkast"), true);
+  assert.equal(source.includes("Lagre presentasjonsutkast"), true);
   assert.equal(source.includes("Kopier presentasjon"), true);
   assert.equal(source.includes("Kopier e-postutkast"), true);
   assert.equal(source.includes("Opprett lead"), false);
@@ -48,6 +49,7 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
   assert.equal(source.includes("/api/lead-intelligence/review"), true);
   assert.equal(source.includes("/api/lead-intelligence/property-matches/preview"), true);
   assert.equal(source.includes("/api/lead-intelligence/shortlists"), true);
+  assert.equal(source.includes("/api/lead-intelligence/presentations"), true);
 });
 
 test("Lead Intelligence property match preview is explicit and non-persistent", async () => {
@@ -79,6 +81,8 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Før videre deling må dette avklares"), true);
   assert.equal(source.includes("Boligkort"), true);
   assert.equal(source.includes("Kortene er et internt utkast"), true);
+  assert.equal(source.includes("Presentasjonsutkast lagret som draft uten eksterne sideeffekter."), true);
+  assert.equal(source.includes("Presentasjon publisert: nei"), true);
   assert.equal(source.includes("Ingen e-post er sendt"), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);
   assert.equal(source.includes("Shortlist opprettet: nei"), false);
