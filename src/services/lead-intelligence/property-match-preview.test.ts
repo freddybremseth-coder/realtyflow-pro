@@ -192,37 +192,41 @@ test("loads approved buyer profile as deterministic match profile", async () => 
           rows: [
             {
               resultJson: {
-                contact: {
-                  name: "Test",
-                  phone: null,
-                  email: null,
-                  language: "no",
-                  country: "NO",
+                schemaVersion: "lead-intelligence-review-save-v1",
+                reviewPayloadHash: "sha256:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                analysis: {
+                  contact: {
+                    name: "Test",
+                    phone: null,
+                    email: null,
+                    language: "no",
+                    country: "NO",
+                  },
+                  purchaseReadiness: {
+                    level: "warm",
+                    confidence: 0.8,
+                    reasoning: "Approved analysis fixture.",
+                  },
+                  budget: {
+                    amount: 440000,
+                    currency: "EUR",
+                    includesCosts: true,
+                    approximate: true,
+                    hardLimit: null,
+                  },
+                  propertyTypes: ["apartment"],
+                  locations: {
+                    preferred: ["Moreira"],
+                    excluded: ["Polop"],
+                    flexible: false,
+                  },
+                  hardRequirements: [],
+                  preferences: [],
+                  exclusions: [],
+                  missingInformation: [],
+                  summary: "Wants Moraira.",
+                  suggestedNextAction: "Preview matches.",
                 },
-                purchaseReadiness: {
-                  level: "warm",
-                  confidence: 0.8,
-                  reasoning: "Approved analysis fixture.",
-                },
-                budget: {
-                  amount: 440000,
-                  currency: "EUR",
-                  includesCosts: true,
-                  approximate: true,
-                  hardLimit: null,
-                },
-                propertyTypes: ["apartment"],
-                locations: {
-                  preferred: ["Finestrat"],
-                  excluded: ["Polop"],
-                  flexible: false,
-                },
-                hardRequirements: [],
-                preferences: [],
-                exclusions: [],
-                missingInformation: [],
-                summary: "Wants Finestrat.",
-                suggestedNextAction: "Preview matches.",
               },
             },
           ] as T[],
@@ -282,7 +286,7 @@ test("loads approved buyer profile as deterministic match profile", async () => 
   assert.equal(profile?.hardRequirements.length, 1);
   assert.equal(profile?.preferences[0].weight, 0.8);
   assert.equal(profile?.exclusions[0].severity, "reject");
-  assert.deepEqual(profile?.locations.preferred, ["Finestrat"]);
+  assert.deepEqual(profile?.locations.preferred, ["Moraira"]);
   assert.deepEqual(profile?.locations.excluded, ["Polop"]);
   assert.equal(db.queries.some((sql) => sql.includes("status = 'approved'")), true);
 });

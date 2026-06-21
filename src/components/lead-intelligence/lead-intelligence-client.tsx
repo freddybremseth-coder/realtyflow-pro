@@ -218,6 +218,31 @@ function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matche
   return parts.join(" · ");
 }
 
+function listToText(values: string[]) {
+  return values.join(", ");
+}
+
+function textToList(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,;]+/)
+        .map((item) => normalizeKnownLocationAlias(item.trim()))
+        .filter(Boolean),
+    ),
+  ).slice(0, LEAD_INTELLIGENCE_LIMITS.locations);
+}
+
+function normalizeKnownLocationAlias(value: string) {
+  const folded = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (folded === "moreira") return "Moraira";
+  if (folded === "moraira") return "Moraira";
+  return value;
+}
+
 function parseJsonEditor(value: string) {
   try {
     return { parsed: JSON.parse(value) as ExtractedLead, error: null };
@@ -998,6 +1023,53 @@ export function LeadIntelligenceClient({
                       E.164-verifisering: {response.meta.phoneNormalization.verifiedE164 ? "ja" : "nei"}.
                     </p>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
+                  <h2 className="mb-3 text-sm font-semibold text-slate-200">Område og boligtype</h2>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <TextInput
+                      label="Foretrukne områder"
+                      value={listToText(edited.locations.preferred)}
+                      onChange={(value) => updateEdited((current) => ({
+                        ...current,
+                        locations: {
+                          ...current.locations,
+                          preferred: textToList(value),
+                        },
+                      }))}
+                    />
+                    <TextInput
+                      label="Ekskluderte områder"
+                      value={listToText(edited.locations.excluded)}
+                      onChange={(value) => updateEdited((current) => ({
+                        ...current,
+                        locations: {
+                          ...current.locations,
+                          excluded: textToList(value),
+                        },
+                      }))}
+                    />
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={edited.locations.flexible}
+                      onChange={(event) => updateEdited((current) => ({
+                        ...current,
+                        locations: {
+                          ...current.locations,
+                          flexible: event.target.checked,
+                        },
+                      }))}
+                    />
+                    Fleksibel på område
+                  </label>
+                  {!edited.locations.flexible && edited.locations.preferred.length > 0 && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Match-preview behandler valgt område som et krav. Eiendommer i andre områder skal avvises eller få tydelig avvik.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">

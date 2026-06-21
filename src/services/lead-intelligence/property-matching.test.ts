@@ -251,23 +251,23 @@ test("property clearly over total budget is rejected", () => {
 });
 
 test("fixed preferred location rejects properties outside the requested area", () => {
-  const fixedFinestratProfile = {
+  const fixedMorairaProfile = {
     ...profile,
     locations: {
-      preferred: ["Finestrat"],
+      preferred: ["Moreira"],
       excluded: [],
       flexible: false,
     },
   };
-  const finestrat = normalizePropertyForLeadMatching({
-    id: "prop-finestrat",
+  const moraira = normalizePropertyForLeadMatching({
+    id: "prop-moraira",
     property_type: "apartment",
     price: 350000,
     bedrooms: 2,
     terrace_size: 25,
     has_lift: true,
     is_top_floor: true,
-    town: "Finestrat",
+    town: "Moraira",
     future_building_risk: false,
     description: "Top floor apartment with panoramic sea view.",
   });
@@ -284,12 +284,12 @@ test("fixed preferred location rejects properties outside the requested area", (
     description: "Top floor apartment with panoramic sea view.",
   });
 
-  const finestratMatch = matchPropertyToLeadProfile(fixedFinestratProfile, finestrat);
-  const alteaMatch = matchPropertyToLeadProfile(fixedFinestratProfile, altea);
+  const morairaMatch = matchPropertyToLeadProfile(fixedMorairaProfile, moraira);
+  const alteaMatch = matchPropertyToLeadProfile(fixedMorairaProfile, altea);
 
-  assert.equal(finestratMatch.eligibility, "eligible");
-  assert.ok(finestratMatch.score > alteaMatch.score);
-  assert.ok(finestratMatch.reasonsForMatch.some((reason) => reason.includes("preferred area Finestrat")));
+  assert.equal(morairaMatch.eligibility, "eligible");
+  assert.ok(morairaMatch.score > alteaMatch.score);
+  assert.ok(morairaMatch.reasonsForMatch.some((reason) => reason.includes("preferred area Moraira")));
   assert.equal(alteaMatch.eligibility, "rejected");
   assert.ok(alteaMatch.concerns.some((concern) => concern.includes("does not match the required preferred area")));
 });
