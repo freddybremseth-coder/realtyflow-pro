@@ -106,3 +106,13 @@ test("Lead Intelligence preview surfaces safe review diagnostics", async () => {
   assert.equal(source.includes("saveError.details"), true);
   assert.equal(source.includes("prettyJson(saveError.details)"), true);
 });
+
+test("Lead Intelligence preview explains duplicate and conflict review saves", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("saveError.code === \"REVIEW_CONFLICT\""), true);
+  assert.equal(source.includes("Systemet har ikke"), true);
+  assert.equal(source.includes("overskrevet buyer profile eller kriterier"), true);
+  assert.equal(source.includes("Ingen nye rader ble opprettet."), true);
+  assert.equal(source.includes("samme intake, analyse og buyer profile"), true);
+});

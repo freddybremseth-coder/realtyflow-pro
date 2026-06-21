@@ -1029,6 +1029,13 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                     <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
                       <p className="font-semibold">{saveError.code}</p>
                       <p className="mt-1">{saveError.message}</p>
+                      {saveError.code === "REVIEW_CONFLICT" && (
+                        <div className="mt-2 rounded-md border border-red-400/30 bg-red-950/40 p-2 text-xs text-red-50">
+                          Dette reviewet er allerede lagret med en annen versjon av innholdet. Systemet har ikke
+                          overskrevet buyer profile eller kriterier. Start på nytt eller analyser henvendelsen på
+                          nytt dersom du vil lagre en ny godkjent versjon.
+                        </div>
+                      )}
                       {saveError.details && (
                         <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
                           {prettyJson(saveError.details)}
@@ -1052,6 +1059,12 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                             Intake {saveResult.result.intake.id} · Buyer profile {saveResult.result.buyerProfile.id} ·
                             kriterier {saveResult.result.buyerProfile.criterionCount}
                           </p>
+                          {saveResult.result.status.duplicate && (
+                            <p className="mt-1 text-xs text-emerald-100/80">
+                              Ingen nye rader ble opprettet. Du ser samme intake, analyse og buyer profile som ved
+                              første lagring.
+                            </p>
+                          )}
                           <p className="mt-1 text-xs text-emerald-100/70">
                             Ny lagring: {saveResult.result.status.newlySaved ? "ja" : "nei"} ·
                             Duplicate: {saveResult.result.status.duplicate ? "ja" : "nei"} ·
