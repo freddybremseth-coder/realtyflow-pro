@@ -3,6 +3,7 @@ import {
   isLeadIntelligenceConnectExistingEnabled,
   isLeadIntelligenceEnabled,
   isLeadIntelligencePersistenceEnabled,
+  isLeadIntelligencePropertyMatchingEnabled,
 } from "@/services/lead-intelligence/feature-flags";
 
 export default function LeadIntelligencePage() {
@@ -11,6 +12,7 @@ export default function LeadIntelligencePage() {
       featureEnabled={isLeadIntelligenceEnabled()}
       persistenceEnabled={isLeadIntelligencePersistenceEnabled()}
       connectExistingEnabled={isLeadIntelligenceConnectExistingEnabled()}
+      propertyMatchingEnabled={isLeadIntelligencePropertyMatchingEnabled()}
     />
   );
 }

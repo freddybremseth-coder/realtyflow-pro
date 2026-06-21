@@ -16,6 +16,7 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Analyser på nytt"), true);
   assert.equal(source.includes("Lagre intake og kjøperprofil"), true);
   assert.equal(source.includes("Vis kontaktkandidater"), true);
+  assert.equal(source.includes("Forhåndsvis valgte eiendommer"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
@@ -41,6 +42,19 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
   assert.equal(source.includes("/api/lead-intelligence/analyze"), true);
   assert.equal(source.includes("/api/lead-intelligence/contact-candidates"), true);
   assert.equal(source.includes("/api/lead-intelligence/review"), true);
+  assert.equal(source.includes("/api/lead-intelligence/property-matches/preview"), true);
+});
+
+test("Lead Intelligence property match preview is explicit and non-persistent", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("propertyMatchingEnabled"), true);
+  assert.equal(source.includes("REALTYFLOW_PROPERTY_MATCHING_ENABLED=true"), true);
+  assert.equal(source.includes("Maks 20 eksplisitte property-ID-er"), true);
+  assert.equal(source.includes("UI-et gjør ikke automatisk inventory-søk"), true);
+  assert.equal(source.includes("Matcher lagret: nei"), true);
+  assert.equal(source.includes("Shortlist opprettet: nei"), true);
+  assert.equal(source.includes("propertyMatchingStarted: true"), false);
 });
 
 test("Lead Intelligence preview clears stale candidates before review save", async () => {

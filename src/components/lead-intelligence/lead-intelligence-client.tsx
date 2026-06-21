@@ -104,6 +104,7 @@ interface Props {
   featureEnabled: boolean;
   persistenceEnabled: boolean;
   connectExistingEnabled: boolean;
+  propertyMatchingEnabled: boolean;
 }
 
 type CriterionType = "hard_requirement" | "preference" | "exclusion" | "missing_information";
@@ -122,6 +123,45 @@ interface ReviewCriterionRow {
   key: string;
   label: string;
   detail: string;
+}
+
+type PropertyMatchEligibility = "eligible" | "conditional" | "rejected";
+
+interface PropertyMatchPreviewResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    buyerProfileId: string;
+    analyzed: number;
+    matched: number;
+    missingPropertyIds: string[];
+    skippedProperties: Array<{
+      propertyId: string;
+      reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
+    }>;
+    matches: Array<{
+      propertyId: string;
+      score: number;
+      eligibility: PropertyMatchEligibility;
+      dataQualityScore: number;
+      reasonsForMatch: string[];
+      concerns: string[];
+      questionsToVerify: string[];
+      budgetResult: {
+        outcome: "pass" | "fail" | "unknown" | "penalty" | "not_applicable";
+        reason: string;
+        expected: unknown;
+        actual: unknown;
+      } | null;
+    }>;
+    sideEffects: {
+      leadsCreated: false;
+      contactsCreated: false;
+      emailsSent: false;
+      matchesPersisted: false;
+      shortlistCreated: false;
+    };
+  };
 }
 
 const sourceOptions: Array<{ value: Source; label: string }> = [
@@ -269,10 +309,63 @@ function JsonSection({
   );
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parsePropertyIds(value: string) {
+  const ids = value
+    .split(/[\s,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(ids));
+
+  if (ids.length !== unique.length) {
+    return { ids: unique, error: "Property IDs må være unike." };
+  }
+
+  if (unique.length > 20) {
+    return { ids: unique.slice(0, 20), error: "Maks 20 property IDs kan forhåndsvises samtidig." };
+  }
+
+  const invalid = unique.find((id) => !uuidPattern.test(id));
+  if (invalid) {
+    return { ids: unique, error: `Ugyldig property UUID: ${invalid}` };
+  }
+
+  return { ids: unique, error: null };
+}
+
+function MatchList({
+  title,
+  items,
+  emptyLabel,
+}: {
+  title: string;
+  items: string[];
+  emptyLabel: string;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      {items.length > 0 ? (
+        <ul className="space-y-1 text-xs text-slate-300">
+          {items.map((item) => (
+            <li key={item} className="rounded border border-slate-800 bg-slate-950/50 px-2 py-1">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-slate-500">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
 export function LeadIntelligenceClient({
   featureEnabled,
   persistenceEnabled,
   connectExistingEnabled,
+  propertyMatchingEnabled,
 }: Props) {
   const [source, setSource] = useState<Source>("phone_call");
   const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
@@ -293,6 +386,10 @@ export function LeadIntelligenceClient({
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
+  const [propertyIdsText, setPropertyIdsText] = useState("");
+  const [propertyMatchLoading, setPropertyMatchLoading] = useState(false);
+  const [propertyMatchError, setPropertyMatchError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [propertyMatchResult, setPropertyMatchResult] = useState<PropertyMatchPreviewResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -303,6 +400,12 @@ export function LeadIntelligenceClient({
     (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
   ).length;
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
+  const parsedPropertyIds = useMemo(() => parsePropertyIds(propertyIdsText), [propertyIdsText]);
+
+  const clearPropertyMatchPreview = () => {
+    setPropertyMatchError(null);
+    setPropertyMatchResult(null);
+  };
 
   const clearContactCandidates = () => {
     setContactCandidatesLoaded(false);
@@ -312,6 +415,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
+    clearPropertyMatchPreview();
   };
 
   const updateEdited = (updater: (current: ExtractedLead) => ExtractedLead) => {
@@ -383,6 +487,8 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
+    setPropertyIdsText("");
+    clearPropertyMatchPreview();
   };
 
   const copyJson = async () => {
@@ -405,6 +511,7 @@ export function LeadIntelligenceClient({
     }));
     setSaveError(null);
     setSaveResult(null);
+    clearPropertyMatchPreview();
   };
 
   const loadContactCandidates = async () => {
@@ -495,6 +602,7 @@ export function LeadIntelligenceClient({
         return;
       }
       setSaveResult(body);
+      clearPropertyMatchPreview();
     } catch {
       setSaveError({
         correlationId: "client",
@@ -503,6 +611,47 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const previewPropertyMatches = async () => {
+    if (!saveResult || !propertyMatchingEnabled || parsedPropertyIds.error) return;
+    setPropertyMatchLoading(true);
+    setPropertyMatchError(null);
+    setPropertyMatchResult(null);
+
+    try {
+      const res = await fetch("/api/lead-intelligence/property-matches/preview", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": saveResult.correlationId,
+        },
+        body: JSON.stringify({
+          brand,
+          buyerProfileId: saveResult.result.buyerProfile.id,
+          propertyIds: parsedPropertyIds.ids,
+          maxResults: parsedPropertyIds.ids.length,
+        }),
+      });
+      const body = (await res.json()) as PropertyMatchPreviewResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setPropertyMatchError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke forhåndsvise eiendomsmatcher.",
+        });
+        return;
+      }
+      setPropertyMatchResult(body);
+    } catch {
+      setPropertyMatchError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte property-match-preview-API-et.",
+      });
+    } finally {
+      setPropertyMatchLoading(false);
     }
   };
 
@@ -1121,6 +1270,157 @@ export function LeadIntelligenceClient({
                     </div>
                   )}
                 </div>
+
+                {saveResult && (
+                  <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-200">Eiendomsmatch-preview</h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Lim inn eksplisitte property-ID-er for å forhåndsvise deterministisk match mot denne
+                          kjøperprofilen. Resultatet lagres ikke og lager ingen shortlist.
+                        </p>
+                      </div>
+                      <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
+                        {propertyMatchingEnabled ? "Preview aktivert" : "Feature flag av"}
+                      </Badge>
+                    </div>
+
+                    {!propertyMatchingEnabled && (
+                      <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                        Property matching er deaktivert i dette miljøet. Serveren må ha
+                        REALTYFLOW_PROPERTY_MATCHING_ENABLED=true før denne read-only previewen kan brukes.
+                      </div>
+                    )}
+
+                    <div className="mt-4 space-y-2">
+                      <FieldLabel>Property IDs</FieldLabel>
+                      <textarea
+                        value={propertyIdsText}
+                        onChange={(event) => {
+                          setPropertyIdsText(event.target.value);
+                          clearPropertyMatchPreview();
+                        }}
+                        rows={4}
+                        placeholder="Én UUID per linje, eller separert med komma..."
+                        className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Maks 20 eksplisitte property-ID-er. UI-et gjør ikke automatisk inventory-søk.
+                      </p>
+                    </div>
+
+                    {parsedPropertyIds.error && (
+                      <p className="mt-2 text-sm text-amber-300">{parsedPropertyIds.error}</p>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={previewPropertyMatches}
+                        disabled={
+                          propertyMatchLoading ||
+                          !propertyMatchingEnabled ||
+                          !saveResult ||
+                          parsedPropertyIds.ids.length === 0 ||
+                          Boolean(parsedPropertyIds.error)
+                        }
+                      >
+                        {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                        Forhåndsvis valgte eiendommer
+                      </Button>
+                    </div>
+
+                    {propertyMatchError && (
+                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                        <p className="font-semibold">{propertyMatchError.code}</p>
+                        <p className="mt-1">{propertyMatchError.message}</p>
+                        {propertyMatchError.details && (
+                          <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                            {prettyJson(propertyMatchError.details)}
+                          </pre>
+                        )}
+                        <p className="mt-2 text-xs text-red-100/80">Correlation ID: {propertyMatchError.correlationId}</p>
+                      </div>
+                    )}
+
+                    {propertyMatchResult && (
+                      <div className="mt-4 space-y-3">
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Analysert</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.analyzed}</p>
+                          </div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Matcher</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.matched}</p>
+                          </div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Mangler</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyIds.length}</p>
+                          </div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.skippedProperties.length}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {propertyMatchResult.result.matches.map((match) => (
+                            <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-mono text-xs text-slate-400">{match.propertyId}</p>
+                                  <p className="mt-1 text-sm text-slate-200">
+                                    Score {match.score} · Data {match.dataQualityScore}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    match.eligibility === "eligible"
+                                      ? "success"
+                                      : match.eligibility === "rejected"
+                                        ? "destructive"
+                                        : "warning"
+                                  }
+                                >
+                                  {match.eligibility}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                <MatchList title="Hvorfor match" items={match.reasonsForMatch} emptyLabel="Ingen positive matchgrunner." />
+                                <MatchList title="Risiko/avvik" items={match.concerns} emptyLabel="Ingen tydelige avvik." />
+                                <MatchList title="Må verifiseres" items={match.questionsToVerify} emptyLabel="Ingen åpne verifikasjonsspørsmål." />
+                              </div>
+                              {match.budgetResult && (
+                                <p className="mt-3 rounded border border-slate-700 bg-slate-950/60 p-2 text-xs text-slate-300">
+                                  Budsjett: {match.budgetResult.outcome} · {match.budgetResult.reason}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {(propertyMatchResult.result.missingPropertyIds.length > 0 ||
+                          propertyMatchResult.result.skippedProperties.length > 0) && (
+                          <JsonSection
+                            title="Diagnostics"
+                            value={{
+                              missingPropertyIds: propertyMatchResult.result.missingPropertyIds,
+                              skippedProperties: propertyMatchResult.result.skippedProperties,
+                            }}
+                          />
+                        )}
+
+                        <p className="text-xs text-slate-500">
+                          E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
+                          Matcher lagret: nei · Shortlist opprettet: nei · Correlation ID: {propertyMatchResult.correlationId}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
