@@ -1728,8 +1728,8 @@ export function LeadIntelligenceClient({
                                   </div>
                                   {manualDecisionOverridesRejected && (
                                     <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
-                                      Denne boligen er fortsatt avvist av systemreglene. Manuell vurdering lagres ikke
-                                      ennå, så kontroller risiko/avvik før den eventuelt tas inn i en senere shortlist.
+                                      Denne boligen er fortsatt avvist av systemreglene. Den kan bare tas med som
+                                      «Må undersøkes», og risiko/avvik blir lagret sammen med shortlist-utkastet.
                                     </p>
                                   )}
                                 </div>

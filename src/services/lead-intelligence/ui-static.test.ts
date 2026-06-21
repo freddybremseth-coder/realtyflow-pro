@@ -68,7 +68,7 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Aktuell"), true);
   assert.equal(source.includes("Kanskje"), true);
   assert.equal(source.includes("Må undersøkes"), true);
-  assert.equal(source.includes("Manuell vurdering lagres ikke"), true);
+  assert.equal(source.includes("risiko/avvik blir lagret sammen med shortlist-utkastet"), true);
   assert.equal(source.includes("Matchpreviewen lagres ikke; shortlist-utkast lagres bare etter"), true);
   assert.equal(source.includes("Det oppretter ikke presentasjon, e-post, lead eller kontakt."), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);
