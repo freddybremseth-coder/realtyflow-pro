@@ -18,6 +18,7 @@ function matchResult(): PropertyMatchPreviewResult {
   return {
     buyerProfileId,
     discoveryMode: "auto",
+    bestEffort: false,
     analyzed: 2,
     matched: 1,
     candidateLimit: 120,

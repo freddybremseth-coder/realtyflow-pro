@@ -154,6 +154,7 @@ export interface PropertyMatchPreviewRepository {
 export interface PropertyMatchPreviewResult {
   buyerProfileId: string;
   discoveryMode: "explicit" | "auto";
+  bestEffort: boolean;
   analyzed: number;
   matched: number;
   candidateLimit: number | null;
@@ -538,9 +539,12 @@ export async function previewLeadPropertyMatchesForProfile(
   }
 
   const maxResults = request.maxResults ?? (request.autoDiscover ? 10 : request.propertyReferences.length);
+  const rankedAll = rankPropertyMatches(matches);
+  const nonRejectedMatches = rankedAll.filter((match) => match.eligibility !== "rejected");
+  const bestEffort = Boolean(request.autoDiscover && rankedAll.length > 0 && nonRejectedMatches.length === 0);
   const rankedCandidates = request.autoDiscover
-    ? rankPropertyMatches(matches).filter((match) => match.eligibility !== "rejected")
-    : rankPropertyMatches(matches);
+    ? (bestEffort ? rankedAll : nonRejectedMatches)
+    : rankedAll;
   const ranked = rankedCandidates
     .slice(0, maxResults)
     .map((match) => ({
@@ -551,6 +555,7 @@ export async function previewLeadPropertyMatchesForProfile(
   return {
     buyerProfileId: profile.buyerProfileId,
     discoveryMode: request.autoDiscover ? "auto" : "explicit",
+    bestEffort,
     analyzed: properties.length,
     matched: ranked.filter((match) => match.eligibility !== "rejected").length,
     candidateLimit: request.autoDiscover

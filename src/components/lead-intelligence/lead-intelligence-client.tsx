@@ -134,6 +134,7 @@ interface PropertyMatchPreviewResponse {
   result: {
     buyerProfileId: string;
     discoveryMode: "explicit" | "auto";
+    bestEffort: boolean;
     analyzed: number;
     matched: number;
     candidateLimit: number | null;
@@ -1629,7 +1630,16 @@ export function LeadIntelligenceClient({
                           </div>
                         </div>
 
-                        {propertyMatchResult.result.matched === 0 && propertyMatchResult.result.matches.length > 0 && (
+                        {propertyMatchResult.result.bestEffort && (
+                          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                            Ingen eiendommer traff alle kravene. Systemet viser derfor de nærmeste alternativene
+                            fra eksisterende eiendommer, med avvik og risiko synlig.
+                          </p>
+                        )}
+
+                        {!propertyMatchResult.result.bestEffort &&
+                          propertyMatchResult.result.matched === 0 &&
+                          propertyMatchResult.result.matches.length > 0 && (
                           <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                             Ingen av de valgte eiendommene er aktuelle uten manuell vurdering. Avviste eller usikre
                             treff vises under med forklaring.
