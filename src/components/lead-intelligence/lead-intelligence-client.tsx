@@ -1356,7 +1356,7 @@ export function LeadIntelligenceClient({
                             <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.analyzed}</p>
                           </div>
                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Matcher</p>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Aktuelle</p>
                             <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.matched}</p>
                           </div>
                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -1368,6 +1368,13 @@ export function LeadIntelligenceClient({
                             <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.skippedProperties.length}</p>
                           </div>
                         </div>
+
+                        {propertyMatchResult.result.matched === 0 && propertyMatchResult.result.matches.length > 0 && (
+                          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                            Ingen av de valgte eiendommene er aktuelle uten manuell vurdering. Avviste eller usikre
+                            treff vises under med forklaring.
+                          </p>
+                        )}
 
                         <div className="space-y-3">
                           {propertyMatchResult.result.matches.map((match) => (
