@@ -116,3 +116,11 @@ test("Lead Intelligence preview explains duplicate and conflict review saves", a
   assert.equal(source.includes("Ingen nye rader ble opprettet."), true);
   assert.equal(source.includes("samme intake, analyse og buyer profile"), true);
 });
+
+test("Lead Intelligence preview keeps connect_existing behind a server-side gate", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("connectExistingEnabled"), true);
+  assert.equal(source.includes("Kandidatoppslag er kun read-only nå."), true);
+  assert.equal(source.includes("setContactDecision(\"connect_existing\");"), true);
+});

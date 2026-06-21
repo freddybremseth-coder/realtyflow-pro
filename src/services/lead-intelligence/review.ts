@@ -29,6 +29,7 @@ import {
 export type LeadIntelligenceReviewErrorCode =
   | "INVALID_REQUEST"
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
+  | "CONTACT_LINKING_DISABLED"
   | "CONTACT_CANDIDATE_STALE"
   | "CONTACT_BRAND_MISMATCH"
   | "REVIEW_CONFLICT"
@@ -307,9 +308,18 @@ function buildCriteria(input: {
 function assertContactDecision(
   request: LeadIntelligenceReviewSaveRequest,
   serverCandidates: LeadContactCandidatePreview[],
+  connectExistingEnabled: boolean,
 ) {
   const decision = request.contactDecision;
   if (decision.action !== "connect_existing") return decision;
+
+  if (!connectExistingEnabled) {
+    throw new LeadIntelligenceReviewError(
+      "CONTACT_LINKING_DISABLED",
+      "Connecting an existing contact is disabled until the dedicated contact-linking gate is approved",
+      403,
+    );
+  }
 
   const selected = serverCandidates.find(
     (candidate) => candidate.contactId === decision.contactId,
@@ -330,12 +340,17 @@ export async function saveLeadIntelligenceReview(input: {
   repository: LeadIntelligenceReviewRepository;
   serverContactCandidates: LeadContactCandidatePreview[];
   approvedBy: string;
+  connectExistingEnabled?: boolean;
   now?: Date;
 }) {
   const request = LeadIntelligenceReviewSaveRequestSchema.parse(input.request);
   const approvedBy = input.approvedBy.trim().toLowerCase();
   const approvedAt = (input.now || new Date()).toISOString();
-  const decision = assertContactDecision(request, input.serverContactCandidates);
+  const decision = assertContactDecision(
+    request,
+    input.serverContactCandidates,
+    input.connectExistingEnabled === true,
+  );
   const idempotencySeed = request.idempotencySeed || request.correlationId;
   const contactId = decision.action === "connect_existing" ? decision.contactId : null;
   const reviewPayloadHash = stableLeadIntelligenceReviewPayloadHash({

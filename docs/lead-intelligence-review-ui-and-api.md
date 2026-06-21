@@ -49,6 +49,7 @@ Persistence is disabled by default. Production must keep these off until the mig
 ```text
 REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=false
 REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false
+REALTYFLOW_LEAD_INTELLIGENCE_CONNECT_EXISTING_ENABLED=false
 REALTYFLOW_PROPERTY_MATCHING_ENABLED=false
 REALTYFLOW_AUTO_SEND_ENABLED=false
 ```
@@ -83,7 +84,15 @@ It stores validated structured AI output, not provider raw output.
 
 ## Contact Decisions
 
-`connect_existing` sets `buyer_profiles.contact_id` only after explicit approval and a fresh server-side candidate verification inside the review-save transaction. The client never sends authoritative candidate hashes, confidence scores, or reasons. If the selected contact was deleted, moved to another brand, or no longer matches the reviewed phone/email/name, the save fails with a safe conflict such as `CONTACT_CANDIDATE_STALE` or `CONTACT_BRAND_MISMATCH`.
+Contact candidate lookup is read-only by default. `connect_existing` is additionally gated by:
+
+```text
+REALTYFLOW_LEAD_INTELLIGENCE_CONNECT_EXISTING_ENABLED=true
+```
+
+This flag is server-side only and defaults to off. When it is off, the UI can still show masked candidates, but saving with `connect_existing` fails closed with `CONTACT_LINKING_DISABLED` before opening the persistence database transaction. This keeps the separate test-contact gate explicit.
+
+When the gate is enabled, `connect_existing` sets `buyer_profiles.contact_id` only after explicit approval and a fresh server-side candidate verification inside the review-save transaction. The client never sends authoritative candidate hashes, confidence scores, or reasons. If the selected contact was deleted, moved to another brand, or no longer matches the reviewed phone/email/name, the save fails with a safe conflict such as `CONTACT_CANDIDATE_STALE` or `CONTACT_BRAND_MISMATCH`.
 
 If Freddy changes brand, contact fields, raw text, or the edited analysis after a candidate lookup, the UI clears candidates and selected contact so a new lookup is required.
 
@@ -116,5 +125,6 @@ Before enabling persistence:
 After enabling persistence:
 
 - set `REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=false`
+- set `REALTYFLOW_LEAD_INTELLIGENCE_CONNECT_EXISTING_ENABLED=false`
 - keep `REALTYFLOW_LEAD_INTELLIGENCE_ENABLED` off if the full feature should disappear
 - do not drop data tables without a separate reviewed rollback plan

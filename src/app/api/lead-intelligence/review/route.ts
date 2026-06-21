@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import {
   LeadIntelligenceReviewSaveRequestSchema,
+  LeadIntelligenceReviewError,
   saveLeadIntelligenceReview,
 } from "@/services/lead-intelligence/review";
 import {
@@ -16,6 +17,7 @@ import {
   withLeadIntelligenceTransaction,
 } from "@/services/lead-intelligence/server-runtime";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
+import { isLeadIntelligenceConnectExistingEnabled } from "@/services/lead-intelligence/feature-flags";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,6 +41,17 @@ export async function POST(request: NextRequest) {
           message: issue.message,
         })),
       });
+    }
+    const connectExistingEnabled = isLeadIntelligenceConnectExistingEnabled();
+    if (
+      parsed.data.contactDecision.action === "connect_existing" &&
+      !connectExistingEnabled
+    ) {
+      throw new LeadIntelligenceReviewError(
+        "CONTACT_LINKING_DISABLED",
+        "Connecting an existing contact is disabled until the dedicated contact-linking gate is approved",
+        403,
+      );
     }
 
     const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
@@ -65,6 +78,7 @@ export async function POST(request: NextRequest) {
         repository: createLeadIntelligenceRepository(client, context),
         serverContactCandidates: verifiedCandidates,
         approvedBy: context.email,
+        connectExistingEnabled,
       });
     });
 

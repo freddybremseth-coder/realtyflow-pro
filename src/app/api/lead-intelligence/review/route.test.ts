@@ -55,6 +55,7 @@ test.beforeEach(() => {
   delete process.env.DATABASE_URL;
   delete process.env.VERCEL_ENV;
   delete process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV];
+  delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_CONNECT_EXISTING_ENABLED;
 });
 
 function extractedLead() {
@@ -264,6 +265,30 @@ test("review route rejects forged client contact candidates before persistence",
   assert.equal(response.status, 400);
   assert.equal(body.error.code, "INVALID_REQUEST");
   assert.equal(JSON.stringify(body).includes("hmac-sha256:v1:forged"), false);
+});
+
+test("review route blocks connect_existing before persistence unless gate is enabled", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+
+  const response = await reviewPost(
+    request(
+      "/api/lead-intelligence/review",
+      validReviewBody({
+        contactDecision: {
+          action: "connect_existing",
+          contactId,
+          explicitApproval: true,
+        },
+      }),
+      { cookie: await adminCookie() },
+    ) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "CONTACT_LINKING_DISABLED");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
 });
 
 test("review route requires dedicated persistence URL in production", async () => {

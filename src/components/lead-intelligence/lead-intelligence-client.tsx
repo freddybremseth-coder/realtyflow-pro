@@ -102,6 +102,7 @@ interface ReviewSaveResponse {
 
 interface Props {
   featureEnabled: boolean;
+  connectExistingEnabled: boolean;
 }
 
 type CriterionType = "hard_requirement" | "preference" | "exclusion" | "missing_information";
@@ -267,7 +268,7 @@ function JsonSection({
   );
 }
 
-export function LeadIntelligenceClient({ featureEnabled }: Props) {
+export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled }: Props) {
   const [source, setSource] = useState<Source>("phone_call");
   const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
   const [language, setLanguage] = useState("");
@@ -919,24 +920,35 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                       </div>
                     )}
 
+                    {contactCandidates.length > 0 && !connectExistingEnabled && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                        Kandidatoppslag er kun read-only nå. Kobling til eksisterende kontakt er låst til egen testkontakt
+                        og egen server-side aktivering.
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       {contactCandidates.map((candidate) => (
-                        <label
+                        <div
                           key={`${candidate.matchType}:${candidate.contactId}`}
-                          className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
+                          className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
                         >
-                          <input
-                            type="radio"
-                            name="lead-contact-candidate"
-                            checked={contactDecision === "connect_existing" && selectedContactId === candidate.contactId}
-                            onChange={() => {
-                              setContactDecision("connect_existing");
-                              setSelectedContactId(candidate.contactId);
-                              setSaveError(null);
-                              setSaveResult(null);
-                            }}
-                            className="mt-1 h-4 w-4"
-                          />
+                          {connectExistingEnabled ? (
+                            <input
+                              type="radio"
+                              name="lead-contact-candidate"
+                              checked={contactDecision === "connect_existing" && selectedContactId === candidate.contactId}
+                              onChange={() => {
+                                setContactDecision("connect_existing");
+                                setSelectedContactId(candidate.contactId);
+                                setSaveError(null);
+                                setSaveResult(null);
+                              }}
+                              className="mt-1 h-4 w-4"
+                            />
+                          ) : (
+                            <Search className="mt-0.5 h-4 w-4 text-slate-500" aria-hidden="true" />
+                          )}
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium text-slate-200">
                               {candidate.name || "Uten navn"}
@@ -948,7 +960,7 @@ export function LeadIntelligenceClient({ featureEnabled }: Props) {
                               {candidate.matchType} · {Math.round(candidate.confidence * 100)}%
                             </span>
                           </span>
-                        </label>
+                        </div>
                       ))}
                     </div>
 
