@@ -96,6 +96,7 @@ const persistedProfileSchema = z
 type PersistedCriterion = z.infer<typeof persistedCriterionSchema>;
 type PersistedProfile = z.infer<typeof persistedProfileSchema>;
 type RawProperty = Record<string, unknown>;
+type SupabasePropertyLookupError = { code?: string | null; message?: string | null };
 
 export interface PropertyMatchPreviewRepository {
   loadApprovedBuyerProfile(brand: string, buyerProfileId: string): Promise<LeadMatchProfile | null>;
@@ -242,14 +243,19 @@ export async function loadPropertiesByReferencesFromSupabase(
     }
   };
 
-  if (uuidReferences.length > 0) {
+  const queryPropertiesByColumn = async (column: string, values: string[], optionalColumn = false) => {
+    if (values.length === 0) return;
     const { data, error } = await supabase
       .from("properties")
       .select("*")
-      .in("id", uuidReferences)
+      .in(column, values)
       .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
 
     if (error) {
+      if (optionalColumn && isMissingPropertyReferenceColumnError(error)) {
+        logOptionalPropertyReferenceColumnUnavailable(column, error);
+        return;
+      }
       throw new LeadIntelligenceError(
         "PROPERTY_MATCHING_UNAVAILABLE",
         "Property matching inventory lookup failed",
@@ -257,38 +263,16 @@ export async function loadPropertiesByReferencesFromSupabase(
       );
     }
     addRows((data || []) as RawProperty[]);
+  };
+
+  if (uuidReferences.length > 0) {
+    await queryPropertiesByColumn("id", uuidReferences);
   }
 
   if (textVariants.length > 0) {
-    const { data: refData, error: refError } = await supabase
-      .from("properties")
-      .select("*")
-      .in("ref", textVariants)
-      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
-
-    if (refError) {
-      throw new LeadIntelligenceError(
-        "PROPERTY_MATCHING_UNAVAILABLE",
-        "Property matching inventory lookup failed",
-        503,
-      );
-    }
-    addRows((refData || []) as RawProperty[]);
-
-    const { data: externalData, error: externalError } = await supabase
-      .from("properties")
-      .select("*")
-      .in("external_id", textVariants)
-      .limit(MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
-
-    if (externalError) {
-      throw new LeadIntelligenceError(
-        "PROPERTY_MATCHING_UNAVAILABLE",
-        "Property matching inventory lookup failed",
-        503,
-      );
-    }
-    addRows((externalData || []) as RawProperty[]);
+    await queryPropertiesByColumn("ref", textVariants, true);
+    await queryPropertiesByColumn("external_id", textVariants, true);
+    await queryPropertiesByColumn("reference", textVariants, true);
   }
 
   return Array.from(rows.values()).slice(0, MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
@@ -431,7 +415,20 @@ function normalizePropertyReference(reference: string) {
 }
 
 function propertyReferenceKeys(property: RawProperty) {
-  return [property.id, property.ref, property.external_id]
+  return [property.id, property.ref, property.external_id, property.reference]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => normalizePropertyReference(value));
+}
+
+export function isMissingPropertyReferenceColumnError(error: SupabasePropertyLookupError) {
+  const code = error.code || "";
+  return code === "42703" || code === "PGRST204";
+}
+
+function logOptionalPropertyReferenceColumnUnavailable(column: string, error: SupabasePropertyLookupError) {
+  const code = error.code && /^[0-9A-Z]+$/.test(error.code) ? error.code : "unknown";
+  console.warn("lead_intelligence_property_lookup_optional_column_unavailable", {
+    column,
+    code,
+  });
 }

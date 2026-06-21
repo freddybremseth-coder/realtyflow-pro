@@ -3,6 +3,7 @@ import test from "node:test";
 import type { QueryClient } from "./persistence";
 import {
   LeadPropertyMatchPreviewRequestSchema,
+  isMissingPropertyReferenceColumnError,
   loadApprovedLeadMatchProfileWithDb,
   previewLeadPropertyMatches,
   previewLeadPropertyMatchesForProfile,
@@ -123,6 +124,14 @@ test("property match preview request validates brand, references, legacy ids, bo
     }).success,
     false,
   );
+});
+
+test("property lookup treats missing optional reference columns as non-fatal only", () => {
+  assert.equal(isMissingPropertyReferenceColumnError({ code: "42703" }), true);
+  assert.equal(isMissingPropertyReferenceColumnError({ code: "PGRST204" }), true);
+  assert.equal(isMissingPropertyReferenceColumnError({ code: "42501" }), false);
+  assert.equal(isMissingPropertyReferenceColumnError({ code: "PGRST301" }), false);
+  assert.equal(isMissingPropertyReferenceColumnError({ code: undefined }), false);
 });
 
 test("loads approved buyer profile as deterministic match profile", async () => {
@@ -280,6 +289,32 @@ test("preview marks missing and cross-brand properties without leaking raw rows"
   ]);
   assert.equal(JSON.stringify(result).includes("internal_notes"), false);
   assert.equal(JSON.stringify(result).includes("do not expose"), false);
+});
+
+test("preview can match properties resolved through legacy reference field", async () => {
+  const result = await previewLeadPropertyMatchesForProfile(
+    {
+      brand: "soleada",
+      buyerProfileId,
+      propertyReferences: ["N8514"],
+    },
+    approvedProfile(),
+    async () => [
+      {
+        id: eligiblePropertyId,
+        reference: "N8514",
+        brand: "soleada",
+        property_type: "apartment",
+        price: 360000,
+        bedrooms: 2,
+        has_lift: true,
+        terrace_area_m2: 24,
+      },
+    ],
+  );
+
+  assert.equal(result.missingPropertyReferences.length, 0);
+  assert.equal(result.matched, 1);
 });
 
 test("preview reports unknown buyer profile as stable safe error", async () => {
