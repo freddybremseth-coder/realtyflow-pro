@@ -127,6 +127,7 @@ interface ReviewCriterionRow {
 
 type PropertyMatchEligibility = "eligible" | "conditional" | "rejected";
 type MatchReviewDecision = "system" | "current" | "maybe" | "needs_research" | "rejected";
+type SelectedShortlistDecision = Exclude<MatchReviewDecision, "system" | "rejected">;
 
 interface PropertyMatchPreviewResponse {
   ok: true;
@@ -236,6 +237,63 @@ function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matche
     match.property.bathrooms === null ? null : `${match.property.bathrooms} bad`,
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+function propertyDisplayName(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
+  return match.property.title || match.property.reference || shortPropertyId(match.propertyId);
+}
+
+function decisionLabelForPresentation(decision: SelectedShortlistDecision) {
+  switch (decision) {
+    case "current":
+      return "Aktuell";
+    case "maybe":
+      return "Kanskje";
+    case "needs_research":
+      return "Må undersøkes";
+  }
+}
+
+function buildShortlistEmailDraft(
+  lead: ExtractedLead,
+  matches: Array<PropertyMatchPreviewResponse["result"]["matches"][number] & { decision: SelectedShortlistDecision }>,
+) {
+  const contactName = lead.contact.name?.trim() || "kunden";
+  const locationText = lead.locations.preferred.length > 0
+    ? lead.locations.preferred.join(", ")
+    : lead.locations.flexible
+      ? "fleksibelt område"
+      : "området vi har snakket om";
+  const budgetText = lead.budget.amount
+    ? `Budsjett: ca. ${formatCurrency(lead.budget.amount)}${lead.budget.includesCosts ? " inkludert omkostninger" : ""}.`
+    : "Budsjett må avklares.";
+  const propertyLines = matches.map((match, index) => {
+    const facts = propertyFactsLine(match);
+    const reasons = match.reasonsForMatch.slice(0, 2).join(" ");
+    const concerns = match.concerns.length > 0
+      ? ` Må avklares: ${match.concerns.slice(0, 2).join(" ")}`
+      : "";
+    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Status: ${decisionLabelForPresentation(match.decision)}\n   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}${concerns}`;
+  });
+
+  return {
+    subject: `Boligforslag basert på behovene dine - ${locationText}`,
+    body: [
+      `Hei ${contactName},`,
+      "",
+      "Jeg har sett på boligene opp mot kriteriene vi har notert så langt.",
+      budgetText,
+      "",
+      "Foreløpig shortlist:",
+      ...propertyLines,
+      "",
+      "Pris, tilgjengelighet og detaljer må verifiseres før vi går videre.",
+      "Gi meg gjerne beskjed om hvilke av disse du ønsker at jeg undersøker nærmere.",
+      "",
+      "Vennlig hilsen",
+      "Freddy",
+    ].join("\n"),
+  };
 }
 
 function matchReviewDecisionLabel(decision: MatchReviewDecision) {
@@ -509,6 +567,7 @@ export function LeadIntelligenceClient({
   const [shortlistSaveLoading, setShortlistSaveLoading] = useState(false);
   const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
+  const [emailDraftCopyState, setEmailDraftCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -536,6 +595,22 @@ export function LeadIntelligenceClient({
         item.decision === "needs_research",
       );
   }, [matchReviewDecisions, propertyMatchResult]);
+  const selectedShortlistMatches = useMemo(() => {
+    if (!propertyMatchResult) return [];
+    const selectedById = new Map(selectedShortlistItems.map((item) => [item.propertyId, item.decision]));
+    return propertyMatchResult.result.matches
+      .map((match) => {
+        const decision = selectedById.get(match.propertyId);
+        return decision ? { ...match, decision } : null;
+      })
+      .filter((match): match is PropertyMatchPreviewResponse["result"]["matches"][number] & { decision: SelectedShortlistDecision } =>
+        Boolean(match),
+      );
+  }, [propertyMatchResult, selectedShortlistItems]);
+  const shortlistEmailDraft = useMemo(() => {
+    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
+    return buildShortlistEmailDraft(edited, selectedShortlistMatches);
+  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
 
   const clearPropertyMatchPreview = () => {
     setPropertyMatchError(null);
@@ -543,6 +618,7 @@ export function LeadIntelligenceClient({
     setMatchReviewDecisions({});
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
+    setEmailDraftCopyState("idle");
   };
 
   const clearContactCandidates = () => {
@@ -794,6 +870,7 @@ export function LeadIntelligenceClient({
       setMatchReviewDecisions({});
       setShortlistSaveError(null);
       setShortlistSaveResult(null);
+      setEmailDraftCopyState("idle");
     } catch {
       setPropertyMatchError({
         correlationId: "client",
@@ -810,6 +887,7 @@ export function LeadIntelligenceClient({
     setShortlistSaveLoading(true);
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
+    setEmailDraftCopyState("idle");
 
     try {
       const res = await fetch("/api/lead-intelligence/shortlists", {
@@ -844,6 +922,16 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setShortlistSaveLoading(false);
+    }
+  };
+
+  const copyEmailDraft = async () => {
+    if (!shortlistEmailDraft) return;
+    try {
+      await navigator.clipboard.writeText(`Emne: ${shortlistEmailDraft.subject}\n\n${shortlistEmailDraft.body}`);
+      setEmailDraftCopyState("copied");
+    } catch {
+      setEmailDraftCopyState("failed");
     }
   };
 
@@ -1726,12 +1814,15 @@ export function LeadIntelligenceClient({
                                     <select
                                       id={`match-review-${match.propertyId}`}
                                       value={reviewDecision}
-                                      onChange={(event) =>
+                                      onChange={(event) => {
                                         setMatchReviewDecisions((current) => ({
                                           ...current,
                                           [match.propertyId]: event.target.value as MatchReviewDecision,
-                                        }))
-                                      }
+                                        }));
+                                        setShortlistSaveError(null);
+                                        setShortlistSaveResult(null);
+                                        setEmailDraftCopyState("idle");
+                                      }}
                                       className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                                     >
                                       <option value="system">Systemforslag</option>
@@ -1805,6 +1896,69 @@ export function LeadIntelligenceClient({
                             </div>
                           )}
 
+                          {shortlistEmailDraft && (
+                            <div className="mt-3 space-y-3 rounded-lg border border-primary-500/30 bg-primary-500/10 p-3">
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <p className="flex items-center gap-2 text-sm font-semibold text-primary-100">
+                                    <MessageSquareText className="h-4 w-4" />
+                                    Lokalt presentasjons- og e-postutkast
+                                  </p>
+                                  <p className="mt-1 text-xs text-primary-100/75">
+                                    Dette er bare en preview basert på shortlist-utkastet. Ingen e-post er sendt,
+                                    og ingen presentasjon er lagret eller publisert.
+                                  </p>
+                                </div>
+                                <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                  <Clipboard className="mr-2 h-4 w-4" />
+                                  Kopier e-postutkast
+                                </Button>
+                              </div>
+
+                              <div className="grid gap-3 lg:grid-cols-2">
+                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Valgte boliger
+                                  </p>
+                                  <div className="mt-3 space-y-2">
+                                    {selectedShortlistMatches.map((match) => (
+                                      <div key={match.propertyId} className="rounded border border-slate-800 bg-slate-950/70 p-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="text-sm font-semibold text-slate-100">{propertyDisplayName(match)}</p>
+                                          <Badge variant={matchReviewDecisionVariant(match.decision)}>
+                                            {decisionLabelForPresentation(match.decision)}
+                                          </Badge>
+                                        </div>
+                                        {propertyFactsLine(match) && (
+                                          <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
+                                        )}
+                                        {match.concerns.length > 0 && (
+                                          <p className="mt-1 text-xs text-amber-200">
+                                            Må avklares: {match.concerns.slice(0, 2).join(" ")}
+                                          </p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    E-postutkast
+                                  </p>
+                                  <p className="mt-3 text-sm font-semibold text-slate-100">{shortlistEmailDraft.subject}</p>
+                                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-200">{shortlistEmailDraft.body}</pre>
+                                  {emailDraftCopyState === "copied" && (
+                                    <p className="mt-2 text-xs text-emerald-300">E-postutkast kopiert.</p>
+                                  )}
+                                  {emailDraftCopyState === "failed" && (
+                                    <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-postutkastet.</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           {shortlistSaveError && (
                             <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
                               <p className="font-semibold">{shortlistSaveError.code}</p>
@@ -1832,7 +1986,7 @@ export function LeadIntelligenceClient({
 
                         <p className="text-xs text-slate-500">
                           E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                          Matcher lagret: nei · Shortlist opprettet: nei · Correlation ID: {propertyMatchResult.correlationId}
+                          Matcher lagret: nei · Correlation ID: {propertyMatchResult.correlationId}
                         </p>
                       </div>
                     )}
