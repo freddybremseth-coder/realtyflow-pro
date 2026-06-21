@@ -1185,6 +1185,11 @@ export function LeadIntelligenceClient({
                       Match-preview behandler valgt område som et krav. Eiendommer i andre områder skal avvises eller få tydelig avvik.
                     </p>
                   )}
+                  {edited.locations.flexible && edited.locations.preferred.length > 0 && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Fleksibelt betyr nærområde rundt valgt sted. Når systemet kjenner områdene, avvises boliger som ligger mer enn ca. 30 km unna.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">

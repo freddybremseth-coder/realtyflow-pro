@@ -538,7 +538,10 @@ export async function previewLeadPropertyMatchesForProfile(
   }
 
   const maxResults = request.maxResults ?? (request.autoDiscover ? 10 : request.propertyReferences.length);
-  const ranked = rankPropertyMatches(matches)
+  const rankedCandidates = request.autoDiscover
+    ? rankPropertyMatches(matches).filter((match) => match.eligibility !== "rejected")
+    : rankPropertyMatches(matches);
+  const ranked = rankedCandidates
     .slice(0, maxResults)
     .map((match) => ({
       ...match,
