@@ -241,6 +241,9 @@ export type LeadIntelligenceErrorCode =
   | "AI_TIMEOUT"
   | "AI_INVALID_OUTPUT"
   | "AI_PROVIDER_ERROR"
+  | "PROPERTY_MATCHING_DISABLED"
+  | "BUYER_PROFILE_NOT_FOUND"
+  | "PROPERTY_MATCHING_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 export class LeadIntelligenceError extends Error {
