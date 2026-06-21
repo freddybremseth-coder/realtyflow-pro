@@ -489,6 +489,7 @@ test("preview can auto-discover bounded inventory candidates without explicit re
   );
 
   assert.equal(result.discoveryMode, "auto");
+  assert.equal(result.bestEffort, false);
   assert.equal(result.candidateLimit, 3);
   assert.equal(result.analyzed, 2);
   assert.equal(result.matched, 1);
@@ -573,9 +574,96 @@ test("auto-discovery does not return rejected properties outside the flexible lo
   );
 
   assert.equal(result.analyzed, 2);
+  assert.equal(result.bestEffort, false);
   assert.equal(result.matched, 1);
   assert.deepEqual(result.matches.map((match) => match.propertyId), [eligiblePropertyId]);
   assert.equal(JSON.stringify(result).includes("Finestrat"), false);
+});
+
+test("auto-discovery returns best-effort alternatives when every candidate is rejected", async () => {
+  const morairaProfile = {
+    ...approvedProfile(),
+    budget: {
+      amount: 700000,
+      currency: "EUR" as const,
+      includesCosts: null,
+      approximate: false,
+      hardLimit: null,
+    },
+    propertyTypes: ["villa"],
+    locations: {
+      preferred: ["Moraira"],
+      excluded: [],
+      flexible: true,
+    },
+    hardRequirements: [
+      {
+        key: "bedrooms" as const,
+        operator: "gte" as const,
+        value: 3,
+        sourceText: "3 soverom",
+        appliesToPropertyTypes: ["villa" as const],
+      },
+      {
+        key: "bathrooms" as const,
+        operator: "gte" as const,
+        value: 2,
+        sourceText: "2 bad",
+        appliesToPropertyTypes: ["villa" as const],
+      },
+    ],
+    preferences: [],
+    exclusions: [],
+  };
+
+  const result = await previewLeadPropertyMatches(
+    LeadPropertyMatchPreviewRequestSchema.parse({
+      brand: "soleada",
+      buyerProfileId,
+      autoDiscover: true,
+      candidateLimit: 10,
+      maxResults: 2,
+    }),
+    {
+      loadApprovedBuyerProfile: async () => morairaProfile,
+      loadProperties: async () => {
+        throw new Error("explicit lookup should not run");
+      },
+      loadCandidateProperties: async () => [
+        {
+          id: rejectedPropertyId,
+          brand: "soleada",
+          property_type: "villa",
+          price: 650000,
+          bedrooms: 3,
+          bathrooms: 2,
+          town: "Finestrat, Cala De Finestrat",
+          future_building_risk: false,
+        },
+        {
+          id: crossBrandPropertyId,
+          brand: "soleada",
+          property_type: "villa",
+          price: 680000,
+          bedrooms: 3,
+          bathrooms: 2,
+          town: "Elche",
+          future_building_risk: false,
+        },
+      ],
+    },
+  );
+
+  assert.equal(result.discoveryMode, "auto");
+  assert.equal(result.bestEffort, true);
+  assert.equal(result.analyzed, 2);
+  assert.equal(result.matched, 0);
+  assert.equal(result.matches.length, 2);
+  assert.ok(result.matches.every((match) => match.eligibility === "rejected"));
+  assert.ok(result.matches.every((match) =>
+    match.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")),
+  ));
+  assert.equal(result.sideEffects.matchesPersisted, false);
 });
 
 test("preview marks missing and cross-brand properties without leaking raw rows", async () => {
