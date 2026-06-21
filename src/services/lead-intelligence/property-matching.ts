@@ -22,6 +22,84 @@ type LocationMatchResult = {
   bonus: number;
 };
 
+const DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM = 30;
+const EARTH_RADIUS_KM = 6371;
+
+const KNOWN_LOCATION_CENTROIDS = [
+  {
+    name: "Moraira",
+    aliases: ["moraira", "moreira"],
+    lat: 38.6886,
+    lng: 0.1348,
+  },
+  {
+    name: "Teulada",
+    aliases: ["teulada"],
+    lat: 38.7295,
+    lng: 0.1036,
+  },
+  {
+    name: "Benitachell",
+    aliases: ["benitachell", "poble nou de benitatxell", "benitatxell"],
+    lat: 38.7326,
+    lng: 0.1433,
+  },
+  {
+    name: "Benissa",
+    aliases: ["benissa"],
+    lat: 38.714,
+    lng: 0.0519,
+  },
+  {
+    name: "Calpe",
+    aliases: ["calpe", "calp"],
+    lat: 38.6447,
+    lng: 0.0445,
+  },
+  {
+    name: "Javea",
+    aliases: ["javea", "jávea", "xabia", "xàbia"],
+    lat: 38.7899,
+    lng: 0.166,
+  },
+  {
+    name: "Denia",
+    aliases: ["denia", "dénia"],
+    lat: 38.8408,
+    lng: 0.1057,
+  },
+  {
+    name: "Altea",
+    aliases: ["altea"],
+    lat: 38.5989,
+    lng: -0.0514,
+  },
+  {
+    name: "Benidorm",
+    aliases: ["benidorm"],
+    lat: 38.5411,
+    lng: -0.1225,
+  },
+  {
+    name: "Finestrat",
+    aliases: ["finestrat", "cala de finestrat", "cala finestrat"],
+    lat: 38.567,
+    lng: -0.212,
+  },
+  {
+    name: "Elche",
+    aliases: ["elche", "elx"],
+    lat: 38.2699,
+    lng: -0.7126,
+  },
+  {
+    name: "San Miguel de Salinas",
+    aliases: ["san miguel de salinas"],
+    lat: 37.9797,
+    lng: -0.789,
+  },
+] as const;
+
 export interface CostProfile {
   resaleTaxRate: number;
   newBuildTaxRate: number;
@@ -603,6 +681,50 @@ function locationTextMatches(actual: string, expected: string) {
   );
 }
 
+function knownLocationFromText(value: string) {
+  const folded = fold(value);
+  const matches = KNOWN_LOCATION_CENTROIDS.filter((location) =>
+    location.aliases.some((alias) => {
+      const aliasFolded = fold(alias);
+      return folded === aliasFolded || folded.includes(aliasFolded);
+    }),
+  );
+
+  return matches.sort((left, right) => right.name.length - left.name.length)[0] || null;
+}
+
+function distanceKm(
+  left: { lat: number; lng: number },
+  right: { lat: number; lng: number },
+) {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRadians(right.lat - left.lat);
+  const dLng = toRadians(right.lng - left.lng);
+  const leftLat = toRadians(left.lat);
+  const rightLat = toRadians(right.lat);
+  const haversine =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(haversine));
+}
+
+function nearestPreferredLocationDistance(actual: string, preferred: string[]) {
+  const actualLocation = knownLocationFromText(actual);
+  if (!actualLocation) return null;
+
+  const distances = preferred
+    .map((location) => knownLocationFromText(location))
+    .filter((location): location is NonNullable<ReturnType<typeof knownLocationFromText>> => Boolean(location))
+    .map((preferredLocation) => ({
+      preferredLocation,
+      actualLocation,
+      distanceKm: distanceKm(preferredLocation, actualLocation),
+    }))
+    .sort((left, right) => left.distanceKm - right.distanceKm);
+
+  return distances[0] || null;
+}
+
 function locationMatchResult(
   profile: LeadMatchProfile,
   property: NormalizedPropertyForMatching,
@@ -669,6 +791,32 @@ function locationMatchResult(
       rejected: false,
       penalty: 0,
       bonus: profile.locations.flexible ? 8 : 14,
+    };
+  }
+
+  const flexibleDistance = profile.locations.flexible
+    ? nearestPreferredLocationDistance(actual, preferred)
+    : null;
+  if (flexibleDistance) {
+    const roundedDistance = Math.round(flexibleDistance.distanceKm);
+    const withinRadius = flexibleDistance.distanceKm <= DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM;
+    return {
+      result: {
+        key: "location",
+        outcome: withinRadius ? "pass" : "fail",
+        expected: {
+          preferred,
+          maxDistanceKm: DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM,
+        },
+        actual,
+        sourceField,
+        reason: withinRadius
+          ? `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}, within the flexible ${DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM} km radius.`
+          : `Property location ${actual} is about ${roundedDistance} km from preferred area ${flexibleDistance.preferredLocation.name}, outside the flexible ${DEFAULT_FLEXIBLE_LOCATION_RADIUS_KM} km radius.`,
+      },
+      rejected: !withinRadius,
+      penalty: withinRadius ? 0 : 30,
+      bonus: withinRadius ? 5 : 0,
     };
   }
 

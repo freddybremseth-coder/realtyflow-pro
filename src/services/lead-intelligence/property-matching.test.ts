@@ -333,6 +333,81 @@ test("flexible preferred location gives a bonus without rejecting other areas", 
   assert.ok(finestratMatch.score > alteaMatch.score);
 });
 
+test("flexible preferred Moraira rejects known areas outside the 30 km radius", () => {
+  const flexibleMorairaProfile = {
+    ...profile,
+    budget: {
+      amount: 700000,
+      currency: "EUR" as const,
+      includesCosts: null,
+      approximate: false,
+      hardLimit: null,
+    },
+    propertyTypes: ["villa" as const],
+    locations: {
+      preferred: ["Moraira"],
+      excluded: [],
+      flexible: true,
+    },
+    hardRequirements: [
+      {
+        key: "bedrooms" as const,
+        operator: "gte" as const,
+        value: 3,
+        sourceText: "3 soverom",
+        appliesToPropertyTypes: ["villa" as const],
+      },
+      {
+        key: "bathrooms" as const,
+        operator: "gte" as const,
+        value: 2,
+        sourceText: "2 bad",
+        appliesToPropertyTypes: ["villa" as const],
+      },
+    ],
+    preferences: [],
+    exclusions: [],
+  };
+
+  const benissaMatch = matchPropertyToLeadProfile(flexibleMorairaProfile, normalizePropertyForLeadMatching({
+    id: "prop-flex-benissa",
+    property_type: "villa",
+    price: 650000,
+    bedrooms: 3,
+    bathrooms: 2,
+    town: "Benissa",
+    future_building_risk: false,
+    description: "Villa close to Moraira.",
+  }));
+  const finestratMatch = matchPropertyToLeadProfile(flexibleMorairaProfile, normalizePropertyForLeadMatching({
+    id: "prop-flex-finestrat",
+    property_type: "villa",
+    price: 650000,
+    bedrooms: 3,
+    bathrooms: 2,
+    town: "Finestrat, Cala De Finestrat",
+    future_building_risk: false,
+    description: "Villa outside the Moraira radius.",
+  }));
+  const elcheMatch = matchPropertyToLeadProfile(flexibleMorairaProfile, normalizePropertyForLeadMatching({
+    id: "prop-flex-elche",
+    property_type: "villa",
+    price: 650000,
+    bedrooms: 3,
+    bathrooms: 2,
+    town: "Elche",
+    future_building_risk: false,
+    description: "Villa far from Moraira.",
+  }));
+
+  assert.notEqual(benissaMatch.eligibility, "rejected");
+  assert.ok(benissaMatch.reasonsForMatch.some((reason) => reason.includes("within the flexible 30 km radius")));
+  assert.equal(finestratMatch.eligibility, "rejected");
+  assert.equal(elcheMatch.eligibility, "rejected");
+  assert.ok(finestratMatch.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")));
+  assert.ok(elcheMatch.concerns.some((concern) => concern.includes("outside the flexible 30 km radius")));
+});
+
 test("matching is deterministic and ranking is stable", () => {
   const good = matchPropertyToLeadProfile(profile, normalizePropertyForLeadMatching({
     id: "prop-a",
