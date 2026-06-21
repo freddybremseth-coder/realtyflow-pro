@@ -134,7 +134,7 @@ interface PropertyMatchPreviewResponse {
     buyerProfileId: string;
     analyzed: number;
     matched: number;
-    missingPropertyIds: string[];
+    missingPropertyReferences: string[];
     skippedProperties: Array<{
       propertyId: string;
       reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
@@ -309,29 +309,29 @@ function JsonSection({
   );
 }
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const propertyReferencePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 
-function parsePropertyIds(value: string) {
-  const ids = value
+function parsePropertyReferences(value: string) {
+  const references = value
     .split(/[\s,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
-  const unique = Array.from(new Set(ids));
+  const unique = Array.from(new Map(references.map((reference) => [reference.toLowerCase(), reference])).values());
 
-  if (ids.length !== unique.length) {
-    return { ids: unique, error: "Property IDs må være unike." };
+  if (references.length !== unique.length) {
+    return { references: unique, error: "Eiendomsreferanser må være unike." };
   }
 
   if (unique.length > 20) {
-    return { ids: unique.slice(0, 20), error: "Maks 20 property IDs kan forhåndsvises samtidig." };
+    return { references: unique.slice(0, 20), error: "Maks 20 eiendomsreferanser kan forhåndsvises samtidig." };
   }
 
-  const invalid = unique.find((id) => !uuidPattern.test(id));
+  const invalid = unique.find((reference) => !propertyReferencePattern.test(reference));
   if (invalid) {
-    return { ids: unique, error: `Ugyldig property UUID: ${invalid}` };
+    return { references: unique, error: `Ugyldig eiendomsreferanse: ${invalid}` };
   }
 
-  return { ids: unique, error: null };
+  return { references: unique, error: null };
 }
 
 function MatchList({
@@ -386,7 +386,7 @@ export function LeadIntelligenceClient({
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
-  const [propertyIdsText, setPropertyIdsText] = useState("");
+  const [propertyReferencesText, setPropertyReferencesText] = useState("");
   const [propertyMatchLoading, setPropertyMatchLoading] = useState(false);
   const [propertyMatchError, setPropertyMatchError] = useState<SafeErrorResponse["error"] | null>(null);
   const [propertyMatchResult, setPropertyMatchResult] = useState<PropertyMatchPreviewResponse | null>(null);
@@ -400,7 +400,10 @@ export function LeadIntelligenceClient({
     (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
   ).length;
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
-  const parsedPropertyIds = useMemo(() => parsePropertyIds(propertyIdsText), [propertyIdsText]);
+  const parsedPropertyReferences = useMemo(
+    () => parsePropertyReferences(propertyReferencesText),
+    [propertyReferencesText],
+  );
 
   const clearPropertyMatchPreview = () => {
     setPropertyMatchError(null);
@@ -487,7 +490,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
-    setPropertyIdsText("");
+    setPropertyReferencesText("");
     clearPropertyMatchPreview();
   };
 
@@ -615,7 +618,7 @@ export function LeadIntelligenceClient({
   };
 
   const previewPropertyMatches = async () => {
-    if (!saveResult || !propertyMatchingEnabled || parsedPropertyIds.error) return;
+    if (!saveResult || !propertyMatchingEnabled || parsedPropertyReferences.error) return;
     setPropertyMatchLoading(true);
     setPropertyMatchError(null);
     setPropertyMatchResult(null);
@@ -630,8 +633,8 @@ export function LeadIntelligenceClient({
         body: JSON.stringify({
           brand,
           buyerProfileId: saveResult.result.buyerProfile.id,
-          propertyIds: parsedPropertyIds.ids,
-          maxResults: parsedPropertyIds.ids.length,
+          propertyReferences: parsedPropertyReferences.references,
+          maxResults: parsedPropertyReferences.references.length,
         }),
       });
       const body = (await res.json()) as PropertyMatchPreviewResponse | SafeErrorResponse;
@@ -1277,7 +1280,7 @@ export function LeadIntelligenceClient({
                       <div>
                         <h2 className="text-sm font-semibold text-slate-200">Eiendomsmatch-preview</h2>
                         <p className="mt-1 text-xs text-slate-500">
-                          Lim inn eksplisitte property-ID-er for å forhåndsvise deterministisk match mot denne
+                          Lim inn eksplisitte eiendomsreferanser, for eksempel N8513 eller en database-UUID, for å forhåndsvise deterministisk match mot denne
                           kjøperprofilen. Resultatet lagres ikke og lager ingen shortlist.
                         </p>
                       </div>
@@ -1294,24 +1297,24 @@ export function LeadIntelligenceClient({
                     )}
 
                     <div className="mt-4 space-y-2">
-                      <FieldLabel>Property IDs</FieldLabel>
+                      <FieldLabel>Eiendomsreferanser</FieldLabel>
                       <textarea
-                        value={propertyIdsText}
+                        value={propertyReferencesText}
                         onChange={(event) => {
-                          setPropertyIdsText(event.target.value);
+                          setPropertyReferencesText(event.target.value);
                           clearPropertyMatchPreview();
                         }}
                         rows={4}
-                        placeholder="Én UUID per linje, eller separert med komma..."
+                        placeholder="F.eks. N8513, N8514 eller én database-UUID per linje..."
                         className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
                       />
                       <p className="text-xs text-slate-500">
-                        Maks 20 eksplisitte property-ID-er. UI-et gjør ikke automatisk inventory-søk.
+                        Maks 20 eksplisitte eiendomsreferanser. UI-et gjør ikke automatisk inventory-søk.
                       </p>
                     </div>
 
-                    {parsedPropertyIds.error && (
-                      <p className="mt-2 text-sm text-amber-300">{parsedPropertyIds.error}</p>
+                    {parsedPropertyReferences.error && (
+                      <p className="mt-2 text-sm text-amber-300">{parsedPropertyReferences.error}</p>
                     )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1323,8 +1326,8 @@ export function LeadIntelligenceClient({
                           propertyMatchLoading ||
                           !propertyMatchingEnabled ||
                           !saveResult ||
-                          parsedPropertyIds.ids.length === 0 ||
-                          Boolean(parsedPropertyIds.error)
+                          parsedPropertyReferences.references.length === 0 ||
+                          Boolean(parsedPropertyReferences.error)
                         }
                       >
                         {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
@@ -1358,7 +1361,7 @@ export function LeadIntelligenceClient({
                           </div>
                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                             <p className="text-xs uppercase tracking-wide text-slate-500">Mangler</p>
-                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyIds.length}</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyReferences.length}</p>
                           </div>
                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                             <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
@@ -1402,12 +1405,12 @@ export function LeadIntelligenceClient({
                           ))}
                         </div>
 
-                        {(propertyMatchResult.result.missingPropertyIds.length > 0 ||
+                        {(propertyMatchResult.result.missingPropertyReferences.length > 0 ||
                           propertyMatchResult.result.skippedProperties.length > 0) && (
                           <JsonSection
                             title="Diagnostics"
                             value={{
-                              missingPropertyIds: propertyMatchResult.result.missingPropertyIds,
+                              missingPropertyReferences: propertyMatchResult.result.missingPropertyReferences,
                               skippedProperties: propertyMatchResult.result.skippedProperties,
                             }}
                           />

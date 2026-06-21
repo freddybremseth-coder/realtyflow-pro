@@ -35,7 +35,7 @@ The browser cannot enable it.
 {
   "brand": "soleada",
   "buyerProfileId": "11111111-1111-4111-8111-111111111111",
-  "propertyIds": ["22222222-2222-4222-8222-222222222222"],
+  "propertyReferences": ["N8513", "22222222-2222-4222-8222-222222222222"],
   "maxResults": 10
 }
 ```
@@ -44,8 +44,12 @@ Constraints:
 
 - `brand` must be an allowed real-estate brand
 - `buyerProfileId` must refer to an approved buyer profile for the same brand
-- `propertyIds` must be unique UUIDs
+- `propertyReferences` must be unique and can be database UUIDs, `properties.ref`,
+  or `properties.external_id` values such as `N8513`
 - at most 20 properties can be evaluated per request
+
+For backwards compatibility the route still accepts `propertyIds`, but new
+callers should send `propertyReferences`.
 
 ## Response
 
@@ -73,8 +77,9 @@ Buyer profile data is read through the dedicated Lead Intelligence runtime
 database connection in a short read-only transaction with server-set brand
 context.
 
-Inventory rows are read server-side by explicit property ID only. The service
-role key is never sent to the browser.
+Inventory rows are read server-side by explicit property reference only. The
+server resolves each reference against `properties.id`, `properties.ref`, and
+`properties.external_id`. The service role key is never sent to the browser.
 
 ## Production Notes
 

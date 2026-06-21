@@ -15,6 +15,7 @@ import { POST } from "./route";
 const VALID_CORRELATION_ID = "rf_mqtest000_0123456789abcdef01234567";
 const buyerProfileId = "11111111-1111-4111-8111-111111111111";
 const propertyId = "22222222-2222-4222-8222-222222222222";
+const propertyRef = "N8513";
 
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
   return `realtyflow_admin=${await createAdminSession(email)}`;
@@ -36,7 +37,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
   return {
     brand: "soleada",
     buyerProfileId,
-    propertyIds: [propertyId],
+    propertyReferences: [propertyRef],
     ...overrides,
   };
 }
@@ -101,7 +102,7 @@ test("property match preview validates request before database access", async ()
       {
         brand: "neuralbeat",
         buyerProfileId,
-        propertyIds: [propertyId],
+        propertyReferences: [propertyRef],
       },
       { cookie: await adminCookie() },
     ) as any,
