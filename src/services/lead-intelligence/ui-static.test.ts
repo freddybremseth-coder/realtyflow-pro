@@ -47,9 +47,27 @@ test("Lead Intelligence preview clears stale candidates before review save", asy
   const source = await readFile(clientPath, "utf8");
 
   assert.equal(source.includes("const clearContactCandidates = () =>"), true);
+  assert.equal(source.includes("setContactCandidatesLoaded(false);"), true);
   assert.equal(source.includes("setContactCandidates([]);"), true);
   assert.equal(source.includes("setSelectedContactId(null);"), true);
   assert.equal(source.includes("          contactCandidates,\n          reviewedCriteria"), false);
+});
+
+test("Lead Intelligence preview distinguishes not-loaded and empty contact candidate lookup", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("Ingen kontaktkandidater hentet ennå."), true);
+  assert.equal(
+    source.includes("Kandidatoppslag fullført. Ingen matchende kontaktkandidater funnet."),
+    true,
+  );
+  assert.equal(source.includes("kontaktkandidat{contactCandidates.length === 1"), true);
+});
+
+test("Lead Intelligence preview does not expose contact lookup hashes", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("matchValueHash"), false);
 });
 
 test("Lead Intelligence preview sends stable criterion fingerprints instead of array indexes", async () => {

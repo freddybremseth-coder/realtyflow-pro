@@ -68,6 +68,17 @@ export const LeadIntelligenceCandidatePreviewSchema = z
   })
   .strict();
 
+export type LeadContactCandidatePublicPreview = Omit<
+  LeadContactCandidatePreview,
+  "matchValueHash"
+>;
+
+export function redactLeadContactCandidatePreviews(
+  candidates: LeadContactCandidatePreview[],
+): LeadContactCandidatePublicPreview[] {
+  return candidates.map(({ matchValueHash: _matchValueHash, ...candidate }) => candidate);
+}
+
 export const LeadIntelligenceContactCandidatesRequestSchema = z
   .object({
     brand: LeadIntelligenceRealEstateBrandSchema,
