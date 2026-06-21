@@ -102,6 +102,7 @@ interface ReviewSaveResponse {
 
 interface Props {
   featureEnabled: boolean;
+  persistenceEnabled: boolean;
   connectExistingEnabled: boolean;
 }
 
@@ -268,7 +269,11 @@ function JsonSection({
   );
 }
 
-export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled }: Props) {
+export function LeadIntelligenceClient({
+  featureEnabled,
+  persistenceEnabled,
+  connectExistingEnabled,
+}: Props) {
   const [source, setSource] = useState<Source>("phone_call");
   const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
   const [language, setLanguage] = useState("");
@@ -403,7 +408,7 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
   };
 
   const loadContactCandidates = async () => {
-    if (!edited) return;
+    if (!edited || !persistenceEnabled) return;
     setCandidateLoading(true);
     setContactCandidatesLoaded(false);
     setContactCandidateError(null);
@@ -442,7 +447,7 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
   };
 
   const saveReview = async () => {
-    if (!edited || !response || !allCriteriaReviewed || jsonEditor.error) return;
+    if (!edited || !response || !persistenceEnabled || !allCriteriaReviewed || jsonEditor.error) return;
     setSaveLoading(true);
     setSaveError(null);
     setSaveResult(null);
@@ -536,6 +541,21 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
               <p className="font-semibold">Lead Intelligence er deaktivert i dette miljøet.</p>
               <p className="text-sm text-amber-100/80">
                 Serveren må ha REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=true for å åpne analysepreviewet.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {featureEnabled && !persistenceEnabled && (
+        <Card className="border-amber-500/30 bg-amber-500/10">
+          <CardContent className="flex items-start gap-3 pt-5 text-amber-100">
+            <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
+            <div>
+              <p className="font-semibold">Lagring er deaktivert i dette miljøet.</p>
+              <p className="text-sm text-amber-100/80">
+                Analysepreviewet kan brukes, men kontaktkandidatoppslag og lagring krever
+                REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=true på serveren.
               </p>
             </div>
           </CardContent>
@@ -886,11 +906,17 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
                       type="button"
                       variant="outline"
                       onClick={loadContactCandidates}
-                      disabled={candidateLoading || !edited}
+                      disabled={candidateLoading || !edited || !persistenceEnabled}
                     >
                       {candidateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                       Vis kontaktkandidater
                     </Button>
+
+                    {!persistenceEnabled && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                        Kontaktkandidatoppslag er deaktivert sammen med persistence. Ingen databaseoppslag kjøres fra denne visningen.
+                      </div>
+                    )}
 
                     {contactCandidateError && (
                       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
@@ -1021,6 +1047,7 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
                       onClick={saveReview}
                       disabled={
                         saveLoading ||
+                        !persistenceEnabled ||
                         Boolean(jsonEditor.error) ||
                         !allCriteriaReviewed ||
                         (contactDecision === "connect_existing" && !selectedContactId)
@@ -1034,6 +1061,12 @@ export function LeadIntelligenceClient({ featureEnabled, connectExistingEnabled 
                   {!allCriteriaReviewed && (
                     <p className="mt-3 text-sm text-amber-300">
                       Alle kriterier må godkjennes eller avvises før lagring.
+                    </p>
+                  )}
+
+                  {!persistenceEnabled && (
+                    <p className="mt-3 text-sm text-amber-300">
+                      Lagring er av i dette miljøet. Analyse og lokal redigering fungerer fortsatt, men ingen intake eller buyer profile skrives.
                     </p>
                   )}
 
