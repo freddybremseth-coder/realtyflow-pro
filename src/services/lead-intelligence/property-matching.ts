@@ -15,6 +15,12 @@ type BudgetInput = ExtractedLead["budget"];
 type RequirementInput = ExtractedLead["hardRequirements"][number];
 type PreferenceInput = ExtractedLead["preferences"][number];
 type ExclusionInput = ExtractedLead["exclusions"][number];
+type LocationMatchResult = {
+  result: MatchCriterionResult | null;
+  rejected: boolean;
+  penalty: number;
+  bonus: number;
+};
 
 export interface CostProfile {
   resaleTaxRate: number;
@@ -570,6 +576,112 @@ function budgetMatchResult(
   };
 }
 
+function cleanLocationValues(values: string[]) {
+  return uniqueLimited(
+    values
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+    20,
+  );
+}
+
+function locationTextMatches(actual: string, expected: string) {
+  const actualFolded = fold(actual);
+  const expectedFolded = fold(expected);
+  return (
+    actualFolded === expectedFolded ||
+    actualFolded.includes(expectedFolded) ||
+    expectedFolded.includes(actualFolded)
+  );
+}
+
+function locationMatchResult(
+  profile: LeadMatchProfile,
+  property: NormalizedPropertyForMatching,
+): LocationMatchResult {
+  const preferred = cleanLocationValues(profile.locations.preferred);
+  const excluded = cleanLocationValues(profile.locations.excluded);
+  if (preferred.length === 0 && excluded.length === 0) {
+    return { result: null, rejected: false, penalty: 0, bonus: 0 };
+  }
+
+  const fact = property.facts.location;
+  const actual = typeof fact?.value === "string" ? fact.value.trim() : "";
+  const sourceField = fact?.sourceField ?? null;
+  const verificationStatus = fact?.verificationStatus ?? "unknown";
+
+  if (!actual) {
+    return {
+      result: {
+        key: "location",
+        outcome: "unknown",
+        expected: { preferred, excluded },
+        actual: null,
+        sourceField,
+        reason: "Property location is unknown and must be verified against the buyer area preference.",
+      },
+      rejected: false,
+      penalty: preferred.length > 0 && profile.locations.flexible === false ? 12 : 6,
+      bonus: 0,
+    };
+  }
+
+  const excludedMatch = excluded.find((location) => locationTextMatches(actual, location));
+  if (excludedMatch) {
+    return {
+      result: {
+        key: "location",
+        outcome: "fail",
+        expected: excluded,
+        actual,
+        sourceField,
+        reason: `Property location ${actual} is in an excluded area (${excludedMatch}).`,
+      },
+      rejected: true,
+      penalty: 35,
+      bonus: 0,
+    };
+  }
+
+  if (preferred.length === 0) {
+    return { result: null, rejected: false, penalty: 0, bonus: 0 };
+  }
+
+  const preferredMatch = preferred.find((location) => locationTextMatches(actual, location));
+  if (preferredMatch) {
+    return {
+      result: {
+        key: "location",
+        outcome: "pass",
+        expected: preferred,
+        actual,
+        sourceField,
+        reason: `Property location ${actual} matches preferred area ${preferredMatch} (${verificationStatus}).`,
+      },
+      rejected: false,
+      penalty: 0,
+      bonus: profile.locations.flexible ? 8 : 14,
+    };
+  }
+
+  const hardAreaPreference = profile.locations.flexible === false;
+  return {
+    result: {
+      key: "location",
+      outcome: "fail",
+      expected: preferred,
+      actual,
+      sourceField,
+      reason: hardAreaPreference
+        ? `Property location ${actual} does not match the required preferred area.`
+        : `Property location ${actual} is outside the preferred area.`,
+    },
+    rejected: hardAreaPreference,
+    penalty: hardAreaPreference ? 28 : 10,
+    bonus: 0,
+  };
+}
+
 function factLabels(
   property: NormalizedPropertyForMatching,
   status: "verified" | "unverified" | "inferred" | "unknown",
@@ -603,6 +715,7 @@ export function matchPropertyToLeadProfile(
     return result;
   });
   const budget = budgetMatchResult(profile, property, options);
+  const location = locationMatchResult(profile, property);
 
   const hardFailures = hardRequirementResults.filter((result) => result.outcome === "fail");
   const hardUnknowns = hardRequirementResults.filter((result) => result.outcome === "unknown");
@@ -621,21 +734,24 @@ export function matchPropertyToLeadProfile(
 
   const penaltyScore =
     budget.penalty +
+    location.penalty +
     exclusionPenalties.length * 14 +
     hardUnknowns.length * 8 +
     preferenceResults.filter((result) => result.outcome === "unknown").length * 4;
 
-  const baseScore = 45 + preferenceScore + property.dataQualityScore * 0.2;
+  const baseScore = 45 + preferenceScore + property.dataQualityScore * 0.2 + location.bonus;
   let score = Math.round(Math.max(0, Math.min(100, baseScore - penaltyScore)));
 
-  const rejected = hardFailures.length > 0 || rejectingExclusions.length > 0 || budget.rejected;
+  const rejected = hardFailures.length > 0 || rejectingExclusions.length > 0 || budget.rejected || location.rejected;
   const conditional =
     !rejected &&
     (hardUnknowns.length > 0 ||
       preferenceResults.some((result) => result.outcome === "unknown") ||
       exclusionResults.some((result) => result.outcome === "unknown") ||
       budget.result?.outcome === "unknown" ||
-      budget.result?.outcome === "fail");
+      budget.result?.outcome === "fail" ||
+      location.result?.outcome === "unknown" ||
+      location.result?.outcome === "fail");
 
   if (rejected) score = Math.min(score, 25);
   if (conditional) score = Math.min(score, 75);
@@ -643,12 +759,14 @@ export function matchPropertyToLeadProfile(
   const reasonsForMatch = uniqueLimited([
     ...hardRequirementResults.filter((result) => result.outcome === "pass").map((result) => result.reason),
     ...preferenceResults.filter((result) => result.outcome === "pass").map((result) => result.reason),
+    ...(location.result?.outcome === "pass" ? [location.result.reason] : []),
     ...(budget.result?.outcome === "pass" ? [budget.result.reason] : []),
   ]);
 
   const concerns = uniqueLimited([
     ...hardRequirementResults.filter((result) => result.outcome === "fail").map((result) => result.reason),
     ...exclusionResults.filter((result) => result.outcome === "fail" || result.outcome === "penalty").map((result) => result.reason),
+    ...(location.result && location.result.outcome === "fail" ? [location.result.reason] : []),
     ...(budget.result && budget.result.outcome !== "pass" ? [budget.result.reason] : []),
   ]);
 
@@ -656,6 +774,7 @@ export function matchPropertyToLeadProfile(
     ...hardRequirementResults.filter((result) => result.outcome === "unknown").map((result) => result.reason),
     ...preferenceResults.filter((result) => result.outcome === "unknown").map((result) => result.reason),
     ...exclusionResults.filter((result) => result.outcome === "unknown").map((result) => result.reason),
+    ...(location.result?.outcome === "unknown" ? [location.result.reason] : []),
   ]);
 
   return PropertyMatchSchema.parse({

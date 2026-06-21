@@ -250,6 +250,89 @@ test("property clearly over total budget is rejected", () => {
   assert.ok(match.concerns.some((concern) => concern.includes("above the buyer budget")));
 });
 
+test("fixed preferred location rejects properties outside the requested area", () => {
+  const fixedFinestratProfile = {
+    ...profile,
+    locations: {
+      preferred: ["Finestrat"],
+      excluded: [],
+      flexible: false,
+    },
+  };
+  const finestrat = normalizePropertyForLeadMatching({
+    id: "prop-finestrat",
+    property_type: "apartment",
+    price: 350000,
+    bedrooms: 2,
+    terrace_size: 25,
+    has_lift: true,
+    is_top_floor: true,
+    town: "Finestrat",
+    future_building_risk: false,
+    description: "Top floor apartment with panoramic sea view.",
+  });
+  const altea = normalizePropertyForLeadMatching({
+    id: "prop-altea",
+    property_type: "apartment",
+    price: 350000,
+    bedrooms: 2,
+    terrace_size: 25,
+    has_lift: true,
+    is_top_floor: true,
+    town: "Altea",
+    future_building_risk: false,
+    description: "Top floor apartment with panoramic sea view.",
+  });
+
+  const finestratMatch = matchPropertyToLeadProfile(fixedFinestratProfile, finestrat);
+  const alteaMatch = matchPropertyToLeadProfile(fixedFinestratProfile, altea);
+
+  assert.equal(finestratMatch.eligibility, "eligible");
+  assert.ok(finestratMatch.score > alteaMatch.score);
+  assert.ok(finestratMatch.reasonsForMatch.some((reason) => reason.includes("preferred area Finestrat")));
+  assert.equal(alteaMatch.eligibility, "rejected");
+  assert.ok(alteaMatch.concerns.some((concern) => concern.includes("does not match the required preferred area")));
+});
+
+test("flexible preferred location gives a bonus without rejecting other areas", () => {
+  const flexibleFinestratProfile = {
+    ...profile,
+    locations: {
+      preferred: ["Finestrat"],
+      excluded: [],
+      flexible: true,
+    },
+  };
+  const finestratMatch = matchPropertyToLeadProfile(flexibleFinestratProfile, normalizePropertyForLeadMatching({
+    id: "prop-flex-finestrat",
+    property_type: "apartment",
+    price: 350000,
+    bedrooms: 2,
+    terrace_size: 25,
+    has_lift: true,
+    is_top_floor: true,
+    town: "Finestrat",
+    future_building_risk: false,
+    description: "Top floor apartment with panoramic sea view.",
+  }));
+  const alteaMatch = matchPropertyToLeadProfile(flexibleFinestratProfile, normalizePropertyForLeadMatching({
+    id: "prop-flex-altea",
+    property_type: "apartment",
+    price: 350000,
+    bedrooms: 2,
+    terrace_size: 25,
+    has_lift: true,
+    is_top_floor: true,
+    town: "Altea",
+    future_building_risk: false,
+    description: "Top floor apartment with panoramic sea view.",
+  }));
+
+  assert.equal(finestratMatch.eligibility, "eligible");
+  assert.notEqual(alteaMatch.eligibility, "rejected");
+  assert.ok(finestratMatch.score > alteaMatch.score);
+});
+
 test("matching is deterministic and ranking is stable", () => {
   const good = matchPropertyToLeadProfile(profile, normalizePropertyForLeadMatching({
     id: "prop-a",

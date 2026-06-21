@@ -79,6 +79,24 @@ The response contains only safe match DTOs from the deterministic matching
 engine. It does not include raw property rows, raw buyer-profile rows, database
 connection details, service-role credentials, or private customer data.
 
+Each match includes a bounded `property` summary for review UI display:
+
+- `id`
+- `reference`
+- `title`
+- `location`
+- `propertyType`
+- `price`
+- `bedrooms`
+- `bathrooms`
+- `primaryImageUrl`
+- `publicUrl`
+
+These fields are derived from existing inventory rows server-side and are
+intentionally limited to display-safe values. Internal notes, raw property rows,
+credentials, signed private URLs, customer data, and database internals are not
+returned.
+
 The response always reports side effects as false in this phase:
 
 ```json
@@ -105,6 +123,14 @@ brand-visibility rules where available, and then runs the deterministic matcher.
 In explicit mode, the server resolves each reference against `properties.id`,
 `properties.ref`, and `properties.external_id`. The service role key is never
 sent to the browser.
+
+The matcher also uses the approved Lead Intelligence analysis for location
+context when it is available and still validates against `ExtractedLeadSchema`.
+For example, a buyer profile with `locations.preferred = ["Finestrat"]` and
+`locations.flexible = false` treats non-Finestrat inventory as a hard mismatch.
+When the area is flexible, the same preference influences the score and
+explanation without automatically rejecting other areas. Unknown property
+location remains a verification question rather than a silent pass.
 
 ## Production Notes
 

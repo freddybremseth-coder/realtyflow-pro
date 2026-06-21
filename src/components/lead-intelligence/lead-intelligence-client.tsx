@@ -143,6 +143,18 @@ interface PropertyMatchPreviewResponse {
     }>;
     matches: Array<{
       propertyId: string;
+      property: {
+        id: string;
+        reference: string | null;
+        title: string | null;
+        location: string | null;
+        propertyType: string | null;
+        price: number | null;
+        bedrooms: number | null;
+        bathrooms: number | null;
+        primaryImageUrl: string | null;
+        publicUrl: string | null;
+      };
       score: number;
       eligibility: PropertyMatchEligibility;
       dataQualityScore: number;
@@ -179,6 +191,31 @@ const realEstateBrands = BRANDS.filter((brand) => brand.type === "real_estate");
 
 function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function shortPropertyId(propertyId: string) {
+  return propertyId.length > 12 ? `${propertyId.slice(0, 8)}...${propertyId.slice(-4)}` : propertyId;
+}
+
+function formatCurrency(value: number | null) {
+  if (value === null) return null;
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
+  const parts = [
+    match.property.reference ? `Ref ${match.property.reference}` : null,
+    match.property.location,
+    match.property.propertyType,
+    formatCurrency(match.property.price),
+    match.property.bedrooms === null ? null : `${match.property.bedrooms} sov`,
+    match.property.bathrooms === null ? null : `${match.property.bathrooms} bad`,
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 
 function parseJsonEditor(value: string) {
@@ -1410,23 +1447,57 @@ export function LeadIntelligenceClient({
                           {propertyMatchResult.result.matches.map((match) => (
                             <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                               <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div>
-                                  <p className="font-mono text-xs text-slate-400">{match.propertyId}</p>
-                                  <p className="mt-1 text-sm text-slate-200">
+                                <div className="flex min-w-0 gap-3">
+                                  {match.property.primaryImageUrl && (
+                                    <img
+                                      src={match.property.primaryImageUrl}
+                                      alt=""
+                                      className="h-20 w-28 flex-none rounded-md border border-slate-800 object-cover"
+                                      loading="lazy"
+                                    />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="truncate text-sm font-semibold text-slate-100">
+                                        {match.property.title ||
+                                          match.property.reference ||
+                                          shortPropertyId(match.propertyId)}
+                                      </p>
+                                      {match.property.publicUrl && (
+                                        <a
+                                          href={match.property.publicUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-xs text-primary-300 underline-offset-2 hover:underline"
+                                        >
+                                          Åpne
+                                        </a>
+                                      )}
+                                    </div>
+                                    {propertyFactsLine(match) && (
+                                      <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
+                                    )}
+                                    <p className="mt-1 font-mono text-[11px] text-slate-500">
+                                      ID {shortPropertyId(match.propertyId)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  <p className="text-sm text-slate-200">
                                     Score {match.score} · Data {match.dataQualityScore}
                                   </p>
+                                  <Badge
+                                    variant={
+                                      match.eligibility === "eligible"
+                                        ? "success"
+                                        : match.eligibility === "rejected"
+                                          ? "destructive"
+                                          : "warning"
+                                    }
+                                  >
+                                    {match.eligibility}
+                                  </Badge>
                                 </div>
-                                <Badge
-                                  variant={
-                                    match.eligibility === "eligible"
-                                      ? "success"
-                                      : match.eligibility === "rejected"
-                                        ? "destructive"
-                                        : "warning"
-                                  }
-                                >
-                                  {match.eligibility}
-                                </Badge>
                               </div>
                               <div className="mt-3 grid gap-3 lg:grid-cols-3">
                                 <MatchList title="Hvorfor match" items={match.reasonsForMatch} emptyLabel="Ingen positive matchgrunner." />
