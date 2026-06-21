@@ -81,10 +81,23 @@ test("Lead Intelligence preview sends stable criterion fingerprints instead of a
 test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", async () => {
   const source = await readFile(clientPath, "utf8");
 
+  assert.equal(source.includes("idempotencySeed: response.correlationId"), true);
   assert.equal(source.includes("Identisk review var allerede lagret."), true);
   assert.equal(source.includes("Ny lagring:"), true);
   assert.equal(source.includes("Duplicate:"), true);
   assert.equal(source.includes("Conflict:"), true);
+});
+
+test("Lead Intelligence preview clears stale save results when reviewed payload changes", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("const clearContactCandidates = () =>"), true);
+  assert.equal(source.includes("setSaveError(null);"), true);
+  assert.equal(source.includes("setSaveResult(null);"), true);
+  assert.equal(source.includes("const updateCriterionReview = "), true);
+  assert.equal(source.includes("setSource(event.target.value as Source);"), true);
+  assert.equal(source.includes("setLanguage(value);"), true);
+  assert.equal(source.includes("setContactDecision(\"connect_existing\");"), true);
 });
 
 test("Lead Intelligence preview surfaces safe review diagnostics", async () => {
