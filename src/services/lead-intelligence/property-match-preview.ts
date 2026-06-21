@@ -23,6 +23,9 @@ import {
 
 const UUIDSchema = z.string().uuid();
 const MAX_PROPERTY_MATCH_PREVIEW_ITEMS = 20;
+const DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT = 120;
+const MAX_AUTO_PROPERTY_CANDIDATE_LIMIT = 200;
+const AUTO_PROPERTY_SCAN_MULTIPLIER = 4;
 const PropertyReferenceSchema = z
   .string()
   .trim()
@@ -36,16 +39,26 @@ export const LeadPropertyMatchPreviewRequestSchema = z
     buyerProfileId: UUIDSchema,
     propertyReferences: z.array(PropertyReferenceSchema).min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
     propertyIds: z.array(UUIDSchema).min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
+    autoDiscover: z.boolean().optional(),
+    candidateLimit: z.number().int().min(1).max(MAX_AUTO_PROPERTY_CANDIDATE_LIMIT).optional(),
     maxResults: z.number().int().min(1).max(MAX_PROPERTY_MATCH_PREVIEW_ITEMS).optional(),
   })
   .strict()
   .superRefine((request, ctx) => {
-    const references = request.propertyReferences || request.propertyIds;
-    if (!references || references.length === 0) {
+    const references = request.propertyReferences || request.propertyIds || [];
+    if (request.autoDiscover && references.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["autoDiscover"],
+        message: "Use either autoDiscover or explicit propertyReferences, not both",
+      });
+      return;
+    }
+    if (!request.autoDiscover && references.length === 0) {
       ctx.addIssue({
         code: "custom",
         path: ["propertyReferences"],
-        message: "propertyReferences are required",
+        message: "propertyReferences are required unless autoDiscover is true",
       });
       return;
     }
@@ -62,6 +75,8 @@ export const LeadPropertyMatchPreviewRequestSchema = z
     brand: request.brand,
     buyerProfileId: request.buyerProfileId,
     propertyReferences: request.propertyReferences || request.propertyIds || [],
+    autoDiscover: request.autoDiscover === true,
+    candidateLimit: request.candidateLimit,
     maxResults: request.maxResults,
   }));
 
@@ -97,16 +112,22 @@ type PersistedCriterion = z.infer<typeof persistedCriterionSchema>;
 type PersistedProfile = z.infer<typeof persistedProfileSchema>;
 type RawProperty = Record<string, unknown>;
 type SupabasePropertyLookupError = { code?: string | null; message?: string | null };
+type SupabaseInventoryClient = {
+  from(table: string): ReturnType<ReturnType<typeof createClient>["from"]>;
+};
 
 export interface PropertyMatchPreviewRepository {
   loadApprovedBuyerProfile(brand: string, buyerProfileId: string): Promise<LeadMatchProfile | null>;
   loadProperties(brand: string, propertyReferences: string[]): Promise<RawProperty[]>;
+  loadCandidateProperties?(brand: string, profile: LeadMatchProfile, candidateLimit: number): Promise<RawProperty[]>;
 }
 
 export interface PropertyMatchPreviewResult {
   buyerProfileId: string;
+  discoveryMode: "explicit" | "auto";
   analyzed: number;
   matched: number;
+  candidateLimit: number | null;
   missingPropertyReferences: string[];
   skippedProperties: Array<{
     propertyId: string;
@@ -278,6 +299,72 @@ export async function loadPropertiesByReferencesFromSupabase(
   return Array.from(rows.values()).slice(0, MAX_PROPERTY_MATCH_PREVIEW_ITEMS);
 }
 
+export async function loadCandidatePropertiesFromSupabase(
+  brand: string,
+  profile: LeadMatchProfile,
+  candidateLimit = DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RawProperty[]> {
+  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    throw new LeadIntelligenceError(
+      "PROPERTY_MATCHING_UNAVAILABLE",
+      "Property matching inventory lookup is not configured",
+      503,
+    );
+  }
+
+  const safeCandidateLimit = Math.min(
+    Math.max(Math.trunc(candidateLimit || DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT), 1),
+    MAX_AUTO_PROPERTY_CANDIDATE_LIMIT,
+  );
+  const scanLimit = Math.min(
+    Math.max(safeCandidateLimit * AUTO_PROPERTY_SCAN_MULTIPLIER, safeCandidateLimit),
+    500,
+  );
+
+  const supabase = createClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  const runCandidateQuery = async (useBudgetFilter: boolean, useCreatedOrder: boolean) => {
+    let query = supabase.from("properties").select("*");
+    const budgetAmount = profile.budget.amount;
+    if (useBudgetFilter && budgetAmount) {
+      query = query.lte("price", Math.ceil(budgetAmount * 1.15));
+    }
+    if (useCreatedOrder) {
+      query = query.order("created_at", { ascending: false });
+    }
+    return query.limit(scanLimit);
+  };
+
+  let { data, error } = await runCandidateQuery(true, true);
+  if (error && isMissingPropertyReferenceColumnError(error)) {
+    logOptionalPropertyReferenceColumnUnavailable("auto_discovery_filter", error);
+    ({ data, error } = await runCandidateQuery(false, false));
+  }
+
+  if (error) {
+    throw new LeadIntelligenceError(
+      "PROPERTY_MATCHING_UNAVAILABLE",
+      "Property matching inventory lookup failed",
+      503,
+    );
+  }
+
+  const filtered = await filterAutoDiscoveredPropertiesForBrand(
+    supabase,
+    brand,
+    ((data || []) as RawProperty[]).filter(isWebsiteVisible),
+  );
+  return filtered.slice(0, safeCandidateLimit);
+}
+
 export async function previewLeadPropertyMatches(
   request: LeadPropertyMatchPreviewRequest,
   repository: PropertyMatchPreviewRepository,
@@ -292,20 +379,31 @@ export async function previewLeadPropertyMatches(
   }
 
   return previewLeadPropertyMatchesForProfile(request, profile, (brand, propertyReferences) =>
-    repository.loadProperties(brand, propertyReferences),
+    request.autoDiscover && repository.loadCandidateProperties
+      ? repository.loadCandidateProperties(
+          brand,
+          profile,
+          request.candidateLimit ?? DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT,
+        )
+      : repository.loadProperties(brand, propertyReferences),
   );
 }
 
 export async function previewLeadPropertyMatchesForProfile(
   request: LeadPropertyMatchPreviewRequest,
   profile: LeadMatchProfile,
-  loadProperties: (brand: string, propertyReferences: string[]) => Promise<RawProperty[]>,
+  loadProperties: (
+    brand: string,
+    propertyReferences: string[],
+    profile: LeadMatchProfile,
+    request: LeadPropertyMatchPreviewRequest,
+  ) => Promise<RawProperty[]>,
 ): Promise<PropertyMatchPreviewResult> {
-  const properties = await loadProperties(request.brand, request.propertyReferences);
+  const properties = await loadProperties(request.brand, request.propertyReferences, profile, request);
   const foundReferences = new Set(properties.flatMap(propertyReferenceKeys));
-  const missingPropertyReferences = request.propertyReferences.filter(
-    (reference) => !foundReferences.has(normalizePropertyReference(reference)),
-  );
+  const missingPropertyReferences = request.autoDiscover
+    ? []
+    : request.propertyReferences.filter((reference) => !foundReferences.has(normalizePropertyReference(reference)));
   const matches: PropertyMatch[] = [];
   const skippedProperties: PropertyMatchPreviewResult["skippedProperties"] = [];
 
@@ -323,13 +421,17 @@ export async function previewLeadPropertyMatchesForProfile(
     }
   }
 
-  const maxResults = request.maxResults ?? request.propertyReferences.length;
+  const maxResults = request.maxResults ?? (request.autoDiscover ? 10 : request.propertyReferences.length);
   const ranked = rankPropertyMatches(matches).slice(0, maxResults);
 
   return {
     buyerProfileId: profile.buyerProfileId,
+    discoveryMode: request.autoDiscover ? "auto" : "explicit",
     analyzed: properties.length,
     matched: ranked.filter((match) => match.eligibility !== "rejected").length,
+    candidateLimit: request.autoDiscover
+      ? request.candidateLimit ?? DEFAULT_AUTO_PROPERTY_CANDIDATE_LIMIT
+      : null,
     missingPropertyReferences,
     skippedProperties,
     matches: ranked,
@@ -341,6 +443,53 @@ export async function previewLeadPropertyMatchesForProfile(
       shortlistCreated: false,
     },
   };
+}
+
+function isWebsiteVisible(property: RawProperty) {
+  return property.show_on_website !== false && property.website_visible !== false;
+}
+
+async function filterAutoDiscoveredPropertiesForBrand(
+  supabase: SupabaseInventoryClient,
+  brand: string,
+  properties: RawProperty[],
+) {
+  const propertyIds = properties
+    .map((property) => property.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  if (propertyIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("property_brand_visibility")
+    .select("property_id, visible")
+    .in("property_id", propertyIds)
+    .eq("brand_id", brand);
+
+  if (error) {
+    if (isMissingOptionalVisibilityTableError(error)) {
+      logOptionalPropertyReferenceColumnUnavailable("property_brand_visibility", error);
+      return properties.filter((property) => propertyMatchesBrand(property, brand));
+    }
+    throw new LeadIntelligenceError(
+      "PROPERTY_MATCHING_UNAVAILABLE",
+      "Property matching brand visibility lookup failed",
+      503,
+    );
+  }
+
+  const visibilityById = new Map(
+    ((data || []) as Array<{ property_id: string; visible: boolean }>).map((row) => [
+      row.property_id,
+      row.visible === true,
+    ]),
+  );
+
+  return properties.filter((property) => {
+    const propertyId = typeof property.id === "string" ? property.id : "";
+    if (propertyId && visibilityById.has(propertyId)) return visibilityById.get(propertyId);
+    return propertyMatchesBrand(property, brand);
+  });
 }
 
 function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCriterion[]): LeadMatchProfile {
@@ -456,6 +605,11 @@ function propertyReferenceKeys(property: RawProperty) {
 export function isMissingPropertyReferenceColumnError(error: SupabasePropertyLookupError) {
   const code = error.code || "";
   return code === "42703" || code === "PGRST204";
+}
+
+function isMissingOptionalVisibilityTableError(error: SupabasePropertyLookupError) {
+  const code = error.code || "";
+  return code === "42P01" || code === "PGRST205";
 }
 
 function logOptionalPropertyReferenceColumnUnavailable(column: string, error: SupabasePropertyLookupError) {

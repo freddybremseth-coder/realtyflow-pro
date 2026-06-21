@@ -52,8 +52,9 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("REALTYFLOW_PROPERTY_MATCHING_ENABLED=true"), true);
   assert.equal(source.includes("N8513"), true);
   assert.equal(source.includes("propertyReferences"), true);
-  assert.equal(source.includes("Maks 20 eksplisitte eiendomsreferanser"), true);
-  assert.equal(source.includes("UI-et gjør ikke automatisk inventory-søk"), true);
+  assert.equal(source.includes("Finn aktuelle eiendommer automatisk"), true);
+  assert.equal(source.includes("autoDiscover: true"), true);
+  assert.equal(source.includes("Valgfritt. Maks 20 eksplisitte eiendomsreferanser"), true);
   assert.equal(source.includes("Aktuelle"), true);
   assert.equal(source.includes("Ingen av de valgte eiendommene er aktuelle uten manuell vurdering."), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);

@@ -114,6 +114,29 @@ test("property match preview validates request before database access", async ()
   assert.equal(JSON.stringify(body).includes("postgres://"), false);
 });
 
+test("property match preview rejects mixed automatic and explicit inventory modes before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+  process.env.REALTYFLOW_PROPERTY_MATCHING_ENABLED = "true";
+
+  const response = await POST(
+    request(
+      {
+        brand: "soleada",
+        buyerProfileId,
+        autoDiscover: true,
+        propertyReferences: [propertyRef],
+      },
+      { cookie: await adminCookie() },
+    ) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
 test("property match preview rate limits before database access", async () => {
   process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
   process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";

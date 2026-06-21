@@ -132,8 +132,10 @@ interface PropertyMatchPreviewResponse {
   correlationId: string;
   result: {
     buyerProfileId: string;
+    discoveryMode: "explicit" | "auto";
     analyzed: number;
     matched: number;
+    candidateLimit: number | null;
     missingPropertyReferences: string[];
     skippedProperties: Array<{
       propertyId: string;
@@ -617,8 +619,9 @@ export function LeadIntelligenceClient({
     }
   };
 
-  const previewPropertyMatches = async () => {
-    if (!saveResult || !propertyMatchingEnabled || parsedPropertyReferences.error) return;
+  const previewPropertyMatches = async (mode: "auto" | "explicit") => {
+    if (!saveResult || !propertyMatchingEnabled) return;
+    if (mode === "explicit" && parsedPropertyReferences.error) return;
     setPropertyMatchLoading(true);
     setPropertyMatchError(null);
     setPropertyMatchResult(null);
@@ -633,8 +636,16 @@ export function LeadIntelligenceClient({
         body: JSON.stringify({
           brand,
           buyerProfileId: saveResult.result.buyerProfile.id,
-          propertyReferences: parsedPropertyReferences.references,
-          maxResults: parsedPropertyReferences.references.length,
+          ...(mode === "auto"
+            ? {
+                autoDiscover: true,
+                candidateLimit: 120,
+                maxResults: 10,
+              }
+            : {
+                propertyReferences: parsedPropertyReferences.references,
+                maxResults: parsedPropertyReferences.references.length,
+              }),
         }),
       });
       const body = (await res.json()) as PropertyMatchPreviewResponse | SafeErrorResponse;
@@ -1280,8 +1291,8 @@ export function LeadIntelligenceClient({
                       <div>
                         <h2 className="text-sm font-semibold text-slate-200">Eiendomsmatch-preview</h2>
                         <p className="mt-1 text-xs text-slate-500">
-                          Lim inn eksplisitte eiendomsreferanser, for eksempel N8513 eller en database-UUID, for å forhåndsvise deterministisk match mot denne
-                          kjøperprofilen. Resultatet lagres ikke og lager ingen shortlist.
+                          La systemet søke i eksisterende eiendommer, eller lim inn eksplisitte referanser som N8513
+                          for en kontrollert test. Resultatet lagres ikke og lager ingen shortlist.
                         </p>
                       </div>
                       <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
@@ -1309,7 +1320,7 @@ export function LeadIntelligenceClient({
                         className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
                       />
                       <p className="text-xs text-slate-500">
-                        Maks 20 eksplisitte eiendomsreferanser. UI-et gjør ikke automatisk inventory-søk.
+                        Valgfritt. Maks 20 eksplisitte eiendomsreferanser hvis du vil teste bestemte boliger.
                       </p>
                     </div>
 
@@ -1321,7 +1332,20 @@ export function LeadIntelligenceClient({
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={previewPropertyMatches}
+                        onClick={() => previewPropertyMatches("auto")}
+                        disabled={
+                          propertyMatchLoading ||
+                          !propertyMatchingEnabled ||
+                          !saveResult
+                        }
+                      >
+                        {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                        Finn aktuelle eiendommer automatisk
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => previewPropertyMatches("explicit")}
                         disabled={
                           propertyMatchLoading ||
                           !propertyMatchingEnabled ||
@@ -1350,6 +1374,12 @@ export function LeadIntelligenceClient({
 
                     {propertyMatchResult && (
                       <div className="mt-4 space-y-3">
+                        <p className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">
+                          Modus: {propertyMatchResult.result.discoveryMode === "auto" ? "Automatisk søk i eksisterende eiendommer" : "Valgte referanser"}
+                          {propertyMatchResult.result.candidateLimit
+                            ? ` · Kandidatgrense ${propertyMatchResult.result.candidateLimit}`
+                            : ""}
+                        </p>
                         <div className="grid gap-3 md:grid-cols-4">
                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                             <p className="text-xs uppercase tracking-wide text-slate-500">Analysert</p>

@@ -69,6 +69,20 @@ function approvedProfile(): LeadMatchProfile {
 }
 
 test("property match preview request validates brand, references, legacy ids, bounds and duplicates", () => {
+  const autoParse = LeadPropertyMatchPreviewRequestSchema.safeParse({
+    brand: "soleada",
+    buyerProfileId,
+    autoDiscover: true,
+    candidateLimit: 25,
+    maxResults: 5,
+  });
+  assert.equal(autoParse.success, true);
+  if (autoParse.success) {
+    assert.equal(autoParse.data.autoDiscover, true);
+    assert.deepEqual(autoParse.data.propertyReferences, []);
+    assert.equal(autoParse.data.candidateLimit, 25);
+  }
+
   const refParse = LeadPropertyMatchPreviewRequestSchema.safeParse({
     brand: "soleada",
     buyerProfileId,
@@ -121,6 +135,24 @@ test("property match preview request validates brand, references, legacy ids, bo
       brand: "soleada",
       buyerProfileId,
       propertyReferences: ["https://example.com/property"],
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    LeadPropertyMatchPreviewRequestSchema.safeParse({
+      brand: "soleada",
+      buyerProfileId,
+      autoDiscover: true,
+      propertyReferences: [eligiblePropertyRef],
+    }).success,
+    false,
+  );
+
+  assert.equal(
+    LeadPropertyMatchPreviewRequestSchema.safeParse({
+      brand: "soleada",
+      buyerProfileId,
     }).success,
     false,
   );
@@ -340,13 +372,64 @@ test("preview ranks explicit property set and returns only safe match DTOs", asy
   );
 
   assert.equal(result.analyzed, 2);
+  assert.equal(result.discoveryMode, "explicit");
   assert.equal(result.matched, 1);
+  assert.equal(result.candidateLimit, null);
   assert.equal(result.matches[0].propertyId, eligiblePropertyId);
   assert.equal(result.matches[1].eligibility, "rejected");
   assert.equal(result.sideEffects.emailsSent, false);
   assert.equal(result.sideEffects.matchesPersisted, false);
   assert.equal(JSON.stringify(result).includes("service_role"), false);
   assert.equal(JSON.stringify(result).includes("raw"), false);
+});
+
+test("preview can auto-discover bounded inventory candidates without explicit references", async () => {
+  const result = await previewLeadPropertyMatches(
+    LeadPropertyMatchPreviewRequestSchema.parse({
+      brand: "soleada",
+      buyerProfileId,
+      autoDiscover: true,
+      candidateLimit: 3,
+      maxResults: 2,
+    }),
+    {
+      loadApprovedBuyerProfile: async () => approvedProfile(),
+      loadProperties: async () => {
+        throw new Error("explicit lookup should not run");
+      },
+      loadCandidateProperties: async (_brand, _profile, candidateLimit) => {
+        assert.equal(candidateLimit, 3);
+        return [
+          {
+            id: eligiblePropertyId,
+            brand: "soleada",
+            property_type: "apartment",
+            price: 360000,
+            bedrooms: 2,
+            has_lift: true,
+            terrace_area_m2: 24,
+            future_building_risk: false,
+          },
+          {
+            id: rejectedPropertyId,
+            brand: "soleada",
+            property_type: "apartment",
+            price: 650000,
+            bedrooms: 1,
+            has_lift: true,
+          },
+        ];
+      },
+    },
+  );
+
+  assert.equal(result.discoveryMode, "auto");
+  assert.equal(result.candidateLimit, 3);
+  assert.equal(result.analyzed, 2);
+  assert.equal(result.matched, 1);
+  assert.equal(result.missingPropertyReferences.length, 0);
+  assert.equal(result.matches.length, 2);
+  assert.equal(result.sideEffects.shortlistCreated, false);
 });
 
 test("preview marks missing and cross-brand properties without leaking raw rows", async () => {
