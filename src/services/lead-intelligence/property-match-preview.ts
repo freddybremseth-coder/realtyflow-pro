@@ -329,7 +329,7 @@ export async function previewLeadPropertyMatchesForProfile(
   return {
     buyerProfileId: profile.buyerProfileId,
     analyzed: properties.length,
-    matched: ranked.length,
+    matched: ranked.filter((match) => match.eligibility !== "rejected").length,
     missingPropertyReferences,
     skippedProperties,
     matches: ranked,
@@ -361,6 +361,7 @@ function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCri
     },
     hardRequirements: criteria
       .filter((criterion) => criterion.criterionType === "hard_requirement")
+      .filter((criterion) => !isDuplicateBudgetHardRequirement(profile, criterion))
       .map((criterion) => criterionToRequirement(criterion)),
     preferences: criteria
       .filter((criterion) => criterion.criterionType === "preference")
@@ -378,10 +379,17 @@ function buildLeadMatchProfile(profile: PersistedProfile, criteria: PersistedCri
 }
 
 function criterionToRequirement(criterion: PersistedCriterion): ExtractedLead["hardRequirements"][number] {
+  const operator =
+    ["bedrooms", "bathrooms"].includes(criterion.key) &&
+    criterion.operator === "eq" &&
+    criterionNumericValue(criterion.value) !== null
+      ? "gte"
+      : criterion.operator;
+
   return {
     key: criterion.key,
     otherKey: criterion.otherKey || undefined,
-    operator: criterion.operator,
+    operator,
     value: criterion.value,
     sourceText: criterion.sourceText || "Approved buyer profile criterion",
     ...(criterion.confidence === null ? {} : { confidence: criterion.confidence }),
@@ -389,6 +397,31 @@ function criterionToRequirement(criterion: PersistedCriterion): ExtractedLead["h
       ? { appliesToPropertyTypes: criterion.appliesToPropertyTypes }
       : {}),
   } as ExtractedLead["hardRequirements"][number];
+}
+
+function isDuplicateBudgetHardRequirement(profile: PersistedProfile, criterion: PersistedCriterion) {
+  if (!["purchase_price", "estimated_total_cost", "total_budget"].includes(criterion.key)) return false;
+  if (criterion.operator !== "eq") return false;
+
+  const budgetAmount = profile.budgetAmount;
+  const criterionAmount = criterionNumericValue(criterion.value);
+  if (budgetAmount === null || criterionAmount === null) return false;
+
+  const tolerance = Math.max(1, budgetAmount * 0.005);
+  return Math.abs(budgetAmount - criterionAmount) <= tolerance;
+}
+
+function criterionNumericValue(value: unknown): number | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return (
+      toNumberOrNull(record.amount) ??
+      toNumberOrNull(record.value) ??
+      toNumberOrNull(record.max) ??
+      toNumberOrNull(record.min)
+    );
+  }
+  return toNumberOrNull(value);
 }
 
 function derivePropertyTypes(criteria: PersistedCriterion[]): ExtractedLead["propertyTypes"] {

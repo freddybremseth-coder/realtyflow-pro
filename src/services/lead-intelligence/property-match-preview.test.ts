@@ -210,6 +210,100 @@ test("loads approved buyer profile as deterministic match profile", async () => 
   assert.equal(db.queries.some((sql) => sql.includes("status = 'approved'")), true);
 });
 
+test("loads persisted criteria with buyer-friendly matching normalization", async () => {
+  class ProfileDb implements QueryClient {
+    async query<T>(sql: string) {
+      if (sql.includes("from public.buyer_profiles")) {
+        return {
+          rows: [
+            {
+              id: buyerProfileId,
+              budgetAmount: 600000,
+              budgetCurrency: "EUR",
+              budgetIncludesCosts: true,
+              budgetApproximate: true,
+              locationFlexible: true,
+            },
+          ] as T[],
+        };
+      }
+      return {
+        rows: [
+          {
+            criterionType: "hard_requirement",
+            key: "purchase_price",
+            otherKey: null,
+            operator: "eq",
+            value: 600000,
+            weight: null,
+            severity: null,
+            appliesToPropertyTypes: [],
+            sourceText: "600000 euro",
+            confidence: 0.8,
+          },
+          {
+            criterionType: "hard_requirement",
+            key: "bedrooms",
+            otherKey: null,
+            operator: "eq",
+            value: 2,
+            weight: null,
+            severity: null,
+            appliesToPropertyTypes: [],
+            sourceText: "2 soverom",
+            confidence: 0.8,
+          },
+          {
+            criterionType: "hard_requirement",
+            key: "bathrooms",
+            otherKey: null,
+            operator: "eq",
+            value: 2,
+            weight: null,
+            severity: null,
+            appliesToPropertyTypes: [],
+            sourceText: "2 bad",
+            confidence: 0.8,
+          },
+        ] as T[],
+      };
+    }
+  }
+
+  const profile = await loadApprovedLeadMatchProfileWithDb(new ProfileDb(), {
+    brand: "soleada",
+    buyerProfileId,
+  });
+
+  assert.equal(profile?.hardRequirements.some((criterion) => criterion.key === "purchase_price"), false);
+  assert.equal(profile?.hardRequirements.find((criterion) => criterion.key === "bedrooms")?.operator, "gte");
+  assert.equal(profile?.hardRequirements.find((criterion) => criterion.key === "bathrooms")?.operator, "gte");
+
+  const result = await previewLeadPropertyMatchesForProfile(
+    {
+      brand: "soleada",
+      buyerProfileId,
+      propertyReferences: [eligiblePropertyRef],
+    },
+    profile!,
+    async () => [
+      {
+        id: eligiblePropertyId,
+        ref: eligiblePropertyRef,
+        brand: "soleada",
+        property_type: "villa",
+        price: 505500,
+        bedrooms: 3,
+        bathrooms: 3,
+      },
+    ],
+  );
+
+  assert.equal(result.matched, 1);
+  assert.equal(result.matches[0].eligibility, "eligible");
+  assert.equal(result.matches[0].hardRequirementResults.some((row) => row.key === "purchase_price"), false);
+});
+
 test("preview ranks explicit property set and returns only safe match DTOs", async () => {
   const result = await previewLeadPropertyMatchesForProfile(
     {
@@ -246,8 +340,9 @@ test("preview ranks explicit property set and returns only safe match DTOs", asy
   );
 
   assert.equal(result.analyzed, 2);
-  assert.equal(result.matched, 2);
+  assert.equal(result.matched, 1);
   assert.equal(result.matches[0].propertyId, eligiblePropertyId);
+  assert.equal(result.matches[1].eligibility, "rejected");
   assert.equal(result.sideEffects.emailsSent, false);
   assert.equal(result.sideEffects.matchesPersisted, false);
   assert.equal(JSON.stringify(result).includes("service_role"), false);
