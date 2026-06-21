@@ -179,6 +179,24 @@ interface PropertyMatchPreviewResponse {
   };
 }
 
+interface ShortlistSaveResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    shortlistId: string;
+    duplicate: boolean;
+    conflict: boolean;
+    itemCount: number;
+    sideEffects: {
+      leadsCreated: false;
+      contactsCreated: false;
+      emailsSent: false;
+      propertyMatchingStarted: false;
+      presentationCreated: false;
+    };
+  };
+}
+
 const sourceOptions: Array<{ value: Source; label: string }> = [
   { value: "phone_call", label: "Telefonsamtale" },
   { value: "whatsapp", label: "WhatsApp" },
@@ -487,6 +505,9 @@ export function LeadIntelligenceClient({
   const [propertyMatchError, setPropertyMatchError] = useState<SafeErrorResponse["error"] | null>(null);
   const [propertyMatchResult, setPropertyMatchResult] = useState<PropertyMatchPreviewResponse | null>(null);
   const [matchReviewDecisions, setMatchReviewDecisions] = useState<Record<string, MatchReviewDecision>>({});
+  const [shortlistSaveLoading, setShortlistSaveLoading] = useState(false);
+  const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -501,11 +522,26 @@ export function LeadIntelligenceClient({
     () => parsePropertyReferences(propertyReferencesText),
     [propertyReferencesText],
   );
+  const selectedShortlistItems = useMemo(() => {
+    if (!propertyMatchResult) return [];
+    return propertyMatchResult.result.matches
+      .map((match) => ({
+        propertyId: match.propertyId,
+        decision: matchReviewDecisions[match.propertyId] || "system",
+      }))
+      .filter((item): item is { propertyId: string; decision: Exclude<MatchReviewDecision, "system" | "rejected"> } =>
+        item.decision === "current" ||
+        item.decision === "maybe" ||
+        item.decision === "needs_research",
+      );
+  }, [matchReviewDecisions, propertyMatchResult]);
 
   const clearPropertyMatchPreview = () => {
     setPropertyMatchError(null);
     setPropertyMatchResult(null);
     setMatchReviewDecisions({});
+    setShortlistSaveError(null);
+    setShortlistSaveResult(null);
   };
 
   const clearContactCandidates = () => {
@@ -754,6 +790,9 @@ export function LeadIntelligenceClient({
         return;
       }
       setPropertyMatchResult(body);
+      setMatchReviewDecisions({});
+      setShortlistSaveError(null);
+      setShortlistSaveResult(null);
     } catch {
       setPropertyMatchError({
         correlationId: "client",
@@ -762,6 +801,48 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setPropertyMatchLoading(false);
+    }
+  };
+
+  const saveShortlistDraft = async () => {
+    if (!saveResult || !propertyMatchResult || selectedShortlistItems.length === 0) return;
+    setShortlistSaveLoading(true);
+    setShortlistSaveError(null);
+    setShortlistSaveResult(null);
+
+    try {
+      const res = await fetch("/api/lead-intelligence/shortlists", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": propertyMatchResult.correlationId,
+        },
+        body: JSON.stringify({
+          brand,
+          buyerProfileId: saveResult.result.buyerProfile.id,
+          title: `Shortlist ${new Date().toLocaleDateString("nb-NO")}`,
+          idempotencySeed: propertyMatchResult.correlationId,
+          items: selectedShortlistItems,
+        }),
+      });
+      const body = (await res.json()) as ShortlistSaveResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setShortlistSaveError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke lagre shortlist-utkast.",
+        });
+        return;
+      }
+      setShortlistSaveResult(body);
+    } catch {
+      setShortlistSaveError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte shortlist-API-et.",
+      });
+    } finally {
+      setShortlistSaveLoading(false);
     }
   };
 
@@ -1435,7 +1516,8 @@ export function LeadIntelligenceClient({
                         <h2 className="text-sm font-semibold text-slate-200">Eiendomsmatch-preview</h2>
                         <p className="mt-1 text-xs text-slate-500">
                           La systemet søke i eksisterende eiendommer, eller lim inn eksplisitte referanser som N8513
-                          for en kontrollert test. Resultatet lagres ikke og lager ingen shortlist.
+                          for en kontrollert test. Matchpreviewen lagres ikke; shortlist-utkast lagres bare etter
+                          eksplisitt valg.
                         </p>
                       </div>
                       <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
@@ -1646,8 +1728,8 @@ export function LeadIntelligenceClient({
                                   </div>
                                   {manualDecisionOverridesRejected && (
                                     <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
-                                      Denne boligen er fortsatt avvist av systemreglene. Manuell vurdering lagres ikke
-                                      ennå, så kontroller risiko/avvik før den eventuelt tas inn i en senere shortlist.
+                                      Denne boligen er fortsatt avvist av systemreglene. Den kan bare tas med som
+                                      «Må undersøkes», og risiko/avvik blir lagret sammen med shortlist-utkastet.
                                     </p>
                                   )}
                                 </div>
@@ -1664,6 +1746,62 @@ export function LeadIntelligenceClient({
                               </div>
                             );
                           })}
+                        </div>
+
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Valgte boliger: {selectedShortlistItems.length}. Utkastet lagrer bare Freddys
+                                shortlistvalg. Det oppretter ikke presentasjon, e-post, lead eller kontakt.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              onClick={saveShortlistDraft}
+                              disabled={shortlistSaveLoading || selectedShortlistItems.length === 0}
+                            >
+                              {shortlistSaveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                              Lagre shortlist-utkast
+                            </Button>
+                          </div>
+
+                          {selectedShortlistItems.length === 0 && (
+                            <p className="mt-2 text-xs text-amber-200">
+                              Marker minst én bolig som Aktuell, Kanskje eller Må undersøkes før shortlist-utkast kan lagres.
+                            </p>
+                          )}
+
+                          {shortlistSaveResult && (
+                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                              <p className="font-semibold">
+                                {shortlistSaveResult.result.duplicate
+                                  ? "Identisk shortlist-utkast var allerede lagret."
+                                  : "Shortlist-utkast lagret uten eksterne sideeffekter."}
+                              </p>
+                              <p className="mt-1 text-emerald-100/80">
+                                Shortlist {shortlistSaveResult.result.shortlistId} · Boliger {shortlistSaveResult.result.itemCount}
+                              </p>
+                              <p className="mt-1 text-xs text-emerald-100/70">
+                                E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
+                                Presentasjon opprettet: nei · Property matching-jobb startet: nei
+                              </p>
+                            </div>
+                          )}
+
+                          {shortlistSaveError && (
+                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                              <p className="font-semibold">{shortlistSaveError.code}</p>
+                              <p className="mt-1">{shortlistSaveError.message}</p>
+                              {shortlistSaveError.details && (
+                                <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                  {prettyJson(shortlistSaveError.details)}
+                                </pre>
+                              )}
+                              <p className="mt-2 text-xs text-red-100/80">Correlation ID: {shortlistSaveError.correlationId}</p>
+                            </div>
+                          )}
                         </div>
 
                         {(propertyMatchResult.result.missingPropertyReferences.length > 0 ||

@@ -54,6 +54,7 @@ const OptionalTextSchema = z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.longTe
 const CorrelationIdSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.id);
 const IdempotencyKeySchema = z.string().trim().min(12).max(LEAD_INTELLIGENCE_LIMITS.id);
 const ReviewPayloadHashSchema = z.string().regex(/^sha256:v1:[0-9a-f]{64}$/);
+const UrlTextSchema = z.string().trim().url().max(LEAD_INTELLIGENCE_LIMITS.longText).nullable();
 
 export const LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV = "REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET";
 export const LEAD_CONTACT_LOOKUP_HASH_PREFIX = "hmac-sha256:v1:";
@@ -118,6 +119,10 @@ export const LeadContactCandidateStatusSchema = z.enum([
   "rejected",
   "ignored",
 ]);
+
+export const LeadPropertyShortlistStatusSchema = z.enum(["draft", "approved", "archived"]);
+export const LeadPropertyShortlistDecisionSchema = z.enum(["current", "maybe", "needs_research"]);
+export const LeadPropertyShortlistEligibilitySchema = z.enum(["eligible", "conditional", "rejected"]);
 
 export const CreateLeadIntakeInputSchema = z
   .object({
@@ -335,10 +340,101 @@ export const LeadContactCandidateInputSchema = z
   })
   .strict();
 
+export const LeadPropertyShortlistItemInputSchema = z
+  .object({
+    brand: BrandSchema,
+    propertyId: UUIDSchema,
+    propertyReference: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable(),
+    propertyTitle: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable(),
+    propertyLocation: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable(),
+    propertyPrice: z.number().nonnegative().nullable(),
+    propertyBedrooms: z.number().nonnegative().nullable(),
+    propertyBathrooms: z.number().nonnegative().nullable(),
+    propertyPrimaryImageUrl: UrlTextSchema,
+    propertyPublicUrl: UrlTextSchema,
+    rank: z.number().int().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortlistItems),
+    decision: LeadPropertyShortlistDecisionSchema,
+    systemEligibility: LeadPropertyShortlistEligibilitySchema,
+    score: z.number().int().min(0).max(100),
+    dataQualityScore: z.number().int().min(0).max(100),
+    reasons: z.array(z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText)).max(
+      LEAD_INTELLIGENCE_LIMITS.matchReasons,
+    ),
+    concerns: z.array(z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText)).max(
+      LEAD_INTELLIGENCE_LIMITS.matchReasons,
+    ),
+    questionsToVerify: z.array(z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText)).max(
+      LEAD_INTELLIGENCE_LIMITS.matchReasons,
+    ),
+    selectedBy: IdentityTextSchema,
+  })
+  .strict();
+
+export const CreateLeadPropertyShortlistInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileId: UUIDSchema,
+    status: LeadPropertyShortlistStatusSchema.default("draft"),
+    title: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable(),
+    idempotencyKey: IdempotencyKeySchema,
+    payloadHash: ReviewPayloadHashSchema,
+    correlationId: CorrelationIdSchema,
+    createdBy: IdentityTextSchema,
+    approvedBy: IdentityTextSchema.nullable(),
+    approvedAt: z.string().datetime().nullable(),
+    archivedAt: z.string().datetime().nullable(),
+    items: z.array(LeadPropertyShortlistItemInputSchema).min(1).max(LEAD_INTELLIGENCE_LIMITS.shortlistItems),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.items.some((item) => item.brand !== input.brand)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["items"],
+        message: "shortlist items must use the shortlist brand",
+      });
+    }
+
+    const propertyIds = input.items.map((item) => item.propertyId);
+    if (new Set(propertyIds).size !== propertyIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["items"],
+        message: "shortlist items must be unique by property",
+      });
+    }
+
+    const ranks = input.items.map((item) => item.rank);
+    if (new Set(ranks).size !== ranks.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["items"],
+        message: "shortlist item ranks must be unique",
+      });
+    }
+
+    if (input.status === "draft" && (input.approvedBy || input.approvedAt || input.archivedAt)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "draft shortlist cannot have approval or archive timestamps",
+      });
+    }
+
+    if (input.status !== "draft") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "only draft shortlists can be created in this phase",
+      });
+    }
+  });
+
 export type CreateLeadIntakeInput = z.infer<typeof CreateLeadIntakeInputSchema>;
 export type RecordLeadAnalysisRunInput = z.infer<typeof RecordLeadAnalysisRunInputSchema>;
 export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSchema>;
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
+export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
 
 export interface ContactLookupRow {
   contactId: string;
@@ -1014,5 +1110,201 @@ export class LeadIntelligencePersistenceRepository {
     );
 
     return rows.map((row) => row.id);
+  }
+
+  async createPropertyShortlistDraft(input: CreateLeadPropertyShortlistInput) {
+    this.assertCanWrite();
+    const data = CreateLeadPropertyShortlistInputSchema.parse(input);
+    const itemsPayload = JSON.stringify(
+      data.items.map((item) => ({
+        brand: item.brand,
+        property_id: item.propertyId,
+        property_reference: item.propertyReference,
+        property_title: item.propertyTitle,
+        property_location: item.propertyLocation,
+        property_price: item.propertyPrice,
+        property_bedrooms: item.propertyBedrooms,
+        property_bathrooms: item.propertyBathrooms,
+        property_primary_image_url: item.propertyPrimaryImageUrl,
+        property_public_url: item.propertyPublicUrl,
+        rank: item.rank,
+        decision: item.decision,
+        system_eligibility: item.systemEligibility,
+        score: item.score,
+        data_quality_score: item.dataQualityScore,
+        reasons: item.reasons,
+        concerns: item.concerns,
+        questions_to_verify: item.questionsToVerify,
+        selected_by: item.selectedBy,
+      })),
+    );
+
+    const shortlistResult = await this.db.query<{
+      id: string;
+      duplicate: boolean;
+      payload_hash_matches: boolean;
+    }>(
+      `
+        with inserted as (
+          insert into public.lead_property_shortlists (
+            brand,
+            buyer_profile_id,
+            status,
+            title,
+            idempotency_key,
+            payload_hash,
+            correlation_id,
+            created_by,
+            approved_by,
+            approved_at,
+            archived_at
+          )
+          values ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz)
+          on conflict (brand, idempotency_key) do nothing
+          returning id, false as duplicate, true as payload_hash_matches
+        )
+        select id, duplicate, payload_hash_matches from inserted
+        union all
+        select
+          id,
+          true as duplicate,
+          payload_hash = $6 as payload_hash_matches
+        from public.lead_property_shortlists
+        where brand = $1
+          and idempotency_key = $5
+          and not exists (select 1 from inserted)
+        limit 1
+      `,
+      [
+        data.brand,
+        data.buyerProfileId,
+        data.status,
+        data.title,
+        data.idempotencyKey,
+        data.payloadHash,
+        data.correlationId,
+        data.createdBy,
+        data.approvedBy,
+        data.approvedAt,
+        data.archivedAt,
+      ],
+    );
+
+    const shortlist = shortlistResult.rows[0];
+    if (!shortlist) {
+      throw new LeadIntelligencePersistenceError(
+        "DATABASE_ERROR",
+        "Lead property shortlist could not be created",
+        500,
+      );
+    }
+
+    if (!shortlist.payload_hash_matches) {
+      return {
+        id: shortlist.id,
+        duplicate: true,
+        payloadHashMatches: false,
+        itemCount: 0,
+      };
+    }
+
+    let itemCount = 0;
+    if (shortlist.duplicate) {
+      const existingItems = await this.db.query<{ count: number }>(
+        `
+          select count(*)::int as count
+          from public.lead_property_shortlist_items
+          where shortlist_id = $1::uuid
+        `,
+        [shortlist.id],
+      );
+      itemCount = Number(existingItems.rows[0]?.count || 0);
+    } else {
+      const insertedItems = await this.db.query<{ count: number }>(
+        `
+          with item_input as (
+            select *
+            from jsonb_to_recordset($2::jsonb) as item (
+              brand text,
+              property_id uuid,
+              property_reference text,
+              property_title text,
+              property_location text,
+              property_price numeric,
+              property_bedrooms numeric,
+              property_bathrooms numeric,
+              property_primary_image_url text,
+              property_public_url text,
+              rank integer,
+              decision text,
+              system_eligibility text,
+              score integer,
+              data_quality_score integer,
+              reasons jsonb,
+              concerns jsonb,
+              questions_to_verify jsonb,
+              selected_by text
+            )
+          ),
+          inserted_items as (
+            insert into public.lead_property_shortlist_items (
+              shortlist_id,
+              brand,
+              property_id,
+              property_reference,
+              property_title,
+              property_location,
+              property_price,
+              property_bedrooms,
+              property_bathrooms,
+              property_primary_image_url,
+              property_public_url,
+              rank,
+              decision,
+              system_eligibility,
+              score,
+              data_quality_score,
+              reasons,
+              concerns,
+              questions_to_verify,
+              selected_by
+            )
+            select
+              $1::uuid,
+              brand,
+              property_id,
+              property_reference,
+              property_title,
+              property_location,
+              property_price,
+              property_bedrooms,
+              property_bathrooms,
+              property_primary_image_url,
+              property_public_url,
+              rank,
+              decision,
+              system_eligibility,
+              score,
+              data_quality_score,
+              reasons,
+              concerns,
+              questions_to_verify,
+              selected_by
+            from item_input
+            returning id
+          )
+          select count(*)::int as count from inserted_items
+        `,
+        [shortlist.id, itemsPayload],
+      );
+      itemCount = Number(insertedItems.rows[0]?.count || 0);
+    }
+
+    return {
+      id: shortlist.id,
+      duplicate: Boolean(shortlist.duplicate),
+      payloadHashMatches: true,
+      itemCount,
+    };
   }
 }
