@@ -112,6 +112,33 @@ class PresentationDraftLookupDb implements QueryClient {
   }
 }
 
+class PresentationDraftHistoryDb implements QueryClient {
+  queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
+
+  async query<T>(sql: string, values?: readonly unknown[]) {
+    this.queries.push({ sql, values });
+    return {
+      rows: [
+        {
+          presentation_id: "77777777-7777-4777-8777-777777777777",
+          shortlist_id: "66666666-6666-4666-8666-666666666666",
+          presentation_status: "draft",
+          title: "Moraira shortlist",
+          presentation_json: {
+            title: "Moraira shortlist",
+            properties: [{ id: "property-1" }, { id: "property-2" }],
+          },
+          presentation_created_at: "2026-06-21T12:00:00.000Z",
+          message_draft_id: "88888888-8888-4888-8888-888888888888",
+          message_status: "draft",
+          subject: "Boligforslag i Moraira",
+          message_created_at: "2026-06-21T12:01:00.000Z",
+        },
+      ] as T[],
+    };
+  }
+}
+
 function persistenceEnv(enabled = true) {
   return {
     REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED: enabled ? "true" : "false",
@@ -806,6 +833,33 @@ test("presentation draft lookup returns safe draft content without raw intake or
   assert.equal(db.queries[0].values?.[1], "77777777-7777-4777-8777-777777777777");
   assert(!/raw_text_restricted/i.test(sql));
   assert(!/result_json/i.test(sql));
+  assert(!/match_value_hash/i.test(sql));
+  assert(!/from public\\.contacts/i.test(sql));
+});
+
+test("presentation draft history returns safe metadata without draft body or contact data", async () => {
+  const db = new PresentationDraftHistoryDb();
+  const repo = repository(db);
+  const items = await repo.listCustomerPresentationDraftHistory({
+    brand: "soleada",
+    buyerProfileId: profileId,
+    limit: 5,
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].presentationId, "77777777-7777-4777-8777-777777777777");
+  assert.equal(items[0].shortlistId, "66666666-6666-4666-8666-666666666666");
+  assert.equal(items[0].messageDraftId, "88888888-8888-4888-8888-888888888888");
+  assert.equal(items[0].subject, "Boligforslag i Moraira");
+  assert.equal(items[0].itemCount, 2);
+
+  const sql = db.queries.map((query) => query.sql).join("\n");
+  assert.equal(db.queries[0].values?.[0], "soleada");
+  assert.equal(db.queries[0].values?.[1], profileId);
+  assert.equal(db.queries[0].values?.[2], 5);
+  assert(!/raw_text_restricted/i.test(sql));
+  assert(!/result_json/i.test(sql));
+  assert(!/body_text|body_html/i.test(sql));
   assert(!/match_value_hash/i.test(sql));
   assert(!/from public\\.contacts/i.test(sql));
 });

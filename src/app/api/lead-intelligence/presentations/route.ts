@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
 import { isLeadIntelligencePropertyMatchingEnabled } from "@/services/lead-intelligence/feature-flags";
 import {
+  LeadCustomerPresentationDraftHistoryQuerySchema,
   LeadCustomerPresentationDraftRequestSchema,
   LeadCustomerPresentationDraftLookupQuerySchema,
   saveLeadCustomerPresentationDraft,
@@ -35,9 +36,51 @@ export async function GET(request: NextRequest) {
     }
 
     assertLeadIntelligenceActionRateLimit(context.email, "presentation-draft");
+    const brand = request.nextUrl.searchParams.get("brand") || "";
+    const presentationId = request.nextUrl.searchParams.get("presentationId") || "";
+    const buyerProfileId = request.nextUrl.searchParams.get("buyerProfileId") || "";
+    const limit = request.nextUrl.searchParams.get("limit") || undefined;
+
+    if (buyerProfileId && !presentationId) {
+      const parsed = LeadCustomerPresentationDraftHistoryQuerySchema.safeParse({
+        brand,
+        buyerProfileId,
+        limit,
+      });
+      if (!parsed.success) {
+        throw new LeadIntelligenceError("INVALID_REQUEST", "Invalid presentation draft history request", 400, {
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
+      }
+
+      const items = await withLeadIntelligenceQuery(parsed.data.brand, (client) =>
+        createLeadIntelligenceRepository(client, context).listCustomerPresentationDraftHistory(parsed.data),
+      );
+
+      return NextResponse.json(
+        {
+          ok: true,
+          correlationId,
+          result: {
+            brand: parsed.data.brand,
+            buyerProfileId: parsed.data.buyerProfileId,
+            limit: parsed.data.limit,
+            items,
+          },
+        },
+        {
+          status: 200,
+          headers: leadIntelligenceHeaders(correlationId),
+        },
+      );
+    }
+
     const parsed = LeadCustomerPresentationDraftLookupQuerySchema.safeParse({
-      brand: request.nextUrl.searchParams.get("brand") || "",
-      presentationId: request.nextUrl.searchParams.get("presentationId") || "",
+      brand,
+      presentationId,
     });
     if (!parsed.success) {
       throw new LeadIntelligenceError("INVALID_REQUEST", "Invalid presentation draft lookup request", 400, {

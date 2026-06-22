@@ -34,6 +34,14 @@ export const LeadCustomerPresentationDraftLookupQuerySchema = z
   })
   .strict();
 
+export const LeadCustomerPresentationDraftHistoryQuerySchema = z
+  .object({
+    brand: LeadIntelligenceRealEstateBrandSchema,
+    buyerProfileId: UUIDSchema,
+    limit: z.coerce.number().int().min(1).max(10).default(5),
+  })
+  .strict();
+
 export interface LeadCustomerPresentationRepository {
   loadShortlistSnapshotForPresentation(input: {
     brand: string;
@@ -44,12 +52,30 @@ export interface LeadCustomerPresentationRepository {
     brand: string;
     presentationId: string;
   }): Promise<LeadCustomerPresentationDraftResult | null>;
+  listCustomerPresentationDraftHistory(input: {
+    brand: string;
+    buyerProfileId: string;
+    limit: number;
+  }): Promise<LeadCustomerPresentationDraftHistoryItem[]>;
   createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput): Promise<{
     presentationId: string;
     messageDraftId: string | null;
     duplicate: boolean;
     payloadHashMatches: boolean;
   }>;
+}
+
+export interface LeadCustomerPresentationDraftHistoryItem {
+  presentationId: string;
+  shortlistId: string;
+  messageDraftId: string;
+  status: "draft" | "approved" | "archived";
+  messageStatus: "draft" | "approved" | "cancelled";
+  title: string;
+  subject: string;
+  itemCount: number;
+  createdAt: string;
+  messageDraftCreatedAt: string;
 }
 
 export interface LeadCustomerPresentationDraftResult {
