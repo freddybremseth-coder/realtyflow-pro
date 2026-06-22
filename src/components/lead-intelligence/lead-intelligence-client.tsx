@@ -377,6 +377,10 @@ function shortPropertyId(propertyId: string) {
   return propertyId.length > 12 ? `${propertyId.slice(0, 8)}...${propertyId.slice(-4)}` : propertyId;
 }
 
+function internalInventoryPropertyUrl(propertyId: string | null) {
+  return propertyId ? `/inventory?propertyId=${encodeURIComponent(propertyId)}` : null;
+}
+
 function formatCurrency(value: number | null, currency = "EUR") {
   if (value === null) return null;
   try {
@@ -898,10 +902,7 @@ function InternalPresentationPreview({
           </p>
         ) : (
           preview.properties.map((property, index) => (
-            <div
-              key={`${property.propertyId || property.reference || property.title}-${index}`}
-              className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70"
-            >
+            <div key={`${property.propertyId || property.reference || property.title}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/70">
               <div className="grid gap-0 xl:grid-cols-[minmax(220px,320px),1fr]">
                 {property.imageUrl && (
                   <img
@@ -912,53 +913,64 @@ function InternalPresentationPreview({
                   />
                 )}
                 <div className="space-y-4 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-base font-semibold leading-snug text-slate-100">{property.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {[
-                        property.reference ? `Ref ${property.reference}` : null,
-                        property.location,
-                        property.score === null ? null : `Score ${property.score}`,
-                        property.dataQualityScore === null ? null : `Data ${property.dataQualityScore}`,
-                      ].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  {property.publicUrl ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a href={property.publicUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Åpne bolig
-                      </a>
-                    </Button>
-                  ) : (
-                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                      Lenke mangler i eiendomsdata
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold leading-snug text-slate-100">{property.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {[
+                          property.reference ? `Ref ${property.reference}` : null,
+                          property.location,
+                          property.score === null ? null : `Score ${property.score}`,
+                          property.dataQualityScore === null ? null : `Data ${property.dataQualityScore}`,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
                     </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {property.publicUrl && (
+                        <Button asChild size="sm" variant="outline">
+                          <a href={property.publicUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Åpne boligside
+                          </a>
+                        </Button>
+                      )}
+                      {internalInventoryPropertyUrl(property.propertyId) && (
+                        <Button asChild size="sm" variant={property.publicUrl ? "secondary" : "outline"}>
+                          <a href={internalInventoryPropertyUrl(property.propertyId) || "/inventory"} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Åpne i RealtyFlow
+                          </a>
+                        </Button>
+                      )}
+                      {!property.publicUrl && !internalInventoryPropertyUrl(property.propertyId) && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                          Lenke mangler i eiendomsdata
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {property.facts.length > 0 && (
+                    <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm leading-relaxed text-slate-300">
+                      {property.facts.join(" · ")}
+                    </p>
                   )}
-                </div>
 
-                {property.facts.length > 0 && (
-                  <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm leading-relaxed text-slate-300">
-                    {property.facts.join(" · ")}
-                  </p>
-                )}
-
-                <div className="grid gap-3 2xl:grid-cols-3">
-                  <PresentationPreviewList title="Hvorfor aktuell" items={property.reasons} emptyLabel="Ingen grunner lagret." />
-                  <PresentationPreviewList
-                    title="Risiko/avvik"
-                    items={property.concerns}
-                    emptyLabel="Ingen tydelige avvik."
-                    tone="warning"
-                  />
-                  <PresentationPreviewList
-                    title="Må verifiseres"
-                    items={property.questionsToVerify}
-                    emptyLabel="Ingen åpne verifikasjonsspørsmål."
-                    tone="warning"
-                  />
-                </div>
+                  <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+                    <PresentationPreviewList title="Hvorfor aktuell" items={property.reasons} emptyLabel="Ingen grunner lagret." />
+                    <PresentationPreviewList
+                      title="Risiko/avvik"
+                      items={property.concerns}
+                      emptyLabel="Ingen tydelige avvik."
+                      tone="warning"
+                    />
+                    <PresentationPreviewList
+                      title="Må verifiseres"
+                      items={property.questionsToVerify}
+                      emptyLabel="Ingen åpne verifikasjonsspørsmål."
+                      tone="warning"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1920,7 +1932,7 @@ export function LeadIntelligenceClient({
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
                       <div className="space-y-3">
                         <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
                           <p className="font-semibold text-slate-100">Neste handling</p>
@@ -2195,14 +2207,8 @@ export function LeadIntelligenceClient({
                         )}
                       </div>
 
-                      <div className="space-y-3">
-                        {!propertyMatchResult && (
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
-                            Ingen match-preview kjørt for denne lagrede profilen ennå.
-                          </div>
-                        )}
-
-                        {propertyMatchResult && (
+                      {propertyMatchResult && (
+                        <div className="space-y-3">
                           <>
                             <div className="grid gap-3 sm:grid-cols-4">
                               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -2233,6 +2239,7 @@ export function LeadIntelligenceClient({
                             <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
                               {propertyMatchResult.result.matches.map((match) => {
                                 const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
+                                const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId);
                                 return (
                                   <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2243,14 +2250,14 @@ export function LeadIntelligenceClient({
                                         {propertyFactsLine(match) && (
                                           <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
                                         )}
-                                        {match.property.publicUrl && (
+                                        {propertyUrl && (
                                           <a
-                                            href={match.property.publicUrl}
+                                            href={propertyUrl}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="mt-2 inline-flex text-xs text-primary-300 underline-offset-2 hover:underline"
                                           >
-                                            Åpne boligside
+                                            {match.property.publicUrl ? "Åpne boligside" : "Åpne i RealtyFlow"}
                                           </a>
                                         )}
                                       </div>
@@ -2466,8 +2473,8 @@ export function LeadIntelligenceClient({
                               )}
                             </div>
                           </>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3405,6 +3412,7 @@ export function LeadIntelligenceClient({
                         <div className="space-y-3">
                           {propertyMatchResult.result.matches.map((match) => {
                             const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
+                            const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId);
                             const manualDecisionOverridesRejected =
                               match.eligibility === "rejected" &&
                               (reviewDecision === "current" || reviewDecision === "maybe");
@@ -3428,14 +3436,14 @@ export function LeadIntelligenceClient({
                                             match.property.reference ||
                                             shortPropertyId(match.propertyId)}
                                         </p>
-                                        {match.property.publicUrl && (
+                                        {propertyUrl && (
                                           <a
-                                            href={match.property.publicUrl}
+                                            href={propertyUrl}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="text-xs text-primary-300 underline-offset-2 hover:underline"
                                           >
-                                            Åpne
+                                            {match.property.publicUrl ? "Åpne" : "Åpne i RealtyFlow"}
                                           </a>
                                         )}
                                       </div>

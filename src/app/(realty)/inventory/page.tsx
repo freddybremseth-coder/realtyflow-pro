@@ -504,6 +504,7 @@ async function apiSaveProperties(properties: Property[]): Promise<{ inserted: nu
 export default function InventoryPage() {
   const [properties, setProperties] = useState<Property[]>(INITIAL_PROPERTIES);
   const [dbLoaded, setDbLoaded] = useState(false);
+  const openedPropertyFromQueryRef = useRef<string | null>(null);
 
   // Load properties from Supabase on mount
   useEffect(() => {
@@ -537,6 +538,25 @@ export default function InventoryPage() {
   const [showEditModal, setShowEditModal] = useState<Property | null>(null);
   const [publicationByProperty, setPublicationByProperty] = useState<Record<string, string[]>>({});
   const [savingPublication, setSavingPublication] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("propertyId") || params.get("propertyRef");
+    if (!target || openedPropertyFromQueryRef.current === target) return;
+
+    const normalizedTarget = target.toLowerCase();
+    const property = properties.find((item) =>
+      item.id.toLowerCase() === normalizedTarget ||
+      item.ref?.toLowerCase() === normalizedTarget,
+    );
+    if (!property) return;
+
+    openedPropertyFromQueryRef.current = target;
+    setSearch(property.ref || property.title || target);
+    setDetailSlide(0);
+    setShowDetailModal(property);
+  }, [properties]);
 
   // Marketing Kit state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
