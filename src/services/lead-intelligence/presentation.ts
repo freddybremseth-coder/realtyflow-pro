@@ -92,6 +92,26 @@ function propertyFacts(item: LeadCustomerPresentationShortlistSnapshot["items"][
   ].filter((value): value is string => Boolean(value));
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function safeWebsiteUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function uniqueItems(values: Array<string | null | undefined>, limit = 8) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
 }
@@ -170,12 +190,12 @@ function buildEmailDraft(input: {
     const facts = propertyFacts(item).join(" · ");
     const reasons = item.reasons.slice(0, 2).join(" ");
     const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
-    const link = item.propertyPublicUrl ? `\n   Link: ${item.propertyPublicUrl}` : "";
+    const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
       `   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}`,
       verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
-      link ? link.trimEnd() : "",
+      websiteUrl ? `   Se boligen på nettsiden: ${websiteUrl}` : "   Nettsidelenke: må legges inn eller verifiseres før deling.",
     ].filter(Boolean).join("\n");
   });
 
@@ -197,10 +217,46 @@ function buildEmailDraft(input: {
     "Freddy",
   ].join("\n");
 
+  const propertyHtml = input.snapshot.items
+    .map((item, index) => {
+      const facts = propertyFacts(item).join(" · ");
+      const reasons = item.reasons.slice(0, 2).join(" ");
+      const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
+      const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
+      return [
+        `<li style="margin:0 0 18px 0;">`,
+        `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
+        facts ? `<br><span>${escapeHtml(facts)}</span>` : "",
+        `<br><span><strong>Hvorfor aktuell:</strong> ${escapeHtml(reasons || "Matcher deler av behovet.")}</span>`,
+        `<br><span><strong>Må avklares:</strong> ${escapeHtml(verification || "Pris og tilgjengelighet må bekreftes.")}</span>`,
+        websiteUrl
+          ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se boligen på nettsiden</a>`
+          : `<br><span><strong>Nettsidelenke:</strong> må legges inn eller verifiseres før deling.</span>`,
+        `</li>`,
+      ].join("");
+    })
+    .join("");
+
+  const budgetLine =
+    input.snapshot.budgetAmount === null
+      ? "Budsjett må avklares."
+      : `Budsjett: ca. ${formatCurrency(input.snapshot.budgetAmount, input.snapshot.budgetCurrency)}${input.snapshot.budgetIncludesCosts ? " inkludert omkostninger" : ""}.`;
+
+  const bodyHtml = [
+    `<p>Hei,</p>`,
+    `<p>Jeg har sett gjennom aktuelle boliger opp mot behovene vi har notert så langt.</p>`,
+    `<p>${escapeHtml(budgetLine)}</p>`,
+    `<p>Jeg ville sett nærmere på disse alternativene:</p>`,
+    `<ol style="padding-left:20px;margin:0 0 16px 0;">${propertyHtml}</ol>`,
+    `<p>Pris, tilgjengelighet og enkelte detaljer må bekreftes før vi går videre.</p>`,
+    `<p>Gi meg gjerne beskjed om hvilke av disse du ønsker at jeg undersøker nærmere.</p>`,
+    `<p>Vennlig hilsen<br>Freddy</p>`,
+  ].join("");
+
   return {
     subject,
     bodyText,
-    bodyHtml: null,
+    bodyHtml,
   };
 }
 
