@@ -215,6 +215,11 @@ interface PresentationDraftResponse {
     itemCount: number;
     title: string;
     subject: string;
+    messageDraft: {
+      subject: string;
+      bodyText: string;
+      bodyHtml: string | null;
+    };
     sideEffects: {
       emailSent: false;
       leadsCreated: false;
@@ -371,7 +376,9 @@ function buildShortlistEmailDraft(
       ...match.concerns.slice(0, 2),
       ...match.questionsToVerify.slice(0, 1),
     ], 3);
-    const link = match.property.publicUrl ? `\n   Link: ${match.property.publicUrl}` : "";
+    const link = match.property.publicUrl
+      ? `\n   Se boligen på nettsiden: ${match.property.publicUrl}`
+      : "\n   Nettsidelenke: må legges inn eller verifiseres før deling.";
     return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}${concerns.length > 0 ? `\n   Må avklares: ${concerns.join(" ")}` : ""}${link}`;
   });
 
@@ -1048,9 +1055,15 @@ export function LeadIntelligenceClient({
   };
 
   const copyEmailDraft = async () => {
-    if (!shortlistEmailDraft) return;
+    const draft = presentationDraftResult?.result.messageDraft
+      ? {
+          subject: presentationDraftResult.result.messageDraft.subject,
+          body: presentationDraftResult.result.messageDraft.bodyText,
+        }
+      : shortlistEmailDraft;
+    if (!draft) return;
     try {
-      await navigator.clipboard.writeText(`Emne: ${shortlistEmailDraft.subject}\n\n${shortlistEmailDraft.body}`);
+      await navigator.clipboard.writeText(`Emne: ${draft.subject}\n\n${draft.body}`);
       setEmailDraftCopyState("copied");
     } catch {
       setEmailDraftCopyState("failed");
@@ -2160,20 +2173,51 @@ export function LeadIntelligenceClient({
                               </div>
 
                               {presentationDraftResult && (
-                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                                  <p className="font-semibold">
-                                    {presentationDraftResult.result.duplicate
-                                      ? "Identisk presentasjonsutkast var allerede lagret."
-                                      : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
-                                  </p>
-                                  <p className="mt-1 text-emerald-100/80">
-                                    Presentation {presentationDraftResult.result.presentationId} · Message draft {presentationDraftResult.result.messageDraftId}
-                                  </p>
-                                  <p className="mt-1 text-xs text-emerald-100/70">
-                                    Status: {presentationDraftResult.result.status} · E-poststatus: {presentationDraftResult.result.messageStatus} ·
-                                    E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                                    Presentasjon publisert: nei · Property matching-jobb startet: nei
-                                  </p>
+                                <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                                  <div>
+                                    <p className="font-semibold">
+                                      {presentationDraftResult.result.duplicate
+                                        ? "Identisk presentasjonsutkast var allerede lagret."
+                                        : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
+                                    </p>
+                                    <p className="mt-1 text-emerald-100/80">
+                                      Presentation {presentationDraftResult.result.presentationId} · Message draft {presentationDraftResult.result.messageDraftId}
+                                    </p>
+                                    <p className="mt-1 text-xs text-emerald-100/70">
+                                      Status: {presentationDraftResult.result.status} · E-poststatus: {presentationDraftResult.result.messageStatus} ·
+                                      E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
+                                      Presentasjon publisert: nei · Property matching-jobb startet: nei
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                      <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
+                                          Lagret e-postutkast
+                                        </p>
+                                        <p className="mt-2 text-sm font-semibold text-emerald-50">
+                                          {presentationDraftResult.result.messageDraft.subject}
+                                        </p>
+                                      </div>
+                                      <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                        <Clipboard className="mr-2 h-4 w-4" />
+                                        Kopier lagret e-postutkast
+                                      </Button>
+                                    </div>
+                                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-100">
+                                      {presentationDraftResult.result.messageDraft.bodyText}
+                                    </pre>
+                                    <p className="mt-2 text-xs text-emerald-100/70">
+                                      Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
+                                    </p>
+                                    {emailDraftCopyState === "copied" && (
+                                      <p className="mt-2 text-xs text-emerald-300">Lagret e-postutkast kopiert.</p>
+                                    )}
+                                    {emailDraftCopyState === "failed" && (
+                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret e-postutkast.</p>
+                                    )}
+                                  </div>
                                 </div>
                               )}
 

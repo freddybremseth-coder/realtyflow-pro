@@ -97,6 +97,9 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.status, "draft");
   assert.equal(result.messageStatus, "draft");
   assert.equal(result.itemCount, 1);
+  assert.equal(result.messageDraft.subject.includes("Moraira"), true);
+  assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
+  assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
   assert.equal(result.sideEffects.emailSent, false);
   assert.equal(result.sideEffects.leadsCreated, false);
   assert.equal(result.sideEffects.contactsCreated, false);

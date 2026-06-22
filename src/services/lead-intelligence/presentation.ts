@@ -51,6 +51,11 @@ export interface LeadCustomerPresentationDraftResult {
   itemCount: number;
   title: string;
   subject: string;
+  messageDraft: {
+    subject: string;
+    bodyText: string;
+    bodyHtml: string | null;
+  };
   sideEffects: {
     emailSent: false;
     leadsCreated: false;
@@ -363,6 +368,11 @@ export async function saveLeadCustomerPresentationDraft(input: {
     itemCount: snapshot.items.length,
     title,
     subject: emailDraft.subject,
+    messageDraft: {
+      subject: emailDraft.subject,
+      bodyText: emailDraft.bodyText,
+      bodyHtml: emailDraft.bodyHtml,
+    },
     sideEffects: {
       emailSent: false,
       leadsCreated: false,
