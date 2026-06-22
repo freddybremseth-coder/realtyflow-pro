@@ -104,8 +104,41 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.sideEffects.presentationPublished, false);
   assert.equal(repository.calls[0].messageDraft.subject.includes("Moraira"), true);
   assert.equal(repository.calls[0].messageDraft.bodyText.includes("Villa nær Moraira"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Se boligen på nettsiden"), true);
   assert.equal(repository.calls[0].messageDraft.sentAt, null);
   assert.equal(repository.calls[0].presentationJson && typeof repository.calls[0].presentationJson === "object", true);
+});
+
+test("presentation email draft does not fabricate missing property website links", async () => {
+  const repository = new MemoryPresentationRepository(
+    snapshot({
+      items: [
+        {
+          ...snapshot().items[0],
+          propertyPublicUrl: null,
+        },
+      ],
+    }),
+  );
+
+  await saveLeadCustomerPresentationDraft({
+    request: {
+      brand: "soleada",
+      buyerProfileId,
+      shortlistId,
+      idempotencySeed: correlationId,
+      language: "nb",
+    },
+    correlationId,
+    createdBy: "freddy.bremseth@gmail.com",
+    repository,
+  });
+
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Nettsidelenke: må legges inn eller verifiseres før deling."), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Nettsidelenke"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("properties.example.test"), false);
 });
 
 test("duplicate presentation draft returns existing IDs for identical payload", async () => {
