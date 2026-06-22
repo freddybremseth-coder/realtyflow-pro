@@ -269,6 +269,43 @@ interface LeadIntelligenceWorklistResponse {
   };
 }
 
+interface LeadIntelligenceCrmContextItem {
+  contactId: string;
+  name: string | null;
+  maskedPhone: string | null;
+  maskedEmail: string | null;
+  matchType: LeadContactCandidatePreview["matchType"];
+  confidence: number;
+  reasons: string[];
+  pipelineStatus: string | null;
+  pipelineValue: number | null;
+  propertyInterest: string | null;
+  source: string | null;
+  sentiment: string | null;
+  notesExcerpt: string | null;
+  interactionCount: number;
+  lastContact: string | null;
+  nextFollowup: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface LeadIntelligenceCrmContextResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    candidates: LeadContactCandidatePreview[];
+    context: LeadIntelligenceCrmContextItem[];
+  };
+  sideEffects: {
+    contactsCreated: false;
+    contactsUpdated: false;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+  };
+}
+
 const sourceOptions: Array<{ value: Source; label: string }> = [
   { value: "phone_call", label: "Telefonsamtale" },
   { value: "whatsapp", label: "WhatsApp" },
@@ -770,6 +807,9 @@ export function LeadIntelligenceClient({
   const [worklistLoading, setWorklistLoading] = useState(false);
   const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
   const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
+  const [crmContextLoading, setCrmContextLoading] = useState(false);
+  const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -839,10 +879,17 @@ export function LeadIntelligenceClient({
     setPresentationDraftResult(null);
   };
 
+  const clearCrmContext = () => {
+    setCrmContextLoading(false);
+    setCrmContextError(null);
+    setCrmContextResult(null);
+  };
+
   const clearContactCandidates = () => {
     setContactCandidatesLoaded(false);
     setContactCandidates([]);
     setContactCandidateError(null);
+    clearCrmContext();
     setContactDecision("continue_without_contact");
     setSelectedContactId(null);
     setSaveError(null);
@@ -915,6 +962,7 @@ export function LeadIntelligenceClient({
     setContactCandidatesLoaded(false);
     setContactCandidates([]);
     setContactCandidateError(null);
+    clearCrmContext();
     setContactDecision("continue_without_contact");
     setSelectedContactId(null);
     setSaveError(null);
@@ -971,6 +1019,7 @@ export function LeadIntelligenceClient({
       }
       setContactCandidates(body.candidates);
       setContactCandidatesLoaded(true);
+      clearCrmContext();
       setContactDecision("continue_without_contact");
       setSelectedContactId(null);
       setSaveResult(null);
@@ -982,6 +1031,48 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setCandidateLoading(false);
+    }
+  };
+
+  const loadCrmContext = async () => {
+    if (!edited || !persistenceEnabled) return;
+    setCrmContextLoading(true);
+    setCrmContextError(null);
+    setCrmContextResult(null);
+    try {
+      const res = await fetch("/api/lead-intelligence/crm-context", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          brand,
+          contact: edited.contact,
+          contactIds: contactCandidates.map((candidate) => candidate.contactId),
+        }),
+      });
+      const body = (await res.json()) as LeadIntelligenceCrmContextResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setCrmContextError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente CRM-kontekst.",
+        });
+        return;
+      }
+      setCrmContextResult(body);
+      setContactCandidates(body.result.candidates);
+      setContactCandidatesLoaded(true);
+      setContactCandidateError(null);
+      setContactDecision("continue_without_contact");
+      setSelectedContactId(null);
+      setSaveResult(null);
+    } catch {
+      setCrmContextError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte CRM-kontekst-API-et.",
+      });
+    } finally {
+      setCrmContextLoading(false);
     }
   };
 
@@ -1863,6 +1954,15 @@ export function LeadIntelligenceClient({
                       {candidateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                       Vis kontaktkandidater
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={loadCrmContext}
+                      disabled={crmContextLoading || !edited || !persistenceEnabled}
+                    >
+                      {crmContextLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                      Hent CRM-kontekst
+                    </Button>
 
                     {!persistenceEnabled && (
                       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
@@ -1876,6 +1976,16 @@ export function LeadIntelligenceClient({
                         <p className="mt-1">{contactCandidateError.message}</p>
                         <p className="mt-2 text-xs text-amber-100/80">
                           Correlation ID: {contactCandidateError.correlationId}
+                        </p>
+                      </div>
+                    )}
+
+                    {crmContextError && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                        <p className="font-semibold">{crmContextError.code}</p>
+                        <p className="mt-1">{crmContextError.message}</p>
+                        <p className="mt-2 text-xs text-amber-100/80">
+                          Correlation ID: {crmContextError.correlationId}
                         </p>
                       </div>
                     )}
@@ -1902,6 +2012,64 @@ export function LeadIntelligenceClient({
                       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
                         Kandidatoppslag er kun read-only nå. Kobling til eksisterende kontakt er låst til egen testkontakt
                         og egen server-side aktivering.
+                      </div>
+                    )}
+
+                    {crmContextResult && (
+                      <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-200">CRM-kontekst</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Read-only kontekst fra eksisterende kontaktpipeline. Ingen kontakt, lead eller e-post er opprettet.
+                          </p>
+                        </div>
+                        {crmContextResult.result.context.length === 0 ? (
+                          <p className="text-sm text-slate-400">
+                            Ingen eksisterende CRM-kontekst funnet for de server-bekreftede kandidatene.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {crmContextResult.result.context.map((item) => (
+                              <div
+                                key={`${item.matchType}:${item.contactId}`}
+                                className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm text-slate-300"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <p className="font-medium text-slate-100">{item.name || "Uten navn"}</p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {item.maskedPhone || "ingen telefon"} · {item.maskedEmail || "ingen e-post"}
+                                    </p>
+                                  </div>
+                                  <Badge variant="secondary">
+                                    {item.matchType} · {Math.round(item.confidence * 100)}%
+                                  </Badge>
+                                </div>
+                                <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                                  <p>Status: <span className="text-slate-200">{item.pipelineStatus || "ukjent"}</span></p>
+                                  <p>Verdi: <span className="text-slate-200">{formatCurrency(item.pipelineValue)}</span></p>
+                                  <p>Kilde: <span className="text-slate-200">{item.source || "ukjent"}</span></p>
+                                  <p>Siste kontakt: <span className="text-slate-200">{formatDateTime(item.lastContact)}</span></p>
+                                  <p>Neste oppfølging: <span className="text-slate-200">{formatDateTime(item.nextFollowup)}</span></p>
+                                  <p>Interaksjoner: <span className="text-slate-200">{item.interactionCount}</span></p>
+                                </div>
+                                {item.propertyInterest && (
+                                  <p className="mt-3 text-xs text-slate-400">
+                                    Boliginteresse: <span className="text-slate-200">{item.propertyInterest}</span>
+                                  </p>
+                                )}
+                                {item.notesExcerpt && (
+                                  <p className="mt-3 rounded-md border border-slate-800 bg-slate-900 p-2 text-xs text-slate-300">
+                                    {item.notesExcerpt}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-slate-500">
+                          Sideeffekter: kontakter opprettet nei · leads opprettet nei · e-post sendt nei · property matching startet nei.
+                        </p>
                       </div>
                     )}
 
