@@ -215,6 +215,17 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("propertyMatchingStarted: true"), false);
 });
 
+test("Lead Intelligence match reasons are humanized before preview and presentation display", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("function humanizedMatchReasonItems"), true);
+  assert.equal(source.includes("const reasons = humanizedMatchReasons(match.reasonsForMatch, 3);"), true);
+  assert.equal(source.includes("items={humanizedMatchReasonItems(match.reasonsForMatch, 4)}"), true);
+  assert.equal(source.includes("const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);"), true);
+  assert.equal(source.includes("items={match.reasonsForMatch}"), false);
+  assert.equal(source.includes("match.reasonsForMatch.slice(0, 3)"), false);
+});
+
 test("Lead Intelligence match review decisions are local-only preview state", async () => {
   const source = await readFile(clientPath, "utf8");
 
