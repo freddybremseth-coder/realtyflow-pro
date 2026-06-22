@@ -114,6 +114,10 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.presentationPreview.properties[0].reference, "N8513");
   assert.equal(result.presentationPreview.properties[0].publicUrl, "https://properties.example.test/n8513");
   assert.equal(result.presentationPreview.properties[0].imageUrl, "https://images.example.test/n8513.jpg");
+  assert.deepEqual(result.presentationPreview.properties[0].reasons.slice(0, 2), [
+    "Antall soverom ser ut til å passe, men må verifiseres.",
+    "Antall bad ser ut til å passe, men må verifiseres.",
+  ]);
   assert.equal(result.presentationPreview.needs.some((item) => item.includes("Kunden ønsker villa")), true);
   assert.equal(result.sideEffects.emailSent, false);
   assert.equal(result.sideEffects.leadsCreated, false);

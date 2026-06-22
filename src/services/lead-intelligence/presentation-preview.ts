@@ -69,6 +69,42 @@ function safeTextArray(value: unknown, limit = 8) {
   ).slice(0, limit);
 }
 
+function humanizeMatchReason(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  const isUnverified = lower.includes("(unverified)") || lower.includes("unverified");
+  const suffix = isUnverified ? ", men må verifiseres" : "";
+
+  if (lower.includes("bedrooms matches")) {
+    return `Antall soverom ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("bathrooms matches")) {
+    return `Antall bad ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("property_type matches")) {
+    return `Boligtypen ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("property location") && lower.includes("matches preferred area")) {
+    return normalized
+      .replace(/^Property location/i, "Området")
+      .replace(/ matches preferred area /i, " matcher ønsket område ")
+      .replace(/\s*\(unverified\)\.?/gi, `${suffix}.`);
+  }
+  if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) {
+    return normalized
+      .replace(/^Estimated total cost/i, "Estimert totalpris")
+      .replace(/ is within the buyer budget\.?$/i, " er innenfor kundens budsjett.");
+  }
+
+  const cleaned = normalized
+    .replace(/\s*\(unverified\)\.?/gi, "")
+    .replace(/\bunverified\b\.?/gi, "")
+    .trim()
+    .replace(/\.$/, "");
+  if (isUnverified && !cleaned) return "Dette punktet må verifiseres.";
+  return isUnverified ? `${cleaned}, men må verifiseres.` : normalized;
+}
+
 function findSection(sections: unknown, type: string) {
   if (!Array.isArray(sections)) return null;
   return sections.map(asRecord).find((section) => section?.type === type) || null;
@@ -114,7 +150,7 @@ export function buildLeadCustomerPresentationPreview(value: unknown): LeadCustom
         systemEligibility: safeText(item.systemEligibility, LEAD_INTELLIGENCE_LIMITS.shortText),
         score: safeNumber(item.score),
         dataQualityScore: safeNumber(item.dataQualityScore),
-        reasons: safeTextArray(item.reasons, 5),
+        reasons: safeTextArray(item.reasons, 5).map(humanizeMatchReason),
         concerns: safeTextArray(item.concerns, 5),
         questionsToVerify: safeTextArray(item.questionsToVerify, 5),
       })),
