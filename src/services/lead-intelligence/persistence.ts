@@ -1881,6 +1881,87 @@ export class LeadIntelligencePersistenceRepository {
     };
   }
 
+  async listCustomerPresentationDraftHistory(input: {
+    brand: string;
+    buyerProfileId: string;
+    limit: number;
+  }) {
+    this.assertCanRead();
+    const data = z
+      .object({
+        brand: BrandSchema,
+        buyerProfileId: UUIDSchema,
+        limit: z.coerce.number().int().min(1).max(10),
+      })
+      .strict()
+      .parse(input);
+    const { rows } = await this.db.query<{
+      presentation_id: string;
+      shortlist_id: string;
+      presentation_status: string;
+      title: string;
+      presentation_json: unknown;
+      presentation_created_at: string | Date;
+      message_draft_id: string;
+      message_status: string;
+      subject: string;
+      message_created_at: string | Date;
+    }>(
+      `
+        select
+          presentation.id::text as presentation_id,
+          presentation.shortlist_id::text as shortlist_id,
+          presentation.status as presentation_status,
+          presentation.title,
+          presentation.presentation_json,
+          presentation.created_at as presentation_created_at,
+          draft.id::text as message_draft_id,
+          draft.status as message_status,
+          draft.subject,
+          draft.created_at as message_created_at
+        from public.lead_customer_presentations presentation
+        join lateral (
+          select id, status, subject, created_at
+          from public.lead_customer_message_drafts draft
+          where draft.brand = presentation.brand
+            and draft.presentation_id = presentation.id
+            and draft.buyer_profile_id = presentation.buyer_profile_id
+          order by draft.created_at desc, draft.id desc
+          limit 1
+        ) draft on true
+        where presentation.brand = $1
+          and presentation.buyer_profile_id = $2::uuid
+        order by draft.created_at desc, presentation.created_at desc, presentation.id desc
+        limit $3
+      `,
+      [data.brand, data.buyerProfileId, data.limit],
+    );
+
+    return rows.map((row) => {
+      const presentationJson = BoundedJsonSchema.parse(row.presentation_json);
+      const itemCount =
+        presentationJson &&
+        typeof presentationJson === "object" &&
+        !Array.isArray(presentationJson) &&
+        Array.isArray((presentationJson as { properties?: unknown }).properties)
+          ? (presentationJson as { properties: unknown[] }).properties.length
+          : 0;
+
+      return {
+        presentationId: UUIDSchema.parse(row.presentation_id),
+        shortlistId: UUIDSchema.parse(row.shortlist_id),
+        messageDraftId: UUIDSchema.parse(row.message_draft_id),
+        status: LeadCustomerPresentationStatusSchema.parse(row.presentation_status),
+        messageStatus: LeadCustomerMessageDraftStatusSchema.parse(row.message_status),
+        title: row.title,
+        subject: row.subject,
+        itemCount,
+        createdAt: normalizeDateString(row.presentation_created_at),
+        messageDraftCreatedAt: normalizeDateString(row.message_created_at),
+      };
+    });
+  }
+
   async createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput) {
     this.assertCanWrite();
     const data = CreateLeadCustomerPresentationDraftInputSchema.parse(input);

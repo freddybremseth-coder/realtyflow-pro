@@ -234,6 +234,28 @@ interface PresentationDraftResponse {
   };
 }
 
+interface PresentationDraftHistoryResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    brand: string;
+    buyerProfileId: string;
+    limit: number;
+    items: Array<{
+      presentationId: string;
+      shortlistId: string;
+      messageDraftId: string;
+      status: "draft" | "approved" | "archived";
+      messageStatus: "draft" | "approved" | "cancelled";
+      title: string;
+      subject: string;
+      itemCount: number;
+      createdAt: string;
+      messageDraftCreatedAt: string;
+    }>;
+  };
+}
+
 interface LeadIntelligenceWorklistItem {
   buyerProfileId: string;
   intakeId: string;
@@ -816,6 +838,9 @@ export function LeadIntelligenceClient({
   const [presentationDraftLoading, setPresentationDraftLoading] = useState(false);
   const [presentationDraftError, setPresentationDraftError] = useState<SafeErrorResponse["error"] | null>(null);
   const [presentationDraftResult, setPresentationDraftResult] = useState<PresentationDraftResponse | null>(null);
+  const [presentationDraftHistoryLoading, setPresentationDraftHistoryLoading] = useState(false);
+  const [presentationDraftHistoryError, setPresentationDraftHistoryError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [presentationDraftHistoryResult, setPresentationDraftHistoryResult] = useState<PresentationDraftHistoryResponse | null>(null);
   const [editableEmailSubject, setEditableEmailSubject] = useState("");
   const [editableEmailBody, setEditableEmailBody] = useState("");
   const [worklistLoading, setWorklistLoading] = useState(false);
@@ -886,6 +911,8 @@ export function LeadIntelligenceClient({
   const clearPresentationDraftState = () => {
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
+    setPresentationDraftHistoryError(null);
+    setPresentationDraftHistoryResult(null);
     setEditableEmailSubject("");
     setEditableEmailBody("");
     resetDraftCopyState();
@@ -1361,8 +1388,7 @@ export function LeadIntelligenceClient({
     }
   };
 
-  const loadLatestPresentationDraft = async () => {
-    if (!activeWorklistItem?.latestPresentationId) return;
+  const loadPresentationDraftById = async (presentationId: string) => {
     setPresentationDraftLoading(true);
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
@@ -1373,7 +1399,7 @@ export function LeadIntelligenceClient({
     try {
       const params = new URLSearchParams({
         brand,
-        presentationId: activeWorklistItem.latestPresentationId,
+        presentationId,
       });
       const res = await fetch(`/api/lead-intelligence/presentations?${params.toString()}`, {
         method: "GET",
@@ -1408,6 +1434,12 @@ export function LeadIntelligenceClient({
       setPresentationDraftResult(body);
       setEditableEmailSubject(body.result.messageDraft.subject);
       setEditableEmailBody(body.result.messageDraft.bodyText);
+      window.setTimeout(() => {
+        document.getElementById("lead-intelligence-active-presentation-draft")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }, 50);
     } catch {
       setPresentationDraftError({
         correlationId: "client",
@@ -1416,6 +1448,47 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setPresentationDraftLoading(false);
+    }
+  };
+
+  const loadLatestPresentationDraft = async () => {
+    if (!activeWorklistItem?.latestPresentationId) return;
+    await loadPresentationDraftById(activeWorklistItem.latestPresentationId);
+  };
+
+  const loadPresentationDraftHistory = async () => {
+    if (!activeWorklistItem?.buyerProfileId) return;
+    setPresentationDraftHistoryLoading(true);
+    setPresentationDraftHistoryError(null);
+
+    try {
+      const params = new URLSearchParams({
+        brand,
+        buyerProfileId: activeWorklistItem.buyerProfileId,
+        limit: "5",
+      });
+      const res = await fetch(`/api/lead-intelligence/presentations?${params.toString()}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      const body = (await res.json()) as PresentationDraftHistoryResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setPresentationDraftHistoryError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente utkasthistorikk.",
+        });
+        return;
+      }
+      setPresentationDraftHistoryResult(body);
+    } catch {
+      setPresentationDraftHistoryError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte presentasjons-API-et.",
+      });
+    } finally {
+      setPresentationDraftHistoryLoading(false);
     }
   };
 
@@ -1700,8 +1773,86 @@ export function LeadIntelligenceClient({
                               )}
                               Åpne siste e-postutkast
                             </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="ml-2 mt-3"
+                              onClick={loadPresentationDraftHistory}
+                              disabled={presentationDraftHistoryLoading}
+                            >
+                              {presentationDraftHistoryLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <MessageSquareText className="mr-2 h-4 w-4" />
+                              )}
+                              Vis utkasthistorikk
+                            </Button>
                             <p className="mt-2 text-xs text-emerald-100/70">
                               Hentes read-only og vises lokalt. Det sendes fortsatt ingen e-post.
+                            </p>
+                          </div>
+                        )}
+
+                        {presentationDraftHistoryResult && (
+                          <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-200">
+                            <p className="font-semibold text-slate-100">
+                              Utkasthistorikk ({presentationDraftHistoryResult.result.items.length})
+                            </p>
+                            {presentationDraftHistoryResult.result.items.length === 0 ? (
+                              <p className="mt-2 text-xs text-slate-500">
+                                Ingen presentasjons- eller e-postutkast er lagret for denne profilen ennå.
+                              </p>
+                            ) : (
+                              <div className="mt-3 space-y-2">
+                                {presentationDraftHistoryResult.result.items.map((item) => (
+                                  <div
+                                    key={item.presentationId}
+                                    className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"
+                                  >
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                      <div>
+                                        <p className="font-medium text-slate-100">{item.subject}</p>
+                                        <p className="mt-1 text-xs text-slate-400">
+                                          Presentation {shortPropertyId(item.presentationId)} · Message draft{" "}
+                                          {shortPropertyId(item.messageDraftId)} · {item.itemCount} bolig(er)
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          Status: {item.status} · E-poststatus: {item.messageStatus} · Lagret{" "}
+                                          {formatDateTime(item.messageDraftCreatedAt)}
+                                        </p>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => loadPresentationDraftById(item.presentationId)}
+                                        disabled={presentationDraftLoading}
+                                      >
+                                        Åpne
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <p className="mt-3 text-xs text-slate-500">
+                              Historikken henter bare metadata. Selve e-postteksten åpnes først når du trykker Åpne.
+                            </p>
+                          </div>
+                        )}
+
+                        {presentationDraftHistoryError && !propertyMatchResult && (
+                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                            <p className="font-semibold">{presentationDraftHistoryError.code}</p>
+                            <p className="mt-1">{presentationDraftHistoryError.message}</p>
+                            {presentationDraftHistoryError.details && (
+                              <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                {prettyJson(presentationDraftHistoryError.details)}
+                              </pre>
+                            )}
+                            <p className="mt-2 text-xs text-red-100/70">
+                              Correlation ID: {presentationDraftHistoryError.correlationId}
                             </p>
                           </div>
                         )}
