@@ -84,6 +84,34 @@ class WorklistDb implements QueryClient {
   }
 }
 
+class PresentationDraftLookupDb implements QueryClient {
+  queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
+
+  async query<T>(sql: string, values?: readonly unknown[]) {
+    this.queries.push({ sql, values });
+    return {
+      rows: [
+        {
+          presentation_id: "77777777-7777-4777-8777-777777777777",
+          buyer_profile_id: profileId,
+          shortlist_id: "66666666-6666-4666-8666-666666666666",
+          presentation_status: "draft",
+          title: "Moraira shortlist",
+          presentation_json: {
+            title: "Moraira shortlist",
+            properties: [{ id: "property-1" }, { id: "property-2" }],
+          },
+          message_draft_id: "88888888-8888-4888-8888-888888888888",
+          message_status: "draft",
+          subject: "Boligforslag i Moraira",
+          body_text: "Hei,\n\nHer er et internt e-postutkast.",
+          body_html: "<p>Hei</p>",
+        },
+      ] as T[],
+    };
+  }
+}
+
 function persistenceEnv(enabled = true) {
   return {
     REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED: enabled ? "true" : "false",
@@ -754,4 +782,30 @@ test("worklist returns safe persisted case metadata without raw payloads or cont
   assert(!/body_text|body_html|subject/i.test(sql));
   assert(!/match_value_hash/i.test(sql));
   assert(!/phone|email/i.test(sql));
+});
+
+test("presentation draft lookup returns safe draft content without raw intake or contact hashes", async () => {
+  const db = new PresentationDraftLookupDb();
+  const repo = repository(db);
+  const draft = await repo.getCustomerPresentationDraft({
+    brand: "soleada",
+    presentationId: "77777777-7777-4777-8777-777777777777",
+  });
+
+  assert.equal(draft?.presentationId, "77777777-7777-4777-8777-777777777777");
+  assert.equal(draft?.buyerProfileId, profileId);
+  assert.equal(draft?.shortlistId, "66666666-6666-4666-8666-666666666666");
+  assert.equal(draft?.messageDraftId, "88888888-8888-4888-8888-888888888888");
+  assert.equal(draft?.loadedFromHistory, true);
+  assert.equal(draft?.itemCount, 2);
+  assert.equal(draft?.messageDraft.subject, "Boligforslag i Moraira");
+  assert.equal(draft?.sideEffects.emailSent, false);
+
+  const sql = db.queries.map((query) => query.sql).join("\n");
+  assert.equal(db.queries[0].values?.[0], "soleada");
+  assert.equal(db.queries[0].values?.[1], "77777777-7777-4777-8777-777777777777");
+  assert(!/raw_text_restricted/i.test(sql));
+  assert(!/result_json/i.test(sql));
+  assert(!/match_value_hash/i.test(sql));
+  assert(!/from public\\.contacts/i.test(sql));
 });

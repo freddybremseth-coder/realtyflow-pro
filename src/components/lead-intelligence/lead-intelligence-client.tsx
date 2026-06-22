@@ -208,11 +208,14 @@ interface PresentationDraftResponse {
   correlationId: string;
   result: {
     presentationId: string;
+    buyerProfileId: string;
+    shortlistId: string;
     messageDraftId: string;
     duplicate: boolean;
     conflict: boolean;
-    status: "draft";
-    messageStatus: "draft";
+    loadedFromHistory?: boolean;
+    status: "draft" | "approved" | "archived";
+    messageStatus: "draft" | "approved" | "cancelled";
     itemCount: number;
     title: string;
     subject: string;
@@ -1352,6 +1355,64 @@ export function LeadIntelligenceClient({
     }
   };
 
+  const loadLatestPresentationDraft = async () => {
+    if (!activeWorklistItem?.latestPresentationId) return;
+    setPresentationDraftLoading(true);
+    setPresentationDraftError(null);
+    setPresentationDraftResult(null);
+    setEditableEmailSubject("");
+    setEditableEmailBody("");
+    resetDraftCopyState();
+
+    try {
+      const params = new URLSearchParams({
+        brand,
+        presentationId: activeWorklistItem.latestPresentationId,
+      });
+      const res = await fetch(`/api/lead-intelligence/presentations?${params.toString()}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      const body = (await res.json()) as PresentationDraftResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setPresentationDraftError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente lagret presentasjonsutkast.",
+        });
+        return;
+      }
+      setShortlistSaveResult({
+        ok: true,
+        correlationId: body.correlationId,
+        result: {
+          shortlistId: body.result.shortlistId,
+          duplicate: true,
+          conflict: false,
+          itemCount: body.result.itemCount,
+          sideEffects: {
+            leadsCreated: false,
+            contactsCreated: false,
+            emailsSent: false,
+            propertyMatchingStarted: false,
+            presentationCreated: false,
+          },
+        },
+      });
+      setPresentationDraftResult(body);
+      setEditableEmailSubject(body.result.messageDraft.subject);
+      setEditableEmailBody(body.result.messageDraft.bodyText);
+    } catch {
+      setPresentationDraftError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte presentasjons-API-et.",
+      });
+    } finally {
+      setPresentationDraftLoading(false);
+    }
+  };
+
   const loadWorklist = async () => {
     if (!persistenceEnabled) return;
     setWorklistLoading(true);
@@ -1609,6 +1670,36 @@ export function LeadIntelligenceClient({
                           </p>
                         </div>
 
+                        {activeWorklistItem.latestPresentationId && (
+                          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                            <p className="font-semibold">Siste lagrede e-postutkast finnes</p>
+                            <p className="mt-1 text-xs text-emerald-100/75">
+                              Presentation {shortPropertyId(activeWorklistItem.latestPresentationId)}
+                              {activeWorklistItem.latestMessageDraftId
+                                ? ` · Message draft ${shortPropertyId(activeWorklistItem.latestMessageDraftId)}`
+                                : ""}
+                            </p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="mt-3"
+                              onClick={loadLatestPresentationDraft}
+                              disabled={presentationDraftLoading}
+                            >
+                              {presentationDraftLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                              )}
+                              Åpne siste e-postutkast
+                            </Button>
+                            <p className="mt-2 text-xs text-emerald-100/70">
+                              Hentes read-only og vises lokalt. Det sendes fortsatt ingen e-post.
+                            </p>
+                          </div>
+                        )}
+
                         <div className="space-y-2">
                           <FieldLabel>Eiendomsreferanser, valgfritt</FieldLabel>
                           <textarea
@@ -1830,7 +1921,9 @@ export function LeadIntelligenceClient({
                                     {presentationDraftResult && (
                                       <div className="mt-3 rounded-lg border border-emerald-400/20 bg-slate-950/80 p-3">
                                         <p className="font-semibold text-emerald-50">
-                                          {presentationDraftResult.result.duplicate
+                                          {presentationDraftResult.result.loadedFromHistory
+                                            ? "Lagret presentasjonsutkast hentet read-only."
+                                            : presentationDraftResult.result.duplicate
                                             ? "Identisk presentasjonsutkast var allerede lagret."
                                             : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
                                         </p>
@@ -3116,7 +3209,9 @@ export function LeadIntelligenceClient({
                                 <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
                                   <div>
                                     <p className="font-semibold">
-                                      {presentationDraftResult.result.duplicate
+                                      {presentationDraftResult.result.loadedFromHistory
+                                        ? "Lagret presentasjonsutkast hentet read-only."
+                                        : presentationDraftResult.result.duplicate
                                         ? "Identisk presentasjonsutkast var allerede lagret."
                                         : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
                                     </p>

@@ -67,6 +67,9 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Tidligere lagrede tester ligger her"), true);
   assert.equal(source.includes("Arbeidslisten hentes automatisk"), true);
   assert.equal(source.includes("continueFromWorklistItem"), true);
+  assert.equal(source.includes("loadLatestPresentationDraft"), true);
+  assert.equal(source.includes("Åpne siste e-postutkast"), true);
+  assert.equal(source.includes("Lagret presentasjonsutkast hentet read-only."), true);
   assert.equal(source.includes("Lagret buyer profile valgt fra arbeidslisten."), true);
   assert.equal(source.includes("Du kan kjøre ny eiendomsmatch på denne lagrede profilen"), true);
   assert.equal(source.includes("Ingen lagrede Lead Intelligence-saker"), true);

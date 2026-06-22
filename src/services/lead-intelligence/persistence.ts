@@ -1785,6 +1785,102 @@ export class LeadIntelligencePersistenceRepository {
     };
   }
 
+  async getCustomerPresentationDraft(input: {
+    brand: string;
+    presentationId: string;
+  }) {
+    this.assertCanRead();
+    const data = z
+      .object({
+        brand: BrandSchema,
+        presentationId: UUIDSchema,
+      })
+      .strict()
+      .parse(input);
+    const { rows } = await this.db.query<{
+      presentation_id: string;
+      buyer_profile_id: string;
+      shortlist_id: string;
+      presentation_status: string;
+      title: string;
+      presentation_json: unknown;
+      message_draft_id: string | null;
+      message_status: string | null;
+      subject: string | null;
+      body_text: string | null;
+      body_html: string | null;
+    }>(
+      `
+        select
+          presentation.id::text as presentation_id,
+          presentation.buyer_profile_id::text as buyer_profile_id,
+          presentation.shortlist_id::text as shortlist_id,
+          presentation.status as presentation_status,
+          presentation.title,
+          presentation.presentation_json,
+          draft.id::text as message_draft_id,
+          draft.status as message_status,
+          draft.subject,
+          draft.body_text,
+          draft.body_html
+        from public.lead_customer_presentations presentation
+        left join lateral (
+          select id, status, subject, body_text, body_html
+          from public.lead_customer_message_drafts draft
+          where draft.brand = presentation.brand
+            and draft.presentation_id = presentation.id
+          order by draft.created_at desc, draft.id desc
+          limit 1
+        ) draft on true
+        where presentation.brand = $1
+          and presentation.id = $2::uuid
+        limit 1
+      `,
+      [data.brand, data.presentationId],
+    );
+
+    const row = rows[0];
+    if (!row || !row.message_draft_id || !row.message_status || !row.subject || !row.body_text) {
+      return null;
+    }
+
+    const presentationJson = BoundedJsonSchema.parse(row.presentation_json);
+    const itemCount =
+      presentationJson &&
+      typeof presentationJson === "object" &&
+      !Array.isArray(presentationJson) &&
+      Array.isArray((presentationJson as { properties?: unknown }).properties)
+        ? (presentationJson as { properties: unknown[] }).properties.length
+        : 0;
+
+    return {
+      presentationId: UUIDSchema.parse(row.presentation_id),
+      buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
+      shortlistId: UUIDSchema.parse(row.shortlist_id),
+      messageDraftId: UUIDSchema.parse(row.message_draft_id),
+      duplicate: true,
+      conflict: false,
+      loadedFromHistory: true,
+      status: LeadCustomerPresentationStatusSchema.parse(row.presentation_status),
+      messageStatus: LeadCustomerMessageDraftStatusSchema.parse(row.message_status),
+      itemCount,
+      title: row.title,
+      subject: row.subject,
+      messageDraft: {
+        subject: row.subject,
+        bodyText: row.body_text,
+        bodyHtml: row.body_html,
+      },
+      sideEffects: {
+        emailSent: false,
+        leadsCreated: false,
+        contactsCreated: false,
+        propertyMatchingStarted: false,
+        presentationPublished: false,
+      } as const,
+    };
+  }
+
   async createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput) {
     this.assertCanWrite();
     const data = CreateLeadCustomerPresentationDraftInputSchema.parse(input);

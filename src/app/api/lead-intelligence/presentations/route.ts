@@ -3,6 +3,7 @@ import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
 import { isLeadIntelligencePropertyMatchingEnabled } from "@/services/lead-intelligence/feature-flags";
 import {
   LeadCustomerPresentationDraftRequestSchema,
+  LeadCustomerPresentationDraftLookupQuerySchema,
   saveLeadCustomerPresentationDraft,
 } from "@/services/lead-intelligence/presentation";
 import {
@@ -12,11 +13,64 @@ import {
   leadIntelligenceHeaders,
   leadIntelligenceJsonError,
   readJsonBody,
+  withLeadIntelligenceQuery,
   withLeadIntelligenceTransaction,
 } from "@/services/lead-intelligence/server-runtime";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+export async function GET(request: NextRequest) {
+  let correlationId = request.headers.get("x-correlation-id") || "unknown";
+
+  try {
+    const context = await getLeadIntelligenceRouteContext(request);
+    correlationId = context.correlationId;
+    if (!isLeadIntelligencePropertyMatchingEnabled()) {
+      throw new LeadIntelligenceError(
+        "PROPERTY_MATCHING_DISABLED",
+        "Lead Intelligence property matching is disabled",
+        403,
+      );
+    }
+
+    assertLeadIntelligenceActionRateLimit(context.email, "presentation-draft");
+    const parsed = LeadCustomerPresentationDraftLookupQuerySchema.safeParse({
+      brand: request.nextUrl.searchParams.get("brand") || "",
+      presentationId: request.nextUrl.searchParams.get("presentationId") || "",
+    });
+    if (!parsed.success) {
+      throw new LeadIntelligenceError("INVALID_REQUEST", "Invalid presentation draft lookup request", 400, {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+    }
+
+    const result = await withLeadIntelligenceQuery(parsed.data.brand, (client) =>
+      createLeadIntelligenceRepository(client, context).getCustomerPresentationDraft(parsed.data),
+    );
+
+    if (!result) {
+      throw new LeadIntelligenceError("PRESENTATION_DRAFT_NOT_FOUND", "Presentation draft was not found", 404);
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        correlationId,
+        result,
+      },
+      {
+        status: 200,
+        headers: leadIntelligenceHeaders(correlationId),
+      },
+    );
+  } catch (error) {
+    return leadIntelligenceJsonError(error, correlationId);
+  }
+}
 
 export async function POST(request: NextRequest) {
   let correlationId = request.headers.get("x-correlation-id") || "unknown";

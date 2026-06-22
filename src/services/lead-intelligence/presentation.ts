@@ -27,12 +27,23 @@ export const LeadCustomerPresentationDraftRequestSchema = z
 
 export type LeadCustomerPresentationDraftRequest = z.infer<typeof LeadCustomerPresentationDraftRequestSchema>;
 
+export const LeadCustomerPresentationDraftLookupQuerySchema = z
+  .object({
+    brand: LeadIntelligenceRealEstateBrandSchema,
+    presentationId: UUIDSchema,
+  })
+  .strict();
+
 export interface LeadCustomerPresentationRepository {
   loadShortlistSnapshotForPresentation(input: {
     brand: string;
     buyerProfileId: string;
     shortlistId: string;
   }): Promise<LeadCustomerPresentationShortlistSnapshot | null>;
+  getCustomerPresentationDraft(input: {
+    brand: string;
+    presentationId: string;
+  }): Promise<LeadCustomerPresentationDraftResult | null>;
   createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput): Promise<{
     presentationId: string;
     messageDraftId: string | null;
@@ -43,11 +54,14 @@ export interface LeadCustomerPresentationRepository {
 
 export interface LeadCustomerPresentationDraftResult {
   presentationId: string;
+  buyerProfileId: string;
+  shortlistId: string;
   messageDraftId: string;
   duplicate: boolean;
   conflict: boolean;
-  status: "draft";
-  messageStatus: "draft";
+  loadedFromHistory?: boolean;
+  status: "draft" | "approved" | "archived";
+  messageStatus: "draft" | "approved" | "cancelled";
   itemCount: number;
   title: string;
   subject: string;
@@ -395,9 +409,12 @@ export async function saveLeadCustomerPresentationDraft(input: {
 
   return {
     presentationId: persisted.presentationId,
+    buyerProfileId: request.buyerProfileId,
+    shortlistId: request.shortlistId,
     messageDraftId: persisted.messageDraftId,
     duplicate: persisted.duplicate,
     conflict: false,
+    loadedFromHistory: false,
     status: "draft",
     messageStatus: "draft",
     itemCount: snapshot.items.length,
