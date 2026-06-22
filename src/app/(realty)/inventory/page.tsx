@@ -114,6 +114,20 @@ function sourceLabel(source: string) {
   }
 }
 
+function safeLeadIntelligenceReturnPath(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/lead-intelligence") || trimmed.startsWith("//")) return null;
+
+  try {
+    const url = new URL(trimmed, "https://realtyflow.local");
+    if (url.pathname !== "/lead-intelligence") return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
 // Parse RedSP XML feed - matches actual RedSP v3 format:
 // <root><property>...<title><no>...</no></title><surface_area><built>...</built></surface_area>...</property></root>
 function parseRedSPXml(xmlText: string): Property[] {
@@ -538,10 +552,12 @@ export default function InventoryPage() {
   const [showEditModal, setShowEditModal] = useState<Property | null>(null);
   const [publicationByProperty, setPublicationByProperty] = useState<Record<string, string[]>>({});
   const [savingPublication, setSavingPublication] = useState<string | null>(null);
+  const [leadIntelligenceReturnPath, setLeadIntelligenceReturnPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    setLeadIntelligenceReturnPath(safeLeadIntelligenceReturnPath(params.get("returnTo")));
     const target = params.get("propertyId") || params.get("propertyRef");
     if (!target || openedPropertyFromQueryRef.current === target) return;
 
@@ -1050,6 +1066,25 @@ REGLER:
           </Button>
         </div>
       </div>
+
+      {leadIntelligenceReturnPath && (
+        <Card className="border-cyan-500/30 bg-cyan-500/10">
+          <CardContent className="flex flex-col gap-3 p-4 text-cyan-100 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Du kom hit fra Lead Intelligence.</p>
+              <p className="mt-1 text-xs text-cyan-100/75">
+                Gå tilbake til samme lagrede e-postutkast og buyer profile uten å starte analysen på nytt.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <a href={leadIntelligenceReturnPath}>
+                <ChevronLeft size={14} className="mr-1.5" />
+                Tilbake til siste e-postutkast
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -1724,7 +1759,15 @@ REGLER:
                     : `Lag SoMe-post for ${selectedSoMeBrand.name}`}
               </Button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {leadIntelligenceReturnPath && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={leadIntelligenceReturnPath}>
+                      <ChevronLeft size={14} className="mr-1.5" />
+                      Tilbake til e-postutkast
+                    </a>
+                  </Button>
+                )}
                 <Button size="sm" onClick={() => { setShowEditModal({...showDetailModal}); setShowDetailModal(null); }}>
                   <Pencil size={14} className="mr-1.5" />Rediger
                 </Button>
