@@ -137,7 +137,10 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Boligkort"), true);
   assert.equal(source.includes("Kortene er et internt utkast"), true);
   assert.equal(source.includes("Presentasjonsutkast lagret som draft uten eksterne sideeffekter."), true);
-  assert.equal(source.includes("Lagret e-postutkast"), true);
+  assert.equal(source.includes("Rediger e-postutkast lokalt"), true);
+  assert.equal(source.includes("Endringene lagres ikke i databasen"), true);
+  assert.equal(source.includes("editableEmailSubject"), true);
+  assert.equal(source.includes("editableEmailBody"), true);
   assert.equal(source.includes("Kopier tekst"), true);
   assert.equal(source.includes("Kopier HTML"), true);
   assert.equal(source.includes("HTML-versjon"), true);

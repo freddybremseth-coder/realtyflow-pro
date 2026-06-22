@@ -813,6 +813,8 @@ export function LeadIntelligenceClient({
   const [presentationDraftLoading, setPresentationDraftLoading] = useState(false);
   const [presentationDraftError, setPresentationDraftError] = useState<SafeErrorResponse["error"] | null>(null);
   const [presentationDraftResult, setPresentationDraftResult] = useState<PresentationDraftResponse | null>(null);
+  const [editableEmailSubject, setEditableEmailSubject] = useState("");
+  const [editableEmailBody, setEditableEmailBody] = useState("");
   const [worklistLoading, setWorklistLoading] = useState(false);
   const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
   const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
@@ -878,15 +880,21 @@ export function LeadIntelligenceClient({
     setPresentationCopyState("idle");
   };
 
+  const clearPresentationDraftState = () => {
+    setPresentationDraftError(null);
+    setPresentationDraftResult(null);
+    setEditableEmailSubject("");
+    setEditableEmailBody("");
+    resetDraftCopyState();
+  };
+
   const clearPropertyMatchPreview = () => {
     setPropertyMatchError(null);
     setPropertyMatchResult(null);
     setMatchReviewDecisions({});
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
-    resetDraftCopyState();
-    setPresentationDraftError(null);
-    setPresentationDraftResult(null);
+    clearPresentationDraftState();
   };
 
   const clearCrmContext = () => {
@@ -1194,9 +1202,7 @@ export function LeadIntelligenceClient({
       setMatchReviewDecisions({});
       setShortlistSaveError(null);
       setShortlistSaveResult(null);
-      resetDraftCopyState();
-      setPresentationDraftError(null);
-      setPresentationDraftResult(null);
+      clearPresentationDraftState();
     } catch {
       setPropertyMatchError({
         correlationId: "client",
@@ -1213,9 +1219,7 @@ export function LeadIntelligenceClient({
     setShortlistSaveLoading(true);
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
-    resetDraftCopyState();
-    setPresentationDraftError(null);
-    setPresentationDraftResult(null);
+    clearPresentationDraftState();
 
     try {
       const res = await fetch("/api/lead-intelligence/shortlists", {
@@ -1242,9 +1246,7 @@ export function LeadIntelligenceClient({
         return;
       }
       setShortlistSaveResult(body);
-      setPresentationDraftError(null);
-      setPresentationDraftResult(null);
-      resetDraftCopyState();
+      clearPresentationDraftState();
     } catch {
       setShortlistSaveError({
         correlationId: "client",
@@ -1259,8 +1261,8 @@ export function LeadIntelligenceClient({
   const copyEmailDraftText = async () => {
     const draft = presentationDraftResult?.result.messageDraft
       ? {
-          subject: presentationDraftResult.result.messageDraft.subject,
-          body: presentationDraftResult.result.messageDraft.bodyText,
+          subject: editableEmailSubject,
+          body: editableEmailBody,
         }
       : shortlistEmailDraft;
     if (!draft) return;
@@ -1307,6 +1309,8 @@ export function LeadIntelligenceClient({
     setPresentationDraftLoading(true);
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
+    setEditableEmailSubject("");
+    setEditableEmailBody("");
     resetDraftCopyState();
 
     try {
@@ -1335,6 +1339,8 @@ export function LeadIntelligenceClient({
         return;
       }
       setPresentationDraftResult(body);
+      setEditableEmailSubject(body.result.messageDraft.subject);
+      setEditableEmailBody(body.result.messageDraft.bodyText);
     } catch {
       setPresentationDraftError({
         correlationId: "client",
@@ -1751,9 +1757,7 @@ export function LeadIntelligenceClient({
                                           }));
                                           setShortlistSaveError(null);
                                           setShortlistSaveResult(null);
-                                          resetDraftCopyState();
-                                          setPresentationDraftError(null);
-                                          setPresentationDraftResult(null);
+                                          clearPresentationDraftState();
                                         }}
                                         className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                                       >
@@ -1855,14 +1859,38 @@ export function LeadIntelligenceClient({
 
                                         <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
                                           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
-                                            Lagret e-postutkast
+                                            Rediger e-postutkast lokalt
                                           </p>
-                                          <p className="mt-2 text-sm font-semibold text-emerald-50">
-                                            {presentationDraftResult.result.messageDraft.subject}
+                                          <p className="mt-1 text-xs text-emerald-100/70">
+                                            Endringene lagres ikke i databasen. Kopier e-posttekst bruker teksten under.
                                           </p>
-                                          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-100">
-                                            {presentationDraftResult.result.messageDraft.bodyText}
-                                          </pre>
+                                          <div className="mt-3 space-y-3">
+                                            <label className="block text-xs font-semibold text-slate-300" htmlFor="active-profile-email-subject">
+                                              Emne
+                                            </label>
+                                            <input
+                                              id="active-profile-email-subject"
+                                              value={editableEmailSubject}
+                                              onChange={(event) => {
+                                                setEditableEmailSubject(event.target.value);
+                                                resetDraftCopyState();
+                                              }}
+                                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                                            />
+                                            <label className="block text-xs font-semibold text-slate-300" htmlFor="active-profile-email-body">
+                                              E-posttekst
+                                            </label>
+                                            <textarea
+                                              id="active-profile-email-body"
+                                              value={editableEmailBody}
+                                              onChange={(event) => {
+                                                setEditableEmailBody(event.target.value);
+                                                resetDraftCopyState();
+                                              }}
+                                              rows={12}
+                                              className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
+                                            />
+                                          </div>
                                           <p className="mt-2 text-xs text-emerald-100/70">
                                             Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
                                           </p>
@@ -2924,9 +2952,7 @@ export function LeadIntelligenceClient({
                                         }));
                                         setShortlistSaveError(null);
                                         setShortlistSaveResult(null);
-                                        resetDraftCopyState();
-                                        setPresentationDraftError(null);
-                                        setPresentationDraftResult(null);
+                                        clearPresentationDraftState();
                                       }}
                                       className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                                     >
@@ -3108,10 +3134,10 @@ export function LeadIntelligenceClient({
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                       <div>
                                         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
-                                          Lagret e-postutkast
+                                          Rediger e-postutkast lokalt
                                         </p>
-                                        <p className="mt-2 text-sm font-semibold text-emerald-50">
-                                          {presentationDraftResult.result.messageDraft.subject}
+                                        <p className="mt-1 text-xs text-emerald-100/70">
+                                          Endringene lagres ikke i databasen. Kopier tekst bruker teksten du redigerer her.
                                         </p>
                                       </div>
                                       <div className="flex flex-wrap gap-2">
@@ -3127,9 +3153,33 @@ export function LeadIntelligenceClient({
                                         )}
                                       </div>
                                     </div>
-                                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-100">
-                                      {presentationDraftResult.result.messageDraft.bodyText}
-                                    </pre>
+                                    <div className="mt-3 space-y-3">
+                                      <label className="block text-xs font-semibold text-slate-300" htmlFor="lead-intelligence-email-subject">
+                                        Emne
+                                      </label>
+                                      <input
+                                        id="lead-intelligence-email-subject"
+                                        value={editableEmailSubject}
+                                        onChange={(event) => {
+                                          setEditableEmailSubject(event.target.value);
+                                          resetDraftCopyState();
+                                        }}
+                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                                      />
+                                      <label className="block text-xs font-semibold text-slate-300" htmlFor="lead-intelligence-email-body">
+                                        E-posttekst
+                                      </label>
+                                      <textarea
+                                        id="lead-intelligence-email-body"
+                                        value={editableEmailBody}
+                                        onChange={(event) => {
+                                          setEditableEmailBody(event.target.value);
+                                          resetDraftCopyState();
+                                        }}
+                                        rows={14}
+                                        className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
+                                      />
+                                    </div>
                                     {presentationDraftResult.result.messageDraft.bodyHtml && (
                                       <details className="mt-3 rounded border border-slate-800 bg-slate-950/60 p-3">
                                         <summary className="cursor-pointer text-xs font-semibold text-emerald-100">
