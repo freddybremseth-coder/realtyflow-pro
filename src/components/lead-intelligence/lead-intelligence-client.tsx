@@ -495,8 +495,12 @@ function humanizeMatchReason(value: string) {
   return isUnverified ? `${cleaned}, men må verifiseres.` : normalized;
 }
 
+function humanizedMatchReasonItems(values: string[], limit = 3) {
+  return uniquePresentationItems(values.slice(0, limit).map(humanizeMatchReason), limit);
+}
+
 function humanizedMatchReasons(values: string[], limit = 2) {
-  return uniquePresentationItems(values.slice(0, limit).map(humanizeMatchReason), limit).join(" ");
+  return humanizedMatchReasonItems(values, limit).join(" ");
 }
 
 function buildShortlistPresentation(lead: ExtractedLead, matches: SelectedShortlistMatch[]) {
@@ -538,7 +542,7 @@ function buildShortlistPresentationText(
   const presentation = buildShortlistPresentation(lead, matches);
   const propertyLines = matches.map((match, index) => {
     const facts = propertyFactsLine(match);
-    const reasons = match.reasonsForMatch.slice(0, 3).join(" ");
+    const reasons = humanizedMatchReasons(match.reasonsForMatch, 3);
     const verification = uniquePresentationItems([
       ...match.concerns.slice(0, 2),
       ...match.questionsToVerify.slice(0, 2),
@@ -3695,7 +3699,11 @@ export function LeadIntelligenceClient({
                                   )}
                                 </div>
                                 <div className="mt-3 grid gap-3 lg:grid-cols-3">
-                                  <MatchList title="Hvorfor match" items={match.reasonsForMatch} emptyLabel="Ingen positive matchgrunner." />
+                                  <MatchList
+                                    title="Hvorfor match"
+                                    items={humanizedMatchReasonItems(match.reasonsForMatch, 4)}
+                                    emptyLabel="Ingen positive matchgrunner."
+                                  />
                                   <MatchList title="Risiko/avvik" items={match.concerns} emptyLabel="Ingen tydelige avvik." />
                                   <MatchList title="Må verifiseres" items={match.questionsToVerify} emptyLabel="Ingen åpne verifikasjonsspørsmål." />
                                 </div>
@@ -3972,6 +3980,7 @@ export function LeadIntelligenceClient({
                                       ...match.concerns.slice(0, 2),
                                       ...match.questionsToVerify.slice(0, 2),
                                     ], 4);
+                                    const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);
                                     const propertyUrl = match.property.publicUrl;
                                     const cardContent = (
                                       <>
@@ -4024,7 +4033,7 @@ export function LeadIntelligenceClient({
                                               Hvorfor den passer
                                             </p>
                                             <ul className="mt-2 space-y-1 text-xs text-slate-200">
-                                              {(match.reasonsForMatch.length > 0 ? match.reasonsForMatch.slice(0, 3) : ["Matcher deler av behovet."]).map((reason) => (
+                                              {(reasons.length > 0 ? reasons : ["Matcher deler av behovet."]).map((reason) => (
                                                 <li key={reason} className="flex gap-2">
                                                   <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" />
                                                   <span>{reason}</span>
