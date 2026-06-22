@@ -23,8 +23,9 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Lagre presentasjonsutkast"), true);
   assert.equal(source.includes("Kopier presentasjon"), true);
   assert.equal(source.includes("Kopier e-postutkast"), true);
-  assert.equal(source.includes("Arbeidsliste"), true);
-  assert.equal(source.includes("Oppdater arbeidsliste"), true);
+  assert.equal(source.includes("Lagrede tester og kjøperprofiler"), true);
+  assert.equal(source.includes("Oppdater lagrede saker"), true);
+  assert.equal(source.includes("Fortsett med denne profilen"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
@@ -62,13 +63,30 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
 
   assert.equal(source.includes("worklistResult"), true);
   assert.equal(source.includes("loadWorklist"), true);
-  assert.equal(source.includes("Lagrede Lead Intelligence-saker"), true);
-  assert.equal(source.includes("Trykk Oppdater arbeidsliste"), true);
+  assert.equal(source.includes("Tidligere lagrede tester ligger her"), true);
+  assert.equal(source.includes("Arbeidslisten hentes automatisk"), true);
+  assert.equal(source.includes("continueFromWorklistItem"), true);
+  assert.equal(source.includes("Lagret buyer profile valgt fra arbeidslisten."), true);
+  assert.equal(source.includes("Du kan kjøre ny eiendomsmatch på denne lagrede profilen"), true);
   assert.equal(source.includes("Ingen lagrede Lead Intelligence-saker"), true);
   assert.equal(source.includes("raw_text_restricted"), false);
   assert.equal(source.includes("result_json"), false);
   assert.equal(source.includes("matchValueHash"), false);
   assert.equal(source.includes("Arbeidslisten krever persistence-flagget"), true);
+});
+
+test("Lead Intelligence worklist auto-loads and can activate a saved buyer profile for matching", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("useEffect"), true);
+  assert.equal(source.includes("void loadWorklist();"), true);
+  assert.equal(source.includes("activeWorklistItem"), true);
+  assert.equal(source.includes("setActiveWorklistItem(item);"), true);
+  assert.equal(source.includes("lead-intelligence-property-match"), true);
+  assert.equal(source.includes("scrollIntoView"), true);
+  assert.equal(source.includes("createdContact: false"), true);
+  assert.equal(source.includes("emailSent: false"), true);
+  assert.equal(source.includes("propertyMatchingStarted: false"), true);
 });
 
 test("Lead Intelligence CRM context is read-only and safe", async () => {

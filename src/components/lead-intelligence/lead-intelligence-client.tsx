@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -348,6 +348,15 @@ function formatDateTime(value: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function generateClientCorrelationId() {
+  const bytes = new Uint8Array(12);
+  globalThis.crypto?.getRandomValues(bytes);
+  const random = bytes.some(Boolean)
+    ? Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")
+    : Math.random().toString(16).slice(2).padEnd(24, "0").slice(0, 24);
+  return `rf_${Date.now().toString(36)}_${random}`;
 }
 
 function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
@@ -807,6 +816,7 @@ export function LeadIntelligenceClient({
   const [worklistLoading, setWorklistLoading] = useState(false);
   const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
   const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
+  const [activeWorklistItem, setActiveWorklistItem] = useState<LeadIntelligenceWorklistItem | null>(null);
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
@@ -894,6 +904,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
+    setActiveWorklistItem(null);
     clearPropertyMatchPreview();
   };
 
@@ -967,6 +978,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
+    setActiveWorklistItem(null);
     setPropertyReferencesText("");
     clearPropertyMatchPreview();
   };
@@ -991,6 +1003,7 @@ export function LeadIntelligenceClient({
     }));
     setSaveError(null);
     setSaveResult(null);
+    setActiveWorklistItem(null);
     clearPropertyMatchPreview();
   };
 
@@ -1125,7 +1138,9 @@ export function LeadIntelligenceClient({
         return;
       }
       setSaveResult(body);
+      setActiveWorklistItem(null);
       clearPropertyMatchPreview();
+      void loadWorklist();
     } catch {
       setSaveError({
         correlationId: "client",
@@ -1366,6 +1381,69 @@ export function LeadIntelligenceClient({
     }
   };
 
+  const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
+    if (!item.analysisRunId) return;
+    clearContactCandidates();
+    setResponse(null);
+    setError(null);
+    setEditableJson("");
+    setCriterionReviews({});
+    setCopyState("idle");
+    setActiveWorklistItem(item);
+    setSaveError(null);
+    setSaveResult({
+      ok: true,
+      correlationId: generateClientCorrelationId(),
+      result: {
+        status: {
+          newlySaved: false,
+          duplicate: true,
+          conflict: false,
+        },
+        intake: {
+          id: item.intakeId,
+          duplicate: true,
+        },
+        analysisRun: {
+          id: item.analysisRunId,
+          duplicate: true,
+        },
+        buyerProfile: {
+          id: item.buyerProfileId,
+          criterionCount: item.criterionCount,
+          duplicate: true,
+        },
+        contactCandidates: {
+          recorded: 0,
+          selectedContactId: null,
+          decision: "continue_without_contact",
+          createdContact: false,
+          linkedContact: item.contactLinked,
+          duplicate: true,
+        },
+      },
+      sideEffects: {
+        contactsCreated: false,
+        contactUpdated: false,
+        emailSent: false,
+        propertyMatchingStarted: false,
+      },
+    });
+    window.setTimeout(() => {
+      document.getElementById("lead-intelligence-property-match")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  };
+
+  useEffect(() => {
+    if (!featureEnabled || !persistenceEnabled) return;
+    void loadWorklist();
+    // Auto-refresh when the user changes brand; loadWorklist is intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureEnabled, persistenceEnabled, brand]);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1428,10 +1506,11 @@ export function LeadIntelligenceClient({
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary-400" />
-                Arbeidsliste
+                Lagrede tester og kjøperprofiler
               </CardTitle>
               <p className="mt-1 text-sm text-slate-400">
-                Lagrede Lead Intelligence-saker, shortlist-utkast og presentasjonsutkast for valgt brand.
+                Tidligere lagrede tester ligger her. Velg en lagret buyer profile for å fortsette med
+                eiendomsmatch uten å analysere henvendelsen på nytt.
               </p>
             </div>
             <Button
@@ -1445,7 +1524,7 @@ export function LeadIntelligenceClient({
               ) : (
                 <RefreshCw className="mr-2 h-4 w-4" />
               )}
-              Oppdater arbeidsliste
+              Oppdater lagrede saker
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1471,7 +1550,8 @@ export function LeadIntelligenceClient({
 
             {persistenceEnabled && !worklistResult && !worklistLoading && !worklistError && (
               <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
-                Trykk Oppdater arbeidsliste for å hente lagrede saker.
+                Arbeidslisten hentes automatisk. Trykk Oppdater lagrede saker hvis du nettopp har lagret noe
+                i en annen fane.
               </div>
             )}
 
@@ -1482,70 +1562,101 @@ export function LeadIntelligenceClient({
             )}
 
             {worklistResult && worklistResult.result.items.length > 0 && (
-              <div className="grid gap-3 lg:grid-cols-2">
-                {worklistResult.result.items.map((item) => {
-                  const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
-                  return (
-                    <div
-                      key={item.buyerProfileId}
-                      className="rounded-lg border border-slate-700/60 bg-slate-950 p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">
-                            Buyer profile {shortPropertyId(item.buyerProfileId)}
-                          </p>
-                          <h2 className="mt-1 text-sm font-semibold text-slate-100">
-                            {item.summary || "Uten sammendrag"}
-                          </h2>
+              <>
+                <div className="rounded-lg border border-primary-500/30 bg-primary-500/10 p-4 text-sm text-primary-100">
+                  <p className="font-semibold">{worklistResult.result.items.length} lagrede sak(er) hentet.</p>
+                  <p className="mt-1 text-primary-100/80">
+                    Dette er historikken over tidligere tester for valgt brand. Knappen Fortsett med denne profilen
+                    setter buyer profile som aktiv for match-preview uten å opprette lead, kontakt eller e-post.
+                  </p>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {worklistResult.result.items.map((item) => {
+                    const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
+                    const isActive = activeWorklistItem?.buyerProfileId === item.buyerProfileId;
+                    return (
+                      <div
+                        key={item.buyerProfileId}
+                        className={`rounded-lg border bg-slate-950 p-4 ${
+                          isActive ? "border-primary-400/70 ring-1 ring-primary-400/30" : "border-slate-700/60"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
+                              Buyer profile {shortPropertyId(item.buyerProfileId)}
+                            </p>
+                            <h2 className="mt-1 text-sm font-semibold text-slate-100">
+                              {item.summary || "Uten sammendrag"}
+                            </h2>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {isActive && <Badge variant="default">Aktiv</Badge>}
+                            <Badge variant="outline">{item.profileStatus}</Badge>
+                            {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">{item.profileStatus}</Badge>
-                          {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}
+
+                        <dl className="mt-4 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
+                          <div>
+                            <dt className="text-slate-500">Kilde</dt>
+                            <dd>{sourceOptions.find((option) => option.value === item.source)?.label || "Ikke satt"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Budsjett</dt>
+                            <dd>{budget || "Ikke satt"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Kontakt</dt>
+                            <dd>{item.contactLinked ? "Koblet" : "Ikke koblet"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Kriterier</dt>
+                            <dd>{item.criterionCount}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Shortlist</dt>
+                            <dd>
+                              {item.shortlistCount > 0
+                                ? `${item.latestShortlistItemCount} bolig(er) · ${item.latestShortlistStatus}`
+                                : "Ingen"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">E-postutkast</dt>
+                            <dd>{item.latestMessageDraftStatus || "Ingen"}</dd>
+                          </div>
+                        </dl>
+
+                        <div className="mt-4 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+                          <p>Intake {shortPropertyId(item.intakeId)}</p>
+                          <p>Oppdatert {formatDateTime(item.updatedAt)}</p>
+                          <p>Analyse {item.analysisRunId ? shortPropertyId(item.analysisRunId) : "mangler"}</p>
+                          <p>Godkjent {formatDateTime(item.approvedAt)}</p>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant={isActive ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => continueFromWorklistItem(item)}
+                            disabled={!item.analysisRunId}
+                          >
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            {isActive ? "Valgt for videre arbeid" : "Fortsett med denne profilen"}
+                          </Button>
+                          {!item.analysisRunId && (
+                            <p className="text-xs text-amber-200">
+                              Mangler analyse-run og kan ikke brukes til videre preview ennå.
+                            </p>
+                          )}
                         </div>
                       </div>
-
-                      <dl className="mt-4 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
-                        <div>
-                          <dt className="text-slate-500">Kilde</dt>
-                          <dd>{sourceOptions.find((option) => option.value === item.source)?.label || "Ikke satt"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">Budsjett</dt>
-                          <dd>{budget || "Ikke satt"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">Kontakt</dt>
-                          <dd>{item.contactLinked ? "Koblet" : "Ikke koblet"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">Kriterier</dt>
-                          <dd>{item.criterionCount}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">Shortlist</dt>
-                          <dd>
-                            {item.shortlistCount > 0
-                              ? `${item.latestShortlistItemCount} bolig(er) · ${item.latestShortlistStatus}`
-                              : "Ingen"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-slate-500">E-postutkast</dt>
-                          <dd>{item.latestMessageDraftStatus || "Ingen"}</dd>
-                        </div>
-                      </dl>
-
-                      <div className="mt-4 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
-                        <p>Intake {shortPropertyId(item.intakeId)}</p>
-                        <p>Oppdatert {formatDateTime(item.updatedAt)}</p>
-                        <p>Analyse {item.analysisRunId ? shortPropertyId(item.analysisRunId) : "mangler"}</p>
-                        <p>Godkjent {formatDateTime(item.approvedAt)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -2216,7 +2327,9 @@ export function LeadIntelligenceClient({
                         <Users className="mt-0.5 h-4 w-4 text-emerald-300" />
                         <div>
                           <p className="font-semibold">
-                            {saveResult.result.status.duplicate
+                            {activeWorklistItem
+                              ? "Lagret buyer profile valgt fra arbeidslisten."
+                              : saveResult.result.status.duplicate
                               ? "Identisk review var allerede lagret."
                               : "Review lagret uten eksterne sideeffekter."}
                           </p>
@@ -2224,6 +2337,12 @@ export function LeadIntelligenceClient({
                             Intake {saveResult.result.intake.id} · Buyer profile {saveResult.result.buyerProfile.id} ·
                             kriterier {saveResult.result.buyerProfile.criterionCount}
                           </p>
+                          {activeWorklistItem && (
+                            <p className="mt-1 text-xs text-emerald-100/80">
+                              Du kan kjøre ny eiendomsmatch på denne lagrede profilen uten å analysere henvendelsen
+                              på nytt. Presentasjonsutkast fra gammel analyse åpnes ikke i denne fasen.
+                            </p>
+                          )}
                           {saveResult.result.status.duplicate && (
                             <p className="mt-1 text-xs text-emerald-100/80">
                               Ingen nye rader ble opprettet. Du ser samme intake, analyse og buyer profile som ved
@@ -2246,7 +2365,9 @@ export function LeadIntelligenceClient({
                   <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
-                        <h2 className="text-sm font-semibold text-slate-200">Eiendomsmatch-preview</h2>
+                        <h2 id="lead-intelligence-property-match" className="text-sm font-semibold text-slate-200">
+                          Eiendomsmatch-preview
+                        </h2>
                         <p className="mt-1 text-xs text-slate-500">
                           La systemet søke i eksisterende eiendommer, eller lim inn eksplisitte referanser som N8513
                           for en kontrollert test. Matchpreviewen lagres ikke; shortlist-utkast lagres bare etter
