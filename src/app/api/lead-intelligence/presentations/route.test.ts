@@ -10,7 +10,7 @@ import {
   LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV,
   LEAD_INTELLIGENCE_DATABASE_URL_ENV,
 } from "@/services/lead-intelligence/server-runtime";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const VALID_CORRELATION_ID = "rf_mqpres_0123456789abcdef01234567";
 const buyerProfileId = "11111111-1111-4111-8111-111111111111";
@@ -29,6 +29,16 @@ function request(body: unknown, headers: Record<string, string> = {}) {
       ...headers,
     },
     body: JSON.stringify(body),
+  });
+}
+
+function lookupRequest(search: string, headers: Record<string, string> = {}) {
+  return new NextRequest(`https://realtyflow.test/api/lead-intelligence/presentations${search}`, {
+    method: "GET",
+    headers: {
+      "x-correlation-id": VALID_CORRELATION_ID,
+      ...headers,
+    },
   });
 }
 
@@ -101,6 +111,39 @@ test("presentation draft validates request before database access", async () => 
 
   assert.equal(response.status, 400);
   assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("presentation draft lookup validates request before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+  process.env.REALTYFLOW_PROPERTY_MATCHING_ENABLED = "true";
+
+  const response = await GET(
+    lookupRequest("?brand=soleada&presentationId=not-a-uuid", { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("presentation draft lookup reports schema-not-ready safely without raw connection details", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+  process.env.REALTYFLOW_PROPERTY_MATCHING_ENABLED = "true";
+  process.env.VERCEL_ENV = "production";
+
+  const response = await GET(
+    lookupRequest("?brand=soleada&presentationId=77777777-7777-4777-8777-777777777777", {
+      cookie: await adminCookie(),
+    }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.error.code, "PERSISTENCE_SCHEMA_NOT_READY");
   assert.equal(JSON.stringify(body).includes("postgres://"), false);
 });
 
