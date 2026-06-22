@@ -202,6 +202,29 @@ interface ShortlistSaveResponse {
   };
 }
 
+interface PresentationDraftResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    presentationId: string;
+    messageDraftId: string;
+    duplicate: boolean;
+    conflict: boolean;
+    status: "draft";
+    messageStatus: "draft";
+    itemCount: number;
+    title: string;
+    subject: string;
+    sideEffects: {
+      emailSent: false;
+      leadsCreated: false;
+      contactsCreated: false;
+      propertyMatchingStarted: false;
+      presentationPublished: false;
+    };
+  };
+}
+
 const sourceOptions: Array<{ value: Source; label: string }> = [
   { value: "phone_call", label: "Telefonsamtale" },
   { value: "whatsapp", label: "WhatsApp" },
@@ -645,6 +668,9 @@ export function LeadIntelligenceClient({
   const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
   const [emailDraftCopyState, setEmailDraftCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [presentationCopyState, setPresentationCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [presentationDraftLoading, setPresentationDraftLoading] = useState(false);
+  const [presentationDraftError, setPresentationDraftError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [presentationDraftResult, setPresentationDraftResult] = useState<PresentationDraftResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -705,6 +731,8 @@ export function LeadIntelligenceClient({
     setShortlistSaveResult(null);
     setEmailDraftCopyState("idle");
     setPresentationCopyState("idle");
+    setPresentationDraftError(null);
+    setPresentationDraftResult(null);
   };
 
   const clearContactCandidates = () => {
@@ -958,6 +986,8 @@ export function LeadIntelligenceClient({
       setShortlistSaveResult(null);
       setEmailDraftCopyState("idle");
       setPresentationCopyState("idle");
+      setPresentationDraftError(null);
+      setPresentationDraftResult(null);
     } catch {
       setPropertyMatchError({
         correlationId: "client",
@@ -976,6 +1006,8 @@ export function LeadIntelligenceClient({
     setShortlistSaveResult(null);
     setEmailDraftCopyState("idle");
     setPresentationCopyState("idle");
+    setPresentationDraftError(null);
+    setPresentationDraftResult(null);
 
     try {
       const res = await fetch("/api/lead-intelligence/shortlists", {
@@ -1002,6 +1034,8 @@ export function LeadIntelligenceClient({
         return;
       }
       setShortlistSaveResult(body);
+      setPresentationDraftError(null);
+      setPresentationDraftResult(null);
     } catch {
       setShortlistSaveError({
         correlationId: "client",
@@ -1030,6 +1064,49 @@ export function LeadIntelligenceClient({
       setPresentationCopyState("copied");
     } catch {
       setPresentationCopyState("failed");
+    }
+  };
+
+  const savePresentationDraft = async () => {
+    if (!saveResult || !shortlistSaveResult) return;
+    setPresentationDraftLoading(true);
+    setPresentationDraftError(null);
+    setPresentationDraftResult(null);
+
+    try {
+      const res = await fetch("/api/lead-intelligence/presentations", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": shortlistSaveResult.correlationId,
+        },
+        body: JSON.stringify({
+          brand,
+          buyerProfileId: saveResult.result.buyerProfile.id,
+          shortlistId: shortlistSaveResult.result.shortlistId,
+          title: shortlistPresentation?.title || `Kundepresentasjon ${new Date().toLocaleDateString("nb-NO")}`,
+          idempotencySeed: shortlistSaveResult.correlationId,
+          language: language || null,
+        }),
+      });
+      const body = (await res.json()) as PresentationDraftResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setPresentationDraftError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke lagre presentasjonsutkast.",
+        });
+        return;
+      }
+      setPresentationDraftResult(body);
+    } catch {
+      setPresentationDraftError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte presentasjons-API-et.",
+      });
+    } finally {
+      setPresentationDraftLoading(false);
     }
   };
 
@@ -1921,6 +1998,8 @@ export function LeadIntelligenceClient({
                                         setShortlistSaveResult(null);
                                         setEmailDraftCopyState("idle");
                                         setPresentationCopyState("idle");
+                                        setPresentationDraftError(null);
+                                        setPresentationDraftResult(null);
                                       }}
                                       className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
                                     >
@@ -2012,6 +2091,15 @@ export function LeadIntelligenceClient({
                                   </p>
                                 </div>
                                 <div className="flex flex-col gap-2 sm:flex-row">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={savePresentationDraft}
+                                    disabled={presentationDraftLoading}
+                                  >
+                                    {presentationDraftLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                    Lagre presentasjonsutkast
+                                  </Button>
                                   <Button type="button" variant="outline" size="sm" onClick={copyPresentationDraft}>
                                     <Clipboard className="mr-2 h-4 w-4" />
                                     Kopier presentasjon
@@ -2070,6 +2158,39 @@ export function LeadIntelligenceClient({
                                   )}
                                 </div>
                               </div>
+
+                              {presentationDraftResult && (
+                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                                  <p className="font-semibold">
+                                    {presentationDraftResult.result.duplicate
+                                      ? "Identisk presentasjonsutkast var allerede lagret."
+                                      : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
+                                  </p>
+                                  <p className="mt-1 text-emerald-100/80">
+                                    Presentation {presentationDraftResult.result.presentationId} · Message draft {presentationDraftResult.result.messageDraftId}
+                                  </p>
+                                  <p className="mt-1 text-xs text-emerald-100/70">
+                                    Status: {presentationDraftResult.result.status} · E-poststatus: {presentationDraftResult.result.messageStatus} ·
+                                    E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
+                                    Presentasjon publisert: nei · Property matching-jobb startet: nei
+                                  </p>
+                                </div>
+                              )}
+
+                              {presentationDraftError && (
+                                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                                  <p className="font-semibold">{presentationDraftError.code}</p>
+                                  <p className="mt-1">{presentationDraftError.message}</p>
+                                  {presentationDraftError.details && (
+                                    <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                      {prettyJson(presentationDraftError.details)}
+                                    </pre>
+                                  )}
+                                  <p className="mt-2 text-xs text-red-100/70">
+                                    Correlation ID: {presentationDraftError.correlationId}
+                                  </p>
+                                </div>
+                              )}
 
                               <div className="space-y-3">
                                 <div className="flex flex-wrap items-end justify-between gap-2">
