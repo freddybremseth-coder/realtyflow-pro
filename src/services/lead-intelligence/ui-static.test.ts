@@ -73,6 +73,10 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Vis utkasthistorikk"), true);
   assert.equal(source.includes("Utkasthistorikk"), true);
   assert.equal(source.includes("Historikken henter bare metadata"), true);
+  assert.equal(source.includes("InternalPresentationPreview"), true);
+  assert.equal(source.includes("Intern presentasjons-preview"), true);
+  assert.equal(source.includes("Viser trygg preview fra lagret presentasjon"), true);
+  assert.equal(source.includes("Åpne bolig"), true);
   assert.equal(source.includes("lead-intelligence-active-presentation-draft"), true);
   assert.equal(source.includes("active-profile-history-email-subject"), true);
   assert.equal(source.includes("Endringer her er lokale"), true);

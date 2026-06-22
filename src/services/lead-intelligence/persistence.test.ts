@@ -826,6 +826,8 @@ test("presentation draft lookup returns safe draft content without raw intake or
   assert.equal(draft?.loadedFromHistory, true);
   assert.equal(draft?.itemCount, 2);
   assert.equal(draft?.messageDraft.subject, "Boligforslag i Moraira");
+  assert.equal(draft?.presentationPreview.properties.length, 2);
+  assert.equal(draft?.presentationPreview.properties[0].title, "Uten tittel");
   assert.equal(draft?.sideEffects.emailSent, false);
 
   const sql = db.queries.map((query) => query.sql).join("\n");

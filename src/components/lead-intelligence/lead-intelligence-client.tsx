@@ -219,6 +219,33 @@ interface PresentationDraftResponse {
     itemCount: number;
     title: string;
     subject: string;
+    presentationPreview: {
+      summary: string | null;
+      budget: {
+        amount: number | null;
+        currency: string | null;
+        includesCosts: boolean | null;
+        approximate: boolean | null;
+      } | null;
+      needs: string[];
+      verification: string[];
+      properties: Array<{
+        propertyId: string | null;
+        reference: string | null;
+        title: string;
+        location: string | null;
+        imageUrl: string | null;
+        publicUrl: string | null;
+        facts: string[];
+        decision: string | null;
+        systemEligibility: string | null;
+        score: number | null;
+        dataQualityScore: number | null;
+        reasons: string[];
+        concerns: string[];
+        questionsToVerify: string[];
+      }>;
+    };
     messageDraft: {
       subject: string;
       bodyText: string;
@@ -794,6 +821,117 @@ function MatchList({
         </ul>
       ) : (
         <p className="text-xs text-slate-500">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
+function InternalPresentationPreview({
+  preview,
+}: {
+  preview: PresentationDraftResponse["result"]["presentationPreview"];
+}) {
+  return (
+    <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/80 p-3 text-sm text-slate-200">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-semibold text-slate-100">Intern presentasjons-preview</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Viser trygg preview fra lagret presentasjon. Den er ikke publisert og sendes ikke.
+          </p>
+        </div>
+        {preview.budget?.amount !== null && preview.budget?.amount !== undefined && (
+          <Badge variant="secondary">
+            Budsjett {formatCurrency(preview.budget.amount, preview.budget.currency || "EUR")}
+          </Badge>
+        )}
+      </div>
+
+      {preview.needs.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Behov</p>
+          <ul className="mt-1 space-y-1 text-xs text-slate-300">
+            {preview.needs.map((item) => (
+              <li key={item} className="rounded border border-slate-800 bg-slate-900/70 px-2 py-1">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-3 space-y-3">
+        {preview.properties.length === 0 ? (
+          <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            Presentasjonen inneholder ingen boligkort. Lag et nytt presentasjonsutkast fra en lagret shortlist.
+          </p>
+        ) : (
+          preview.properties.map((property, index) => (
+            <div
+              key={`${property.propertyId || property.reference || property.title}-${index}`}
+              className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/70"
+            >
+              {property.imageUrl && (
+                <img
+                  src={property.imageUrl}
+                  alt={property.title}
+                  className="h-36 w-full object-cover"
+                  loading="lazy"
+                />
+              )}
+              <div className="space-y-3 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-100">{property.title}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {[
+                        property.reference ? `Ref ${property.reference}` : null,
+                        property.location,
+                        property.score === null ? null : `Score ${property.score}`,
+                        property.dataQualityScore === null ? null : `Data ${property.dataQualityScore}`,
+                      ].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  {property.publicUrl ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={property.publicUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Åpne bolig
+                      </a>
+                    </Button>
+                  ) : (
+                    <Badge variant="secondary">Lenke mangler</Badge>
+                  )}
+                </div>
+
+                {property.facts.length > 0 && (
+                  <p className="text-xs text-slate-300">{property.facts.join(" · ")}</p>
+                )}
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <MatchList title="Hvorfor aktuell" items={property.reasons} emptyLabel="Ingen grunner lagret." />
+                  <MatchList title="Risiko/avvik" items={property.concerns} emptyLabel="Ingen tydelige avvik." />
+                  <MatchList
+                    title="Må verifiseres"
+                    items={property.questionsToVerify}
+                    emptyLabel="Ingen åpne verifikasjonsspørsmål."
+                  />
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {preview.verification.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">Må avklares før deling</p>
+          <ul className="mt-2 space-y-1 text-xs text-amber-100">
+            {preview.verification.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
@@ -1935,6 +2073,7 @@ export function LeadIntelligenceClient({
                             {emailDraftHtmlCopyState === "failed" && (
                               <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere HTML-utkast.</p>
                             )}
+                            <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
                           </div>
                         )}
 
@@ -2202,6 +2341,8 @@ export function LeadIntelligenceClient({
                                             </Button>
                                           )}
                                         </div>
+
+                                        <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
 
                                         <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
                                           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
@@ -3477,6 +3618,8 @@ export function LeadIntelligenceClient({
                                       Presentasjon publisert: nei · Property matching-jobb startet: nei
                                     </p>
                                   </div>
+
+                                  <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
 
                                   <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
