@@ -7,6 +7,7 @@ const clientPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-client.tsx",
 );
+const inventoryPath = path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx");
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
   const source = await readFile(clientPath, "utf8");
@@ -77,6 +78,8 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Intern presentasjons-preview"), true);
   assert.equal(source.includes("Viser trygg preview fra lagret presentasjon"), true);
   assert.equal(source.includes("Åpne bolig"), true);
+  assert.equal(source.includes("Åpne i RealtyFlow"), true);
+  assert.equal(source.includes("internalInventoryPropertyUrl"), true);
   assert.equal(source.includes("PresentationPreviewList"), true);
   assert.equal(source.includes("Lenke mangler i eiendomsdata"), true);
   assert.equal(source.includes("2xl:grid-cols-3"), true);
@@ -103,7 +106,8 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("lead-intelligence-property-match"), true);
   assert.equal(source.includes("lead-intelligence-active-profile"), true);
   assert.equal(source.includes("scrollIntoView"), true);
-  assert.equal(source.includes("Ingen match-preview kjørt for denne lagrede profilen ennå."), true);
+  assert.equal(source.includes("Ingen match-preview kjørt for denne lagrede profilen ennå."), false);
+  assert.equal(source.includes('propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"'), true);
   assert.equal(source.includes("Tomt felt bruker automatisk søk i eksisterende eiendommer."), true);
   assert.equal(source.includes("Shortlist {shortlistSaveResult.result.shortlistId}"), true);
   assert.equal(source.includes("Neste steg: presentasjons- og e-postutkast"), true);
@@ -111,6 +115,16 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("createdContact: false"), true);
   assert.equal(source.includes("emailSent: false"), true);
   assert.equal(source.includes("propertyMatchingStarted: false"), true);
+});
+
+test("Inventory can open a property detail modal from Lead Intelligence internal links", async () => {
+  const source = await readFile(inventoryPath, "utf8");
+
+  assert.equal(source.includes("openedPropertyFromQueryRef"), true);
+  assert.equal(source.includes('params.get("propertyId")'), true);
+  assert.equal(source.includes('params.get("propertyRef")'), true);
+  assert.equal(source.includes("setShowDetailModal(property);"), true);
+  assert.equal(source.includes("setDetailSlide(0);"), true);
 });
 
 test("Lead Intelligence CRM context is read-only and safe", async () => {
