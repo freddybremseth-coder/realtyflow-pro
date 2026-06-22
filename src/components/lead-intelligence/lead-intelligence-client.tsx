@@ -949,122 +949,6 @@ function PresentationDraftReadiness({
   );
 }
 
-function PresentationManualSharingGate({
-  preview,
-}: {
-  preview: PresentationDraftResponse["result"]["presentationPreview"];
-}) {
-  const [checks, setChecks] = useState<Record<string, boolean>>({});
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const missingCustomerLinks = preview.properties.filter((property) => !property.publicUrl);
-  const verificationItems = uniquePresentationItems([
-    ...preview.verification,
-    ...preview.properties.flatMap((property) => property.questionsToVerify),
-    ...preview.properties.flatMap((property) => property.concerns),
-  ], 8);
-  const checklist = [
-    {
-      id: "links",
-      label: "Boliglenker og interne RealtyFlow-lenker er kontrollert",
-      detail: missingCustomerLinks.length === 0
-        ? "Alle boligkort har kundelenke."
-        : `${missingCustomerLinks.length} bolig${missingCustomerLinks.length === 1 ? "" : "er"} mangler kundelenke og må vurderes manuelt.`,
-    },
-    {
-      id: "facts",
-      label: "Pris, tilgjengelighet og nøkkelfakta er manuelt vurdert",
-      detail: verificationItems.length === 0
-        ? "Ingen åpne avklaringspunkter er lagret."
-        : `${verificationItems.length} avklaringspunkt${verificationItems.length === 1 ? "" : "er"} ligger i utkastet.`,
-    },
-    {
-      id: "tone",
-      label: "E-postteksten er lest og passer kundens situasjon",
-      detail: "Dette er Freddys lokale kvalitetssjekk før eventuell manuell deling.",
-    },
-  ];
-  const allChecked = checklist.every((item) => checks[item.id]);
-  const handoffText = [
-    "Lead Intelligence - manuell sendepakke",
-    "",
-    `Status: ${allChecked ? "Klar for manuell deling" : "Ikke klar"}`,
-    `Boliger i utkast: ${preview.properties.length}`,
-    `Boliger uten kundelenke: ${missingCustomerLinks.length}`,
-    `Avklaringspunkter: ${verificationItems.length}`,
-    "",
-    "Viktig:",
-    "- E-post er fortsatt bare et draft.",
-    "- Ingen e-post er sendt fra RealtyFlow.",
-    "- Pris, tilgjengelighet og fakta må være kontrollert før kunden kontaktes.",
-  ].join("\n");
-
-  const copyHandoffPackage = async () => {
-    try {
-      await navigator.clipboard.writeText(handoffText);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  };
-
-  return (
-    <section className="mt-3 rounded-lg border border-cyan-500/25 bg-cyan-500/10 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-cyan-50">Freddy-godkjenning før manuell deling</p>
-          <p className="mt-1 text-xs text-cyan-100/75">
-            Lokal sjekkliste for å gjøre utkastet klart. Den lagrer ikke approval-status og sender ikke e-post.
-          </p>
-        </div>
-        <Badge variant={allChecked ? "success" : "secondary"}>
-          {allChecked ? "Lokalt klar" : `${checklist.filter((item) => checks[item.id]).length}/${checklist.length} kontrollert`}
-        </Badge>
-      </div>
-
-      <div className="mt-3 space-y-2">
-        {checklist.map((item) => (
-          <label
-            key={item.id}
-            className="flex gap-3 rounded-lg border border-cyan-500/20 bg-slate-950/60 p-3 text-sm text-cyan-50"
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(checks[item.id])}
-              onChange={(event) => {
-                setChecks((current) => ({ ...current, [item.id]: event.target.checked }));
-                setCopyState("idle");
-              }}
-              className="mt-1"
-            />
-            <span>
-              <span className="block font-medium">{item.label}</span>
-              <span className="mt-1 block text-xs text-cyan-100/65">{item.detail}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-cyan-100/70">
-          {allChecked
-            ? "Utkastet kan kopieres for manuell deling når Freddy velger det."
-            : "Fullfør sjekklisten før du bruker dette som manuell sendepakke."}
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={copyHandoffPackage} disabled={!allChecked}>
-          <Clipboard className="mr-2 h-4 w-4" />
-          Kopier manuell sendepakke
-        </Button>
-      </div>
-      {copyState === "copied" && (
-        <p className="mt-2 text-xs text-emerald-300">Manuell sendepakke kopiert.</p>
-      )}
-      {copyState === "failed" && (
-        <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere sendepakken.</p>
-      )}
-    </section>
-  );
-}
-
 function InternalPresentationPreview({
   preview,
   returnTo,
@@ -1102,7 +986,6 @@ function InternalPresentationPreview({
       )}
 
       <PresentationDraftReadiness preview={preview} />
-      <PresentationManualSharingGate preview={preview} />
 
       <div className="mt-3 space-y-3">
         {preview.properties.length === 0 ? (
