@@ -84,6 +84,13 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Intern presentasjons-preview"), true);
   assert.equal(source.includes("Viser trygg preview fra lagret presentasjon"), true);
   assert.equal(source.includes("Før deling med kunde"), true);
+  assert.equal(source.includes("Klar for manuell deling"), true);
+  assert.equal(source.includes("Må kvalitetssikres"), true);
+  assert.equal(source.includes("Anbefalt neste handling"), true);
+  assert.equal(source.includes("Dette er en intern kvalitetssjekk for manuell bruk."), true);
+  assert.equal(source.includes("Vurder å korte ned utkastet til 3–5 boliger før kunden får det."), true);
+  assert.equal(source.includes("Åpne boligkortene i RealtyFlow og kontroller pris, tilgjengelighet og nøkkelfakta manuelt."), true);
+  assert.equal(source.includes("Les gjennom e-postteksten og kopier den manuelt når du er fornøyd."), true);
   assert.equal(source.includes("Kundelenker"), true);
   assert.equal(source.includes("RealtyFlow-lenker er bare interne for Freddy."), true);
   assert.equal(source.includes("Ingen send-knapp finnes i denne fasen."), true);

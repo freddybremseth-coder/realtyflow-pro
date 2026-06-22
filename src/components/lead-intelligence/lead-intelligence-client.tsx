@@ -940,6 +940,7 @@ function PresentationDraftReadiness({
   preview: PresentationDraftResponse["result"]["presentationPreview"];
 }) {
   const missingCustomerLinks = preview.properties.filter((property) => !property.publicUrl);
+  const propertyCount = preview.properties.length;
   const verificationItems = uniquePresentationItems([
     ...preview.verification,
     ...preview.properties.flatMap((property) => property.questionsToVerify),
@@ -947,6 +948,18 @@ function PresentationDraftReadiness({
   ], 8);
   const hasProperties = preview.properties.length > 0;
   const allCustomerLinksReady = hasProperties && missingCustomerLinks.length === 0;
+  const hasLeanShortlist = propertyCount > 0 && propertyCount <= 5;
+  const canUseManually = hasProperties && verificationItems.length === 0 && allCustomerLinksReady;
+  const needsShortlistTrim = propertyCount > 5;
+  const readinessLabel = canUseManually ? "Klar for manuell deling" : "Må kvalitetssikres";
+  const nextActions = uniquePresentationItems([
+    !hasProperties ? "Lag et shortlist-utkast med minst én godkjent bolig." : null,
+    needsShortlistTrim ? "Vurder å korte ned utkastet til 3–5 boliger før kunden får det." : null,
+    missingCustomerLinks.length > 0 ? "Kontroller eller legg inn kundelenker for boligene som mangler offentlig lenke." : null,
+    verificationItems.length > 0 ? "Avklar punktene under før teksten brukes mot kunde." : null,
+    hasProperties ? "Åpne boligkortene i RealtyFlow og kontroller pris, tilgjengelighet og nøkkelfakta manuelt." : null,
+    canUseManually ? "Les gjennom e-postteksten og kopier den manuelt når du er fornøyd." : null,
+  ], 6);
 
   return (
     <section className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
@@ -954,15 +967,26 @@ function PresentationDraftReadiness({
         <div>
           <p className="text-sm font-semibold text-slate-100">Før deling med kunde</p>
           <p className="mt-1 text-xs text-slate-500">
-            Dette er en intern kvalitetssjekk. Den sender ikke e-post og publiserer ikke presentasjon.
+            Dette er en intern kvalitetssjekk for manuell bruk. Den sender ikke e-post og publiserer ikke presentasjon.
           </p>
         </div>
-        <Badge variant={allCustomerLinksReady && verificationItems.length === 0 ? "success" : "warning"}>
-          {allCustomerLinksReady && verificationItems.length === 0 ? "Klar til manuell vurdering" : "Må kontrolleres"}
+        <Badge variant={canUseManually ? "success" : "warning"}>
+          {readinessLabel}
         </Badge>
       </div>
 
-      <div className="mt-3 grid gap-2 md:grid-cols-3">
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Utvalg</p>
+          <p className="mt-2 text-sm text-slate-200">
+            {hasProperties
+              ? `${propertyCount} bolig${propertyCount === 1 ? "" : "er"} i utkastet.`
+              : "Ingen boliger i utkastet."}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {hasLeanShortlist ? "Passer som kort kundeliste." : "3–5 boliger er vanligvis mest oversiktlig."}
+          </p>
+        </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kundelenker</p>
           <p className="mt-2 text-sm text-slate-200">
@@ -988,6 +1012,20 @@ function PresentationDraftReadiness({
           <p className="mt-1 text-xs text-slate-500">Ingen send-knapp finnes i denne fasen.</p>
         </div>
       </div>
+
+      {nextActions.length > 0 && (
+        <div className="mt-3 rounded-lg border border-primary-500/20 bg-primary-500/10 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary-200">Anbefalt neste handling</p>
+          <ul className="mt-2 space-y-1 text-xs text-primary-50">
+            {nextActions.map((item) => (
+              <li key={item} className="flex gap-2">
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-200" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {verificationItems.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs text-amber-100">
