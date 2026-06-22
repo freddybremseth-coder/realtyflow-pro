@@ -1344,6 +1344,12 @@ export function LeadIntelligenceClient({
       setPresentationDraftResult(body);
       setEditableEmailSubject(body.result.messageDraft.subject);
       setEditableEmailBody(body.result.messageDraft.bodyText);
+      window.setTimeout(() => {
+        document.getElementById("lead-intelligence-active-presentation-draft")?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }, 50);
     } catch {
       setPresentationDraftError({
         correlationId: "client",
@@ -1696,6 +1702,102 @@ export function LeadIntelligenceClient({
                             </Button>
                             <p className="mt-2 text-xs text-emerald-100/70">
                               Hentes read-only og vises lokalt. Det sendes fortsatt ingen e-post.
+                            </p>
+                          </div>
+                        )}
+
+                        {presentationDraftResult?.result.loadedFromHistory && (
+                          <div
+                            id="lead-intelligence-active-presentation-draft"
+                            className="rounded-lg border border-emerald-400/30 bg-slate-950/80 p-3 text-sm text-emerald-100"
+                          >
+                            <p className="font-semibold text-emerald-50">
+                              Lagret presentasjonsutkast hentet read-only.
+                            </p>
+                            <p className="mt-1 text-xs text-emerald-100/70">
+                              Presentation {presentationDraftResult.result.presentationId} · Message draft{" "}
+                              {presentationDraftResult.result.messageDraftId}
+                            </p>
+                            <p className="mt-1 text-xs text-emerald-100/70">
+                              Status: {presentationDraftResult.result.status} · E-poststatus:{" "}
+                              {presentationDraftResult.result.messageStatus} · E-post sendt: nei
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
+                                <Clipboard className="mr-2 h-4 w-4" />
+                                Kopier e-posttekst
+                              </Button>
+                              {presentationDraftResult.result.messageDraft.bodyHtml && (
+                                <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftHtml}>
+                                  <Clipboard className="mr-2 h-4 w-4" />
+                                  Kopier HTML
+                                </Button>
+                              )}
+                            </div>
+
+                            <div className="mt-3 space-y-3">
+                              <label
+                                className="block text-xs font-semibold text-slate-300"
+                                htmlFor="active-profile-history-email-subject"
+                              >
+                                Emne
+                              </label>
+                              <input
+                                id="active-profile-history-email-subject"
+                                value={editableEmailSubject}
+                                onChange={(event) => {
+                                  setEditableEmailSubject(event.target.value);
+                                  resetDraftCopyState();
+                                }}
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+                              />
+                              <label
+                                className="block text-xs font-semibold text-slate-300"
+                                htmlFor="active-profile-history-email-body"
+                              >
+                                E-posttekst
+                              </label>
+                              <textarea
+                                id="active-profile-history-email-body"
+                                value={editableEmailBody}
+                                onChange={(event) => {
+                                  setEditableEmailBody(event.target.value);
+                                  resetDraftCopyState();
+                                }}
+                                rows={12}
+                                className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
+                              />
+                            </div>
+                            <p className="mt-2 text-xs text-emerald-100/70">
+                              Endringer her er lokale. Ingen e-post sendes fra denne visningen.
+                            </p>
+                            {emailDraftCopyState === "copied" && (
+                              <p className="mt-2 text-xs text-emerald-300">E-posttekst kopiert.</p>
+                            )}
+                            {emailDraftCopyState === "failed" && (
+                              <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-posttekst.</p>
+                            )}
+                            {emailDraftHtmlCopyState === "copied" && (
+                              <p className="mt-2 text-xs text-emerald-300">HTML-utkast kopiert.</p>
+                            )}
+                            {emailDraftHtmlCopyState === "failed" && (
+                              <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere HTML-utkast.</p>
+                            )}
+                          </div>
+                        )}
+
+                        {presentationDraftError && !propertyMatchResult && (
+                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                            <p className="font-semibold">{presentationDraftError.code}</p>
+                            <p className="mt-1">{presentationDraftError.message}</p>
+                            {presentationDraftError.details && (
+                              <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                {prettyJson(presentationDraftError.details)}
+                              </pre>
+                            )}
+                            <p className="mt-2 text-xs text-red-100/70">
+                              Correlation ID: {presentationDraftError.correlationId}
                             </p>
                           </div>
                         )}
