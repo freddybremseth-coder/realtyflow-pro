@@ -121,6 +121,39 @@ function uniqueItems(values: Array<string | null | undefined>, limit = 8) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
 }
 
+function humanizeMatchReason(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  const isUnverified = lower.includes("(unverified)") || lower.includes("unverified");
+
+  const suffix = isUnverified ? ", men må verifiseres" : "";
+  if (lower.includes("bedrooms matches")) {
+    return `Antall soverom ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("bathrooms matches")) {
+    return `Antall bad ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("property_type matches")) {
+    return `Boligtypen ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) {
+    return normalized
+      .replace(/^Estimated total cost/i, "Estimert totalpris")
+      .replace(/ is within the buyer budget\.?$/i, " er innenfor kundens budsjett.");
+  }
+  const cleaned = normalized
+    .replace(/\s*\(unverified\)\.?/gi, "")
+    .replace(/\bunverified\b\.?/gi, "")
+    .trim()
+    .replace(/\.$/, "");
+  if (isUnverified && !cleaned) return "Dette punktet må verifiseres.";
+  return isUnverified ? `${cleaned}, men må verifiseres.` : normalized;
+}
+
+function humanizedReasons(values: string[], limit = 2) {
+  return uniqueItems(values.slice(0, limit).map(humanizeMatchReason), limit).join(" ");
+}
+
 function buildPresentationJson(input: {
   snapshot: LeadCustomerPresentationShortlistSnapshot;
   title: string;
@@ -193,14 +226,16 @@ function buildEmailDraft(input: {
   const subject = `Boligforslag: ${input.snapshot.items.length} alternativer i ${location}`;
   const propertyLines = input.snapshot.items.map((item, index) => {
     const facts = propertyFacts(item).join(" · ");
-    const reasons = item.reasons.slice(0, 2).join(" ");
+    const reasons = humanizedReasons(item.reasons, 2);
     const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
     const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
-      `   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}`,
+      `   Passer fordi: ${reasons || "Matcher deler av behovet."}`,
       verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
-      websiteUrl ? `   Se boligen på nettsiden: ${websiteUrl}` : "   Nettsidelenke: må legges inn eller verifiseres før deling.",
+      websiteUrl
+        ? `   Se boligen på nettsiden: ${websiteUrl}`
+        : "   Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden.",
     ].filter(Boolean).join("\n");
   });
 
@@ -225,18 +260,18 @@ function buildEmailDraft(input: {
   const propertyHtml = input.snapshot.items
     .map((item, index) => {
       const facts = propertyFacts(item).join(" · ");
-      const reasons = item.reasons.slice(0, 2).join(" ");
+      const reasons = humanizedReasons(item.reasons, 2);
       const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
       const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
       return [
         `<li style="margin:0 0 18px 0;">`,
         `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
         facts ? `<br><span>${escapeHtml(facts)}</span>` : "",
-        `<br><span><strong>Hvorfor aktuell:</strong> ${escapeHtml(reasons || "Matcher deler av behovet.")}</span>`,
+        `<br><span><strong>Passer fordi:</strong> ${escapeHtml(reasons || "Matcher deler av behovet.")}</span>`,
         `<br><span><strong>Må avklares:</strong> ${escapeHtml(verification || "Pris og tilgjengelighet må bekreftes.")}</span>`,
         websiteUrl
           ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se boligen på nettsiden</a>`
-          : `<br><span><strong>Nettsidelenke:</strong> må legges inn eller verifiseres før deling.</span>`,
+          : `<br><span><strong>Boliglenke:</strong> mangler i systemet og må legges inn før utkastet sendes til kunden.</span>`,
         `</li>`,
       ].join("");
     })

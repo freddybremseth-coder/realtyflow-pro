@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clipboard,
+  ExternalLink,
   Loader2,
   MessageSquareText,
   RefreshCw,
@@ -289,6 +290,39 @@ function uniquePresentationItems(values: Array<string | null | undefined>, limit
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
 }
 
+function humanizeMatchReason(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  const isUnverified = lower.includes("(unverified)") || lower.includes("unverified");
+  const suffix = isUnverified ? ", men må verifiseres" : "";
+
+  if (lower.includes("bedrooms matches")) {
+    return `Antall soverom ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("bathrooms matches")) {
+    return `Antall bad ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("property_type matches")) {
+    return `Boligtypen ser ut til å passe${suffix}.`;
+  }
+  if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) {
+    return normalized
+      .replace(/^Estimated total cost/i, "Estimert totalpris")
+      .replace(/ is within the buyer budget\.?$/i, " er innenfor kundens budsjett.");
+  }
+  const cleaned = normalized
+    .replace(/\s*\(unverified\)\.?/gi, "")
+    .replace(/\bunverified\b\.?/gi, "")
+    .trim()
+    .replace(/\.$/, "");
+  if (isUnverified && !cleaned) return "Dette punktet må verifiseres.";
+  return isUnverified ? `${cleaned}, men må verifiseres.` : normalized;
+}
+
+function humanizedMatchReasons(values: string[], limit = 2) {
+  return uniquePresentationItems(values.slice(0, limit).map(humanizeMatchReason), limit).join(" ");
+}
+
 function buildShortlistPresentation(lead: ExtractedLead, matches: SelectedShortlistMatch[]) {
   const contactName = lead.contact.name?.trim() || "kunden";
   const propertyTypes = lead.propertyTypes.length > 0 ? lead.propertyTypes.join(", ") : "bolig";
@@ -371,15 +405,15 @@ function buildShortlistEmailDraft(
     : "Budsjett må avklares.";
   const propertyLines = matches.map((match, index) => {
     const facts = propertyFactsLine(match);
-    const reasons = match.reasonsForMatch.slice(0, 2).join(" ");
+    const reasons = humanizedMatchReasons(match.reasonsForMatch, 2);
     const concerns = uniquePresentationItems([
       ...match.concerns.slice(0, 2),
       ...match.questionsToVerify.slice(0, 1),
     ], 3);
     const link = match.property.publicUrl
       ? `\n   Se boligen på nettsiden: ${match.property.publicUrl}`
-      : "\n   Nettsidelenke: må legges inn eller verifiseres før deling.";
-    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Hvorfor aktuell: ${reasons || "Matcher deler av behovet."}${concerns.length > 0 ? `\n   Må avklares: ${concerns.join(" ")}` : ""}${link}`;
+      : "\n   Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden.";
+    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Passer fordi: ${reasons || "Matcher deler av behovet."}${concerns.length > 0 ? `\n   Må avklares: ${concerns.join(" ")}` : ""}${link}`;
   });
 
   return {
@@ -2253,8 +2287,9 @@ export function LeadIntelligenceClient({
                                       ...match.concerns.slice(0, 2),
                                       ...match.questionsToVerify.slice(0, 2),
                                     ], 4);
-                                    return (
-                                      <div key={match.propertyId} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+                                    const propertyUrl = match.property.publicUrl;
+                                    const cardContent = (
+                                      <>
                                         {match.property.primaryImageUrl ? (
                                           <img
                                             src={match.property.primaryImageUrl}
@@ -2293,6 +2328,12 @@ export function LeadIntelligenceClient({
                                               {match.eligibility}
                                             </Badge>
                                           </div>
+                                          {propertyUrl && (
+                                            <div className="flex items-center gap-1 text-xs font-semibold text-primary-300">
+                                              <ExternalLink className="h-3.5 w-3.5" />
+                                              <span>Åpne boligside</span>
+                                            </div>
+                                          )}
                                           <div>
                                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                               Hvorfor den passer
@@ -2321,17 +2362,24 @@ export function LeadIntelligenceClient({
                                               ))}
                                             </ul>
                                           </div>
-                                          {match.property.publicUrl && (
-                                            <a
-                                              href={match.property.publicUrl}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="inline-flex text-xs font-semibold text-primary-300 hover:text-primary-200"
-                                            >
-                                              Åpne boligside
-                                            </a>
-                                          )}
                                         </div>
+                                      </>
+                                    );
+
+                                    return propertyUrl ? (
+                                      <a
+                                        key={match.propertyId}
+                                        href={propertyUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        aria-label={`Åpne boligside for ${propertyDisplayName(match)}`}
+                                        className="block overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 transition hover:border-primary-500/60 hover:bg-slate-900/70 focus:outline-none focus:ring-2 focus:ring-primary-500/70"
+                                      >
+                                        {cardContent}
+                                      </a>
+                                    ) : (
+                                      <div key={match.propertyId} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+                                        {cardContent}
                                       </div>
                                     );
                                   })}

@@ -86,7 +86,9 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Kopier lagret e-postutkast"), true);
   assert.equal(source.includes("Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen."), true);
   assert.equal(source.includes("Se boligen på nettsiden:"), true);
-  assert.equal(source.includes("Nettsidelenke: må legges inn eller verifiseres før deling."), true);
+  assert.equal(source.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), true);
+  assert.equal(source.includes("Åpne boligside for"), true);
+  assert.equal(source.includes("focus:ring-2 focus:ring-primary-500/70"), true);
   assert.equal(source.includes("Presentasjon publisert: nei"), true);
   assert.equal(source.includes("Ingen e-post er sendt"), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);

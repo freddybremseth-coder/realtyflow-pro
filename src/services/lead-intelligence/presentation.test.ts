@@ -44,7 +44,7 @@ function snapshot(overrides: Partial<LeadCustomerPresentationShortlistSnapshot> 
         systemEligibility: "eligible",
         score: 82,
         dataQualityScore: 70,
-        reasons: ["Bedrooms match.", "Location is close to Moraira."],
+        reasons: ["bedrooms matches (unverified).", "bathrooms matches (unverified)."],
         concerns: ["Availability must be verified."],
         questionsToVerify: ["Confirm community fees."],
       },
@@ -98,6 +98,8 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.messageStatus, "draft");
   assert.equal(result.itemCount, 1);
   assert.equal(result.messageDraft.subject.includes("Moraira"), true);
+  assert.equal(result.messageDraft.bodyText.includes("Passer fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
+  assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
   assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
   assert.equal(result.sideEffects.emailSent, false);
@@ -139,8 +141,8 @@ test("presentation email draft does not fabricate missing property website links
     repository,
   });
 
-  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Nettsidelenke: må legges inn eller verifiseres før deling."), true);
-  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Nettsidelenke"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Boliglenke"), true);
   assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("properties.example.test"), false);
 });
 
