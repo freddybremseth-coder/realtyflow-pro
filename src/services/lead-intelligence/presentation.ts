@@ -7,6 +7,7 @@ import {
   type CreateLeadCustomerPresentationDraftInput,
   type LeadCustomerPresentationShortlistSnapshot,
 } from "./persistence";
+import { buildLeadCustomerPresentationPreview, type LeadCustomerPresentationPreview } from "./presentation-preview";
 import { LeadIntelligenceReviewError } from "./review";
 import { stableReviewJson } from "./review-shared";
 
@@ -91,6 +92,7 @@ export interface LeadCustomerPresentationDraftResult {
   itemCount: number;
   title: string;
   subject: string;
+  presentationPreview: LeadCustomerPresentationPreview;
   messageDraft: {
     subject: string;
     bodyText: string;
@@ -446,6 +448,7 @@ export async function saveLeadCustomerPresentationDraft(input: {
     itemCount: snapshot.items.length,
     title,
     subject: emailDraft.subject,
+    presentationPreview: buildLeadCustomerPresentationPreview(presentationJson),
     messageDraft: {
       subject: emailDraft.subject,
       bodyText: emailDraft.bodyText,

@@ -14,6 +14,7 @@ import {
 } from "./contracts";
 import { isLeadIntelligencePersistenceEnabled } from "./feature-flags";
 import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
+import { buildLeadCustomerPresentationPreview } from "./presentation-preview";
 
 export type LeadIntelligencePersistenceErrorCode =
   | "LEAD_INTELLIGENCE_PERSISTENCE_DISABLED"
@@ -1845,13 +1846,8 @@ export class LeadIntelligencePersistenceRepository {
     }
 
     const presentationJson = BoundedJsonSchema.parse(row.presentation_json);
-    const itemCount =
-      presentationJson &&
-      typeof presentationJson === "object" &&
-      !Array.isArray(presentationJson) &&
-      Array.isArray((presentationJson as { properties?: unknown }).properties)
-        ? (presentationJson as { properties: unknown[] }).properties.length
-        : 0;
+    const presentationPreview = buildLeadCustomerPresentationPreview(presentationJson);
+    const itemCount = presentationPreview.properties.length;
 
     return {
       presentationId: UUIDSchema.parse(row.presentation_id),
@@ -1866,6 +1862,7 @@ export class LeadIntelligencePersistenceRepository {
       itemCount,
       title: row.title,
       subject: row.subject,
+      presentationPreview,
       messageDraft: {
         subject: row.subject,
         bodyText: row.body_text,
@@ -1939,13 +1936,7 @@ export class LeadIntelligencePersistenceRepository {
 
     return rows.map((row) => {
       const presentationJson = BoundedJsonSchema.parse(row.presentation_json);
-      const itemCount =
-        presentationJson &&
-        typeof presentationJson === "object" &&
-        !Array.isArray(presentationJson) &&
-        Array.isArray((presentationJson as { properties?: unknown }).properties)
-          ? (presentationJson as { properties: unknown[] }).properties.length
-          : 0;
+      const itemCount = buildLeadCustomerPresentationPreview(presentationJson).properties.length;
 
       return {
         presentationId: UUIDSchema.parse(row.presentation_id),

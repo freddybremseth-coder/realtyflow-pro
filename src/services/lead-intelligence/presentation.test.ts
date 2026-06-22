@@ -65,6 +65,14 @@ class MemoryPresentationRepository implements LeadCustomerPresentationRepository
     return this.source;
   }
 
+  async getCustomerPresentationDraft() {
+    return null;
+  }
+
+  async listCustomerPresentationDraftHistory() {
+    return [];
+  }
+
   async createCustomerPresentationDraft(input: CreateLeadCustomerPresentationDraftInput) {
     this.calls.push(input);
     return {
@@ -102,6 +110,11 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
   assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
+  assert.equal(result.presentationPreview.properties.length, 1);
+  assert.equal(result.presentationPreview.properties[0].reference, "N8513");
+  assert.equal(result.presentationPreview.properties[0].publicUrl, "https://properties.example.test/n8513");
+  assert.equal(result.presentationPreview.properties[0].imageUrl, "https://images.example.test/n8513.jpg");
+  assert.equal(result.presentationPreview.needs.some((item) => item.includes("Kunden ønsker villa")), true);
   assert.equal(result.sideEffects.emailSent, false);
   assert.equal(result.sideEffects.leadsCreated, false);
   assert.equal(result.sideEffects.contactsCreated, false);
