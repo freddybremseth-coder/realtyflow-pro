@@ -6,6 +6,7 @@ import {
   CreateLeadIntakeInputSchema,
   LEAD_CONTACT_LOOKUP_HASH_PREFIX,
   LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV,
+  LeadIntelligenceWorklistQuerySchema,
   LeadIntelligencePersistenceError,
   LeadIntelligencePersistenceRepository,
   RecordLeadAnalysisRunInputSchema,
@@ -41,6 +42,45 @@ class CaptureDb implements QueryClient {
       return { rows: [{ id: intakeId, duplicate: false }] as T[] };
     }
     return { rows: [{ id: contactId }] as T[] };
+  }
+}
+
+class WorklistDb implements QueryClient {
+  queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
+
+  async query<T>(sql: string, values?: readonly unknown[]) {
+    this.queries.push({ sql, values });
+    return {
+      rows: [
+        {
+          buyer_profile_id: profileId,
+          intake_id: intakeId,
+          analysis_run_id: "55555555-5555-4555-8555-555555555555",
+          source: "phone_call",
+          intake_status: "approved",
+          profile_status: "approved",
+          purchase_readiness: "ready_to_buy",
+          summary: "Kjøpeklar kunde med godkjent shortlist.",
+          budget_amount: "440000",
+          budget_currency: "EUR",
+          location_flexible: true,
+          contact_linked: false,
+          criterion_count: 5,
+          shortlist_count: 1,
+          latest_shortlist_id: "66666666-6666-4666-8666-666666666666",
+          latest_shortlist_status: "draft",
+          latest_shortlist_item_count: 4,
+          presentation_count: 1,
+          latest_presentation_id: "77777777-7777-4777-8777-777777777777",
+          latest_presentation_status: "draft",
+          latest_message_draft_id: "88888888-8888-4888-8888-888888888888",
+          latest_message_draft_status: "draft",
+          created_at: "2026-06-20T12:00:00.000Z",
+          updated_at: "2026-06-21T12:00:00.000Z",
+          approved_at: "2026-06-20T12:10:00.000Z",
+        },
+      ] as T[],
+    };
   }
 }
 
@@ -677,4 +717,41 @@ test("recordContactCandidates is idempotent through a single upsert batch", asyn
   assert.equal(db.queries.length, 1);
   assert(db.queries[0].sql.includes("on conflict (intake_id, match_type, match_value_hash)"));
   assert(db.queries[0].sql.includes("do update set"));
+});
+
+test("worklist query validates brand and limit before database access", async () => {
+  assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 20 }).success, true);
+  assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "neuralbeat", limit: 20 }).success, false);
+  assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 500 }).success, false);
+
+  const db = new WorklistDb();
+  const repo = repository(db);
+  await assert.rejects(
+    () => repo.listWorklist({ brand: "neuralbeat", limit: 10 }),
+    (error) => error instanceof Error,
+  );
+  assert.equal(db.queries.length, 0);
+});
+
+test("worklist returns safe persisted case metadata without raw payloads or contact hashes", async () => {
+  const db = new WorklistDb();
+  const repo = repository(db);
+  const items = await repo.listWorklist({ brand: "soleada", limit: 20 });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].buyerProfileId, profileId);
+  assert.equal(items[0].intakeId, intakeId);
+  assert.equal(items[0].contactLinked, false);
+  assert.equal(items[0].criterionCount, 5);
+  assert.equal(items[0].latestShortlistItemCount, 4);
+  assert.equal(items[0].latestMessageDraftStatus, "draft");
+
+  const sql = db.queries.map((query) => query.sql).join("\n");
+  assert.equal(db.queries[0].values?.[0], "soleada");
+  assert.equal(db.queries[0].values?.[1], 20);
+  assert(!/raw_text_restricted/i.test(sql));
+  assert(!/result_json/i.test(sql));
+  assert(!/body_text|body_html|subject/i.test(sql));
+  assert(!/match_value_hash/i.test(sql));
+  assert(!/phone|email/i.test(sql));
 });

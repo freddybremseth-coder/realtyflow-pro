@@ -231,6 +231,44 @@ interface PresentationDraftResponse {
   };
 }
 
+interface LeadIntelligenceWorklistItem {
+  buyerProfileId: string;
+  intakeId: string;
+  analysisRunId: string | null;
+  source: Source | null;
+  intakeStatus: string | null;
+  profileStatus: string;
+  purchaseReadiness: string | null;
+  summary: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  locationFlexible: boolean;
+  contactLinked: boolean;
+  criterionCount: number;
+  shortlistCount: number;
+  latestShortlistId: string | null;
+  latestShortlistStatus: string | null;
+  latestShortlistItemCount: number;
+  presentationCount: number;
+  latestPresentationId: string | null;
+  latestPresentationStatus: string | null;
+  latestMessageDraftId: string | null;
+  latestMessageDraftStatus: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+}
+
+interface LeadIntelligenceWorklistResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    brand: string;
+    limit: number;
+    items: LeadIntelligenceWorklistItem[];
+  };
+}
+
 const sourceOptions: Array<{ value: Source; label: string }> = [
   { value: "phone_call", label: "Telefonsamtale" },
   { value: "whatsapp", label: "WhatsApp" },
@@ -250,13 +288,29 @@ function shortPropertyId(propertyId: string) {
   return propertyId.length > 12 ? `${propertyId.slice(0, 8)}...${propertyId.slice(-4)}` : propertyId;
 }
 
-function formatCurrency(value: number | null) {
+function formatCurrency(value: number | null, currency = "EUR") {
   if (value === null) return null;
-  return new Intl.NumberFormat("nb-NO", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  try {
+    return new Intl.NumberFormat("nb-NO", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return new Intl.NumberFormat("nb-NO", {
+      maximumFractionDigits: 0,
+    }).format(value);
+  }
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "Ikke satt";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("nb-NO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
@@ -713,6 +767,9 @@ export function LeadIntelligenceClient({
   const [presentationDraftLoading, setPresentationDraftLoading] = useState(false);
   const [presentationDraftError, setPresentationDraftError] = useState<SafeErrorResponse["error"] | null>(null);
   const [presentationDraftResult, setPresentationDraftResult] = useState<PresentationDraftResponse | null>(null);
+  const [worklistLoading, setWorklistLoading] = useState(false);
+  const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -1183,6 +1240,41 @@ export function LeadIntelligenceClient({
     }
   };
 
+  const loadWorklist = async () => {
+    if (!persistenceEnabled) return;
+    setWorklistLoading(true);
+    setWorklistError(null);
+
+    try {
+      const params = new URLSearchParams({
+        brand,
+        limit: "20",
+      });
+      const res = await fetch(`/api/lead-intelligence/worklist?${params.toString()}`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      const body = (await res.json()) as LeadIntelligenceWorklistResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setWorklistError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente arbeidslisten.",
+        });
+        return;
+      }
+      setWorklistResult(body);
+    } catch {
+      setWorklistError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte arbeidsliste-API-et.",
+      });
+    } finally {
+      setWorklistLoading(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1239,6 +1331,135 @@ export function LeadIntelligenceClient({
         </Card>
       )}
 
+      {featureEnabled && (
+        <Card>
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary-400" />
+                Arbeidsliste
+              </CardTitle>
+              <p className="mt-1 text-sm text-slate-400">
+                Lagrede Lead Intelligence-saker, shortlist-utkast og presentasjonsutkast for valgt brand.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={loadWorklist}
+              disabled={!persistenceEnabled || worklistLoading}
+            >
+              {worklistLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Oppdater arbeidsliste
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!persistenceEnabled && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                Arbeidslisten krever persistence-flagget, fordi den bare leser allerede lagrede intake- og
+                buyer-profile-rader.
+              </div>
+            )}
+
+            {worklistError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+                <p className="font-semibold">{worklistError.code}</p>
+                <p className="mt-1">{worklistError.message}</p>
+                {worklistError.details && (
+                  <pre className="mt-3 max-h-40 overflow-auto rounded border border-red-400/20 bg-red-950/30 p-2 text-xs text-red-100/90">
+                    {prettyJson(worklistError.details)}
+                  </pre>
+                )}
+                <p className="mt-2 text-xs text-red-200/80">Correlation ID: {worklistError.correlationId}</p>
+              </div>
+            )}
+
+            {persistenceEnabled && !worklistResult && !worklistLoading && !worklistError && (
+              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
+                Trykk Oppdater arbeidsliste for å hente lagrede saker.
+              </div>
+            )}
+
+            {worklistResult && worklistResult.result.items.length === 0 && (
+              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
+                Ingen lagrede Lead Intelligence-saker for dette brandet ennå.
+              </div>
+            )}
+
+            {worklistResult && worklistResult.result.items.length > 0 && (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {worklistResult.result.items.map((item) => {
+                  const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
+                  return (
+                    <div
+                      key={item.buyerProfileId}
+                      className="rounded-lg border border-slate-700/60 bg-slate-950 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">
+                            Buyer profile {shortPropertyId(item.buyerProfileId)}
+                          </p>
+                          <h2 className="mt-1 text-sm font-semibold text-slate-100">
+                            {item.summary || "Uten sammendrag"}
+                          </h2>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="outline">{item.profileStatus}</Badge>
+                          {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}
+                        </div>
+                      </div>
+
+                      <dl className="mt-4 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
+                        <div>
+                          <dt className="text-slate-500">Kilde</dt>
+                          <dd>{sourceOptions.find((option) => option.value === item.source)?.label || "Ikke satt"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Budsjett</dt>
+                          <dd>{budget || "Ikke satt"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Kontakt</dt>
+                          <dd>{item.contactLinked ? "Koblet" : "Ikke koblet"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Kriterier</dt>
+                          <dd>{item.criterionCount}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Shortlist</dt>
+                          <dd>
+                            {item.shortlistCount > 0
+                              ? `${item.latestShortlistItemCount} bolig(er) · ${item.latestShortlistStatus}`
+                              : "Ingen"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">E-postutkast</dt>
+                          <dd>{item.latestMessageDraftStatus || "Ingen"}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="mt-4 grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+                        <p>Intake {shortPropertyId(item.intakeId)}</p>
+                        <p>Oppdatert {formatDateTime(item.updatedAt)}</p>
+                        <p>Analyse {item.analysisRunId ? shortPropertyId(item.analysisRunId) : "mangler"}</p>
+                        <p>Godkjent {formatDateTime(item.approvedAt)}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <Card>
           <CardHeader>
@@ -1272,6 +1493,8 @@ export function LeadIntelligenceClient({
                     setBrand(event.target.value);
                     clearContactCandidates();
                     setSaveResult(null);
+                    setWorklistResult(null);
+                    setWorklistError(null);
                   }}
                   className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
                 >

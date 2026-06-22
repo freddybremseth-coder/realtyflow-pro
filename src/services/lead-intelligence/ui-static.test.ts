@@ -22,6 +22,8 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Lagre presentasjonsutkast"), true);
   assert.equal(source.includes("Kopier presentasjon"), true);
   assert.equal(source.includes("Kopier e-postutkast"), true);
+  assert.equal(source.includes("Arbeidsliste"), true);
+  assert.equal(source.includes("Oppdater arbeidsliste"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
@@ -50,6 +52,21 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
   assert.equal(source.includes("/api/lead-intelligence/property-matches/preview"), true);
   assert.equal(source.includes("/api/lead-intelligence/shortlists"), true);
   assert.equal(source.includes("/api/lead-intelligence/presentations"), true);
+  assert.equal(source.includes("/api/lead-intelligence/worklist"), true);
+});
+
+test("Lead Intelligence worklist is read-only and does not expose raw stored payloads", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("worklistResult"), true);
+  assert.equal(source.includes("loadWorklist"), true);
+  assert.equal(source.includes("Lagrede Lead Intelligence-saker"), true);
+  assert.equal(source.includes("Trykk Oppdater arbeidsliste"), true);
+  assert.equal(source.includes("Ingen lagrede Lead Intelligence-saker"), true);
+  assert.equal(source.includes("raw_text_restricted"), false);
+  assert.equal(source.includes("result_json"), false);
+  assert.equal(source.includes("matchValueHash"), false);
+  assert.equal(source.includes("Arbeidslisten krever persistence-flagget"), true);
 });
 
 test("Lead Intelligence property match preview is explicit and non-persistent", async () => {
