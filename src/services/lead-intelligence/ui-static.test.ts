@@ -89,6 +89,8 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("Ingen match-preview kjørt for denne lagrede profilen ennå."), true);
   assert.equal(source.includes("Tomt felt bruker automatisk søk i eksisterende eiendommer."), true);
   assert.equal(source.includes("Shortlist {shortlistSaveResult.result.shortlistId}"), true);
+  assert.equal(source.includes("Neste steg: presentasjons- og e-postutkast"), true);
+  assert.equal(source.includes("Lager et internt draft fra lagret shortlist."), true);
   assert.equal(source.includes("createdContact: false"), true);
   assert.equal(source.includes("emailSent: false"), true);
   assert.equal(source.includes("propertyMatchingStarted: false"), true);
