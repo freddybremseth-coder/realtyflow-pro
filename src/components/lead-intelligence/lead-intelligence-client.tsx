@@ -826,17 +826,48 @@ function MatchList({
   );
 }
 
+function PresentationPreviewList({
+  title,
+  items,
+  emptyLabel,
+  tone = "default",
+}: {
+  title: string;
+  items: string[];
+  emptyLabel: string;
+  tone?: "default" | "warning";
+}) {
+  const dotClass = tone === "warning" ? "bg-amber-300" : "bg-emerald-300";
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      {items.length > 0 ? (
+        <ul className="mt-2 space-y-2 text-sm leading-relaxed text-slate-200">
+          {items.map((item) => (
+            <li key={item} className="flex gap-2">
+              <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">{emptyLabel}</p>
+      )}
+    </section>
+  );
+}
+
 function InternalPresentationPreview({
   preview,
 }: {
   preview: PresentationDraftResponse["result"]["presentationPreview"];
 }) {
   return (
-    <div className="mt-4 rounded-lg border border-slate-700 bg-slate-950/80 p-3 text-sm text-slate-200">
+    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/80 p-4 text-sm text-slate-200 sm:p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-semibold text-slate-100">Intern presentasjons-preview</p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="text-base font-semibold text-slate-100">Intern presentasjons-preview</p>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
             Viser trygg preview fra lagret presentasjon. Den er ikke publisert og sendes ikke.
           </p>
         </div>
@@ -850,9 +881,9 @@ function InternalPresentationPreview({
       {preview.needs.length > 0 && (
         <div className="mt-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Behov</p>
-          <ul className="mt-1 space-y-1 text-xs text-slate-300">
+          <ul className="mt-2 grid gap-2 text-sm text-slate-200 md:grid-cols-2">
             {preview.needs.map((item) => (
-              <li key={item} className="rounded border border-slate-800 bg-slate-900/70 px-2 py-1">
+              <li key={item} className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 leading-relaxed">
                 {item}
               </li>
             ))}
@@ -869,21 +900,22 @@ function InternalPresentationPreview({
           preview.properties.map((property, index) => (
             <div
               key={`${property.propertyId || property.reference || property.title}-${index}`}
-              className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/70"
+              className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70"
             >
-              {property.imageUrl && (
-                <img
-                  src={property.imageUrl}
-                  alt={property.title}
-                  className="h-36 w-full object-cover"
-                  loading="lazy"
-                />
-              )}
-              <div className="space-y-3 p-3">
+              <div className="grid gap-0 xl:grid-cols-[minmax(220px,320px),1fr]">
+                {property.imageUrl && (
+                  <img
+                    src={property.imageUrl}
+                    alt={property.title}
+                    className="h-48 w-full object-cover xl:h-full"
+                    loading="lazy"
+                  />
+                )}
+                <div className="space-y-4 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="font-semibold text-slate-100">{property.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold leading-snug text-slate-100">{property.title}</p>
+                    <p className="mt-1 text-sm text-slate-500">
                       {[
                         property.reference ? `Ref ${property.reference}` : null,
                         property.location,
@@ -900,22 +932,33 @@ function InternalPresentationPreview({
                       </a>
                     </Button>
                   ) : (
-                    <Badge variant="secondary">Lenke mangler</Badge>
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                      Lenke mangler i eiendomsdata
+                    </div>
                   )}
                 </div>
 
                 {property.facts.length > 0 && (
-                  <p className="text-xs text-slate-300">{property.facts.join(" · ")}</p>
+                  <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm leading-relaxed text-slate-300">
+                    {property.facts.join(" · ")}
+                  </p>
                 )}
 
-                <div className="grid gap-3 md:grid-cols-3">
-                  <MatchList title="Hvorfor aktuell" items={property.reasons} emptyLabel="Ingen grunner lagret." />
-                  <MatchList title="Risiko/avvik" items={property.concerns} emptyLabel="Ingen tydelige avvik." />
-                  <MatchList
+                <div className="grid gap-3 2xl:grid-cols-3">
+                  <PresentationPreviewList title="Hvorfor aktuell" items={property.reasons} emptyLabel="Ingen grunner lagret." />
+                  <PresentationPreviewList
+                    title="Risiko/avvik"
+                    items={property.concerns}
+                    emptyLabel="Ingen tydelige avvik."
+                    tone="warning"
+                  />
+                  <PresentationPreviewList
                     title="Må verifiseres"
                     items={property.questionsToVerify}
                     emptyLabel="Ingen åpne verifikasjonsspørsmål."
+                    tone="warning"
                   />
+                </div>
                 </div>
               </div>
             </div>
