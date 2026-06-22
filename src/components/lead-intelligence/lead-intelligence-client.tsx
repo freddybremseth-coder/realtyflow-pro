@@ -881,6 +881,74 @@ function PresentationPreviewList({
   );
 }
 
+function PresentationDraftReadiness({
+  preview,
+}: {
+  preview: PresentationDraftResponse["result"]["presentationPreview"];
+}) {
+  const missingCustomerLinks = preview.properties.filter((property) => !property.publicUrl);
+  const verificationItems = uniquePresentationItems([
+    ...preview.verification,
+    ...preview.properties.flatMap((property) => property.questionsToVerify),
+    ...preview.properties.flatMap((property) => property.concerns),
+  ], 8);
+  const hasProperties = preview.properties.length > 0;
+  const allCustomerLinksReady = hasProperties && missingCustomerLinks.length === 0;
+
+  return (
+    <section className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-100">Før deling med kunde</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Dette er en intern kvalitetssjekk. Den sender ikke e-post og publiserer ikke presentasjon.
+          </p>
+        </div>
+        <Badge variant={allCustomerLinksReady && verificationItems.length === 0 ? "success" : "warning"}>
+          {allCustomerLinksReady && verificationItems.length === 0 ? "Klar til manuell vurdering" : "Må kontrolleres"}
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kundelenker</p>
+          <p className="mt-2 text-sm text-slate-200">
+            {allCustomerLinksReady
+              ? "Alle boligkort har ekstern nettsidelenke."
+              : `${missingCustomerLinks.length} bolig${missingCustomerLinks.length === 1 ? "" : "er"} mangler kundelenke.`}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            RealtyFlow-lenker er bare interne for Freddy.
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Avklaringer</p>
+          <p className="mt-2 text-sm text-slate-200">
+            {verificationItems.length === 0
+              ? "Ingen åpne avklaringer er lagret i utkastet."
+              : `${verificationItems.length} punkt${verificationItems.length === 1 ? "" : "er"} må vurderes før sending.`}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sikkerhet</p>
+          <p className="mt-2 text-sm text-slate-200">E-poststatus: draft.</p>
+          <p className="mt-1 text-xs text-slate-500">Ingen send-knapp finnes i denne fasen.</p>
+        </div>
+      </div>
+
+      {verificationItems.length > 0 && (
+        <ul className="mt-3 space-y-1 text-xs text-amber-100">
+          {verificationItems.slice(0, 5).map((item) => (
+            <li key={item} className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function InternalPresentationPreview({
   preview,
   returnTo,
@@ -916,6 +984,8 @@ function InternalPresentationPreview({
           </ul>
         </div>
       )}
+
+      <PresentationDraftReadiness preview={preview} />
 
       <div className="mt-3 space-y-3">
         {preview.properties.length === 0 ? (
