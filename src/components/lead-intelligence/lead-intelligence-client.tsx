@@ -1789,10 +1789,115 @@ export function LeadIntelligenceClient({
                               </div>
 
                               {shortlistSaveResult && (
-                                <p className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                                  Shortlist {shortlistSaveResult.result.shortlistId} lagret med
-                                  {" "}{shortlistSaveResult.result.itemCount} bolig(er). E-post sendt: nei.
-                                </p>
+                                <div className="mt-3 space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                                  <div>
+                                    <p className="font-semibold">
+                                      Shortlist {shortlistSaveResult.result.shortlistId} lagret med
+                                      {" "}{shortlistSaveResult.result.itemCount} bolig(er).
+                                    </p>
+                                    <p className="mt-1 text-xs text-emerald-100/70">
+                                      E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
+                                      Presentasjon opprettet: nei · Property matching-jobb startet: nei
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
+                                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                      <div>
+                                        <p className="text-sm font-semibold text-emerald-50">
+                                          Neste steg: presentasjons- og e-postutkast
+                                        </p>
+                                        <p className="mt-1 text-xs text-emerald-100/75">
+                                          Lager et internt draft fra lagret shortlist. Det sendes ikke e-post,
+                                          publiseres ikke presentasjon og opprettes ikke lead eller kontakt.
+                                        </p>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={savePresentationDraft}
+                                        disabled={presentationDraftLoading}
+                                      >
+                                        {presentationDraftLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                        Lagre presentasjonsutkast
+                                      </Button>
+                                    </div>
+
+                                    {presentationDraftResult && (
+                                      <div className="mt-3 rounded-lg border border-emerald-400/20 bg-slate-950/80 p-3">
+                                        <p className="font-semibold text-emerald-50">
+                                          {presentationDraftResult.result.duplicate
+                                            ? "Identisk presentasjonsutkast var allerede lagret."
+                                            : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
+                                        </p>
+                                        <p className="mt-1 text-xs text-emerald-100/70">
+                                          Presentation {presentationDraftResult.result.presentationId} ·
+                                          Message draft {presentationDraftResult.result.messageDraftId}
+                                        </p>
+                                        <p className="mt-1 text-xs text-emerald-100/70">
+                                          Status: {presentationDraftResult.result.status} · E-poststatus:
+                                          {" "}{presentationDraftResult.result.messageStatus} · E-post sendt: nei ·
+                                          Presentasjon publisert: nei
+                                        </p>
+
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
+                                            <Clipboard className="mr-2 h-4 w-4" />
+                                            Kopier e-posttekst
+                                          </Button>
+                                          {presentationDraftResult.result.messageDraft.bodyHtml && (
+                                            <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftHtml}>
+                                              <Clipboard className="mr-2 h-4 w-4" />
+                                              Kopier HTML
+                                            </Button>
+                                          )}
+                                        </div>
+
+                                        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
+                                            Lagret e-postutkast
+                                          </p>
+                                          <p className="mt-2 text-sm font-semibold text-emerald-50">
+                                            {presentationDraftResult.result.messageDraft.subject}
+                                          </p>
+                                          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-100">
+                                            {presentationDraftResult.result.messageDraft.bodyText}
+                                          </pre>
+                                          <p className="mt-2 text-xs text-emerald-100/70">
+                                            Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
+                                          </p>
+                                          {emailDraftCopyState === "copied" && (
+                                            <p className="mt-2 text-xs text-emerald-300">E-posttekst kopiert.</p>
+                                          )}
+                                          {emailDraftCopyState === "failed" && (
+                                            <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-posttekst.</p>
+                                          )}
+                                          {emailDraftHtmlCopyState === "copied" && (
+                                            <p className="mt-2 text-xs text-emerald-300">HTML-utkast kopiert.</p>
+                                          )}
+                                          {emailDraftHtmlCopyState === "failed" && (
+                                            <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere HTML-utkast.</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {presentationDraftError && (
+                                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                                        <p className="font-semibold">{presentationDraftError.code}</p>
+                                        <p className="mt-1">{presentationDraftError.message}</p>
+                                        {presentationDraftError.details && (
+                                          <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                            {prettyJson(presentationDraftError.details)}
+                                          </pre>
+                                        )}
+                                        <p className="mt-2 text-xs text-red-100/70">
+                                          Correlation ID: {presentationDraftError.correlationId}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               )}
 
                               {shortlistSaveError && (
