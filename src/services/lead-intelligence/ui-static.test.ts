@@ -26,6 +26,7 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Lagrede tester og kjøperprofiler"), true);
   assert.equal(source.includes("Oppdater lagrede saker"), true);
   assert.equal(source.includes("Fortsett med denne profilen"), true);
+  assert.equal(source.includes("Aktiv lagret profil"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
@@ -83,7 +84,11 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("activeWorklistItem"), true);
   assert.equal(source.includes("setActiveWorklistItem(item);"), true);
   assert.equal(source.includes("lead-intelligence-property-match"), true);
+  assert.equal(source.includes("lead-intelligence-active-profile"), true);
   assert.equal(source.includes("scrollIntoView"), true);
+  assert.equal(source.includes("Ingen match-preview kjørt for denne lagrede profilen ennå."), true);
+  assert.equal(source.includes("Tomt felt bruker automatisk søk i eksisterende eiendommer."), true);
+  assert.equal(source.includes("Shortlist {shortlistSaveResult.result.shortlistId}"), true);
   assert.equal(source.includes("createdContact: false"), true);
   assert.equal(source.includes("emailSent: false"), true);
   assert.equal(source.includes("propertyMatchingStarted: false"), true);

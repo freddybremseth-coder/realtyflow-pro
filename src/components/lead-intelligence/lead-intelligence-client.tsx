@@ -1430,7 +1430,7 @@ export function LeadIntelligenceClient({
       },
     });
     window.setTimeout(() => {
-      document.getElementById("lead-intelligence-property-match")?.scrollIntoView({
+      document.getElementById("lead-intelligence-active-profile")?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -1570,6 +1570,244 @@ export function LeadIntelligenceClient({
                     setter buyer profile som aktiv for match-preview uten å opprette lead, kontakt eller e-post.
                   </p>
                 </div>
+                {activeWorklistItem && saveResult && (
+                  <div
+                    id="lead-intelligence-active-profile"
+                    className="rounded-lg border border-primary-400/60 bg-slate-950 p-4 shadow-lg shadow-primary-950/20"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-primary-300">Aktiv lagret profil</p>
+                        <h2 className="mt-1 text-base font-semibold text-slate-100">
+                          {activeWorklistItem.summary || `Buyer profile ${shortPropertyId(activeWorklistItem.buyerProfileId)}`}
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Buyer profile {activeWorklistItem.buyerProfileId} · kriterier {activeWorklistItem.criterionCount}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="default">Valgt for videre arbeid</Badge>
+                        <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
+                          {propertyMatchingEnabled ? "Match aktivert" : "Matching av"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
+                          <p className="font-semibold text-slate-100">Neste handling</p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Kjør automatisk søk i eksisterende eiendommer, eller lim inn referanser hvis du vil teste
+                            konkrete boliger. Dette oppretter ikke lead, kontakt, e-post eller matchingjobb.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <FieldLabel>Eiendomsreferanser, valgfritt</FieldLabel>
+                          <textarea
+                            value={propertyReferencesText}
+                            onChange={(event) => {
+                              setPropertyReferencesText(event.target.value);
+                              clearPropertyMatchPreview();
+                            }}
+                            rows={3}
+                            placeholder="F.eks. N8513, N8514 eller én database-UUID per linje..."
+                            className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
+                          />
+                          {parsedPropertyReferences.error ? (
+                            <p className="text-sm text-amber-300">{parsedPropertyReferences.error}</p>
+                          ) : (
+                            <p className="text-xs text-slate-500">
+                              Tomt felt bruker automatisk søk i eksisterende eiendommer.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => previewPropertyMatches("auto")}
+                            disabled={propertyMatchLoading || !propertyMatchingEnabled}
+                          >
+                            {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                            Finn aktuelle eiendommer automatisk
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => previewPropertyMatches("explicit")}
+                            disabled={
+                              propertyMatchLoading ||
+                              !propertyMatchingEnabled ||
+                              parsedPropertyReferences.references.length === 0 ||
+                              Boolean(parsedPropertyReferences.error)
+                            }
+                          >
+                            <Search className="mr-2 h-4 w-4" />
+                            Forhåndsvis valgte eiendommer
+                          </Button>
+                        </div>
+
+                        {propertyMatchError && (
+                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                            <p className="font-semibold">{propertyMatchError.code}</p>
+                            <p className="mt-1">{propertyMatchError.message}</p>
+                            {propertyMatchError.details && (
+                              <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
+                                {prettyJson(propertyMatchError.details)}
+                              </pre>
+                            )}
+                            <p className="mt-2 text-xs text-red-100/80">Correlation ID: {propertyMatchError.correlationId}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        {!propertyMatchResult && (
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
+                            Ingen match-preview kjørt for denne lagrede profilen ennå.
+                          </div>
+                        )}
+
+                        {propertyMatchResult && (
+                          <>
+                            <div className="grid gap-3 sm:grid-cols-4">
+                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Analysert</p>
+                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.analyzed}</p>
+                              </div>
+                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Aktuelle</p>
+                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.matched}</p>
+                              </div>
+                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Mangler</p>
+                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyReferences.length}</p>
+                              </div>
+                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Valgt</p>
+                                <p className="mt-1 text-lg font-semibold text-slate-100">{selectedShortlistItems.length}</p>
+                              </div>
+                            </div>
+
+                            {propertyMatchResult.result.bestEffort && (
+                              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                                Ingen eiendommer traff alle kravene. Systemet viser de nærmeste alternativene med
+                                synlige avvik.
+                              </p>
+                            )}
+
+                            <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
+                              {propertyMatchResult.result.matches.map((match) => {
+                                const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
+                                return (
+                                  <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-slate-100">
+                                          {propertyDisplayName(match)}
+                                        </p>
+                                        {propertyFactsLine(match) && (
+                                          <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
+                                        )}
+                                        {match.property.publicUrl && (
+                                          <a
+                                            href={match.property.publicUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="mt-2 inline-flex text-xs text-primary-300 underline-offset-2 hover:underline"
+                                          >
+                                            Åpne boligside
+                                          </a>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-col items-end gap-2">
+                                        <p className="text-sm text-slate-200">Score {match.score}</p>
+                                        <Badge
+                                          variant={
+                                            match.eligibility === "eligible"
+                                              ? "success"
+                                              : match.eligibility === "rejected"
+                                                ? "destructive"
+                                                : "warning"
+                                          }
+                                        >
+                                          {match.eligibility}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                      <label htmlFor={`active-match-review-${match.propertyId}`} className="text-xs font-semibold text-slate-300">
+                                        Manuell vurdering
+                                      </label>
+                                      <select
+                                        id={`active-match-review-${match.propertyId}`}
+                                        value={reviewDecision}
+                                        onChange={(event) => {
+                                          setMatchReviewDecisions((current) => ({
+                                            ...current,
+                                            [match.propertyId]: event.target.value as MatchReviewDecision,
+                                          }));
+                                          setShortlistSaveError(null);
+                                          setShortlistSaveResult(null);
+                                          resetDraftCopyState();
+                                          setPresentationDraftError(null);
+                                          setPresentationDraftResult(null);
+                                        }}
+                                        className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                                      >
+                                        <option value="system">Systemforslag</option>
+                                        <option value="current">Aktuell</option>
+                                        <option value="maybe">Kanskje</option>
+                                        <option value="needs_research">Må undersøkes</option>
+                                        <option value="rejected">Avvist</option>
+                                      </select>
+                                    </div>
+                                    <MatchList title="Risiko/avvik" items={match.concerns} emptyLabel="Ingen tydelige avvik." />
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Valgte boliger: {selectedShortlistItems.length}. Ingen e-post, lead eller kontakt opprettes.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  onClick={saveShortlistDraft}
+                                  disabled={shortlistSaveLoading || selectedShortlistItems.length === 0}
+                                >
+                                  {shortlistSaveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                  Lagre shortlist-utkast
+                                </Button>
+                              </div>
+
+                              {shortlistSaveResult && (
+                                <p className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                                  Shortlist {shortlistSaveResult.result.shortlistId} lagret med
+                                  {" "}{shortlistSaveResult.result.itemCount} bolig(er). E-post sendt: nei.
+                                </p>
+                              )}
+
+                              {shortlistSaveError && (
+                                <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                                  <p className="font-semibold">{shortlistSaveError.code}</p>
+                                  <p className="mt-1">{shortlistSaveError.message}</p>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-3 lg:grid-cols-2">
                   {worklistResult.result.items.map((item) => {
                     const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
