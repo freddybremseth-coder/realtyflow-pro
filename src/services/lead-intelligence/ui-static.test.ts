@@ -80,6 +80,12 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Åpne bolig"), true);
   assert.equal(source.includes("Åpne i RealtyFlow"), true);
   assert.equal(source.includes("internalInventoryPropertyUrl"), true);
+  assert.equal(source.includes("leadIntelligenceDraftReturnUrl"), true);
+  assert.equal(source.includes("returnTo={presentationDraftReturnUrl}"), true);
+  assert.equal(source.includes('params.set("returnTo", returnTo);'), true);
+  assert.equal(source.includes('params.get("buyerProfileId")'), true);
+  assert.equal(source.includes('params.get("presentationId")'), true);
+  assert.equal(source.includes("returnUrlHydratedRef"), true);
   assert.equal(source.includes("PresentationPreviewList"), true);
   assert.equal(source.includes("Lenke mangler i eiendomsdata"), true);
   assert.equal(source.includes("2xl:grid-cols-3"), true);
@@ -123,6 +129,12 @@ test("Inventory can open a property detail modal from Lead Intelligence internal
   assert.equal(source.includes("openedPropertyFromQueryRef"), true);
   assert.equal(source.includes('params.get("propertyId")'), true);
   assert.equal(source.includes('params.get("propertyRef")'), true);
+  assert.equal(source.includes('params.get("returnTo")'), true);
+  assert.equal(source.includes("safeLeadIntelligenceReturnPath"), true);
+  assert.equal(source.includes("leadIntelligenceReturnPath"), true);
+  assert.equal(source.includes("Tilbake til siste e-postutkast"), true);
+  assert.equal(source.includes("Tilbake til e-postutkast"), true);
+  assert.equal(source.includes('url.pathname !== "/lead-intelligence"'), true);
   assert.equal(source.includes("setShowDetailModal(property);"), true);
   assert.equal(source.includes("setDetailSlide(0);"), true);
 });

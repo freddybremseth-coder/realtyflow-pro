@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -377,8 +377,28 @@ function shortPropertyId(propertyId: string) {
   return propertyId.length > 12 ? `${propertyId.slice(0, 8)}...${propertyId.slice(-4)}` : propertyId;
 }
 
-function internalInventoryPropertyUrl(propertyId: string | null) {
-  return propertyId ? `/inventory?propertyId=${encodeURIComponent(propertyId)}` : null;
+function leadIntelligenceDraftReturnUrl({
+  buyerProfileId,
+  presentationId,
+  messageDraftId,
+}: {
+  buyerProfileId?: string | null;
+  presentationId?: string | null;
+  messageDraftId?: string | null;
+}) {
+  const params = new URLSearchParams();
+  if (buyerProfileId) params.set("buyerProfileId", buyerProfileId);
+  if (presentationId) params.set("presentationId", presentationId);
+  if (messageDraftId) params.set("messageDraftId", messageDraftId);
+  const query = params.toString();
+  return query ? `/lead-intelligence?${query}` : "/lead-intelligence";
+}
+
+function internalInventoryPropertyUrl(propertyId: string | null, returnTo?: string | null) {
+  if (!propertyId) return null;
+  const params = new URLSearchParams({ propertyId });
+  if (returnTo) params.set("returnTo", returnTo);
+  return `/inventory?${params.toString()}`;
 }
 
 function formatCurrency(value: number | null, currency = "EUR") {
@@ -863,8 +883,10 @@ function PresentationPreviewList({
 
 function InternalPresentationPreview({
   preview,
+  returnTo,
 }: {
   preview: PresentationDraftResponse["result"]["presentationPreview"];
+  returnTo?: string | null;
 }) {
   return (
     <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/80 p-4 text-sm text-slate-200 sm:p-5">
@@ -901,7 +923,9 @@ function InternalPresentationPreview({
             Presentasjonen inneholder ingen boligkort. Lag et nytt presentasjonsutkast fra en lagret shortlist.
           </p>
         ) : (
-          preview.properties.map((property, index) => (
+          preview.properties.map((property, index) => {
+            const realtyFlowUrl = internalInventoryPropertyUrl(property.propertyId, returnTo);
+            return (
             <div key={`${property.propertyId || property.reference || property.title}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/70">
               <div className="grid gap-0 xl:grid-cols-[minmax(220px,320px),1fr]">
                 {property.imageUrl && (
@@ -934,15 +958,15 @@ function InternalPresentationPreview({
                           </a>
                         </Button>
                       )}
-                      {internalInventoryPropertyUrl(property.propertyId) && (
+                      {realtyFlowUrl && (
                         <Button asChild size="sm" variant={property.publicUrl ? "secondary" : "outline"}>
-                          <a href={internalInventoryPropertyUrl(property.propertyId) || "/inventory"} target="_blank" rel="noopener noreferrer">
+                          <a href={realtyFlowUrl} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="mr-2 h-4 w-4" />
                             Åpne i RealtyFlow
                           </a>
                         </Button>
                       )}
-                      {!property.publicUrl && !internalInventoryPropertyUrl(property.propertyId) && (
+                      {!property.publicUrl && !realtyFlowUrl && (
                         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
                           Lenke mangler i eiendomsdata
                         </div>
@@ -974,7 +998,8 @@ function InternalPresentationPreview({
                 </div>
               </div>
             </div>
-          ))
+          );
+          })
         )}
       </div>
 
@@ -1040,6 +1065,7 @@ export function LeadIntelligenceClient({
   const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
   const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
   const [activeWorklistItem, setActiveWorklistItem] = useState<LeadIntelligenceWorklistItem | null>(null);
+  const returnUrlHydratedRef = useRef(false);
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
@@ -1783,6 +1809,38 @@ export function LeadIntelligenceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureEnabled, persistenceEnabled, brand]);
 
+  useEffect(() => {
+    if (returnUrlHydratedRef.current || !worklistResult || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const buyerProfileId = params.get("buyerProfileId");
+    const presentationId = params.get("presentationId");
+    if (!buyerProfileId && !presentationId) return;
+
+    const item = worklistResult.result.items.find((candidate) =>
+      (buyerProfileId && candidate.buyerProfileId === buyerProfileId) ||
+      (presentationId && candidate.latestPresentationId === presentationId),
+    );
+    if (!item) return;
+
+    returnUrlHydratedRef.current = true;
+    continueFromWorklistItem(item);
+    if (presentationId) {
+      void loadPresentationDraftById(presentationId);
+    } else if (item.latestPresentationId) {
+      void loadPresentationDraftById(item.latestPresentationId);
+    }
+    // Restore should run once against the first loaded worklist snapshot from the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worklistResult]);
+
+  const presentationDraftReturnUrl = presentationDraftResult
+    ? leadIntelligenceDraftReturnUrl({
+        buyerProfileId: presentationDraftResult.result.buyerProfileId,
+        presentationId: presentationDraftResult.result.presentationId,
+        messageDraftId: presentationDraftResult.result.messageDraftId,
+      })
+    : null;
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2128,7 +2186,10 @@ export function LeadIntelligenceClient({
                             {emailDraftHtmlCopyState === "failed" && (
                               <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere HTML-utkast.</p>
                             )}
-                            <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
+                            <InternalPresentationPreview
+                              preview={presentationDraftResult.result.presentationPreview}
+                              returnTo={presentationDraftReturnUrl}
+                            />
                           </div>
                         )}
 
@@ -2239,7 +2300,7 @@ export function LeadIntelligenceClient({
                             <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
                               {propertyMatchResult.result.matches.map((match) => {
                                 const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
-                                const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId);
+                                const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId, presentationDraftReturnUrl);
                                 return (
                                   <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2392,7 +2453,10 @@ export function LeadIntelligenceClient({
                                           )}
                                         </div>
 
-                                        <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
+                                        <InternalPresentationPreview
+                                          preview={presentationDraftResult.result.presentationPreview}
+                                          returnTo={presentationDraftReturnUrl}
+                                        />
 
                                         <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
                                           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
@@ -3412,7 +3476,7 @@ export function LeadIntelligenceClient({
                         <div className="space-y-3">
                           {propertyMatchResult.result.matches.map((match) => {
                             const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
-                            const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId);
+                            const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId, presentationDraftReturnUrl);
                             const manualDecisionOverridesRejected =
                               match.eligibility === "rejected" &&
                               (reviewDecision === "current" || reviewDecision === "maybe");
@@ -3670,7 +3734,10 @@ export function LeadIntelligenceClient({
                                     </p>
                                   </div>
 
-                                  <InternalPresentationPreview preview={presentationDraftResult.result.presentationPreview} />
+                                  <InternalPresentationPreview
+                                    preview={presentationDraftResult.result.presentationPreview}
+                                    returnTo={presentationDraftReturnUrl}
+                                  />
 
                                   <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
