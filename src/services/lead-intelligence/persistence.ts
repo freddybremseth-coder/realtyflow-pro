@@ -56,6 +56,10 @@ const IdempotencyKeySchema = z.string().trim().min(12).max(LEAD_INTELLIGENCE_LIM
 const ReviewPayloadHashSchema = z.string().regex(/^sha256:v1:[0-9a-f]{64}$/);
 const UrlTextSchema = z.string().trim().url().max(LEAD_INTELLIGENCE_LIMITS.longText).nullable();
 
+function normalizeDateString(value: string | Date) {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 export const LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV = "REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET";
 export const LEAD_CONTACT_LOOKUP_HASH_PREFIX = "hmac-sha256:v1:";
 
@@ -126,6 +130,41 @@ export const LeadPropertyShortlistEligibilitySchema = z.enum(["eligible", "condi
 export const LeadCustomerPresentationStatusSchema = z.enum(["draft", "approved", "archived"]);
 export const LeadCustomerMessageDraftStatusSchema = z.enum(["draft", "approved", "cancelled"]);
 export const LeadCustomerMessageChannelSchema = z.enum(["email"]);
+
+export const LeadIntelligenceWorklistQuerySchema = z
+  .object({
+    brand: BrandSchema,
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+
+export interface LeadIntelligenceWorklistItem {
+  buyerProfileId: string;
+  intakeId: string;
+  analysisRunId: string | null;
+  source: z.infer<typeof LeadIntakeSourcePersistenceSchema> | null;
+  intakeStatus: z.infer<typeof LeadIntakeStatusSchema> | null;
+  profileStatus: z.infer<typeof BuyerProfilePersistenceStatusSchema>;
+  purchaseReadiness: z.infer<typeof PurchaseReadinessLevelSchema> | null;
+  summary: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  locationFlexible: boolean;
+  contactLinked: boolean;
+  criterionCount: number;
+  shortlistCount: number;
+  latestShortlistId: string | null;
+  latestShortlistStatus: z.infer<typeof LeadPropertyShortlistStatusSchema> | null;
+  latestShortlistItemCount: number;
+  presentationCount: number;
+  latestPresentationId: string | null;
+  latestPresentationStatus: z.infer<typeof LeadCustomerPresentationStatusSchema> | null;
+  latestMessageDraftId: string | null;
+  latestMessageDraftStatus: z.infer<typeof LeadCustomerMessageDraftStatusSchema> | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+}
 
 export const CreateLeadIntakeInputSchema = z
   .object({
@@ -838,8 +877,188 @@ export class LeadIntelligencePersistenceRepository {
     private readonly options: LeadIntelligencePersistenceRepositoryOptions,
   ) {}
 
+  private assertCanRead() {
+    return assertLeadIntelligencePersistenceAccess(this.options.auth, this.options.env);
+  }
+
   private assertCanWrite() {
     return assertLeadIntelligencePersistenceAccess(this.options.auth, this.options.env);
+  }
+
+  async listWorklist(input: z.input<typeof LeadIntelligenceWorklistQuerySchema>) {
+    this.assertCanRead();
+    const data = LeadIntelligenceWorklistQuerySchema.parse(input);
+    const { rows } = await this.db.query<{
+      buyer_profile_id: string;
+      intake_id: string;
+      analysis_run_id: string | null;
+      source: string | null;
+      intake_status: string | null;
+      profile_status: string;
+      purchase_readiness: string | null;
+      summary: string | null;
+      budget_amount: string | number | null;
+      budget_currency: string | null;
+      location_flexible: boolean;
+      contact_linked: boolean;
+      criterion_count: string | number | null;
+      shortlist_count: string | number | null;
+      latest_shortlist_id: string | null;
+      latest_shortlist_status: string | null;
+      latest_shortlist_item_count: string | number | null;
+      presentation_count: string | number | null;
+      latest_presentation_id: string | null;
+      latest_presentation_status: string | null;
+      latest_message_draft_id: string | null;
+      latest_message_draft_status: string | null;
+      created_at: string | Date;
+      updated_at: string | Date;
+      approved_at: string | Date | null;
+    }>(
+      `
+        with selected_profiles as (
+          select
+            profile.id,
+            profile.brand,
+            profile.intake_id,
+            profile.contact_id,
+            profile.status,
+            profile.purchase_readiness,
+            profile.summary,
+            profile.budget_amount,
+            profile.budget_currency,
+            profile.location_flexible,
+            profile.created_at,
+            profile.updated_at,
+            profile.approved_at
+          from public.buyer_profiles profile
+          where profile.brand = $1
+          order by profile.updated_at desc, profile.created_at desc, profile.id desc
+          limit $2
+        )
+        select
+          profile.id::text as buyer_profile_id,
+          profile.intake_id::text as intake_id,
+          analysis.id::text as analysis_run_id,
+          intake.source,
+          intake.status as intake_status,
+          profile.status as profile_status,
+          profile.purchase_readiness,
+          profile.summary,
+          profile.budget_amount,
+          profile.budget_currency,
+          profile.location_flexible,
+          profile.contact_id is not null as contact_linked,
+          coalesce(criteria.criterion_count, 0)::int as criterion_count,
+          coalesce(shortlist_totals.shortlist_count, 0)::int as shortlist_count,
+          latest_shortlist.id::text as latest_shortlist_id,
+          latest_shortlist.status as latest_shortlist_status,
+          coalesce(latest_shortlist_items.item_count, 0)::int as latest_shortlist_item_count,
+          coalesce(presentation_totals.presentation_count, 0)::int as presentation_count,
+          latest_presentation.id::text as latest_presentation_id,
+          latest_presentation.status as latest_presentation_status,
+          latest_message.id::text as latest_message_draft_id,
+          latest_message.status as latest_message_draft_status,
+          profile.created_at,
+          profile.updated_at,
+          profile.approved_at
+        from selected_profiles profile
+        left join public.lead_intake_messages intake
+          on intake.id = profile.intake_id
+         and intake.brand = profile.brand
+        left join lateral (
+          select id
+          from public.lead_analysis_runs analysis
+          where analysis.intake_id = profile.intake_id
+          order by analysis.created_at desc, analysis.id desc
+          limit 1
+        ) analysis on true
+        left join lateral (
+          select count(*)::int as criterion_count
+          from public.buyer_profile_criteria criterion
+          where criterion.buyer_profile_id = profile.id
+            and criterion.active = true
+        ) criteria on true
+        left join lateral (
+          select count(*)::int as shortlist_count
+          from public.lead_property_shortlists shortlist
+          where shortlist.brand = profile.brand
+            and shortlist.buyer_profile_id = profile.id
+        ) shortlist_totals on true
+        left join lateral (
+          select id, status
+          from public.lead_property_shortlists shortlist
+          where shortlist.brand = profile.brand
+            and shortlist.buyer_profile_id = profile.id
+          order by shortlist.created_at desc, shortlist.id desc
+          limit 1
+        ) latest_shortlist on true
+        left join lateral (
+          select count(*)::int as item_count
+          from public.lead_property_shortlist_items item
+          where latest_shortlist.id is not null
+            and item.shortlist_id = latest_shortlist.id
+        ) latest_shortlist_items on true
+        left join lateral (
+          select count(*)::int as presentation_count
+          from public.lead_customer_presentations presentation
+          where presentation.brand = profile.brand
+            and presentation.buyer_profile_id = profile.id
+        ) presentation_totals on true
+        left join lateral (
+          select id, status
+          from public.lead_customer_presentations presentation
+          where presentation.brand = profile.brand
+            and presentation.buyer_profile_id = profile.id
+          order by presentation.created_at desc, presentation.id desc
+          limit 1
+        ) latest_presentation on true
+        left join lateral (
+          select id, status
+          from public.lead_customer_message_drafts draft
+          where draft.brand = profile.brand
+            and draft.buyer_profile_id = profile.id
+          order by draft.created_at desc, draft.id desc
+          limit 1
+        ) latest_message on true
+        order by profile.updated_at desc, profile.created_at desc, profile.id desc
+      `,
+      [data.brand, data.limit],
+    );
+
+    return rows.map((row): LeadIntelligenceWorklistItem => ({
+      buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
+      intakeId: UUIDSchema.parse(row.intake_id),
+      analysisRunId: row.analysis_run_id ? UUIDSchema.parse(row.analysis_run_id) : null,
+      source: row.source ? LeadIntakeSourcePersistenceSchema.parse(row.source) : null,
+      intakeStatus: row.intake_status ? LeadIntakeStatusSchema.parse(row.intake_status) : null,
+      profileStatus: BuyerProfilePersistenceStatusSchema.parse(row.profile_status),
+      purchaseReadiness: row.purchase_readiness ? PurchaseReadinessLevelSchema.parse(row.purchase_readiness) : null,
+      summary: row.summary,
+      budgetAmount: row.budget_amount === null ? null : Number(row.budget_amount),
+      budgetCurrency: row.budget_currency,
+      locationFlexible: Boolean(row.location_flexible),
+      contactLinked: Boolean(row.contact_linked),
+      criterionCount: Number(row.criterion_count || 0),
+      shortlistCount: Number(row.shortlist_count || 0),
+      latestShortlistId: row.latest_shortlist_id ? UUIDSchema.parse(row.latest_shortlist_id) : null,
+      latestShortlistStatus: row.latest_shortlist_status
+        ? LeadPropertyShortlistStatusSchema.parse(row.latest_shortlist_status)
+        : null,
+      latestShortlistItemCount: Number(row.latest_shortlist_item_count || 0),
+      presentationCount: Number(row.presentation_count || 0),
+      latestPresentationId: row.latest_presentation_id ? UUIDSchema.parse(row.latest_presentation_id) : null,
+      latestPresentationStatus: row.latest_presentation_status
+        ? LeadCustomerPresentationStatusSchema.parse(row.latest_presentation_status)
+        : null,
+      latestMessageDraftId: row.latest_message_draft_id ? UUIDSchema.parse(row.latest_message_draft_id) : null,
+      latestMessageDraftStatus: row.latest_message_draft_status
+        ? LeadCustomerMessageDraftStatusSchema.parse(row.latest_message_draft_status)
+        : null,
+      createdAt: normalizeDateString(row.created_at),
+      updatedAt: normalizeDateString(row.updated_at),
+      approvedAt: row.approved_at ? normalizeDateString(row.approved_at) : null,
+    }));
   }
 
   async createIntake(input: CreateLeadIntakeInput) {
