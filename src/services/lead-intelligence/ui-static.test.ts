@@ -16,6 +16,7 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Analyser på nytt"), true);
   assert.equal(source.includes("Lagre intake og kjøperprofil"), true);
   assert.equal(source.includes("Vis kontaktkandidater"), true);
+  assert.equal(source.includes("Hent CRM-kontekst"), true);
   assert.equal(source.includes("Forhåndsvis valgte eiendommer"), true);
   assert.equal(source.includes("Lagre shortlist-utkast"), true);
   assert.equal(source.includes("Profesjonelt presentasjonsutkast"), true);
@@ -48,6 +49,7 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
 
   assert.equal(source.includes("/api/lead-intelligence/analyze"), true);
   assert.equal(source.includes("/api/lead-intelligence/contact-candidates"), true);
+  assert.equal(source.includes("/api/lead-intelligence/crm-context"), true);
   assert.equal(source.includes("/api/lead-intelligence/review"), true);
   assert.equal(source.includes("/api/lead-intelligence/property-matches/preview"), true);
   assert.equal(source.includes("/api/lead-intelligence/shortlists"), true);
@@ -67,6 +69,17 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("result_json"), false);
   assert.equal(source.includes("matchValueHash"), false);
   assert.equal(source.includes("Arbeidslisten krever persistence-flagget"), true);
+});
+
+test("Lead Intelligence CRM context is read-only and safe", async () => {
+  const source = await readFile(clientPath, "utf8");
+
+  assert.equal(source.includes("loadCrmContext"), true);
+  assert.equal(source.includes("CRM-kontekst"), true);
+  assert.equal(source.includes("Read-only kontekst fra eksisterende kontaktpipeline"), true);
+  assert.equal(source.includes("Ingen eksisterende CRM-kontekst funnet"), true);
+  assert.equal(source.includes("Sideeffekter: kontakter opprettet nei"), true);
+  assert.equal(source.includes("matchValueHash"), false);
 });
 
 test("Lead Intelligence property match preview is explicit and non-persistent", async () => {

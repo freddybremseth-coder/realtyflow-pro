@@ -26,6 +26,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260617130114_lead_intelligence_runtime_rls.sql",
   ),
+  leadIntelligenceCrmContext: path.join(
+    repoRoot,
+    "supabase/migrations/20260622103729_lead_intelligence_crm_context_readonly.sql",
+  ),
   leadIntelligenceShortlistDraft: path.join(
     repoRoot,
     "supabase/migrations/20260621161521_lead_intelligence_shortlist_draft.sql",
@@ -1226,6 +1230,15 @@ async function createLeadIntelligenceRuntimeTestObjects(client) {
       name text,
       phone text,
       email text,
+      pipeline_status text,
+      pipeline_value numeric,
+      property_interest text,
+      source text,
+      sentiment text,
+      notes text,
+      interactions jsonb not null default '[]'::jsonb,
+      last_contact timestamptz,
+      next_followup timestamptz,
       secret_note text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -3106,6 +3119,192 @@ async function testLeadIntelligenceRuntimeRls() {
   });
 }
 
+async function testLeadIntelligenceCrmContextReadonly() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: applies after runtime RLS and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceCrmContext);
+    await applyMigration(client, migrationFiles.leadIntelligenceCrmContext);
+
+    const viewRows = await client.query(`
+      select
+        c.relkind,
+        c.reloptions::text as reloptions,
+        obj_description(c.oid, 'pg_class') as comment
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
+        and c.relname = 'lead_intelligence_crm_context_lookup'
+    `);
+    assert(viewRows.rows.length === 1, "CRM context view was not created.");
+    assert(viewRows.rows[0].relkind === "v", "CRM context object is not a view.");
+    assert(
+      String(viewRows.rows[0].reloptions || "").includes("security_barrier=true"),
+      "CRM context view is not security_barrier.",
+    );
+    assert(
+      String(viewRows.rows[0].comment || "").includes("Lead Intelligence read-only CRM context"),
+      "CRM context view comment is missing.",
+    );
+
+    process.stdout.write("  Scenario: grants are scoped only to runtime role\n");
+    const grants = await client.query(`
+      select
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.lead_intelligence_crm_context_lookup', 'select') as runtime_select,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as contacts_select,
+        has_table_privilege('anon', 'public.lead_intelligence_crm_context_lookup', 'select') as anon_select,
+        has_table_privilege('authenticated', 'public.lead_intelligence_crm_context_lookup', 'select') as authenticated_select
+    `);
+    assert(grants.rows[0].runtime_select === true, "Runtime role cannot select CRM context view.");
+    assert(grants.rows[0].contacts_select === false, "Runtime role can select contacts directly.");
+    assert(grants.rows[0].anon_select === false, "anon can select CRM context view.");
+    assert(grants.rows[0].authenticated_select === false, "authenticated can select CRM context view.");
+
+    const publicGrants = await client.query(`
+      select count(*)::int as count
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) as acl
+      where n.nspname = 'public'
+        and c.relname = 'lead_intelligence_crm_context_lookup'
+        and acl.grantee = 0
+        and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+    `);
+    assert(publicGrants.rows[0].count === 0, "PUBLIC has access to CRM context view.");
+
+    process.stdout.write("  Scenario: runtime view filters by transaction brand context\n");
+    await client.query(`
+      insert into public.contacts (
+        brand,
+        name,
+        phone,
+        email,
+        pipeline_status,
+        pipeline_value,
+        property_interest,
+        source,
+        sentiment,
+        notes,
+        interactions,
+        last_contact,
+        next_followup
+      )
+      values
+        (
+          'soleada',
+          'Emmadale',
+          '+4790174714',
+          'emmadale@example.test',
+          'qualified',
+          440000,
+          'Penthouse eller enderekkehus',
+          'phone_call',
+          'positive',
+          repeat('safe note ', 80),
+          '[{"type":"call"},{"type":"email"}]'::jsonb,
+          '2026-06-21T10:00:00Z',
+          '2026-06-23T10:00:00Z'
+        ),
+        (
+          'zeneco',
+          'Other Contact',
+          '+34999999999',
+          'other@example.test',
+          'hot',
+          900000,
+          'Villa',
+          'email',
+          'neutral',
+          'cross-brand private note',
+          '[{"type":"email"}]'::jsonb,
+          '2026-06-21T11:00:00Z',
+          null
+        )
+    `);
+
+    const contextRows = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        select
+          brand,
+          name,
+          phone,
+          email,
+          pipeline_status,
+          pipeline_value::int as pipeline_value,
+          property_interest,
+          source,
+          sentiment,
+          notes_excerpt,
+          interaction_count,
+          last_contact,
+          next_followup
+        from public.lead_intelligence_crm_context_lookup
+        order by name
+      `,
+    );
+    assert(contextRows.rows.length === 1, "CRM context view did not enforce brand context.");
+    assert(contextRows.rows[0].brand === "soleada", "CRM context leaked cross-brand rows.");
+    assert(contextRows.rows[0].pipeline_status === "qualified", "CRM context omitted pipeline status.");
+    assert(Number(contextRows.rows[0].pipeline_value) === 440000, "CRM context omitted pipeline value.");
+    assert(contextRows.rows[0].property_interest === "Penthouse eller enderekkehus", "CRM context omitted property interest.");
+    assert(contextRows.rows[0].interaction_count === 2, "CRM context interaction_count is wrong.");
+    assert(String(contextRows.rows[0].notes_excerpt).length <= 500, "CRM context notes excerpt is too long.");
+
+    const emptyContextRows = await queryAsRuntime(
+      client,
+      null,
+      "select id from public.lead_intelligence_crm_context_lookup",
+    );
+    assert(emptyContextRows.rows.length === 0, "CRM context returned rows without brand context.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select id, brand, name, phone, email from public.contacts",
+      "Runtime role could read contacts directly after CRM context migration.",
+      "permission denied",
+    );
+
+    await client.query("alter table public.contacts disable row level security");
+    const rowsWithoutContactsRls = await queryAsRuntime(
+      client,
+      "soleada",
+      "select brand, name from public.lead_intelligence_crm_context_lookup order by name",
+    );
+    assert(
+      rowsWithoutContactsRls.rows.length === 1 &&
+        rowsWithoutContactsRls.rows[0].brand === "soleada",
+      "CRM context view leaked cross-brand rows when contacts RLS was disabled.",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+
+    process.stdout.write("  Scenario: incompatible contacts schema fails closed\n");
+    await client.query("alter table public.contacts drop column pipeline_status");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceCrmContext, "utf8"),
+      "CRM context migration accepted an incompatible contacts schema.",
+      "LEAD_INTELLIGENCE_CRM_CONTEXT_SCHEMA_INCOMPATIBLE",
+    );
+  });
+}
+
 async function testLeadIntelligenceShortlistDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -3613,6 +3812,7 @@ const tests = new Map([
   ["remaster-job-core", testRemasterJobCore],
   ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
+  ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
   ["lead-intelligence-presentation-draft", testLeadIntelligencePresentationDraft],
 ]);
