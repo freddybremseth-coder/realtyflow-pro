@@ -83,7 +83,10 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Kortene er et internt utkast"), true);
   assert.equal(source.includes("Presentasjonsutkast lagret som draft uten eksterne sideeffekter."), true);
   assert.equal(source.includes("Lagret e-postutkast"), true);
-  assert.equal(source.includes("Kopier lagret e-postutkast"), true);
+  assert.equal(source.includes("Kopier tekst"), true);
+  assert.equal(source.includes("Kopier HTML"), true);
+  assert.equal(source.includes("HTML-versjon"), true);
+  assert.equal(source.includes("Lagret HTML-utkast kopiert."), true);
   assert.equal(source.includes("Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen."), true);
   assert.equal(source.includes("Se boligen på nettsiden:"), true);
   assert.equal(source.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), true);

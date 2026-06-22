@@ -708,6 +708,7 @@ export function LeadIntelligenceClient({
   const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
   const [emailDraftCopyState, setEmailDraftCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [emailDraftHtmlCopyState, setEmailDraftHtmlCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [presentationCopyState, setPresentationCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [presentationDraftLoading, setPresentationDraftLoading] = useState(false);
   const [presentationDraftError, setPresentationDraftError] = useState<SafeErrorResponse["error"] | null>(null);
@@ -764,14 +765,19 @@ export function LeadIntelligenceClient({
     return buildShortlistEmailDraft(edited, selectedShortlistMatches);
   }, [edited, selectedShortlistMatches, shortlistSaveResult]);
 
+  const resetDraftCopyState = () => {
+    setEmailDraftCopyState("idle");
+    setEmailDraftHtmlCopyState("idle");
+    setPresentationCopyState("idle");
+  };
+
   const clearPropertyMatchPreview = () => {
     setPropertyMatchError(null);
     setPropertyMatchResult(null);
     setMatchReviewDecisions({});
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
-    setEmailDraftCopyState("idle");
-    setPresentationCopyState("idle");
+    resetDraftCopyState();
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
   };
@@ -1025,8 +1031,7 @@ export function LeadIntelligenceClient({
       setMatchReviewDecisions({});
       setShortlistSaveError(null);
       setShortlistSaveResult(null);
-      setEmailDraftCopyState("idle");
-      setPresentationCopyState("idle");
+      resetDraftCopyState();
       setPresentationDraftError(null);
       setPresentationDraftResult(null);
     } catch {
@@ -1045,8 +1050,7 @@ export function LeadIntelligenceClient({
     setShortlistSaveLoading(true);
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
-    setEmailDraftCopyState("idle");
-    setPresentationCopyState("idle");
+    resetDraftCopyState();
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
 
@@ -1077,6 +1081,7 @@ export function LeadIntelligenceClient({
       setShortlistSaveResult(body);
       setPresentationDraftError(null);
       setPresentationDraftResult(null);
+      resetDraftCopyState();
     } catch {
       setShortlistSaveError({
         correlationId: "client",
@@ -1088,7 +1093,7 @@ export function LeadIntelligenceClient({
     }
   };
 
-  const copyEmailDraft = async () => {
+  const copyEmailDraftText = async () => {
     const draft = presentationDraftResult?.result.messageDraft
       ? {
           subject: presentationDraftResult.result.messageDraft.subject,
@@ -1101,6 +1106,26 @@ export function LeadIntelligenceClient({
       setEmailDraftCopyState("copied");
     } catch {
       setEmailDraftCopyState("failed");
+    }
+  };
+
+  const copyEmailDraftHtml = async () => {
+    const draft = presentationDraftResult?.result.messageDraft;
+    if (!draft?.bodyHtml) return;
+    try {
+      if ("ClipboardItem" in window && typeof navigator.clipboard.write === "function") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([draft.bodyHtml], { type: "text/html" }),
+            "text/plain": new Blob([`Emne: ${draft.subject}\n\n${draft.bodyText}`], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(draft.bodyHtml);
+      }
+      setEmailDraftHtmlCopyState("copied");
+    } catch {
+      setEmailDraftHtmlCopyState("failed");
     }
   };
 
@@ -1119,6 +1144,7 @@ export function LeadIntelligenceClient({
     setPresentationDraftLoading(true);
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
+    resetDraftCopyState();
 
     try {
       const res = await fetch("/api/lead-intelligence/presentations", {
@@ -2043,8 +2069,7 @@ export function LeadIntelligenceClient({
                                         }));
                                         setShortlistSaveError(null);
                                         setShortlistSaveResult(null);
-                                        setEmailDraftCopyState("idle");
-                                        setPresentationCopyState("idle");
+                                        resetDraftCopyState();
                                         setPresentationDraftError(null);
                                         setPresentationDraftResult(null);
                                       }}
@@ -2151,7 +2176,7 @@ export function LeadIntelligenceClient({
                                     <Clipboard className="mr-2 h-4 w-4" />
                                     Kopier presentasjon
                                   </Button>
-                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
                                     <Clipboard className="mr-2 h-4 w-4" />
                                     Kopier e-postutkast
                                   </Button>
@@ -2234,22 +2259,46 @@ export function LeadIntelligenceClient({
                                           {presentationDraftResult.result.messageDraft.subject}
                                         </p>
                                       </div>
-                                      <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
-                                        <Clipboard className="mr-2 h-4 w-4" />
-                                        Kopier lagret e-postutkast
-                                      </Button>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
+                                          <Clipboard className="mr-2 h-4 w-4" />
+                                          Kopier tekst
+                                        </Button>
+                                        {presentationDraftResult.result.messageDraft.bodyHtml && (
+                                          <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftHtml}>
+                                            <Clipboard className="mr-2 h-4 w-4" />
+                                            Kopier HTML
+                                          </Button>
+                                        )}
+                                      </div>
                                     </div>
                                     <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-100">
                                       {presentationDraftResult.result.messageDraft.bodyText}
                                     </pre>
+                                    {presentationDraftResult.result.messageDraft.bodyHtml && (
+                                      <details className="mt-3 rounded border border-slate-800 bg-slate-950/60 p-3">
+                                        <summary className="cursor-pointer text-xs font-semibold text-emerald-100">
+                                          HTML-versjon
+                                        </summary>
+                                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-slate-100">
+                                          {presentationDraftResult.result.messageDraft.bodyHtml}
+                                        </pre>
+                                      </details>
+                                    )}
                                     <p className="mt-2 text-xs text-emerald-100/70">
                                       Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
                                     </p>
                                     {emailDraftCopyState === "copied" && (
-                                      <p className="mt-2 text-xs text-emerald-300">Lagret e-postutkast kopiert.</p>
+                                      <p className="mt-2 text-xs text-emerald-300">Lagret e-posttekst kopiert.</p>
                                     )}
                                     {emailDraftCopyState === "failed" && (
-                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret e-postutkast.</p>
+                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret e-posttekst.</p>
+                                    )}
+                                    {emailDraftHtmlCopyState === "copied" && (
+                                      <p className="mt-2 text-xs text-emerald-300">Lagret HTML-utkast kopiert.</p>
+                                    )}
+                                    {emailDraftHtmlCopyState === "failed" && (
+                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret HTML-utkast.</p>
                                     )}
                                   </div>
                                 </div>
@@ -2394,7 +2443,7 @@ export function LeadIntelligenceClient({
                                     </p>
                                     <p className="mt-3 text-sm font-semibold text-slate-100">{shortlistEmailDraft.subject}</p>
                                   </div>
-                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraft}>
+                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
                                     <Clipboard className="mr-2 h-4 w-4" />
                                     Kopier e-postutkast
                                   </Button>
