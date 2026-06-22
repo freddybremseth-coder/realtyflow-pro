@@ -73,6 +73,11 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Åpne siste e-postutkast"), true);
   assert.equal(source.includes("Vis utkasthistorikk"), true);
   assert.equal(source.includes("Utkasthistorikk"), true);
+  assert.equal(source.includes("Lagret profilhistorikk"), true);
+  assert.equal(source.includes("Skjul profilhistorikk"), true);
+  assert.equal(source.includes("Vis profilhistorikk"), true);
+  assert.equal(source.includes("Gå til aktiv profil"), true);
+  assert.equal(source.includes("Historikken er skjult mens du jobber med valgt profil"), true);
   assert.equal(source.includes("Historikken henter bare metadata"), true);
   assert.equal(source.includes("InternalPresentationPreview"), true);
   assert.equal(source.includes("PresentationDraftReadiness"), true);
@@ -118,7 +123,10 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("useEffect"), true);
   assert.equal(source.includes("void loadWorklist();"), true);
   assert.equal(source.includes("activeWorklistItem"), true);
+  assert.equal(source.includes("worklistHistoryExpanded"), true);
   assert.equal(source.includes("setActiveWorklistItem(item);"), true);
+  assert.equal(source.includes("setWorklistHistoryExpanded(false);"), true);
+  assert.equal(source.includes("setWorklistHistoryExpanded(true);"), true);
   assert.equal(source.includes("lead-intelligence-property-match"), true);
   assert.equal(source.includes("lead-intelligence-active-profile"), true);
   assert.equal(source.includes("scrollIntoView"), true);
