@@ -205,7 +205,8 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Lagret HTML-utkast kopiert."), true);
   assert.equal(source.includes("Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen."), true);
   assert.equal(source.includes("Se boligen på nettsiden:"), true);
-  assert.equal(source.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), true);
+  assert.equal(source.includes("Boliglenker kontrolleres før endelig sending."), true);
+  assert.equal(source.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), false);
   assert.equal(source.includes("Åpne boligside for"), true);
   assert.equal(source.includes("focus:ring-2 focus:ring-primary-500/70"), true);
   assert.equal(source.includes("Presentasjon publisert: nei"), true);
@@ -219,6 +220,8 @@ test("Lead Intelligence match reasons are humanized before preview and presentat
   const source = await readFile(clientPath, "utf8");
 
   assert.equal(source.includes("function humanizedMatchReasonItems"), true);
+  assert.equal(source.includes("function sharedMatchReasonSummary"), true);
+  assert.equal(source.includes("itemSpecificMatchReasons"), true);
   assert.equal(source.includes("const reasons = humanizedMatchReasons(match.reasonsForMatch, 3);"), true);
   assert.equal(source.includes("items={humanizedMatchReasonItems(match.reasonsForMatch, 4)}"), true);
   assert.equal(source.includes("const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);"), true);

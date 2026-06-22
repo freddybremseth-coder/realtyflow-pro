@@ -503,6 +503,45 @@ function humanizedMatchReasons(values: string[], limit = 2) {
   return humanizedMatchReasonItems(values, limit).join(" ");
 }
 
+type MatchReasonKey = "bedrooms" | "bathrooms" | "property_type" | "budget";
+
+function matchReasonKey(value: string): MatchReasonKey | null {
+  const lower = value.toLowerCase();
+  if (lower.includes("bedrooms matches")) return "bedrooms";
+  if (lower.includes("bathrooms matches")) return "bathrooms";
+  if (lower.includes("property_type matches")) return "property_type";
+  if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) return "budget";
+  return null;
+}
+
+function sharedMatchReasonKeys(reasonGroups: string[][]) {
+  if (reasonGroups.length < 3) return new Set<MatchReasonKey>();
+  const keyedGroups = reasonGroups.map((reasons) => new Set(reasons.map(matchReasonKey).filter((key): key is MatchReasonKey => Boolean(key))));
+  const allKeys: MatchReasonKey[] = ["bedrooms", "bathrooms", "property_type", "budget"];
+  return new Set(allKeys.filter((key) => keyedGroups.every((group) => group.has(key))));
+}
+
+function sharedMatchReasonSummary(sharedKeys: Set<MatchReasonKey>) {
+  const parts: string[] = [];
+  if (sharedKeys.has("bedrooms") && sharedKeys.has("bathrooms")) {
+    parts.push("romfordelingen ser ut til å passe behovet for soverom og bad");
+  } else {
+    if (sharedKeys.has("bedrooms")) parts.push("antall soverom ser ut til å passe");
+    if (sharedKeys.has("bathrooms")) parts.push("antall bad ser ut til å passe");
+  }
+  if (sharedKeys.has("property_type")) parts.push("boligtypen treffer ønsket type");
+  if (sharedKeys.has("budget")) parts.push("prisene ser ut til å ligge innenfor budsjettet");
+  if (parts.length === 0) return null;
+  return `Felles for forslagene er at ${parts.join(", ")}. Dette må fortsatt bekreftes mot oppdatert prospekt og tilgjengelighet.`;
+}
+
+function itemSpecificMatchReasons(values: string[], sharedKeys: Set<MatchReasonKey>, limit = 2) {
+  return humanizedMatchReasons(values.filter((value) => {
+    const key = matchReasonKey(value);
+    return !key || !sharedKeys.has(key);
+  }), limit);
+}
+
 function buildShortlistPresentation(lead: ExtractedLead, matches: SelectedShortlistMatch[]) {
   const contactName = lead.contact.name?.trim() || "kunden";
   const propertyTypes = lead.propertyTypes.length > 0 ? lead.propertyTypes.join(", ") : "bolig";
@@ -583,18 +622,27 @@ function buildShortlistEmailDraft(
   const budgetText = lead.budget.amount
     ? `Budsjett: ca. ${formatCurrency(lead.budget.amount)}${lead.budget.includesCosts ? " inkludert omkostninger" : ""}.`
     : "Budsjett må avklares.";
+  const sharedReasons = sharedMatchReasonKeys(matches.map((match) => match.reasonsForMatch));
+  const sharedReasonText = sharedMatchReasonSummary(sharedReasons);
+  const missingWebsiteLinks = matches.filter((match) => !match.property.publicUrl).length;
   const propertyLines = matches.map((match, index) => {
     const facts = propertyFactsLine(match);
-    const reasons = humanizedMatchReasons(match.reasonsForMatch, 2);
+    const reasons = itemSpecificMatchReasons(match.reasonsForMatch, sharedReasons, 2);
     const concerns = uniquePresentationItems([
       ...match.concerns.slice(0, 2),
       ...match.questionsToVerify.slice(0, 1),
     ], 3);
-    const link = match.property.publicUrl
-      ? `\n   Se boligen på nettsiden: ${match.property.publicUrl}`
-      : "\n   Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden.";
-    return `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}\n   Passer fordi: ${reasons || "Matcher deler av behovet."}${concerns.length > 0 ? `\n   Må avklares: ${concerns.join(" ")}` : ""}${link}`;
+    return [
+      `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
+      reasons ? `   Aktuelt fordi: ${reasons}` : null,
+      concerns.length > 0 ? `   Må avklares: ${concerns.join(" ")}` : null,
+      match.property.publicUrl ? `   Se boligen på nettsiden: ${match.property.publicUrl}` : null,
+    ].filter(Boolean).join("\n");
   });
+  const closingChecks = uniquePresentationItems([
+    "Pris, tilgjengelighet og enkelte detaljer må bekreftes før vi går videre.",
+    missingWebsiteLinks > 0 ? "Boliglenker kontrolleres før endelig sending." : null,
+  ], 2);
 
   return {
     subject: `Boligforslag: ${matches.length} alternativer i ${locationText}`,
@@ -603,11 +651,12 @@ function buildShortlistEmailDraft(
       "",
       "Jeg har sett gjennom aktuelle boliger opp mot behovene vi har notert så langt.",
       budgetText,
+      sharedReasonText,
       "",
       "Jeg ville sett nærmere på disse alternativene:",
       ...propertyLines,
       "",
-      "Pris, tilgjengelighet og enkelte detaljer må bekreftes før vi går videre.",
+      ...closingChecks,
       "Gi meg gjerne beskjed om hvilke av disse du ønsker at jeg undersøker nærmere.",
       "",
       "Vennlig hilsen",

@@ -106,7 +106,7 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.messageStatus, "draft");
   assert.equal(result.itemCount, 1);
   assert.equal(result.messageDraft.subject.includes("Moraira"), true);
-  assert.equal(result.messageDraft.bodyText.includes("Passer fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
+  assert.equal(result.messageDraft.bodyText.includes("Aktuelt fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
   assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
   assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
@@ -158,9 +158,54 @@ test("presentation email draft does not fabricate missing property website links
     repository,
   });
 
-  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), true);
-  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Boliglenke"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Boliglenker kontrolleres før endelig sending."), true);
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Boliglenke mangler i systemet"), false);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Boliglenker kontrolleres før endelig sending."), true);
   assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("properties.example.test"), false);
+});
+
+test("presentation email draft summarizes repeated common match reasons once", async () => {
+  const baseItem = snapshot().items[0];
+  const repository = new MemoryPresentationRepository(
+    snapshot({
+      items: [
+        baseItem,
+        {
+          ...baseItem,
+          propertyId: "33333333-3333-4333-8333-333333333334",
+          propertyReference: "N8514",
+          propertyTitle: "Villa alternativ 2",
+          rank: 2,
+        },
+        {
+          ...baseItem,
+          propertyId: "33333333-3333-4333-8333-333333333335",
+          propertyReference: "N8515",
+          propertyTitle: "Villa alternativ 3",
+          rank: 3,
+        },
+      ],
+    }),
+  );
+
+  await saveLeadCustomerPresentationDraft({
+    request: {
+      brand: "soleada",
+      buyerProfileId,
+      shortlistId,
+      idempotencySeed: correlationId,
+      language: "nb",
+    },
+    correlationId,
+    createdBy: "freddy.bremseth@gmail.com",
+    repository,
+  });
+
+  const body = repository.calls[0].messageDraft.bodyText;
+  assert.equal(body.includes("Felles for forslagene er at romfordelingen ser ut til å passe behovet for soverom og bad."), true);
+  assert.equal(body.includes("Passer fordi:"), false);
+  assert.equal(body.includes("Aktuelt fordi: Antall soverom ser ut til å passe"), false);
+  assert.equal(body.includes("Aktuelt fordi: Antall bad ser ut til å passe"), false);
 });
 
 test("duplicate presentation draft returns existing IDs for identical payload", async () => {
