@@ -10,6 +10,7 @@ import {
 } from "@/services/lead-intelligence/server-runtime";
 import { POST as archivePost } from "./[buyerProfileId]/archive/route";
 import { POST as contactCandidatesPost } from "./[buyerProfileId]/contact-candidates/route";
+import { POST as contactCreatePost } from "./[buyerProfileId]/contact-create/route";
 import { POST as contactLinkPost } from "./[buyerProfileId]/contact-link/route";
 
 const VALID_CORRELATION_ID = "rf_profile_0123456789abcdef012345";
@@ -40,6 +41,7 @@ test.beforeEach(() => {
   delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED;
   delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED;
   delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_CONNECT_EXISTING_ENABLED;
+  delete process.env.REALTYFLOW_LEAD_INTELLIGENCE_CREATE_CONTACT_ENABLED;
   delete process.env[LEAD_INTELLIGENCE_DATABASE_URL_ENV];
   delete process.env[LEAD_INTELLIGENCE_DATABASE_CA_CERT_ENV];
   delete process.env[LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV];
@@ -113,6 +115,45 @@ test("saved profile contact linking requires dedicated feature flag before datab
 
   assert.equal(response.status, 403);
   assert.equal(body.error.code, "CONTACT_LINKING_DISABLED");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("saved profile contact creation requires dedicated feature flag before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+
+  const response = await contactCreatePost(
+    request(
+      `/api/lead-intelligence/buyer-profiles/${buyerProfileId}/contact-create`,
+      { brand: "soleada" },
+      { cookie: await adminCookie() },
+    ) as any,
+    { params },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "CONTACT_CREATION_DISABLED");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("saved profile contact creation rejects unknown brand before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_CREATE_CONTACT_ENABLED = "true";
+
+  const response = await contactCreatePost(
+    request(
+      `/api/lead-intelligence/buyer-profiles/${buyerProfileId}/contact-create`,
+      { brand: "neuralbeat" },
+      { cookie: await adminCookie() },
+    ) as any,
+    { params },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
   assert.equal(JSON.stringify(body).includes("postgres://"), false);
 });
 

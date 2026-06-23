@@ -113,6 +113,7 @@ interface Props {
   featureEnabled: boolean;
   persistenceEnabled: boolean;
   connectExistingEnabled: boolean;
+  createContactEnabled: boolean;
   propertyMatchingEnabled: boolean;
 }
 
@@ -401,6 +402,26 @@ interface SavedProfileContactLinkResponse {
     leadsCreated: false;
     emailSent: false;
     propertyMatchingStarted: false;
+  };
+}
+
+interface SavedProfileContactCreateResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    buyerProfileId: string;
+    contactId: string;
+    duplicate: boolean;
+    linkedContact: LinkedContactPreview;
+  };
+  sideEffects: {
+    contactsCreated: boolean;
+    contactsUpdated: false;
+    buyerProfileUpdated: boolean;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+    presentationCreated: false;
   };
 }
 
@@ -1248,6 +1269,7 @@ export function LeadIntelligenceClient({
   featureEnabled,
   persistenceEnabled,
   connectExistingEnabled,
+  createContactEnabled,
   propertyMatchingEnabled,
 }: Props) {
   const [source, setSource] = useState<Source>("phone_call");
@@ -1304,6 +1326,9 @@ export function LeadIntelligenceClient({
   const [profileContactLinkLoading, setProfileContactLinkLoading] = useState(false);
   const [profileContactLinkError, setProfileContactLinkError] = useState<SafeErrorResponse["error"] | null>(null);
   const [profileContactLinkResult, setProfileContactLinkResult] = useState<SavedProfileContactLinkResponse | null>(null);
+  const [profileContactCreateLoading, setProfileContactCreateLoading] = useState(false);
+  const [profileContactCreateError, setProfileContactCreateError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [profileContactCreateResult, setProfileContactCreateResult] = useState<SavedProfileContactCreateResponse | null>(null);
   const [profileArchiveLoading, setProfileArchiveLoading] = useState(false);
   const [profileArchiveError, setProfileArchiveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [profileArchiveResult, setProfileArchiveResult] = useState<SavedProfileArchiveResponse | null>(null);
@@ -1398,6 +1423,9 @@ export function LeadIntelligenceClient({
     setProfileContactLinkLoading(false);
     setProfileContactLinkError(null);
     setProfileContactLinkResult(null);
+    setProfileContactCreateLoading(false);
+    setProfileContactCreateError(null);
+    setProfileContactCreateResult(null);
     setProfileArchiveLoading(false);
     setProfileArchiveError(null);
     setProfileArchiveResult(null);
@@ -2008,6 +2036,8 @@ export function LeadIntelligenceClient({
     setProfileContactCandidatesError(null);
     setProfileContactLinkError(null);
     setProfileContactLinkResult(null);
+    setProfileContactCreateError(null);
+    setProfileContactCreateResult(null);
     setProfileSelectedContactId(null);
 
     try {
@@ -2118,6 +2148,75 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setProfileContactLinkLoading(false);
+    }
+  };
+
+  const createContactFromSavedProfile = async () => {
+    if (!activeWorklistItem || !persistenceEnabled || !createContactEnabled) return;
+    const confirmed = window.confirm(
+      "Opprett ny CRM-kontakt fra denne godkjente buyer profile? Dette oppretter én kontakt og kobler profilen, men oppretter ikke lead, e-post eller matchingjobb.",
+    );
+    if (!confirmed) return;
+
+    setProfileContactCreateLoading(true);
+    setProfileContactCreateError(null);
+    setProfileContactCreateResult(null);
+
+    try {
+      const res = await fetch(
+        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-create`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brand }),
+        },
+      );
+      const body = (await res.json()) as SavedProfileContactCreateResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setProfileContactCreateError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke opprette CRM-kontakt.",
+        });
+        return;
+      }
+
+      setProfileContactCreateResult(body);
+      setActiveWorklistItem((current) =>
+        current && current.buyerProfileId === body.result.buyerProfileId
+          ? {
+              ...current,
+              contactLinked: true,
+              linkedContact: body.result.linkedContact,
+            }
+          : current,
+      );
+      setSaveResult((current) =>
+        current
+          ? {
+              ...current,
+              result: {
+                ...current.result,
+                contactCandidates: {
+                  ...current.result.contactCandidates,
+                  selectedContactId: body.result.contactId,
+                  decision: "create_new",
+                  linkedContact: true,
+                  duplicate: body.result.duplicate,
+                },
+              },
+            }
+          : current,
+      );
+      void loadWorklist();
+    } catch {
+      setProfileContactCreateError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte kontaktopprettings-API-et.",
+      });
+    } finally {
+      setProfileContactCreateLoading(false);
     }
   };
 
@@ -2505,11 +2604,57 @@ export function LeadIntelligenceClient({
                               )}
                               Finn kontaktkandidater
                             </Button>
-                            <Button type="button" variant="outline" size="sm" disabled>
-                              <Users className="mr-2 h-4 w-4" />
-                              Opprett ny kontakt kommer i egen gate
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={createContactFromSavedProfile}
+                              disabled={
+                                profileContactCreateLoading ||
+                                !createContactEnabled ||
+                                Boolean(activeWorklistItem.linkedContact)
+                              }
+                            >
+                              {profileContactCreateLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Users className="mr-2 h-4 w-4" />
+                              )}
+                              {createContactEnabled ? "Opprett ny kontakt" : "Kontaktoppretting låst"}
                             </Button>
                           </div>
+
+                          {!createContactEnabled && (
+                            <p className="mt-2 text-xs text-slate-500">
+                              Oppretting av ny kontakt krever server-side feature flag og egen produksjonsgate.
+                            </p>
+                          )}
+
+                          {profileContactCreateResult && (
+                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                              <p className="font-semibold">
+                                Kontakt opprettet og koblet uten lead, e-post eller matching.
+                              </p>
+                              <p className="mt-1">
+                                {profileContactCreateResult.result.linkedContact.name || "Uten navn"} ·{" "}
+                                {profileContactCreateResult.result.linkedContact.maskedPhone || "ingen telefon"} ·{" "}
+                                {profileContactCreateResult.result.linkedContact.maskedEmail || "ingen e-post"}
+                              </p>
+                              <p className="mt-2 text-emerald-100/70">
+                                Correlation ID: {profileContactCreateResult.correlationId}
+                              </p>
+                            </div>
+                          )}
+
+                          {profileContactCreateError && (
+                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
+                              <p className="font-semibold">{profileContactCreateError.code}</p>
+                              <p className="mt-1">{profileContactCreateError.message}</p>
+                              <p className="mt-2 text-red-100/70">
+                                Correlation ID: {profileContactCreateError.correlationId}
+                              </p>
+                            </div>
+                          )}
 
                           {profileArchiveResult && (
                             <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
