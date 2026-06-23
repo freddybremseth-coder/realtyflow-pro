@@ -3714,6 +3714,7 @@ async function testContactsRlsHardening() {
     await ensureSupabaseTestRoles(client);
     await createLeadIntelligenceRuntimeTestObjects(client);
     await installLegacyOpenContactsAccess(client);
+    await client.query("revoke create on schema public from public");
 
     process.stdout.write("  Scenario: contact-create gate can apply after contacts hardening\n");
     await applyMigration(client, migrationFiles.leadIntelligencePersistence);
