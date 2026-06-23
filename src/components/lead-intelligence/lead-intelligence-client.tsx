@@ -14,6 +14,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UserCheck,
   Users,
   XCircle,
@@ -70,6 +71,13 @@ interface ContactCandidatesResponse {
   correlationId: string;
   candidates: LeadContactCandidatePreview[];
   requiresManualSelection: boolean;
+}
+
+interface LinkedContactPreview {
+  contactId: string;
+  name: string | null;
+  maskedPhone: string | null;
+  maskedEmail: string | null;
 }
 
 interface ReviewSaveResponse {
@@ -309,6 +317,7 @@ interface LeadIntelligenceWorklistItem {
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;
+  linkedContact: LinkedContactPreview | null;
 }
 
 interface LeadIntelligenceWorklistResponse {
@@ -355,6 +364,63 @@ interface LeadIntelligenceCrmContextResponse {
     leadsCreated: false;
     emailSent: false;
     propertyMatchingStarted: false;
+  };
+}
+
+interface SavedProfileContactCandidatesResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    buyerProfileId: string;
+    linkedContact: LinkedContactPreview | null;
+    candidates: LeadContactCandidatePreview[];
+    requiresManualSelection: boolean;
+  };
+  sideEffects: {
+    contactsCreated: false;
+    contactsUpdated: false;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+  };
+}
+
+interface SavedProfileContactLinkResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    buyerProfileId: string;
+    contactId: string;
+    duplicate: boolean;
+    linkedContact: LinkedContactPreview;
+  };
+  sideEffects: {
+    contactsCreated: false;
+    contactsUpdated: false;
+    buyerProfileUpdated: true;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+  };
+}
+
+interface SavedProfileArchiveResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    buyerProfileId: string;
+    status: "archived";
+    duplicate: boolean;
+    archived: true;
+  };
+  sideEffects: {
+    profileArchived: true;
+    contactsCreated: false;
+    contactsUpdated: false;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+    presentationCreated: false;
   };
 }
 
@@ -1231,6 +1297,16 @@ export function LeadIntelligenceClient({
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
+  const [profileContactCandidatesLoading, setProfileContactCandidatesLoading] = useState(false);
+  const [profileContactCandidatesError, setProfileContactCandidatesError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [profileContactCandidatesResult, setProfileContactCandidatesResult] = useState<SavedProfileContactCandidatesResponse | null>(null);
+  const [profileSelectedContactId, setProfileSelectedContactId] = useState<string | null>(null);
+  const [profileContactLinkLoading, setProfileContactLinkLoading] = useState(false);
+  const [profileContactLinkError, setProfileContactLinkError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [profileContactLinkResult, setProfileContactLinkResult] = useState<SavedProfileContactLinkResponse | null>(null);
+  const [profileArchiveLoading, setProfileArchiveLoading] = useState(false);
+  const [profileArchiveError, setProfileArchiveError] = useState<SafeErrorResponse["error"] | null>(null);
+  const [profileArchiveResult, setProfileArchiveResult] = useState<SavedProfileArchiveResponse | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -1314,6 +1390,19 @@ export function LeadIntelligenceClient({
     setCrmContextResult(null);
   };
 
+  const clearActiveProfileActions = () => {
+    setProfileContactCandidatesLoading(false);
+    setProfileContactCandidatesError(null);
+    setProfileContactCandidatesResult(null);
+    setProfileSelectedContactId(null);
+    setProfileContactLinkLoading(false);
+    setProfileContactLinkError(null);
+    setProfileContactLinkResult(null);
+    setProfileArchiveLoading(false);
+    setProfileArchiveError(null);
+    setProfileArchiveResult(null);
+  };
+
   const clearContactCandidates = () => {
     setContactCandidatesLoaded(false);
     setContactCandidates([]);
@@ -1325,6 +1414,7 @@ export function LeadIntelligenceClient({
     setSaveResult(null);
     setActiveWorklistItem(null);
     setWorklistHistoryExpanded(true);
+    clearActiveProfileActions();
     clearPropertyMatchPreview();
   };
 
@@ -1912,9 +2002,177 @@ export function LeadIntelligenceClient({
     }
   };
 
+  const loadSavedProfileContactCandidates = async () => {
+    if (!activeWorklistItem || !persistenceEnabled) return;
+    setProfileContactCandidatesLoading(true);
+    setProfileContactCandidatesError(null);
+    setProfileContactLinkError(null);
+    setProfileContactLinkResult(null);
+    setProfileSelectedContactId(null);
+
+    try {
+      const res = await fetch(
+        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-candidates`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brand }),
+        },
+      );
+      const body = (await res.json()) as SavedProfileContactCandidatesResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setProfileContactCandidatesError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke hente kontaktkandidater for lagret profil.",
+        });
+        return;
+      }
+      setProfileContactCandidatesResult(body);
+      if (body.result.linkedContact) {
+        setActiveWorklistItem((current) =>
+          current && current.buyerProfileId === body.result.buyerProfileId
+            ? {
+                ...current,
+                contactLinked: true,
+                linkedContact: body.result.linkedContact,
+              }
+            : current,
+        );
+      }
+    } catch {
+      setProfileContactCandidatesError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte profil-kandidat-API-et.",
+      });
+    } finally {
+      setProfileContactCandidatesLoading(false);
+    }
+  };
+
+  const linkSavedProfileContact = async (contactId: string) => {
+    if (!activeWorklistItem || !persistenceEnabled || !connectExistingEnabled) return;
+    const confirmed = window.confirm(
+      "Koble denne buyer profile til den valgte eksisterende kontakten? Kontaktkortet oppdateres ikke, og det opprettes ikke lead eller e-post.",
+    );
+    if (!confirmed) return;
+
+    setProfileSelectedContactId(contactId);
+    setProfileContactLinkLoading(true);
+    setProfileContactLinkError(null);
+    setProfileContactLinkResult(null);
+
+    try {
+      const res = await fetch(
+        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-link`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brand, contactId }),
+        },
+      );
+      const body = (await res.json()) as SavedProfileContactLinkResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setProfileContactLinkError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke koble eksisterende kontakt.",
+        });
+        return;
+      }
+
+      setProfileContactLinkResult(body);
+      setActiveWorklistItem((current) =>
+        current && current.buyerProfileId === body.result.buyerProfileId
+          ? {
+              ...current,
+              contactLinked: true,
+              linkedContact: body.result.linkedContact,
+            }
+          : current,
+      );
+      setSaveResult((current) =>
+        current
+          ? {
+              ...current,
+              result: {
+                ...current.result,
+                contactCandidates: {
+                  ...current.result.contactCandidates,
+                  selectedContactId: body.result.contactId,
+                  decision: "connect_existing",
+                  linkedContact: true,
+                  duplicate: body.result.duplicate,
+                },
+              },
+            }
+          : current,
+      );
+      void loadWorklist();
+    } catch {
+      setProfileContactLinkError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte kontaktkoblings-API-et.",
+      });
+    } finally {
+      setProfileContactLinkLoading(false);
+    }
+  };
+
+  const archiveActiveProfile = async () => {
+    if (!activeWorklistItem || !persistenceEnabled) return;
+    const confirmed = window.confirm(
+      "Arkiver denne buyer profile? Den fjernes fra arbeidslisten, men slettes ikke fysisk og kan beholdes som audit-historikk.",
+    );
+    if (!confirmed) return;
+
+    setProfileArchiveLoading(true);
+    setProfileArchiveError(null);
+    setProfileArchiveResult(null);
+
+    try {
+      const res = await fetch(
+        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/archive`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brand }),
+        },
+      );
+      const body = (await res.json()) as SavedProfileArchiveResponse | SafeErrorResponse;
+      if (!res.ok || !body.ok) {
+        setProfileArchiveError((body as SafeErrorResponse).error || {
+          correlationId: res.headers.get("x-correlation-id") || "unknown",
+          code: "INTERNAL_ERROR",
+          message: "Kunne ikke arkivere profilen.",
+        });
+        return;
+      }
+
+      setActiveWorklistItem(null);
+      setSaveResult(null);
+      clearActiveProfileActions();
+      setProfileArchiveResult(body);
+      clearPropertyMatchPreview();
+      setWorklistHistoryExpanded(true);
+      void loadWorklist();
+    } catch {
+      setProfileArchiveError({
+        correlationId: "client",
+        code: "INTERNAL_ERROR",
+        message: "Kunne ikke kontakte profilarkiv-API-et.",
+      });
+    } finally {
+      setProfileArchiveLoading(false);
+    }
+  };
+
   const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
     if (!item.analysisRunId) return;
     clearContactCandidates();
+    clearActiveProfileActions();
     setResponse(null);
     setError(null);
     setEditableJson("");
@@ -2134,6 +2392,17 @@ export function LeadIntelligenceClient({
                     setter buyer profile som aktiv for match-preview uten å opprette lead, kontakt eller e-post.
                   </p>
                 </div>
+                {profileArchiveResult && !activeWorklistItem && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                    <p className="font-semibold">
+                      Profil {shortPropertyId(profileArchiveResult.result.buyerProfileId)} er arkivert.
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-100/75">
+                      Den er fjernet fra arbeidslisten, men ikke fysisk slettet. Ingen kontakt, lead, e-post,
+                      presentasjon eller matchingjobb ble opprettet.
+                    </p>
+                  </div>
+                )}
                 {activeWorklistItem && saveResult && (
                   <div
                     id="lead-intelligence-active-profile"
@@ -2154,6 +2423,9 @@ export function LeadIntelligenceClient({
                         <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
                           {propertyMatchingEnabled ? "Match aktivert" : "Matching av"}
                         </Badge>
+                        <Badge variant={activeWorklistItem.contactLinked ? "success" : "outline"}>
+                          {activeWorklistItem.contactLinked ? "Kontakt koblet" : "Kontakt ikke koblet"}
+                        </Badge>
                       </div>
                     </div>
 
@@ -2165,6 +2437,188 @@ export function LeadIntelligenceClient({
                             Kjør automatisk søk i eksisterende eiendommer, eller lim inn referanser hvis du vil teste
                             konkrete boliger. Dette oppretter ikke lead, kontakt, e-post eller matchingjobb.
                           </p>
+                        </div>
+
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-100">Kontaktkort</p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                Se koblet kontakt eller finn en eksisterende kontakt for denne lagrede profilen.
+                                Ingen ny kontakt opprettes her.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={archiveActiveProfile}
+                              disabled={profileArchiveLoading}
+                            >
+                              {profileArchiveLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="mr-2 h-4 w-4" />
+                              )}
+                              Arkiver profil
+                            </Button>
+                          </div>
+
+                          {activeWorklistItem.linkedContact ? (
+                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-100">
+                              <p className="text-xs uppercase tracking-wide text-emerald-200/80">
+                                Koblet eksisterende kontakt
+                              </p>
+                              <p className="mt-1 font-semibold text-emerald-50">
+                                {activeWorklistItem.linkedContact.name || "Uten navn"}
+                              </p>
+                              <p className="mt-1 text-xs text-emerald-100/75">
+                                {activeWorklistItem.linkedContact.maskedPhone || "ingen telefon"} ·{" "}
+                                {activeWorklistItem.linkedContact.maskedEmail || "ingen e-post"}
+                              </p>
+                              <p className="mt-2 text-xs text-emerald-100/70">
+                                Kontaktdata er hentet read-only og ble ikke overskrevet av Lead Intelligence.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
+                              <p className="font-semibold">Ingen kontakt koblet ennå.</p>
+                              <p className="mt-1 text-xs text-amber-100/80">
+                                Du kan søke etter eksisterende kontakt fra den lagrede analysen. Opprett ny kontakt er
+                                fortsatt en egen godkjenningsfase.
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={loadSavedProfileContactCandidates}
+                              disabled={profileContactCandidatesLoading || !persistenceEnabled}
+                            >
+                              {profileContactCandidatesLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Search className="mr-2 h-4 w-4" />
+                              )}
+                              Finn kontaktkandidater
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" disabled>
+                              <Users className="mr-2 h-4 w-4" />
+                              Opprett ny kontakt kommer i egen gate
+                            </Button>
+                          </div>
+
+                          {profileArchiveResult && (
+                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                              Profil {shortPropertyId(profileArchiveResult.result.buyerProfileId)} er arkivert.
+                              Den er fjernet fra arbeidslisten, men ikke fysisk slettet.
+                            </div>
+                          )}
+
+                          {profileArchiveError && (
+                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
+                              <p className="font-semibold">{profileArchiveError.code}</p>
+                              <p className="mt-1">{profileArchiveError.message}</p>
+                              <p className="mt-2 text-red-100/70">Correlation ID: {profileArchiveError.correlationId}</p>
+                            </div>
+                          )}
+
+                          {profileContactCandidatesError && (
+                            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                              <p className="font-semibold">{profileContactCandidatesError.code}</p>
+                              <p className="mt-1">{profileContactCandidatesError.message}</p>
+                              <p className="mt-2 text-amber-100/80">
+                                Correlation ID: {profileContactCandidatesError.correlationId}
+                              </p>
+                            </div>
+                          )}
+
+                          {profileContactLinkError && (
+                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
+                              <p className="font-semibold">{profileContactLinkError.code}</p>
+                              <p className="mt-1">{profileContactLinkError.message}</p>
+                              <p className="mt-2 text-red-100/70">Correlation ID: {profileContactLinkError.correlationId}</p>
+                            </div>
+                          )}
+
+                          {profileContactLinkResult && (
+                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                              Kontakt {profileContactLinkResult.result.linkedContact.name || shortPropertyId(profileContactLinkResult.result.contactId)}
+                              {" "}er koblet til buyer profile. Ingen kontakt, lead eller e-post ble opprettet.
+                            </div>
+                          )}
+
+                          {profileContactCandidatesResult && (
+                            <div className="mt-3 space-y-2">
+                              {profileContactCandidatesResult.result.candidates.length === 0 ? (
+                                <p className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
+                                  Ingen eksisterende kontaktkandidater funnet for denne profilen.
+                                </p>
+                              ) : (
+                                profileContactCandidatesResult.result.candidates.map((candidate) => (
+                                  <div
+                                    key={`${candidate.matchType}:${candidate.contactId}`}
+                                    className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
+                                  >
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                      <label className="flex min-w-0 cursor-pointer items-start gap-3">
+                                        <input
+                                          type="radio"
+                                          name="saved-profile-contact-candidate"
+                                          checked={profileSelectedContactId === candidate.contactId}
+                                          onChange={() => {
+                                            setProfileSelectedContactId(candidate.contactId);
+                                            setProfileContactLinkError(null);
+                                            setProfileContactLinkResult(null);
+                                          }}
+                                          className="mt-1 h-4 w-4"
+                                          disabled={Boolean(activeWorklistItem.linkedContact) || !connectExistingEnabled}
+                                        />
+                                        <span className="min-w-0">
+                                          <span className="block font-medium text-slate-100">
+                                            {candidate.name || "Uten navn"}
+                                          </span>
+                                          <span className="mt-1 block text-xs text-slate-500">
+                                            {candidate.maskedPhone || "ingen telefon"} ·{" "}
+                                            {candidate.maskedEmail || "ingen e-post"}
+                                          </span>
+                                          <span className="mt-1 block text-xs text-slate-400">
+                                            {candidate.matchType} · {Math.round(candidate.confidence * 100)}%
+                                          </span>
+                                        </span>
+                                      </label>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => linkSavedProfileContact(candidate.contactId)}
+                                        disabled={
+                                          profileContactLinkLoading ||
+                                          Boolean(activeWorklistItem.linkedContact) ||
+                                          !connectExistingEnabled
+                                        }
+                                      >
+                                        {profileContactLinkLoading && profileSelectedContactId === candidate.contactId ? (
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <UserCheck className="mr-2 h-4 w-4" />
+                                        )}
+                                        Koble
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                              {!connectExistingEnabled && (
+                                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                                  Kobling til eksisterende kontakt er ikke aktivert i dette miljøet.
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {activeWorklistItem.latestPresentationId && (
@@ -2791,7 +3245,13 @@ export function LeadIntelligenceClient({
                               </div>
                               <div>
                                 <dt className="text-slate-500">Kontakt</dt>
-                                <dd>{item.contactLinked ? "Koblet" : "Ikke koblet"}</dd>
+                                <dd>
+                                  {item.linkedContact
+                                    ? item.linkedContact.name || item.linkedContact.maskedPhone || "Koblet"
+                                    : item.contactLinked
+                                      ? "Koblet"
+                                      : "Ikke koblet"}
+                                </dd>
                               </div>
                               <div>
                                 <dt className="text-slate-500">Kriterier</dt>
