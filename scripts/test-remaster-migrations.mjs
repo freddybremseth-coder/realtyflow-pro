@@ -1269,9 +1269,11 @@ async function createLeadIntelligenceRuntimeTestObjects(client) {
     create table public.contacts (
       id uuid primary key default gen_random_uuid(),
       brand text not null,
+      brand_id text,
       name text,
       phone text,
       email text,
+      type text,
       pipeline_status text,
       pipeline_value numeric,
       property_interest text,
