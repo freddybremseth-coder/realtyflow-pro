@@ -30,6 +30,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260623120717_lead_intelligence_contact_link_gate.sql",
   ),
+  leadIntelligenceProfileActions: path.join(
+    repoRoot,
+    "supabase/migrations/20260623153545_lead_intelligence_profile_actions.sql",
+  ),
   leadIntelligenceCrmContext: path.join(
     repoRoot,
     "supabase/migrations/20260622103729_lead_intelligence_crm_context_readonly.sql",
@@ -3355,6 +3359,190 @@ async function testLeadIntelligenceContactLinkGate() {
   });
 }
 
+async function testLeadIntelligenceProfileActions() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: applies after runtime/contact-link gates and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactLinkGate);
+    await applyMigration(client, migrationFiles.leadIntelligenceProfileActions);
+    await applyMigration(client, migrationFiles.leadIntelligenceProfileActions);
+
+    const grants = await client.query(`
+      select
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'status', 'update') as status_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'contact_id', 'update') as contact_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'summary', 'update') as summary_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'brand', 'update') as brand_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'intake_id', 'update') as intake_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'delete') as profile_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as contacts_select,
+        has_table_privilege('anon', 'public.buyer_profiles', 'select,insert,update,delete') as anon_profile_access,
+        has_table_privilege('authenticated', 'public.buyer_profiles', 'select,insert,update,delete') as authenticated_profile_access
+    `);
+    assert(grants.rows[0].status_update === true, "Runtime role cannot update buyer_profiles.status.");
+    assert(grants.rows[0].contact_update === true, "Contact-link gate update(contact_id) was lost.");
+    assert(grants.rows[0].summary_update === false, "Runtime role can update buyer profile summary.");
+    assert(grants.rows[0].brand_update === false, "Runtime role can update buyer profile brand.");
+    assert(grants.rows[0].intake_update === false, "Runtime role can update buyer profile intake_id.");
+    assert(grants.rows[0].profile_delete === false, "Runtime role can delete buyer profiles.");
+    assert(grants.rows[0].contacts_select === false, "Runtime role can read public.contacts directly.");
+    assert(grants.rows[0].anon_profile_access === false, "anon can access buyer_profiles.");
+    assert(grants.rows[0].authenticated_profile_access === false, "authenticated can access buyer_profiles.");
+
+    const policyRows = await client.query(`
+      select
+        cmd,
+        roles::text as roles,
+        qual,
+        with_check
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'buyer_profiles'
+        and policyname = 'buyer_profiles_runtime_archive'
+    `);
+    assert(policyRows.rows.length === 1, "Profile archive update policy is missing.");
+    assert(policyRows.rows[0].cmd === "UPDATE", "Profile archive policy is not an UPDATE policy.");
+    assert(
+      policyRows.rows[0].roles.includes("realtyflow_lead_intelligence_runtime"),
+      "Profile archive policy is not scoped to the runtime role.",
+    );
+    assert(
+      String(policyRows.rows[0].with_check || "").includes("status = 'archived'"),
+      "Profile archive policy does not constrain the target status to archived.",
+    );
+
+    process.stdout.write("  Scenario: runtime can soft-archive only same-brand draft/approved profiles\n");
+    const intake = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'approved', 'freddy.bremseth@gmail.com', 'rf_archive_0123456789abcdef01', 'profile-actions-intake-001')
+        returning id::text
+      `,
+    );
+    const intakeId = intake.rows[0].id;
+
+    const profile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          contact_id,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', null, $1::uuid, 1, 'approved', 'ready_to_buy', 440000, 'EUR', true, true, true, 'Archive candidate.', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id::text
+      `,
+      [intakeId],
+    );
+    const profileId = profile.rows[0].id;
+
+    const archived = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        update public.buyer_profiles
+        set status = 'archived'
+        where id = $1::uuid
+        returning status
+      `,
+      [profileId],
+    );
+    assert(archived.rows[0].status === "archived", "Runtime role did not archive same-brand profile.");
+
+    const archivedAgain = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        update public.buyer_profiles
+        set status = 'archived'
+        where id = $1::uuid
+        returning status
+      `,
+      [profileId],
+    );
+    assert(archivedAgain.rows.length === 0, "Raw runtime SQL could re-update an already archived profile.");
+
+    const crossBrand = await queryAsRuntime(
+      client,
+      "zeneco",
+      `
+        update public.buyer_profiles
+        set status = 'archived'
+        where id = $1::uuid
+        returning status
+      `,
+      [profileId],
+    );
+    assert(crossBrand.rows.length === 0, "Runtime role archived a cross-brand profile.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.buyer_profiles set summary = 'changed'",
+      "Runtime role could update buyer profile summary.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "delete from public.buyer_profiles where id is not null",
+      "Runtime role could hard-delete buyer profiles.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select id, brand, name, phone, email from public.contacts",
+      "Runtime role could read contacts directly after profile-actions migration.",
+      "permission denied",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: missing runtime RLS schema fails closed\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceProfileActions, "utf8"),
+      "Profile-actions migration accepted missing runtime RLS schema.",
+      "LEAD_INTELLIGENCE_PROFILE_ACTIONS_SCHEMA_NOT_READY",
+    );
+  });
+}
+
 async function testLeadIntelligenceCrmContextReadonly() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -4049,6 +4237,7 @@ const tests = new Map([
   ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
   ["lead-intelligence-contact-link-gate", testLeadIntelligenceContactLinkGate],
+  ["lead-intelligence-profile-actions", testLeadIntelligenceProfileActions],
   ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
   ["lead-intelligence-presentation-draft", testLeadIntelligencePresentationDraft],

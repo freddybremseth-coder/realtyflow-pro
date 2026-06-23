@@ -28,6 +28,10 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Oppdater lagrede saker"), true);
   assert.equal(source.includes("Fortsett med denne profilen"), true);
   assert.equal(source.includes("Aktiv lagret profil"), true);
+  assert.equal(source.includes("Kontaktkort"), true);
+  assert.equal(source.includes("Finn kontaktkandidater"), true);
+  assert.equal(source.includes("Arkiver profil"), true);
+  assert.equal(source.includes("Opprett ny kontakt kommer i egen gate"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);
@@ -58,6 +62,7 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
   assert.equal(source.includes("/api/lead-intelligence/shortlists"), true);
   assert.equal(source.includes("/api/lead-intelligence/presentations"), true);
   assert.equal(source.includes("/api/lead-intelligence/worklist"), true);
+  assert.equal(source.includes("/api/lead-intelligence/buyer-profiles/"), true);
 });
 
 test("Lead Intelligence worklist is read-only and does not expose raw stored payloads", async () => {
@@ -96,6 +101,13 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("Ingen send-knapp finnes i denne fasen."), true);
   assert.equal(source.includes("PresentationManualSharingGate"), false);
   assert.equal(source.includes("Kopier manuell sendepakke"), false);
+  assert.equal(source.includes("Koblet eksisterende kontakt"), true);
+  assert.equal(source.includes("Kontaktdata er hentet read-only"), true);
+  assert.equal(source.includes("Ingen kontakt koblet ennå."), true);
+  assert.equal(source.includes("Koble denne buyer profile til den valgte eksisterende kontakten?"), true);
+  assert.equal(source.includes("Arkiver denne buyer profile?"), true);
+  assert.equal(source.includes("ikke fysisk slettet"), true);
+  assert.equal(source.includes("hard delete"), false);
   assert.equal(source.includes("Åpne bolig"), true);
   assert.equal(source.includes("Åpne i RealtyFlow"), true);
   assert.equal(source.includes("internalInventoryPropertyUrl"), true);

@@ -38,6 +38,9 @@ class CaptureDb implements QueryClient {
     if (sql.includes("update public.buyer_profiles profile") && sql.includes("set contact_id")) {
       return { rows: [{ id: profileId, contact_id: contactId, duplicate: false }] as T[] };
     }
+    if (sql.includes("update public.buyer_profiles profile") && sql.includes("set status = 'archived'")) {
+      return { rows: [{ id: profileId, status: "archived", duplicate: false }] as T[] };
+    }
     if (sql.includes("insert into public.lead_analysis_runs")) {
       return { rows: [{ id: "55555555-5555-4555-8555-555555555555", duplicate: false, payload_hash_matches: true }] as T[] };
     }
@@ -67,7 +70,7 @@ class WorklistDb implements QueryClient {
           budget_amount: "440000",
           budget_currency: "EUR",
           location_flexible: true,
-          contact_linked: false,
+          contact_linked: true,
           criterion_count: 5,
           shortlist_count: 1,
           latest_shortlist_id: "66666666-6666-4666-8666-666666666666",
@@ -78,9 +81,41 @@ class WorklistDb implements QueryClient {
           latest_presentation_status: "draft",
           latest_message_draft_id: "88888888-8888-4888-8888-888888888888",
           latest_message_draft_status: "draft",
+          linked_contact_id: contactId,
+          linked_contact_name: "Emmadale",
+          linked_contact_phone: "+4790174714",
+          linked_contact_email: "kunde@example.com",
           created_at: "2026-06-20T12:00:00.000Z",
           updated_at: "2026-06-21T12:00:00.000Z",
           approved_at: "2026-06-20T12:10:00.000Z",
+        },
+      ] as T[],
+    };
+  }
+}
+
+class BuyerProfileContactContextDb implements QueryClient {
+  queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
+
+  async query<T>(sql: string, values?: readonly unknown[]) {
+    this.queries.push({ sql, values });
+    return {
+      rows: [
+        {
+          buyer_profile_id: profileId,
+          brand: "soleada",
+          profile_status: "approved",
+          contact_id: contactId,
+          linked_contact_name: "Emmadale",
+          linked_contact_phone: "+4790174714",
+          linked_contact_email: "kunde@example.com",
+          contact_json: {
+            name: "Emmadale",
+            phone: "+4790174714",
+            email: "kunde@example.com",
+            language: null,
+            country: "NO",
+          },
         },
       ] as T[],
     };
@@ -842,6 +877,47 @@ test("linkBuyerProfileContact rejects stale or cross-brand contact candidates", 
   );
 });
 
+test("getBuyerProfileContactContext returns reviewed contact and masked linked contact safely", async () => {
+  const db = new BuyerProfileContactContextDb();
+  const repo = repository(db);
+  const context = await repo.getBuyerProfileContactContext({
+    brand: "soleada",
+    buyerProfileId: profileId,
+  });
+
+  assert.equal(context.buyerProfileId, profileId);
+  assert.equal(context.contact?.name, "Emmadale");
+  assert.equal(context.linkedContact?.contactId, contactId);
+  assert.equal(context.linkedContact?.name, "Emmadale");
+  assert(!context.linkedContact?.maskedPhone?.includes("90174714"));
+  assert(!context.linkedContact?.maskedEmail?.includes("kunde"));
+
+  const sql = db.queries[0].sql;
+  assert(sql.includes("public.lead_intelligence_contact_lookup"));
+  assert(!sql.includes("raw_text_restricted"));
+  assert(!sql.includes("match_value_hash"));
+  assert.deepEqual(db.queries[0].values, ["soleada", profileId]);
+});
+
+test("archiveBuyerProfile soft-deletes profile by status only", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+  const result = await repo.archiveBuyerProfile({
+    brand: "soleada",
+    buyerProfileId: profileId,
+  });
+
+  assert.equal(result.id, profileId);
+  assert.equal(result.status, "archived");
+  assert.equal(result.duplicate, false);
+  assert.equal(db.queries.length, 1);
+  assert(db.queries[0].sql.includes("set status = 'archived'"));
+  assert(!db.queries[0].sql.includes("delete from"));
+  assert(!db.queries[0].sql.includes("set contact_id"));
+  assert(!db.queries[0].sql.includes("public.contacts"));
+  assert.deepEqual(db.queries[0].values, ["soleada", profileId]);
+});
+
 test("worklist query validates brand and limit before database access", async () => {
   assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 20 }).success, true);
   assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "neuralbeat", limit: 20 }).success, false);
@@ -864,7 +940,11 @@ test("worklist returns safe persisted case metadata without raw payloads or cont
   assert.equal(items.length, 1);
   assert.equal(items[0].buyerProfileId, profileId);
   assert.equal(items[0].intakeId, intakeId);
-  assert.equal(items[0].contactLinked, false);
+  assert.equal(items[0].contactLinked, true);
+  assert.equal(items[0].linkedContact?.contactId, contactId);
+  assert.equal(items[0].linkedContact?.name, "Emmadale");
+  assert(!items[0].linkedContact?.maskedPhone?.includes("90174714"));
+  assert(!items[0].linkedContact?.maskedEmail?.includes("kunde"));
   assert.equal(items[0].criterionCount, 5);
   assert.equal(items[0].latestShortlistItemCount, 4);
   assert.equal(items[0].latestMessageDraftStatus, "draft");
@@ -876,7 +956,8 @@ test("worklist returns safe persisted case metadata without raw payloads or cont
   assert(!/result_json/i.test(sql));
   assert(!/body_text|body_html|subject/i.test(sql));
   assert(!/match_value_hash/i.test(sql));
-  assert(!/phone|email/i.test(sql));
+  assert(sql.includes("public.lead_intelligence_contact_lookup"));
+  assert(!/public\.contacts/i.test(sql));
 });
 
 test("presentation draft lookup returns safe draft content without raw intake or contact hashes", async () => {

@@ -6,6 +6,7 @@ import {
   CANONICAL_PROPERTY_TYPES,
   ConfidenceSchema,
   CriterionOperatorSchema,
+  ExtractedLeadContactSchema,
   LEAD_INTELLIGENCE_LIMITS,
   LanguageCodeSchema,
   PurchaseReadinessLevelSchema,
@@ -25,6 +26,7 @@ export type LeadIntelligencePersistenceErrorCode =
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
   | "CONTACT_CANDIDATE_STALE"
   | "CONTACT_BRAND_MISMATCH"
+  | "BUYER_PROFILE_NOT_FOUND"
   | "REVIEW_CONFLICT"
   | "DATABASE_ERROR";
 
@@ -168,6 +170,12 @@ export interface LeadIntelligenceWorklistItem {
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;
+  linkedContact: {
+    contactId: string;
+    name: string | null;
+    maskedPhone: string | null;
+    maskedEmail: string | null;
+  } | null;
 }
 
 export const CreateLeadIntakeInputSchema = z
@@ -394,6 +402,13 @@ export const LinkBuyerProfileContactInputSchema = z
   })
   .strict();
 
+export const BuyerProfileActionInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileId: UUIDSchema,
+  })
+  .strict();
+
 export const LeadPropertyShortlistItemInputSchema = z
   .object({
     brand: BrandSchema,
@@ -576,6 +591,7 @@ export type RecordLeadAnalysisRunInput = z.infer<typeof RecordLeadAnalysisRunInp
 export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSchema>;
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
 export type LinkBuyerProfileContactInput = z.infer<typeof LinkBuyerProfileContactInputSchema>;
+export type BuyerProfileActionInput = z.infer<typeof BuyerProfileActionInputSchema>;
 export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
 export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLeadCustomerPresentationDraftInputSchema>;
 
@@ -924,6 +940,10 @@ export class LeadIntelligencePersistenceRepository {
       latest_presentation_status: string | null;
       latest_message_draft_id: string | null;
       latest_message_draft_status: string | null;
+      linked_contact_id: string | null;
+      linked_contact_name: string | null;
+      linked_contact_phone: string | null;
+      linked_contact_email: string | null;
       created_at: string | Date;
       updated_at: string | Date;
       approved_at: string | Date | null;
@@ -972,6 +992,10 @@ export class LeadIntelligencePersistenceRepository {
           latest_presentation.status as latest_presentation_status,
           latest_message.id::text as latest_message_draft_id,
           latest_message.status as latest_message_draft_status,
+          linked_contact.id::text as linked_contact_id,
+          linked_contact.name as linked_contact_name,
+          linked_contact.phone as linked_contact_phone,
+          linked_contact.email as linked_contact_email,
           profile.created_at,
           profile.updated_at,
           profile.approved_at
@@ -1034,6 +1058,14 @@ export class LeadIntelligencePersistenceRepository {
           order by draft.created_at desc, draft.id desc
           limit 1
         ) latest_message on true
+        left join lateral (
+          select id, name, phone, email
+          from public.lead_intelligence_contact_lookup contact
+          where profile.contact_id is not null
+            and contact.id = profile.contact_id
+          limit 1
+        ) linked_contact on true
+        where profile.status <> 'archived'
         order by profile.updated_at desc, profile.created_at desc, profile.id desc
       `,
       [data.brand, data.limit],
@@ -1071,6 +1103,14 @@ export class LeadIntelligencePersistenceRepository {
       createdAt: normalizeDateString(row.created_at),
       updatedAt: normalizeDateString(row.updated_at),
       approvedAt: row.approved_at ? normalizeDateString(row.approved_at) : null,
+      linkedContact: row.linked_contact_id
+        ? {
+            contactId: UUIDSchema.parse(row.linked_contact_id),
+            name: row.linked_contact_name || null,
+            maskedPhone: maskPhone(row.linked_contact_phone),
+            maskedEmail: maskEmail(row.linked_contact_email),
+          }
+        : null,
     }));
   }
 
@@ -1446,6 +1486,130 @@ export class LeadIntelligencePersistenceRepository {
     return {
       id: row.id,
       contactId: row.contact_id,
+      duplicate: Boolean(row.duplicate),
+    };
+  }
+
+  async getBuyerProfileContactContext(input: BuyerProfileActionInput) {
+    this.assertCanRead();
+    const data = BuyerProfileActionInputSchema.parse(input);
+    const { rows } = await this.db.query<{
+      buyer_profile_id: string;
+      brand: string;
+      profile_status: string;
+      contact_id: string | null;
+      linked_contact_name: string | null;
+      linked_contact_phone: string | null;
+      linked_contact_email: string | null;
+      contact_json: unknown;
+    }>(
+      `
+        select
+          profile.id::text as buyer_profile_id,
+          profile.brand,
+          profile.status as profile_status,
+          profile.contact_id::text as contact_id,
+          linked_contact.name as linked_contact_name,
+          linked_contact.phone as linked_contact_phone,
+          linked_contact.email as linked_contact_email,
+          analysis.result_json -> 'contact' as contact_json
+        from public.buyer_profiles profile
+        left join lateral (
+          select result_json
+          from public.lead_analysis_runs analysis
+          where analysis.intake_id = profile.intake_id
+          order by analysis.created_at desc, analysis.id desc
+          limit 1
+        ) analysis on true
+        left join lateral (
+          select id, name, phone, email
+          from public.lead_intelligence_contact_lookup contact
+          where profile.contact_id is not null
+            and contact.id = profile.contact_id
+          limit 1
+        ) linked_contact on true
+        where profile.id = $2::uuid
+          and profile.brand = $1
+          and profile.status <> 'archived'
+        limit 1
+      `,
+      [data.brand, data.buyerProfileId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      throw new LeadIntelligencePersistenceError(
+        "BUYER_PROFILE_NOT_FOUND",
+        "Buyer profile was not found for this brand",
+        404,
+      );
+    }
+
+    const contact = row.contact_json
+      ? ExtractedLeadContactSchema.parse(row.contact_json)
+      : null;
+
+    return {
+      buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
+      brand: BrandSchema.parse(row.brand),
+      profileStatus: BuyerProfilePersistenceStatusSchema.parse(row.profile_status),
+      contact,
+      linkedContact: row.contact_id
+        ? {
+            contactId: UUIDSchema.parse(row.contact_id),
+            name: row.linked_contact_name || null,
+            maskedPhone: maskPhone(row.linked_contact_phone),
+            maskedEmail: maskEmail(row.linked_contact_email),
+          }
+        : null,
+    };
+  }
+
+  async archiveBuyerProfile(input: BuyerProfileActionInput) {
+    this.assertCanWrite();
+    const data = BuyerProfileActionInputSchema.parse(input);
+    const { rows } = await this.db.query<{
+      id: string;
+      status: string;
+      duplicate: boolean;
+    }>(
+      `
+        with archived_profile as (
+          update public.buyer_profiles profile
+          set status = 'archived'
+          where profile.id = $2::uuid
+            and profile.brand = $1
+            and profile.status in ('draft', 'approved')
+          returning profile.id::text as id, profile.status, false as duplicate
+        ),
+        existing_archived as (
+          select profile.id::text as id, profile.status, true as duplicate
+          from public.buyer_profiles profile
+          where profile.id = $2::uuid
+            and profile.brand = $1
+            and profile.status = 'archived'
+            and not exists (select 1 from archived_profile)
+        )
+        select id, status, duplicate from archived_profile
+        union all
+        select id, status, duplicate from existing_archived
+        limit 1
+      `,
+      [data.brand, data.buyerProfileId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      throw new LeadIntelligencePersistenceError(
+        "BUYER_PROFILE_NOT_FOUND",
+        "Buyer profile was not found for this brand",
+        404,
+      );
+    }
+
+    return {
+      id: UUIDSchema.parse(row.id),
+      status: BuyerProfilePersistenceStatusSchema.parse(row.status),
       duplicate: Boolean(row.duplicate),
     };
   }
