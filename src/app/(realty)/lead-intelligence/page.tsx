@@ -1,6 +1,7 @@
 import { LeadIntelligenceClient } from "@/components/lead-intelligence/lead-intelligence-client";
 import {
   isLeadIntelligenceConnectExistingEnabled,
+  isLeadIntelligenceCreateContactEnabled,
   isLeadIntelligenceEnabled,
   isLeadIntelligencePersistenceEnabled,
   isLeadIntelligencePropertyMatchingEnabled,
@@ -12,6 +13,7 @@ export default function LeadIntelligencePage() {
       featureEnabled={isLeadIntelligenceEnabled()}
       persistenceEnabled={isLeadIntelligencePersistenceEnabled()}
       connectExistingEnabled={isLeadIntelligenceConnectExistingEnabled()}
+      createContactEnabled={isLeadIntelligenceCreateContactEnabled()}
       propertyMatchingEnabled={isLeadIntelligencePropertyMatchingEnabled()}
     />
   );

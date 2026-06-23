@@ -34,6 +34,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260623153545_lead_intelligence_profile_actions.sql",
   ),
+  leadIntelligenceContactCreateGate: path.join(
+    repoRoot,
+    "supabase/migrations/20260623174512_lead_intelligence_contact_create_gate.sql",
+  ),
   leadIntelligenceCrmContext: path.join(
     repoRoot,
     "supabase/migrations/20260622103729_lead_intelligence_crm_context_readonly.sql",
@@ -3543,6 +3547,166 @@ async function testLeadIntelligenceProfileActions() {
   });
 }
 
+async function testLeadIntelligenceContactCreateGate() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: grants only narrow contacts insert and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactLinkGate);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactCreateGate);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactCreateGate);
+
+    const grants = await client.query(`
+      select
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'id', 'insert') as id_insert,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'name', 'insert') as name_insert,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'brand', 'insert') as brand_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as contacts_select,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'update') as contacts_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'delete') as contacts_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.leads', 'insert') as leads_insert,
+        has_table_privilege('anon', 'public.contacts', 'insert,update,delete') as anon_contact_write,
+        has_table_privilege('authenticated', 'public.contacts', 'insert,update,delete') as authenticated_contact_write
+    `);
+    assert(grants.rows[0].id_insert === true, "Runtime role cannot insert contacts.id.");
+    assert(grants.rows[0].name_insert === true, "Runtime role cannot insert contacts.name.");
+    assert(grants.rows[0].brand_insert === true, "Runtime role cannot insert contacts.brand.");
+    assert(grants.rows[0].contacts_select === false, "Runtime role can select public.contacts directly.");
+    assert(grants.rows[0].contacts_update === false, "Runtime role can update public.contacts.");
+    assert(grants.rows[0].contacts_delete === false, "Runtime role can delete public.contacts.");
+    assert(grants.rows[0].leads_insert === false, "Runtime role can insert public.leads.");
+    assert(grants.rows[0].anon_contact_write === false, "anon can write public.contacts.");
+    assert(grants.rows[0].authenticated_contact_write === false, "authenticated can write public.contacts.");
+
+    const policyRows = await client.query(`
+      select cmd, roles::text as roles, with_check
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'contacts'
+        and policyname = 'contacts_lead_intelligence_runtime_insert'
+    `);
+    assert(policyRows.rows.length === 1, "Contact create policy is missing.");
+    assert(policyRows.rows[0].cmd === "INSERT", "Contact create policy is not INSERT-only.");
+    assert(
+      policyRows.rows[0].roles.includes("realtyflow_lead_intelligence_runtime"),
+      "Contact create policy is not scoped to runtime role.",
+    );
+    assert(
+      String(policyRows.rows[0].with_check || "").includes("source = 'lead_intelligence'"),
+      "Contact create policy does not enforce lead_intelligence source.",
+    );
+
+    process.stdout.write("  Scenario: runtime can insert only same-brand Lead Intelligence buyer contacts\n");
+    await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.contacts (
+          id,
+          name,
+          email,
+          phone,
+          type,
+          pipeline_status,
+          source,
+          brand,
+          brand_id,
+          created_at,
+          updated_at
+        )
+        values (
+          '77777777-7777-4777-8777-777777777777'::uuid,
+          'Lead Intelligence Test',
+          'lead-intelligence-test@example.com',
+          '+4799999999',
+          'buyer',
+          'NEW',
+          'lead_intelligence',
+          'soleada',
+          'soleada',
+          now(),
+          now()
+        )
+      `,
+    );
+
+    const insertedCount = await client.query(`
+      select count(*)::int as count
+      from public.contacts
+      where id = '77777777-7777-4777-8777-777777777777'::uuid
+        and source = 'lead_intelligence'
+        and brand = 'soleada'
+    `);
+    assert(insertedCount.rows[0].count === 1, "Runtime contact insert did not create the expected test contact.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "zeneco",
+      `
+        insert into public.contacts (
+          id, name, type, pipeline_status, source, brand, brand_id, created_at, updated_at
+        )
+        values (
+          '77777777-7777-4777-8777-777777777778'::uuid,
+          'Cross Brand Test',
+          'buyer',
+          'NEW',
+          'lead_intelligence',
+          'soleada',
+          'soleada',
+          now(),
+          now()
+        )
+      `,
+      "Runtime role inserted a cross-brand contact.",
+      "violates row-level security",
+    );
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select id, name, phone, email from public.contacts",
+      "Runtime role could select contacts directly.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.contacts set name = 'changed'",
+      "Runtime role could update contacts.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "delete from public.contacts",
+      "Runtime role could delete contacts.",
+      "permission denied",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: missing runtime RLS schema fails closed\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceContactCreateGate, "utf8"),
+      "Contact-create migration accepted missing runtime RLS schema.",
+      "LEAD_INTELLIGENCE_CONTACT_CREATE_SCHEMA_NOT_READY",
+    );
+  });
+}
+
 async function testLeadIntelligenceCrmContextReadonly() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -4238,6 +4402,7 @@ const tests = new Map([
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
   ["lead-intelligence-contact-link-gate", testLeadIntelligenceContactLinkGate],
   ["lead-intelligence-profile-actions", testLeadIntelligenceProfileActions],
+  ["lead-intelligence-contact-create-gate", testLeadIntelligenceContactCreateGate],
   ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
   ["lead-intelligence-presentation-draft", testLeadIntelligencePresentationDraft],

@@ -31,7 +31,9 @@ test("Lead Intelligence preview exposes only local review actions", async () => 
   assert.equal(source.includes("Kontaktkort"), true);
   assert.equal(source.includes("Finn kontaktkandidater"), true);
   assert.equal(source.includes("Arkiver profil"), true);
-  assert.equal(source.includes("Opprett ny kontakt kommer i egen gate"), true);
+  assert.equal(source.includes("Opprett ny kontakt"), true);
+  assert.equal(source.includes("Kontaktoppretting låst"), true);
+  assert.equal(source.includes("/contact-create"), true);
   assert.equal(source.includes("Opprett lead"), false);
   assert.equal(source.includes("Send til kunde"), false);
   assert.equal(source.includes("Finn boliger"), false);

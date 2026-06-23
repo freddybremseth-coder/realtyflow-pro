@@ -21,6 +21,13 @@ export function isLeadIntelligenceConnectExistingEnabled(
   return /^(1|true|yes|on)$/i.test(String(raw || "").trim());
 }
 
+export function isLeadIntelligenceCreateContactEnabled(
+  env: Record<string, string | undefined> = process.env,
+) {
+  const raw = env[LEAD_INTELLIGENCE_FEATURE_FLAGS.leadIntelligenceCreateContact];
+  return /^(1|true|yes|on)$/i.test(String(raw || "").trim());
+}
+
 export function isLeadIntelligencePropertyMatchingEnabled(
   env: Record<string, string | undefined> = process.env,
 ) {

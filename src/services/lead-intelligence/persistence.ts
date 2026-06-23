@@ -26,6 +26,7 @@ export type LeadIntelligencePersistenceErrorCode =
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
   | "CONTACT_CANDIDATE_STALE"
   | "CONTACT_BRAND_MISMATCH"
+  | "CONTACT_CANDIDATE_EXISTS"
   | "BUYER_PROFILE_NOT_FOUND"
   | "REVIEW_CONFLICT"
   | "DATABASE_ERROR";
@@ -409,6 +410,12 @@ export const BuyerProfileActionInputSchema = z
   })
   .strict();
 
+export const CreateBuyerProfileContactInputSchema = BuyerProfileActionInputSchema.extend({
+  contactId: UUIDSchema,
+  contact: ExtractedLeadContactSchema,
+  createdBy: IdentityTextSchema,
+}).strict();
+
 export const LeadPropertyShortlistItemInputSchema = z
   .object({
     brand: BrandSchema,
@@ -592,6 +599,7 @@ export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSche
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
 export type LinkBuyerProfileContactInput = z.infer<typeof LinkBuyerProfileContactInputSchema>;
 export type BuyerProfileActionInput = z.infer<typeof BuyerProfileActionInputSchema>;
+export type CreateBuyerProfileContactInput = z.infer<typeof CreateBuyerProfileContactInputSchema>;
 export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
 export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLeadCustomerPresentationDraftInputSchema>;
 
@@ -1487,6 +1495,92 @@ export class LeadIntelligencePersistenceRepository {
       id: row.id,
       contactId: row.contact_id,
       duplicate: Boolean(row.duplicate),
+    };
+  }
+
+  async createContactForBuyerProfile(input: CreateBuyerProfileContactInput) {
+    this.assertCanWrite();
+    const data = CreateBuyerProfileContactInputSchema.parse(input);
+    const name = String(data.contact.name || "").trim();
+    if (!name) {
+      throw new LeadIntelligencePersistenceError(
+        "INVALID_REQUEST",
+        "A contact name is required before creating a CRM contact",
+        400,
+      );
+    }
+
+    const email = normalizeEmailForLeadLookup(data.contact.email) || "";
+    const phone = String(data.contact.phone || "").trim();
+    const { rows } = await this.db.query<{
+      buyer_profile_id: string;
+      contact_id: string;
+    }>(
+      `
+        with inserted_contact as (
+          insert into public.contacts (
+            id,
+            name,
+            email,
+            phone,
+            type,
+            pipeline_status,
+            source,
+            brand,
+            brand_id,
+            created_at,
+            updated_at
+          )
+          values (
+            $2::uuid,
+            $3,
+            $4,
+            $5,
+            'buyer',
+            'NEW',
+            'lead_intelligence',
+            $1,
+            $1,
+            now(),
+            now()
+          )
+        ),
+        updated_profile as (
+          update public.buyer_profiles profile
+          set contact_id = $2::uuid
+          where profile.id = $6::uuid
+            and profile.brand = $1
+            and profile.status = 'approved'
+            and profile.contact_id is null
+          returning profile.id::text as buyer_profile_id, profile.contact_id::text as contact_id
+        )
+        select buyer_profile_id, contact_id from updated_profile
+      `,
+      [
+        data.brand,
+        data.contactId,
+        name,
+        email,
+        phone,
+        data.buyerProfileId,
+      ],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      throw new LeadIntelligencePersistenceError(
+        "REVIEW_CONFLICT",
+        "Buyer profile could not be linked to the newly created contact",
+        409,
+      );
+    }
+
+    return {
+      buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
+      contactId: UUIDSchema.parse(row.contact_id),
+      name,
+      maskedPhone: maskPhone(phone),
+      maskedEmail: maskEmail(email),
     };
   }
 
