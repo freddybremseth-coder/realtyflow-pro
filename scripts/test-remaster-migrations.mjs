@@ -38,6 +38,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260623174512_lead_intelligence_contact_create_gate.sql",
   ),
+  contactsRlsHardening: path.join(
+    repoRoot,
+    "supabase/migrations/20260623192000_contacts_rls_hardening_before_lead_intelligence_create.sql",
+  ),
   leadIntelligenceCrmContext: path.join(
     repoRoot,
     "supabase/migrations/20260622103729_lead_intelligence_crm_context_readonly.sql",
@@ -136,6 +140,32 @@ async function assertRejectsQuery(client, sql, message, expectedMessage) {
   let rejected = false;
   try {
     await client.query(sql);
+  } catch (error) {
+    rejected = true;
+    if (expectedMessage) {
+      assert(
+        error instanceof Error && error.message.includes(expectedMessage),
+        `${message} Expected error message to include ${expectedMessage}.`,
+      );
+    }
+  }
+  assert(rejected, message);
+}
+
+async function queryAsRole(client, roleName, sql, values = []) {
+  await client.query("reset role");
+  try {
+    await client.query(`set role ${roleName}`);
+    return await client.query(sql, values);
+  } finally {
+    await client.query("reset role");
+  }
+}
+
+async function assertRejectsRoleQuery(client, roleName, sql, message, expectedMessage) {
+  let rejected = false;
+  try {
+    await queryAsRole(client, roleName, sql);
   } catch (error) {
     rejected = true;
     if (expectedMessage) {
@@ -1283,6 +1313,24 @@ async function createLeadIntelligenceRuntimeTestObjects(client) {
       name text,
       owner text
     );
+  `);
+}
+
+async function installLegacyOpenContactsAccess(client) {
+  await client.query(`
+    alter role service_role bypassrls;
+
+    grant select, insert, update, delete, truncate, references, trigger on public.contacts to anon;
+    grant select, insert, update, delete, truncate, references, trigger on public.contacts to authenticated;
+    grant select, insert, update, delete on public.contacts to service_role;
+
+    drop policy if exists "Allow all on contacts" on public.contacts;
+    create policy "Allow all on contacts"
+      on public.contacts
+      for all
+      to public
+      using (true)
+      with check (true);
   `);
 }
 
@@ -3547,6 +3595,183 @@ async function testLeadIntelligenceProfileActions() {
   });
 }
 
+async function testContactsRlsHardening() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await installLegacyOpenContactsAccess(client);
+
+    const publicCreateBefore = await client.query(`
+      select exists (
+        select 1
+        from pg_namespace n
+        cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) acl
+        where n.nspname = 'public'
+          and acl.grantee = 0
+          and acl.privilege_type = 'CREATE'
+      ) as public_create
+    `);
+
+    process.stdout.write("  Scenario: removes legacy open contacts policy and browser-role access\n");
+    await applyMigration(client, migrationFiles.contactsRlsHardening);
+    await applyMigration(client, migrationFiles.contactsRlsHardening);
+
+    const publicCreateAfter = await client.query(`
+      select exists (
+        select 1
+        from pg_namespace n
+        cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) acl
+        where n.nspname = 'public'
+          and acl.grantee = 0
+          and acl.privilege_type = 'CREATE'
+      ) as public_create
+    `);
+    assert(
+      publicCreateAfter.rows[0].public_create === publicCreateBefore.rows[0].public_create,
+      "Contacts hardening changed global PUBLIC CREATE on schema public.",
+    );
+
+    const openPolicies = await client.query(`
+      select policyname, cmd, roles::text as roles, qual, with_check
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'contacts'
+        and roles::text like '%public%'
+        and cmd = 'ALL'
+        and lower(coalesce(qual, '')) in ('true', '(true)')
+        and lower(coalesce(with_check, '')) in ('true', '(true)')
+    `);
+    assert(openPolicies.rows.length === 0, "Legacy open public contacts policy still exists.");
+
+    const browserGrants = await client.query(`
+      select
+        has_table_privilege('anon', 'public.contacts', 'select') as anon_select,
+        has_table_privilege('anon', 'public.contacts', 'insert') as anon_insert,
+        has_table_privilege('anon', 'public.contacts', 'update') as anon_update,
+        has_table_privilege('anon', 'public.contacts', 'delete') as anon_delete,
+        has_table_privilege('authenticated', 'public.contacts', 'select') as authenticated_select,
+        has_table_privilege('authenticated', 'public.contacts', 'insert') as authenticated_insert,
+        has_table_privilege('authenticated', 'public.contacts', 'update') as authenticated_update,
+        has_table_privilege('authenticated', 'public.contacts', 'delete') as authenticated_delete,
+        has_table_privilege('service_role', 'public.contacts', 'select,insert,update,delete') as service_crud
+    `);
+    assert(browserGrants.rows[0].anon_select === false, "anon can SELECT contacts directly.");
+    assert(browserGrants.rows[0].anon_insert === false, "anon can INSERT contacts.");
+    assert(browserGrants.rows[0].anon_update === false, "anon can UPDATE contacts.");
+    assert(browserGrants.rows[0].anon_delete === false, "anon can DELETE contacts.");
+    assert(browserGrants.rows[0].authenticated_select === false, "authenticated can SELECT contacts directly.");
+    assert(browserGrants.rows[0].authenticated_insert === false, "authenticated can INSERT contacts.");
+    assert(browserGrants.rows[0].authenticated_update === false, "authenticated can UPDATE contacts.");
+    assert(browserGrants.rows[0].authenticated_delete === false, "authenticated can DELETE contacts.");
+    assert(browserGrants.rows[0].service_crud === true, "service_role lost contacts CRUD.");
+
+    const publicGrantRows = await client.query(`
+      select count(*)::int as count
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) acl
+      where n.nspname = 'public'
+        and c.relname = 'contacts'
+        and acl.grantee = 0
+        and acl.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+    `);
+    assert(publicGrantRows.rows[0].count === 0, "PUBLIC still has contacts table grants.");
+
+    await assertRejectsRoleQuery(
+      client,
+      "anon",
+      "insert into public.contacts (brand, name) values ('soleada', 'Anon Contact')",
+      "anon inserted into contacts after hardening.",
+      "permission denied",
+    );
+    await assertRejectsRoleQuery(
+      client,
+      "authenticated",
+      "update public.contacts set name = 'changed'",
+      "authenticated updated contacts after hardening.",
+      "permission denied",
+    );
+    await assertRejectsRoleQuery(
+      client,
+      "authenticated",
+      "delete from public.contacts",
+      "authenticated deleted contacts after hardening.",
+      "permission denied",
+    );
+
+    await queryAsRole(
+      client,
+      "service_role",
+      "insert into public.contacts (brand, name, source, created_at, updated_at) values ('soleada', 'Backend Contact', 'test', now(), now())",
+    );
+    await queryAsRole(client, "service_role", "update public.contacts set pipeline_status = 'CONTACT' where name = 'Backend Contact'");
+    await queryAsRole(client, "service_role", "delete from public.contacts where name = 'Backend Contact'");
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await installLegacyOpenContactsAccess(client);
+
+    process.stdout.write("  Scenario: contact-create gate can apply after contacts hardening\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactLinkGate);
+    await applyMigration(client, migrationFiles.contactsRlsHardening);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactCreateGate);
+
+    const grants = await client.query(`
+      select
+        has_table_privilege('anon', 'public.contacts', 'insert,update,delete') as anon_write,
+        has_table_privilege('authenticated', 'public.contacts', 'insert,update,delete') as authenticated_write,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'name', 'insert') as runtime_name_insert,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as runtime_select
+    `);
+    assert(grants.rows[0].anon_write === false, "anon can write contacts before contact-create.");
+    assert(grants.rows[0].authenticated_write === false, "authenticated can write contacts before contact-create.");
+    assert(grants.rows[0].runtime_name_insert === true, "Contact-create gate did not grant runtime contact insert.");
+    assert(grants.rows[0].runtime_select === false, "Runtime can select contacts directly after contact-create.");
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await installLegacyOpenContactsAccess(client);
+    await client.query("alter table public.contacts disable row level security");
+
+    process.stdout.write("  Scenario: contacts without RLS fails closed\n");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.contactsRlsHardening, "utf8"),
+      "Contacts hardening accepted contacts without RLS.",
+      "CONTACTS_RLS_HARDENING_SCHEMA_INCOMPATIBLE",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await client.query(`
+      create table public.contacts (
+        id uuid primary key default gen_random_uuid(),
+        name text
+      );
+      alter table public.contacts enable row level security;
+    `);
+
+    process.stdout.write("  Scenario: incompatible contacts schema fails closed\n");
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.contactsRlsHardening, "utf8"),
+      "Contacts hardening accepted an incompatible contacts table.",
+      "CONTACTS_RLS_HARDENING_SCHEMA_INCOMPATIBLE",
+    );
+  });
+}
+
 async function testLeadIntelligenceContactCreateGate() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -4402,6 +4627,7 @@ const tests = new Map([
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
   ["lead-intelligence-contact-link-gate", testLeadIntelligenceContactLinkGate],
   ["lead-intelligence-profile-actions", testLeadIntelligenceProfileActions],
+  ["contacts-rls-hardening", testContactsRlsHardening],
   ["lead-intelligence-contact-create-gate", testLeadIntelligenceContactCreateGate],
   ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
