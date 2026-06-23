@@ -35,6 +35,9 @@ class CaptureDb implements QueryClient {
     if (sql.includes("insert into public.buyer_profiles")) {
       return { rows: [{ id: profileId, duplicate: false }] as T[] };
     }
+    if (sql.includes("update public.buyer_profiles profile") && sql.includes("set contact_id")) {
+      return { rows: [{ id: profileId, contact_id: contactId, duplicate: false }] as T[] };
+    }
     if (sql.includes("insert into public.lead_analysis_runs")) {
       return { rows: [{ id: "55555555-5555-4555-8555-555555555555", duplicate: false, payload_hash_matches: true }] as T[] };
     }
@@ -772,6 +775,71 @@ test("recordContactCandidates is idempotent through a single upsert batch", asyn
   assert.equal(db.queries.length, 1);
   assert(db.queries[0].sql.includes("on conflict (intake_id, match_type, match_value_hash)"));
   assert(db.queries[0].sql.includes("do update set"));
+});
+
+test("linkBuyerProfileContact verifies contact through lookup view and only updates contact_id", async () => {
+  const db = new CaptureDb();
+  const repo = repository(db);
+
+  const result = await repo.linkBuyerProfileContact({
+    brand: "soleada",
+    buyerProfileId: profileId,
+    contactId,
+  });
+
+  assert.equal(result.id, profileId);
+  assert.equal(result.contactId, contactId);
+  assert.equal(result.duplicate, false);
+  assert.equal(db.queries.length, 1);
+  assert(db.queries[0].sql.includes("public.lead_intelligence_contact_lookup"));
+  assert(db.queries[0].sql.includes("update public.buyer_profiles profile"));
+  assert(db.queries[0].sql.includes("set contact_id"));
+  assert(!db.queries[0].sql.includes("public.contacts"));
+  assert(!db.queries[0].sql.includes("set summary"));
+  assert(!db.queries[0].sql.includes("set status"));
+  assert.deepEqual(db.queries[0].values, ["soleada", profileId, contactId]);
+});
+
+test("linkBuyerProfileContact is idempotent for the same already-linked contact", async () => {
+  class DuplicateLinkDb extends CaptureDb {
+    override async query<T>(sql: string, values?: readonly unknown[]) {
+      this.queries.push({ sql, values });
+      return { rows: [{ id: profileId, contact_id: contactId, duplicate: true }] as T[] };
+    }
+  }
+
+  const repo = repository(new DuplicateLinkDb());
+  const result = await repo.linkBuyerProfileContact({
+    brand: "soleada",
+    buyerProfileId: profileId,
+    contactId,
+  });
+
+  assert.equal(result.duplicate, true);
+  assert.equal(result.contactId, contactId);
+});
+
+test("linkBuyerProfileContact rejects stale or cross-brand contact candidates", async () => {
+  class MissingLinkDb extends CaptureDb {
+    override async query<T>(sql: string, values?: readonly unknown[]) {
+      this.queries.push({ sql, values });
+      return { rows: [] as T[] };
+    }
+  }
+
+  const repo = repository(new MissingLinkDb());
+  await assert.rejects(
+    () =>
+      repo.linkBuyerProfileContact({
+        brand: "soleada",
+        buyerProfileId: profileId,
+        contactId,
+      }),
+    (error) =>
+      error instanceof LeadIntelligencePersistenceError &&
+      error.code === "REVIEW_CONFLICT" &&
+      error.status === 409,
+  );
 });
 
 test("worklist query validates brand and limit before database access", async () => {

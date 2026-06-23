@@ -26,6 +26,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260617130114_lead_intelligence_runtime_rls.sql",
   ),
+  leadIntelligenceContactLinkGate: path.join(
+    repoRoot,
+    "supabase/migrations/20260623120717_lead_intelligence_contact_link_gate.sql",
+  ),
   leadIntelligenceCrmContext: path.join(
     repoRoot,
     "supabase/migrations/20260622103729_lead_intelligence_crm_context_readonly.sql",
@@ -3119,6 +3123,238 @@ async function testLeadIntelligenceRuntimeRls() {
   });
 }
 
+async function testLeadIntelligenceContactLinkGate() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: applies after runtime RLS and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactLinkGate);
+    await applyMigration(client, migrationFiles.leadIntelligenceContactLinkGate);
+
+    const grants = await client.query(`
+      select
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'contact_id', 'update') as contact_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'summary', 'update') as summary_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'status', 'update') as status_update,
+        has_column_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'brand', 'update') as brand_update,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.buyer_profiles', 'delete') as profile_delete,
+        has_table_privilege('realtyflow_lead_intelligence_runtime', 'public.contacts', 'select') as contacts_select,
+        has_table_privilege('anon', 'public.buyer_profiles', 'update') as anon_profile_update,
+        has_table_privilege('authenticated', 'public.buyer_profiles', 'update') as authenticated_profile_update
+    `);
+    assert(grants.rows[0].contact_update === true, "Runtime role cannot update buyer_profiles.contact_id.");
+    assert(grants.rows[0].summary_update === false, "Runtime role can update buyer profile summary.");
+    assert(grants.rows[0].status_update === false, "Runtime role can update buyer profile status.");
+    assert(grants.rows[0].brand_update === false, "Runtime role can update buyer profile brand.");
+    assert(grants.rows[0].profile_delete === false, "Runtime role can delete buyer profiles.");
+    assert(grants.rows[0].contacts_select === false, "Runtime role can read public.contacts directly.");
+    assert(grants.rows[0].anon_profile_update === false, "anon can update buyer_profiles.");
+    assert(grants.rows[0].authenticated_profile_update === false, "authenticated can update buyer_profiles.");
+
+    const policyRows = await client.query(`
+      select
+        cmd,
+        roles::text as roles,
+        qual,
+        with_check
+      from pg_policies
+      where schemaname = 'public'
+        and tablename = 'buyer_profiles'
+        and policyname = 'buyer_profiles_runtime_contact_link'
+    `);
+    assert(policyRows.rows.length === 1, "Contact-link update policy is missing.");
+    assert(policyRows.rows[0].cmd === "UPDATE", "Contact-link policy is not an UPDATE policy.");
+    assert(
+      policyRows.rows[0].roles.includes("realtyflow_lead_intelligence_runtime"),
+      "Contact-link policy is not scoped to the runtime role.",
+    );
+    assert(
+      String(policyRows.rows[0].with_check || "").includes("lead_intelligence_contact_lookup"),
+      "Contact-link policy does not require the same-brand contact lookup view.",
+    );
+    assert(
+      String(policyRows.rows[0].qual || "").includes("contact_id IS NULL") ||
+        String(policyRows.rows[0].qual || "").includes("contact_id is null"),
+      "Contact-link policy does not require an unlinked existing profile.",
+    );
+
+    process.stdout.write("  Scenario: runtime links only same-brand contacts through lookup view\n");
+    const contactInsert = await client.query(`
+      insert into public.contacts (brand, name, phone, email, secret_note)
+      values
+        ('soleada', 'Emmadale', '+4790174714', 'emmadale@example.test', 'private soleada note'),
+        ('zeneco', 'Other Contact', '+34999999999', 'other@example.test', 'private zeneco note')
+      returning id::text, brand
+    `);
+    const soleadaContactId = contactInsert.rows.find((row) => row.brand === "soleada").id;
+    const zenecoContactId = contactInsert.rows.find((row) => row.brand === "zeneco").id;
+
+    const intake = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'approved', 'freddy.bremseth@gmail.com', 'rf_link_0123456789abcdef0123', 'contact-link-intake-001')
+        returning id::text
+      `,
+    );
+    const intakeId = intake.rows[0].id;
+
+    const profile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          contact_id,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', null, $1::uuid, 1, 'approved', 'ready_to_buy', 440000, 'EUR', true, true, true, 'Approved buyer profile.', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id::text
+      `,
+      [intakeId],
+    );
+    const profileId = profile.rows[0].id;
+
+    const linkedProfile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        update public.buyer_profiles
+        set contact_id = $1::uuid
+        where id = $2::uuid
+        returning contact_id::text
+      `,
+      [soleadaContactId, profileId],
+    );
+    assert(linkedProfile.rows[0].contact_id === soleadaContactId, "Runtime did not link same-brand contact.");
+
+    const repeatLink = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        update public.buyer_profiles
+        set contact_id = $1::uuid
+        where id = $2::uuid
+        returning contact_id::text
+      `,
+      [soleadaContactId, profileId],
+    );
+    assert(repeatLink.rows.length === 0, "Raw runtime SQL could relink an already linked profile.");
+
+    const profileForCrossBrand = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          contact_id,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', null, $1::uuid, 2, 'approved', 'ready_to_buy', 440000, 'EUR', true, true, true, 'Second buyer profile.', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id::text
+      `,
+      [intakeId],
+    );
+
+    let crossBrandRejected = false;
+    try {
+      await queryAsRuntime(
+        client,
+        "soleada",
+        `
+          update public.buyer_profiles
+          set contact_id = $1::uuid
+          where id = $2::uuid
+          returning contact_id::text
+        `,
+        [zenecoContactId, profileForCrossBrand.rows[0].id],
+      );
+    } catch (error) {
+      crossBrandRejected = true;
+      assert(
+        error instanceof Error && error.message.includes("row-level security"),
+        "Cross-brand contact link failed for an unexpected reason.",
+      );
+    }
+    assert(crossBrandRejected, "Runtime linked a cross-brand contact.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "select id, brand, name, phone, email from public.contacts",
+      "Runtime role could read contacts directly after contact-link migration.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.buyer_profiles set summary = 'changed'",
+      "Runtime role could update buyer profile summary.",
+      "permission denied",
+    );
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "delete from public.buyer_profiles where id is not null",
+      "Runtime role could delete buyer profiles.",
+      "permission denied",
+    );
+  });
+
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: missing runtime RLS schema fails closed\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await assertRejectsQuery(
+      client,
+      await fs.readFile(migrationFiles.leadIntelligenceContactLinkGate, "utf8"),
+      "Contact-link migration accepted missing runtime RLS schema.",
+      "LEAD_INTELLIGENCE_CONTACT_LINK_SCHEMA_NOT_READY",
+    );
+  });
+}
+
 async function testLeadIntelligenceCrmContextReadonly() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -3812,6 +4048,7 @@ const tests = new Map([
   ["remaster-job-core", testRemasterJobCore],
   ["lead-intelligence-persistence", testLeadIntelligencePersistenceFoundation],
   ["lead-intelligence-runtime-rls", testLeadIntelligenceRuntimeRls],
+  ["lead-intelligence-contact-link-gate", testLeadIntelligenceContactLinkGate],
   ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
   ["lead-intelligence-presentation-draft", testLeadIntelligencePresentationDraft],

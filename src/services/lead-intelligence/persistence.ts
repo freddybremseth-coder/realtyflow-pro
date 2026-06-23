@@ -23,6 +23,9 @@ export type LeadIntelligencePersistenceErrorCode =
   | "INVALID_REQUEST"
   | "LOOKUP_HASH_SECRET_MISSING"
   | "CONTACT_DECISION_REQUIRES_EXPLICIT_ACTION"
+  | "CONTACT_CANDIDATE_STALE"
+  | "CONTACT_BRAND_MISMATCH"
+  | "REVIEW_CONFLICT"
   | "DATABASE_ERROR";
 
 export class LeadIntelligencePersistenceError extends Error {
@@ -383,6 +386,14 @@ export const LeadContactCandidateInputSchema = z
   })
   .strict();
 
+export const LinkBuyerProfileContactInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileId: UUIDSchema,
+    contactId: UUIDSchema,
+  })
+  .strict();
+
 export const LeadPropertyShortlistItemInputSchema = z
   .object({
     brand: BrandSchema,
@@ -564,6 +575,7 @@ export type CreateLeadIntakeInput = z.infer<typeof CreateLeadIntakeInputSchema>;
 export type RecordLeadAnalysisRunInput = z.infer<typeof RecordLeadAnalysisRunInputSchema>;
 export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSchema>;
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
+export type LinkBuyerProfileContactInput = z.infer<typeof LinkBuyerProfileContactInputSchema>;
 export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
 export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLeadCustomerPresentationDraftInputSchema>;
 
@@ -1376,6 +1388,65 @@ export class LeadIntelligencePersistenceRepository {
       id: profileId,
       criterionCount,
       duplicate,
+    };
+  }
+
+  async linkBuyerProfileContact(input: LinkBuyerProfileContactInput) {
+    this.assertCanWrite();
+    const data = LinkBuyerProfileContactInputSchema.parse(input);
+    const { rows } = await this.db.query<{
+      id: string;
+      contact_id: string;
+      duplicate: boolean;
+    }>(
+      `
+        with verified_contact as (
+          select id
+          from public.lead_intelligence_contact_lookup
+          where id = $3::uuid
+            and brand = $1
+          limit 1
+        ),
+        updated_profile as (
+          update public.buyer_profiles profile
+          set contact_id = (select id from verified_contact)
+          where profile.id = $2::uuid
+            and profile.brand = $1
+            and profile.status = 'approved'
+            and profile.contact_id is null
+            and exists (select 1 from verified_contact)
+          returning profile.id::text as id, profile.contact_id::text as contact_id, false as duplicate
+        ),
+        existing_profile as (
+          select profile.id::text as id, profile.contact_id::text as contact_id, true as duplicate
+          from public.buyer_profiles profile
+          where profile.id = $2::uuid
+            and profile.brand = $1
+            and profile.contact_id = $3::uuid
+            and exists (select 1 from verified_contact)
+            and not exists (select 1 from updated_profile)
+        )
+        select id, contact_id, duplicate from updated_profile
+        union all
+        select id, contact_id, duplicate from existing_profile
+        limit 1
+      `,
+      [data.brand, data.buyerProfileId, data.contactId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      throw new LeadIntelligencePersistenceError(
+        "REVIEW_CONFLICT",
+        "Buyer profile could not be linked to the selected contact",
+        409,
+      );
+    }
+
+    return {
+      id: row.id,
+      contactId: row.contact_id,
+      duplicate: Boolean(row.duplicate),
     };
   }
 
