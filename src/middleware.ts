@@ -56,6 +56,48 @@ function isRemasterProxyPath(pathname: string) {
   );
 }
 
+function safeLeadIntelligenceReturnPath(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/lead-intelligence") || trimmed.startsWith("//")) return null;
+
+  try {
+    const url = new URL(trimmed, "https://realtyflow.local");
+    if (url.pathname !== "/lead-intelligence") return null;
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
+  const referer = request.headers.get("referer");
+  if (!referer) return null;
+
+  try {
+    const refererUrl = new URL(referer);
+    if (refererUrl.origin !== request.nextUrl.origin) return null;
+    return safeLeadIntelligenceReturnPath(`${refererUrl.pathname}${refererUrl.search}`);
+  } catch {
+    return null;
+  }
+}
+
+function inventoryLeadIntelligenceReturnRedirect(request: NextRequest) {
+  const { nextUrl } = request;
+  if (nextUrl.pathname !== "/inventory") return null;
+
+  const openedPropertyFromQuery = nextUrl.searchParams.has("propertyId") || nextUrl.searchParams.has("propertyRef");
+  if (!openedPropertyFromQuery || nextUrl.searchParams.has("returnTo")) return null;
+
+  const returnTo = leadIntelligenceReturnPathFromReferer(request);
+  if (!returnTo) return null;
+
+  const redirectUrl = nextUrl.clone();
+  redirectUrl.searchParams.set("returnTo", returnTo);
+  return NextResponse.redirect(redirectUrl);
+}
+
 function base64UrlToBytes(value: string) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
@@ -145,6 +187,9 @@ export async function middleware(request: NextRequest) {
 
   const isAllowed = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (isAllowed) {
+    const inventoryRedirect = inventoryLeadIntelligenceReturnRedirect(request);
+    if (inventoryRedirect) return inventoryRedirect;
+
     requestHeaders.set("x-admin-authenticated", "true");
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
