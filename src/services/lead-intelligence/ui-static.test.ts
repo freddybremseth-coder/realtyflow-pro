@@ -171,8 +171,9 @@ test("Inventory can open a property detail modal from Lead Intelligence internal
   assert.equal(source.includes('params.get("returnTo")'), true);
   assert.equal(source.includes("safeLeadIntelligenceReturnPath"), true);
   assert.equal(source.includes("leadIntelligenceReturnPath"), true);
-  assert.equal(source.includes("Tilbake til siste e-postutkast"), true);
-  assert.equal(source.includes("Tilbake til e-postutkast"), true);
+  assert.equal(source.includes("Åpnet fra Lead Intelligence"), true);
+  assert.equal(source.includes("Tilbake til AI Lead Inbox"), true);
+  assert.equal(source.includes("sticky top-0"), true);
   assert.equal(source.includes('url.pathname !== "/lead-intelligence"'), true);
   assert.equal(source.includes("setShowDetailModal(property);"), true);
   assert.equal(source.includes("setDetailSlide(0);"), true);
