@@ -8,6 +8,7 @@ const clientPath = path.join(
   "src/components/lead-intelligence/lead-intelligence-client.tsx",
 );
 const inventoryPath = path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx");
+const pipelinePath = path.join(process.cwd(), "src/app/(realty)/pipeline/page.tsx");
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
   const source = await readFile(clientPath, "utf8");
@@ -186,6 +187,26 @@ test("Lead Intelligence CRM context is read-only and safe", async () => {
   assert.equal(source.includes("Ingen eksisterende CRM-kontekst funnet"), true);
   assert.equal(source.includes("Sideeffekter: kontakter opprettet nei"), true);
   assert.equal(source.includes("matchValueHash"), false);
+});
+
+test("CRM contact detail can open read-only Lead Intelligence history", async () => {
+  const source = await readFile(pipelinePath, "utf8");
+
+  assert.equal(source.includes("/api/lead-intelligence/worklist"), true);
+  assert.equal(source.includes("contactId"), true);
+  assert.equal(source.includes("Lead Intelligence"), true);
+  assert.equal(source.includes("Read-only historikk for denne kontakten"), true);
+  assert.equal(source.includes("Oppretter ikke lead, e-post eller matchingjobb"), true);
+  assert.equal(source.includes("Ingen koblede Lead Intelligence-profiler for denne kontakten ennå."), true);
+  assert.equal(source.includes("Åpne Lead Intelligence"), true);
+  assert.equal(source.includes("Åpne siste presentasjonsutkast"), true);
+  assert.equal(source.includes("Finn/match boliger"), true);
+  assert.equal(source.includes("leadIntelligenceProfileUrl"), true);
+  assert.equal(source.includes("leadIntelligenceMatchUrl"), true);
+  assert.equal(source.includes("latestMessageDraftId"), true);
+  assert.equal(source.includes("latestPresentationId"), true);
+  assert.equal(source.includes("fetch(`/api/lead-intelligence/worklist?${params.toString()}`)"), true);
+  assert.equal(source.includes("/api/contacts?view=pipeline"), true);
 });
 
 test("Lead Intelligence property match preview is explicit and non-persistent", async () => {

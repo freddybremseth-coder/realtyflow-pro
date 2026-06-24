@@ -191,6 +191,7 @@ export const LeadCustomerMessageChannelSchema = z.enum(["email"]);
 export const LeadIntelligenceWorklistQuerySchema = z
   .object({
     brand: BrandSchema,
+    contactId: UUIDSchema.optional(),
     limit: z.coerce.number().int().min(1).max(50).default(20),
   })
   .strict();
@@ -1024,6 +1025,7 @@ export class LeadIntelligencePersistenceRepository {
             profile.approved_at
           from public.buyer_profiles profile
           where profile.brand = $1
+            and ($3::uuid is null or profile.contact_id = $3::uuid)
           order by profile.updated_at desc, profile.created_at desc, profile.id desc
           limit $2
         )
@@ -1126,7 +1128,7 @@ export class LeadIntelligencePersistenceRepository {
         where profile.status <> 'archived'
         order by profile.updated_at desc, profile.created_at desc, profile.id desc
       `,
-      [data.brand, data.limit],
+      [data.brand, data.limit, data.contactId || null],
     );
 
     return rows.map((row): LeadIntelligenceWorklistItem => ({
