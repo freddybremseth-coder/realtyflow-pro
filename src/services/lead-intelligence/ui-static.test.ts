@@ -111,7 +111,9 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
   assert.equal(source.includes("ikke fysisk slettet"), true);
   assert.equal(source.includes("hard delete"), false);
   assert.equal(source.includes("Åpne bolig"), true);
-  assert.equal(source.includes("Åpne i RealtyFlow"), true);
+  assert.equal(source.includes("PropertyNavigationLinks"), true);
+  assert.equal(source.includes("Åpne boligkort"), true);
+  assert.equal(source.includes("Åpne kundelenke"), true);
   assert.equal(source.includes("internalInventoryPropertyUrl"), true);
   assert.equal(source.includes("leadIntelligenceDraftReturnUrl"), true);
   assert.equal(source.includes("returnTo={presentationDraftReturnUrl}"), true);
@@ -228,8 +230,10 @@ test("Lead Intelligence property match preview is explicit and non-persistent", 
   assert.equal(source.includes("Se boligen på nettsiden:"), true);
   assert.equal(source.includes("Boliglenker kontrolleres før endelig sending."), true);
   assert.equal(source.includes("Boliglenke mangler i systemet og må legges inn før utkastet sendes til kunden."), false);
-  assert.equal(source.includes("Åpne boligside for"), true);
-  assert.equal(source.includes("focus:ring-2 focus:ring-primary-500/70"), true);
+  assert.equal(source.includes("Åpne boligkort"), true);
+  assert.equal(source.includes("Åpne kundelenke"), true);
+  assert.equal(source.includes("href={realtyFlowUrl}"), true);
+  assert.equal(source.includes("href={publicUrl}"), true);
   assert.equal(source.includes("Presentasjon publisert: nei"), true);
   assert.equal(source.includes("Ingen e-post er sendt"), true);
   assert.equal(source.includes("Matcher lagret: nei"), true);

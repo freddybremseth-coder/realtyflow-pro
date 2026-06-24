@@ -488,6 +488,47 @@ function internalInventoryPropertyUrl(propertyId: string | null, returnTo?: stri
   return `/inventory?${params.toString()}`;
 }
 
+function PropertyNavigationLinks({
+  propertyId,
+  publicUrl,
+  returnTo,
+}: {
+  propertyId: string | null;
+  publicUrl?: string | null;
+  returnTo?: string | null;
+}) {
+  const realtyFlowUrl = internalInventoryPropertyUrl(propertyId, returnTo);
+
+  if (!publicUrl && !realtyFlowUrl) {
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+        Lenke mangler i eiendomsdata
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex shrink-0 flex-wrap gap-2">
+      {realtyFlowUrl && (
+        <Button asChild size="sm" variant="outline">
+          <a href={realtyFlowUrl}>
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Åpne boligkort
+          </a>
+        </Button>
+      )}
+      {publicUrl && (
+        <Button asChild size="sm" variant="secondary">
+          <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Åpne kundelenke
+          </a>
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function formatCurrency(value: number | null, currency = "EUR") {
   if (value === null) return null;
   try {
@@ -1171,9 +1212,7 @@ function InternalPresentationPreview({
             Presentasjonen inneholder ingen boligkort. Lag et nytt presentasjonsutkast fra en lagret shortlist.
           </p>
         ) : (
-          preview.properties.map((property, index) => {
-            const realtyFlowUrl = internalInventoryPropertyUrl(property.propertyId, returnTo);
-            return (
+          preview.properties.map((property, index) => (
             <div key={`${property.propertyId || property.reference || property.title}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/70">
               <div className="grid gap-0 xl:grid-cols-[minmax(220px,320px),1fr]">
                 {property.imageUrl && (
@@ -1197,29 +1236,11 @@ function InternalPresentationPreview({
                         ].filter(Boolean).join(" · ")}
                       </p>
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      {property.publicUrl && (
-                        <Button asChild size="sm" variant="outline">
-                          <a href={property.publicUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Åpne boligside
-                          </a>
-                        </Button>
-                      )}
-                      {realtyFlowUrl && (
-                        <Button asChild size="sm" variant={property.publicUrl ? "secondary" : "outline"}>
-                          <a href={realtyFlowUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Åpne i RealtyFlow
-                          </a>
-                        </Button>
-                      )}
-                      {!property.publicUrl && !realtyFlowUrl && (
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                          Lenke mangler i eiendomsdata
-                        </div>
-                      )}
-                    </div>
+                    <PropertyNavigationLinks
+                      propertyId={property.propertyId}
+                      publicUrl={property.publicUrl}
+                      returnTo={returnTo}
+                    />
                   </div>
 
                   {property.facts.length > 0 && (
@@ -1246,8 +1267,7 @@ function InternalPresentationPreview({
                 </div>
               </div>
             </div>
-          );
-          })
+          ))
         )}
       </div>
 
@@ -3066,7 +3086,6 @@ export function LeadIntelligenceClient({
                             <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
                               {propertyMatchResult.result.matches.map((match) => {
                                 const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
-                                const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId, presentationDraftReturnUrl);
                                 return (
                                   <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3077,16 +3096,13 @@ export function LeadIntelligenceClient({
                                         {propertyFactsLine(match) && (
                                           <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
                                         )}
-                                        {propertyUrl && (
-                                          <a
-                                            href={propertyUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="mt-2 inline-flex text-xs text-primary-300 underline-offset-2 hover:underline"
-                                          >
-                                            {match.property.publicUrl ? "Åpne boligside" : "Åpne i RealtyFlow"}
-                                          </a>
-                                        )}
+                                        <div className="mt-2">
+                                          <PropertyNavigationLinks
+                                            propertyId={match.propertyId}
+                                            publicUrl={match.property.publicUrl}
+                                            returnTo={presentationDraftReturnUrl}
+                                          />
+                                        </div>
                                       </div>
                                       <div className="flex flex-col items-end gap-2">
                                         <p className="text-sm text-slate-200">Score {match.score}</p>
@@ -4294,7 +4310,6 @@ export function LeadIntelligenceClient({
                         <div className="space-y-3">
                           {propertyMatchResult.result.matches.map((match) => {
                             const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
-                            const propertyUrl = match.property.publicUrl || internalInventoryPropertyUrl(match.propertyId, presentationDraftReturnUrl);
                             const manualDecisionOverridesRejected =
                               match.eligibility === "rejected" &&
                               (reviewDecision === "current" || reviewDecision === "maybe");
@@ -4318,16 +4333,6 @@ export function LeadIntelligenceClient({
                                             match.property.reference ||
                                             shortPropertyId(match.propertyId)}
                                         </p>
-                                        {propertyUrl && (
-                                          <a
-                                            href={propertyUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-xs text-primary-300 underline-offset-2 hover:underline"
-                                          >
-                                            {match.property.publicUrl ? "Åpne" : "Åpne i RealtyFlow"}
-                                          </a>
-                                        )}
                                       </div>
                                       {propertyFactsLine(match) && (
                                         <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
@@ -4335,6 +4340,13 @@ export function LeadIntelligenceClient({
                                       <p className="mt-1 font-mono text-[11px] text-slate-500">
                                         ID {shortPropertyId(match.propertyId)}
                                       </p>
+                                      <div className="mt-2">
+                                        <PropertyNavigationLinks
+                                          propertyId={match.propertyId}
+                                          publicUrl={match.property.publicUrl}
+                                          returnTo={presentationDraftReturnUrl}
+                                        />
+                                      </div>
                                     </div>
                                   </div>
                                   <div className="flex flex-col items-end gap-2">
@@ -4673,7 +4685,6 @@ export function LeadIntelligenceClient({
                                       ...match.questionsToVerify.slice(0, 2),
                                     ], 4);
                                     const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);
-                                    const propertyUrl = match.property.publicUrl;
                                     const cardContent = (
                                       <>
                                         {match.property.primaryImageUrl ? (
@@ -4714,12 +4725,11 @@ export function LeadIntelligenceClient({
                                               {match.eligibility}
                                             </Badge>
                                           </div>
-                                          {propertyUrl && (
-                                            <div className="flex items-center gap-1 text-xs font-semibold text-primary-300">
-                                              <ExternalLink className="h-3.5 w-3.5" />
-                                              <span>Åpne boligside</span>
-                                            </div>
-                                          )}
+                                          <PropertyNavigationLinks
+                                            propertyId={match.propertyId}
+                                            publicUrl={match.property.publicUrl}
+                                            returnTo={presentationDraftReturnUrl}
+                                          />
                                           <div>
                                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                               Hvorfor den passer
@@ -4752,19 +4762,11 @@ export function LeadIntelligenceClient({
                                       </>
                                     );
 
-                                    return propertyUrl ? (
-                                      <a
+                                    return (
+                                      <div
                                         key={match.propertyId}
-                                        href={propertyUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        aria-label={`Åpne boligside for ${propertyDisplayName(match)}`}
-                                        className="block overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 transition hover:border-primary-500/60 hover:bg-slate-900/70 focus:outline-none focus:ring-2 focus:ring-primary-500/70"
+                                        className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60"
                                       >
-                                        {cardContent}
-                                      </a>
-                                    ) : (
-                                      <div key={match.propertyId} className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
                                         {cardContent}
                                       </div>
                                     );
