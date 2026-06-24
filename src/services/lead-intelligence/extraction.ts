@@ -451,7 +451,7 @@ function normalizeCriterionValue(key: string, value: unknown) {
 }
 
 function normalizeCriterionOperator(value: unknown) {
-  if (typeof value !== "string") return value;
+  if (typeof value !== "string") return "unknown";
   const normalized = value
     .trim()
     .toLowerCase()
@@ -524,7 +524,51 @@ function normalizeCriterionOperator(value: unknown) {
     unspecified: "unknown",
   };
 
-  return aliases[normalized] || value;
+  return aliases[normalized] || "unknown";
+}
+
+function normalizeRequiredBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value;
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return fallback;
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return fallback;
+  }
+
+  if (typeof value !== "string") return fallback;
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const truthy = new Set(["true", "yes", "ja", "y", "1"]);
+  const falsyOrAmbiguous = new Set([
+    "",
+    "false",
+    "no",
+    "nei",
+    "n",
+    "0",
+    "unknown",
+    "ukjent",
+    "unclear",
+    "usikker",
+    "unspecified",
+    "approx",
+    "approximate",
+    "approximately",
+    "ca",
+    "circa",
+    "omtrent",
+  ]);
+
+  if (truthy.has(normalized)) return true;
+  if (falsyOrAmbiguous.has(normalized)) return false;
+  return fallback;
 }
 
 function normalizeConfidenceValue(value: unknown) {
@@ -591,6 +635,16 @@ function normalizeReasoningValue(value: unknown, fallback: string) {
   return fallback;
 }
 
+function canonicalizeBudget(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const budget = value as Record<string, unknown>;
+
+  return {
+    ...budget,
+    approximate: normalizeRequiredBoolean(budget.approximate, false),
+  };
+}
+
 function canonicalizeCriterion<T extends Record<string, unknown>>(item: T): T {
   const originalKey = item.key;
   const key = normalizeCriterionKey(originalKey);
@@ -646,6 +700,7 @@ export function canonicalizeExtractedLeadCandidate(value: unknown) {
   return {
     ...input,
     purchaseReadiness,
+    budget: canonicalizeBudget(input.budget),
     propertyTypes: Array.isArray(input.propertyTypes)
       ? input.propertyTypes.map(normalizePropertyType)
       : input.propertyTypes,
