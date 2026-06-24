@@ -1079,7 +1079,7 @@ REGLER:
             <Button asChild variant="outline" size="sm">
               <a href={leadIntelligenceReturnPath}>
                 <ChevronLeft size={14} className="mr-1.5" />
-                Tilbake til siste e-postutkast
+                Tilbake til AI Lead Inbox
               </a>
             </Button>
           </CardContent>
@@ -1503,6 +1503,22 @@ REGLER:
       {showDetailModal && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowDetailModal(null)}>
           <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {leadIntelligenceReturnPath && (
+              <div className="sticky top-0 z-30 flex flex-col gap-2 border-b border-cyan-500/30 bg-slate-950/95 p-3 text-cyan-100 shadow-lg shadow-slate-950/30 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Åpnet fra Lead Intelligence</p>
+                  <p className="mt-0.5 text-xs text-cyan-100/70">
+                    Gå tilbake til samme buyer profile, shortlist og e-postutkast uten å starte på nytt.
+                  </p>
+                </div>
+                <Button asChild size="sm" className="shrink-0 bg-cyan-600 hover:bg-cyan-500">
+                  <a href={leadIntelligenceReturnPath}>
+                    <ChevronLeft size={14} className="mr-1.5" />
+                    Tilbake til AI Lead Inbox
+                  </a>
+                </Button>
+              </div>
+            )}
             {(() => {
               const allImgs = [showDetailModal.imageUrl, ...(showDetailModal.gallery || [])].filter(Boolean) as string[];
               return (
@@ -1764,7 +1780,7 @@ REGLER:
                   <Button asChild variant="outline" size="sm">
                     <a href={leadIntelligenceReturnPath}>
                       <ChevronLeft size={14} className="mr-1.5" />
-                      Tilbake til e-postutkast
+                      Tilbake til AI Lead Inbox
                     </a>
                   </Button>
                 )}
