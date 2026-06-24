@@ -97,27 +97,30 @@ class WorklistDb implements QueryClient {
 class BuyerProfileContactContextDb implements QueryClient {
   queries: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
 
+  constructor(
+    private readonly row: Record<string, unknown> = {
+      buyer_profile_id: profileId,
+      brand: "soleada",
+      profile_status: "approved",
+      contact_id: contactId,
+      summary: "Emmadale is looking for an apartment in Moraira.",
+      linked_contact_name: "Emmadale",
+      linked_contact_phone: "+4790174714",
+      linked_contact_email: "kunde@example.com",
+      contact_json: {
+        name: "Emmadale",
+        phone: "+4790174714",
+        email: "kunde@example.com",
+        language: null,
+        country: "NO",
+      },
+    },
+  ) {}
+
   async query<T>(sql: string, values?: readonly unknown[]) {
     this.queries.push({ sql, values });
     return {
-      rows: [
-        {
-          buyer_profile_id: profileId,
-          brand: "soleada",
-          profile_status: "approved",
-          contact_id: contactId,
-          linked_contact_name: "Emmadale",
-          linked_contact_phone: "+4790174714",
-          linked_contact_email: "kunde@example.com",
-          contact_json: {
-            name: "Emmadale",
-            phone: "+4790174714",
-            email: "kunde@example.com",
-            language: null,
-            country: "NO",
-          },
-        },
-      ] as T[],
+      rows: [this.row] as T[],
     };
   }
 }
@@ -897,6 +900,73 @@ test("getBuyerProfileContactContext returns reviewed contact and masked linked c
   assert(!sql.includes("raw_text_restricted"));
   assert(!sql.includes("match_value_hash"));
   assert.deepEqual(db.queries[0].values, ["soleada", profileId]);
+});
+
+test("getBuyerProfileContactContext derives a manual name-only contact from reviewed profile summary", async () => {
+  const db = new BuyerProfileContactContextDb({
+    buyer_profile_id: profileId,
+    brand: "soleada",
+    profile_status: "approved",
+    contact_id: null,
+    summary: "Customer Freddy Bremseth is looking for a villa with 3 bedrooms.",
+    linked_contact_name: null,
+    linked_contact_phone: null,
+    linked_contact_email: null,
+    contact_json: null,
+  });
+  const repo = repository(db);
+  const context = await repo.getBuyerProfileContactContext({
+    brand: "soleada",
+    buyerProfileId: profileId,
+  });
+
+  assert.equal(context.contact?.name, "Freddy Bremseth");
+  assert.equal(context.contact?.phone, null);
+  assert.equal(context.contact?.email, null);
+  assert.equal(context.linkedContact, null);
+
+  const candidates = findLeadContactCandidatePreviews(
+    { brand: "soleada", name: context.contact?.name || null },
+    [{ contactId, brand: "soleada", name: "Freddy Bremseth" }],
+    { hmacSecret },
+  );
+  assert.equal(candidates[0].matchType, "name_similarity");
+  assert.equal(candidates[0].confidence, 0.35);
+  assert.equal(requiresManualContactSelection(candidates), true);
+
+  const sql = db.queries[0].sql;
+  assert(sql.includes("profile.summary"));
+  assert(!sql.includes("raw_text_restricted"));
+  assert(!sql.includes("match_value_hash"));
+});
+
+test("getBuyerProfileContactContext falls back to profile summary when reviewed contact is empty", async () => {
+  const db = new BuyerProfileContactContextDb({
+    buyer_profile_id: profileId,
+    brand: "soleada",
+    profile_status: "approved",
+    contact_id: null,
+    summary: "Freddy Bremseth is looking for an apartment in Finestrat.",
+    linked_contact_name: null,
+    linked_contact_phone: null,
+    linked_contact_email: null,
+    contact_json: {
+      name: null,
+      phone: null,
+      email: null,
+      language: null,
+      country: null,
+    },
+  });
+  const repo = repository(db);
+  const context = await repo.getBuyerProfileContactContext({
+    brand: "soleada",
+    buyerProfileId: profileId,
+  });
+
+  assert.equal(context.contact?.name, "Freddy Bremseth");
+  assert.equal(context.contact?.phone, null);
+  assert.equal(context.contact?.email, null);
 });
 
 test("archiveBuyerProfile soft-deletes profile by status only", async () => {

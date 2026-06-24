@@ -54,6 +54,8 @@ export interface QueryClient {
   ): Promise<{ rows: T[] }>;
 }
 
+type ExtractedLeadContact = z.infer<typeof ExtractedLeadContactSchema>;
+
 const UUIDSchema = z.string().uuid();
 const IdentityTextSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText);
 const BrandSchema = LeadIntelligenceRealEstateBrandSchema;
@@ -65,6 +67,54 @@ const UrlTextSchema = z.string().trim().url().max(LEAD_INTELLIGENCE_LIMITS.longT
 
 function normalizeDateString(value: string | Date) {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+function normalizeNameOnlyCandidate(value: string | null) {
+  const name = value
+    ?.replace(/["'`]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name) {
+    return null;
+  }
+  if (name.length < 2 || name.length > LEAD_INTELLIGENCE_LIMITS.personName) {
+    return null;
+  }
+  if (/[0-9@:/\\]/.test(name)) {
+    return null;
+  }
+  if (/^(customer|kunde|client|lead|prospect)$/i.test(name)) {
+    return null;
+  }
+  return name;
+}
+
+function deriveNameOnlyContactFromProfileSummary(summary: string | null): ExtractedLeadContact | null {
+  if (!summary) {
+    return null;
+  }
+
+  const text = summary.replace(/\s+/g, " ").trim();
+  const patterns = [
+    /^(?:customer|kunde)\s+(.+?)\s+(?:is looking for|looks for|ser etter|søker|leter etter|ønsker)\b/i,
+    /^(.+?)\s+(?:is looking for|looks for|ser etter|søker|leter etter|ønsker)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const name = normalizeNameOnlyCandidate(match?.[1] || null);
+    if (name) {
+      return ExtractedLeadContactSchema.parse({
+        name,
+        phone: null,
+        email: null,
+        language: null,
+        country: null,
+      });
+    }
+  }
+
+  return null;
 }
 
 export const LEAD_CONTACT_LOOKUP_HMAC_SECRET_ENV = "REALTYFLOW_LEAD_CONTACT_LOOKUP_HMAC_SECRET";
@@ -1592,6 +1642,7 @@ export class LeadIntelligencePersistenceRepository {
       brand: string;
       profile_status: string;
       contact_id: string | null;
+      summary: string | null;
       linked_contact_name: string | null;
       linked_contact_phone: string | null;
       linked_contact_email: string | null;
@@ -1603,6 +1654,7 @@ export class LeadIntelligencePersistenceRepository {
           profile.brand,
           profile.status as profile_status,
           profile.contact_id::text as contact_id,
+          profile.summary,
           linked_contact.name as linked_contact_name,
           linked_contact.phone as linked_contact_phone,
           linked_contact.email as linked_contact_email,
@@ -1639,9 +1691,13 @@ export class LeadIntelligencePersistenceRepository {
       );
     }
 
-    const contact = row.contact_json
+    const reviewedContact = row.contact_json
       ? ExtractedLeadContactSchema.parse(row.contact_json)
       : null;
+    const contact =
+      reviewedContact && (reviewedContact.name || reviewedContact.phone || reviewedContact.email)
+        ? reviewedContact
+        : deriveNameOnlyContactFromProfileSummary(row.summary);
 
     return {
       buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
