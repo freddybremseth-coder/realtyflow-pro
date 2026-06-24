@@ -1,11 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { verifyAdminSession } from '@/lib/admin-auth';
+import { getContactsSupabase } from './supabase-client';
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
+async function requireContactsAdmin(request: NextRequest) {
+  const session = await verifyAdminSession(request.cookies.get('realtyflow_admin')?.value);
+  if (!session?.email) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required',
+        },
+      },
+      { status: 401 },
+    );
+  }
+
+  return null;
+}
+
+function missingDatabaseResponse() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        code: 'DATABASE_NOT_CONFIGURED',
+        message: 'Contacts database is not configured',
+      },
+    },
+    { status: 500 },
+  );
 }
 
 function normalizeStatus(status: unknown) {
@@ -130,8 +155,11 @@ async function updateContactWithFallbacks(supabase: any, id: string, updates: an
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ contacts: [] });
+  const unauthorized = await requireContactsAdmin(request);
+  if (unauthorized) return unauthorized;
+
+  const supabase = getContactsSupabase();
+  if (!supabase) return missingDatabaseResponse();
 
   const { searchParams } = new URL(request.url);
   const view = searchParams.get('view');
@@ -159,8 +187,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
+  const unauthorized = await requireContactsAdmin(request);
+  if (unauthorized) return unauthorized;
+
+  const supabase = getContactsSupabase();
+  if (!supabase) return missingDatabaseResponse();
 
   const contact = normalizeIncomingContact(await request.json());
   const { data, error } = await insertContactWithFallbacks(supabase, contact);
@@ -169,8 +200,11 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
+  const unauthorized = await requireContactsAdmin(request);
+  if (unauthorized) return unauthorized;
+
+  const supabase = getContactsSupabase();
+  if (!supabase) return missingDatabaseResponse();
 
   const { id, ...rawUpdates } = await request.json();
   const updates = normalizeIncomingContact(rawUpdates);
@@ -182,8 +216,11 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
+  const unauthorized = await requireContactsAdmin(request);
+  if (unauthorized) return unauthorized;
+
+  const supabase = getContactsSupabase();
+  if (!supabase) return missingDatabaseResponse();
 
   const { id } = await request.json();
   const { error } = await supabase.from('contacts').delete().eq('id', id);

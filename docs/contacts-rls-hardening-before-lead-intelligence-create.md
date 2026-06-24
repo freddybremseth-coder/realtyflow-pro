@@ -45,6 +45,11 @@ with `NEXT_PUBLIC_SUPABASE_ANON_KEY`. This PR moves that contacts query to the
 protected `/api/contacts?view=pipeline` server route so direct browser access to
 `public.contacts` can be removed.
 
+The `/api/contacts` route now verifies the `realtyflow_admin` session cookie
+inside the route before creating or using the service-role Supabase client.
+Middleware protection is still useful, but the route-level check is the
+authoritative guard for the privileged contacts path.
+
 ## Migration behavior
 
 New migration:
@@ -95,6 +100,8 @@ Risk to check before production:
 
 - CRM list loads.
 - Pipeline list loads.
+- Unauthenticated `/api/contacts` requests return 401 and do not reach the
+  database client.
 - Contact create/update/delete still works through `/api/contacts`.
 - Public lead and booking lead captures still write through server routes.
 - No browser code still directly queries `public.contacts`.
@@ -108,12 +115,13 @@ After applying this hardening migration in production, but before running
 2. Confirm `Allow all on contacts` policy no longer exists.
 3. Confirm `anon` cannot `INSERT`, `UPDATE` or `DELETE public.contacts`.
 4. Confirm `authenticated` cannot `INSERT`, `UPDATE` or `DELETE public.contacts`.
-5. Confirm `/api/contacts?view=pipeline` returns CRM data while logged in as admin.
-6. Create and edit one synthetic CRM test contact through the UI, then remove it
+5. Confirm `/api/contacts?view=pipeline` returns 401 without an admin session.
+6. Confirm `/api/contacts?view=pipeline` returns CRM data while logged in as admin.
+7. Create and edit one synthetic CRM test contact through the UI, then remove it
    through the UI if appropriate.
-7. Submit a synthetic public lead only if a test source key and cleanup plan are
+8. Submit a synthetic public lead only if a test source key and cleanup plan are
    available.
-8. Re-run the Lead Intelligence contact-create preflight.
+9. Re-run the Lead Intelligence contact-create preflight.
 
 Only after this smoke test should the contact-create migration be applied.
 
