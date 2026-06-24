@@ -50,6 +50,29 @@ interface Lead {
   brand_id?: string;
 }
 
+interface LeadIntelligenceCrmHistoryItem {
+  buyerProfileId: string;
+  intakeId: string;
+  profileStatus: string;
+  purchaseReadiness: string | null;
+  summary: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  contactLinked: boolean;
+  criterionCount: number;
+  shortlistCount: number;
+  latestShortlistId: string | null;
+  latestShortlistStatus: string | null;
+  latestShortlistItemCount: number;
+  presentationCount: number;
+  latestPresentationId: string | null;
+  latestPresentationStatus: string | null;
+  latestMessageDraftId: string | null;
+  latestMessageDraftStatus: string | null;
+  updatedAt: string;
+  approvedAt: string | null;
+}
+
 const TAB_COLUMNS: Record<CrmTab, LeadStatus[]> = {
   leads: ["NEW"],
   pipeline: ["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"],
@@ -149,6 +172,33 @@ const emptyLead = {
   name: "", email: "", phone: "", budget: "", source: "", property: "", notes: "", brand_id: DEFAULT_NEW_LEAD_BRAND_ID,
 };
 
+function shortId(value: string | null | undefined) {
+  return value ? `${value.slice(0, 8)}...${value.slice(-4)}` : "Ikke satt";
+}
+
+function leadIntelligenceProfileUrl(item: LeadIntelligenceCrmHistoryItem) {
+  const params = new URLSearchParams({ buyerProfileId: item.buyerProfileId });
+  if (item.latestPresentationId) params.set("presentationId", item.latestPresentationId);
+  if (item.latestMessageDraftId) params.set("messageDraftId", item.latestMessageDraftId);
+  return `/lead-intelligence?${params.toString()}`;
+}
+
+function leadIntelligenceMatchUrl(item: LeadIntelligenceCrmHistoryItem) {
+  return `${leadIntelligenceProfileUrl(item)}#lead-intelligence-property-match`;
+}
+
+function formatLeadIntelligenceBudget(item: LeadIntelligenceCrmHistoryItem) {
+  if (item.budgetAmount === null) return "Budsjett ikke satt";
+  return `${item.budgetAmount.toLocaleString("nb-NO")} ${item.budgetCurrency || ""}`.trim();
+}
+
+function formatLeadIntelligenceDate(value: string | null | undefined) {
+  if (!value) return "Ikke satt";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("nb-NO");
+}
+
 // ── Main Component ─────────────────────────────────────
 
 export default function PipelinePage() {
@@ -199,6 +249,9 @@ export default function PipelinePage() {
   const [portalInviteStatus, setPortalInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [portalInviteError, setPortalInviteError] = useState("");
   const [portalTemporaryPassword, setPortalTemporaryPassword] = useState("");
+  const [leadIntelligenceHistory, setLeadIntelligenceHistory] = useState<LeadIntelligenceCrmHistoryItem[]>([]);
+  const [leadIntelligenceHistoryLoading, setLeadIntelligenceHistoryLoading] = useState(false);
+  const [leadIntelligenceHistoryError, setLeadIntelligenceHistoryError] = useState<string | null>(null);
 
   // ── Load leads from database ───────────────────────
 
@@ -237,6 +290,41 @@ export default function PipelinePage() {
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
+  const loadLeadIntelligenceHistory = useCallback(async (lead: Lead) => {
+    setLeadIntelligenceHistoryLoading(true);
+    setLeadIntelligenceHistoryError(null);
+    setLeadIntelligenceHistory([]);
+
+    if (!lead.brand_id) {
+      setLeadIntelligenceHistoryLoading(false);
+      setLeadIntelligenceHistoryError("Kontakten mangler brand, så Lead Intelligence-historikk kan ikke avgrenses trygt.");
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        brand: lead.brand_id,
+        contactId: lead.id,
+        limit: "5",
+      });
+      const response = await fetch(`/api/lead-intelligence/worklist?${params.toString()}`);
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const code = body?.error?.code || "LEAD_INTELLIGENCE_HISTORY_UNAVAILABLE";
+        const message = body?.error?.message || "Kunne ikke hente Lead Intelligence-historikk.";
+        setLeadIntelligenceHistoryError(`${code}: ${message}`);
+        return;
+      }
+
+      setLeadIntelligenceHistory(body?.result?.items || []);
+    } catch {
+      setLeadIntelligenceHistoryError("Kunne ikke hente Lead Intelligence-historikk akkurat nå.");
+    } finally {
+      setLeadIntelligenceHistoryLoading(false);
+    }
+  }, []);
+
   // Keep selectedLead in sync with leads state
   useEffect(() => {
     if (selectedLead) {
@@ -250,6 +338,17 @@ export default function PipelinePage() {
     setPortalInviteError("");
     setPortalTemporaryPassword("");
   }, [selectedLead?.id]);
+
+  useEffect(() => {
+    if (!selectedLead) {
+      setLeadIntelligenceHistory([]);
+      setLeadIntelligenceHistoryError(null);
+      setLeadIntelligenceHistoryLoading(false);
+      return;
+    }
+
+    void loadLeadIntelligenceHistory(selectedLead);
+  }, [loadLeadIntelligenceHistory, selectedLead?.id, selectedLead?.brand_id]);
 
   const filteredLeads = leads.filter(
     (l) =>
@@ -1394,6 +1493,102 @@ export default function PipelinePage() {
                     <span>Portal: {selectedLead.interactions.some((item) => /min side|portal|kjøpssignal/i.test(item.content)) ? "Aktiv" : "Ikke logget"}</span>
                     <span>Oppfølging: {getBuyingSignalScore(selectedLead) >= 70 ? "Innen 24t" : "Normal"}</span>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-cyan-200">Lead Intelligence</p>
+                      <p className="text-[11px] text-slate-400">
+                        Read-only historikk for denne kontakten. Oppretter ikke lead, e-post eller matchingjobb.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 shrink-0 text-[10px]"
+                      disabled={leadIntelligenceHistoryLoading}
+                      onClick={() => loadLeadIntelligenceHistory(selectedLead)}
+                    >
+                      {leadIntelligenceHistoryLoading ? (
+                        <Loader2 size={11} className="mr-1 animate-spin" />
+                      ) : (
+                        <Search size={11} className="mr-1" />
+                      )}
+                      Oppdater
+                    </Button>
+                  </div>
+
+                  {leadIntelligenceHistoryLoading && (
+                    <div className="rounded-md border border-slate-700 bg-slate-950/40 p-2 text-[11px] text-slate-400">
+                      Henter lagrede buyer profiles, shortlist og presentasjonsutkast...
+                    </div>
+                  )}
+
+                  {leadIntelligenceHistoryError && (
+                    <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-2 text-[11px] text-amber-100">
+                      {leadIntelligenceHistoryError}
+                    </div>
+                  )}
+
+                  {!leadIntelligenceHistoryLoading && !leadIntelligenceHistoryError && leadIntelligenceHistory.length === 0 && (
+                    <div className="rounded-md border border-slate-700 bg-slate-950/40 p-2 text-[11px] text-slate-400">
+                      Ingen koblede Lead Intelligence-profiler for denne kontakten ennå.
+                    </div>
+                  )}
+
+                  {leadIntelligenceHistory.length > 0 && (
+                    <div className="space-y-2">
+                      {leadIntelligenceHistory.map((item) => (
+                        <div key={item.buyerProfileId} className="rounded-md border border-cyan-500/15 bg-slate-950/40 p-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="line-clamp-2 text-xs font-semibold text-slate-100">
+                                {item.summary || "Buyer profile uten oppsummering"}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                Profile {shortId(item.buyerProfileId)} · {formatLeadIntelligenceBudget(item)} · oppdatert {formatLeadIntelligenceDate(item.updatedAt)}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="shrink-0 text-[10px]">
+                              {item.profileStatus}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-slate-400">
+                            <span>Kriterier: {item.criterionCount}</span>
+                            <span>Shortlist: {item.shortlistCount}</span>
+                            <span>Boliger: {item.latestShortlistItemCount}</span>
+                            <span>Utkast: {item.latestMessageDraftStatus || "nei"}</span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <a
+                              href={leadIntelligenceProfileUrl(item)}
+                              className="inline-flex items-center rounded-md border border-cyan-500/30 px-2 py-1 text-[10px] font-medium text-cyan-100 hover:bg-cyan-500/10"
+                            >
+                              <ArrowRight size={10} className="mr-1" />
+                              Åpne Lead Intelligence
+                            </a>
+                            {item.latestPresentationId && (
+                              <a
+                                href={leadIntelligenceProfileUrl(item)}
+                                className="inline-flex items-center rounded-md border border-emerald-500/30 px-2 py-1 text-[10px] font-medium text-emerald-100 hover:bg-emerald-500/10"
+                              >
+                                <FileText size={10} className="mr-1" />
+                                Åpne siste presentasjonsutkast
+                              </a>
+                            )}
+                            <a
+                              href={leadIntelligenceMatchUrl(item)}
+                              className="inline-flex items-center rounded-md border border-slate-600 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-800"
+                            >
+                              <Search size={10} className="mr-1" />
+                              Finn/match boliger
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Commission info for WON — editable */}

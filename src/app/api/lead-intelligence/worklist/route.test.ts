@@ -94,6 +94,20 @@ test("worklist rejects excessive limits before database access", async () => {
   assert.equal(body.error.code, "INVALID_REQUEST");
 });
 
+test("worklist rejects invalid contact filters before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+
+  const response = await GET(
+    request("?brand=soleada&contactId=not-a-contact-id", { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
 test("worklist reports schema-not-ready safely without raw connection details", async () => {
   process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
   process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";

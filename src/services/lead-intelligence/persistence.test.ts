@@ -990,8 +990,16 @@ test("archiveBuyerProfile soft-deletes profile by status only", async () => {
 
 test("worklist query validates brand and limit before database access", async () => {
   assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 20 }).success, true);
+  assert.equal(
+    LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 20, contactId }).success,
+    true,
+  );
   assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "neuralbeat", limit: 20 }).success, false);
   assert.equal(LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 500 }).success, false);
+  assert.equal(
+    LeadIntelligenceWorklistQuerySchema.safeParse({ brand: "soleada", limit: 20, contactId: "bad-id" }).success,
+    false,
+  );
 
   const db = new WorklistDb();
   const repo = repository(db);
@@ -1005,7 +1013,7 @@ test("worklist query validates brand and limit before database access", async ()
 test("worklist returns safe persisted case metadata without raw payloads or contact hashes", async () => {
   const db = new WorklistDb();
   const repo = repository(db);
-  const items = await repo.listWorklist({ brand: "soleada", limit: 20 });
+  const items = await repo.listWorklist({ brand: "soleada", limit: 20, contactId });
 
   assert.equal(items.length, 1);
   assert.equal(items[0].buyerProfileId, profileId);
@@ -1022,6 +1030,8 @@ test("worklist returns safe persisted case metadata without raw payloads or cont
   const sql = db.queries.map((query) => query.sql).join("\n");
   assert.equal(db.queries[0].values?.[0], "soleada");
   assert.equal(db.queries[0].values?.[1], 20);
+  assert.equal(db.queries[0].values?.[2], contactId);
+  assert(sql.includes("profile.contact_id = $3::uuid"));
   assert(!/raw_text_restricted/i.test(sql));
   assert(!/result_json/i.test(sql));
   assert(!/body_text|body_html|subject/i.test(sql));

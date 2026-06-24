@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
 
     const parsed = LeadIntelligenceWorklistQuerySchema.safeParse({
       brand: request.nextUrl.searchParams.get("brand") || "",
+      contactId: request.nextUrl.searchParams.get("contactId") || undefined,
       limit: request.nextUrl.searchParams.get("limit") || undefined,
     });
     if (!parsed.success) {
