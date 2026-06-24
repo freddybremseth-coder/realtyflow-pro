@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Building2,
   CheckCircle2,
   Clipboard,
   ExternalLink,
@@ -169,6 +170,8 @@ interface PropertyMatchPreviewResponse {
         bedrooms: number | null;
         bathrooms: number | null;
         primaryImageUrl: string | null;
+        imageUrl?: string | null;
+        gallery?: string[] | null;
         publicUrl: string | null;
       };
       score: number;
@@ -481,6 +484,17 @@ function leadIntelligenceDraftReturnUrl({
   return query ? `/lead-intelligence?${query}` : "/lead-intelligence";
 }
 
+function leadIntelligenceMatchAnchor(propertyId: string | null) {
+  return propertyId ? `lead-intelligence-match-${propertyId}` : null;
+}
+
+function leadIntelligenceMatchReturnUrl(baseReturnTo: string | null | undefined, propertyId: string | null) {
+  const anchor = leadIntelligenceMatchAnchor(propertyId);
+  if (!anchor) return baseReturnTo || null;
+  const withoutHash = (baseReturnTo || "/lead-intelligence").split("#")[0] || "/lead-intelligence";
+  return `${withoutHash}#${anchor}`;
+}
+
 function internalInventoryPropertyUrl(propertyId: string | null, returnTo?: string | null) {
   if (!propertyId) return null;
   const params = new URLSearchParams({ propertyId });
@@ -524,6 +538,33 @@ function PropertyNavigationLinks({
             Åpne kundelenke
           </a>
         </Button>
+      )}
+    </div>
+  );
+}
+
+function matchPropertyImageUrl(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
+  return match.property.primaryImageUrl || match.property.imageUrl || match.property.gallery?.[0] || null;
+}
+
+function PropertyMatchThumbnail({ match }: { match: PropertyMatchPreviewResponse["result"]["matches"][number] }) {
+  const imageUrl = matchPropertyImageUrl(match);
+  const title = propertyDisplayName(match);
+
+  return (
+    <div className="h-20 w-28 flex-none overflow-hidden rounded-md border border-slate-800 bg-slate-950 sm:h-24 sm:w-32">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={title}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-slate-900 text-slate-500">
+          <Building2 className="h-6 w-6" aria-hidden="true" />
+          <span className="sr-only">Ingen bilde i eiendomsdata</span>
+        </div>
       )}
     </div>
   );
@@ -1171,9 +1212,13 @@ function PresentationDraftReadiness({
 function InternalPresentationPreview({
   preview,
   returnTo,
+  anchorCards = false,
+  highlightedMatchId = null,
 }: {
   preview: PresentationDraftResponse["result"]["presentationPreview"];
   returnTo?: string | null;
+  anchorCards?: boolean;
+  highlightedMatchId?: string | null;
 }) {
   return (
     <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/80 p-4 text-sm text-slate-200 sm:p-5">
@@ -1213,7 +1258,15 @@ function InternalPresentationPreview({
           </p>
         ) : (
           preview.properties.map((property, index) => (
-            <div key={`${property.propertyId || property.reference || property.title}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/70">
+            <div
+              key={`${property.propertyId || property.reference || property.title}-${index}`}
+              id={anchorCards ? leadIntelligenceMatchAnchor(property.propertyId) || undefined : undefined}
+              className={`scroll-mt-28 rounded-xl border bg-slate-900/70 transition-all duration-500 ${
+                anchorCards && property.propertyId && highlightedMatchId === property.propertyId
+                  ? "border-primary-300 ring-2 ring-primary-300/70"
+                  : "border-slate-800"
+              }`}
+            >
               <div className="grid gap-0 xl:grid-cols-[minmax(220px,320px),1fr]">
                 {property.imageUrl && (
                   <img
@@ -1239,7 +1292,7 @@ function InternalPresentationPreview({
                     <PropertyNavigationLinks
                       propertyId={property.propertyId}
                       publicUrl={property.publicUrl}
-                      returnTo={returnTo}
+                      returnTo={leadIntelligenceMatchReturnUrl(returnTo, property.propertyId)}
                     />
                   </div>
 
@@ -1352,6 +1405,7 @@ export function LeadIntelligenceClient({
   const [profileArchiveLoading, setProfileArchiveLoading] = useState(false);
   const [profileArchiveError, setProfileArchiveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [profileArchiveResult, setProfileArchiveResult] = useState<SavedProfileArchiveResponse | null>(null);
+  const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -1426,6 +1480,7 @@ export function LeadIntelligenceClient({
     setMatchReviewDecisions({});
     setShortlistSaveError(null);
     setShortlistSaveResult(null);
+    setHighlightedMatchId(null);
     clearPresentationDraftState();
   };
 
@@ -2377,6 +2432,31 @@ export function LeadIntelligenceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worklistResult]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#lead-intelligence-match-")) return;
+
+    const targetId = decodeURIComponent(hash.slice(1));
+    const propertyId = targetId.replace(/^lead-intelligence-match-/, "");
+    let clearHighlightTimer: number | undefined;
+
+    const scrollTimer = window.setTimeout(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      setHighlightedMatchId(propertyId);
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      clearHighlightTimer = window.setTimeout(() => {
+        setHighlightedMatchId((current) => (current === propertyId ? null : current));
+      }, 3500);
+    }, 150);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      if (clearHighlightTimer) window.clearTimeout(clearHighlightTimer);
+    };
+  }, [activeWorklistItem, propertyMatchResult, presentationDraftResult]);
+
   const presentationDraftReturnUrl = presentationDraftResult
     ? leadIntelligenceDraftReturnUrl({
         buyerProfileId: presentationDraftResult.result.buyerProfileId,
@@ -2384,6 +2464,11 @@ export function LeadIntelligenceClient({
         messageDraftId: presentationDraftResult.result.messageDraftId,
       })
     : null;
+  const propertyMatchReturnBaseUrl =
+    presentationDraftReturnUrl ||
+    leadIntelligenceDraftReturnUrl({
+      buyerProfileId: activeWorklistItem?.buyerProfileId || saveResult?.result.buyerProfile.id || null,
+    });
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -2975,6 +3060,8 @@ export function LeadIntelligenceClient({
                             <InternalPresentationPreview
                               preview={presentationDraftResult.result.presentationPreview}
                               returnTo={presentationDraftReturnUrl}
+                              anchorCards={!propertyMatchResult}
+                              highlightedMatchId={highlightedMatchId}
                             />
                           </div>
                         )}
@@ -3086,10 +3173,21 @@ export function LeadIntelligenceClient({
                             <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
                               {propertyMatchResult.result.matches.map((match) => {
                                 const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
+                                const isHighlightedMatch = highlightedMatchId === match.propertyId;
                                 return (
-                                  <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                                  <div
+                                    key={match.propertyId}
+                                    id={leadIntelligenceMatchAnchor(match.propertyId) || undefined}
+                                    className={`scroll-mt-28 rounded-lg border p-3 transition-all duration-500 ${
+                                      isHighlightedMatch
+                                        ? "border-primary-300 bg-primary-500/10 ring-2 ring-primary-300/70"
+                                        : "border-slate-800 bg-slate-900/60"
+                                    }`}
+                                  >
                                     <div className="flex flex-wrap items-start justify-between gap-3">
-                                      <div className="min-w-0">
+                                      <div className="flex min-w-0 gap-3">
+                                        <PropertyMatchThumbnail match={match} />
+                                        <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-slate-100">
                                           {propertyDisplayName(match)}
                                         </p>
@@ -3100,8 +3198,9 @@ export function LeadIntelligenceClient({
                                           <PropertyNavigationLinks
                                             propertyId={match.propertyId}
                                             publicUrl={match.property.publicUrl}
-                                            returnTo={presentationDraftReturnUrl}
+                                            returnTo={leadIntelligenceMatchReturnUrl(propertyMatchReturnBaseUrl, match.propertyId)}
                                           />
+                                        </div>
                                         </div>
                                       </div>
                                       <div className="flex flex-col items-end gap-2">
@@ -3238,6 +3337,8 @@ export function LeadIntelligenceClient({
                                         <InternalPresentationPreview
                                           preview={presentationDraftResult.result.presentationPreview}
                                           returnTo={presentationDraftReturnUrl}
+                                          anchorCards={!propertyMatchResult}
+                                          highlightedMatchId={highlightedMatchId}
                                         />
 
                                         <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
@@ -4314,18 +4415,20 @@ export function LeadIntelligenceClient({
                               match.eligibility === "rejected" &&
                               (reviewDecision === "current" || reviewDecision === "maybe");
 
+                            const isHighlightedMatch = highlightedMatchId === match.propertyId;
                             return (
-                              <div key={match.propertyId} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                              <div
+                                key={match.propertyId}
+                                id={leadIntelligenceMatchAnchor(match.propertyId) || undefined}
+                                className={`scroll-mt-28 rounded-lg border p-3 transition-all duration-500 ${
+                                  isHighlightedMatch
+                                    ? "border-primary-300 bg-primary-500/10 ring-2 ring-primary-300/70"
+                                    : "border-slate-800 bg-slate-900/60"
+                                }`}
+                              >
                                 <div className="flex flex-wrap items-start justify-between gap-2">
                                   <div className="flex min-w-0 gap-3">
-                                    {match.property.primaryImageUrl && (
-                                      <img
-                                        src={match.property.primaryImageUrl}
-                                        alt=""
-                                        className="h-20 w-28 flex-none rounded-md border border-slate-800 object-cover"
-                                        loading="lazy"
-                                      />
-                                    )}
+                                    <PropertyMatchThumbnail match={match} />
                                     <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <p className="truncate text-sm font-semibold text-slate-100">
@@ -4344,7 +4447,7 @@ export function LeadIntelligenceClient({
                                         <PropertyNavigationLinks
                                           propertyId={match.propertyId}
                                           publicUrl={match.property.publicUrl}
-                                          returnTo={presentationDraftReturnUrl}
+                                          returnTo={leadIntelligenceMatchReturnUrl(propertyMatchReturnBaseUrl, match.propertyId)}
                                         />
                                       </div>
                                     </div>
@@ -4571,6 +4674,8 @@ export function LeadIntelligenceClient({
                                   <InternalPresentationPreview
                                     preview={presentationDraftResult.result.presentationPreview}
                                     returnTo={presentationDraftReturnUrl}
+                                    anchorCards={!propertyMatchResult}
+                                    highlightedMatchId={highlightedMatchId}
                                   />
 
                                   <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
@@ -4687,14 +4792,15 @@ export function LeadIntelligenceClient({
                                     const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);
                                     const cardContent = (
                                       <>
-                                        {match.property.primaryImageUrl ? (
+                                        {matchPropertyImageUrl(match) ? (
                                           <img
-                                            src={match.property.primaryImageUrl}
+                                            src={matchPropertyImageUrl(match) || ""}
                                             alt={propertyDisplayName(match)}
                                             className="h-44 w-full object-cover"
                                           />
                                         ) : (
                                           <div className="flex h-44 items-center justify-center bg-slate-900 text-sm text-slate-500">
+                                            <Building2 className="mr-2 h-5 w-5" aria-hidden="true" />
                                             Ingen bilde i eiendomsdata
                                           </div>
                                         )}
@@ -4728,7 +4834,7 @@ export function LeadIntelligenceClient({
                                           <PropertyNavigationLinks
                                             propertyId={match.propertyId}
                                             publicUrl={match.property.publicUrl}
-                                            returnTo={presentationDraftReturnUrl}
+                                            returnTo={leadIntelligenceMatchReturnUrl(propertyMatchReturnBaseUrl, match.propertyId)}
                                           />
                                           <div>
                                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

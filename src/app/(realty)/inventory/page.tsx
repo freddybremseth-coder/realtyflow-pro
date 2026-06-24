@@ -122,7 +122,7 @@ function safeLeadIntelligenceReturnPath(value: string | null) {
   try {
     const url = new URL(trimmed, "https://realtyflow.local");
     if (url.pathname !== "/lead-intelligence") return null;
-    return `${url.pathname}${url.search}`;
+    return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return null;
   }
