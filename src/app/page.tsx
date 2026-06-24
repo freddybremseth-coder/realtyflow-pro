@@ -19,6 +19,33 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+interface DashboardContact {
+  id?: string;
+  pipeline_status?: string | null;
+  pipeline_value?: number | null;
+  interactions?: unknown[];
+  notes?: string | null;
+  brand?: string | null;
+  source?: string | null;
+}
+
+async function fetchDashboardContacts() {
+  try {
+    const response = await fetch("/api/contacts?view=pipeline", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Contacts API returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { data: (Array.isArray(payload.contacts) ? payload.contacts : []) as DashboardContact[], error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Contacts API request failed" },
+    };
+  }
+}
+
 interface DashboardStats {
   activeLeads: number;
   hotSignals: number;
@@ -315,7 +342,7 @@ export default function Dashboard() {
           socialAccountsRes,
           websiteLeadTasksRes,
         ] = await Promise.all([
-          supabase.from("contacts").select("id,pipeline_status,pipeline_value,interactions,notes,brand,source").in("pipeline_status", ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"]),
+          fetchDashboardContacts(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("land_plots").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
@@ -417,7 +444,7 @@ export default function Dashboard() {
           });
         }
 
-        const activeContacts = contactsRes.data || [];
+        const activeContacts = (contactsRes.data || []) as DashboardContact[];
         const contentItems = contentByBrandRes.data || [];
         const socialAccounts = socialAccountsRes.data || [];
         const brandWorkspaces: BrandWorkspaceStats[] = BRAND_WORKSPACES.map((workspace) => {

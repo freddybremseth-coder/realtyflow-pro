@@ -20,6 +20,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --silent
+      - name: Contacts API auth tests
+        run: npm run test:contacts-api
       - name: Build
         id: next_build
         shell: bash
