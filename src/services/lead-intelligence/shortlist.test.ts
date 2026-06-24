@@ -13,6 +13,18 @@ const buyerProfileId = "11111111-1111-4111-8111-111111111111";
 const propertyId = "22222222-2222-4222-8222-222222222222";
 const rejectedPropertyId = "33333333-3333-4333-8333-333333333333";
 const correlationId = "rf_mqshort_0123456789abcdef01234567";
+const qualityReview = {
+  status: "client_ready" as const,
+  note: "Freddy har kvalitetssjekket pris og lenke.",
+  checkedAt: "2026-06-24T10:00:00.000Z",
+  checkedBy: "freddy.bremseth@gmail.com",
+};
+const needsMoreReview = {
+  status: "verify_price_availability" as const,
+  note: "Pris og tilgjengelighet må bekreftes med megler.",
+  checkedAt: "2026-06-24T10:05:00.000Z",
+  checkedBy: "freddy.bremseth@gmail.com",
+};
 
 function matchResult(): PropertyMatchPreviewResult {
   return {
@@ -115,8 +127,8 @@ test("saves a shortlist draft from recomputed match results without external sid
       title: "Emmadale shortlist",
       idempotencySeed: correlationId,
       items: [
-        { propertyId, decision: "current" },
-        { propertyId: rejectedPropertyId, decision: "needs_research" },
+        { propertyId, decision: "current", qualityReview },
+        { propertyId: rejectedPropertyId, decision: "needs_research", qualityReview: needsMoreReview },
       ],
     },
     correlationId,
@@ -132,7 +144,11 @@ test("saves a shortlist draft from recomputed match results without external sid
   assert.equal(result.sideEffects.contactsCreated, false);
   assert.equal(result.sideEffects.presentationCreated, false);
   assert.equal(repository.calls[0].items[0].propertyReference, "N8513");
+  assert.equal(repository.calls[0].items[0].qualityReviewStatus, "client_ready");
+  assert.equal(repository.calls[0].items[0].qualityReviewNote, "Freddy har kvalitetssjekket pris og lenke.");
+  assert.equal(repository.calls[0].items[0].qualityReviewCheckedBy, "freddy.bremseth@gmail.com");
   assert.equal(repository.calls[0].items[1].systemEligibility, "rejected");
+  assert.equal(repository.calls[0].items[1].qualityReviewStatus, "verify_price_availability");
 });
 
 test("shortlist draft idempotency is stable for identical selected payloads", async () => {
@@ -161,7 +177,7 @@ test("duplicate shortlist draft returns existing id without inserting duplicate 
       brand: "soleada",
       buyerProfileId,
       idempotencySeed: correlationId,
-      items: [{ propertyId, decision: "current" }],
+      items: [{ propertyId, decision: "current", qualityReview }],
     },
     correlationId,
     createdBy: "freddy.bremseth@gmail.com",
@@ -180,7 +196,7 @@ test("selected property must be present in the recomputed match result", async (
         brand: "soleada",
         buyerProfileId,
         idempotencySeed: correlationId,
-        items: [{ propertyId: "55555555-5555-4555-8555-555555555555", decision: "current" }],
+        items: [{ propertyId: "55555555-5555-4555-8555-555555555555", decision: "current", qualityReview }],
       },
       correlationId,
       createdBy: "freddy.bremseth@gmail.com",
@@ -198,7 +214,7 @@ test("same idempotency key with different payload is rejected as a safe conflict
         brand: "soleada",
         buyerProfileId,
         idempotencySeed: correlationId,
-        items: [{ propertyId, decision: "current" }],
+        items: [{ propertyId, decision: "current", qualityReview }],
       },
       correlationId,
       createdBy: "freddy.bremseth@gmail.com",

@@ -47,6 +47,10 @@ function snapshot(overrides: Partial<LeadCustomerPresentationShortlistSnapshot> 
         reasons: ["bedrooms matches (unverified).", "bathrooms matches (unverified)."],
         concerns: ["Availability must be verified."],
         questionsToVerify: ["Confirm community fees."],
+        qualityReviewStatus: "client_ready",
+        qualityReviewNote: "Freddy har kontrollert at denne kan deles med kunden.",
+        qualityReviewCheckedAt: "2026-06-24T10:00:00.000Z",
+        qualityReviewCheckedBy: "freddy.bremseth@gmail.com",
       },
     ],
     ...overrides,
@@ -107,6 +111,7 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.itemCount, 1);
   assert.equal(result.messageDraft.subject.includes("Moraira"), true);
   assert.equal(result.messageDraft.bodyText.includes("Aktuelt fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
+  assert.equal(result.messageDraft.bodyText.includes("Min vurdering: Freddy har kontrollert at denne kan deles med kunden."), true);
   assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
   assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
@@ -206,6 +211,74 @@ test("presentation email draft summarizes repeated common match reasons once", a
   assert.equal(body.includes("Passer fordi:"), false);
   assert.equal(body.includes("Aktuelt fordi: Antall soverom ser ut til å passe"), false);
   assert.equal(body.includes("Aktuelt fordi: Antall bad ser ut til å passe"), false);
+});
+
+test("presentation draft only uses Freddy client-ready shortlist items", async () => {
+  const baseItem = snapshot().items[0];
+  const repository = new MemoryPresentationRepository(
+    snapshot({
+      items: [
+        baseItem,
+        {
+          ...baseItem,
+          propertyId: "33333333-3333-4333-8333-333333333334",
+          propertyReference: "N8514",
+          propertyTitle: "Villa som må sjekkes",
+          rank: 2,
+          qualityReviewStatus: "verify_price_availability",
+          qualityReviewNote: "Må bekrefte pris først.",
+        },
+      ],
+    }),
+  );
+
+  const result = await saveLeadCustomerPresentationDraft({
+    request: {
+      brand: "soleada",
+      buyerProfileId,
+      shortlistId,
+      idempotencySeed: correlationId,
+      language: "nb",
+    },
+    correlationId,
+    createdBy: "freddy.bremseth@gmail.com",
+    repository,
+  });
+
+  assert.equal(result.itemCount, 1);
+  assert.equal(result.messageDraft.bodyText.includes("Villa nær Moraira"), true);
+  assert.equal(result.messageDraft.bodyText.includes("Villa som må sjekkes"), false);
+  assert.equal(repository.calls[0].presentationJson && typeof repository.calls[0].presentationJson === "object", true);
+});
+
+test("presentation draft rejects shortlist without client-ready quality review", async () => {
+  const repository = new MemoryPresentationRepository(
+    snapshot({
+      items: [
+        {
+          ...snapshot().items[0],
+          qualityReviewStatus: "needs_review",
+          qualityReviewNote: "Må kvalitetssikres før deling.",
+        },
+      ],
+    }),
+  );
+
+  await assert.rejects(
+    saveLeadCustomerPresentationDraft({
+      request: {
+        brand: "soleada",
+        buyerProfileId,
+        shortlistId,
+        idempotencySeed: correlationId,
+      },
+      correlationId,
+      createdBy: "freddy.bremseth@gmail.com",
+      repository,
+    }),
+    (error) => error instanceof LeadIntelligenceError && error.code === "INVALID_REQUEST",
+  );
+  assert.equal(repository.calls.length, 0);
 });
 
 test("duplicate presentation draft returns existing IDs for identical payload", async () => {

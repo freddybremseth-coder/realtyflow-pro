@@ -54,6 +54,10 @@ const migrationFiles = {
     repoRoot,
     "supabase/migrations/20260621191609_lead_intelligence_presentation_draft.sql",
   ),
+  leadIntelligencePropertyQualityReview: path.join(
+    repoRoot,
+    "supabase/migrations/20260624132000_lead_intelligence_property_quality_review.sql",
+  ),
 };
 
 function assert(condition, message) {
@@ -4326,6 +4330,203 @@ async function testLeadIntelligenceShortlistDraft() {
   });
 }
 
+async function testLeadIntelligencePropertyQualityReview() {
+  await withClient(async (client) => {
+    await resetPublicSchema(client);
+    await ensureSupabaseTestRoles(client);
+    await createLeadIntelligenceRuntimeTestObjects(client);
+    await client.query("revoke create on schema public from public");
+
+    process.stdout.write("  Scenario: applies after shortlist schema and is idempotent\n");
+    await applyMigration(client, migrationFiles.leadIntelligencePersistence);
+    await applyMigration(client, migrationFiles.leadIntelligenceRuntimeRls);
+    await applyMigration(client, migrationFiles.leadIntelligenceShortlistDraft);
+
+    const intake = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_intake_messages (
+          brand,
+          source,
+          status,
+          created_by,
+          correlation_id,
+          idempotency_key
+        )
+        values ('soleada', 'phone_call', 'draft', 'freddy.bremseth@gmail.com', 'rf_quality_0123456789abcdef0123', 'quality-intake-001')
+        returning id
+      `,
+    );
+    const profile = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.buyer_profiles (
+          brand,
+          intake_id,
+          version,
+          status,
+          purchase_readiness,
+          budget_amount,
+          budget_currency,
+          budget_includes_costs,
+          budget_approximate,
+          location_flexible,
+          summary,
+          created_by,
+          approved_by,
+          approved_at
+        )
+        values ('soleada', $1, 1, 'approved', 'ready_to_buy', 500000, 'EUR', true, false, true, 'Quality review profile', 'freddy.bremseth@gmail.com', 'freddy.bremseth@gmail.com', now())
+        returning id
+      `,
+      [intake.rows[0].id],
+    );
+    const shortlist = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlists (
+          brand,
+          buyer_profile_id,
+          status,
+          title,
+          idempotency_key,
+          payload_hash,
+          correlation_id,
+          created_by
+        )
+        values ('soleada', $1, 'draft', 'Quality shortlist', 'quality-shortlist-001', $2, 'rf_quality_abcdef0123456789abcdef01', 'freddy.bremseth@gmail.com')
+        returning id
+      `,
+      [profile.rows[0].id, `sha256:v1:${"q".repeat(64)}`],
+    );
+    const shortlistId = shortlist.rows[0].id;
+    await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlist_items (
+          shortlist_id,
+          brand,
+          property_id,
+          property_reference,
+          property_title,
+          property_location,
+          rank,
+          decision,
+          system_eligibility,
+          score,
+          data_quality_score,
+          reasons,
+          concerns,
+          questions_to_verify,
+          selected_by
+        )
+        values ($1, 'soleada', '22222222-2222-4222-8222-222222222222', 'N8513', 'Moraira apartment', 'Moraira', 1, 'current', 'eligible', 72, 61, '["Location matches."]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'freddy.bremseth@gmail.com')
+      `,
+      [shortlistId],
+    );
+
+    await applyMigration(client, migrationFiles.leadIntelligencePropertyQualityReview);
+    await applyMigration(client, migrationFiles.leadIntelligencePropertyQualityReview);
+
+    await assertTableHasColumns(client, "lead_property_shortlist_items", [
+      "quality_review_status",
+      "quality_review_note",
+      "quality_review_checked_at",
+      "quality_review_checked_by",
+    ]);
+
+    const qualityConstraints = await getTableConstraints(client, "lead_property_shortlist_items");
+    for (const constraintName of [
+      "lead_property_shortlist_items_quality_review_status_check",
+      "lead_property_shortlist_items_quality_review_note_check",
+      "lead_property_shortlist_items_quality_review_metadata_check",
+    ]) {
+      const constraint = qualityConstraints.get(constraintName);
+      assert(constraint, `Missing ${constraintName}.`);
+      assert(constraint.convalidated === true, `${constraintName} is not validated.`);
+    }
+
+    const defaulted = await queryAsRuntime(
+      client,
+      "soleada",
+      "select quality_review_status from public.lead_property_shortlist_items where shortlist_id = $1::uuid",
+      [shortlistId],
+    );
+    assert(defaulted.rows[0].quality_review_status === "needs_review", "Existing shortlist item did not default to needs_review.");
+
+    const ready = await queryAsRuntime(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlist_items (
+          shortlist_id,
+          brand,
+          property_id,
+          property_reference,
+          property_title,
+          property_location,
+          rank,
+          decision,
+          system_eligibility,
+          score,
+          data_quality_score,
+          reasons,
+          concerns,
+          questions_to_verify,
+          selected_by,
+          quality_review_status,
+          quality_review_note,
+          quality_review_checked_at,
+          quality_review_checked_by
+        )
+        values ($1, 'soleada', '33333333-3333-4333-8333-333333333333', 'N8514', 'Finestrat apartment', 'Finestrat', 2, 'current', 'eligible', 80, 70, '["Budget matches."]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'freddy.bremseth@gmail.com', 'client_ready', 'Pris kontrollert manuelt.', now(), 'freddy.bremseth@gmail.com')
+        returning quality_review_status, quality_review_note
+      `,
+      [shortlistId],
+    );
+    assert(ready.rows[0].quality_review_status === "client_ready", "Runtime role could not insert client_ready quality review.");
+    assert(ready.rows[0].quality_review_note === "Pris kontrollert manuelt.", "Quality review note was not persisted.");
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      `
+        insert into public.lead_property_shortlist_items (
+          shortlist_id,
+          brand,
+          property_id,
+          rank,
+          decision,
+          system_eligibility,
+          score,
+          data_quality_score,
+          reasons,
+          concerns,
+          questions_to_verify,
+          selected_by,
+          quality_review_status,
+          quality_review_checked_at,
+          quality_review_checked_by
+        )
+        values ('${shortlistId}'::uuid, 'soleada', '44444444-4444-4444-8444-444444444444', 3, 'current', 'eligible', 80, 70, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 'freddy.bremseth@gmail.com', 'auto_send', now(), 'freddy.bremseth@gmail.com')
+      `,
+      "Invalid quality review status was accepted.",
+    );
+
+    await assertRejectsRuntimeQuery(
+      client,
+      "soleada",
+      "update public.lead_property_shortlist_items set quality_review_status = 'client_ready' where shortlist_id = '00000000-0000-4000-8000-000000000000'",
+      "Runtime role could UPDATE shortlist quality review.",
+      "permission denied",
+    );
+  });
+}
+
 async function testLeadIntelligencePresentationDraft() {
   await withClient(async (client) => {
     await resetPublicSchema(client);
@@ -4634,6 +4835,7 @@ const tests = new Map([
   ["lead-intelligence-contact-create-gate", testLeadIntelligenceContactCreateGate],
   ["lead-intelligence-crm-context", testLeadIntelligenceCrmContextReadonly],
   ["lead-intelligence-shortlist-draft", testLeadIntelligenceShortlistDraft],
+  ["lead-intelligence-property-quality-review", testLeadIntelligencePropertyQualityReview],
   ["lead-intelligence-presentation-draft", testLeadIntelligencePresentationDraft],
 ]);
 

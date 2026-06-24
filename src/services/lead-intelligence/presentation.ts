@@ -285,6 +285,12 @@ function buildPresentationJson(input: {
           systemEligibility: item.systemEligibility,
           score: item.score,
           dataQualityScore: item.dataQualityScore,
+          qualityReview: {
+            status: item.qualityReviewStatus,
+            note: item.qualityReviewNote,
+            checkedAt: item.qualityReviewCheckedAt,
+            checkedBy: item.qualityReviewCheckedBy,
+          },
           reasons: item.reasons.slice(0, 5),
           concerns: item.concerns.slice(0, 5),
           questionsToVerify: item.questionsToVerify.slice(0, 5),
@@ -313,9 +319,11 @@ function buildEmailDraft(input: {
     const reasons = itemSpecificReasons(item.reasons, sharedReasons, 2);
     const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
     const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
+    const qualityNote = item.qualityReviewNote?.trim();
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
       reasons ? `   Aktuelt fordi: ${reasons}` : null,
+      qualityNote ? `   Min vurdering: ${qualityNote}` : null,
       verification ? `   Må avklares: ${verification}` : null,
       websiteUrl ? `   Se boligen på nettsiden: ${websiteUrl}` : null,
     ].filter(Boolean).join("\n");
@@ -355,6 +363,7 @@ function buildEmailDraft(input: {
         `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
         facts ? `<br><span>${escapeHtml(facts)}</span>` : "",
         reasons ? `<br><span><strong>Aktuelt fordi:</strong> ${escapeHtml(reasons)}</span>` : "",
+        item.qualityReviewNote ? `<br><span><strong>Min vurdering:</strong> ${escapeHtml(item.qualityReviewNote)}</span>` : "",
         verification ? `<br><span><strong>Må avklares:</strong> ${escapeHtml(verification)}</span>` : "",
         websiteUrl
           ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se boligen på nettsiden</a>`
@@ -410,13 +419,27 @@ export async function saveLeadCustomerPresentationDraft(input: {
     );
   }
 
-  const title = request.title || snapshot.shortlistTitle || `Kundepresentasjon ${new Date().toISOString().slice(0, 10)}`;
+  const clientReadyItems = snapshot.items.filter((item) => item.qualityReviewStatus === "client_ready");
+  if (clientReadyItems.length === 0) {
+    throw new LeadIntelligenceError(
+      "INVALID_REQUEST",
+      "At least one property must be marked Klar for kunde before creating a presentation draft",
+      400,
+      { requiredQualityReviewStatus: "client_ready" },
+    );
+  }
+  const clientReadySnapshot = {
+    ...snapshot,
+    items: clientReadyItems,
+  };
+
+  const title = request.title || clientReadySnapshot.shortlistTitle || `Kundepresentasjon ${new Date().toISOString().slice(0, 10)}`;
   const presentationJson = buildPresentationJson({
-    snapshot,
+    snapshot: clientReadySnapshot,
     title,
     language: request.language,
   });
-  const emailDraft = buildEmailDraft({ snapshot, title });
+  const emailDraft = buildEmailDraft({ snapshot: clientReadySnapshot, title });
   const canonicalPayload = {
     brand: request.brand,
     buyerProfileId: request.buyerProfileId,
@@ -491,7 +514,7 @@ export async function saveLeadCustomerPresentationDraft(input: {
     loadedFromHistory: false,
     status: "draft",
     messageStatus: "draft",
-    itemCount: snapshot.items.length,
+    itemCount: clientReadySnapshot.items.length,
     title,
     subject: emailDraft.subject,
     presentationPreview: buildLeadCustomerPresentationPreview(presentationJson),

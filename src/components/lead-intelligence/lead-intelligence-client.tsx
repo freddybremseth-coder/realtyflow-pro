@@ -139,8 +139,28 @@ interface ReviewCriterionRow {
 type PropertyMatchEligibility = "eligible" | "conditional" | "rejected";
 type MatchReviewDecision = "system" | "current" | "maybe" | "needs_research" | "rejected";
 type SelectedShortlistDecision = Exclude<MatchReviewDecision, "system" | "rejected">;
+type PropertyQualityReviewStatus =
+  | "unreviewed"
+  | "client_ready"
+  | "needs_review"
+  | "rejected"
+  | "ask_agent"
+  | "verify_price_availability";
+type SavedPropertyQualityReviewStatus = Exclude<PropertyQualityReviewStatus, "unreviewed">;
+interface PropertyQualityReviewState {
+  status: PropertyQualityReviewStatus;
+  note: string;
+  checkedAt: string | null;
+  checkedBy: string | null;
+}
 type SelectedShortlistMatch = PropertyMatchPreviewResponse["result"]["matches"][number] & {
   decision: SelectedShortlistDecision;
+  qualityReview: {
+    status: "client_ready";
+    note: string;
+    checkedAt: string;
+    checkedBy: string;
+  };
 };
 
 interface PropertyMatchPreviewResponse {
@@ -759,8 +779,9 @@ function buildShortlistPresentationText(
       `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
       `   Status: ${decisionLabelForPresentation(match.decision)}`,
       `   Hvorfor den passer: ${reasons || "Matcher deler av behovet."}`,
+      match.qualityReview.note ? `   Min kvalitetssjekk: ${match.qualityReview.note}` : null,
       verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   });
 
   return [
@@ -804,6 +825,7 @@ function buildShortlistEmailDraft(
     return [
       `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
       reasons ? `   Aktuelt fordi: ${reasons}` : null,
+      match.qualityReview.note ? `   Min vurdering: ${match.qualityReview.note}` : null,
       concerns.length > 0 ? `   Må avklares: ${concerns.join(" ")}` : null,
       match.property.publicUrl ? `   Se boligen på nettsiden: ${match.property.publicUrl}` : null,
     ].filter(Boolean).join("\n");
@@ -863,6 +885,62 @@ function matchReviewDecisionVariant(decision: MatchReviewDecision) {
     default:
       return "secondary";
   }
+}
+
+function defaultPropertyQualityReview(): PropertyQualityReviewState {
+  return {
+    status: "unreviewed",
+    note: "",
+    checkedAt: null,
+    checkedBy: null,
+  };
+}
+
+function propertyQualityReviewLabel(status: PropertyQualityReviewStatus) {
+  switch (status) {
+    case "client_ready":
+      return "Klar for kunde";
+    case "needs_review":
+      return "Må sjekkes";
+    case "rejected":
+      return "Ikke aktuell";
+    case "ask_agent":
+      return "Spør utbygger/megler";
+    case "verify_price_availability":
+      return "Pris/tilgjengelighet må verifiseres";
+    case "unreviewed":
+    default:
+      return "Ikke kvalitetssjekket";
+  }
+}
+
+function propertyQualityReviewVariant(status: PropertyQualityReviewStatus) {
+  switch (status) {
+    case "client_ready":
+      return "success";
+    case "rejected":
+      return "destructive";
+    case "ask_agent":
+    case "verify_price_availability":
+    case "needs_review":
+      return "warning";
+    case "unreviewed":
+    default:
+      return "secondary";
+  }
+}
+
+function savedPropertyQualityDecision(
+  status: SavedPropertyQualityReviewStatus,
+  reviewDecision: MatchReviewDecision,
+): SelectedShortlistDecision {
+  if (status === "client_ready") {
+    return reviewDecision === "maybe" ? "maybe" : "current";
+  }
+  if (reviewDecision === "current" || reviewDecision === "maybe" || reviewDecision === "needs_research") {
+    return reviewDecision;
+  }
+  return "needs_research";
 }
 
 function listToText(values: string[]) {
@@ -1369,6 +1447,7 @@ export function LeadIntelligenceClient({
   const [propertyMatchError, setPropertyMatchError] = useState<SafeErrorResponse["error"] | null>(null);
   const [propertyMatchResult, setPropertyMatchResult] = useState<PropertyMatchPreviewResponse | null>(null);
   const [matchReviewDecisions, setMatchReviewDecisions] = useState<Record<string, MatchReviewDecision>>({});
+  const [propertyQualityReviews, setPropertyQualityReviews] = useState<Record<string, PropertyQualityReviewState>>({});
   const [shortlistSaveLoading, setShortlistSaveLoading] = useState(false);
   const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
@@ -1423,28 +1502,59 @@ export function LeadIntelligenceClient({
   const selectedShortlistItems = useMemo(() => {
     if (!propertyMatchResult) return [];
     return propertyMatchResult.result.matches
-      .map((match) => ({
-        propertyId: match.propertyId,
-        decision: matchReviewDecisions[match.propertyId] || "system",
-      }))
-      .filter((item): item is { propertyId: string; decision: Exclude<MatchReviewDecision, "system" | "rejected"> } =>
-        item.decision === "current" ||
-        item.decision === "maybe" ||
-        item.decision === "needs_research",
-      );
-  }, [matchReviewDecisions, propertyMatchResult]);
+      .map((match) => {
+        const qualityReview = propertyQualityReviews[match.propertyId] || defaultPropertyQualityReview();
+        if (qualityReview.status === "unreviewed") return null;
+        const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
+        return {
+          propertyId: match.propertyId,
+          decision: savedPropertyQualityDecision(qualityReview.status, reviewDecision),
+          qualityReview: {
+            status: qualityReview.status,
+            note: qualityReview.note.trim() || null,
+            checkedAt: qualityReview.checkedAt || new Date().toISOString(),
+            checkedBy: qualityReview.checkedBy || "Freddy",
+          },
+        };
+      })
+      .filter((item): item is {
+        propertyId: string;
+        decision: SelectedShortlistDecision;
+        qualityReview: {
+          status: SavedPropertyQualityReviewStatus;
+          note: string | null;
+          checkedAt: string;
+          checkedBy: string;
+        };
+      } => Boolean(item));
+  }, [matchReviewDecisions, propertyMatchResult, propertyQualityReviews]);
+  const clientReadyShortlistItems = useMemo(
+    () => selectedShortlistItems.filter((item) => item.qualityReview.status === "client_ready"),
+    [selectedShortlistItems],
+  );
   const selectedShortlistMatches = useMemo(() => {
     if (!propertyMatchResult) return [];
-    const selectedById = new Map(selectedShortlistItems.map((item) => [item.propertyId, item.decision]));
+    const selectedById = new Map(clientReadyShortlistItems.map((item) => [item.propertyId, item]));
     return propertyMatchResult.result.matches
       .map((match) => {
-        const decision = selectedById.get(match.propertyId);
-        return decision ? { ...match, decision } : null;
+        const selected = selectedById.get(match.propertyId);
+        return selected
+          ? {
+              ...match,
+              decision: selected.decision,
+              qualityReview: {
+                status: "client_ready" as const,
+                note: selected.qualityReview.note || "",
+                checkedAt: selected.qualityReview.checkedAt,
+                checkedBy: selected.qualityReview.checkedBy,
+              },
+            }
+          : null;
       })
       .filter((match): match is SelectedShortlistMatch =>
         Boolean(match),
       );
-  }, [propertyMatchResult, selectedShortlistItems]);
+  }, [clientReadyShortlistItems, propertyMatchResult]);
   const shortlistPresentation = useMemo(() => {
     if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
     return buildShortlistPresentation(edited, selectedShortlistMatches);
@@ -1462,6 +1572,36 @@ export function LeadIntelligenceClient({
     setEmailDraftCopyState("idle");
     setEmailDraftHtmlCopyState("idle");
     setPresentationCopyState("idle");
+  };
+
+  const clearShortlistAndPresentationState = () => {
+    setShortlistSaveError(null);
+    setShortlistSaveResult(null);
+    clearPresentationDraftState();
+  };
+
+  const updatePropertyQualityReviewStatus = (propertyId: string, status: PropertyQualityReviewStatus) => {
+    setPropertyQualityReviews((current) => ({
+      ...current,
+      [propertyId]: {
+        ...(current[propertyId] || defaultPropertyQualityReview()),
+        status,
+        checkedAt: status === "unreviewed" ? null : new Date().toISOString(),
+        checkedBy: status === "unreviewed" ? null : "Freddy",
+      },
+    }));
+    clearShortlistAndPresentationState();
+  };
+
+  const updatePropertyQualityReviewNote = (propertyId: string, note: string) => {
+    setPropertyQualityReviews((current) => ({
+      ...current,
+      [propertyId]: {
+        ...(current[propertyId] || defaultPropertyQualityReview()),
+        note: note.slice(0, LEAD_INTELLIGENCE_LIMITS.mediumText),
+      },
+    }));
+    clearShortlistAndPresentationState();
   };
 
   const clearPresentationDraftState = () => {
@@ -1808,6 +1948,7 @@ export function LeadIntelligenceClient({
       }
       setPropertyMatchResult(body);
       setMatchReviewDecisions({});
+      setPropertyQualityReviews({});
       setShortlistSaveError(null);
       setShortlistSaveResult(null);
       clearPresentationDraftState();
@@ -2469,6 +2610,73 @@ export function LeadIntelligenceClient({
     leadIntelligenceDraftReturnUrl({
       buyerProfileId: activeWorklistItem?.buyerProfileId || saveResult?.result.buyerProfile.id || null,
     });
+  const renderPropertyQualityReviewControls = (
+    match: PropertyMatchPreviewResponse["result"]["matches"][number],
+    idPrefix: string,
+  ) => {
+    const qualityReview = propertyQualityReviews[match.propertyId] || defaultPropertyQualityReview();
+    return (
+      <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100">
+              Kvalitetssjekk før kunde
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Bare boliger markert «Klar for kunde» brukes i presentasjons- og e-postutkast.
+            </p>
+          </div>
+          <Badge variant={propertyQualityReviewVariant(qualityReview.status)}>
+            {propertyQualityReviewLabel(qualityReview.status)}
+          </Badge>
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {([
+            "client_ready",
+            "needs_review",
+            "rejected",
+            "ask_agent",
+            "verify_price_availability",
+          ] as const).map((status) => (
+            <Button
+              key={status}
+              type="button"
+              size="sm"
+              variant={qualityReview.status === status ? "default" : "outline"}
+              onClick={() => updatePropertyQualityReviewStatus(match.propertyId, status)}
+              className="justify-start"
+            >
+              {status === "client_ready" && <CheckCircle2 className="mr-2 h-4 w-4" />}
+              {status === "needs_review" && <AlertTriangle className="mr-2 h-4 w-4" />}
+              {status === "rejected" && <XCircle className="mr-2 h-4 w-4" />}
+              {status === "ask_agent" && <MessageSquareText className="mr-2 h-4 w-4" />}
+              {status === "verify_price_availability" && <ShieldCheck className="mr-2 h-4 w-4" />}
+              {propertyQualityReviewLabel(status)}
+            </Button>
+          ))}
+        </div>
+
+        <label
+          htmlFor={`${idPrefix}-quality-note-${match.propertyId}`}
+          className="mt-3 block text-xs font-semibold text-slate-300"
+        >
+          Notat fra kvalitetssjekk
+        </label>
+        <textarea
+          id={`${idPrefix}-quality-note-${match.propertyId}`}
+          value={qualityReview.note}
+          onChange={(event) => updatePropertyQualityReviewNote(match.propertyId, event.target.value)}
+          rows={2}
+          placeholder="F.eks. pris bekreftet, må ringe megler, usikker tilgjengelighet..."
+          className="mt-1 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
+        />
+        <p className="mt-2 text-xs text-slate-500">
+          Siste sjekk: {formatDateTime(qualityReview.checkedAt)} · Sjekket av: {qualityReview.checkedBy || "Ikke satt"}
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -3158,8 +3366,8 @@ export function LeadIntelligenceClient({
                                 <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyReferences.length}</p>
                               </div>
                               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Valgt</p>
-                                <p className="mt-1 text-lg font-semibold text-slate-100">{selectedShortlistItems.length}</p>
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Klar for kunde</p>
+                                <p className="mt-1 text-lg font-semibold text-slate-100">{clientReadyShortlistItems.length}</p>
                               </div>
                             </div>
 
@@ -3243,6 +3451,7 @@ export function LeadIntelligenceClient({
                                         <option value="rejected">Avvist</option>
                                       </select>
                                     </div>
+                                    {renderPropertyQualityReviewControls(match, "active-match")}
                                     <MatchList title="Risiko/avvik" items={match.concerns} emptyLabel="Ingen tydelige avvik." />
                                   </div>
                                 );
@@ -3254,7 +3463,8 @@ export function LeadIntelligenceClient({
                                 <div>
                                   <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    Valgte boliger: {selectedShortlistItems.length}. Ingen e-post, lead eller kontakt opprettes.
+                                    Kvalitetssjekket: {selectedShortlistItems.length} · Klar for kunde:{" "}
+                                    {clientReadyShortlistItems.length}. Ingen e-post, lead eller kontakt opprettes.
                                   </p>
                                 </div>
                                 <Button
@@ -3266,6 +3476,19 @@ export function LeadIntelligenceClient({
                                   Lagre shortlist-utkast
                                 </Button>
                               </div>
+
+                              {selectedShortlistItems.length === 0 && (
+                                <p className="mt-2 text-xs text-amber-200">
+                                  Kvalitetssjekk minst én bolig før shortlist-utkast kan lagres.
+                                </p>
+                              )}
+
+                              {selectedShortlistItems.length > 0 && clientReadyShortlistItems.length === 0 && (
+                                <p className="mt-2 text-xs text-amber-200">
+                                  Ingen boliger er markert «Klar for kunde». Du kan lagre intern kvalitetssjekk, men
+                                  presentasjonsutkast lages først når minst én bolig er klar.
+                                </p>
+                              )}
 
                               {shortlistSaveResult && (
                                 <div className="mt-3 space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
@@ -4498,16 +4721,17 @@ export function LeadIntelligenceClient({
                                       <option value="rejected">Avvist</option>
                                     </select>
                                   </div>
-                                  {manualDecisionOverridesRejected && (
-                                    <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
-                                      Denne boligen er fortsatt avvist av systemreglene. Den kan bare tas med som
-                                      «Må undersøkes», og risiko/avvik blir lagret sammen med shortlist-utkastet.
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="mt-3 grid gap-3 lg:grid-cols-3">
-                                  <MatchList
-                                    title="Hvorfor match"
+                                {manualDecisionOverridesRejected && (
+                                  <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
+                                    Denne boligen er fortsatt avvist av systemreglene. Den kan bare tas med som
+                                     «Må undersøkes», og risiko/avvik blir lagret sammen med shortlist-utkastet.
+                                  </p>
+                                )}
+                              </div>
+                              {renderPropertyQualityReviewControls(match, "match")}
+                              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                <MatchList
+                                  title="Hvorfor match"
                                     items={humanizedMatchReasonItems(match.reasonsForMatch, 4)}
                                     emptyLabel="Ingen positive matchgrunner."
                                   />
@@ -4529,8 +4753,9 @@ export function LeadIntelligenceClient({
                             <div>
                               <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
                               <p className="mt-1 text-xs text-slate-500">
-                                Valgte boliger: {selectedShortlistItems.length}. Utkastet lagrer bare Freddys
-                                shortlistvalg. Det oppretter ikke presentasjon, e-post, lead eller kontakt.
+                                Kvalitetssjekket: {selectedShortlistItems.length} · Klar for kunde:{" "}
+                                {clientReadyShortlistItems.length}. Utkastet lagrer bare Freddys
+                                kvalitetssjekk. Det oppretter ikke presentasjon, e-post, lead eller kontakt.
                               </p>
                             </div>
                             <Button
@@ -4545,7 +4770,14 @@ export function LeadIntelligenceClient({
 
                           {selectedShortlistItems.length === 0 && (
                             <p className="mt-2 text-xs text-amber-200">
-                              Marker minst én bolig som Aktuell, Kanskje eller Må undersøkes før shortlist-utkast kan lagres.
+                              Kvalitetssjekk minst én bolig før shortlist-utkast kan lagres.
+                            </p>
+                          )}
+
+                          {selectedShortlistItems.length > 0 && clientReadyShortlistItems.length === 0 && (
+                            <p className="mt-2 text-xs text-amber-200">
+                              Ingen boliger er markert «Klar for kunde». Du kan lagre intern kvalitetssjekk, men
+                              presentasjonsutkast lages først når minst én bolig er klar.
                             </p>
                           )}
 
