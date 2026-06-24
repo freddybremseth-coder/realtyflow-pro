@@ -100,6 +100,12 @@ function statusLabel(status: LeadStatus) {
   return columns.find((c) => c.key === status)?.label || status;
 }
 
+const DEFAULT_NEW_LEAD_BRAND_ID = BRANDS.find((brand) => brand.id === "zeneco")?.id || BRANDS[0]?.id || "";
+
+function getBrandMeta(brandId?: string | null) {
+  return BRANDS.find((brand) => brand.id === brandId);
+}
+
 function getBuyingSignalScore(lead: Lead) {
   const activityText = [lead.notes, lead.property, lead.source, ...lead.interactions.map((item) => item.content)]
     .filter(Boolean)
@@ -140,7 +146,7 @@ function signalLabel(score: number) {
 }
 
 const emptyLead = {
-  name: "", email: "", phone: "", budget: "", source: "", property: "", notes: "",
+  name: "", email: "", phone: "", budget: "", source: "", property: "", notes: "", brand_id: DEFAULT_NEW_LEAD_BRAND_ID,
 };
 
 // ── Main Component ─────────────────────────────────────
@@ -476,12 +482,15 @@ export default function PipelinePage() {
     }, 0);
 
   const addNewLead = async () => {
-    if (!newLead.name) return;
+    if (!newLead.name || !newLead.brand_id) return;
     const now = new Date().toISOString();
+    const selectedBrandId = newLead.brand_id || DEFAULT_NEW_LEAD_BRAND_ID;
     const contactPayload = {
       name: newLead.name,
       email: newLead.email || "",
       phone: newLead.phone || "",
+      brand: selectedBrandId,
+      brand_id: selectedBrandId,
       pipeline_value: parseInt(String(newLead.budget).replace(/[^0-9]/g, '')) || 0,
       source: newLead.source || "Manuell",
       pipeline_status: "NEW",
@@ -507,6 +516,7 @@ export default function PipelinePage() {
         budget: newLead.budget ? `€${newLead.budget}` : "€0",
         source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
         property: newLead.property || undefined, notes: newLead.notes || undefined,
+        brand_id: contact?.brand_id || contact?.brand || selectedBrandId,
         createdAt: now.split("T")[0], lastContact: now.split("T")[0],
         interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
       };
@@ -518,6 +528,7 @@ export default function PipelinePage() {
         budget: newLead.budget ? `€${newLead.budget}` : "€0",
         source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
         property: newLead.property || undefined, notes: newLead.notes || undefined,
+        brand_id: selectedBrandId,
         createdAt: now.split("T")[0], lastContact: now.split("T")[0],
         interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
       };
@@ -715,6 +726,7 @@ export default function PipelinePage() {
     setSelectedLead(lead);
     setEditNotes(lead.notes || "");
   };
+  const selectedLeadBrand = selectedLead?.brand_id ? getBrandMeta(selectedLead.brand_id) : null;
 
   // ── RENDER ─────────────────────────────────────────
 
@@ -794,6 +806,19 @@ export default function PipelinePage() {
                   <label className="text-xs font-medium text-slate-300 mb-1 block">Navn *</label>
                   <Input placeholder="Fullt navn" value={newLead.name} onChange={(e) => setNewLead((p) => ({ ...p, name: e.target.value }))} />
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Brand *</label>
+                  <select
+                    value={newLead.brand_id}
+                    onChange={(e) => setNewLead((p) => ({ ...p, brand_id: e.target.value }))}
+                    className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                    required
+                  >
+                    {BRANDS.map((brand) => (
+                      <option key={brand.id} value={brand.id}>{brand.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-medium text-slate-300 mb-1 block">E-post</label>
                     <Input placeholder="epost@example.com" value={newLead.email} onChange={(e) => setNewLead((p) => ({ ...p, email: e.target.value }))} /></div>
@@ -817,7 +842,7 @@ export default function PipelinePage() {
                   <Input placeholder="F.eks. Villa i Altea" value={newLead.property} onChange={(e) => setNewLead((p) => ({ ...p, property: e.target.value }))} /></div>
                 <div><label className="text-xs font-medium text-slate-300 mb-1 block">Notater</label>
                   <textarea placeholder="Tilleggsinfo..." value={newLead.notes} onChange={(e) => setNewLead((p) => ({ ...p, notes: e.target.value }))} className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-20 resize-none" /></div>
-                <Button onClick={addNewLead} className="w-full" disabled={!newLead.name}>
+                <Button onClick={addNewLead} className="w-full" disabled={!newLead.name || !newLead.brand_id}>
                   <Plus size={16} className="mr-1" />Legg til lead
                 </Button>
               </div>
@@ -1191,6 +1216,7 @@ export default function PipelinePage() {
                     (() => {
                       const signalScore = getBuyingSignalScore(lead);
                       const bookedMeeting = isBookedMeetingLead(lead);
+                      const leadBrand = getBrandMeta(lead.brand_id);
                       return (
                     <Card
                       key={lead.id}
@@ -1219,6 +1245,15 @@ export default function PipelinePage() {
                           </div>
                         </div>
                         {lead.property && <p className="text-xs text-slate-400 mb-1.5 truncate">{lead.property}</p>}
+                        {lead.brand_id && (
+                          <Badge
+                            variant="outline"
+                            className="mb-1.5 text-[10px]"
+                            style={leadBrand?.color ? { borderColor: leadBrand.color, color: leadBrand.color } : undefined}
+                          >
+                            {leadBrand?.name || lead.brand_id}
+                          </Badge>
+                        )}
                         {bookedMeeting && (
                           <p className="mb-1.5 line-clamp-2 text-[11px] font-medium text-emerald-200">{bookedMeetingSummary(lead)}</p>
                         )}
@@ -1247,7 +1282,7 @@ export default function PipelinePage() {
                               </div>
                             )}
                             {lead.brand_id && (
-                              <Badge variant="outline" className="text-[10px]">{BRANDS.find((b) => b.id === lead.brand_id)?.name || lead.brand_id}</Badge>
+                              <Badge variant="outline" className="text-[10px]">{leadBrand?.name || lead.brand_id}</Badge>
                             )}
                           </div>
                         ) : (
@@ -1309,6 +1344,19 @@ export default function PipelinePage() {
                   <div className="flex items-center gap-2 text-sm text-slate-300">
                     <Globe size={14} className="text-slate-500" />{selectedLead.source}
                   </div>
+                  {selectedLead.brand_id && (
+                    <div className="flex items-center gap-2 text-sm text-slate-300">
+                      <Building2 size={14} className="text-slate-500" />
+                      <span>{selectedLeadBrand?.name || selectedLead.brand_id}</span>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px]"
+                        style={selectedLeadBrand?.color ? { borderColor: selectedLeadBrand.color, color: selectedLeadBrand.color } : undefined}
+                      >
+                        {selectedLead.brand_id}
+                      </Badge>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-amber-300">
                     <Clock size={14} className="text-slate-500" />Siste kontakt: {selectedLead.lastContact || selectedLead.createdAt}
                   </div>
