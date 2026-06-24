@@ -398,6 +398,53 @@ test("normalizes provider operator aliases before strict schema validation", asy
   assert.equal(analysis.result.preferences[0].operator, "gte");
 });
 
+test("normalizes budget approximate variants before strict schema validation", async () => {
+  const cases: Array<[unknown, boolean]> = [
+    [null, false],
+    ["unknown", false],
+    ["approximately", false],
+    ["ca", false],
+    ["yes", true],
+  ];
+
+  for (const [approximate, expected] of cases) {
+    const { provider } = providerReturning(emmadaleOutput({
+      budget: {
+        ...emmadaleOutput().budget,
+        approximate: approximate as ExtractedLead["budget"]["approximate"],
+      },
+    }));
+    const analysis = await analyzeLeadIntake(
+      { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+      { correlationId: CORRELATION_ID, provider },
+    );
+
+    assert.equal(analysis.result.budget.approximate, expected);
+  }
+});
+
+test("normalizes invalid criterion operators to unknown before strict schema validation", async () => {
+  const { provider } = providerReturning(emmadaleOutput({
+    preferences: [
+      {
+        ...emmadaleOutput().preferences[0],
+        operator: "roughly" as ExtractedLead["preferences"][number]["operator"],
+      },
+      {
+        ...emmadaleOutput().preferences[1],
+        operator: null as unknown as ExtractedLead["preferences"][number]["operator"],
+      },
+    ] as ExtractedLead["preferences"],
+  }));
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.result.preferences[0].operator, "unknown");
+  assert.equal(analysis.result.preferences[1].operator, "unknown");
+});
+
 test("normalizes provider confidence variants and missing reasoning before strict schema validation", async () => {
   const { provider } = providerReturning(emmadaleOutput({
     purchaseReadiness: {
@@ -459,6 +506,30 @@ test("normalizes provider confidence variants and missing reasoning before stric
   assert.equal(analysis.result.hardRequirements[2].confidence, 0.8);
   assert.equal(analysis.result.preferences[0].confidence, 0.75);
   assert.equal(analysis.result.preferences[0].weight, 0.8);
+});
+
+test("repairs output with non-boolean approximate and invalid preference operator before strict validation", async () => {
+  const repairedOutput = emmadaleOutput({
+    budget: {
+      ...emmadaleOutput().budget,
+      approximate: "approx" as unknown as ExtractedLead["budget"]["approximate"],
+    },
+    preferences: [
+      {
+        ...emmadaleOutput().preferences[0],
+        operator: "around" as ExtractedLead["preferences"][number]["operator"],
+      },
+    ] as ExtractedLead["preferences"],
+  });
+  const { provider } = providerReturning("No structured JSON available.", repairedOutput);
+  const analysis = await analyzeLeadIntake(
+    { source: "phone_call", brand: "soleada", rawText: EMMADALE_FIXTURE, language: "norsk" },
+    { correlationId: CORRELATION_ID, provider },
+  );
+
+  assert.equal(analysis.meta.repaired, true);
+  assert.equal(analysis.result.budget.approximate, false);
+  assert.equal(analysis.result.preferences[0].operator, "unknown");
 });
 
 test("rejects unsafe confidence text after repair without leaking raw output", async () => {
