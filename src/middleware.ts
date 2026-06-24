@@ -40,6 +40,9 @@ const REMASTER_PROXY_PREFIXES = [
   "/api/neural-beat/jobs",
 ];
 
+const LEAD_INTELLIGENCE_INVENTORY_RETURN_HASH_COOKIE = "rf_li_inventory_return_hash";
+const LEAD_INTELLIGENCE_PROPERTY_MATCH_SECTION_ID = "lead-intelligence-property-match";
+
 function isPublicPath(pathname: string) {
   return (
     pathname.startsWith("/_next") ||
@@ -83,19 +86,53 @@ function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
   }
 }
 
-function inventoryLeadIntelligenceReturnRedirect(request: NextRequest) {
+function setLeadIntelligenceInventoryReturnCookie(request: NextRequest, response: NextResponse) {
+  response.cookies.set({
+    name: LEAD_INTELLIGENCE_INVENTORY_RETURN_HASH_COOKIE,
+    value: LEAD_INTELLIGENCE_PROPERTY_MATCH_SECTION_ID,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol === "https:",
+    path: "/",
+    maxAge: 5 * 60,
+  });
+  return response;
+}
+
+function leadIntelligenceInventoryReturnHashRedirect(request: NextRequest) {
+  if (request.nextUrl.pathname !== "/lead-intelligence") return null;
+
+  const storedHash = request.cookies.get(LEAD_INTELLIGENCE_INVENTORY_RETURN_HASH_COOKIE)?.value;
+  if (storedHash !== LEAD_INTELLIGENCE_PROPERTY_MATCH_SECTION_ID) return null;
+
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.hash = storedHash;
+  const response = NextResponse.redirect(redirectUrl);
+  response.cookies.delete(LEAD_INTELLIGENCE_INVENTORY_RETURN_HASH_COOKIE);
+  return response;
+}
+
+function inventoryLeadIntelligenceReturnResponse(request: NextRequest, requestHeaders: Headers) {
   const { nextUrl } = request;
   if (nextUrl.pathname !== "/inventory") return null;
 
   const openedPropertyFromQuery = nextUrl.searchParams.has("propertyId") || nextUrl.searchParams.has("propertyRef");
-  if (!openedPropertyFromQuery || nextUrl.searchParams.has("returnTo")) return null;
+  if (!openedPropertyFromQuery) return null;
+
+  const existingReturnTo = safeLeadIntelligenceReturnPath(nextUrl.searchParams.get("returnTo"));
+  if (existingReturnTo) {
+    return setLeadIntelligenceInventoryReturnCookie(
+      request,
+      NextResponse.next({ request: { headers: requestHeaders } }),
+    );
+  }
 
   const returnTo = leadIntelligenceReturnPathFromReferer(request);
   if (!returnTo) return null;
 
   const redirectUrl = nextUrl.clone();
   redirectUrl.searchParams.set("returnTo", returnTo);
-  return NextResponse.redirect(redirectUrl);
+  return setLeadIntelligenceInventoryReturnCookie(request, NextResponse.redirect(redirectUrl));
 }
 
 function base64UrlToBytes(value: string) {
@@ -187,10 +224,14 @@ export async function middleware(request: NextRequest) {
 
   const isAllowed = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (isAllowed) {
-    const inventoryRedirect = inventoryLeadIntelligenceReturnRedirect(request);
-    if (inventoryRedirect) return inventoryRedirect;
-
     requestHeaders.set("x-admin-authenticated", "true");
+
+    const leadIntelligenceReturnRedirect = leadIntelligenceInventoryReturnHashRedirect(request);
+    if (leadIntelligenceReturnRedirect) return leadIntelligenceReturnRedirect;
+
+    const inventoryReturnResponse = inventoryLeadIntelligenceReturnResponse(request, requestHeaders);
+    if (inventoryReturnResponse) return inventoryReturnResponse;
+
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
