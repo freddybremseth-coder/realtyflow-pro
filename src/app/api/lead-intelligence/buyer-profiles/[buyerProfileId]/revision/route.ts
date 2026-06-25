@@ -19,6 +19,54 @@ const ParamsSchema = z.object({
   buyerProfileId: z.string().uuid(),
 });
 
+const criterionKeys = [
+  "bedrooms",
+  "bathrooms",
+  "property_type",
+  "location",
+  "total_budget",
+  "purchase_price",
+  "estimated_total_cost",
+  "floor_position",
+  "has_lift",
+  "terrace_area_m2",
+  "terrace_access",
+  "view_quality",
+  "orientation",
+  "parking",
+  "pool",
+  "new_build_or_resale",
+  "availability_status",
+  "availability_verified_at",
+  "adjacent_plot_status",
+  "future_building_risk",
+  "view_privacy_loss_risk",
+  "view_obstruction_risk",
+  "legal_notes",
+  "living_area_m2",
+  "plot_area_m2",
+  "distance_to_beach",
+  "stairs",
+  "other",
+  "unknown",
+] as const;
+
+const propertyTypes = [
+  "end_townhouse",
+  "townhouse",
+  "apartment",
+  "penthouse",
+  "villa",
+  "duplex",
+  "bungalow",
+  "finca",
+  "country_house",
+  "plot",
+  "commercial",
+  "other",
+  "unknown",
+] as const;
+
 const NullableBudgetAmountSchema = z.union([
   z.coerce.number().nonnegative().max(100_000_000),
   z.null(),
@@ -35,6 +83,46 @@ const CurrencySchema = z
   .nullable()
   .optional();
 
+const CriterionRevisionInputSchema = z
+  .object({
+    criterionType: z.enum(["hard_requirement", "preference", "exclusion", "missing_information"]),
+    key: z.enum(criterionKeys),
+    otherKey: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable().optional(),
+    operator: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "exists", "unknown"]),
+    value: z.unknown().default(null),
+    weight: z.coerce.number().min(0).max(1).nullable().optional(),
+    severity: z.enum(["reject", "major_penalty", "minor_penalty"]).nullable().optional(),
+    appliesToPropertyTypes: z.array(z.enum(propertyTypes)).max(20).default([]),
+    sourceText: z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable().optional(),
+    customerConfirmed: z.boolean().default(true),
+    active: z.boolean().default(true),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.key === "other" && !value.otherKey) {
+      ctx.addIssue({ code: "custom", path: ["otherKey"], message: "otherKey is required when key is other" });
+    }
+    if (value.key !== "other" && value.otherKey) {
+      ctx.addIssue({ code: "custom", path: ["otherKey"], message: "otherKey is only allowed when key is other" });
+    }
+    if (value.criterionType === "preference" && value.weight === null) {
+      ctx.addIssue({ code: "custom", path: ["weight"], message: "weight is required for preferences" });
+    }
+    if (value.criterionType !== "preference" && value.weight !== null && value.weight !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["weight"], message: "weight is only allowed for preferences" });
+    }
+    if (value.criterionType === "exclusion" && !value.severity) {
+      ctx.addIssue({ code: "custom", path: ["severity"], message: "severity is required for exclusions" });
+    }
+    if (value.criterionType !== "exclusion" && value.severity) {
+      ctx.addIssue({ code: "custom", path: ["severity"], message: "severity is only allowed for exclusions" });
+    }
+    const serializedValue = JSON.stringify(value.value ?? null);
+    if (!serializedValue || serializedValue.length > 3_000) {
+      ctx.addIssue({ code: "custom", path: ["value"], message: "criterion value is too large" });
+    }
+  });
+
 const BuyerProfileRevisionRequestSchema = z
   .object({
     brand: LeadIntelligenceRealEstateBrandSchema,
@@ -47,10 +135,12 @@ const BuyerProfileRevisionRequestSchema = z
     locationFlexible: z.boolean().default(false),
     revisionNote: NullableTextSchema,
     editedBy: NullableShortTextSchema,
+    criteria: z.array(CriterionRevisionInputSchema).max(30).optional(),
   })
   .strict();
 
 type BuyerProfileRevisionRequest = z.infer<typeof BuyerProfileRevisionRequestSchema>;
+type CriterionRevisionInput = z.infer<typeof CriterionRevisionInputSchema>;
 
 type QueryClientLike = {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -72,6 +162,175 @@ type NewProfileRow = {
   id: string;
   version: number;
 };
+
+type CriterionRow = {
+  id: string;
+  criterion_type: string;
+  key: string;
+  other_key: string | null;
+  operator: string;
+  value: unknown;
+  weight: number | null;
+  severity: string | null;
+  applies_to_property_types: string[];
+  source_text: string | null;
+  customer_confirmed: boolean;
+  active: boolean;
+};
+
+function jsonValue(value: unknown) {
+  return JSON.stringify(value ?? null);
+}
+
+function criterionSourceText(criterion: CriterionRevisionInput) {
+  return criterion.sourceText || `${criterion.key} ${criterion.operator} ${JSON.stringify(criterion.value ?? null)}`;
+}
+
+async function insertReplacementCriteria(input: {
+  client: QueryClientLike;
+  buyerProfileId: string;
+  criteria: CriterionRevisionInput[];
+  approvedBy: string;
+  approvedAt: string;
+}) {
+  let count = 0;
+  for (const criterion of input.criteria) {
+    if (!criterion.active) continue;
+    const weight = criterion.criterionType === "preference" ? criterion.weight ?? 0.5 : null;
+    const severity = criterion.criterionType === "exclusion" ? criterion.severity || "major_penalty" : null;
+    await input.client.query(
+      `
+        insert into public.buyer_profile_criteria (
+          buyer_profile_id,
+          criterion_type,
+          key,
+          other_key,
+          operator,
+          value,
+          weight,
+          severity,
+          applies_to_property_types,
+          source,
+          source_text,
+          confidence,
+          customer_confirmed,
+          approval_status,
+          approved_by,
+          approved_at,
+          active
+        ) values (
+          $1::uuid,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6::jsonb,
+          $7,
+          $8,
+          $9::text[],
+          'manual',
+          $10,
+          1,
+          $11,
+          'approved',
+          $12,
+          $13::timestamptz,
+          true
+        )
+      `,
+      [
+        input.buyerProfileId,
+        criterion.criterionType,
+        criterion.key,
+        criterion.key === "other" ? criterion.otherKey : null,
+        criterion.operator,
+        jsonValue(criterion.value),
+        weight,
+        severity,
+        criterion.appliesToPropertyTypes,
+        criterionSourceText(criterion),
+        criterion.customerConfirmed,
+        input.approvedBy,
+        input.approvedAt,
+      ],
+    );
+    count += 1;
+  }
+  return count;
+}
+
+async function loadBuyerProfileRevisionDetails(input: {
+  client: QueryClientLike;
+  buyerProfileId: string;
+  brand: string;
+}) {
+  const profileResult = await input.client.query<ExistingProfileRow>(
+    `
+      select
+        id::text,
+        brand,
+        contact_id::text,
+        intake_id::text,
+        version,
+        status
+      from public.buyer_profiles
+      where id = $1::uuid
+        and brand = $2
+    `,
+    [input.buyerProfileId, input.brand],
+  );
+  const profile = profileResult.rows[0];
+  if (!profile) {
+    throw new LeadIntelligenceError("BUYER_PROFILE_NOT_FOUND", "Buyer profile was not found", 404);
+  }
+
+  const criteriaResult = await input.client.query<CriterionRow>(
+    `
+      select
+        id::text,
+        criterion_type,
+        key,
+        other_key,
+        operator,
+        value,
+        weight,
+        severity,
+        applies_to_property_types,
+        source_text,
+        customer_confirmed,
+        active
+      from public.buyer_profile_criteria
+      where buyer_profile_id = $1::uuid
+        and active is true
+      order by criterion_type, key, created_at
+    `,
+    [input.buyerProfileId],
+  );
+
+  return {
+    profile: {
+      buyerProfileId: profile.id,
+      brand: profile.brand,
+      intakeId: profile.intake_id,
+      version: profile.version,
+      status: profile.status,
+    },
+    criteria: criteriaResult.rows.map((criterion) => ({
+      id: criterion.id,
+      criterionType: criterion.criterion_type,
+      key: criterion.key,
+      otherKey: criterion.other_key,
+      operator: criterion.operator,
+      value: criterion.value,
+      weight: criterion.weight,
+      severity: criterion.severity,
+      appliesToPropertyTypes: criterion.applies_to_property_types,
+      sourceText: criterion.source_text,
+      customerConfirmed: criterion.customer_confirmed,
+      active: criterion.active,
+    })),
+  };
+}
 
 async function createBuyerProfileRevision(input: {
   client: QueryClientLike;
@@ -179,55 +438,65 @@ async function createBuyerProfileRevision(input: {
     throw new LeadIntelligenceError("INTERNAL_ERROR", "Buyer profile revision could not be created", 500);
   }
 
-  const copiedCriteria = await input.client.query<{ criterion_count: number }>(
-    `
-      with copied as (
-        insert into public.buyer_profile_criteria (
-          buyer_profile_id,
-          criterion_type,
-          key,
-          other_key,
-          operator,
-          value,
-          weight,
-          severity,
-          applies_to_property_types,
-          source,
-          source_text,
-          confidence,
-          customer_confirmed,
-          approval_status,
-          approved_by,
-          approved_at,
-          active
+  const criteriaCount = input.data.criteria
+    ? await insertReplacementCriteria({
+        client: input.client,
+        buyerProfileId: newProfile.id,
+        criteria: input.data.criteria,
+        approvedBy: input.approvedBy,
+        approvedAt,
+      })
+    : (
+        await input.client.query<{ criterion_count: number }>(
+          `
+            with copied as (
+              insert into public.buyer_profile_criteria (
+                buyer_profile_id,
+                criterion_type,
+                key,
+                other_key,
+                operator,
+                value,
+                weight,
+                severity,
+                applies_to_property_types,
+                source,
+                source_text,
+                confidence,
+                customer_confirmed,
+                approval_status,
+                approved_by,
+                approved_at,
+                active
+              )
+              select
+                $1::uuid,
+                criterion_type,
+                key,
+                other_key,
+                operator,
+                value,
+                weight,
+                severity,
+                applies_to_property_types,
+                source,
+                source_text,
+                confidence,
+                customer_confirmed,
+                approval_status,
+                approved_by,
+                approved_at,
+                active
+              from public.buyer_profile_criteria
+              where buyer_profile_id = $2::uuid
+                and active is true
+              returning id
+            )
+            select count(*)::int as criterion_count from copied
+          `,
+          [newProfile.id, existing.id],
         )
-        select
-          $1::uuid,
-          criterion_type,
-          key,
-          other_key,
-          operator,
-          value,
-          weight,
-          severity,
-          applies_to_property_types,
-          source,
-          source_text,
-          confidence,
-          customer_confirmed,
-          approval_status,
-          approved_by,
-          approved_at,
-          active
-        from public.buyer_profile_criteria
-        where buyer_profile_id = $2::uuid
-          and active is true
-        returning id
-      )
-      select count(*)::int as criterion_count from copied
-    `,
-    [newProfile.id, existing.id],
-  );
+      ).rows[0]?.criterion_count || 0;
 
   const superseded = await input.client.query<{ id: string }>(
     `
@@ -257,9 +526,67 @@ async function createBuyerProfileRevision(input: {
     version: newProfile.version,
     previousStatus: "superseded" as const,
     status: "approved" as const,
-    criteriaCopied: copiedCriteria.rows[0]?.criterion_count || 0,
+    criteriaCopied: criteriaCount,
+    criteriaReplaced: Boolean(input.data.criteria),
     revisionNote: input.data.revisionNote || null,
   };
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ buyerProfileId: string }> },
+) {
+  let correlationId = request.headers.get("x-correlation-id") || "unknown";
+
+  try {
+    const context = await getLeadIntelligenceRouteContext(request);
+    correlationId = context.correlationId;
+    assertLeadIntelligenceActionRateLimit(context.email, "profile-revision-details");
+
+    const routeParams = ParamsSchema.parse(await params);
+    const brand = LeadIntelligenceRealEstateBrandSchema.parse(request.nextUrl.searchParams.get("brand"));
+    const result = await withLeadIntelligenceTransaction(brand, (client) =>
+      loadBuyerProfileRevisionDetails({
+        client,
+        buyerProfileId: routeParams.buyerProfileId,
+        brand,
+      }),
+    );
+
+    return NextResponse.json(
+      {
+        ok: true,
+        correlationId,
+        result,
+        sideEffects: {
+          contactsCreated: false,
+          contactsUpdated: false,
+          leadsCreated: false,
+          emailSent: false,
+          propertyMatchingStarted: false,
+          presentationCreated: false,
+        },
+      },
+      {
+        status: 200,
+        headers: leadIntelligenceHeaders(correlationId),
+      },
+    );
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return leadIntelligenceJsonError(
+        new LeadIntelligenceError("INVALID_REQUEST", "Invalid buyer profile revision details request", 400, {
+          issues: error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        }),
+        correlationId,
+      );
+    }
+
+    return leadIntelligenceJsonError(error, correlationId);
+  }
 }
 
 export async function POST(
@@ -274,7 +601,7 @@ export async function POST(
     assertLeadIntelligenceActionRateLimit(context.email, "profile-revision");
 
     const routeParams = ParamsSchema.parse(await params);
-    const body = await readJsonBody(request, 16 * 1024);
+    const body = await readJsonBody(request, 32 * 1024);
     const parsed = BuyerProfileRevisionRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new LeadIntelligenceError("INVALID_REQUEST", "Invalid buyer profile revision request", 400, {
