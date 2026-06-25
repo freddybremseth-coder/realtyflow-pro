@@ -184,6 +184,13 @@ export const LeadContactCandidateStatusSchema = z.enum([
 export const LeadPropertyShortlistStatusSchema = z.enum(["draft", "approved", "archived"]);
 export const LeadPropertyShortlistDecisionSchema = z.enum(["current", "maybe", "needs_research"]);
 export const LeadPropertyShortlistEligibilitySchema = z.enum(["eligible", "conditional", "rejected"]);
+export const LeadPropertyQualityReviewStatusSchema = z.enum([
+  "client_ready",
+  "needs_review",
+  "rejected",
+  "ask_agent",
+  "verify_price_availability",
+]);
 export const LeadCustomerPresentationStatusSchema = z.enum(["draft", "approved", "archived"]);
 export const LeadCustomerMessageDraftStatusSchema = z.enum(["draft", "approved", "cancelled"]);
 export const LeadCustomerMessageChannelSchema = z.enum(["email"]);
@@ -494,6 +501,10 @@ export const LeadPropertyShortlistItemInputSchema = z
       LEAD_INTELLIGENCE_LIMITS.matchReasons,
     ),
     selectedBy: IdentityTextSchema,
+    qualityReviewStatus: LeadPropertyQualityReviewStatusSchema,
+    qualityReviewNote: z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable(),
+    qualityReviewCheckedAt: z.string().datetime(),
+    qualityReviewCheckedBy: IdentityTextSchema,
   })
   .strict();
 
@@ -672,6 +683,10 @@ export interface LeadCustomerPresentationShortlistItemRow {
   reasons: string[];
   concerns: string[];
   questionsToVerify: string[];
+  qualityReviewStatus: z.infer<typeof LeadPropertyQualityReviewStatusSchema>;
+  qualityReviewNote: string | null;
+  qualityReviewCheckedAt: string | null;
+  qualityReviewCheckedBy: string | null;
 }
 
 export interface LeadCustomerPresentationShortlistSnapshot {
@@ -1868,6 +1883,10 @@ export class LeadIntelligencePersistenceRepository {
         concerns: item.concerns,
         questions_to_verify: item.questionsToVerify,
         selected_by: item.selectedBy,
+        quality_review_status: item.qualityReviewStatus,
+        quality_review_note: item.qualityReviewNote,
+        quality_review_checked_at: item.qualityReviewCheckedAt,
+        quality_review_checked_by: item.qualityReviewCheckedBy,
       })),
     );
 
@@ -1975,7 +1994,11 @@ export class LeadIntelligencePersistenceRepository {
               reasons jsonb,
               concerns jsonb,
               questions_to_verify jsonb,
-              selected_by text
+              selected_by text,
+              quality_review_status text,
+              quality_review_note text,
+              quality_review_checked_at timestamptz,
+              quality_review_checked_by text
             )
           ),
           inserted_items as (
@@ -1999,7 +2022,11 @@ export class LeadIntelligencePersistenceRepository {
               reasons,
               concerns,
               questions_to_verify,
-              selected_by
+              selected_by,
+              quality_review_status,
+              quality_review_note,
+              quality_review_checked_at,
+              quality_review_checked_by
             )
             select
               $1::uuid,
@@ -2021,7 +2048,11 @@ export class LeadIntelligencePersistenceRepository {
               reasons,
               concerns,
               questions_to_verify,
-              selected_by
+              selected_by,
+              quality_review_status,
+              quality_review_note,
+              quality_review_checked_at,
+              quality_review_checked_by
             from item_input
             returning id
           )
@@ -2108,6 +2139,10 @@ export class LeadIntelligencePersistenceRepository {
       reasons: unknown;
       concerns: unknown;
       questions_to_verify: unknown;
+      quality_review_status: z.infer<typeof LeadPropertyQualityReviewStatusSchema>;
+      quality_review_note: string | null;
+      quality_review_checked_at: string | null;
+      quality_review_checked_by: string | null;
     }>(
       `
         select
@@ -2127,7 +2162,11 @@ export class LeadIntelligencePersistenceRepository {
           data_quality_score,
           reasons,
           concerns,
-          questions_to_verify
+          questions_to_verify,
+          quality_review_status,
+          quality_review_note,
+          quality_review_checked_at::text,
+          quality_review_checked_by
         from public.lead_property_shortlist_items
         where brand = $1
           and shortlist_id = $2::uuid
@@ -2169,6 +2208,10 @@ export class LeadIntelligencePersistenceRepository {
         reasons: stringArraySchema.parse(row.reasons),
         concerns: stringArraySchema.parse(row.concerns),
         questionsToVerify: stringArraySchema.parse(row.questions_to_verify),
+        qualityReviewStatus: LeadPropertyQualityReviewStatusSchema.parse(row.quality_review_status),
+        qualityReviewNote: row.quality_review_note,
+        qualityReviewCheckedAt: row.quality_review_checked_at,
+        qualityReviewCheckedBy: row.quality_review_checked_by,
       })),
     };
   }

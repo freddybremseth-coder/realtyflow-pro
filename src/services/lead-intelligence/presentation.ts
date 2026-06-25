@@ -410,13 +410,27 @@ export async function saveLeadCustomerPresentationDraft(input: {
     );
   }
 
-  const title = request.title || snapshot.shortlistTitle || `Kundepresentasjon ${new Date().toISOString().slice(0, 10)}`;
+  const clientReadyItems = snapshot.items.filter((item) => item.qualityReviewStatus === "client_ready");
+  if (clientReadyItems.length === 0) {
+    throw new LeadIntelligenceError(
+      "INVALID_REQUEST",
+      "At least one property must be marked Klar for kunde before creating a presentation draft",
+      400,
+      { requiredQualityReviewStatus: "client_ready" },
+    );
+  }
+  const clientReadySnapshot = {
+    ...snapshot,
+    items: clientReadyItems,
+  };
+
+  const title = request.title || clientReadySnapshot.shortlistTitle || `Kundepresentasjon ${new Date().toISOString().slice(0, 10)}`;
   const presentationJson = buildPresentationJson({
-    snapshot,
+    snapshot: clientReadySnapshot,
     title,
     language: request.language,
   });
-  const emailDraft = buildEmailDraft({ snapshot, title });
+  const emailDraft = buildEmailDraft({ snapshot: clientReadySnapshot, title });
   const canonicalPayload = {
     brand: request.brand,
     buyerProfileId: request.buyerProfileId,
@@ -491,7 +505,7 @@ export async function saveLeadCustomerPresentationDraft(input: {
     loadedFromHistory: false,
     status: "draft",
     messageStatus: "draft",
-    itemCount: snapshot.items.length,
+    itemCount: clientReadySnapshot.items.length,
     title,
     subject: emailDraft.subject,
     presentationPreview: buildLeadCustomerPresentationPreview(presentationJson),

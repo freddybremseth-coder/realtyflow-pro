@@ -15,6 +15,12 @@ import { POST } from "./route";
 const VALID_CORRELATION_ID = "rf_mqshort_0123456789abcdef01234567";
 const buyerProfileId = "11111111-1111-4111-8111-111111111111";
 const propertyId = "22222222-2222-4222-8222-222222222222";
+const qualityReview = {
+  status: "client_ready",
+  note: "Freddy har kvalitetssjekket boligen.",
+  checkedAt: "2026-06-24T10:00:00.000Z",
+  checkedBy: "freddy.bremseth@gmail.com",
+};
 
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
   return `realtyflow_admin=${await createAdminSession(email)}`;
@@ -38,7 +44,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
     buyerProfileId,
     title: "Emmadale shortlist",
     idempotencySeed: VALID_CORRELATION_ID,
-    items: [{ propertyId, decision: "current" }],
+    items: [{ propertyId, decision: "current", qualityReview }],
     ...overrides,
   };
 }
@@ -92,7 +98,7 @@ test("shortlist draft validates request before database access", async () => {
       {
         brand: "neuralbeat",
         buyerProfileId,
-        items: [{ propertyId, decision: "current" }],
+        items: [{ propertyId, decision: "current", qualityReview }],
       },
       { cookie: await adminCookie() },
     ) as any,
@@ -114,7 +120,7 @@ test("shortlist draft rejects empty or rejected-only selections before database 
       {
         brand: "soleada",
         buyerProfileId,
-        items: [{ propertyId, decision: "rejected" }],
+        items: [{ propertyId, decision: "rejected", qualityReview: { ...qualityReview, status: "rejected" } }],
       },
       { cookie: await adminCookie() },
     ) as any,

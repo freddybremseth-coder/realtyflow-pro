@@ -4,6 +4,7 @@ import { LEAD_INTELLIGENCE_LIMITS } from "./contracts";
 import { LeadIntelligenceError } from "./extraction";
 import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 import {
+  LeadPropertyQualityReviewStatusSchema,
   LeadPropertyShortlistDecisionSchema,
   type CreateLeadPropertyShortlistInput,
 } from "./persistence";
@@ -17,6 +18,14 @@ import { LeadIntelligenceReviewError } from "./review";
 const UUIDSchema = z.string().uuid();
 const CorrelationIdSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.id);
 const IdempotencySeedSchema = z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.id).optional();
+const ShortlistQualityReviewSchema = z
+  .object({
+    status: LeadPropertyQualityReviewStatusSchema,
+    note: z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable().optional(),
+    checkedAt: z.string().datetime(),
+    checkedBy: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText),
+  })
+  .strict();
 
 export const LeadPropertyShortlistSaveRequestSchema = z
   .object({
@@ -30,6 +39,7 @@ export const LeadPropertyShortlistSaveRequestSchema = z
           .object({
             propertyId: UUIDSchema,
             decision: LeadPropertyShortlistDecisionSchema,
+            qualityReview: ShortlistQualityReviewSchema,
           })
           .strict(),
       )
@@ -67,6 +77,7 @@ export interface LeadPropertyShortlistSaveResult {
   items: Array<{
     propertyId: string;
     decision: z.infer<typeof LeadPropertyShortlistDecisionSchema>;
+    qualityReviewStatus: z.infer<typeof LeadPropertyQualityReviewStatusSchema>;
     systemEligibility: PropertyMatchPreviewMatch["eligibility"];
     score: number;
     dataQualityScore: number;
@@ -132,6 +143,10 @@ export async function saveLeadPropertyShortlistDraft(input: {
     items: selectedMatches.map((item) => ({
       propertyId: item.propertyId,
       decision: item.decision,
+      qualityReviewStatus: item.qualityReview.status,
+      qualityReviewNote: item.qualityReview.note?.trim() || null,
+      qualityReviewCheckedAt: item.qualityReview.checkedAt,
+      qualityReviewCheckedBy: item.qualityReview.checkedBy,
       systemEligibility: item.match.eligibility,
       rank: item.rank,
     })),
@@ -174,6 +189,10 @@ export async function saveLeadPropertyShortlistDraft(input: {
       concerns: item.match.concerns,
       questionsToVerify: item.match.questionsToVerify,
       selectedBy: input.createdBy,
+      qualityReviewStatus: item.qualityReview.status,
+      qualityReviewNote: item.qualityReview.note?.trim() || null,
+      qualityReviewCheckedAt: item.qualityReview.checkedAt,
+      qualityReviewCheckedBy: item.qualityReview.checkedBy,
     })),
   });
 
@@ -194,6 +213,7 @@ export async function saveLeadPropertyShortlistDraft(input: {
     items: selectedMatches.map((item) => ({
       propertyId: item.propertyId,
       decision: item.decision,
+      qualityReviewStatus: item.qualityReview.status,
       systemEligibility: item.match.eligibility,
       score: item.match.score,
       dataQualityScore: item.match.dataQualityScore,
