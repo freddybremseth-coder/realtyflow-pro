@@ -4,6 +4,8 @@ import {
   LeadIntelligenceReviewSaveRequestSchema,
   LeadIntelligenceReviewError,
   saveLeadIntelligenceReview,
+  stableLeadIntelligenceIdempotencyKey,
+  stableLeadIntelligenceReviewPayloadHash,
 } from "@/services/lead-intelligence/review";
 import {
   assertLeadIntelligenceActionRateLimit,
@@ -54,6 +56,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const contactId = parsed.data.contactDecision.action === "connect_existing"
+      ? parsed.data.contactDecision.contactId
+      : null;
+    const reviewPayloadHash = stableLeadIntelligenceReviewPayloadHash({
+      brand: parsed.data.brand,
+      source: parsed.data.source,
+      analysis: parsed.data.analysis,
+      reviewedCriteria: parsed.data.reviewedCriteria,
+      contactDecision: {
+        action: parsed.data.contactDecision.action,
+        contactId,
+      },
+      promptVersion: parsed.data.analysisMeta.promptVersion,
+    });
+    const payloadScopedIdempotencySeed = stableLeadIntelligenceIdempotencyKey("lead-review-route-v1", {
+      seed: parsed.data.idempotencySeed || correlationId,
+      reviewPayloadHash,
+    });
+    const reviewRequest = {
+      ...parsed.data,
+      idempotencySeed: payloadScopedIdempotencySeed,
+    };
+
     const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
       const serverCandidates = await findContactCandidatePreviewsWithDb(client, {
         brand: parsed.data.brand,
@@ -74,7 +99,7 @@ export async function POST(request: NextRequest) {
           : serverCandidates;
 
       return saveLeadIntelligenceReview({
-        request: parsed.data,
+        request: reviewRequest,
         repository: createLeadIntelligenceRepository(client, context),
         serverContactCandidates: verifiedCandidates,
         approvedBy: context.email,
