@@ -154,3 +154,10 @@ body {
   font-weight: 600;
   color: #f1f5f9;
 }
+
+/* RealtyFlow visual polish */
+@media (max-width: 768px) {
+  .document-preview {
+    max-width: none;
+  }
+}
