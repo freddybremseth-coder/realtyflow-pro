@@ -137,16 +137,6 @@ function formatCurrency(value: number | null, currency = "EUR") {
   }
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "Ikke satt";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("nb-NO", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
-
 function purchaseReadinessLabel(value: string | null) {
   switch (value) {
     case "cold":
@@ -310,7 +300,6 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
         return;
       }
       setRevisionResult(body);
-      await loadWorklist(brand);
       setSelectedBuyerProfileId(body.result.buyerProfileId);
     } catch {
       setSaveError({
