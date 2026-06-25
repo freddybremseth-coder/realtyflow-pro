@@ -28,7 +28,7 @@ function profileForPolop(): LeadMatchProfile {
   };
 }
 
-function match(propertyId: string, location: string) {
+function match(propertyId: string, location: string, title = propertyId) {
   return {
     propertyId,
     buyerProfileId,
@@ -47,7 +47,7 @@ function match(propertyId: string, location: string) {
     property: {
       id: propertyId,
       reference: propertyId,
-      title: propertyId,
+      title,
       location,
       propertyType: "villa",
       price: 450000,
@@ -59,20 +59,17 @@ function match(propertyId: string, location: string) {
   } as PropertyMatchPreviewResult["matches"][number];
 }
 
-test("auto discovery keeps Polop-area matches and filters distant Guardamar matches", () => {
-  const result: PropertyMatchPreviewResult = {
+function autoResult(matches: PropertyMatchPreviewResult["matches"]): PropertyMatchPreviewResult {
+  return {
     buyerProfileId,
     discoveryMode: "auto",
     bestEffort: false,
-    analyzed: 2,
-    matched: 2,
+    analyzed: matches.length,
+    matched: matches.length,
     candidateLimit: 20,
     missingPropertyReferences: [],
     skippedProperties: [],
-    matches: [
-      match("polop-1", "Polop"),
-      match("guardamar-1", "Guardamar del Segura"),
-    ],
+    matches,
     sideEffects: {
       leadsCreated: false,
       contactsCreated: false,
@@ -81,10 +78,32 @@ test("auto discovery keeps Polop-area matches and filters distant Guardamar matc
       shortlistCreated: false,
     },
   };
+}
 
-  const guarded = applyLeadPropertyLocationGuard(result, profileForPolop());
+test("auto discovery keeps Polop-area matches and filters distant Guardamar matches", () => {
+  const guarded = applyLeadPropertyLocationGuard(
+    autoResult([
+      match("polop-1", "Polop"),
+      match("guardamar-1", "Guardamar del Segura"),
+    ]),
+    profileForPolop(),
+  );
 
   assert.deepEqual(guarded.matches.map((item) => item.property.location), ["Polop"]);
+  assert.equal(guarded.matched, 1);
+});
+
+test("auto discovery uses area profile regions to filter Los Alcazares and Hondon from Polop searches", () => {
+  const guarded = applyLeadPropertyLocationGuard(
+    autoResult([
+      match("polop-1", "Costa Blanca North", "Moderne luksusvillaer til salgs i Polop de la Marina"),
+      match("los-alcazares-1", "Los Alcazares, La Serena Golf", "Nytt boligkompleks i Los Alcazares"),
+      match("hondon-1", "Hondón de las Nieves, Pueblo", "Leiligheter i Hondón de las Nieves"),
+    ]),
+    profileForPolop(),
+  );
+
+  assert.deepEqual(guarded.matches.map((item) => item.propertyId), ["polop-1"]);
   assert.equal(guarded.matched, 1);
 });
 
