@@ -159,6 +159,28 @@ function safeWebsiteUrl(value: string | null) {
   }
 }
 
+function safePropertyReference(value: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.length > 80 || !/^[A-Za-z0-9._-]+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function brandPropertyBaseUrl(brand: string) {
+  if (brand === "zeneco" || brand === "zenecohomes") return "https://www.zenecohomes.com/eiendommer";
+  if (brand === "pinosoecolife") return "https://www.pinosoecolife.com/eiendommer";
+  return null;
+}
+
+function brandPropertyUrl(brand: string, propertyReference: string | null) {
+  const baseUrl = brandPropertyBaseUrl(brand);
+  const reference = safePropertyReference(propertyReference);
+  return baseUrl && reference ? `${baseUrl}/${encodeURIComponent(reference)}` : null;
+}
+
+function customerPropertyUrl(brand: string, item: LeadCustomerPresentationShortlistSnapshot["items"][number]) {
+  return safeWebsiteUrl(item.propertyPublicUrl) || brandPropertyUrl(brand, item.propertyReference);
+}
+
 function uniqueItems(values: Array<string | null | undefined>, limit = 8) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
 }
@@ -333,7 +355,7 @@ function buildPresentationJson(input: {
           title: propertyName(item),
           location: item.propertyLocation,
           imageUrl: item.propertyPrimaryImageUrl,
-          publicUrl: item.propertyPublicUrl,
+          publicUrl: customerPropertyUrl(snapshot.brand, item),
           facts: propertyFacts(item),
           decision: item.decision,
           systemEligibility: item.systemEligibility,
@@ -361,7 +383,7 @@ function buildEmailDraft(input: {
   const subject = `Boligforslag: ${input.snapshot.items.length} alternativer i ${location}`;
   const sharedReasons = sharedReasonKeys(input.snapshot.items.map((item) => item.reasons));
   const sharedReasonText = sharedReasonSummary(sharedReasons);
-  const missingWebsiteLinks = input.snapshot.items.filter((item) => !safeWebsiteUrl(item.propertyPublicUrl)).length;
+  const missingWebsiteLinks = input.snapshot.items.filter((item) => !customerPropertyUrl(input.snapshot.brand, item)).length;
   const propertyLines = input.snapshot.items.map((item, index) => {
     const facts = propertyFacts(item).join(" · ");
     const reasons = itemSpecificReasons(item.reasons, sharedReasons, 2);
@@ -369,7 +391,7 @@ function buildEmailDraft(input: {
       ...item.concerns.slice(0, 2).map(humanizeVerificationNote),
       ...item.questionsToVerify.slice(0, 1).map(humanizeVerificationNote),
     ], 3).join(" ");
-    const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
+    const websiteUrl = customerPropertyUrl(input.snapshot.brand, item);
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
       reasons ? `   Hvorfor den kan være aktuell: ${reasons}` : null,
@@ -409,7 +431,7 @@ function buildEmailDraft(input: {
         ...item.concerns.slice(0, 2).map(humanizeVerificationNote),
         ...item.questionsToVerify.slice(0, 1).map(humanizeVerificationNote),
       ], 3).join(" ");
-      const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
+      const websiteUrl = customerPropertyUrl(input.snapshot.brand, item);
       return [
         `<li style="margin:0 0 18px 0;">`,
         `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
