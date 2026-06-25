@@ -44,7 +44,11 @@ function snapshot(overrides: Partial<LeadCustomerPresentationShortlistSnapshot> 
         systemEligibility: "eligible",
         score: 82,
         dataQualityScore: 70,
-        reasons: ["bedrooms matches (unverified).", "bathrooms matches (unverified)."],
+        reasons: [
+          "purchase_price matches.",
+          "Property location Moraira matches preferred area moraira.",
+          "bedrooms matches (unverified).",
+        ],
         concerns: ["Availability must be verified."],
         questionsToVerify: ["Confirm community fees."],
         qualityReviewStatus: "client_ready",
@@ -110,23 +114,29 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.messageStatus, "draft");
   assert.equal(result.itemCount, 1);
   assert.equal(result.messageDraft.subject.includes("Moraira"), true);
-  assert.equal(result.messageDraft.bodyText.includes("Aktuelt fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
+  assert.equal(result.messageDraft.bodyText.includes("Hvorfor den kan være aktuell: Prisen ligger innenfor budsjettet vi har lagt til grunn."), true);
+  assert.equal(result.messageDraft.bodyText.includes("Beliggenheten passer godt med ønsket område i Moraira."), true);
+  assert.equal(result.messageDraft.bodyText.includes("purchase_price"), false);
+  assert.equal(result.messageDraft.bodyText.includes("matches"), false);
   assert.equal(result.messageDraft.bodyText.includes("Freddy har kontrollert at denne kan deles med kunden."), false);
   assert.equal(result.messageDraft.bodyText.includes("Min vurdering:"), false);
   assert.equal(result.messageDraft.bodyHtml?.includes("Freddy har kontrollert at denne kan deles med kunden."), false);
   assert.equal(result.messageDraft.bodyHtml?.includes("Min vurdering:"), false);
-  assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
-  assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
+  assert.equal(result.messageDraft.bodyText.includes("bedrooms matches"), false);
+  assert.equal(result.messageDraft.bodyText.includes("Se prosjektet/boligen her: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
+  assert.equal(result.messageDraft.bodyHtml?.includes("Se prosjektet/boligen her"), true);
   assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("qualityReview"), false);
   assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("Freddy har kontrollert"), false);
+  assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("purchase_price"), false);
+  assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("matches"), false);
   assert.equal(result.presentationPreview.properties.length, 1);
   assert.equal(result.presentationPreview.properties[0].reference, "N8513");
   assert.equal(result.presentationPreview.properties[0].publicUrl, "https://properties.example.test/n8513");
   assert.equal(result.presentationPreview.properties[0].imageUrl, "https://images.example.test/n8513.jpg");
   assert.deepEqual(result.presentationPreview.properties[0].reasons.slice(0, 2), [
-    "Antall soverom ser ut til å passe, men må verifiseres.",
-    "Antall bad ser ut til å passe, men må verifiseres.",
+    "Prisen ligger innenfor budsjettet vi har lagt til grunn.",
+    "Beliggenheten passer godt med ønsket område i Moraira.",
   ]);
   assert.equal(result.presentationPreview.needs.some((item) => item.includes("Kunden ønsker villa")), true);
   assert.equal(result.sideEffects.emailSent, false);
@@ -136,9 +146,9 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.sideEffects.presentationPublished, false);
   assert.equal(repository.calls[0].messageDraft.subject.includes("Moraira"), true);
   assert.equal(repository.calls[0].messageDraft.bodyText.includes("Villa nær Moraira"), true);
-  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyText.includes("Se prosjektet/boligen her: https://properties.example.test/n8513"), true);
   assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
-  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Se boligen på nettsiden"), true);
+  assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Se prosjektet/boligen her"), true);
   assert.equal(repository.calls[0].messageDraft.sentAt, null);
   assert.equal(repository.calls[0].presentationJson && typeof repository.calls[0].presentationJson === "object", true);
 });
@@ -175,7 +185,10 @@ test("presentation email draft does not fabricate missing property website links
 });
 
 test("presentation email draft summarizes repeated common match reasons once", async () => {
-  const baseItem = snapshot().items[0];
+  const baseItem = {
+    ...snapshot().items[0],
+    reasons: ["bedrooms matches (unverified).", "bathrooms matches (unverified)."],
+  };
   const repository = new MemoryPresentationRepository(
     snapshot({
       items: [
