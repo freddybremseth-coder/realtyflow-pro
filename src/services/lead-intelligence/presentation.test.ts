@@ -153,9 +153,10 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(repository.calls[0].presentationJson && typeof repository.calls[0].presentationJson === "object", true);
 });
 
-test("presentation email draft does not fabricate missing property website links", async () => {
+test("presentation email draft does not fabricate missing property website links for brands without a public URL rule", async () => {
   const repository = new MemoryPresentationRepository(
     snapshot({
+      brand: "soleada",
       items: [
         {
           ...snapshot().items[0],
@@ -182,6 +183,45 @@ test("presentation email draft does not fabricate missing property website links
   assert.equal(repository.calls[0].messageDraft.bodyText.includes("Boliglenke mangler i systemet"), false);
   assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("Boliglenker kontrolleres før endelig sending."), true);
   assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes("properties.example.test"), false);
+});
+
+test("presentation email draft derives brand property links when publicUrl is missing", async () => {
+  const cases = [
+    { brand: "zeneco", reference: "N5844", expectedUrl: "https://www.zenecohomes.com/eiendommer/N5844" },
+    { brand: "pinosoecolife", reference: "N3849", expectedUrl: "https://www.pinosoecolife.com/eiendommer/N3849" },
+  ] as const;
+
+  for (const { brand, reference, expectedUrl } of cases) {
+    const repository = new MemoryPresentationRepository(
+      snapshot({
+        brand,
+        items: [
+          {
+            ...snapshot().items[0],
+            propertyReference: reference,
+            propertyPublicUrl: null,
+          },
+        ],
+      }),
+    );
+
+    const result = await saveLeadCustomerPresentationDraft({
+      request: {
+        brand,
+        buyerProfileId,
+        shortlistId,
+        idempotencySeed: `${correlationId}_${brand}`,
+        language: "nb",
+      },
+      correlationId,
+      createdBy: "freddy.bremseth@gmail.com",
+      repository,
+    });
+
+    assert.equal(repository.calls[0].messageDraft.bodyText.includes(`Se prosjektet/boligen her: ${expectedUrl}`), true);
+    assert.equal(repository.calls[0].messageDraft.bodyHtml?.includes(`href="${expectedUrl}"`), true);
+    assert.equal(result.presentationPreview.properties[0].publicUrl, expectedUrl);
+  }
 });
 
 test("presentation email draft summarizes repeated common match reasons once", async () => {
