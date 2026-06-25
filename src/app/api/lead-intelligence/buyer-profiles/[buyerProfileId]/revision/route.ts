@@ -101,10 +101,10 @@ async function createBuyerProfileRevision(input: {
     throw new LeadIntelligenceError("BUYER_PROFILE_NOT_FOUND", "Buyer profile was not found", 404);
   }
   if (existing.status === "archived") {
-    throw new LeadIntelligenceError("REVIEW_CONFLICT", "Archived buyer profiles cannot be revised", 409);
+    throw new LeadIntelligenceError("INVALID_REQUEST", "Archived buyer profiles cannot be revised", 409);
   }
   if (existing.status === "superseded") {
-    throw new LeadIntelligenceError("REVIEW_CONFLICT", "Superseded buyer profiles cannot be revised again", 409);
+    throw new LeadIntelligenceError("INVALID_REQUEST", "Superseded buyer profiles cannot be revised again", 409);
   }
 
   const nextVersionResult = await input.client.query<{ next_version: number }>(
@@ -176,7 +176,7 @@ async function createBuyerProfileRevision(input: {
 
   const newProfile = createdProfile.rows[0];
   if (!newProfile) {
-    throw new LeadIntelligenceError("DATABASE_ERROR", "Buyer profile revision could not be created", 500);
+    throw new LeadIntelligenceError("INTERNAL_ERROR", "Buyer profile revision could not be created", 500);
   }
 
   const copiedCriteria = await input.client.query<{ criterion_count: number }>(
@@ -243,7 +243,7 @@ async function createBuyerProfileRevision(input: {
 
   if (superseded.rows.length !== 1) {
     throw new LeadIntelligenceError(
-      "REVIEW_CONFLICT",
+      "INVALID_REQUEST",
       "Previous buyer profile could not be marked as superseded after creating the revision",
       409,
     );
