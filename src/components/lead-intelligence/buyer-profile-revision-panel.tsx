@@ -110,6 +110,7 @@ interface Props {
 }
 
 const realEstateBrands = BRANDS.filter((brand) => brand.type === "real_estate");
+const fallbackRevisionSummary = "Oppdatert buyer profile etter manuell kundedialog.";
 
 function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -177,7 +178,7 @@ function revisionMatchUrl(buyerProfileId: string) {
 }
 
 export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, propertyMatchingEnabled }: Props) {
-  const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
+  const [brand, setBrand] = useState(realEstateBrands[0]?.id || "zeneco");
   const [loading, setLoading] = useState(false);
   const [worklist, setWorklist] = useState<LeadIntelligenceWorklistResponse | null>(null);
   const [error, setError] = useState<SafeErrorResponse["error"] | null>(null);
@@ -188,19 +189,19 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
   const [revisionResult, setRevisionResult] = useState<BuyerProfileRevisionResponse | null>(null);
 
   const activeProfiles = useMemo(
-    () => (worklist?.result.items || []).filter((item) => item.profileStatus !== "archived" && item.profileStatus !== "superseded"),
+    () => (worklist?.result.items || []).filter((item) => item.profileStatus === "draft" || item.profileStatus === "approved"),
     [worklist],
   );
   const selectedProfile = activeProfiles.find((item) => item.buyerProfileId === selectedBuyerProfileId) || null;
-  const canSave = featureEnabled && persistenceEnabled && selectedProfile && form && form.summary.trim().length > 0 && !saving;
+  const canSave = Boolean(featureEnabled && persistenceEnabled && selectedProfile && form && !saving);
 
-  const loadWorklist = async (nextBrand = brand) => {
+  const loadWorklist = async (nextBrand = brand, preserveRevisionResult = false) => {
     if (!featureEnabled || !persistenceEnabled) return;
     setLoading(true);
     setError(null);
 
     try {
-      const params = new URLSearchParams({ brand: nextBrand, limit: "20" });
+      const params = new URLSearchParams({ brand: nextBrand, limit: "50" });
       const res = await fetch(`/api/lead-intelligence/worklist?${params.toString()}`, {
         method: "GET",
         headers: { accept: "application/json" },
@@ -215,14 +216,15 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
         return;
       }
       setWorklist(body);
-      setRevisionResult(null);
+      if (!preserveRevisionResult) setRevisionResult(null);
       const urlBuyerProfileId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("buyerProfileId");
+      const candidates = body.result.items.filter((item) => item.profileStatus === "draft" || item.profileStatus === "approved");
       const nextSelected =
-        (urlBuyerProfileId && body.result.items.find((item) => item.buyerProfileId === urlBuyerProfileId)?.buyerProfileId) ||
-        body.result.items.find((item) => item.profileStatus !== "archived" && item.profileStatus !== "superseded")?.buyerProfileId ||
+        (urlBuyerProfileId && candidates.find((item) => item.buyerProfileId === urlBuyerProfileId)?.buyerProfileId) ||
+        candidates[0]?.buyerProfileId ||
         "";
       setSelectedBuyerProfileId(nextSelected);
-      const nextItem = body.result.items.find((item) => item.buyerProfileId === nextSelected) || null;
+      const nextItem = candidates.find((item) => item.buyerProfileId === nextSelected) || null;
       setForm(nextItem ? initialForm(nextItem) : null);
     } catch {
       setError({
@@ -272,6 +274,7 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
 
     try {
       const correlationId = generateClientCorrelationId();
+      const summary = form.summary.trim() || fallbackRevisionSummary;
       const res = await fetch(`/api/lead-intelligence/buyer-profiles/${selectedProfile.buyerProfileId}/revision`, {
         method: "POST",
         headers: {
@@ -280,14 +283,14 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
         },
         body: JSON.stringify({
           brand,
-          summary: form.summary.trim(),
+          summary,
           purchaseReadiness: form.purchaseReadiness,
           budgetAmount,
           budgetCurrency: form.budgetCurrency.trim().toUpperCase() || "EUR",
           budgetIncludesCosts: form.budgetIncludesCosts,
           budgetApproximate: form.budgetApproximate,
           locationFlexible: form.locationFlexible,
-          revisionNote: form.revisionNote.trim() || null,
+          revisionNote: form.revisionNote.trim() || "Manuell buyer profile-revisjon lagret fra Lead Intelligence UI.",
         }),
       });
       const body = (await res.json()) as BuyerProfileRevisionResponse | SafeErrorResponse;
@@ -301,6 +304,7 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
       }
       setRevisionResult(body);
       setSelectedBuyerProfileId(body.result.buyerProfileId);
+      void loadWorklist(brand, true);
     } catch {
       setSaveError({
         correlationId: "client",
@@ -325,8 +329,7 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
             Rediger buyer profile
           </CardTitle>
           <p className="mt-1 max-w-3xl text-sm text-slate-400">
-            Endre oppsummering, budsjett og kjøpsstatus når kunden korrigerer behovene. Lagring oppretter en ny versjon;
-            gammel profil og historikk beholdes.
+            Bruk denne seksjonen når kunden endrer budsjett, behov eller kjøpsstatus. Ikke bruk «Arkiver profil» for redigering.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -352,8 +355,8 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-sm text-cyan-100">
           <p className="font-semibold">Trygg versjonering</p>
           <p className="mt-1 text-cyan-100/80">
-            Denne handlingen oppretter ikke kontakt, lead, e-post, presentasjon eller automatisk matching.
-            Aktive kriterier kopieres til ny profil, og gammel profil settes til superseded.
+            «Lagre som ny versjon» oppretter ny buyer profile og setter gammel profil til superseded. Ingen kontakt, lead,
+            e-post, presentasjon eller automatisk matching opprettes.
           </p>
         </div>
 
@@ -414,7 +417,7 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
 
             {!selectedProfile && !loading && (
               <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-4 text-sm text-slate-400">
-                Ingen aktiv buyer profile funnet for valgt brand.
+                Ingen aktiv buyer profile funnet for valgt brand. Velg riktig brand øverst eller trykk Oppdater profiler.
               </div>
             )}
           </div>
@@ -457,7 +460,7 @@ export function BuyerProfileRevisionPanel({ featureEnabled, persistenceEnabled, 
               <div>
                 <p className="font-semibold text-slate-100">Endringer lagres som ny versjon</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Bruk dette når kunden ringer og endrer budsjett, kjøpsstatus eller behovstekst.
+                  Endre felt under og trykk «Lagre som ny versjon». Tom oppsummering får en trygg standardtekst.
                 </p>
               </div>
               <Badge variant="secondary">Ingen overwrite</Badge>
