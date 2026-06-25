@@ -285,12 +285,6 @@ function buildPresentationJson(input: {
           systemEligibility: item.systemEligibility,
           score: item.score,
           dataQualityScore: item.dataQualityScore,
-          qualityReview: {
-            status: item.qualityReviewStatus,
-            note: item.qualityReviewNote,
-            checkedAt: item.qualityReviewCheckedAt,
-            checkedBy: item.qualityReviewCheckedBy,
-          },
           reasons: item.reasons.slice(0, 5),
           concerns: item.concerns.slice(0, 5),
           questionsToVerify: item.questionsToVerify.slice(0, 5),
@@ -319,11 +313,9 @@ function buildEmailDraft(input: {
     const reasons = itemSpecificReasons(item.reasons, sharedReasons, 2);
     const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
     const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
-    const qualityNote = item.qualityReviewNote?.trim();
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
       reasons ? `   Aktuelt fordi: ${reasons}` : null,
-      qualityNote ? `   Min vurdering: ${qualityNote}` : null,
       verification ? `   Må avklares: ${verification}` : null,
       websiteUrl ? `   Se boligen på nettsiden: ${websiteUrl}` : null,
     ].filter(Boolean).join("\n");
@@ -363,7 +355,6 @@ function buildEmailDraft(input: {
         `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
         facts ? `<br><span>${escapeHtml(facts)}</span>` : "",
         reasons ? `<br><span><strong>Aktuelt fordi:</strong> ${escapeHtml(reasons)}</span>` : "",
-        item.qualityReviewNote ? `<br><span><strong>Min vurdering:</strong> ${escapeHtml(item.qualityReviewNote)}</span>` : "",
         verification ? `<br><span><strong>Må avklares:</strong> ${escapeHtml(verification)}</span>` : "",
         websiteUrl
           ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se boligen på nettsiden</a>`

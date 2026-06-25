@@ -779,7 +779,6 @@ function buildShortlistPresentationText(
       `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
       `   Status: ${decisionLabelForPresentation(match.decision)}`,
       `   Hvorfor den passer: ${reasons || "Matcher deler av behovet."}`,
-      match.qualityReview.note ? `   Min kvalitetssjekk: ${match.qualityReview.note}` : null,
       verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
     ].filter(Boolean).join("\n");
   });
@@ -825,7 +824,6 @@ function buildShortlistEmailDraft(
     return [
       `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
       reasons ? `   Aktuelt fordi: ${reasons}` : null,
-      match.qualityReview.note ? `   Min vurdering: ${match.qualityReview.note}` : null,
       concerns.length > 0 ? `   Må avklares: ${concerns.join(" ")}` : null,
       match.property.publicUrl ? `   Se boligen på nettsiden: ${match.property.publicUrl}` : null,
     ].filter(Boolean).join("\n");

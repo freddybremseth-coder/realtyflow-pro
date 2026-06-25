@@ -111,10 +111,15 @@ test("saves a deterministic presentation and email draft without external side e
   assert.equal(result.itemCount, 1);
   assert.equal(result.messageDraft.subject.includes("Moraira"), true);
   assert.equal(result.messageDraft.bodyText.includes("Aktuelt fordi: Antall soverom ser ut til å passe, men må verifiseres."), true);
-  assert.equal(result.messageDraft.bodyText.includes("Min vurdering: Freddy har kontrollert at denne kan deles med kunden."), true);
+  assert.equal(result.messageDraft.bodyText.includes("Freddy har kontrollert at denne kan deles med kunden."), false);
+  assert.equal(result.messageDraft.bodyText.includes("Min vurdering:"), false);
+  assert.equal(result.messageDraft.bodyHtml?.includes("Freddy har kontrollert at denne kan deles med kunden."), false);
+  assert.equal(result.messageDraft.bodyHtml?.includes("Min vurdering:"), false);
   assert.equal(result.messageDraft.bodyText.includes("bathrooms matches (unverified)"), false);
   assert.equal(result.messageDraft.bodyText.includes("Se boligen på nettsiden: https://properties.example.test/n8513"), true);
   assert.equal(result.messageDraft.bodyHtml?.includes('href="https://properties.example.test/n8513"'), true);
+  assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("qualityReview"), false);
+  assert.equal(JSON.stringify(repository.calls[0].presentationJson).includes("Freddy har kontrollert"), false);
   assert.equal(result.presentationPreview.properties.length, 1);
   assert.equal(result.presentationPreview.properties[0].reference, "N8513");
   assert.equal(result.presentationPreview.properties[0].publicUrl, "https://properties.example.test/n8513");
