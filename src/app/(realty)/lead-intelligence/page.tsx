@@ -1,3 +1,4 @@
+import { BuyerProfileRevisionPanel } from "@/components/lead-intelligence/buyer-profile-revision-panel";
 import { LeadIntelligenceClient } from "@/components/lead-intelligence/lead-intelligence-client";
 import {
   isLeadIntelligenceConnectExistingEnabled,
@@ -8,13 +9,24 @@ import {
 } from "@/services/lead-intelligence/feature-flags";
 
 export default function LeadIntelligencePage() {
+  const featureEnabled = isLeadIntelligenceEnabled();
+  const persistenceEnabled = isLeadIntelligencePersistenceEnabled();
+  const propertyMatchingEnabled = isLeadIntelligencePropertyMatchingEnabled();
+
   return (
-    <LeadIntelligenceClient
-      featureEnabled={isLeadIntelligenceEnabled()}
-      persistenceEnabled={isLeadIntelligencePersistenceEnabled()}
-      connectExistingEnabled={isLeadIntelligenceConnectExistingEnabled()}
-      createContactEnabled={isLeadIntelligenceCreateContactEnabled()}
-      propertyMatchingEnabled={isLeadIntelligencePropertyMatchingEnabled()}
-    />
+    <div className="space-y-6">
+      <BuyerProfileRevisionPanel
+        featureEnabled={featureEnabled}
+        persistenceEnabled={persistenceEnabled}
+        propertyMatchingEnabled={propertyMatchingEnabled}
+      />
+      <LeadIntelligenceClient
+        featureEnabled={featureEnabled}
+        persistenceEnabled={persistenceEnabled}
+        connectExistingEnabled={isLeadIntelligenceConnectExistingEnabled()}
+        createContactEnabled={isLeadIntelligenceCreateContactEnabled()}
+        propertyMatchingEnabled={propertyMatchingEnabled}
+      />
+    </div>
   );
 }
