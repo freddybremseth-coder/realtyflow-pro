@@ -163,54 +163,94 @@ function uniqueItems(values: Array<string | null | undefined>, limit = 8) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
 }
 
+function cleanInternalText(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s*\(unverified\)\.?/gi, "")
+    .replace(/\bunverified\b\.?/gi, "")
+    .replace(/_/g, " ")
+    .replace(/\s+\./g, ".")
+    .replace(/\.$/, "")
+    .trim();
+}
+
+function formatAreaName(value: string | null | undefined) {
+  const cleaned = cleanInternalText(value || "");
+  if (!cleaned) return "";
+  return cleaned
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function sentence(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 function humanizeMatchReason(value: string) {
   const normalized = value.trim().replace(/\s+/g, " ");
   const lower = normalized.toLowerCase();
-  const isUnverified = lower.includes("(unverified)") || lower.includes("unverified");
 
-  const suffix = isUnverified ? ", men må verifiseres" : "";
   if (lower.includes("bedrooms matches")) {
-    return `Antall soverom ser ut til å passe${suffix}.`;
+    return "Antall soverom ser ut til å passe behovet.";
   }
   if (lower.includes("bathrooms matches")) {
-    return `Antall bad ser ut til å passe${suffix}.`;
+    return "Antall bad ser ut til å passe behovet.";
   }
-  if (lower.includes("property_type matches")) {
-    return `Boligtypen ser ut til å passe${suffix}.`;
+  if (lower.includes("property_type matches") || lower.includes("property type matches")) {
+    return "Boligtypen virker relevant for ønskene dine.";
+  }
+  if (lower.includes("purchase_price matches") || lower.includes("purchase price matches")) {
+    return "Prisen ligger innenfor budsjettet vi har lagt til grunn.";
+  }
+  if (lower.includes("budget matches") || lower.includes("price matches")) {
+    return "Totalrammen ser ut til å passe budsjettet.";
   }
   if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) {
-    return normalized
-      .replace(/^Estimated total cost/i, "Estimert totalpris")
-      .replace(/ is within the buyer budget\.?$/i, " er innenfor kundens budsjett.");
+    return "Totalrammen ser ut til å passe budsjettet.";
   }
-  const cleaned = normalized
-    .replace(/\s*\(unverified\)\.?/gi, "")
-    .replace(/\bunverified\b\.?/gi, "")
-    .trim()
-    .replace(/\.$/, "");
-  if (isUnverified && !cleaned) return "Dette punktet må verifiseres.";
-  return isUnverified ? `${cleaned}, men må verifiseres.` : normalized;
+
+  const locationMatch = normalized.match(/property location\s+(.+?)\s+matches preferred area\s+(.+?)(?:\.|$)/i);
+  if (locationMatch) {
+    const preferredArea = formatAreaName(locationMatch[2]);
+    return preferredArea
+      ? `Beliggenheten passer godt med ønsket område i ${preferredArea}.`
+      : "Beliggenheten passer godt med ønsket område.";
+  }
+
+  if (lower.includes("matches") || lower.includes("purchase_price") || lower.includes("preferred_area")) {
+    return null;
+  }
+
+  const cleaned = cleanInternalText(normalized);
+  if (!cleaned || cleaned.includes("_")) return null;
+  return sentence(cleaned);
 }
 
 function humanizedReasons(values: string[], limit = 2) {
-  return uniqueItems(values.slice(0, limit).map(humanizeMatchReason), limit).join(" ");
+  return uniqueItems(values.map(humanizeMatchReason), limit).join(" ");
 }
 
-type MatchReasonKey = "bedrooms" | "bathrooms" | "property_type" | "budget";
+type MatchReasonKey = "bedrooms" | "bathrooms" | "property_type" | "budget" | "price" | "location";
 
 function matchReasonKey(value: string): MatchReasonKey | null {
   const lower = value.toLowerCase();
   if (lower.includes("bedrooms matches")) return "bedrooms";
   if (lower.includes("bathrooms matches")) return "bathrooms";
-  if (lower.includes("property_type matches")) return "property_type";
-  if (lower.includes("estimated total cost") && lower.includes("within the buyer budget")) return "budget";
+  if (lower.includes("property_type matches") || lower.includes("property type matches")) return "property_type";
+  if (lower.includes("purchase_price matches") || lower.includes("purchase price matches")) return "price";
+  if (lower.includes("budget matches") || (lower.includes("estimated total cost") && lower.includes("within the buyer budget"))) return "budget";
+  if (lower.includes("property location") && lower.includes("matches preferred area")) return "location";
   return null;
 }
 
 function sharedReasonKeys(reasonGroups: string[][]) {
   if (reasonGroups.length < 3) return new Set<MatchReasonKey>();
   const keyedGroups = reasonGroups.map((reasons) => new Set(reasons.map(matchReasonKey).filter((key): key is MatchReasonKey => Boolean(key))));
-  const allKeys: MatchReasonKey[] = ["bedrooms", "bathrooms", "property_type", "budget"];
+  const allKeys: MatchReasonKey[] = ["bedrooms", "bathrooms", "property_type", "budget", "price", "location"];
   return new Set(allKeys.filter((key) => keyedGroups.every((group) => group.has(key))));
 }
 
@@ -223,9 +263,10 @@ function sharedReasonSummary(sharedKeys: Set<MatchReasonKey>) {
     if (sharedKeys.has("bathrooms")) parts.push("antall bad ser ut til å passe");
   }
   if (sharedKeys.has("property_type")) parts.push("boligtypen treffer ønsket type");
-  if (sharedKeys.has("budget")) parts.push("prisene ser ut til å ligge innenfor budsjettet");
+  if (sharedKeys.has("budget") || sharedKeys.has("price")) parts.push("prisene ser ut til å ligge innenfor budsjettet");
+  if (sharedKeys.has("location")) parts.push("beliggenhetene passer godt med ønsket område");
   if (parts.length === 0) return null;
-  return `Felles for forslagene er at ${parts.join(", ")}. Dette må fortsatt bekreftes mot oppdatert prospekt og tilgjengelighet.`;
+  return `Felles for forslagene er at ${parts.join(", ")}. Pris, tilgjengelighet og enkelte detaljer må fortsatt bekreftes før vi går videre.`;
 }
 
 function itemSpecificReasons(values: string[], sharedKeys: Set<MatchReasonKey>, limit = 2) {
@@ -235,6 +276,19 @@ function itemSpecificReasons(values: string[], sharedKeys: Set<MatchReasonKey>, 
   }), limit);
 }
 
+function humanizeVerificationNote(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  const lower = normalized.toLowerCase();
+  if (!normalized) return null;
+  if (lower.includes("availability must be verified")) return null;
+  if (lower.includes("price") && lower.includes("availability")) return null;
+  if (lower.includes("confirm community fees")) return "Felleskostnader bør bekreftes.";
+  if (lower.includes("community fees")) return "Felleskostnader bør bekreftes.";
+  if (lower.includes("confirm") && lower.includes("fees")) return "Kostnader bør bekreftes.";
+  if (lower.includes("matches") || normalized.includes("_")) return null;
+  return sentence(cleanInternalText(normalized));
+}
+
 function buildPresentationJson(input: {
   snapshot: LeadCustomerPresentationShortlistSnapshot;
   title: string;
@@ -242,8 +296,8 @@ function buildPresentationJson(input: {
 }) {
   const { snapshot } = input;
   const verification = uniqueItems([
-    ...snapshot.items.flatMap((item) => item.concerns.slice(0, 3)),
-    ...snapshot.items.flatMap((item) => item.questionsToVerify.slice(0, 3)),
+    ...snapshot.items.flatMap((item) => item.concerns.slice(0, 3).map(humanizeVerificationNote)),
+    ...snapshot.items.flatMap((item) => item.questionsToVerify.slice(0, 3).map(humanizeVerificationNote)),
     "Pris, tilgjengelighet og nøkkelfakta må bekreftes før kunden får endelig anbefaling.",
   ]);
 
@@ -285,9 +339,9 @@ function buildPresentationJson(input: {
           systemEligibility: item.systemEligibility,
           score: item.score,
           dataQualityScore: item.dataQualityScore,
-          reasons: item.reasons.slice(0, 5),
-          concerns: item.concerns.slice(0, 5),
-          questionsToVerify: item.questionsToVerify.slice(0, 5),
+          reasons: uniqueItems(item.reasons.map(humanizeMatchReason), 5),
+          concerns: uniqueItems(item.concerns.map(humanizeVerificationNote), 5),
+          questionsToVerify: uniqueItems(item.questionsToVerify.map(humanizeVerificationNote), 5),
         })),
       },
       {
@@ -311,13 +365,16 @@ function buildEmailDraft(input: {
   const propertyLines = input.snapshot.items.map((item, index) => {
     const facts = propertyFacts(item).join(" · ");
     const reasons = itemSpecificReasons(item.reasons, sharedReasons, 2);
-    const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
+    const verification = uniqueItems([
+      ...item.concerns.slice(0, 2).map(humanizeVerificationNote),
+      ...item.questionsToVerify.slice(0, 1).map(humanizeVerificationNote),
+    ], 3).join(" ");
     const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
     return [
       `${index + 1}. ${propertyName(item)}${facts ? ` (${facts})` : ""}`,
-      reasons ? `   Aktuelt fordi: ${reasons}` : null,
+      reasons ? `   Hvorfor den kan være aktuell: ${reasons}` : null,
       verification ? `   Må avklares: ${verification}` : null,
-      websiteUrl ? `   Se boligen på nettsiden: ${websiteUrl}` : null,
+      websiteUrl ? `   Se prosjektet/boligen her: ${websiteUrl}` : null,
     ].filter(Boolean).join("\n");
   });
   const closingChecks = uniqueItems([
@@ -348,16 +405,19 @@ function buildEmailDraft(input: {
     .map((item, index) => {
       const facts = propertyFacts(item).join(" · ");
       const reasons = itemSpecificReasons(item.reasons, sharedReasons, 2);
-      const verification = uniqueItems([...item.concerns.slice(0, 2), ...item.questionsToVerify.slice(0, 1)], 3).join(" ");
+      const verification = uniqueItems([
+        ...item.concerns.slice(0, 2).map(humanizeVerificationNote),
+        ...item.questionsToVerify.slice(0, 1).map(humanizeVerificationNote),
+      ], 3).join(" ");
       const websiteUrl = safeWebsiteUrl(item.propertyPublicUrl);
       return [
         `<li style="margin:0 0 18px 0;">`,
         `<strong>${index + 1}. ${escapeHtml(propertyName(item))}</strong>`,
         facts ? `<br><span>${escapeHtml(facts)}</span>` : "",
-        reasons ? `<br><span><strong>Aktuelt fordi:</strong> ${escapeHtml(reasons)}</span>` : "",
+        reasons ? `<br><span><strong>Hvorfor den kan være aktuell:</strong> ${escapeHtml(reasons)}</span>` : "",
         verification ? `<br><span><strong>Må avklares:</strong> ${escapeHtml(verification)}</span>` : "",
         websiteUrl
-          ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se boligen på nettsiden</a>`
+          ? `<br><a href="${escapeHtml(websiteUrl)}" target="_blank" rel="noopener noreferrer">Se prosjektet/boligen her</a>`
           : "",
         `</li>`,
       ].join("");
