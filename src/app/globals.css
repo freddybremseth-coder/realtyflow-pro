@@ -47,6 +47,46 @@ body {
   background-clip: text;
 }
 
+/* Lead Intelligence property preview polish */
+.rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 {
+  grid-template-columns: minmax(190px, 280px) minmax(0, 1fr) !important;
+  align-items: stretch;
+}
+
+.rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 > img {
+  aspect-ratio: 16 / 11;
+  height: 100% !important;
+  min-height: 220px;
+  max-height: 340px;
+}
+
+.rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 > div:last-child {
+  min-width: 0;
+}
+
+.rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 section ul {
+  max-height: 11rem;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+@media (max-width: 1279px) {
+  .rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 > img {
+    width: 100%;
+    height: auto !important;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .rounded-xl.border.bg-slate-900\/70 > .grid.gap-0 section ul {
+    max-height: none;
+  }
+}
+
 /* Document Hub markdown preview */
 .document-preview {
   color: #e2e8f0;
@@ -155,7 +195,6 @@ body {
   color: #f1f5f9;
 }
 
-/* RealtyFlow visual polish */
 @media (max-width: 768px) {
   .document-preview {
     max-width: none;
