@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { BRANDS } from "@/lib/constants";
+import { MONDEO_CONTRACT } from "@/lib/mondeo";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +115,12 @@ function formatRevenue(value: number, currency = "EUR") {
     currency,
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function getBrandRevenueCurrency(brandId: string) {
+  if (brandId === "mondeo") return "NOK";
+  if (brandId === "chatgenius" || brandId === "freddypublishing") return "USD";
+  return "EUR";
 }
 
 async function getOliviaData() {
@@ -245,7 +252,7 @@ export async function GET() {
     supabase.from("growth_actions").select("id, brand, brand_id, status, created_at, updated_at"),
     supabase.from("saas_apps").select("id, slug, name, status, total_users, active_users_30d, total_revenue, mrr, arr"),
     supabase.from("publishing_books").select("id, brand_id, title, orders, royalties, ad_spend, reviews_count, role, status"),
-    supabase.from("business_financial_events").select("id, brand_id, stream, direction, status, amount, currency, event_date"),
+    supabase.from("business_financial_events").select("id, brand_id, source_type, stream, direction, status, amount, currency, event_date"),
     getOliviaData(),
   ]);
 
@@ -356,7 +363,12 @@ export async function GET() {
       data.revenueAmount += data.oliviaRevenue;
     }
 
-    data.revenue = formatRevenue(data.revenueAmount, brand.id === "chatgenius" || brand.id === "freddypublishing" ? "USD" : "EUR");
+    if (brand.id === "mondeo") {
+      data.revenueAmount = Math.max(data.revenueAmount, MONDEO_CONTRACT.purchasePriceNok);
+      data.wonDeals = Math.max(data.wonDeals, 1);
+    }
+
+    data.revenue = formatRevenue(data.revenueAmount, getBrandRevenueCurrency(brand.id));
     brandDataMap[brand.id] = data;
   }
 
