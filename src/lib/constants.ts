@@ -24,6 +24,17 @@ export const BRANDS: Brand[] = [
     specialties: ["Costa Blanca", "Costa Cálida", "luxury villas"],
   },
   {
+    id: "mondeo",
+    name: "Mondeo Eiendom AS",
+    type: "real_estate",
+    description: "Salg av bolig/aksjer, selgerkreditt, renteinntekter, KPI og betalingsoppfølging",
+    color: "#f97316",
+    website: "",
+    tone: "presis, kontrollert, finansiell, juridisk ryddig",
+    target_audience: "Egen business-oversikt for selgerkreditt, renter og oppgjør",
+    specialties: ["selgerkreditt", "renteinntekter", "KPI", "betalingsplan", "sikkerhet"],
+  },
+  {
     id: "chatgenius",
     name: "ChatGenius.pro",
     type: "saas",
@@ -125,6 +136,7 @@ export const SIDEBAR_NAV = {
   ],
   properties: [
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
+    { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
     { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
