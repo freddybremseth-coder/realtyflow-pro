@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
-import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf, RefreshCw } from "lucide-react";
+import { PieChart, BarChart, TrendingUp, DollarSign, Users, Loader2, Banknote, Leaf, RefreshCw, Home } from "lucide-react";
 
 interface BrandData {
   brandId: string;
@@ -52,6 +52,17 @@ interface OliviaData {
   };
   expensesByCategory: Record<string, number>;
   harvestsBySeason: Record<string, { kg: number; revenue: number }>;
+}
+
+const MONDEO_MONTHLY_INTEREST_NOK = 36_000;
+const MONDEO_MIN_PAYMENT_NOK = 33_000;
+
+function formatNok(value: number) {
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: "NOK",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 }
 
 export default function BusinessOverviewPage() {
@@ -122,6 +133,12 @@ export default function BusinessOverviewPage() {
   }
 
   const brandsToShow = selectedBrand === "all" ? BRANDS : BRANDS.filter((b) => b.id === selectedBrand);
+  const contentBrands = BRANDS.filter((brand) => brand.id !== "mondeo");
+  const regularBrandData = Object.values(brandDataMap).filter((data) => data.brandId !== "mondeo");
+  const mondeoData = brandDataMap.mondeo;
+  const mondeoReceivedNok = Number(mondeoData?.financialIncome || 0);
+  const mondeoNetNok = Number(mondeoData?.financialNet || 0);
+  const nonMondeoFinancialNet = regularBrandData.reduce((sum, data) => sum + Number(data.financialNet || 0), 0);
 
   if (loading) {
     return (
@@ -139,7 +156,7 @@ export default function BusinessOverviewPage() {
             <PieChart className="text-primary-400" size={28} />
             Business Oversikt
           </h1>
-          <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per brand (sanntidsdata)</p>
+          <p className="text-sm text-slate-400 mt-1">Samlet ytelse og analyse per businessområde</p>
         </div>
         <Button onClick={syncFinance} disabled={syncingFinance}>
           {syncingFinance ? <Loader2 className="mr-2 animate-spin" size={16} /> : <RefreshCw className="mr-2" size={16} />}
@@ -153,20 +170,58 @@ export default function BusinessOverviewPage() {
         </div>
       )}
 
-      {/* Commission Income Banner */}
+      {mondeoData && (
+        <Card className="border-orange-500/30 bg-gradient-to-r from-orange-500/10 to-amber-500/10">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Home size={24} className="text-orange-400" />
+                <div>
+                  <h2 className="text-lg font-bold text-white">Mondeo Eiendom AS — boligsalg og selgerkreditt</h2>
+                  <p className="text-xs text-slate-400">Ikke leads eller kommisjon. Dette er salgsverdi, renter, KPI og innbetalinger.</p>
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setSelectedBrand("mondeo")}>Se Mondeo</Button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Salgsverdi bolig</p>
+                <p className="text-2xl font-bold text-white">{mondeoData.revenue}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Månedlig renteinntekt</p>
+                <p className="text-2xl font-bold text-amber-400">{formatNok(MONDEO_MONTHLY_INTEREST_NOK)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Minimum innbetaling</p>
+                <p className="text-2xl font-bold text-blue-400">{formatNok(MONDEO_MIN_PAYMENT_NOK)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase mb-1">Mottatt / KPI fra Family</p>
+                <p className="text-2xl font-bold text-emerald-400">{formatNok(mondeoReceivedNok)}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
+              Betalinger registreres i Family og speiles til RealtyFlow. Business Overview viser huset som salgsverdi og rente-/betalingsinntekt, ikke som pipeline.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Commission Income Banner - excludes Mondeo because Mondeo is not commission/pipeline */}
       {(() => {
-        const allCommission = Object.values(brandDataMap).reduce((s, d) => s + d.commissionTotal, 0);
-        const allPaid = Object.values(brandDataMap).reduce((s, d) => s + d.commissionPaid, 0);
+        const allCommission = regularBrandData.reduce((s, d) => s + d.commissionTotal, 0);
+        const allPaid = regularBrandData.reduce((s, d) => s + d.commissionPaid, 0);
         const allPending = allCommission - allPaid;
-        const allRevenue = Object.values(brandDataMap).reduce((s, d) => s + d.revenueAmount, 0);
-        const totalWon = Object.values(brandDataMap).reduce((s, d) => s + d.wonDeals, 0);
+        const allRevenue = regularBrandData.reduce((s, d) => s + d.revenueAmount, 0);
+        const totalWon = regularBrandData.reduce((s, d) => s + d.wonDeals, 0);
         if (allCommission <= 0 && totalWon <= 0) return null;
         return (
           <Card className="border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-emerald-500/10">
             <CardContent className="p-5">
               <div className="flex items-center gap-3 mb-3">
                 <Banknote size={22} className="text-amber-400" />
-                <h2 className="text-lg font-bold text-white">Inntektsoversikt</h2>
+                <h2 className="text-lg font-bold text-white">Inntektsoversikt — kommisjon og øvrige salg</h2>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
@@ -208,7 +263,7 @@ export default function BusinessOverviewPage() {
               <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
                 <p className="font-medium">Olivia har Supabase-kontakt, men mangler forventede tabeller/data.</p>
                 <p className="mt-1 text-amber-100/80">
-                  Host: {oliviaData.supabaseHost || "ukjent"}. Kjor <code>20260507135000_remaster_olivia_foundation.sql</code>, eller sett <code>OLIVIA_SUPABASE_URL</code> og <code>OLIVIA_SUPABASE_KEY</code> til riktig Olivia-prosjekt i Vercel.
+                  Host: {oliviaData.supabaseHost || "ukjent"}. Kjør <code>20260507135000_remaster_olivia_foundation.sql</code>, eller sett <code>OLIVIA_SUPABASE_URL</code> og <code>OLIVIA_SUPABASE_KEY</code> til riktig Olivia-prosjekt i Vercel.
                 </p>
               </div>
             )}
@@ -242,35 +297,34 @@ export default function BusinessOverviewPage() {
                 <p className="text-xl font-bold text-amber-400">{oliviaData.financials.totalHarvestKg.toLocaleString()}</p>
               </div>
             </div>
-            {/* Expense breakdown */}
-            {Object.keys(oliviaData.expensesByCategory).length > 0 && (
-              <div className="mt-4 pt-3 border-t border-slate-700/50">
-                <p className="text-[10px] text-slate-500 uppercase mb-2">Utgifter per kategori</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(oliviaData.expensesByCategory)
-                    .sort(([, a], [, b]) => b - a)
-                    .slice(0, 6)
-                    .map(([cat, amount]) => (
-                      <div key={cat} className="bg-slate-800/50 rounded-lg px-3 py-1.5">
-                        <span className="text-xs text-slate-300">{cat}</span>
-                        <span className="text-xs text-slate-400 ml-2">€{amount.toLocaleString()}</span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {mondeoData && (
+          <Card className="border-orange-500/30 bg-orange-500/10">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-orange-300">{mondeoData.revenue}</p>
+              <p className="text-[10px] text-slate-500 uppercase">Mondeo salgsverdi</p>
+            </CardContent>
+          </Card>
+        )}
+        {mondeoData && (
+          <Card className="border-slate-700/50 bg-slate-800/50">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-emerald-400">{formatNok(mondeoNetNok)}</p>
+              <p className="text-[10px] text-slate-500 uppercase">Mondeo mottatt/KPI</p>
+            </CardContent>
+          </Card>
+        )}
         <Card className="border-slate-700/50 bg-slate-800/50">
           <CardContent className="p-4 text-center">
-            <p className={`text-2xl font-bold ${Number(totals.financialNet || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              €{Number(totals.financialNet || 0).toLocaleString()}
+            <p className={`text-2xl font-bold ${Number(nonMondeoFinancialNet || 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              €{Number(nonMondeoFinancialNet || 0).toLocaleString()}
             </p>
-            <p className="text-[10px] text-slate-500 uppercase">Økonomi netto</p>
+            <p className="text-[10px] text-slate-500 uppercase">Økonomi netto øvrig</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
@@ -283,18 +337,6 @@ export default function BusinessOverviewPage() {
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-white">{totals.totalPosts}</p>
             <p className="text-[10px] text-slate-500 uppercase">Totalt innlegg</p>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-700/50 bg-slate-800/50">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-emerald-400">{totals.publishedPosts}</p>
-            <p className="text-[10px] text-slate-500 uppercase">Publisert</p>
-          </CardContent>
-        </Card>
-        <Card className="border-slate-700/50 bg-slate-800/50">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-blue-400">{totals.connectedAccounts}</p>
-            <p className="text-[10px] text-slate-500 uppercase">Sosiale kontoer</p>
           </CardContent>
         </Card>
         <Card className="border-slate-700/50 bg-slate-800/50">
@@ -339,9 +381,7 @@ export default function BusinessOverviewPage() {
 
       {/* Brand Selector */}
       <div className="flex gap-2 flex-wrap">
-        <Button size="sm" variant={selectedBrand === "all" ? "default" : "outline"} onClick={() => setSelectedBrand("all")}>
-          Alle brands
-        </Button>
+        <Button size="sm" variant={selectedBrand === "all" ? "default" : "outline"} onClick={() => setSelectedBrand("all")}>Alle brands</Button>
         {BRANDS.map((brand) => (
           <Button
             key={brand.id}
@@ -366,10 +406,10 @@ export default function BusinessOverviewPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {BRANDS.map((brand) => {
+              {contentBrands.map((brand) => {
                 const data = brandDataMap[brand.id];
                 if (!data) return null;
-                const maxPosts = Math.max(...BRANDS.map(b => brandDataMap[b.id]?.totalPosts || 0), 1);
+                const maxPosts = Math.max(...contentBrands.map(b => brandDataMap[b.id]?.totalPosts || 0), 1);
                 const barWidth = (data.totalPosts / maxPosts) * 100;
                 return (
                   <div key={brand.id} className="flex items-center gap-3">
@@ -398,14 +438,58 @@ export default function BusinessOverviewPage() {
         {brandsToShow.map((brand) => {
           const data = brandDataMap[brand.id];
           if (!data) return null;
+
+          if (brand.id === "mondeo") {
+            return (
+              <Card key={brand.id} className="border-orange-500/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm" style={{ backgroundColor: brand.color + "33", color: brand.color }}>
+                      ME
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Mondeo Eiendom AS</CardTitle>
+                      <p className="text-xs text-slate-500">Boligsalg, selgerkreditt, renter, KPI og innbetalinger</p>
+                    </div>
+                    <Badge variant="secondary" className="ml-auto text-[10px]">boligsalg</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                      <Home size={16} className="mx-auto text-orange-400 mb-1" />
+                      <p className="text-lg font-bold text-white">{data.revenue}</p>
+                      <p className="text-[10px] text-slate-500">Salgsverdi bolig</p>
+                    </div>
+                    <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                      <Banknote size={16} className="mx-auto text-amber-400 mb-1" />
+                      <p className="text-lg font-bold text-amber-400">{formatNok(MONDEO_MONTHLY_INTEREST_NOK)}</p>
+                      <p className="text-[10px] text-slate-500">Månedlig rente</p>
+                    </div>
+                    <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                      <TrendingUp size={16} className="mx-auto text-blue-400 mb-1" />
+                      <p className="text-lg font-bold text-blue-400">{formatNok(MONDEO_MIN_PAYMENT_NOK)}</p>
+                      <p className="text-[10px] text-slate-500">Minimum betaling</p>
+                    </div>
+                    <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                      <PieChart size={16} className="mx-auto text-emerald-400 mb-1" />
+                      <p className="text-lg font-bold text-emerald-400">{formatNok(data.financialNet)}</p>
+                      <p className="text-[10px] text-slate-500">Mottatt / KPI</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3 text-xs text-orange-100">
+                    Mondeo er ikke med i leads, CRM-kunder eller kommisjon. Innbetalinger skal fortsatt registreres i Family og speiles automatisk hit.
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+
           return (
             <Card key={brand.id}>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm"
-                    style={{ backgroundColor: brand.color + "33", color: brand.color }}
-                  >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm" style={{ backgroundColor: brand.color + "33", color: brand.color }}>
                     {brand.name.substring(0, 2).toUpperCase()}
                   </div>
                   <div>
@@ -416,7 +500,6 @@ export default function BusinessOverviewPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* KPIs */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <DollarSign size={16} className="mx-auto text-emerald-400 mb-1" />
@@ -427,9 +510,7 @@ export default function BusinessOverviewPage() {
                     <Banknote size={16} className="mx-auto text-amber-400 mb-1" />
                     <p className="text-lg font-bold text-amber-400">€{data.commissionTotal.toLocaleString()}</p>
                     <p className="text-[10px] text-slate-500">Kommisjon</p>
-                    {data.commissionPending > 0 && (
-                      <p className="text-[9px] text-orange-400 mt-0.5">€{data.commissionPending.toLocaleString()} ventende</p>
-                    )}
+                    {data.commissionPending > 0 && <p className="text-[9px] text-orange-400 mt-0.5">€{data.commissionPending.toLocaleString()} ventende</p>}
                   </div>
                   <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                     <Users size={16} className="mx-auto text-blue-400 mb-1" />
@@ -448,7 +529,6 @@ export default function BusinessOverviewPage() {
                   </div>
                 </div>
 
-                {/* Additional KPIs */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   <div className="flex items-center justify-between p-2 bg-slate-800/30 rounded-lg">
                     <span className="text-xs text-slate-400">Totalt innlegg</span>
