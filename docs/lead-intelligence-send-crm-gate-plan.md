@@ -303,6 +303,48 @@ Email drafts may be edited by Freddy. The generated content should:
 - avoid saying price, availability, view, legal status, neighbor plot risk, or total cost is verified unless the source proves it or Freddy approves it
 - avoid legal, financial, tax, or availability guarantees
 
+## Dream-Layer Area Content
+
+Real estate is sold on dreams as well as facts. Lead Intelligence should use the existing `area_profiles` content as a controlled source for dream-layer storytelling in PDFs, email drafts, and reactivation sequences.
+
+The dream layer should adapt to lead temperature:
+
+- cold leads need more lifestyle, area emotion, climate, local rhythm, food, beaches, villages, family life, investment dreams, and reasons to imagine themselves in Spain
+- warm leads need a balanced mix of dream, practical reassurance, and selected property examples
+- hot or active buyers need less generic dream content and more precise matching, objections, trade-offs, budget, availability, area fit, and next-step clarity
+
+Allowed uses of `area_profiles` content:
+
+- generated PDF sections such as "Why this area may fit you"
+- email introductions for cold-lead reactivation
+- soft follow-up sequences when a lead has gone quiet
+- area comparison blocks, for example Costa Blanca North vs Costa Blanca South vs Inland vs Costa Calida
+- brand-specific storytelling for ZenEcoHomes and PinosoEcolife
+- short emotional hooks before concrete property suggestions
+
+Rules:
+
+- area text must support the customer's actual preferred region or explicitly explain why a nearby alternative is being suggested
+- cold-lead content may be more inspirational, but must not fabricate personal intent, budget, readiness, or urgency
+- active buyer content must not bury the specific property match behind generic destination marketing
+- use `area_profiles.description`, `hero_blurb`, `highlights`, `climate`, and `lifestyle` as source material, but generate concise customer-facing copy rather than dumping the full area text
+- never imply that an area, price, school, tax, legal, availability, or investment result is guaranteed
+- mark area facts that may change over time for Freddy review before send
+- generated PDFs and emails remain drafts until Freddy approves them
+
+Example content strategy:
+
+```text
+Cold lead:
+Lead with the dream of daily life in the area, then invite the customer back into a simple question: "Would you still prefer coast, village, or inland value?"
+
+Warm lead:
+Use a short area story, then show 2-4 carefully selected property directions.
+
+Hot buyer:
+Keep the area story short. Focus on why the specific shortlisted properties match, what must be verified, and what Freddy recommends doing next.
+```
+
 ## Security And Privacy
 
 Do not log:
