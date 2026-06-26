@@ -8,6 +8,7 @@ import {
   isLeadIntelligencePropertyMatchingEnabled,
 } from "@/services/lead-intelligence/feature-flags";
 import { LeadIntelligencePersistenceError } from "@/services/lead-intelligence/persistence";
+import { applyLeadPropertyLocationGuard } from "@/services/lead-intelligence/location-guard";
 import {
   LeadPropertyMatchPreviewRequestSchema,
   loadApprovedLeadMatchProfileWithDb,
@@ -96,12 +97,13 @@ export async function POST(request: NextRequest) {
             )
           : loadPropertiesByReferencesFromSupabase(brand, propertyReferences),
     );
+    const guardedResult = applyLeadPropertyLocationGuard(result, profile);
 
     return NextResponse.json(
       {
         ok: true,
         correlationId,
-        result,
+        result: guardedResult,
       },
       {
         status: 200,
