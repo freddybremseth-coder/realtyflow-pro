@@ -1,0 +1,14 @@
+-- Applied in Supabase production: sync Family Mondeo rows into RealtyFlow ledger.
+-- Source tables:
+--   family.mondeo_loan_payments
+--   family.mondeo_kpi_adjustments
+-- Target table:
+--   public.business_financial_events
+-- Target brand_id:
+--   mondeo
+-- Streams:
+--   mondeo_payment
+--   kpi_adjustment
+--
+-- Production migration name: sync_family_mondeo_to_business_events
+-- It creates triggers on the two family tables so inserts, updates and deletes are mirrored to business_financial_events.
