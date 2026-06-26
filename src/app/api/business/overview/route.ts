@@ -266,6 +266,8 @@ export async function GET() {
   const hasLedger = ledgerEvents.length > 0;
   const pipelineContacts = contacts;
   const crmContacts = contacts.filter((contact) => contact.pipeline_status !== "NEW");
+  const nonMondeoPipelineContacts = pipelineContacts.filter((contact) => normalizeBrandId(String(contact.brand_id || "")) !== "mondeo");
+  const nonMondeoCrmContacts = crmContacts.filter((contact) => normalizeBrandId(String(contact.brand_id || "")) !== "mondeo");
 
   const brandDataMap: Record<string, BrandData> = {};
 
@@ -315,7 +317,6 @@ export async function GET() {
     data.revenueAmount = uniqueWon.reduce((sum, contact) => sum + (Number(contact.sale_price) || 0), 0);
 
     const brandLedger = ledgerEvents.filter((event) => event.brand_id === brand.id);
-    const brandHasLedger = brandLedger.length > 0;
     data.financialIncome = brandLedger
       .filter((event) => event.direction === "income")
       .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
@@ -364,8 +365,16 @@ export async function GET() {
     }
 
     if (brand.id === "mondeo") {
+      // Mondeo is not a lead/CRM/commission business. It is a house sale with seller credit.
+      // Business Overview should show house sale value plus monthly interest/payment income.
       data.revenueAmount = Math.max(data.revenueAmount, MONDEO_CONTRACT.purchasePriceNok);
-      data.wonDeals = Math.max(data.wonDeals, 1);
+      data.commissionTotal = 0;
+      data.commissionPaid = 0;
+      data.commissionPending = 0;
+      data.pipelineLeads = 0;
+      data.crmContacts = 0;
+      data.customers = 0;
+      data.wonDeals = 1;
     }
 
     data.revenue = formatRevenue(data.revenueAmount, getBrandRevenueCurrency(brand.id));
@@ -377,8 +386,8 @@ export async function GET() {
     publishedPosts: publications.filter((post) => post.status === "published").length,
     connectedAccounts: socialAccounts.length,
     totalBrands: BRANDS.length,
-    pipelineLeads: pipelineContacts.length,
-    crmContacts: crmContacts.length,
+    pipelineLeads: nonMondeoPipelineContacts.length,
+    crmContacts: nonMondeoCrmContacts.length,
     saasApps: saasApps.length,
     saasMrr: hasLedger
       ? ledgerEvents.filter((event) => event.stream === "saas_mrr").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
