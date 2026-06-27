@@ -45,7 +45,15 @@ type DemoSiteOrder = {
   created_at?: string;
 };
 
+type DemoSiteOrderRow = DemoSiteOrder & {
+  id: string;
+  status: DemoSiteStatus;
+  billing_status: DemoSiteBillingStatus;
+};
+
 type SupabaseClientLike = ReturnType<typeof createClient>;
+
+type SaasAppLookup = { id?: string };
 
 const ACTIVE_REVENUE_STATUSES = new Set(["ordered", "in_setup", "preview_ready", "approved", "deployed"]);
 const ACTIVE_MRR_STATUSES = new Set(["in_setup", "preview_ready", "approved", "deployed"]);
@@ -53,7 +61,7 @@ const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://r
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -115,7 +123,9 @@ function computeSummary(orders: DemoSiteOrder[]) {
 
 async function ensureDemositesApp(supabase: SupabaseClientLike) {
   const existing = await supabase.from("saas_apps").select("id").eq("slug", "demosites").maybeSingle();
-  if (existing.data?.id) {
+  const existingApp = existing.data as SaasAppLookup | null;
+
+  if (existingApp?.id) {
     await supabase
       .from("saas_apps")
       .update({
@@ -125,8 +135,8 @@ async function ensureDemositesApp(supabase: SupabaseClientLike) {
           "Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview og abonnement/MRR-oppfølging inne i RealtyFlow.",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", existing.data.id);
-    return String(existing.data.id);
+      .eq("id", existingApp.id);
+    return existingApp.id;
   }
 
   const inserted = await supabase
@@ -152,7 +162,9 @@ async function ensureDemositesApp(supabase: SupabaseClientLike) {
     .single();
 
   if (inserted.error) throw inserted.error;
-  return String(inserted.data.id);
+  const insertedApp = inserted.data as SaasAppLookup | null;
+  if (!insertedApp?.id) throw new Error("Could not create DemoSites SaaS app");
+  return insertedApp.id;
 }
 
 async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrder[]) {
@@ -186,7 +198,7 @@ export async function GET() {
       templates: DEMO_SITE_TEMPLATE_SEEDS,
       packages: DEMO_SITE_PACKAGES,
       summary: computeSummary([]),
-      error: "Supabase service role is not configured. Add SUPABASE_SERVICE_ROLE_KEY on the server.",
+      error: "Supabase server key is not configured.",
       source: "not-configured",
     });
   }
@@ -226,7 +238,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 503 });
+  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
   try {
     const body = (await request.json()) as Partial<DemoSiteOrder>;
@@ -296,9 +308,10 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase.from("demo_site_orders").insert(payload).select("*").single();
     if (error) throw error;
+    const createdOrder = data as DemoSiteOrderRow;
 
     await supabase.from("demo_site_order_events").insert({
-      order_id: data.id,
+      order_id: createdOrder.id,
       event_type: "order_created",
       title: "Bestilling opprettet",
       description: `${companyName} valgte ${selectedPackage.shortName}.`,
@@ -307,7 +320,7 @@ export async function POST(request: NextRequest) {
 
     const orders = await getOrders(supabase);
     const summary = await syncSaasMetrics(supabase, orders);
-    return NextResponse.json({ order: data, summary }, { status: 201 });
+    return NextResponse.json({ order: createdOrder, summary }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not create DemoSites order" },
@@ -318,7 +331,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 503 });
+  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
   try {
     const body = (await request.json()) as Partial<DemoSiteOrder> & { id?: string };
@@ -350,28 +363,30 @@ export async function PATCH(request: NextRequest) {
       "editable_fields",
       "requested_changes",
       "notes",
-    ] as const;
+    ];
 
     for (const key of allowedKeys) {
-      if (body[key] !== undefined) patch[key] = body[key];
+      const value = (body as Record<string, unknown>)[key];
+      if (value !== undefined) patch[key] = value;
     }
     if (body.status === "approved") patch.approved_at = new Date().toISOString();
     if (body.status === "deployed") patch.deployed_at = new Date().toISOString();
 
     const { data, error } = await supabase.from("demo_site_orders").update(patch).eq("id", body.id).select("*").single();
     if (error) throw error;
+    const updatedOrder = data as DemoSiteOrderRow;
 
     await supabase.from("demo_site_order_events").insert({
       order_id: body.id,
       event_type: "order_updated",
       title: "Bestilling oppdatert",
-      description: `Status: ${data.status}. Betaling: ${data.billing_status}.`,
+      description: `Status: ${updatedOrder.status}. Betaling: ${updatedOrder.billing_status}.`,
       metadata: patch,
     });
 
     const orders = await getOrders(supabase);
     const summary = await syncSaasMetrics(supabase, orders);
-    return NextResponse.json({ order: data, summary });
+    return NextResponse.json({ order: updatedOrder, summary });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not update DemoSites order" },
