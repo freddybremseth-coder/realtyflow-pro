@@ -126,6 +126,8 @@ export const SIDEBAR_NAV = {
   overview: [
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
+    { label: "SaaS & abonnement", href: "/saas", icon: "Rocket" },
+    { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
   ],
   operations: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
@@ -154,8 +156,6 @@ export const SIDEBAR_NAV = {
   growth: [
     { label: "Publishing Hub", href: "/publishing", icon: "BookOpen" },
     { label: "Growth Hub", href: "/growth-hub", icon: "Rocket" },
-    { label: "SaaS", href: "/saas", icon: "Rocket" },
-    { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
     { label: "Market Intelligence", href: "/reports", icon: "TrendingUp" },
     { label: "Analytics", href: "/analytics", icon: "BarChart3" },
   ],
