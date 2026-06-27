@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ARCHIVED_SAAS_APP_SLUGS, SAAS_PORTFOLIO_APPS, sortSaasPortfolio } from '@/lib/saas-portfolio';
 
 type SaasAppLookup = { id?: string };
-type SupabaseClientLike = ReturnType<typeof createClient>;
+type SupabaseClientLike = any;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
