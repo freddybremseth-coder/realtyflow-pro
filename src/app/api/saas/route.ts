@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ARCHIVED_SAAS_APP_SLUGS, SAAS_PORTFOLIO_APPS, sortSaasPortfolio } from '@/lib/saas-portfolio';
 
+type SaasAppLookup = { id?: string };
+type SupabaseClientLike = ReturnType<typeof createClient>;
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -16,7 +19,7 @@ function fallbackApps() {
     active_subscriptions: 0,
     total_users: 0,
     active_users_30d: 0,
-    total_revenue: app.slug === 'demosites' ? 0 : 0,
+    total_revenue: 0,
     mrr: 0,
     arr: 0,
     portfolio_order: index,
@@ -33,7 +36,7 @@ function calculateTotals(apps: any[]) {
   };
 }
 
-async function syncPortfolioApps(supabase: ReturnType<typeof createClient>) {
+async function syncPortfolioApps(supabase: SupabaseClientLike) {
   for (const app of SAAS_PORTFOLIO_APPS) {
     const payload = {
       ...app,
@@ -41,8 +44,10 @@ async function syncPortfolioApps(supabase: ReturnType<typeof createClient>) {
     };
 
     const existing = await supabase.from('saas_apps').select('id').eq('slug', app.slug).maybeSingle();
-    if (existing.data?.id) {
-      await supabase.from('saas_apps').update(payload).eq('id', existing.data.id);
+    const existingApp = existing.data as SaasAppLookup | null;
+
+    if (existingApp?.id) {
+      await supabase.from('saas_apps').update(payload).eq('id', existingApp.id);
     } else {
       await supabase.from('saas_apps').insert(payload);
     }
@@ -54,11 +59,6 @@ async function syncPortfolioApps(supabase: ReturnType<typeof createClient>) {
     .in('slug', [...ARCHIVED_SAAS_APP_SLUGS]);
 }
 
-/**
- * GET /api/saas
- * List SaaS apps. The main portfolio is kept aligned with ChatGenius public demos:
- * Astro, Family, VM2026, RealtyFlow, Spanish and DemoSites.
- */
 export async function GET(request: NextRequest) {
   try {
     const status = request.nextUrl.searchParams.get('status');
@@ -106,17 +106,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ apps, totals: calculateTotals(apps), source: 'supabase' });
   } catch (error) {
     console.error('[API /api/saas GET] Unhandled error:', error);
+    const apps = fallbackApps();
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch apps', apps: fallbackApps(), totals: calculateTotals(fallbackApps()) },
+      { error: error instanceof Error ? error.message : 'Failed to fetch apps', apps, totals: calculateTotals(apps) },
       { status: 500 }
     );
   }
 }
 
-/**
- * POST /api/saas
- * Create or update a SaaS app
- */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -168,10 +165,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * DELETE /api/saas
- * Delete a SaaS app by id
- */
 export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
