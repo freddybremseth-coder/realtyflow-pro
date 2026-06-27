@@ -2,12 +2,14 @@ export type DemoSitePackageId = "basis" | "standard" | "premium";
 
 export type DemoSiteStatus =
   | "lead"
+  | "draft_preview"
   | "ordered"
   | "in_setup"
   | "preview_ready"
   | "approved"
   | "deployed"
   | "paused"
+  | "expired"
   | "cancelled";
 
 export type DemoSiteBillingStatus =
