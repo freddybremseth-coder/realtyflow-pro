@@ -15,6 +15,8 @@ type SaasApp = {
   mrr?: number;
   arr?: number;
   total_revenue?: number;
+  total_users?: number;
+  active_users_30d?: number;
   active_subscriptions?: number;
   currency?: string;
 };
@@ -151,7 +153,7 @@ export function SaasSubscriptionOverview() {
               </div>
               <div className="rounded-xl bg-slate-950/40 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">ARR</p>
-                <p className="text-2xl font-bold text-emerald-300">{formatNok(demoArr || (totalMrr * 12))}</p>
+                <p className="text-2xl font-bold text-emerald-300">{formatNok(demoArr || totalMrr * 12)}</p>
               </div>
               <div className="rounded-xl bg-slate-950/40 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">Oppstart</p>
