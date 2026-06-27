@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, Globe, Loader2, MonitorSmartphone, Rocket, Send, Wallet } from "lucide-react";
+import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { DEMO_SITE_PACKAGES, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
 
 type DemoSiteOrder = {
@@ -52,7 +53,7 @@ type OrderFormState = {
 const EMPTY_SUMMARY: DemoSiteSummary = { totalOrders: 0, activeOrders: 0, paidOrders: 0, bookedSetupRevenue: 0, activeMrr: 0, setupCosts: 0, monthlyCosts: 0, netSetup: 0, netMrr: 0, arr: 0 };
 const INITIAL_FORM: OrderFormState = { company_name: "", customer_name: "", customer_email: "", customer_phone: "", industry: "", website_url: "", package_id: "standard", template_slug: "local-service", setup_cost_nok: "0", monthly_cost_nok: "0", notes: "" };
 
-const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", cancelled: "Kansellert" };
+const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", draft_preview: "Midlertidig demo", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", expired: "Utløpt", cancelled: "Kansellert" };
 const billingLabel: Record<DemoSiteBillingStatus, string> = { not_invoiced: "Ikke fakturert", pending: "Venter", paid: "Betalt", overdue: "Forfalt", cancelled: "Stoppet" };
 
 function formatDate(value?: string) {
@@ -148,6 +149,8 @@ export default function DemoSitesPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {DEMO_SITE_PACKAGES.map((pkg) => <Card key={pkg.id} className={`border-slate-700/50 bg-slate-800/50 ${pkg.recommended ? "ring-1 ring-purple-500/60" : ""}`}><CardHeader><CardTitle className="text-white">{pkg.shortName}</CardTitle><CardDescription>{pkg.tagline}</CardDescription></CardHeader><CardContent><div className="text-2xl font-bold text-white">{formatNok(pkg.setupFeeNok)}</div><div className="text-sm text-emerald-300">+ {formatNok(pkg.monthlyFeeNok)} / mnd</div><p className="mt-3 text-xs text-slate-400">{pkg.salesAngle}</p></CardContent></Card>)}
       </div>
+
+      <TempDemoCard onCreated={loadData} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
         <Card className="border-purple-500/20 bg-slate-800/50">
