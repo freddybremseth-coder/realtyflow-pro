@@ -126,6 +126,8 @@ export const SIDEBAR_NAV = {
   overview: [
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
+    { label: "SaaS & abonnement", href: "/saas", icon: "Rocket" },
+    { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
   ],
   operations: [
     { label: "CRM", href: "/pipeline", icon: "Users" },
