@@ -9,14 +9,14 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type SupabaseClientLike = ReturnType<typeof createClient>;
+type SupabaseClientLike = any;
 type IdLookup = { id?: string };
 
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
