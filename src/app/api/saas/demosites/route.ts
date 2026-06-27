@@ -51,7 +51,7 @@ type DemoSiteOrderRow = DemoSiteOrder & {
   billing_status: DemoSiteBillingStatus;
 };
 
-type SupabaseClientLike = ReturnType<typeof createClient>;
+type SupabaseClientLike = any;
 
 type SaasAppLookup = { id?: string };
 
