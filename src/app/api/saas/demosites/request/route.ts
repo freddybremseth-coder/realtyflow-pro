@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     const slug = slugifyCompanyName(companyName);
     const claimToken = generateClaimToken();
     const claimUrl = `${REALTYFLOW_BASE_URL}/demosites/claim/${claimToken}`;
-    const previewUrl = `${REALTYFLOW_BASE_URL}/demosites?preview=${slug}`;
+    const previewUrl = `${REALTYFLOW_BASE_URL}/demosites/preview/${claimToken}`;
     const expiresAt = daysFromNow(DEFAULT_EXPIRY_DAYS);
     const appId = await getDemositesAppId(supabase);
 
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       event_type: "demo_request_created",
       title: "Demo-request opprettet",
       description: `${companyName} fikk en midlertidig demo som utløper om ${DEFAULT_EXPIRY_DAYS} dager.`,
-      metadata: { claim_url: claimUrl, expires_at: expiresAt, package_id: selectedPackage.id },
+      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id },
     });
 
     return NextResponse.json({
