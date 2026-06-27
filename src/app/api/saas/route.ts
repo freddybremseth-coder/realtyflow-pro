@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sortSaasPortfolio } from '@/lib/saas-portfolio';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,10 +48,12 @@ export async function GET(request: NextRequest) {
       appSubscriptions[sub.app_id] = (appSubscriptions[sub.app_id] || 0) + 1;
     });
 
-    const apps = (data || []).map((app: any) => ({
-      ...app,
-      active_subscriptions: appSubscriptions[app.id] || 0,
-    }));
+    const apps = sortSaasPortfolio(
+      (data || []).map((app: any) => ({
+        ...app,
+        active_subscriptions: appSubscriptions[app.id] || 0,
+      }))
+    );
 
     // Calculate totals
     const totals = {
