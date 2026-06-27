@@ -49,10 +49,11 @@ type SupabaseClientLike = ReturnType<typeof createClient>;
 
 const ACTIVE_REVENUE_STATUSES = new Set(["ordered", "in_setup", "preview_ready", "approved", "deployed"]);
 const ACTIVE_MRR_STATUSES = new Set(["in_setup", "preview_ready", "approved", "deployed"]);
+const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -114,16 +115,28 @@ function computeSummary(orders: DemoSiteOrder[]) {
 
 async function ensureDemositesApp(supabase: SupabaseClientLike) {
   const existing = await supabase.from("saas_apps").select("id").eq("slug", "demosites").maybeSingle();
-  if (existing.data?.id) return String(existing.data.id);
+  if (existing.data?.id) {
+    await supabase
+      .from("saas_apps")
+      .update({
+        domain: "realtyflow.chatgenius.pro",
+        live_url: `${REALTYFLOW_BASE_URL}/saas`,
+        description:
+          "Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview og abonnement/MRR-oppfølging inne i RealtyFlow.",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.data.id);
+    return String(existing.data.id);
+  }
 
   const inserted = await supabase
     .from("saas_apps")
     .insert({
       slug: "demosites",
       name: "ChatGenius DemoSites",
-      domain: "demosites.chatgenius.pro",
+      domain: "realtyflow.chatgenius.pro",
       description:
-        "Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview-URL og abonnement/MRR-oppfølging.",
+        "Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview og abonnement/MRR-oppfølging inne i RealtyFlow.",
       category: "marketing",
       tech_stack: ["next.js", "supabase", "chatgenius", "demosites"],
       status: "live",
@@ -132,7 +145,7 @@ async function ensureDemositesApp(supabase: SupabaseClientLike) {
       price_monthly: 490,
       currency: "NOK",
       repo_url: "https://github.com/freddybremseth-coder/demosites",
-      live_url: "https://chatgenius.pro/demosites",
+      live_url: `${REALTYFLOW_BASE_URL}/saas`,
       dev_platform: "codex",
     })
     .select("id")
@@ -173,6 +186,7 @@ export async function GET() {
       templates: DEMO_SITE_TEMPLATE_SEEDS,
       packages: DEMO_SITE_PACKAGES,
       summary: computeSummary([]),
+      error: "Supabase service role is not configured. Add SUPABASE_SERVICE_ROLE_KEY on the server.",
       source: "not-configured",
     });
   }
@@ -212,7 +226,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 503 });
 
   try {
     const body = (await request.json()) as Partial<DemoSiteOrder>;
@@ -226,6 +240,7 @@ export async function POST(request: NextRequest) {
     const selectedPackage = getDemoSitePackage(body.package_id);
     const slug = slugifyCompanyName(companyName);
     const targetSubdomain = body.target_subdomain || `${slug}.chatgenius.pro`;
+    const internalPreviewUrl = `${REALTYFLOW_BASE_URL}/demosites?preview=${slug}`;
     const appId = await ensureDemositesApp(supabase);
 
     const payload = {
@@ -250,9 +265,9 @@ export async function POST(request: NextRequest) {
       subscription_renews_at: plusOneMonthIso(),
       template_slug: body.template_slug || "local-service",
       target_subdomain: targetSubdomain,
-      preview_url: body.preview_url || `https://${targetSubdomain}`,
+      preview_url: body.preview_url || internalPreviewUrl,
       production_url: body.production_url || null,
-      deployment_target: "subdomain.chatgenius.pro",
+      deployment_target: "realtyflow.chatgenius.pro",
       app_id: appId,
       logo_url: body.logo_url || null,
       brand_color: body.brand_color || null,
@@ -273,7 +288,7 @@ export async function POST(request: NextRequest) {
         {
           at: new Date().toISOString(),
           type: "order_created",
-          message: "Bestilling opprettet. Klar for manuell eller senere automatisk demo-generering.",
+          message: "Bestilling opprettet i RealtyFlow. Klar for manuell eller senere automatisk demo-generering.",
         },
       ],
       notes: body.notes || null,
@@ -287,7 +302,7 @@ export async function POST(request: NextRequest) {
       event_type: "order_created",
       title: "Bestilling opprettet",
       description: `${companyName} valgte ${selectedPackage.shortName}.`,
-      metadata: { package_id: selectedPackage.id },
+      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url },
     });
 
     const orders = await getOrders(supabase);
@@ -303,7 +318,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  if (!supabase) return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 503 });
 
   try {
     const body = (await request.json()) as Partial<DemoSiteOrder> & { id?: string };
