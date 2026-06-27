@@ -9,6 +9,9 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type SupabaseClientLike = ReturnType<typeof createClient>;
+type IdLookup = { id?: string };
+
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 
 function getSupabase() {
@@ -83,9 +86,10 @@ function buildDemoProfile(input: {
   };
 }
 
-async function ensureDemositesApp(supabase: ReturnType<typeof createClient>) {
+async function ensureDemositesApp(supabase: SupabaseClientLike) {
   const existing = await supabase.from("saas_apps").select("id").eq("slug", "demosites").maybeSingle();
-  if (existing.data?.id) return String(existing.data.id);
+  const existingApp = existing.data as IdLookup | null;
+  if (existingApp?.id) return existingApp.id;
 
   const inserted = await supabase
     .from("saas_apps")
@@ -109,7 +113,9 @@ async function ensureDemositesApp(supabase: ReturnType<typeof createClient>) {
     .single();
 
   if (inserted.error) throw inserted.error;
-  return String(inserted.data.id);
+  const insertedApp = inserted.data as IdLookup | null;
+  if (!insertedApp?.id) throw new Error("Could not create DemoSites SaaS app");
+  return insertedApp.id;
 }
 
 export async function POST(request: NextRequest) {
@@ -208,9 +214,10 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase.from("demo_site_orders").insert(payload).select("*").single();
     if (error) throw error;
+    const createdOrder = data as IdLookup;
 
     await supabase.from("demo_site_order_events").insert({
-      order_id: data.id,
+      order_id: createdOrder.id,
       event_type: "demo_generated",
       title: "Demo opprettet",
       description: `${companyName} ble klargjort som DemoSites-preview.`,
