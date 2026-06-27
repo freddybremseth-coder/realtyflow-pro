@@ -187,3 +187,74 @@ export function buildDefaultTemplateFields(input: {
     images: [],
   };
 }
+
+export interface DemoSiteProfileAnalyzeInput {
+  companyName?: string | null;
+  websiteUrl?: string | null;
+  industry?: string | null;
+  notes?: string | null;
+  requestedPackageId?: string | null;
+}
+
+export interface DemoSiteProfileAnalyzeResult {
+  slug: string;
+  recommendedPackage: DemoSitePackage;
+  templateSlug: string;
+  readinessScore: number;
+  missingFields: string[];
+  suggestedNextSteps: string[];
+}
+
+const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
+  {
+    slug: "real-estate-agent",
+    keywords: ["eiendom", "megler", "bolig", "property", "real estate", "villa", "leilighet"],
+  },
+  {
+    slug: "restaurant-cafe",
+    keywords: ["restaurant", "kafe", "cafe", "mat", "menu", "meny", "bar", "tapas"],
+  },
+];
+
+function normalizeProfileText(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): DemoSiteProfileAnalyzeResult {
+  const companyName = (input.companyName || "").trim();
+  const profileText = normalizeProfileText(
+    [companyName, input.websiteUrl, input.industry, input.notes].filter(Boolean).join(" "),
+  );
+
+  const matchedTemplate = TEMPLATE_KEYWORDS.find((template) =>
+    template.keywords.some((keyword) => profileText.includes(keyword)),
+  );
+
+  const missingFields = [
+    !companyName && "companyName",
+    !input.websiteUrl && "websiteUrl",
+    !input.industry && "industry",
+    !input.notes && "notes",
+  ].filter((field): field is string => Boolean(field));
+
+  const hasWebsite = Boolean(input.websiteUrl && input.websiteUrl.trim().length > 0);
+  const recommendedPackage = getDemoSitePackage(
+    input.requestedPackageId || (hasWebsite && missingFields.length <= 1 ? "standard" : "basis"),
+  );
+
+  const readinessScore = Math.max(0, Math.min(100, 100 - missingFields.length * 20));
+
+  return {
+    slug: slugifyCompanyName(companyName || input.industry || "demosite"),
+    recommendedPackage,
+    templateSlug: matchedTemplate?.slug || "local-service",
+    readinessScore,
+    missingFields,
+    suggestedNextSteps: missingFields.length
+      ? missingFields.map((field) => `Legg inn ${field} før demoen klargjøres.`)
+      : ["Klargjør demo med valgt mal og anbefalt pakke."],
+  };
+}
