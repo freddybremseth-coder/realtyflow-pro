@@ -83,9 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_demo_site_orders_package ON demo_site_orders(pack
 CREATE INDEX IF NOT EXISTS idx_demo_site_orders_created_at ON demo_site_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_demo_site_events_order ON demo_site_order_events(order_id, created_at DESC);
 
-ALTER TABLE demo_site_templates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE demo_site_orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE demo_site_order_events ENABLE ROW LEVEL SECURITY;
+-- The API route writes through Next.js. Keep these tables accessible to the same Supabase access pattern used by the existing SaaS module.
+ALTER TABLE demo_site_templates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_site_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_site_order_events DISABLE ROW LEVEL SECURITY;
 
 INSERT INTO demo_site_templates (slug, name, category, description, repo_url, preview_url)
 VALUES
