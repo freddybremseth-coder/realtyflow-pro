@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BRANDS } from "@/lib/constants";
 import { SaasSubscriptionOverview } from "@/components/business/saas-subscription-overview";
-import { Banknote, BarChart, FileText, Home, Leaf, Loader2, PieChart, RefreshCw, TrendingUp, Users } from "lucide-react";
+import { Banknote, BarChart, Home, Leaf, Loader2, PieChart, RefreshCw } from "lucide-react";
 
 type BrandData = {
   brandId: string;
@@ -14,28 +14,16 @@ type BrandData = {
   revenueAmount: number;
   commissionTotal: number;
   commissionPaid: number;
-  commissionPending: number;
   wonDeals: number;
   totalPosts: number;
   publishedPosts: number;
-  pipelineLeads: number;
   crmContacts: number;
   growthActions: number;
-  saasApps: number;
-  saasMrr: number;
-  saasRevenue: number;
-  publishingRoyalties: number;
-  oliviaRevenue: number;
-  oliviaNetProfit: number;
-  financialIncome: number;
-  financialExpense: number;
   financialNet: number;
 };
 
 type OliviaData = {
   farmName: string;
-  supabaseHost?: string | null;
-  warnings?: string[];
   parcels: { count: number; totalTrees: number };
   financials: {
     totalRevenue: number;
@@ -49,7 +37,7 @@ type OliviaData = {
 const MONDEO_MONTHLY_INTEREST_NOK = 36_000;
 const MONDEO_MIN_PAYMENT_NOK = 33_000;
 
-function formatCurrency(value: number, currency = "EUR") {
+function money(value: number, currency = "EUR") {
   return new Intl.NumberFormat("nb-NO", {
     style: "currency",
     currency,
@@ -68,15 +56,9 @@ export default function BusinessOverviewPage() {
     totalPosts: 0,
     publishedPosts: 0,
     totalBrands: BRANDS.length,
-    pipelineLeads: 0,
     crmContacts: 0,
-    saasApps: 0,
     saasMrr: 0,
-    saasRevenue: 0,
-    publishingRoyalties: 0,
     oliviaNetProfit: 0,
-    financeEvents: 0,
-    financialNet: 0,
   });
 
   const fetchOverviewData = useCallback(async () => {
@@ -115,9 +97,9 @@ export default function BusinessOverviewPage() {
     }
   }
 
+  const mondeoData = brandDataMap.mondeo;
   const brandsToShow = selectedBrand === "all" ? BRANDS : BRANDS.filter((brand) => brand.id === selectedBrand);
   const regularBrandData = Object.values(brandDataMap).filter((data) => data.brandId !== "mondeo");
-  const mondeoData = brandDataMap.mondeo;
   const totalCommission = regularBrandData.reduce((sum, data) => sum + Number(data.commissionTotal || 0), 0);
   const totalPaid = regularBrandData.reduce((sum, data) => sum + Number(data.commissionPaid || 0), 0);
   const totalSales = regularBrandData.reduce((sum, data) => sum + Number(data.revenueAmount || 0), 0);
@@ -149,11 +131,7 @@ export default function BusinessOverviewPage() {
         </Button>
       </div>
 
-      {financeStatus && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-          {financeStatus}
-        </div>
-      )}
+      {financeStatus && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{financeStatus}</div>}
 
       {mondeoData && (
         <Card className="border-orange-500/30 bg-gradient-to-r from-orange-500/10 to-amber-500/10">
@@ -167,9 +145,9 @@ export default function BusinessOverviewPage() {
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <Metric label="Salgsverdi bolig" value={mondeoData.revenue} />
-              <Metric label="Månedlig rente" value={formatCurrency(MONDEO_MONTHLY_INTEREST_NOK, "NOK")} tone="amber" />
-              <Metric label="Minimum betaling" value={formatCurrency(MONDEO_MIN_PAYMENT_NOK, "NOK")} tone="blue" />
-              <Metric label="Mottatt / KPI" value={formatCurrency(Number(mondeoData.financialNet || 0), "NOK")} tone="green" />
+              <Metric label="Månedlig rente" value={money(MONDEO_MONTHLY_INTEREST_NOK, "NOK")} tone="text-amber-400" />
+              <Metric label="Minimum betaling" value={money(MONDEO_MIN_PAYMENT_NOK, "NOK")} tone="text-blue-400" />
+              <Metric label="Mottatt / KPI" value={money(Number(mondeoData.financialNet || 0), "NOK")} tone="text-emerald-400" />
             </div>
           </CardContent>
         </Card>
@@ -180,10 +158,10 @@ export default function BusinessOverviewPage() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
         <StatCard label="Brands" value={String(totals.totalBrands)} />
         <StatCard label="Totalt innlegg" value={Number(totals.totalPosts || 0).toLocaleString()} />
-        <StatCard label="SaaS MRR" value={formatCurrency(Number(totals.saasMrr || 0), "NOK")} tone="green" />
-        <StatCard label="Kommisjon" value={formatCurrency(totalCommission, "EUR")} tone="amber" />
-        <StatCard label="CRM kunder" value={String(totals.crmContacts)} tone="blue" />
-        <StatCard label="Olivia netto" value={formatCurrency(Number(totals.oliviaNetProfit || 0), "EUR")} tone={Number(totals.oliviaNetProfit || 0) >= 0 ? "green" : "red"} />
+        <StatCard label="SaaS MRR" value={money(Number(totals.saasMrr || 0), "NOK")} tone="text-emerald-400" />
+        <StatCard label="Kommisjon" value={money(totalCommission, "EUR")} tone="text-amber-400" />
+        <StatCard label="CRM kunder" value={String(totals.crmContacts)} tone="text-blue-400" />
+        <StatCard label="Olivia netto" value={money(Number(totals.oliviaNetProfit || 0), "EUR")} tone={Number(totals.oliviaNetProfit || 0) >= 0 ? "text-emerald-400" : "text-red-400"} />
       </div>
 
       {(totalCommission > 0 || wonDeals > 0) && (
@@ -194,10 +172,10 @@ export default function BusinessOverviewPage() {
               <h2 className="text-lg font-bold text-white">Inntektsoversikt — kommisjon og øvrige salg</h2>
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              <Metric label="Total salgsverdi" value={formatCurrency(totalSales, "EUR")} />
-              <Metric label="Total kommisjon" value={formatCurrency(totalCommission, "EUR")} tone="amber" />
-              <Metric label="Utbetalt" value={formatCurrency(totalPaid, "EUR")} tone="green" />
-              <Metric label="Ventende" value={formatCurrency(totalCommission - totalPaid, "EUR")} tone="orange" />
+              <Metric label="Total salgsverdi" value={money(totalSales, "EUR")} />
+              <Metric label="Total kommisjon" value={money(totalCommission, "EUR")} tone="text-amber-400" />
+              <Metric label="Utbetalt" value={money(totalPaid, "EUR")} tone="text-emerald-400" />
+              <Metric label="Ventende" value={money(totalCommission - totalPaid, "EUR")} tone="text-orange-400" />
               <Metric label="Avsluttede salg" value={String(wonDeals)} />
             </div>
           </CardContent>
@@ -213,12 +191,12 @@ export default function BusinessOverviewPage() {
               <Badge variant="secondary" className="ml-auto text-[10px]">Olivia</Badge>
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
-              <Metric label="Høstinntekter" value={formatCurrency(oliviaData.financials.totalRevenue, "EUR")} tone="green" />
-              <Metric label="Subsidier" value={formatCurrency(oliviaData.financials.totalSubsidies, "EUR")} tone="blue" />
-              <Metric label="Utgifter" value={formatCurrency(oliviaData.financials.totalExpenses, "EUR")} tone="red" />
-              <Metric label="Netto resultat" value={formatCurrency(oliviaData.financials.netProfit, "EUR")} tone={oliviaData.financials.netProfit >= 0 ? "green" : "red"} />
+              <Metric label="Høstinntekter" value={money(oliviaData.financials.totalRevenue, "EUR")} tone="text-emerald-400" />
+              <Metric label="Subsidier" value={money(oliviaData.financials.totalSubsidies, "EUR")} tone="text-blue-400" />
+              <Metric label="Utgifter" value={money(oliviaData.financials.totalExpenses, "EUR")} tone="text-red-400" />
+              <Metric label="Netto resultat" value={money(oliviaData.financials.netProfit, "EUR")} tone={oliviaData.financials.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
               <Metric label="Parseller / trær" value={`${oliviaData.parcels.count} / ${oliviaData.parcels.totalTrees}`} />
-              <Metric label="Total høst kg" value={oliviaData.financials.totalHarvestKg.toLocaleString()} tone="amber" />
+              <Metric label="Total høst kg" value={oliviaData.financials.totalHarvestKg.toLocaleString()} tone="text-amber-400" />
             </div>
           </CardContent>
         </Card>
@@ -253,11 +231,11 @@ export default function BusinessOverviewPage() {
                       <p className="text-xs text-slate-500">{brand.type}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <MiniMetric icon={<TrendingUp size={15} />} label="Salgsverdi" value={data.revenue} />
-                    <MiniMetric icon={<Users size={15} />} label="CRM" value={String(data.crmContacts)} />
-                    <MiniMetric icon={<FileText size={15} />} label="Publisert" value={String(data.publishedPosts)} />
-                    <MiniMetric icon={<Banknote size={15} />} label="Netto" value={brand.id === "mondeo" ? formatCurrency(data.financialNet, "NOK") : formatCurrency(data.financialNet, "EUR")} />
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <Mini label="Salgsverdi" value={data.revenue} />
+                    <Mini label="CRM" value={String(data.crmContacts)} />
+                    <Mini label="Publisert" value={String(data.publishedPosts)} />
+                    <Mini label="Netto" value={brand.id === "mondeo" ? money(data.financialNet, "NOK") : money(data.financialNet, "EUR")} />
                   </div>
                 </div>
               );
@@ -269,40 +247,30 @@ export default function BusinessOverviewPage() {
   );
 }
 
-function toneClass(tone?: string) {
-  if (tone === "green") return "text-emerald-400";
-  if (tone === "amber") return "text-amber-400";
-  if (tone === "orange") return "text-orange-400";
-  if (tone === "blue") return "text-blue-400";
-  if (tone === "red") return "text-red-400";
-  return "text-white";
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Metric({ label, value, tone = "text-white" }: { label: string; value: string; tone?: string }) {
   return (
     <div>
       <p className="mb-1 text-[10px] uppercase text-slate-500">{label}</p>
-      <p className={`text-xl font-bold ${toneClass(tone)}`}>{value}</p>
+      <p className={`text-xl font-bold ${tone}`}>{value}</p>
     </div>
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function StatCard({ label, value, tone = "text-white" }: { label: string; value: string; tone?: string }) {
   return (
     <Card className="border-slate-700/50 bg-slate-800/50">
       <CardContent className="p-4 text-center">
-        <p className={`text-2xl font-bold ${toneClass(tone)}`}>{value}</p>
+        <p className={`text-2xl font-bold ${tone}`}>{value}</p>
         <p className="text-[10px] uppercase text-slate-500">{label}</p>
       </CardContent>
     </Card>
   );
 }
 
-function MiniMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-slate-800/50 p-3 text-center">
-      <div className="mb-1 flex justify-center text-slate-400">{icon}</div>
-      <p className="truncate text-sm font-semibold text-white">{value}</p>
+      <p className="truncate font-semibold text-white">{value}</p>
       <p className="text-[10px] text-slate-500">{label}</p>
     </div>
   );
