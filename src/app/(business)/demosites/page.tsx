@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, Globe, Loader2, MonitorSmartphone, Rocket, Send, Wallet } from "lucide-react";
 import { DEMO_SITE_PACKAGES, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
+import { DemoGeneratorCard } from "@/components/demosites/demo-generator-card";
 
 type DemoSiteOrder = {
   id: string;
@@ -73,6 +74,7 @@ export default function DemoSitesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -98,6 +100,7 @@ export default function DemoSitesPage() {
     event.preventDefault();
     setSaving(true);
     setError(null);
+    setSuccess(null);
     try {
       const response = await fetch("/api/saas/demosites", {
         method: "POST",
@@ -107,6 +110,7 @@ export default function DemoSitesPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Bestilling feilet.");
       setForm(INITIAL_FORM);
+      setSuccess("Bestilling er opprettet.");
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bestilling feilet.");
@@ -129,12 +133,13 @@ export default function DemoSitesPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="flex items-center gap-3 text-3xl font-bold text-white"><MonitorSmartphone className="text-purple-400" /> DemoSites CRM</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-400">Bestillingsflyt, kundeoversikt, preview-URL og MRR for nettsidepakker på ChatGenius.pro.</p>
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">Bestillingsflyt, demo-generator, kundeoversikt, preview-URL og MRR for nettsidepakker på ChatGenius.pro.</p>
         </div>
         <a href="https://github.com/freddybremseth-coder/demosites" target="_blank" rel="noopener noreferrer"><Button variant="outline" className="border-slate-600">Demosites repo <ExternalLink className="ml-2 h-4 w-4" /></Button></a>
       </div>
 
       {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+      {success && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{success}</div>}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
         <Metric label="Bestillinger" value={String(summary.totalOrders)} />
@@ -149,9 +154,11 @@ export default function DemoSitesPage() {
         {DEMO_SITE_PACKAGES.map((pkg) => <Card key={pkg.id} className={`border-slate-700/50 bg-slate-800/50 ${pkg.recommended ? "ring-1 ring-purple-500/60" : ""}`}><CardHeader><CardTitle className="text-white">{pkg.shortName}</CardTitle><CardDescription>{pkg.tagline}</CardDescription></CardHeader><CardContent><div className="text-2xl font-bold text-white">{formatNok(pkg.setupFeeNok)}</div><div className="text-sm text-emerald-300">+ {formatNok(pkg.monthlyFeeNok)} / mnd</div><p className="mt-3 text-xs text-slate-400">{pkg.salesAngle}</p></CardContent></Card>)}
       </div>
 
+      <DemoGeneratorCard templates={templates} onCreated={loadData} onError={setError} onSuccess={setSuccess} />
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
         <Card className="border-purple-500/20 bg-slate-800/50">
-          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Send className="h-5 w-5 text-purple-300" />Ny bestilling</CardTitle><CardDescription>Få valg, enkel bestilling og automatisk forslag til preview-subdomene.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Send className="h-5 w-5 text-purple-300" />Ny bestilling</CardTitle><CardDescription>Bruk denne når kunden allerede har sagt ja og du vil registrere salget direkte.</CardDescription></CardHeader>
           <CardContent>
             <form onSubmit={createOrder} className="space-y-3">
               <Input label="Bedriftsnavn" required value={form.company_name} onChange={(value) => setForm((prev) => ({ ...prev, company_name: value }))} />
@@ -160,10 +167,7 @@ export default function DemoSitesPage() {
               <Input label="Telefon" value={form.customer_phone} onChange={(value) => setForm((prev) => ({ ...prev, customer_phone: value }))} />
               <Input label="Bransje" value={form.industry} onChange={(value) => setForm((prev) => ({ ...prev, industry: value }))} />
               <Input label="Eksisterende nettside" value={form.website_url} onChange={(value) => setForm((prev) => ({ ...prev, website_url: value }))} />
-              <div className="grid grid-cols-2 gap-3">
-                <Select label="Pakke" value={form.package_id} onChange={(value) => setForm((prev) => ({ ...prev, package_id: value as DemoSitePackageId }))} options={DEMO_SITE_PACKAGES.map((pkg) => ({ value: pkg.id, label: pkg.shortName }))} />
-                <Select label="Mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={(templates.length ? templates : [{ slug: "local-service", name: "Lokal service" }]).map((template) => ({ value: template.slug, label: template.name }))} />
-              </div>
+              <div className="grid grid-cols-2 gap-3"><Select label="Pakke" value={form.package_id} onChange={(value) => setForm((prev) => ({ ...prev, package_id: value as DemoSitePackageId }))} options={DEMO_SITE_PACKAGES.map((pkg) => ({ value: pkg.id, label: pkg.shortName }))} /><Select label="Mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={(templates.length ? templates : [{ slug: "local-service", name: "Lokal service" }]).map((template) => ({ value: template.slug, label: template.name }))} /></div>
               <div className="grid grid-cols-2 gap-3"><Input label="Setup-kost" type="number" value={form.setup_cost_nok} onChange={(value) => setForm((prev) => ({ ...prev, setup_cost_nok: value }))} /><Input label="Mnd-kost" type="number" value={form.monthly_cost_nok} onChange={(value) => setForm((prev) => ({ ...prev, monthly_cost_nok: value }))} /></div>
               <textarea value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} rows={3} className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Logo, farger, tjenester, produkter, priser og tekst som skal endres" />
               <Button type="submit" disabled={saving} className="w-full bg-purple-600 hover:bg-purple-500">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Opprett bestilling</Button>
@@ -172,9 +176,9 @@ export default function DemoSitesPage() {
         </Card>
 
         <Card className="border-slate-700/50 bg-slate-800/50">
-          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Globe className="h-5 w-5 text-blue-300" />Kunder og bestillinger</CardTitle><CardDescription>Her ser du hvem som har kjøpt, betalt, valgt pakke og hvilken URL som skal vises.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Globe className="h-5 w-5 text-blue-300" />Demoer, kunder og bestillinger</CardTitle><CardDescription>Her ser du demoer før salg, kunder som har kjøpt, betalt, valgt pakke og hvilken URL som skal vises.</CardDescription></CardHeader>
           <CardContent className="space-y-3">
-            {orders.length === 0 ? <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Ingen bestillinger ennå.</div> : orders.map((order) => (
+            {orders.length === 0 ? <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Ingen demoer eller bestillinger ennå.</div> : orders.map((order) => (
               <div key={order.id} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-lg font-semibold text-white">{order.company_name}</h3><p className="text-xs text-slate-500">{order.order_number} · {order.customer_name} · {order.customer_email} · {formatDate(order.created_at)}</p></div><div className="flex flex-wrap gap-2"><Badge>{statusLabel[order.status]}</Badge><Badge variant="outline" className="border-slate-600 text-slate-300">{billingLabel[order.billing_status]}</Badge></div></div>
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3"><Info label="Pakke" value={order.package_id} /><Info label="Pris" value={`${formatNok(order.setup_fee_nok)} + ${formatNok(order.monthly_fee_nok)}/mnd`} /><Info label="Preview" value={order.preview_url || "Ikke klar"} href={order.preview_url || undefined} /></div>
