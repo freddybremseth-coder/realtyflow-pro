@@ -1,7 +1,20 @@
 -- ============================================================================
 -- DemoSites CRM
--- Productized website sales pipeline for ChatGenius.pro
+-- Productized website sales pipeline for ChatGenius.pro inside RealtyFlow
+--
+-- RLS is enabled. The Next.js API route must use SUPABASE_SERVICE_ROLE_KEY
+-- server-side; the frontend should not access these tables directly with anon.
 -- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 CREATE TABLE IF NOT EXISTS demo_site_templates (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -21,6 +34,12 @@ CREATE TABLE IF NOT EXISTS demo_site_templates (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DROP TRIGGER IF EXISTS update_demo_site_templates_updated_at ON demo_site_templates;
+CREATE TRIGGER update_demo_site_templates_updated_at
+BEFORE UPDATE ON demo_site_templates
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TABLE IF NOT EXISTS demo_site_orders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -51,7 +70,7 @@ CREATE TABLE IF NOT EXISTS demo_site_orders (
   target_subdomain TEXT,
   preview_url TEXT,
   production_url TEXT,
-  deployment_target TEXT DEFAULT 'subdomain.chatgenius.pro',
+  deployment_target TEXT DEFAULT 'realtyflow.chatgenius.pro',
   app_id UUID REFERENCES saas_apps(id) ON DELETE SET NULL,
   logo_url TEXT,
   brand_color TEXT,
@@ -67,6 +86,12 @@ CREATE TABLE IF NOT EXISTS demo_site_orders (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS update_demo_site_orders_updated_at ON demo_site_orders;
+CREATE TRIGGER update_demo_site_orders_updated_at
+BEFORE UPDATE ON demo_site_orders
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TABLE IF NOT EXISTS demo_site_order_events (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   order_id UUID REFERENCES demo_site_orders(id) ON DELETE CASCADE,
@@ -81,18 +106,26 @@ CREATE INDEX IF NOT EXISTS idx_demo_site_orders_status ON demo_site_orders(statu
 CREATE INDEX IF NOT EXISTS idx_demo_site_orders_billing_status ON demo_site_orders(billing_status);
 CREATE INDEX IF NOT EXISTS idx_demo_site_orders_package ON demo_site_orders(package_id);
 CREATE INDEX IF NOT EXISTS idx_demo_site_orders_created_at ON demo_site_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_site_orders_customer_email ON demo_site_orders(customer_email);
+CREATE INDEX IF NOT EXISTS idx_demo_site_orders_company_name ON demo_site_orders(company_name);
 CREATE INDEX IF NOT EXISTS idx_demo_site_events_order ON demo_site_order_events(order_id, created_at DESC);
 
--- The API route writes through Next.js. Keep these tables accessible to the same Supabase access pattern used by the existing SaaS module.
-ALTER TABLE demo_site_templates DISABLE ROW LEVEL SECURITY;
-ALTER TABLE demo_site_orders DISABLE ROW LEVEL SECURITY;
-ALTER TABLE demo_site_order_events DISABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_site_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_site_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_site_order_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read demo_site_templates" ON demo_site_templates;
+DROP POLICY IF EXISTS "Allow public insert demo_site_orders" ON demo_site_orders;
+DROP POLICY IF EXISTS "Allow public read demo_site_orders" ON demo_site_orders;
+DROP POLICY IF EXISTS "Allow public update demo_site_orders" ON demo_site_orders;
+DROP POLICY IF EXISTS "Allow public read demo_site_order_events" ON demo_site_order_events;
+DROP POLICY IF EXISTS "Allow public insert demo_site_order_events" ON demo_site_order_events;
 
 INSERT INTO demo_site_templates (slug, name, category, description, repo_url, preview_url)
 VALUES
-  ('local-service', 'Lokal servicebedrift', 'service', 'Rask mal for håndverkere, flyttebyrå, verksted, renhold og lokale tjenestebedrifter.', 'https://github.com/freddybremseth-coder/demosites', 'https://local-service.chatgenius.pro'),
-  ('restaurant-cafe', 'Restaurant / kafé', 'hospitality', 'Mat, meny, åpningstider, bordbestilling og enkel leadfangst.', 'https://github.com/freddybremseth-coder/demosites', 'https://restaurant-cafe.chatgenius.pro'),
-  ('real-estate-agent', 'Eiendomsmegler / rådgiver', 'real-estate', 'Profil, områder, tjenester, boligønskeskjema og ChatGenius lead-assistent.', 'https://github.com/freddybremseth-coder/demosites', 'https://real-estate-agent.chatgenius.pro')
+  ('local-service', 'Lokal servicebedrift', 'service', 'Rask mal for håndverkere, flyttebyrå, verksted, renhold og lokale tjenestebedrifter.', 'https://github.com/freddybremseth-coder/demosites', 'https://realtyflow.chatgenius.pro/saas?template=local-service'),
+  ('restaurant-cafe', 'Restaurant / kafé', 'hospitality', 'Mat, meny, åpningstider, bordbestilling og enkel leadfangst.', 'https://github.com/freddybremseth-coder/demosites', 'https://realtyflow.chatgenius.pro/saas?template=restaurant-cafe'),
+  ('real-estate-agent', 'Eiendomsmegler / rådgiver', 'real-estate', 'Profil, områder, tjenester, boligønskeskjema og ChatGenius lead-assistent.', 'https://github.com/freddybremseth-coder/demosites', 'https://realtyflow.chatgenius.pro/saas?template=real-estate-agent')
 ON CONFLICT (slug) DO UPDATE SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
@@ -108,8 +141,8 @@ INSERT INTO saas_apps (
 VALUES (
   'demosites',
   'ChatGenius DemoSites',
-  'demosites.chatgenius.pro',
-  'Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview-URL og abonnement/MRR-oppfølging.',
+  'realtyflow.chatgenius.pro',
+  'Produktisert nettsidepakke med demo-maler, bestillingsskjema, CRM, preview og abonnement/MRR-oppfølging inne i RealtyFlow.',
   'marketing',
   ARRAY['next.js', 'supabase', 'chatgenius', 'demosites'],
   'live',
@@ -118,7 +151,7 @@ VALUES (
   490,
   'NOK',
   'https://github.com/freddybremseth-coder/demosites',
-  'https://chatgenius.pro/demosites',
+  'https://realtyflow.chatgenius.pro/saas',
   'codex'
 )
 ON CONFLICT (slug) DO UPDATE SET
