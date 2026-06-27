@@ -108,7 +108,7 @@ export const DEMO_SITE_TEMPLATE_SEEDS = [
     category: "service",
     description: "Rask mal for håndverkere, flyttebyrå, verksted, renhold og lokale tjenestebedrifter.",
     repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://local-service.chatgenius.pro",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=local-service",
   },
   {
     slug: "restaurant-cafe",
@@ -116,7 +116,7 @@ export const DEMO_SITE_TEMPLATE_SEEDS = [
     category: "hospitality",
     description: "Mat, meny, åpningstider, bordbestilling og enkel leadfangst.",
     repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://restaurant-cafe.chatgenius.pro",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=restaurant-cafe",
   },
   {
     slug: "real-estate-agent",
@@ -124,7 +124,7 @@ export const DEMO_SITE_TEMPLATE_SEEDS = [
     category: "real-estate",
     description: "Profil, områder, tjenester, boligønskeskjema og ChatGenius lead-assistent.",
     repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://real-estate-agent.chatgenius.pro",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=real-estate-agent",
   },
 ];
 
