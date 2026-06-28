@@ -38,6 +38,7 @@ type DemoSiteOrder = {
 
 type DemoSiteTemplate = { slug: string; name: string; description?: string; preview_url?: string };
 type DemoSiteSummary = { totalOrders: number; activeOrders: number; paidOrders: number; bookedSetupRevenue: number; activeMrr: number; setupCosts: number; monthlyCosts: number; netSetup: number; netMrr: number; arr: number };
+type DemoSiteEvent = { id: string; order_id: string; event_type: string; title: string; description?: string | null; created_at?: string };
 
 type OrderFormState = {
   company_name: string;
@@ -64,6 +65,11 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium" }).format(new Date(value));
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
 function editableFieldList(order: DemoSiteOrder) {
   const fields = order.editable_fields && typeof order.editable_fields === "object" ? Object.keys(order.editable_fields) : [];
   return fields.length ? fields : ["logo", "adresse", "kontaktinfo", "priser", "tjenester", "produkter", "tekstfelt", "farger"];
@@ -72,6 +78,7 @@ function editableFieldList(order: DemoSiteOrder) {
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>([]);
+  const [events, setEvents] = useState<DemoSiteEvent[]>([]);
   const [summary, setSummary] = useState<DemoSiteSummary>(EMPTY_SUMMARY);
   const [form, setForm] = useState<OrderFormState>(INITIAL_FORM);
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,7 @@ export default function DemoSitesPage() {
       if (!response.ok) throw new Error(data.error || "Kunne ikke hente DemoSites CRM.");
       setOrders(Array.isArray(data.orders) ? data.orders : []);
       setTemplates(Array.isArray(data.templates) ? data.templates : []);
+      setEvents(Array.isArray(data.events) ? data.events : []);
       setSummary(data.summary || EMPTY_SUMMARY);
       if (data.error) setError(data.error);
     } catch (err) {
@@ -126,6 +134,8 @@ export default function DemoSitesPage() {
     await loadData();
   }
 
+  const orderNameById = new Map(orders.map((order) => [order.id, order.company_name]));
+
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>;
 
   return (
@@ -154,6 +164,26 @@ export default function DemoSitesPage() {
       </div>
 
       <TempDemoCard onCreated={loadData} />
+
+      <Card className="border-slate-700/50 bg-slate-800/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-white"><CheckCircle className="h-5 w-5 text-emerald-300" />Siste hendelser</CardTitle>
+          <CardDescription>Logg fra DemoSites: demo opprettet, oppdatert, claimet eller utløpt.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {events.length === 0 ? <div className="rounded-lg border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">Ingen hendelser ennå.</div> : events.slice(0, 8).map((event) => (
+            <div key={event.id} className="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-white">{event.title}</div>
+                  <div className="mt-1 text-xs text-slate-400">{orderNameById.get(event.order_id) || "DemoSites"} · {event.description || event.event_type}</div>
+                </div>
+                <div className="shrink-0 text-xs text-slate-500">{formatDateTime(event.created_at)}</div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
         <Card className="border-purple-500/20 bg-slate-800/50">
