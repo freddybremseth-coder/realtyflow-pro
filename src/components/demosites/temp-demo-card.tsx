@@ -50,7 +50,7 @@ const INITIAL_FORM: DemoRequestFormState = {
   notes: "",
 };
 
-const MAX_FILE_SIZE = 850_000;
+const MAX_FILE_SIZE = 650_000;
 
 function formatDate(value?: string) {
   if (!value) return "7 dager";
@@ -60,7 +60,7 @@ function formatDate(value?: string) {
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     if (file.size > MAX_FILE_SIZE) {
-      reject(new Error("Bildet er for stort. Bruk bilder under ca. 850 KB i denne demo-versjonen."));
+      reject(new Error("Bildet er for stort. Bruk bilder under ca. 650 KB i denne demo-versjonen."));
       return;
     }
 
@@ -149,7 +149,7 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
               <FileInput label={form.demo_image_2 ? "Bilde 2 lastet" : "Last opp bilde 2"} onChange={(file) => handleFile("demo_image_2", file)} />
               <FileInput label={form.demo_image_3 ? "Bilde 3 lastet" : "Last opp bilde 3"} onChange={(file) => handleFile("demo_image_3", file)} />
             </div>
-            <p className="mt-2 text-xs text-slate-500">Midlertidig demo-versjon: bruk bilder under ca. 850 KB per bilde.</p>
+            <p className="mt-2 text-xs text-slate-500">Midlertidig demo-versjon: bruk bilder under ca. 650 KB per bilde.</p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_180px]">
