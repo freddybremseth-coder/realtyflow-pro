@@ -26,6 +26,23 @@ function text(body: RequestBody, snakeCase: string, camelCase: string) {
   return output || null;
 }
 
+function cleanHexColor(value: unknown, fallback: string) {
+  const raw = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+  if (/^[0-9a-f]{6}$/i.test(raw)) return `#${raw}`;
+  return fallback;
+}
+
+function readImageUrls(body: RequestBody) {
+  const value = body.image_urls ?? body.imageUrls ?? body.gallery_images ?? body.galleryImages;
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
+  return String(value || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 function daysFromNow(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -77,10 +94,31 @@ export async function POST(request: NextRequest) {
     const selectedPackage = getDemoSitePackage(String(body.package_id || body.packageId || "standard"));
     const websiteUrl = text(body, "website_url", "websiteUrl");
     const logoUrl = text(body, "logo_url", "logoUrl");
-    const brandColor = text(body, "brand_color", "brandColor");
+    const primaryColor = cleanHexColor(body.primary_color ?? body.primaryColor ?? body.brand_color ?? body.brandColor, "#0f9f8f");
+    const secondaryColor = cleanHexColor(body.secondary_color ?? body.secondaryColor, "#0f172a");
+    const accentColor = cleanHexColor(body.accent_color ?? body.accentColor, "#14b8a6");
+    const imageUrls = readImageUrls(body);
     const industry = text(body, "industry", "industry");
     const notes = text(body, "notes", "notes");
-    const profile = buildSiteProfile({ companyName, websiteUrl, logoUrl, brandColor, industry, services, notes });
+    const profile = buildSiteProfile({ companyName, websiteUrl, logoUrl, brandColor: primaryColor, industry, services, notes });
+    const enrichedProfile = {
+      ...profile,
+      logoUrl: logoUrl || profile.logoUrl,
+      brandColor: primaryColor,
+      colorPalette: [primaryColor, secondaryColor, accentColor, "#f8fafc"],
+      secondaryColor,
+      accentColor,
+      imageUrls,
+    };
+    const defaultFields = buildDefaultTemplateFields({
+      companyName,
+      customerName: customerName || companyName,
+      customerEmail,
+      customerPhone: text(body, "customer_phone", "customerPhone") || undefined,
+      websiteUrl: profile.websiteUrl || undefined,
+      industry: profile.industry,
+      notes: notes || undefined,
+    });
     const slug = slugifyCompanyName(companyName);
     const claimToken = generateClaimToken();
     const claimUrl = `${REALTYFLOW_BASE_URL}/demosites/claim/${claimToken}`;
@@ -112,18 +150,18 @@ export async function POST(request: NextRequest) {
       production_url: null,
       deployment_target: "realtyflow.chatgenius.pro",
       app_id: appId,
-      logo_url: profile.logoUrl,
-      brand_color: profile.brandColor,
-      extracted_profile: profile,
-      editable_fields: buildDefaultTemplateFields({
-        companyName,
-        customerName: customerName || companyName,
-        customerEmail,
-        customerPhone: text(body, "customer_phone", "customerPhone") || undefined,
-        websiteUrl: profile.websiteUrl || undefined,
-        industry: profile.industry,
-        notes: notes || undefined,
-      }),
+      logo_url: enrichedProfile.logoUrl,
+      brand_color: primaryColor,
+      extracted_profile: enrichedProfile,
+      editable_fields: {
+        ...defaultFields,
+        logo_url: enrichedProfile.logoUrl,
+        primary_color: primaryColor,
+        secondary_color: secondaryColor,
+        accent_color: accentColor,
+        image_urls: imageUrls,
+        services,
+      },
       requested_changes: {},
       provisioning_log: [
         {
@@ -146,7 +184,7 @@ export async function POST(request: NextRequest) {
       event_type: "demo_request_created",
       title: "Demo-request opprettet",
       description: `${companyName} fikk en midlertidig demo som utløper om ${DEFAULT_EXPIRY_DAYS} dager.`,
-      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id },
+      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id, image_count: imageUrls.length },
     });
 
     return NextResponse.json({
