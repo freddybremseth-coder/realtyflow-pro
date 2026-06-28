@@ -31,6 +31,7 @@ type DemoSiteOrder = {
   claimed_at?: string | null;
   expires_at?: string | null;
   production_url?: string | null;
+  logo_url?: string | null;
   editable_fields?: Record<string, unknown> | null;
   notes?: string | null;
   created_at?: string;
@@ -70,9 +71,20 @@ function formatDateTime(value?: string | null) {
   return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function getEditableFields(order: DemoSiteOrder) {
+  return order.editable_fields && typeof order.editable_fields === "object" ? order.editable_fields : {};
+}
+
 function editableFieldList(order: DemoSiteOrder) {
-  const fields = order.editable_fields && typeof order.editable_fields === "object" ? Object.keys(order.editable_fields) : [];
+  const fields = Object.keys(getEditableFields(order));
   return fields.length ? fields : ["logo", "adresse", "kontaktinfo", "priser", "tjenester", "produkter", "tekstfelt", "farger"];
+}
+
+function getAssetSummary(order: DemoSiteOrder) {
+  const fields = getEditableFields(order);
+  const galleryImages = Array.isArray(fields.gallery_images) ? fields.gallery_images : [];
+  const hasLogo = Boolean(order.logo_url || fields.logo_url);
+  return { hasLogo, imageCount: galleryImages.length };
 }
 
 export default function DemoSitesPage() {
@@ -208,16 +220,20 @@ export default function DemoSitesPage() {
         </Card>
 
         <Card className="border-slate-700/50 bg-slate-800/50">
-          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Globe className="h-5 w-5 text-blue-300" />Kunder og bestillinger</CardTitle><CardDescription>Her ser du demo, claim-lenke, betaling, valgt pakke og utløpsdato.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-white"><Globe className="h-5 w-5 text-blue-300" />Kunder og bestillinger</CardTitle><CardDescription>Her ser du demo, claim-lenke, betaling, valgt pakke, utløpsdato og bilde/logo-status.</CardDescription></CardHeader>
           <CardContent className="space-y-3">
-            {orders.length === 0 ? <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Ingen bestillinger ennå.</div> : orders.map((order) => (
-              <div key={order.id} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-lg font-semibold text-white">{order.company_name}</h3><p className="text-xs text-slate-500">{order.order_number} · {order.customer_name} · {order.customer_email} · {formatDate(order.created_at)}</p></div><div className="flex flex-wrap gap-2"><Badge>{statusLabel[order.status]}</Badge><Badge variant="outline" className="border-slate-600 text-slate-300">{billingLabel[order.billing_status]}</Badge>{order.claimed_at && <Badge className="bg-emerald-600 text-white">Claimet</Badge>}</div></div>
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6"><Info label="Pakke" value={order.package_id} /><Info label="Pris" value={`${formatNok(order.setup_fee_nok)} + ${formatNok(order.monthly_fee_nok)}/mnd`} /><Info label="Preview" value={order.preview_url ? "Åpne preview" : "Ikke klar"} href={order.preview_url || undefined} /><Info label="Claim" value={order.claim_url ? "Åpne claim" : "Ikke klar"} href={order.claim_url || undefined} /><Info label="Claimet" value={formatDate(order.claimed_at) || "Ikke claimet"} /><Info label="Utløper" value={formatDate(order.expires_at) || "Ikke satt"} /></div>
-                <div className="mt-3 flex flex-wrap gap-1.5">{editableFieldList(order).slice(0, 8).map((field) => <Badge key={field} variant="outline" className="border-slate-600 text-[10px] text-slate-300">{field}</Badge>)}</div>
-                <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" className="border-slate-600" onClick={() => updateOrder(order, { status: "in_setup" })}>Oppsett</Button><Button size="sm" variant="outline" className="border-purple-500/40 text-purple-200" onClick={() => updateOrder(order, { status: "preview_ready" })}>Preview klar</Button><Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button><Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Live</Button><Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button></div>
-              </div>
-            ))}
+            {orders.length === 0 ? <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">Ingen bestillinger ennå.</div> : orders.map((order) => {
+              const assetSummary = getAssetSummary(order);
+              return (
+                <div key={order.id} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-lg font-semibold text-white">{order.company_name}</h3><p className="text-xs text-slate-500">{order.order_number} · {order.customer_name} · {order.customer_email} · {formatDate(order.created_at)}</p></div><div className="flex flex-wrap gap-2"><Badge>{statusLabel[order.status]}</Badge><Badge variant="outline" className="border-slate-600 text-slate-300">{billingLabel[order.billing_status]}</Badge>{order.claimed_at && <Badge className="bg-emerald-600 text-white">Claimet</Badge>}{assetSummary.hasLogo && <Badge className="bg-blue-600 text-white">Logo</Badge>}{assetSummary.imageCount > 0 && <Badge className="bg-purple-600 text-white">{assetSummary.imageCount} bilde{assetSummary.imageCount === 1 ? "" : "r"}</Badge>}</div></div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6"><Info label="Pakke" value={order.package_id} /><Info label="Pris" value={`${formatNok(order.setup_fee_nok)} + ${formatNok(order.monthly_fee_nok)}/mnd`} /><Info label="Preview" value={order.preview_url ? "Åpne preview" : "Ikke klar"} href={order.preview_url || undefined} /><Info label="Claim" value={order.claim_url ? "Åpne claim" : "Ikke klar"} href={order.claim_url || undefined} /><Info label="Claimet" value={formatDate(order.claimed_at) || "Ikke claimet"} /><Info label="Utløper" value={formatDate(order.expires_at) || "Ikke satt"} /></div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3"><Info label="Logo" value={assetSummary.hasLogo ? "Lagt inn" : "Mangler"} /><Info label="Bilder" value={`${assetSummary.imageCount} av 3`} /><Info label="Farger" value={getEditableFields(order).brand_colors ? "Lagt inn" : "Standard"} /></div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">{editableFieldList(order).slice(0, 8).map((field) => <Badge key={field} variant="outline" className="border-slate-600 text-[10px] text-slate-300">{field}</Badge>)}</div>
+                  <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" className="border-slate-600" onClick={() => updateOrder(order, { status: "in_setup" })}>Oppsett</Button><Button size="sm" variant="outline" className="border-purple-500/40 text-purple-200" onClick={() => updateOrder(order, { status: "preview_ready" })}>Preview klar</Button><Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button><Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Live</Button><Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button></div>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       </div>
