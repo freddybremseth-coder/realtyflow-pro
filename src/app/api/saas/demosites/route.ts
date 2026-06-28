@@ -51,6 +51,16 @@ type DemoSiteOrderRow = DemoSiteOrder & {
   billing_status: DemoSiteBillingStatus;
 };
 
+type DemoSiteEventRow = {
+  id: string;
+  order_id: string;
+  event_type: string;
+  title: string;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string;
+};
+
 type SupabaseClientLike = any;
 
 type SaasAppLookup = { id?: string };
@@ -190,6 +200,17 @@ async function getOrders(supabase: SupabaseClientLike) {
   return (data || []) as DemoSiteOrder[];
 }
 
+async function getEvents(supabase: SupabaseClientLike) {
+  const { data, error } = await supabase
+    .from("demo_site_order_events")
+    .select("id, order_id, event_type, title, description, metadata, created_at")
+    .order("created_at", { ascending: false })
+    .limit(25);
+
+  if (error) throw error;
+  return (data || []) as DemoSiteEventRow[];
+}
+
 export async function GET() {
   const supabase = getSupabase();
   if (!supabase) {
@@ -197,6 +218,7 @@ export async function GET() {
       orders: [],
       templates: DEMO_SITE_TEMPLATE_SEEDS,
       packages: DEMO_SITE_PACKAGES,
+      events: [],
       summary: computeSummary([]),
       error: "Supabase server key is not configured.",
       source: "not-configured",
@@ -204,9 +226,10 @@ export async function GET() {
   }
 
   try {
-    const [ordersResult, templatesResult] = await Promise.allSettled([
+    const [ordersResult, templatesResult, eventsResult] = await Promise.allSettled([
       getOrders(supabase),
       supabase.from("demo_site_templates").select("*").order("name", { ascending: true }),
+      getEvents(supabase),
     ]);
 
     if (ordersResult.status === "rejected" && isMissingTable(ordersResult.reason)) {
@@ -214,6 +237,7 @@ export async function GET() {
         orders: [],
         templates: DEMO_SITE_TEMPLATE_SEEDS,
         packages: DEMO_SITE_PACKAGES,
+        events: [],
         summary: computeSummary([]),
         error: "DemoSites-tabellene finnes ikke ennå. Kjør migrasjonen 20260627090000_demosites_crm.sql.",
         source: "missing-tables",
@@ -225,9 +249,10 @@ export async function GET() {
       templatesResult.status === "fulfilled" && !templatesResult.value.error
         ? templatesResult.value.data || []
         : DEMO_SITE_TEMPLATE_SEEDS;
+    const events = eventsResult.status === "fulfilled" ? eventsResult.value : [];
     const summary = await syncSaasMetrics(supabase, orders);
 
-    return NextResponse.json({ orders, templates, packages: DEMO_SITE_PACKAGES, summary, source: "supabase" });
+    return NextResponse.json({ orders, templates, packages: DEMO_SITE_PACKAGES, events, summary, source: "supabase" });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not fetch DemoSites CRM" },
