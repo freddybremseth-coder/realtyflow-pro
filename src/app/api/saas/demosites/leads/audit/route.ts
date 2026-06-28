@@ -133,15 +133,19 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as RequestBody;
     const leadId = text(body, "lead_id", "leadId");
-    let websiteUrl = normalizeWebsiteUrl(body.website_url ?? body.websiteUrl ?? body.url);
 
-    if (leadId && !websiteUrl) {
-      const { data, error } = await supabase.from("demo_site_leads").select("website_url").eq("id", leadId).single();
-      if (error) throw error;
-      websiteUrl = normalizeWebsiteUrl(data?.website_url);
-    }
+    if (!leadId) return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
 
-    if (!websiteUrl) return NextResponse.json({ error: "website_url is required" }, { status: 400 });
+    const { data: lead, error: leadError } = await supabase
+      .from("demo_site_leads")
+      .select("id, website_url")
+      .eq("id", leadId)
+      .single();
+
+    if (leadError) throw leadError;
+
+    const websiteUrl = normalizeWebsiteUrl(lead?.website_url);
+    if (!websiteUrl) return NextResponse.json({ error: "Lead has no valid website_url" }, { status: 400 });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -185,21 +189,17 @@ export async function POST(request: NextRequest) {
       audit_status: "completed",
     };
 
-    let audit = auditPayload;
-    if (leadId) {
-      const { data, error } = await supabase.from("demo_site_lead_audits").insert(auditPayload).select("*").single();
-      if (error) throw error;
-      audit = data;
+    const { data: audit, error: auditError } = await supabase.from("demo_site_lead_audits").insert(auditPayload).select("*").single();
+    if (auditError) throw auditError;
 
-      await supabase.from("demo_site_leads").update({
-        lead_status: nextStatus,
-        last_scanned_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        metadata: { last_audit_score: score, issue_count: issues.length },
-      }).eq("id", leadId);
+    await supabase.from("demo_site_leads").update({
+      lead_status: nextStatus,
+      last_scanned_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      metadata: { last_audit_score: score, issue_count: issues.length },
+    }).eq("id", leadId);
 
-      await insertLeadEvent(supabase, leadId, "URL analysert", "url_audited", { score, issue_count: issues.length, website_url: websiteUrl });
-    }
+    await insertLeadEvent(supabase, leadId, "URL analysert", "url_audited", { score, issue_count: issues.length, website_url: websiteUrl });
 
     return NextResponse.json({ audit, checks, profile, score, issue_count: issues.length, next_status: nextStatus });
   } catch (error) {
