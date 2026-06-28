@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { ArrowRight, Bot, CheckCircle, ExternalLink, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
-import { DEMO_SITE_PACKAGES, formatNok } from "@/lib/demosites";
+import { DEMO_SITE_PACKAGES } from "@/lib/demosites";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,12 +20,19 @@ type DemoOrder = {
   package_id: string;
   setup_fee_nok: number;
   monthly_fee_nok: number;
+  logo_url?: string | null;
   claim_url?: string | null;
   expires_at?: string | null;
   brand_color?: string | null;
   extracted_profile?: Record<string, unknown> | null;
   editable_fields?: Record<string, unknown> | null;
   notes?: string | null;
+};
+
+type BrandColors = {
+  primary: string;
+  secondary: string;
+  accent: string;
 };
 
 function getSupabase() {
@@ -45,8 +52,32 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium" }).format(new Date(value));
 }
 
+function isHexColor(value: unknown) {
+  return /^#[0-9A-Fa-f]{6}$/.test(String(value || ""));
+}
+
 function getPackage(packageId: string) {
   return DEMO_SITE_PACKAGES.find((pkg) => pkg.id === packageId) || DEMO_SITE_PACKAGES[1];
+}
+
+function getBrandColors(order: DemoOrder): BrandColors {
+  const fields = order.editable_fields || {};
+  const brandColors = (fields.brand_colors && typeof fields.brand_colors === "object" ? fields.brand_colors : {}) as Record<string, unknown>;
+  const primary = isHexColor(brandColors.primary) ? String(brandColors.primary) : isHexColor(order.brand_color) ? String(order.brand_color) : "#059669";
+  const secondary = isHexColor(brandColors.secondary) ? String(brandColors.secondary) : "#0f172a";
+  const accent = isHexColor(brandColors.accent) ? String(brandColors.accent) : "#f59e0b";
+  return { primary, secondary, accent };
+}
+
+function getLogo(order: DemoOrder) {
+  const fields = order.editable_fields || {};
+  return text(fields.logo_url, text(order.logo_url));
+}
+
+function getGalleryImages(order: DemoOrder) {
+  const fields = order.editable_fields || {};
+  const images = Array.isArray(fields.gallery_images) ? fields.gallery_images : [];
+  return images.map((item) => String(item)).filter((item) => item.startsWith("data:image/") || item.startsWith("http://") || item.startsWith("https://"));
 }
 
 function getServices(order: DemoOrder) {
@@ -71,7 +102,7 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
 
   const { data, error } = await supabase
     .from("demo_site_orders")
-    .select("status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes")
+    .select("status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, logo_url, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes")
     .eq("claim_token", token)
     .maybeSingle();
 
@@ -84,6 +115,9 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
   const companyName = order.company_name;
   const industry = text(order.industry, "lokale tjenester");
   const services = getServices(order);
+  const colors = getBrandColors(order);
+  const logo = getLogo(order);
+  const images = getGalleryImages(order);
   const heroText = text((order.editable_fields || {}).hero_text, `${companyName} hjelper kunder med ${industry}.`);
   const aboutText = text((order.editable_fields || {}).about_text, order.notes || "Denne previewen viser hvordan en ny nettside kan presentere bedriften tydeligere og gjøre det enklere å ta kontakt.");
 
@@ -91,25 +125,29 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
     <main className="min-h-screen bg-slate-50 text-slate-950">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div className="font-bold tracking-tight">{companyName}</div>
+          <div className="flex items-center gap-3 font-bold tracking-tight">
+            {logo && <img src={logo} alt={`${companyName} logo`} className="h-10 w-10 rounded-xl object-contain" />}
+            <span>{companyName}</span>
+          </div>
           <div className="hidden items-center gap-6 text-sm text-slate-600 md:flex">
             <a href="#tjenester" className="hover:text-slate-950">Tjenester</a>
+            <a href="#bilder" className="hover:text-slate-950">Bilder</a>
             <a href="#om" className="hover:text-slate-950">Om oss</a>
             <a href="#kontakt" className="hover:text-slate-950">Kontakt</a>
           </div>
-          <a href={`mailto:${order.customer_email}`} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Kontakt</a>
+          <a href={`mailto:${order.customer_email}`} className="rounded-full px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: colors.secondary }}>Kontakt</a>
         </div>
       </div>
 
       <section className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-16 lg:grid-cols-[1.2fr_0.8fr] lg:py-24">
         <div>
-          <div className="mb-5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+          <div className="mb-5 inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium" style={{ borderColor: colors.primary, backgroundColor: `${colors.primary}18`, color: colors.primary }}>
             <Sparkles className="mr-2 h-3.5 w-3.5" /> Midlertidig DemoSites-preview
           </div>
           <h1 className="text-4xl font-black tracking-tight md:text-6xl">{heroText}</h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">{aboutText}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a href={`mailto:${order.customer_email}`} className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-6 py-4 text-sm font-bold text-white hover:bg-emerald-500">
+            <a href={`mailto:${order.customer_email}`} className="inline-flex items-center justify-center rounded-2xl px-6 py-4 text-sm font-bold text-white" style={{ backgroundColor: colors.primary }}>
               Be om tilbud <ArrowRight className="ml-2 h-4 w-4" />
             </a>
             {order.website_url && <a href={order.website_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-2xl border border-slate-300 px-6 py-4 text-sm font-bold text-slate-700 hover:bg-white">Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" /></a>}
@@ -117,10 +155,10 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         </div>
 
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
-          <div className="rounded-3xl bg-slate-950 p-5 text-white">
-            <div className="flex items-center gap-2 text-sm text-emerald-200"><Bot className="h-4 w-4" /> ChatGenius AI-assistent</div>
+          <div className="rounded-3xl p-5 text-white" style={{ backgroundColor: colors.secondary }}>
+            <div className="flex items-center gap-2 text-sm" style={{ color: colors.accent }}><Bot className="h-4 w-4" /> ChatGenius AI-assistent</div>
             <div className="mt-6 rounded-2xl bg-white/10 p-4 text-sm">Hei! Jeg kan hjelpe deg med informasjon om {companyName}, tjenester og kontakt.</div>
-            <div className="mt-3 rounded-2xl bg-emerald-500 p-4 text-sm font-medium text-slate-950">Hva ønsker du hjelp med i dag?</div>
+            <div className="mt-3 rounded-2xl p-4 text-sm font-medium text-slate-950" style={{ backgroundColor: colors.accent }}>Hva ønsker du hjelp med i dag?</div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
             <Info label="Pakke" value={pkg.shortName} />
@@ -129,13 +167,23 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         </div>
       </section>
 
+      {images.length > 0 && (
+        <section id="bilder" className="mx-auto max-w-6xl px-4 pb-16">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {images.slice(0, 3).map((image, index) => (
+              <img key={image.slice(0, 80) + index} src={image} alt={`${companyName} bilde ${index + 1}`} className="h-72 w-full rounded-[2rem] object-cover shadow-lg" />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section id="tjenester" className="bg-white py-16">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-3xl font-bold">Hva kunden kan få hjelp med</h2>
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
             {services.slice(0, 3).map((service) => (
               <div key={service} className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-                <CheckCircle className="h-6 w-6 text-emerald-600" />
+                <CheckCircle className="h-6 w-6" style={{ color: colors.primary }} />
                 <h3 className="mt-4 font-semibold">{service}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">Denne delen kan senere byttes ut med ekte tekst, bilder, priser og produkter.</p>
               </div>
@@ -145,14 +193,14 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
       </section>
 
       <section id="om" className="mx-auto max-w-6xl px-4 py-16">
-        <div className="rounded-[2rem] bg-slate-950 p-8 text-white md:p-12">
+        <div className="rounded-[2rem] p-8 text-white md:p-12" style={{ backgroundColor: colors.secondary }}>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <div>
               <h2 className="text-3xl font-bold">Om {companyName}</h2>
               <p className="mt-4 leading-8 text-slate-300">{aboutText}</p>
             </div>
             <div className="rounded-3xl bg-white/10 p-6">
-              <ShieldCheck className="h-7 w-7 text-emerald-300" />
+              <ShieldCheck className="h-7 w-7" style={{ color: colors.accent }} />
               <h3 className="mt-4 font-semibold">Klar for profesjonell nettside</h3>
               <p className="mt-2 text-sm leading-6 text-slate-300">Denne previewen er et første utkast. Når kunden godkjenner, kan vi bygge videre mot ferdig nettside, hosting, SSL og ChatGenius-assistent.</p>
             </div>
@@ -160,12 +208,12 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         </div>
       </section>
 
-      <section id="kontakt" className="bg-emerald-600 py-16 text-white">
+      <section id="kontakt" className="py-16 text-white" style={{ backgroundColor: colors.primary }}>
         <div className="mx-auto max-w-4xl px-4 text-center">
           <MessageCircle className="mx-auto h-8 w-8" />
           <h2 className="mt-4 text-3xl font-bold">Klar for flere henvendelser?</h2>
-          <p className="mt-3 text-emerald-50">Denne delen blir senere koblet til skjema, e-post, CRM og eventuell AI-chat.</p>
-          <a href={`mailto:${order.customer_email}`} className="mt-8 inline-flex rounded-2xl bg-white px-6 py-4 text-sm font-bold text-emerald-700 hover:bg-emerald-50">Kontakt {companyName}</a>
+          <p className="mt-3 text-white/85">Denne delen blir senere koblet til skjema, e-post, CRM og eventuell AI-chat.</p>
+          <a href={`mailto:${order.customer_email}`} className="mt-8 inline-flex rounded-2xl bg-white px-6 py-4 text-sm font-bold hover:bg-slate-50" style={{ color: colors.primary }}>Kontakt {companyName}</a>
         </div>
       </section>
 
