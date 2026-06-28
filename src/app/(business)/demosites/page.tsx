@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, Globe, Loader2, MonitorSmartphone, Rocket, Send, Wallet } from "lucide-react";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
+import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
 import { DEMO_SITE_PACKAGES, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
 
 type DemoSiteOrder = {
@@ -176,6 +177,8 @@ export default function DemoSitesPage() {
       </div>
 
       <TempDemoCard onCreated={loadData} />
+
+      <LeadPipelineCard />
 
       <Card className="border-slate-700/50 bg-slate-800/50">
         <CardHeader>
