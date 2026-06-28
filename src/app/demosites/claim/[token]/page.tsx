@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { CheckCircle, Clock, ExternalLink, Globe, ShieldCheck } from "lucide-react";
+import { ClaimDemoButton } from "@/components/demosites/claim-demo-button";
 import { DEMO_SITE_PACKAGES, formatNok } from "@/lib/demosites";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ type DemoOrder = {
   monthly_fee_nok: number;
   preview_url?: string | null;
   claim_url?: string | null;
+  claimed_at?: string | null;
   expires_at?: string | null;
   extracted_profile?: Record<string, unknown> | null;
   notes?: string | null;
@@ -53,6 +55,14 @@ function getPackageLabel(packageId: string) {
   return `${pkg.shortName} — ${formatNok(pkg.setupFeeNok)} + ${formatNok(pkg.monthlyFeeNok)} / mnd`;
 }
 
+function getStatusLabel(order: DemoOrder, expired: boolean) {
+  if (expired) return "Utløpt";
+  if (order.claimed_at) return "Claimet av kunde";
+  if (order.status === "approved") return "Godkjent";
+  if (order.status === "deployed") return "Live";
+  return "Midlertidig demo";
+}
+
 export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
   const resolvedParams = await params;
   const token = String(resolvedParams.token || "").trim();
@@ -64,7 +74,7 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
 
   const { data, error } = await supabase
     .from("demo_site_orders")
-    .select("id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, preview_url, claim_url, expires_at, extracted_profile, notes")
+    .select("id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, preview_url, claim_url, claimed_at, expires_at, extracted_profile, notes")
     .eq("claim_token", token)
     .maybeSingle();
 
@@ -101,7 +111,7 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
           <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
             <h2 className="text-xl font-semibold">Demo-status</h2>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Info label="Status" value={expired ? "Utløpt" : "Midlertidig demo"} />
+              <Info label="Status" value={getStatusLabel(order, expired)} />
               <Info label="Pakke" value={getPackageLabel(order.package_id)} />
               <Info label="Bransje" value={order.industry || "Ikke satt"} />
               <Info label="Eksisterende nettside" value={order.website_url || "Ikke satt"} href={order.website_url || undefined} />
@@ -110,9 +120,9 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
             <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
               <h3 className="flex items-center gap-2 font-semibold"><Globe className="h-4 w-4 text-blue-300" /> Neste steg</h3>
               <div className="mt-4 space-y-3 text-sm text-slate-300">
-                <Step text="Vi klargjør demoen basert på informasjonen over." />
-                <Step text="Du kan be om endringer før siden publiseres." />
-                <Step text="Siden beholdes først når pakken er godkjent og kjøpt." />
+                <Step text="Vi registrerer at kunden ønsker å beholde demoen." />
+                <Step text="Freddy/ChatGenius tar neste steg med faktura, endringer og godkjenning." />
+                <Step text="Full nettside og automatisk publisering kobles på i senere steg." />
               </div>
             </div>
           </section>
@@ -120,10 +130,13 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
           <aside className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-6">
             <h2 className="text-xl font-semibold">Vil du beholde demoen?</h2>
             <p className="mt-3 text-sm text-emerald-50/80">
-              Når du godkjenner demoen, kan vi gjøre den om til en ferdig nettsidepakke med hosting, SSL og videre oppfølging.
+              Når du claimer demoen, registreres den som godkjent i DemoSites CRM. Betaling og publisering håndteres etterpå.
             </p>
+            <div className="mt-5">
+              <ClaimDemoButton token={token} alreadyClaimed={Boolean(order.claimed_at)} expired={expired} />
+            </div>
             {order.preview_url && (
-              <a href={order.preview_url} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-50">
+              <a href={order.preview_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">
                 Se preview <ExternalLink className="ml-2 h-4 w-4" />
               </a>
             )}
