@@ -33,16 +33,17 @@ function sanitizeHexColor(value: unknown, fallback: string) {
   return fallback;
 }
 
-function sanitizeDataImage(value: unknown) {
+function sanitizeImageUrl(value: unknown) {
   const raw = String(value || "").trim();
-  if (!raw.startsWith("data:image/")) return null;
-  if (raw.length > 1_400_000) return null;
-  return raw;
+  if (!raw) return null;
+  if (raw.startsWith("data:image/") && raw.length <= 1_400_000) return raw;
+  if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
+  return null;
 }
 
 function getGalleryImages(body: RequestBody) {
   return [body.demo_image_1, body.demo_image_2, body.demo_image_3]
-    .map((item) => sanitizeDataImage(item))
+    .map((item) => sanitizeImageUrl(item))
     .filter((item): item is string => Boolean(item));
 }
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     const selectedPackage = getDemoSitePackage(String(body.package_id || body.packageId || "standard"));
     const websiteUrl = text(body, "website_url", "websiteUrl");
     const logoUrl = text(body, "logo_url", "logoUrl");
-    const logoDataUrl = sanitizeDataImage(body.logo_data_url || body.logoDataUrl);
+    const logoDataUrl = sanitizeImageUrl(body.logo_data_url || body.logoDataUrl);
     const brandColor = sanitizeHexColor(body.brand_color || body.brandColor, "#059669");
     const secondaryColor = sanitizeHexColor(body.secondary_color || body.secondaryColor, "#0f172a");
     const accentColor = sanitizeHexColor(body.accent_color || body.accentColor, "#f59e0b");
