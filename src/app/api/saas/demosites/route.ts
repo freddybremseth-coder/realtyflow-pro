@@ -36,6 +36,9 @@ type DemoSiteOrder = {
   target_subdomain?: string | null;
   preview_url?: string | null;
   production_url?: string | null;
+  claim_token?: string | null;
+  claim_url?: string | null;
+  expires_at?: string | null;
   logo_url?: string | null;
   brand_color?: string | null;
   extracted_profile?: Record<string, unknown>;
@@ -68,6 +71,8 @@ type SaasAppLookup = { id?: string };
 const ACTIVE_REVENUE_STATUSES = new Set(["ordered", "in_setup", "preview_ready", "approved", "deployed"]);
 const ACTIVE_MRR_STATUSES = new Set(["in_setup", "preview_ready", "approved", "deployed"]);
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
+const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
+const DEFAULT_EXPIRY_DAYS = 7;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -93,10 +98,61 @@ function plusOneMonthIso() {
   return date.toISOString();
 }
 
+function daysFromNow(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
 function generateOrderNumber() {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `DS-${stamp}-${random}`;
+}
+
+function generateClaimToken() {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.randomUUID) return cryptoApi.randomUUID().replace(/-/g, "");
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 18)}`;
+}
+
+function buildClaimUrl(token: string) {
+  return `${REALTYFLOW_BASE_URL}/demosites/claim/${token}`;
+}
+
+function buildPreviewUrl(token: string) {
+  return `${REALTYFLOW_BASE_URL}/demosites/preview/${token}`;
+}
+
+function hasCustomerPreviewUrl(value?: string | null) {
+  return Boolean(value && value.includes("/demosites/preview/"));
+}
+
+function hasClaimUrl(value?: string | null) {
+  return Boolean(value && value.includes("/demosites/claim/"));
+}
+
+async function repairOrderLinks(supabase: SupabaseClientLike, order: DemoSiteOrderRow) {
+  const token = order.claim_token || generateClaimToken();
+  const patch: Record<string, unknown> = {};
+
+  if (!order.claim_token) patch.claim_token = token;
+  if (!hasClaimUrl(order.claim_url)) patch.claim_url = buildClaimUrl(token);
+  if (!hasCustomerPreviewUrl(order.preview_url)) patch.preview_url = buildPreviewUrl(token);
+  if (!order.expires_at) patch.expires_at = daysFromNow(DEFAULT_EXPIRY_DAYS);
+  if (!order.template_slug || order.template_slug === "local-service") patch.template_slug = DEFAULT_TEMPLATE_SLUG;
+
+  if (Object.keys(patch).length === 0) return order;
+
+  const { data, error } = await supabase
+    .from("demo_site_orders")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", order.id)
+    .select("*")
+    .single();
+
+  if (error) return { ...order, ...patch } as DemoSiteOrderRow;
+  return data as DemoSiteOrderRow;
 }
 
 function computeSummary(orders: DemoSiteOrder[]) {
@@ -197,7 +253,8 @@ async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrd
 async function getOrders(supabase: SupabaseClientLike) {
   const { data, error } = await supabase.from("demo_site_orders").select("*").order("created_at", { ascending: false });
   if (error) throw error;
-  return (data || []) as DemoSiteOrder[];
+  const rows = (data || []) as DemoSiteOrderRow[];
+  return Promise.all(rows.map((order) => repairOrderLinks(supabase, order)));
 }
 
 async function getEvents(supabase: SupabaseClientLike) {
@@ -277,7 +334,10 @@ export async function POST(request: NextRequest) {
     const selectedPackage = getDemoSitePackage(body.package_id);
     const slug = slugifyCompanyName(companyName);
     const targetSubdomain = body.target_subdomain || `${slug}.chatgenius.pro`;
-    const internalPreviewUrl = `${REALTYFLOW_BASE_URL}/demosites?preview=${slug}`;
+    const claimToken = body.claim_token || generateClaimToken();
+    const claimUrl = buildClaimUrl(claimToken);
+    const previewUrl = buildPreviewUrl(claimToken);
+    const expiresAt = body.expires_at || daysFromNow(DEFAULT_EXPIRY_DAYS);
     const appId = await ensureDemositesApp(supabase);
 
     const payload = {
@@ -300,10 +360,13 @@ export async function POST(request: NextRequest) {
       currency: "NOK",
       subscription_started_at: new Date().toISOString(),
       subscription_renews_at: plusOneMonthIso(),
-      template_slug: body.template_slug || "local-service",
+      template_slug: body.template_slug || DEFAULT_TEMPLATE_SLUG,
       target_subdomain: targetSubdomain,
-      preview_url: body.preview_url || internalPreviewUrl,
+      preview_url: previewUrl,
       production_url: body.production_url || null,
+      claim_token: claimToken,
+      claim_url: claimUrl,
+      expires_at: expiresAt,
       deployment_target: "realtyflow.chatgenius.pro",
       app_id: appId,
       logo_url: body.logo_url || null,
@@ -340,7 +403,7 @@ export async function POST(request: NextRequest) {
       event_type: "order_created",
       title: "Bestilling opprettet",
       description: `${companyName} valgte ${selectedPackage.shortName}.`,
-      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url },
+      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url, claim_url: payload.claim_url, template_slug: payload.template_slug },
     });
 
     const orders = await getOrders(supabase);
@@ -382,6 +445,9 @@ export async function PATCH(request: NextRequest) {
       "target_subdomain",
       "preview_url",
       "production_url",
+      "claim_token",
+      "claim_url",
+      "expires_at",
       "logo_url",
       "brand_color",
       "extracted_profile",
@@ -399,7 +465,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data, error } = await supabase.from("demo_site_orders").update(patch).eq("id", body.id).select("*").single();
     if (error) throw error;
-    const updatedOrder = data as DemoSiteOrderRow;
+    const updatedOrder = await repairOrderLinks(supabase, data as DemoSiteOrderRow);
 
     await supabase.from("demo_site_order_events").insert({
       order_id: body.id,
