@@ -2,15 +2,17 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Save, Settings } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Save, Settings } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OrderFeesCard } from "@/components/demosites/order-fees-card";
+import { DEMO_SITE_TEMPLATE_SEEDS } from "@/lib/demosites";
 
 type SetupOrder = {
   id: string;
   company_name: string;
   status: string;
+  template_slug?: string | null;
   preview_url?: string | null;
   claim_url?: string | null;
   logo_url?: string | null;
@@ -25,7 +27,19 @@ type FeesOrder = {
   monthly_cost_nok: number;
 };
 
+type DemoSiteTemplate = {
+  slug: string;
+  name: string;
+  category?: string | null;
+  description?: string | null;
+  preview_url?: string | null;
+  previewUrl?: string | null;
+  repo_url?: string | null;
+  repoUrl?: string | null;
+};
+
 type SetupForm = {
+  template_slug: string;
   hero_title: string;
   hero_subtitle: string;
   intro_text: string;
@@ -40,7 +54,11 @@ type SetupForm = {
   gallery_images: string;
 };
 
+const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
+const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
+
 const EMPTY_FORM: SetupForm = {
+  template_slug: DEFAULT_TEMPLATE_SLUG,
   hero_title: "",
   hero_subtitle: "",
   intro_text: "",
@@ -63,8 +81,17 @@ function listValue(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || "")).join("\n") : "";
 }
 
-function buildForm(fields: Record<string, unknown>): SetupForm {
+function templatePreviewUrl(template?: DemoSiteTemplate | null) {
+  return template?.preview_url || template?.previewUrl || "";
+}
+
+function templateRepoUrl(template?: DemoSiteTemplate | null) {
+  return template?.repo_url || template?.repoUrl || "";
+}
+
+function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string): SetupForm {
   return {
+    template_slug: selectedTemplateSlug || DEFAULT_TEMPLATE_SLUG,
     hero_title: stringValue(fields.hero_title),
     hero_subtitle: stringValue(fields.hero_subtitle),
     intro_text: stringValue(fields.intro_text),
@@ -85,6 +112,7 @@ export default function DemoSitesSetupEditorPage() {
   const orderId = params.orderId;
   const [order, setOrder] = useState<SetupOrder | null>(null);
   const [fees, setFees] = useState<FeesOrder | null>(null);
+  const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
   const [form, setForm] = useState<SetupForm>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,20 +124,26 @@ export default function DemoSitesSetupEditorPage() {
     setError(null);
 
     try {
-      const [setupResponse, feesResponse] = await Promise.all([
+      const [setupResponse, feesResponse, templatesResponse] = await Promise.all([
         fetch(`/api/saas/demosites/setup?order_id=${encodeURIComponent(orderId)}`, { cache: "no-store" }),
         fetch(`/api/saas/demosites/fees?order_id=${encodeURIComponent(orderId)}`, { cache: "no-store" }),
+        fetch("/api/saas/demosites", { cache: "no-store" }),
       ]);
 
       const setupData = await setupResponse.json();
       const feesData = await feesResponse.json();
+      const templatesData = await templatesResponse.json().catch(() => ({}));
       if (!setupResponse.ok) throw new Error(setupData.error || "Kunne ikke hente oppsett.");
       if (!feesResponse.ok) throw new Error(feesData.error || "Kunne ikke hente priser.");
 
+      const loadedTemplates = Array.isArray(templatesData.templates) && templatesData.templates.length ? templatesData.templates : DEFAULT_TEMPLATES;
+      const loadedOrder = setupData.order || null;
+      const selectedTemplateSlug = loadedOrder?.template_slug || loadedTemplates[0]?.slug || DEFAULT_TEMPLATE_SLUG;
       const fields = setupData.setup_content && typeof setupData.setup_content === "object" ? setupData.setup_content : {};
-      setOrder(setupData.order || null);
+      setTemplates(loadedTemplates);
+      setOrder(loadedOrder);
       setFees(feesData.order || null);
-      setForm(buildForm(fields));
+      setForm(buildForm(fields, selectedTemplateSlug));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke hente oppsett.");
     } finally {
@@ -142,6 +176,10 @@ export default function DemoSitesSetupEditorPage() {
     }
   }
 
+  const selectedTemplate = templates.find((template) => template.slug === form.template_slug);
+  const selectedTemplatePreviewUrl = templatePreviewUrl(selectedTemplate);
+  const selectedTemplateRepoUrl = templateRepoUrl(selectedTemplate);
+
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-300" /></div>;
 
   return (
@@ -165,10 +203,12 @@ export default function DemoSitesSetupEditorPage() {
         <Card className="border-cyan-500/20 bg-slate-800/50">
           <CardHeader>
             <CardTitle className="text-white">Innhold på demosiden</CardTitle>
-            <CardDescription>Endre logo, tekst, farger og bilder for denne demoen.</CardDescription>
+            <CardDescription>Velg demo-mal og endre logo, tekst, farger og bilder for denne demoen.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={saveSetup} className="space-y-4">
+              <Select label="Demo-mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={templates.map((template) => ({ value: template.slug, label: template.name }))} />
+              {selectedTemplate?.description && <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">{selectedTemplate.description}</div>}
               <Input label="Logo URL" value={form.logo_url} onChange={(value) => setForm((prev) => ({ ...prev, logo_url: value }))} />
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <Input label="Primærfarge" value={form.brand_color} onChange={(value) => setForm((prev) => ({ ...prev, brand_color: value }))} placeholder="#0ea5e9" />
@@ -198,9 +238,12 @@ export default function DemoSitesSetupEditorPage() {
               <CardTitle className="text-white">Status</CardTitle>
               <CardDescription>Oppsettet lagres på bestillingen og brukes i preview.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-slate-300">
+            <CardContent className="space-y-3 text-sm text-slate-300">
               <div>Status: {order?.status || "-"}</div>
-              <div>Order ID: {orderId}</div>
+              <div>Valgt mal: {selectedTemplate?.name || form.template_slug || "-"}</div>
+              {selectedTemplatePreviewUrl && <a href={selectedTemplatePreviewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">Åpne mal <ExternalLink className="h-3 w-3" /></a>}
+              {selectedTemplateRepoUrl && <a href={selectedTemplateRepoUrl} target="_blank" rel="noopener noreferrer" className="block text-xs text-slate-500 hover:text-slate-300">Repo-fil</a>}
+              <div className="break-all text-xs text-slate-500">Order ID: {orderId}</div>
             </CardContent>
           </Card>
         </div>
@@ -211,6 +254,10 @@ export default function DemoSitesSetupEditorPage() {
 
 function Input({ label, value, onChange, placeholder = "" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return <label className="block"><span className="mb-1 block text-xs font-medium text-slate-300">{label}</span><input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-500" /></label>;
+}
+
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+  return <label className="block"><span className="mb-1 block text-xs font-medium text-slate-300">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-500">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
 function Textarea({ label, value, onChange, hint }: { label: string; value: string; onChange: (value: string) => void; hint?: string }) {
