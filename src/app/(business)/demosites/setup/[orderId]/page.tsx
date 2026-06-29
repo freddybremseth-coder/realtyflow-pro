@@ -6,7 +6,7 @@ import { ArrowLeft, ExternalLink, Loader2, Save, Settings } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OrderFeesCard } from "@/components/demosites/order-fees-card";
-import { DEMO_SITE_TEMPLATE_SEEDS } from "@/lib/demosites";
+import { DEMO_SITE_TEMPLATE_SEEDS, getDemoSiteTemplateDefaults, type DemoSiteFaqItem } from "@/lib/demosites";
 
 type SetupOrder = {
   id: string;
@@ -43,6 +43,9 @@ type SetupForm = {
   services: string;
   products: string;
   prices: string;
+  trust_points: string;
+  faq: string;
+  call_to_action: string;
   contact_text: string;
   logo_url: string;
   brand_color: string;
@@ -62,6 +65,9 @@ const EMPTY_FORM: SetupForm = {
   services: "",
   products: "",
   prices: "",
+  trust_points: "",
+  faq: "",
+  call_to_action: "",
   contact_text: "",
   logo_url: "",
   brand_color: "",
@@ -78,6 +84,39 @@ function listValue(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || "")).join("\n") : "";
 }
 
+function faqValue(value: unknown) {
+  if (!Array.isArray(value)) return "";
+
+  return value
+    .map((item) => {
+      if (item && typeof item === "object") {
+        const faq = item as Partial<DemoSiteFaqItem>;
+        const question = stringValue(faq.question).trim();
+        const answer = stringValue(faq.answer).trim();
+        return question && answer ? `${question} :: ${answer}` : "";
+      }
+
+      return String(item || "").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseFaqValue(value: string) {
+  return value
+    .split("\n")
+    .map((line) => {
+      const [question, ...answerParts] = line.split("::");
+      const answer = answerParts.join("::").trim();
+      return question.trim() && answer ? { question: question.trim(), answer } : null;
+    })
+    .filter((item): item is DemoSiteFaqItem => Boolean(item));
+}
+
+function getCompanyName(order?: SetupOrder | null) {
+  return order?.company_name || "Bedriften";
+}
+
 function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string): SetupForm {
   return {
     template_slug: selectedTemplateSlug || DEFAULT_TEMPLATE_SLUG,
@@ -87,12 +126,40 @@ function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string
     services: listValue(fields.services),
     products: listValue(fields.products),
     prices: listValue(fields.prices),
+    trust_points: listValue(fields.trust_points),
+    faq: faqValue(fields.faq),
+    call_to_action: stringValue(fields.call_to_action),
     contact_text: stringValue(fields.contact_text),
     logo_url: stringValue(fields.logo_url),
     brand_color: stringValue(fields.brand_color),
     secondary_color: stringValue(fields.secondary_color),
     accent_color: stringValue(fields.accent_color),
     gallery_images: listValue(fields.gallery_images),
+  };
+}
+
+function buildTemplateResetForm(previousForm: SetupForm, nextTemplateSlug: string, companyName: string): SetupForm {
+  const previousDefaults = getDemoSiteTemplateDefaults(previousForm.template_slug, companyName);
+  const nextDefaults = getDemoSiteTemplateDefaults(nextTemplateSlug, companyName);
+  const previousHeroTitle = previousForm.hero_title.trim();
+  const keepCustomHeroTitle = Boolean(previousHeroTitle && previousHeroTitle !== previousDefaults.hero_title);
+
+  return {
+    ...previousForm,
+    template_slug: nextTemplateSlug,
+    hero_title: keepCustomHeroTitle ? previousForm.hero_title : nextDefaults.hero_title,
+    hero_subtitle: nextDefaults.hero_subtitle,
+    intro_text: nextDefaults.intro_text,
+    services: nextDefaults.services.join("\n"),
+    products: nextDefaults.products.join("\n"),
+    prices: nextDefaults.prices.join("\n"),
+    trust_points: nextDefaults.trust_points.join("\n"),
+    faq: faqValue(nextDefaults.faq),
+    call_to_action: nextDefaults.call_to_action,
+    contact_text: nextDefaults.contact_text,
+    brand_color: nextDefaults.brand_color,
+    secondary_color: nextDefaults.secondary_color,
+    accent_color: nextDefaults.accent_color,
   };
 }
 
@@ -159,7 +226,7 @@ export default function DemoSitesSetupEditorPage() {
       const response = await fetch("/api/saas/demosites/setup", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: orderId, ...form }),
+        body: JSON.stringify({ order_id: orderId, ...form, faq: parseFaqValue(form.faq) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke lagre oppsett.");
@@ -170,6 +237,12 @@ export default function DemoSitesSetupEditorPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleTemplateChange(templateSlug: string) {
+    setForm((prev) => buildTemplateResetForm(prev, templateSlug, getCompanyName(order)));
+    setMessage(null);
+    setError(null);
   }
 
   const selectedTemplate = templates.find((template) => template.slug === form.template_slug);
@@ -202,7 +275,8 @@ export default function DemoSitesSetupEditorPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={saveSetup} className="space-y-4">
-              <Select label="Demo-mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={templates.map((template) => ({ value: template.slug, label: template.name }))} />
+              <Select label="Demo-mal" value={form.template_slug} onChange={handleTemplateChange} options={templates.map((template) => ({ value: template.slug, label: template.name }))} />
+              <p className="text-xs leading-5 text-slate-400">Bytter du mal, oppdateres standard tekst, tjenester, priser og farger. Logo, bilder og kundedata beholdes.</p>
               {selectedTemplate?.description && <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">{selectedTemplate.description}</div>}
               <Input label="Logo URL" value={form.logo_url} onChange={(value) => setForm((prev) => ({ ...prev, logo_url: value }))} />
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -216,6 +290,9 @@ export default function DemoSitesSetupEditorPage() {
               <Textarea label="Tjenester" value={form.services} onChange={(value) => setForm((prev) => ({ ...prev, services: value }))} hint="Én linje per tjeneste" />
               <Textarea label="Produkter" value={form.products} onChange={(value) => setForm((prev) => ({ ...prev, products: value }))} hint="Én linje per produkt" />
               <Textarea label="Priser / pakker" value={form.prices} onChange={(value) => setForm((prev) => ({ ...prev, prices: value }))} hint="Én linje per pris eller pakke" />
+              <Textarea label="Hvorfor velge oss" value={form.trust_points} onChange={(value) => setForm((prev) => ({ ...prev, trust_points: value }))} hint="Én linje per tillitspunkt" />
+              <Textarea label="FAQ" value={form.faq} onChange={(value) => setForm((prev) => ({ ...prev, faq: value }))} hint="Én linje per spørsmål: Spørsmål :: Svar" />
+              <Input label="Call to action" value={form.call_to_action} onChange={(value) => setForm((prev) => ({ ...prev, call_to_action: value }))} />
               <Textarea label="Kontakttekst" value={form.contact_text} onChange={(value) => setForm((prev) => ({ ...prev, contact_text: value }))} />
               <Textarea label="Bilde-URL-er" value={form.gallery_images} onChange={(value) => setForm((prev) => ({ ...prev, gallery_images: value }))} hint="Én bilde-URL per linje" />
               <Button type="submit" disabled={saving} className="bg-cyan-600 hover:bg-cyan-500">
