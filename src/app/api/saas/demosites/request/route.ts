@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { DEMO_SITE_PACKAGES, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
+import { DEMO_SITE_PACKAGES, analyzeDemoSiteProfile, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,6 @@ const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://r
 const DEFAULT_EXPIRY_DAYS = 7;
 
 type RequestBody = Record<string, unknown>;
-
 type SupabaseClientLike = any;
 
 function getSupabase() {
@@ -105,6 +104,14 @@ export async function POST(request: NextRequest) {
     const industry = text(body, "industry", "industry");
     const notes = text(body, "notes", "notes");
     const profile = buildSiteProfile({ companyName, websiteUrl, logoUrl, brandColor, industry, services, notes });
+    const analysis = analyzeDemoSiteProfile({
+      companyName,
+      websiteUrl: profile.websiteUrl,
+      industry: profile.industry,
+      notes,
+      requestedPackageId: selectedPackage.id,
+    });
+    const selectedTemplateSlug = text(body, "template_slug", "templateSlug") || analysis.templateSlug;
     const galleryImages = getGalleryImages(body);
     const logoAsset = logoDataUrl || profile.logoUrl;
     const slug = slugifyCompanyName(companyName);
@@ -113,17 +120,24 @@ export async function POST(request: NextRequest) {
     const previewUrl = `${REALTYFLOW_BASE_URL}/demosites/preview/${claimToken}`;
     const expiresAt = daysFromNow(DEFAULT_EXPIRY_DAYS);
     const appId = await getDemositesAppId(supabase);
+    const defaultFields = buildDefaultTemplateFields({
+      companyName,
+      customerName: customerName || companyName,
+      customerEmail,
+      customerPhone: text(body, "customer_phone", "customerPhone") || undefined,
+      websiteUrl: profile.websiteUrl || undefined,
+      industry: profile.industry,
+      notes: notes || undefined,
+    });
     const editableFields = {
-      ...buildDefaultTemplateFields({
-        companyName,
-        customerName: customerName || companyName,
-        customerEmail,
-        customerPhone: text(body, "customer_phone", "customerPhone") || undefined,
-        websiteUrl: profile.websiteUrl || undefined,
-        industry: profile.industry,
-        notes: notes || undefined,
-      }),
+      ...defaultFields,
+      hero_title: defaultFields.hero_text,
+      hero_subtitle: "Nettside, tydelig kontakt og ChatGenius AI-assistent samlet i én moderne demo.",
+      intro_text: defaultFields.about_text,
       logo_url: logoAsset,
+      brand_color: brandColor,
+      secondary_color: secondaryColor,
+      accent_color: accentColor,
       brand_colors: {
         primary: brandColor,
         secondary: secondaryColor,
@@ -150,7 +164,7 @@ export async function POST(request: NextRequest) {
       setup_cost_nok: 0,
       monthly_cost_nok: 0,
       currency: "NOK",
-      template_slug: text(body, "template_slug", "templateSlug") || "local-service",
+      template_slug: selectedTemplateSlug,
       target_subdomain: `${slug}.chatgenius.pro`,
       preview_url: previewUrl,
       production_url: null,
@@ -187,7 +201,7 @@ export async function POST(request: NextRequest) {
       event_type: "demo_request_created",
       title: "Demo-request opprettet",
       description: `${companyName} fikk en midlertidig demo som utløper om ${DEFAULT_EXPIRY_DAYS} dager.`,
-      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id, has_logo: Boolean(logoAsset), gallery_images: galleryImages.length },
+      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id, template_slug: selectedTemplateSlug, has_logo: Boolean(logoAsset), gallery_images: galleryImages.length },
     });
 
     return NextResponse.json({
