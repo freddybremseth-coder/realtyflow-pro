@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { DEMO_SITE_TEMPLATE_SEEDS } from "@/lib/demosites";
+import { DEMO_SITE_TEMPLATE_SEEDS, buildDefaultTemplateFields } from "@/lib/demosites";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,12 +14,16 @@ type SetupContent = {
   services?: string[];
   products?: string[];
   prices?: string[];
+  trust_points?: string[];
+  faq?: unknown[];
+  call_to_action?: string | null;
   contact_text?: string | null;
   logo_url?: string | null;
   brand_color?: string | null;
   secondary_color?: string | null;
   accent_color?: string | null;
   gallery_images?: string[];
+  suggested_sections?: string[];
 };
 
 type SetupOrder = {
@@ -63,6 +67,28 @@ function textList(value: unknown, maxItems = 12) {
   return String(value || "")
     .split("\n")
     .map((item) => text(item, 500))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function faqList(value: unknown, maxItems = 8) {
+  if (!Array.isArray(value)) return undefined;
+
+  return value
+    .map((item) => {
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        const question = text(record.question, 240);
+        const answer = text(record.answer, 800);
+        return question && answer ? { question, answer } : null;
+      }
+
+      const line = text(item, 800);
+      if (!line) return null;
+      const [question, ...answerParts] = line.split("::");
+      const answer = answerParts.join("::").trim();
+      return answer ? { question: question.trim(), answer } : null;
+    })
     .filter(Boolean)
     .slice(0, maxItems);
 }
@@ -154,12 +180,32 @@ function buildSetupContent(body: RequestBody): SetupContent {
     services: textList(body.services, 12) as string[],
     products: textList(body.products, 12) as string[],
     prices: textList(body.prices, 12) as string[],
+    trust_points: textList(body.trust_points ?? body.trustPoints, 12) as string[],
+    faq: faqList(body.faq),
+    call_to_action: text(body.call_to_action ?? body.callToAction, 160),
     contact_text: text(body.contact_text ?? body.contactText, 800),
     logo_url: url(body.logo_url ?? body.logoUrl),
     brand_color: color(body.brand_color ?? body.brandColor),
     secondary_color: color(body.secondary_color ?? body.secondaryColor),
     accent_color: color(body.accent_color ?? body.accentColor),
     gallery_images: galleryImages,
+    suggested_sections: textList(body.suggested_sections ?? body.suggestedSections, 16) as string[],
+  };
+}
+
+function getSetupContentDefaults(order: Pick<SetupOrder, "company_name" | "template_slug" | "notes">) {
+  return buildDefaultTemplateFields({
+    companyName: order.company_name,
+    notes: order.notes || undefined,
+    templateSlug: order.template_slug || DEFAULT_TEMPLATE_SLUG,
+  });
+}
+
+function mergeSetupContentDefaults(order: SetupOrder) {
+  const currentFields = order.editable_fields && typeof order.editable_fields === "object" ? order.editable_fields : {};
+  return {
+    ...getSetupContentDefaults(order),
+    ...currentFields,
   };
 }
 
@@ -179,7 +225,7 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const order = await repairOrderLinks(supabase, data as SetupOrder);
-  return NextResponse.json({ order, setup_content: order?.editable_fields || {} });
+  return NextResponse.json({ order, setup_content: mergeSetupContentDefaults(order) });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -193,18 +239,24 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existing, error: existingError } = await supabase
       .from("demo_site_orders")
-      .select("id, editable_fields, template_slug, preview_url, claim_token, claim_url, production_url, expires_at")
+      .select("id, company_name, editable_fields, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, notes")
       .eq("id", orderId)
       .single();
 
     if (existingError) throw existingError;
 
-    const currentFields = existing?.editable_fields && typeof existing.editable_fields === "object" ? existing.editable_fields : {};
     const setupContent = buildSetupContent(body);
     const selectedTemplateSlug = templateSlug(body.template_slug ?? body.templateSlug);
+    const currentTemplateSlug = selectedTemplateSlug || existing?.template_slug || DEFAULT_TEMPLATE_SLUG;
+    const existingOrderForDefaults = {
+      ...(existing as SetupOrder),
+      template_slug: currentTemplateSlug,
+    };
+    const currentFields = mergeSetupContentDefaults(existingOrderForDefaults);
     const editableFields = {
       ...currentFields,
       ...setupContent,
+      template_slug: currentTemplateSlug,
       setup_updated_at: new Date().toISOString(),
     };
     const patch: Record<string, unknown> = {

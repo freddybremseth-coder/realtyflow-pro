@@ -339,6 +339,21 @@ export async function POST(request: NextRequest) {
     const previewUrl = buildPreviewUrl(claimToken);
     const expiresAt = body.expires_at || daysFromNow(DEFAULT_EXPIRY_DAYS);
     const appId = await ensureDemositesApp(supabase);
+    const selectedTemplateSlug = String(body.template_slug || DEFAULT_TEMPLATE_SLUG).trim() || DEFAULT_TEMPLATE_SLUG;
+    const defaultEditableFields = buildDefaultTemplateFields({
+      companyName,
+      customerName,
+      customerEmail,
+      customerPhone: body.customer_phone || undefined,
+      websiteUrl: body.website_url || undefined,
+      industry: body.industry || undefined,
+      notes: body.notes || undefined,
+      templateSlug: selectedTemplateSlug,
+    });
+    const incomingEditableFields =
+      body.editable_fields && typeof body.editable_fields === "object" && !Array.isArray(body.editable_fields)
+        ? body.editable_fields
+        : {};
 
     const payload = {
       order_number: generateOrderNumber(),
@@ -360,7 +375,7 @@ export async function POST(request: NextRequest) {
       currency: "NOK",
       subscription_started_at: new Date().toISOString(),
       subscription_renews_at: plusOneMonthIso(),
-      template_slug: body.template_slug || DEFAULT_TEMPLATE_SLUG,
+      template_slug: selectedTemplateSlug,
       target_subdomain: targetSubdomain,
       preview_url: previewUrl,
       production_url: body.production_url || null,
@@ -370,19 +385,12 @@ export async function POST(request: NextRequest) {
       deployment_target: "realtyflow.chatgenius.pro",
       app_id: appId,
       logo_url: body.logo_url || null,
-      brand_color: body.brand_color || null,
+      brand_color: body.brand_color || defaultEditableFields.brand_color,
       extracted_profile: body.extracted_profile || {},
-      editable_fields:
-        body.editable_fields ||
-        buildDefaultTemplateFields({
-          companyName,
-          customerName,
-          customerEmail,
-          customerPhone: body.customer_phone || undefined,
-          websiteUrl: body.website_url || undefined,
-          industry: body.industry || undefined,
-          notes: body.notes || undefined,
-        }),
+      editable_fields: {
+        ...defaultEditableFields,
+        ...incomingEditableFields,
+      },
       requested_changes: body.requested_changes || {},
       provisioning_log: [
         {
