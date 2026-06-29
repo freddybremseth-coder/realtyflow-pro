@@ -15,6 +15,7 @@ type SetupOrder = {
   template_slug?: string | null;
   preview_url?: string | null;
   claim_url?: string | null;
+  production_url?: string | null;
   logo_url?: string | null;
   editable_fields?: Record<string, unknown> | null;
 };
@@ -32,10 +33,6 @@ type DemoSiteTemplate = {
   name: string;
   category?: string | null;
   description?: string | null;
-  preview_url?: string | null;
-  previewUrl?: string | null;
-  repo_url?: string | null;
-  repoUrl?: string | null;
 };
 
 type SetupForm = {
@@ -81,14 +78,6 @@ function listValue(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || "")).join("\n") : "";
 }
 
-function templatePreviewUrl(template?: DemoSiteTemplate | null) {
-  return template?.preview_url || template?.previewUrl || "";
-}
-
-function templateRepoUrl(template?: DemoSiteTemplate | null) {
-  return template?.repo_url || template?.repoUrl || "";
-}
-
 function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string): SetupForm {
   return {
     template_slug: selectedTemplateSlug || DEFAULT_TEMPLATE_SLUG,
@@ -105,6 +94,13 @@ function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string
     accent_color: stringValue(fields.accent_color),
     gallery_images: listValue(fields.gallery_images),
   };
+}
+
+function customerPreviewUrl(order?: SetupOrder | null) {
+  if (!order) return "";
+  if (order.preview_url?.includes("/demosites/preview/")) return order.preview_url;
+  if (order.claim_url?.includes("/demosites/claim/")) return order.claim_url.replace("/demosites/claim/", "/demosites/preview/");
+  return order.preview_url || "";
 }
 
 export default function DemoSitesSetupEditorPage() {
@@ -177,8 +173,7 @@ export default function DemoSitesSetupEditorPage() {
   }
 
   const selectedTemplate = templates.find((template) => template.slug === form.template_slug);
-  const selectedTemplatePreviewUrl = templatePreviewUrl(selectedTemplate);
-  const selectedTemplateRepoUrl = templateRepoUrl(selectedTemplate);
+  const previewUrl = customerPreviewUrl(order);
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-300" /></div>;
 
@@ -190,9 +185,9 @@ export default function DemoSitesSetupEditorPage() {
           <h1 className="flex items-center gap-3 text-3xl font-bold text-white"><Settings className="text-cyan-300" /> Oppsett</h1>
           <p className="mt-2 text-sm text-slate-400">{order?.company_name || orderId}</p>
         </div>
-        <div className="flex gap-2">
-          {order?.preview_url && <a href={order.preview_url} target="_blank" rel="noopener noreferrer"><Button variant="outline" className="border-slate-600">Preview</Button></a>}
-          {order?.claim_url && <a href={order.claim_url} target="_blank" rel="noopener noreferrer"><Button variant="outline" className="border-slate-600">Claim</Button></a>}
+        <div className="flex flex-wrap gap-2">
+          {previewUrl && <a href={previewUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" className="border-cyan-500/50 text-cyan-100">Åpne kunde-preview <ExternalLink className="ml-2 h-4 w-4" /></Button></a>}
+          {order?.claim_url && <a href={order.claim_url} target="_blank" rel="noopener noreferrer"><Button variant="outline" className="border-slate-600">Åpne claim</Button></a>}
         </div>
       </div>
 
@@ -236,13 +231,13 @@ export default function DemoSitesSetupEditorPage() {
           <Card className="border-slate-700/50 bg-slate-800/50">
             <CardHeader>
               <CardTitle className="text-white">Status</CardTitle>
-              <CardDescription>Oppsettet lagres på bestillingen og brukes i preview.</CardDescription>
+              <CardDescription>Oppsettet lagres på bestillingen og brukes i kundens preview.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-300">
               <div>Status: {order?.status || "-"}</div>
               <div>Valgt mal: {selectedTemplate?.name || form.template_slug || "-"}</div>
-              {selectedTemplatePreviewUrl && <a href={selectedTemplatePreviewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">Åpne mal <ExternalLink className="h-3 w-3" /></a>}
-              {selectedTemplateRepoUrl && <a href={selectedTemplateRepoUrl} target="_blank" rel="noopener noreferrer" className="block text-xs text-slate-500 hover:text-slate-300">Repo-fil</a>}
+              {previewUrl ? <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200">Åpne kunde-preview <ExternalLink className="h-3 w-3" /></a> : <div className="text-xs text-slate-500">Preview-lenke mangler</div>}
+              {order?.production_url && <a href={order.production_url} target="_blank" rel="noopener noreferrer" className="block text-emerald-300 hover:text-emerald-200">Åpne live-side</a>}
               <div className="break-all text-xs text-slate-500">Order ID: {orderId}</div>
             </CardContent>
           </Card>
