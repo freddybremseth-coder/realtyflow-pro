@@ -35,6 +35,9 @@ type DemoSiteOrder = {
   template_slug?: string | null;
   target_subdomain?: string | null;
   preview_url?: string | null;
+  claim_token?: string | null;
+  claim_url?: string | null;
+  expires_at?: string | null;
   production_url?: string | null;
   logo_url?: string | null;
   brand_color?: string | null;
@@ -68,6 +71,7 @@ type SaasAppLookup = { id?: string };
 const ACTIVE_REVENUE_STATUSES = new Set(["ordered", "in_setup", "preview_ready", "approved", "deployed"]);
 const ACTIVE_MRR_STATUSES = new Set(["in_setup", "preview_ready", "approved", "deployed"]);
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
+const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -93,10 +97,22 @@ function plusOneMonthIso() {
   return date.toISOString();
 }
 
+function plusDaysIso(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
 function generateOrderNumber() {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `DS-${stamp}-${random}`;
+}
+
+function generateClaimToken() {
+  const stamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 18);
+  return `${stamp}${random}`;
 }
 
 function computeSummary(orders: DemoSiteOrder[]) {
@@ -274,10 +290,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "company_name, customer_name and customer_email are required" }, { status: 400 });
     }
 
+    const duplicateCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const duplicate = await supabase
+      .from("demo_site_orders")
+      .select("*")
+      .eq("company_name", companyName)
+      .eq("customer_email", customerEmail)
+      .gte("created_at", duplicateCutoff)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicate.data?.id) {
+      const orders = await getOrders(supabase);
+      const summary = await syncSaasMetrics(supabase, orders);
+      return NextResponse.json({ order: duplicate.data, summary, duplicate: true }, { status: 200 });
+    }
+
     const selectedPackage = getDemoSitePackage(body.package_id);
     const slug = slugifyCompanyName(companyName);
     const targetSubdomain = body.target_subdomain || `${slug}.chatgenius.pro`;
-    const internalPreviewUrl = `${REALTYFLOW_BASE_URL}/demosites?preview=${slug}`;
+    const claimToken = body.claim_token || generateClaimToken();
+    const previewUrl = body.preview_url || `${REALTYFLOW_BASE_URL}/demosites/preview/${claimToken}`;
+    const claimUrl = body.claim_url || `${REALTYFLOW_BASE_URL}/demosites/claim/${claimToken}`;
     const appId = await ensureDemositesApp(supabase);
 
     const payload = {
@@ -300,9 +335,12 @@ export async function POST(request: NextRequest) {
       currency: "NOK",
       subscription_started_at: new Date().toISOString(),
       subscription_renews_at: plusOneMonthIso(),
-      template_slug: body.template_slug || "local-service",
+      template_slug: body.template_slug || DEFAULT_TEMPLATE_SLUG,
       target_subdomain: targetSubdomain,
-      preview_url: body.preview_url || internalPreviewUrl,
+      preview_url: previewUrl,
+      claim_token: claimToken,
+      claim_url: claimUrl,
+      expires_at: body.expires_at || plusDaysIso(7),
       production_url: body.production_url || null,
       deployment_target: "realtyflow.chatgenius.pro",
       app_id: appId,
@@ -325,7 +363,7 @@ export async function POST(request: NextRequest) {
         {
           at: new Date().toISOString(),
           type: "order_created",
-          message: "Bestilling opprettet i RealtyFlow. Klar for manuell eller senere automatisk demo-generering.",
+          message: "Bestilling opprettet i RealtyFlow. Preview- og claim-lenker er klare.",
         },
       ],
       notes: body.notes || null,
@@ -340,7 +378,7 @@ export async function POST(request: NextRequest) {
       event_type: "order_created",
       title: "Bestilling opprettet",
       description: `${companyName} valgte ${selectedPackage.shortName}.`,
-      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url },
+      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url, claim_url: payload.claim_url },
     });
 
     const orders = await getOrders(supabase);
@@ -381,6 +419,9 @@ export async function PATCH(request: NextRequest) {
       "template_slug",
       "target_subdomain",
       "preview_url",
+      "claim_token",
+      "claim_url",
+      "expires_at",
       "production_url",
       "logo_url",
       "brand_color",
