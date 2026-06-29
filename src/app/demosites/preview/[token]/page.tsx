@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { ArrowRight, Bot, CheckCircle, ExternalLink, MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
-import { DEMO_SITE_PACKAGES } from "@/lib/demosites";
+import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS } from "@/lib/demosites";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,6 +20,7 @@ type DemoOrder = {
   package_id: string;
   setup_fee_nok: number;
   monthly_fee_nok: number;
+  template_slug?: string | null;
   logo_url?: string | null;
   claim_url?: string | null;
   expires_at?: string | null;
@@ -35,6 +36,45 @@ type BrandColors = {
   accent: string;
 };
 
+type TemplateDefaults = {
+  primary: string;
+  secondary: string;
+  accent: string;
+  label: string;
+  services: string[];
+};
+
+const TEMPLATE_DEFAULTS: Record<string, TemplateDefaults> = {
+  elektro: {
+    primary: "#eab308",
+    secondary: "#0f172a",
+    accent: "#facc15",
+    label: "Pindsle Elektro",
+    services: ["Elektriske installasjoner", "Feilsøking og reparasjon", "Sikkerhet og kontroll"],
+  },
+  dekk: {
+    primary: "#dc2626",
+    secondary: "#111827",
+    accent: "#f87171",
+    label: "Sandefjord Dekk",
+    services: ["Dekkskift og hjulhotell", "Bilservice og kontroll", "Timebestilling på nett"],
+  },
+  frakt: {
+    primary: "#2563eb",
+    secondary: "#172554",
+    accent: "#93c5fd",
+    label: "Vestfold Frakt",
+    services: ["Lokal transport", "Frakttilbud", "Rute og godstype"],
+  },
+  renhold: {
+    primary: "#0d9488",
+    secondary: "#134e4a",
+    accent: "#5eead4",
+    label: "Sandefjord Renhold",
+    services: ["Renhold for bedrift", "Privat vask", "Pris etter areal og frekvens"],
+  },
+};
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
@@ -45,6 +85,11 @@ function getSupabase() {
 function text(value: unknown, fallback = "") {
   const output = String(value || "").trim();
   return output || fallback;
+}
+
+function stringList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
 function formatDate(value?: string | null) {
@@ -60,12 +105,24 @@ function getPackage(packageId: string) {
   return DEMO_SITE_PACKAGES.find((pkg) => pkg.id === packageId) || DEMO_SITE_PACKAGES[1];
 }
 
+function getTemplateSlug(order: DemoOrder) {
+  const slug = text(order.template_slug, "").toLowerCase();
+  if (slug && TEMPLATE_DEFAULTS[slug]) return slug;
+  return DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
+}
+
+function getTemplateLabel(slug: string) {
+  const template = DEMO_SITE_TEMPLATE_SEEDS.find((item) => item.slug === slug);
+  return template?.name || TEMPLATE_DEFAULTS[slug]?.label || slug;
+}
+
 function getBrandColors(order: DemoOrder): BrandColors {
   const fields = order.editable_fields || {};
+  const template = TEMPLATE_DEFAULTS[getTemplateSlug(order)] || TEMPLATE_DEFAULTS.elektro;
   const brandColors = (fields.brand_colors && typeof fields.brand_colors === "object" ? fields.brand_colors : {}) as Record<string, unknown>;
-  const primary = isHexColor(brandColors.primary) ? String(brandColors.primary) : isHexColor(order.brand_color) ? String(order.brand_color) : "#059669";
-  const secondary = isHexColor(brandColors.secondary) ? String(brandColors.secondary) : "#0f172a";
-  const accent = isHexColor(brandColors.accent) ? String(brandColors.accent) : "#f59e0b";
+  const primary = isHexColor(fields.brand_color) ? String(fields.brand_color) : isHexColor(brandColors.primary) ? String(brandColors.primary) : isHexColor(order.brand_color) ? String(order.brand_color) : template.primary;
+  const secondary = isHexColor(fields.secondary_color) ? String(fields.secondary_color) : isHexColor(brandColors.secondary) ? String(brandColors.secondary) : template.secondary;
+  const accent = isHexColor(fields.accent_color) ? String(fields.accent_color) : isHexColor(brandColors.accent) ? String(brandColors.accent) : template.accent;
   return { primary, secondary, accent };
 }
 
@@ -82,13 +139,20 @@ function getGalleryImages(order: DemoOrder) {
 
 function getServices(order: DemoOrder) {
   const fields = order.editable_fields || {};
-  const services = Array.isArray(fields.services) ? fields.services : [];
-  if (services.length > 0) return services.map((item) => String(item));
-  return [
-    "Profesjonell nettside på mobil og desktop",
-    "Tydelig kontakt og lead-fangst",
-    "ChatGenius AI-assistent kan kobles på",
-  ];
+  const services = stringList(fields.services);
+  if (services.length > 0) return services;
+  const template = TEMPLATE_DEFAULTS[getTemplateSlug(order)] || TEMPLATE_DEFAULTS.elektro;
+  return template.services;
+}
+
+function getProducts(order: DemoOrder) {
+  const fields = order.editable_fields || {};
+  return stringList(fields.products);
+}
+
+function getPrices(order: DemoOrder) {
+  const fields = order.editable_fields || {};
+  return stringList(fields.prices);
 }
 
 export default async function DemoPreviewPage({ params }: PreviewPageProps) {
@@ -102,7 +166,7 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
 
   const { data, error } = await supabase
     .from("demo_site_orders")
-    .select("status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, logo_url, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes")
+    .select("status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, template_slug, logo_url, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes")
     .eq("claim_token", token)
     .maybeSingle();
 
@@ -113,13 +177,20 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
   const order = data as DemoOrder;
   const pkg = getPackage(order.package_id);
   const companyName = order.company_name;
+  const fields = order.editable_fields || {};
   const industry = text(order.industry, "lokale tjenester");
+  const templateSlug = getTemplateSlug(order);
+  const templateLabel = getTemplateLabel(templateSlug);
   const services = getServices(order);
+  const products = getProducts(order);
+  const prices = getPrices(order);
   const colors = getBrandColors(order);
   const logo = getLogo(order);
   const images = getGalleryImages(order);
-  const heroText = text((order.editable_fields || {}).hero_text, `${companyName} hjelper kunder med ${industry}.`);
-  const aboutText = text((order.editable_fields || {}).about_text, order.notes || "Denne previewen viser hvordan en ny nettside kan presentere bedriften tydeligere og gjøre det enklere å ta kontakt.");
+  const heroTitle = text(fields.hero_title, text(fields.hero_text, `${companyName} hjelper kunder med ${industry}.`));
+  const heroSubtitle = text(fields.hero_subtitle, "Nettside, tydelig kontakt og ChatGenius AI-assistent samlet i én moderne demo.");
+  const introText = text(fields.intro_text, text(fields.about_text, order.notes || "Denne previewen viser hvordan en ny nettside kan presentere bedriften tydeligere og gjøre det enklere å ta kontakt."));
+  const contactText = text(fields.contact_text, `Kontakt ${companyName} for mer informasjon eller et tilbud.`);
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
@@ -131,6 +202,7 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
           </div>
           <div className="hidden items-center gap-6 text-sm text-slate-600 md:flex">
             <a href="#tjenester" className="hover:text-slate-950">Tjenester</a>
+            {(products.length > 0 || prices.length > 0) && <a href="#tilbud" className="hover:text-slate-950">Tilbud</a>}
             <a href="#bilder" className="hover:text-slate-950">Bilder</a>
             <a href="#om" className="hover:text-slate-950">Om oss</a>
             <a href="#kontakt" className="hover:text-slate-950">Kontakt</a>
@@ -142,10 +214,11 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
       <section className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-16 lg:grid-cols-[1.2fr_0.8fr] lg:py-24">
         <div>
           <div className="mb-5 inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium" style={{ borderColor: colors.primary, backgroundColor: `${colors.primary}18`, color: colors.primary }}>
-            <Sparkles className="mr-2 h-3.5 w-3.5" /> Midlertidig DemoSites-preview
+            <Sparkles className="mr-2 h-3.5 w-3.5" /> {templateLabel}
           </div>
-          <h1 className="text-4xl font-black tracking-tight md:text-6xl">{heroText}</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">{aboutText}</p>
+          <h1 className="text-4xl font-black tracking-tight md:text-6xl">{heroTitle}</h1>
+          <p className="mt-5 max-w-2xl text-xl leading-8 text-slate-700">{heroSubtitle}</p>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{introText}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a href={`mailto:${order.customer_email}`} className="inline-flex items-center justify-center rounded-2xl px-6 py-4 text-sm font-bold text-white" style={{ backgroundColor: colors.primary }}>
               Be om tilbud <ArrowRight className="ml-2 h-4 w-4" />
@@ -181,23 +254,32 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-3xl font-bold">Hva kunden kan få hjelp med</h2>
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-            {services.slice(0, 3).map((service) => (
+            {services.slice(0, 6).map((service) => (
               <div key={service} className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
                 <CheckCircle className="h-6 w-6" style={{ color: colors.primary }} />
                 <h3 className="mt-4 font-semibold">{service}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Denne delen kan senere byttes ut med ekte tekst, bilder, priser og produkter.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Denne delen kan justeres videre med ekte tekst, bilder, priser og produkter.</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
+      {(products.length > 0 || prices.length > 0) && (
+        <section id="tilbud" className="mx-auto max-w-6xl px-4 py-16">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {products.length > 0 && <ListCard title="Produkter" items={products} color={colors.primary} />}
+            {prices.length > 0 && <ListCard title="Priser / pakker" items={prices} color={colors.primary} />}
+          </div>
+        </section>
+      )}
+
       <section id="om" className="mx-auto max-w-6xl px-4 py-16">
         <div className="rounded-[2rem] p-8 text-white md:p-12" style={{ backgroundColor: colors.secondary }}>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <div>
               <h2 className="text-3xl font-bold">Om {companyName}</h2>
-              <p className="mt-4 leading-8 text-slate-300">{aboutText}</p>
+              <p className="mt-4 leading-8 text-slate-300">{introText}</p>
             </div>
             <div className="rounded-3xl bg-white/10 p-6">
               <ShieldCheck className="h-7 w-7" style={{ color: colors.accent }} />
@@ -212,7 +294,7 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         <div className="mx-auto max-w-4xl px-4 text-center">
           <MessageCircle className="mx-auto h-8 w-8" />
           <h2 className="mt-4 text-3xl font-bold">Klar for flere henvendelser?</h2>
-          <p className="mt-3 text-white/85">Denne delen blir senere koblet til skjema, e-post, CRM og eventuell AI-chat.</p>
+          <p className="mt-3 text-white/85">{contactText}</p>
           <a href={`mailto:${order.customer_email}`} className="mt-8 inline-flex rounded-2xl bg-white px-6 py-4 text-sm font-bold hover:bg-slate-50" style={{ color: colors.primary }}>Kontakt {companyName}</a>
         </div>
       </section>
@@ -226,6 +308,10 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
 
 function Info({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-slate-100 p-4"><div className="text-xs uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 font-semibold text-slate-950">{value}</div></div>;
+}
+
+function ListCard({ title, items, color }: { title: string; items: string[]; color: string }) {
+  return <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-bold">{title}</h2><div className="mt-5 space-y-3">{items.slice(0, 8).map((item) => <div key={item} className="flex gap-3 rounded-2xl bg-slate-50 p-4 text-sm"><CheckCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color }} /><span>{item}</span></div>)}</div></div>;
 }
 
 function NotFound({ title, description }: { title: string; description: string }) {
