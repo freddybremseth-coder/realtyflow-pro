@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEMO_SITE_TEMPLATE_SEEDS, getDemoSiteTemplateDefaults } from "./demosites";
+import { DEMO_SITE_TEMPLATE_SEEDS, analyzeDemoSiteProfile, getDemoSiteTemplateDefaults } from "./demosites";
 
 const REQUIRED_TEMPLATE_SLUGS = [
   "elektro",
@@ -83,4 +83,22 @@ test("unknown DemoSites template slug falls back to generic local-service defaul
   for (const word of FORBIDDEN_ELECTRO_WORDS) {
     assert.equal(fallbackText.includes(word), false);
   }
+});
+
+test("DemoSites profile analysis recommends restaurant or local-service without elektro fallback", () => {
+  const restaurant = analyzeDemoSiteProfile({
+    companyName: "Fjord Bistro",
+    websiteUrl: "https://fjordbistro.example",
+    industry: "Restaurant med meny, lunsj, middag og bordbestilling",
+    notes: "Selskaper og catering",
+  });
+  const unknown = analyzeDemoSiteProfile({
+    companyName: "Nordvik Partner AS",
+    websiteUrl: "https://nordvik.example",
+    industry: "Lokal rådgivning og praktisk koordinering",
+    notes: "Kundeoppfølging og service",
+  });
+
+  assert.equal(restaurant.templateSlug, "restaurant");
+  assert.equal(unknown.templateSlug, "local-service");
 });

@@ -940,6 +940,8 @@ export interface DemoSiteProfileAnalyzeResult {
   suggestedNextSteps: string[];
 }
 
+const DEFAULT_ANALYZED_TEMPLATE_SLUG = "local-service";
+
 const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   {
     slug: "elektro",
@@ -1018,15 +1020,22 @@ function normalizeProfileText(value: string | null | undefined) {
     .toLowerCase();
 }
 
+function scoreTemplateMatch(profileText: string, template: { slug: string; keywords: string[] }) {
+  return template.keywords.reduce((score, keyword) => {
+    const normalizedKeyword = normalizeProfileText(keyword);
+    if (!normalizedKeyword || !profileText.includes(normalizedKeyword)) return score;
+    return score + Math.max(2, normalizedKeyword.length > 8 ? 4 : 2);
+  }, profileText.includes(template.slug) ? 3 : 0);
+}
+
 export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): DemoSiteProfileAnalyzeResult {
   const companyName = (input.companyName || "").trim();
   const profileText = normalizeProfileText(
     [companyName, input.websiteUrl, input.industry, input.notes].filter(Boolean).join(" "),
   );
-
-  const matchedTemplate = TEMPLATE_KEYWORDS.find((template) =>
-    template.keywords.some((keyword) => profileText.includes(keyword)),
-  );
+  const matchedTemplate = TEMPLATE_KEYWORDS.map((template) => ({ template, score: scoreTemplateMatch(profileText, template) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.template;
 
   const missingFields = [
     !companyName && "companyName",
@@ -1039,13 +1048,12 @@ export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): Demo
   const recommendedPackage = getDemoSitePackage(
     input.requestedPackageId || (hasWebsite && missingFields.length <= 1 ? "standard" : "basis"),
   );
-  const defaultTemplateSlug = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
   const readinessScore = Math.max(0, Math.min(100, 100 - missingFields.length * 20));
 
   return {
     slug: slugifyCompanyName(companyName || input.industry || "demosite"),
     recommendedPackage,
-    templateSlug: matchedTemplate?.slug || defaultTemplateSlug,
+    templateSlug: matchedTemplate?.slug || DEFAULT_ANALYZED_TEMPLATE_SLUG,
     readinessScore,
     missingFields,
     suggestedNextSteps: missingFields.length
