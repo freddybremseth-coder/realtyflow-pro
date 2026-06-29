@@ -63,6 +63,12 @@ function color(value: unknown) {
   return /^#[0-9a-f]{6}$/i.test(output) ? output : null;
 }
 
+function templateSlug(value: unknown) {
+  const output = text(value, 80);
+  if (!output) return null;
+  return /^[a-z0-9-]+$/i.test(output) ? output : null;
+}
+
 function buildSetupContent(body: RequestBody): SetupContent {
   const galleryImages = textList(body.gallery_images ?? body.galleryImages, 6)
     .map((item) => url(item))
@@ -93,7 +99,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("demo_site_orders")
-    .select("id, company_name, status, preview_url, claim_url, logo_url, editable_fields, notes")
+    .select("id, company_name, status, template_slug, preview_url, claim_url, logo_url, editable_fields, notes")
     .eq("id", orderId)
     .single();
 
@@ -121,21 +127,25 @@ export async function PATCH(request: NextRequest) {
 
     const currentFields = existing?.editable_fields && typeof existing.editable_fields === "object" ? existing.editable_fields : {};
     const setupContent = buildSetupContent(body);
+    const selectedTemplateSlug = templateSlug(body.template_slug ?? body.templateSlug);
     const editableFields = {
       ...currentFields,
       ...setupContent,
       setup_updated_at: new Date().toISOString(),
     };
+    const patch: Record<string, unknown> = {
+      editable_fields: editableFields,
+      status: "in_setup",
+    };
+
+    if (setupContent.logo_url) patch.logo_url = setupContent.logo_url;
+    if (selectedTemplateSlug) patch.template_slug = selectedTemplateSlug;
 
     const { data, error } = await supabase
       .from("demo_site_orders")
-      .update({
-        editable_fields: editableFields,
-        logo_url: setupContent.logo_url || undefined,
-        status: "in_setup",
-      })
+      .update(patch)
       .eq("id", orderId)
-      .select("id, company_name, status, preview_url, claim_url, logo_url, editable_fields")
+      .select("id, company_name, status, template_slug, preview_url, claim_url, logo_url, editable_fields")
       .single();
 
     if (error) throw error;
@@ -144,8 +154,11 @@ export async function PATCH(request: NextRequest) {
       order_id: orderId,
       event_type: "setup_content_updated",
       title: "Oppsettinnhold oppdatert",
-      description: "Logo, tekst, farger eller innhold ble lagret i DemoSites-oppsettet.",
-      metadata: { fields: Object.keys(setupContent).filter((key) => setupContent[key as keyof SetupContent]) },
+      description: "Logo, tekst, farger, innhold eller malvalg ble lagret i DemoSites-oppsettet.",
+      metadata: {
+        fields: Object.keys(setupContent).filter((key) => setupContent[key as keyof SetupContent]),
+        template_slug: selectedTemplateSlug,
+      },
     });
 
     return NextResponse.json({ order: data, setup_content: data.editable_fields });
