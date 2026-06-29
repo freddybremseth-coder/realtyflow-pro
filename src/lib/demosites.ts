@@ -105,28 +105,36 @@ export const DEMO_SITE_EDITABLE_FIELDS = [
 
 export const DEMO_SITE_TEMPLATE_SEEDS = [
   {
-    slug: "local-service",
-    name: "Lokal servicebedrift",
-    category: "service",
-    description: "Rask mal for håndverkere, flyttebyrå, verksted, renhold og lokale tjenestebedrifter.",
-    repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=local-service",
+    slug: "elektro",
+    name: "Pindsle Elektro",
+    category: "trades",
+    description: "Håndverker/elektriker-mal med fastpriser, lokale tjenester og AI-chat for jobbforespørsler.",
+    repoUrl: "https://github.com/freddybremseth-coder/demosites/blob/main/elektro.html",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas/elektro.html",
   },
   {
-    slug: "restaurant-cafe",
-    name: "Restaurant / kafé",
-    category: "hospitality",
-    description: "Mat, meny, åpningstider, bordbestilling og enkel leadfangst.",
-    repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=restaurant-cafe",
+    slug: "dekk",
+    name: "Sandefjord Dekk",
+    category: "auto",
+    description: "Bil, dekk og verksted-mal med timeforespørsel, reg.nr og sesongbaserte tjenester.",
+    repoUrl: "https://github.com/freddybremseth-coder/demosites/blob/main/dekk.html",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas/dekk.html",
   },
   {
-    slug: "real-estate-agent",
-    name: "Eiendomsmegler / rådgiver",
-    category: "real-estate",
-    description: "Profil, områder, tjenester, boligønskeskjema og ChatGenius lead-assistent.",
-    repoUrl: "https://github.com/freddybremseth-coder/demosites",
-    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=real-estate-agent",
+    slug: "frakt",
+    name: "Vestfold Frakt",
+    category: "transport",
+    description: "Transport/logistikk-mal med fra-til-rute, godstype og tilbudsforespørsel.",
+    repoUrl: "https://github.com/freddybremseth-coder/demosites/blob/main/frakt.html",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas/frakt.html",
+  },
+  {
+    slug: "renhold",
+    name: "Sandefjord Renhold",
+    category: "cleaning",
+    description: "Renholdsmal for privat og bedrift med areal, frekvens og enkel prisforespørsel.",
+    repoUrl: "https://github.com/freddybremseth-coder/demosites/blob/main/renhold.html",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas/renhold.html",
   },
 ];
 
@@ -209,12 +217,20 @@ export interface DemoSiteProfileAnalyzeResult {
 
 const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   {
-    slug: "real-estate-agent",
-    keywords: ["eiendom", "megler", "bolig", "property", "real estate", "villa", "leilighet"],
+    slug: "elektro",
+    keywords: ["elektro", "elektriker", "strøm", "electric", "electrician", "installasjon"],
   },
   {
-    slug: "restaurant-cafe",
-    keywords: ["restaurant", "kafe", "cafe", "mat", "menu", "meny", "bar", "tapas"],
+    slug: "dekk",
+    keywords: ["dekk", "bil", "verksted", "auto", "car", "tire", "tyre", "garage"],
+  },
+  {
+    slug: "frakt",
+    keywords: ["frakt", "transport", "logistikk", "flytting", "cargo", "delivery", "logistics"],
+  },
+  {
+    slug: "renhold",
+    keywords: ["renhold", "vask", "cleaning", "rengjøring", "cleaner", "maid"],
   },
 ];
 
@@ -246,13 +262,13 @@ export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): Demo
   const recommendedPackage = getDemoSitePackage(
     input.requestedPackageId || (hasWebsite && missingFields.length <= 1 ? "standard" : "basis"),
   );
-
+  const defaultTemplateSlug = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
   const readinessScore = Math.max(0, Math.min(100, 100 - missingFields.length * 20));
 
   return {
     slug: slugifyCompanyName(companyName || input.industry || "demosite"),
     recommendedPackage,
-    templateSlug: matchedTemplate?.slug || "local-service",
+    templateSlug: matchedTemplate?.slug || defaultTemplateSlug,
     readinessScore,
     missingFields,
     suggestedNextSteps: missingFields.length
