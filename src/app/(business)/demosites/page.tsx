@@ -1,13 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, Globe, Loader2, MonitorSmartphone, Rocket, Send, Wallet } from "lucide-react";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
-import { DEMO_SITE_PACKAGES, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
+import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
 
 type DemoSiteOrder = {
   id: string;
@@ -57,7 +57,8 @@ type OrderFormState = {
 };
 
 const EMPTY_SUMMARY: DemoSiteSummary = { totalOrders: 0, activeOrders: 0, paidOrders: 0, bookedSetupRevenue: 0, activeMrr: 0, setupCosts: 0, monthlyCosts: 0, netSetup: 0, netMrr: 0, arr: 0 };
-const INITIAL_FORM: OrderFormState = { company_name: "", customer_name: "", customer_email: "", customer_phone: "", industry: "", website_url: "", package_id: "standard", template_slug: "local-service", setup_cost_nok: "0", monthly_cost_nok: "0", notes: "" };
+const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
+const INITIAL_FORM: OrderFormState = { company_name: "", customer_name: "", customer_email: "", customer_phone: "", industry: "", website_url: "", package_id: "standard", template_slug: DEFAULT_TEMPLATE_SLUG, setup_cost_nok: "0", monthly_cost_nok: "0", notes: "" };
 
 const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", draft_preview: "Midlertidig demo", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", expired: "Utløpt", cancelled: "Kansellert" };
 const billingLabel: Record<DemoSiteBillingStatus, string> = { not_invoiced: "Ikke fakturert", pending: "Venter", paid: "Betalt", overdue: "Forfalt", cancelled: "Stoppet" };
@@ -97,6 +98,7 @@ export default function DemoSitesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const creatingOrderRef = useRef(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -121,6 +123,8 @@ export default function DemoSitesPage() {
 
   async function createOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (creatingOrderRef.current) return;
+    creatingOrderRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -136,6 +140,7 @@ export default function DemoSitesPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bestilling feilet.");
     } finally {
+      creatingOrderRef.current = false;
       setSaving(false);
     }
   }
@@ -148,6 +153,7 @@ export default function DemoSitesPage() {
   }
 
   const orderNameById = new Map(orders.map((order) => [order.id, order.company_name]));
+  const templateOptions = templates.length ? templates : DEMO_SITE_TEMPLATE_SEEDS;
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>;
 
@@ -213,11 +219,11 @@ export default function DemoSitesPage() {
               <Input label="Eksisterende nettside" value={form.website_url} onChange={(value) => setForm((prev) => ({ ...prev, website_url: value }))} />
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Pakke" value={form.package_id} onChange={(value) => setForm((prev) => ({ ...prev, package_id: value as DemoSitePackageId }))} options={DEMO_SITE_PACKAGES.map((pkg) => ({ value: pkg.id, label: pkg.shortName }))} />
-                <Select label="Mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={(templates.length ? templates : [{ slug: "local-service", name: "Lokal service" }]).map((template) => ({ value: template.slug, label: template.name }))} />
+                <Select label="Mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={templateOptions.map((template) => ({ value: template.slug, label: template.name }))} />
               </div>
               <div className="grid grid-cols-2 gap-3"><Input label="Setup-kost" type="number" value={form.setup_cost_nok} onChange={(value) => setForm((prev) => ({ ...prev, setup_cost_nok: value }))} /><Input label="Mnd-kost" type="number" value={form.monthly_cost_nok} onChange={(value) => setForm((prev) => ({ ...prev, monthly_cost_nok: value }))} /></div>
               <textarea value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} rows={3} className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-purple-500" placeholder="Logo, farger, tjenester, produkter, priser og tekst som skal endres" />
-              <Button type="submit" disabled={saving} className="w-full bg-purple-600 hover:bg-purple-500">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Opprett bestilling</Button>
+              <Button type="submit" disabled={saving} aria-busy={saving} className="w-full touch-manipulation bg-purple-600 hover:bg-purple-500">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{saving ? "Oppretter..." : "Opprett bestilling"}</Button>
             </form>
           </CardContent>
         </Card>
@@ -231,9 +237,15 @@ export default function DemoSitesPage() {
                 <div key={order.id} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-lg font-semibold text-white">{order.company_name}</h3><p className="text-xs text-slate-500">{order.order_number} · {order.customer_name} · {order.customer_email} · {formatDate(order.created_at)}</p></div><div className="flex flex-wrap gap-2"><Badge>{statusLabel[order.status]}</Badge><Badge variant="outline" className="border-slate-600 text-slate-300">{billingLabel[order.billing_status]}</Badge>{order.claimed_at && <Badge className="bg-emerald-600 text-white">Claimet</Badge>}{assetSummary.hasLogo && <Badge className="bg-blue-600 text-white">Logo</Badge>}{assetSummary.imageCount > 0 && <Badge className="bg-purple-600 text-white">{assetSummary.imageCount} bilde{assetSummary.imageCount === 1 ? "" : "r"}</Badge>}</div></div>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6"><Info label="Pakke" value={order.package_id} /><Info label="Pris" value={`${formatNok(order.setup_fee_nok)} + ${formatNok(order.monthly_fee_nok)}/mnd`} /><Info label="Preview" value={order.preview_url ? "Åpne preview" : "Ikke klar"} href={order.preview_url || undefined} /><Info label="Claim" value={order.claim_url ? "Åpne claim" : "Ikke klar"} href={order.claim_url || undefined} /><Info label="Claimet" value={formatDate(order.claimed_at) || "Ikke claimet"} /><Info label="Utløper" value={formatDate(order.expires_at) || "Ikke satt"} /></div>
-                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3"><Info label="Logo" value={assetSummary.hasLogo ? "Lagt inn" : "Mangler"} /><Info label="Bilder" value={`${assetSummary.imageCount} av 3`} /><Info label="Farger" value={getEditableFields(order).brand_colors ? "Lagt inn" : "Standard"} /></div>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3"><Info label="Logo" value={assetSummary.hasLogo ? "Lagt inn" : "Mangler"} /><Info label="Bilder" value={`${assetSummary.imageCount} av 3`} /><Info label="Farger" value={getEditableFields(order).brand_colors || getEditableFields(order).brand_color ? "Lagt inn" : "Standard"} /></div>
                   <div className="mt-3 flex flex-wrap gap-1.5">{editableFieldList(order).slice(0, 8).map((field) => <Badge key={field} variant="outline" className="border-slate-600 text-[10px] text-slate-300">{field}</Badge>)}</div>
-                  <div className="mt-3 flex flex-wrap gap-2"><a href={`/demosites/setup/${order.id}`}><Button size="sm" variant="outline" className="border-slate-600">Oppsett</Button></a><Button size="sm" variant="outline" className="border-purple-500/40 text-purple-200" onClick={() => updateOrder(order, { status: "preview_ready" })}>Preview klar</Button><Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button><Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Live</Button><Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button></div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a href={`/demosites/setup/${order.id}`} className="inline-flex h-9 touch-manipulation items-center justify-center rounded-md border border-slate-600 px-3 text-sm font-medium text-slate-100 transition hover:bg-slate-800">Oppsett</a>
+                    <Button size="sm" variant="outline" className="border-purple-500/40 text-purple-200" onClick={() => updateOrder(order, { status: "preview_ready" })}>Preview klar</Button>
+                    <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button>
+                    <Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Live</Button>
+                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button>
+                  </div>
                 </div>
               );
             })}
