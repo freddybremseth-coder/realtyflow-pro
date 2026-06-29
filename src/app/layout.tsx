@@ -10,9 +10,16 @@ export const metadata: Metadata = {
 };
 
 const AUTH_PATH_PREFIXES = ["/login", "/reset-password", "/account/password"];
+const PUBLIC_SHELL_PATH_PREFIXES = ["/demosites/preview", "/demosites/claim"];
 
 function isAuthRoute(pathname: string) {
   return AUTH_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+function isPublicShellRoute(pathname: string) {
+  return PUBLIC_SHELL_PATH_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
@@ -24,6 +31,7 @@ export default function RootLayout({
 }>) {
   const pathname = headers().get("x-pathname") || "";
   const authRoute = isAuthRoute(pathname);
+  const bareRoute = authRoute || isPublicShellRoute(pathname);
 
   return (
     <html lang="no" className="dark">
@@ -34,7 +42,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen">
-        {authRoute ? (
+        {bareRoute ? (
           <main className="min-h-screen">{children}</main>
         ) : (
           <>

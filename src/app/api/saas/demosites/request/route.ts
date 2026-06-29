@@ -128,12 +128,10 @@ export async function POST(request: NextRequest) {
       websiteUrl: profile.websiteUrl || undefined,
       industry: profile.industry,
       notes: notes || undefined,
+      templateSlug: selectedTemplateSlug,
     });
     const editableFields = {
       ...defaultFields,
-      hero_title: defaultFields.hero_text,
-      hero_subtitle: "Nettside, tydelig kontakt og ChatGenius AI-assistent samlet i én moderne demo.",
-      intro_text: defaultFields.about_text,
       logo_url: logoAsset,
       brand_color: brandColor,
       secondary_color: secondaryColor,

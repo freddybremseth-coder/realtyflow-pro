@@ -23,6 +23,10 @@ const PUBLIC_PATHS = [
   "/api/oauth/google/callback",
   "/api/oauth/google/finalize",
   "/oauth/select",
+  "/demosites/preview",
+  "/demosites/claim",
+  "/api/saas/demosites/request",
+  "/api/saas/demosites/claim",
 ];
 
 const REMASTER_PROXY_PATHS = [
