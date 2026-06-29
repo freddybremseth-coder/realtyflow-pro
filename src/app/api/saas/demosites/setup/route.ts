@@ -157,7 +157,7 @@ function buildSetupContent(body: RequestBody): SetupContent {
     contact_text: text(body.contact_text ?? body.contactText, 800),
     logo_url: url(body.logo_url ?? body.logoUrl),
     brand_color: color(body.brand_color ?? body.brandColor),
-    secondary_color: color(body.secondary_color ?? bodySecondaryColor),
+    secondary_color: color(body.secondary_color ?? body.secondaryColor),
     accent_color: color(body.accent_color ?? body.accentColor),
     gallery_images: galleryImages,
   };
