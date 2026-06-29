@@ -166,8 +166,100 @@ export interface DemoSiteTemplateDefaults {
 type DemoSiteTemplateDefaultBase = Omit<DemoSiteTemplateDefaults, "template_slug">;
 
 const DEFAULT_COMPANY_NAME = "Bedriften";
+const GENERIC_TEMPLATE_SLUG = "local-service";
+
+const GENERIC_SERVICE_GALLERY_IMAGES = [
+  "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=1200&q=80",
+];
+
+const DEMO_SITE_TEMPLATE_ALIASES: Record<string, string> = {
+  "restaurant-cafe": "restaurant",
+  cafe: "kafe",
+  "real-estate-agent": "eiendomsmegler",
+  "estate-agent": "eiendomsmegler",
+  realtor: "eiendomsmegler",
+  "beauty-clinic": "klinikk",
+  beauty: "klinikk",
+  skjonnhet: "klinikk",
+  "skjonnhet-klinikk": "klinikk",
+  overnatting: "hotell",
+  "hotell-overnatting": "hotell",
+  anlegg: "bygg",
+  "bygg-anlegg": "bygg",
+};
+
+function normalizeDemoSiteTemplateSlug(value: string | null | undefined) {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/å/g, "a")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return DEMO_SITE_TEMPLATE_ALIASES[slug] || slug;
+}
 
 const DEMO_SITE_TEMPLATE_DEFAULTS: Record<string, DemoSiteTemplateDefaultBase> = {
+  "local-service": {
+    template_name: "Lokal servicebedrift",
+    hero_title: "{companyName} hjelper lokale kunder raskt videre",
+    hero_subtitle: "Profesjonell nettside med tydelige tjenester, enkel kontakt, tilbudsforespørsel og ChatGenius-assistent.",
+    intro_text:
+      "{companyName} kan vise frem tjenester, priser, kontaktinfo og kundeløfter på en ryddig nettside som gjør det enkelt å be om hjelp eller tilbud.",
+    services: [
+      "Tjenester for lokale privat- og bedriftskunder",
+      "Behovsavklaring og anbefalt neste steg",
+      "Tilbud på oppdrag, avtaler eller faste leveranser",
+      "Rask kontakt via skjema, telefon eller e-post",
+      "Oppfølging fra første forespørsel til levert jobb",
+      "ChatGenius-assistent som fanger opp spørsmål etter stengetid",
+    ],
+    products: [
+      "Nettside med tydelig tjenesteoversikt",
+      "Kontaktskjema og tilbudsforespørsel",
+      "ChatGenius-assistent for vanlige spørsmål",
+      "Lokal profil med bilder, priser og trygghetspunkter",
+    ],
+    prices: [
+      "Gratis første vurdering av forespørsel",
+      "Pris etter behov, omfang og ønsket levering",
+      "Fast tilbud kan gis før oppstart",
+      "Serviceavtale kan avtales for gjentakende behov",
+    ],
+    trust_points: [
+      "Tydelig kommunikasjon før kunden bestemmer seg",
+      "Oversiktlige tjenester og forventninger",
+      "Lokalt tilgjengelig kontaktpunkt",
+      "Profesjonell nettside og ChatGenius-assistent som svarer raskt",
+    ],
+    faq: [
+      {
+        question: "Hvordan ber jeg om tilbud?",
+        answer: "Send en kort beskrivelse av behovet ditt, så tar bedriften kontakt med forslag til neste steg.",
+      },
+      {
+        question: "Kan jeg stille spørsmål før jeg bestemmer meg?",
+        answer: "Ja. Nettsiden og ChatGenius-assistenten gjør det enkelt å få svar før du sender en forespørsel.",
+      },
+      {
+        question: "Hva bør jeg oppgi i kontaktskjemaet?",
+        answer: "Beskriv hva du trenger hjelp med, ønsket tidspunkt og hvordan du vil bli kontaktet.",
+      },
+    ],
+    call_to_action: "Be om tilbud",
+    contact_text: "Fortell kort hva du trenger hjelp med, så følger {companyName} opp med kontakt, pris eller anbefalt neste steg.",
+    brand_color: "#2563eb",
+    secondary_color: "#0f172a",
+    accent_color: "#22c55e",
+    suggested_sections: ["Hero", "Tjenester", "Tilbud", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
   elektro: {
     template_name: "Pindsle Elektro",
     hero_title: "{companyName} fikser strømmen trygt og raskt",
@@ -400,6 +492,331 @@ const DEMO_SITE_TEMPLATE_DEFAULTS: Record<string, DemoSiteTemplateDefaultBase> =
       "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1200&q=80",
     ],
   },
+  restaurant: {
+    template_name: "Restaurant",
+    hero_title: "{companyName} serverer gode opplevelser rundt bordet",
+    hero_subtitle: "Meny, åpningstider, selskaper, bordforespørsel og enkel kontakt samlet på en appetittlig nettside.",
+    intro_text:
+      "{companyName} kan vise frem meny, atmosfære, bordforespørsel og dagens tilbud på en side som gjør det lett å velge stedet før besøket.",
+    services: [
+      "Lunsj, middag og sesongbaserte retter",
+      "Bordforespørsel for små og større grupper",
+      "Selskaper, møter og private arrangementer",
+      "Takeaway eller catering når det tilbys",
+      "Dagens meny og aktuelle kampanjer",
+    ],
+    products: [
+      "A la carte-meny",
+      "Dagens rett og ukens anbefaling",
+      "Selskapsmeny for grupper",
+      "Drikke og dessertutvalg",
+    ],
+    prices: [
+      "Lunsjretter fra kr 189",
+      "Middagsretter fra kr 269",
+      "Selskapsmeny prises per person",
+      "Tilbud tilpasses gruppe, dato og behov",
+    ],
+    trust_points: [
+      "Tydelig meny og åpningstider",
+      "Enkel bord- og selskapsforespørsel",
+      "Rask oppfølging fra restaurantteamet",
+      "ChatGenius kan svare på vanlige spørsmål etter stengetid",
+    ],
+    faq: [
+      {
+        question: "Kan jeg sende bordforespørsel?",
+        answer: "Ja. Oppgi dato, tidspunkt og antall personer, så kan restauranten bekrefte kapasitet.",
+      },
+      {
+        question: "Tar dere imot selskaper?",
+        answer: "Ja, selskaper og grupper kan få forslag til meny, tidspunkt og praktisk oppsett.",
+      },
+      {
+        question: "Hvor finner jeg meny og åpningstider?",
+        answer: "Meny, åpningstider og kontaktinfo kan ligge samlet på nettsiden og i ChatGenius-assistenten.",
+      },
+    ],
+    call_to_action: "Send bordforespørsel",
+    contact_text: "Fortell dato, tidspunkt og antall gjester, så følger {companyName} opp med ledighet og forslag.",
+    brand_color: "#b45309",
+    secondary_color: "#1f2937",
+    accent_color: "#f59e0b",
+    suggested_sections: ["Hero", "Meny", "Selskaper", "Dagens tilbud", "Priser", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: [
+      "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=80",
+    ],
+  },
+  frisor: {
+    template_name: "Frisor",
+    hero_title: "{companyName} gir deg en frisyre som passer hverdagen",
+    hero_subtitle: "Klipp, farge, styling, behandlinger og enkel timeforespørsel for nye og faste kunder.",
+    intro_text:
+      "{companyName} kan presentere salongen, behandlinger, priser og ledige timer på en nettside som gjør booking enklere.",
+    services: ["Dame- og herreklipp", "Farge, striping og glossing", "Styling til hverdag og anledning", "Barneklipp og raske oppfriskninger", "Veiledning om hårpleie"],
+    products: ["Klippetime", "Fargebehandling", "Kur og pleieprodukter", "Stylingtime"],
+    prices: ["Klipp fra kr 590", "Farge fra kr 1 390", "Kur og styling etter behov", "Endelig pris avklares før behandling"],
+    trust_points: ["Erfarne frisører og personlig veiledning", "Tydelige priser før oppstart", "Enkel timeforespørsel på mobil", "Mulighet for svar på vanlige spørsmål via ChatGenius"],
+    faq: [
+      { question: "Kan jeg spørre om riktig behandling først?", answer: "Ja. Beskriv håret og ønsket resultat, så kan salongen anbefale riktig time." },
+      { question: "Hvor lang tid tar en fargetime?", answer: "Det avhenger av hårlengde og ønsket resultat. Salongen kan gi estimat før booking." },
+    ],
+    call_to_action: "Book frisortime",
+    contact_text: "Send ønsket behandling, tidspunkt og gjerne bilde eller kort beskrivelse, så tar {companyName} kontakt.",
+    brand_color: "#be185d",
+    secondary_color: "#4a044e",
+    accent_color: "#f9a8d4",
+    suggested_sections: ["Hero", "Behandlinger", "Priser", "Salong", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: [
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&w=1200&q=80",
+    ],
+  },
+  tannlege: {
+    template_name: "Tannlege",
+    hero_title: "{companyName} gjør tannlegebesøket tryggere og enklere",
+    hero_subtitle: "Undersøkelse, akutt hjelp, tannrens, estetikk og timeforespørsel med rolig og tydelig informasjon.",
+    intro_text:
+      "{companyName} kan samle behandlinger, priser, akuttkontakt og pasientinformasjon på en nettside som skaper tillit før timen.",
+    services: ["Tannundersøkelse og røntgen", "Tannrens og forebyggende behandling", "Akutt tannhjelp ved smerter", "Fyllinger, kroner og estetiske behandlinger", "Råd for tannhelse hjemme"],
+    products: ["Førstegangsundersøkelse", "Tannrens", "Akuttime", "Estetisk konsultasjon"],
+    prices: ["Undersøkelse fra kr 990", "Tannrens prises etter behov", "Akutt vurdering etter kapasitet", "Behandlingsplan gis før større arbeid"],
+    trust_points: ["Rolig forklaring før behandling", "Tydelig prisoversikt og behandlingsplan", "Enkel akuttkontakt", "Pasientvennlig informasjon på mobil"],
+    faq: [
+      { question: "Kan jeg be om akuttime?", answer: "Ja. Beskriv smerter eller problem kort, så vurderer klinikken ledig kapasitet." },
+      { question: "Får jeg pris før behandling?", answer: "Ved større behandling får du plan og prisoverslag før arbeidet starter." },
+    ],
+    call_to_action: "Bestill tannlegetime",
+    contact_text: "Fortell hva du trenger hjelp med, så tar {companyName} kontakt med forslag til time eller neste steg.",
+    brand_color: "#0891b2",
+    secondary_color: "#164e63",
+    accent_color: "#67e8f9",
+    suggested_sections: ["Hero", "Behandlinger", "Akutt hjelp", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  bilverksted: {
+    template_name: "Bilverksted",
+    hero_title: "{companyName} holder bilen trygg og klar",
+    hero_subtitle: "Service, reparasjon, EU-kontroll, feilsok og timeforespørsel for bileiere som vil ha oversikt.",
+    intro_text:
+      "{companyName} kan vise tjenester, priser, kampanjer og verkstedkontakt på en nettside som gjør det enkelt å bestille tid.",
+    services: ["Service og oljeskift", "EU-kontroll og etterkontroll", "Bremser, understell og slitedeler", "Feilsok og verksteddiagnose", "Dekk, hjul og sesongklargjøring"],
+    products: ["Servicepakke", "EU-kontroll", "Bremsekontroll", "Sesongsjekk"],
+    prices: ["Service fra kr 1 990", "EU-kontroll etter gjeldende pris", "Feilsok prises etter tid", "Fastpris kan gis etter vurdering"],
+    trust_points: ["Tydelig avtale før arbeidet starter", "Forklaring av funn og anbefalinger", "Enkel timeforespørsel med bilinfo", "Ryddig oppfølging fra verkstedet"],
+    faq: [
+      { question: "Hva bør jeg oppgi når jeg bestiller?", answer: "Oppgi bilmodell, registreringsnummer, kilometerstand og hva du trenger hjelp med." },
+      { question: "Kan dere gi pris før reparasjon?", answer: "Ja, etter en vurdering kan verkstedet gi pris eller anbefalt neste steg." },
+    ],
+    call_to_action: "Bestill verkstedtime",
+    contact_text: "Send bilmodell, registreringsnummer og ønsket hjelp, så følger {companyName} opp med tid eller prisforslag.",
+    brand_color: "#ea580c",
+    secondary_color: "#1c1917",
+    accent_color: "#facc15",
+    suggested_sections: ["Hero", "Verkstedtjenester", "Service", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  rorlegger: {
+    template_name: "Rorlegger",
+    hero_title: "{companyName} hjelper når vann, varme og bad må fungere",
+    hero_subtitle: "Service, lekkasjer, bad, varmtvann, befaring og tilbudsforespørsel for private og bedrifter.",
+    intro_text:
+      "{companyName} kan presentere rørleggertjenester, hastehjelp, prosjekter og kontakt på en nettside som gjør veien til hjelp kort.",
+    services: ["Lekkasje, service og reparasjoner", "Bad, vaskerom og oppgradering", "Varmtvannsbereder og sanitærutstyr", "Rørinspeksjon og rådgivning", "Befaring og tilbud på prosjekt"],
+    products: ["Servicebesøk", "Baderomsprosjekt", "Varmtvannsbereder", "Vedlikeholdsavtale"],
+    prices: ["Serviceoppdrag fra kr 1 690", "Befaring etter avtale", "Prosjekt prises etter omfang", "Fastpris kan avtales før oppstart"],
+    trust_points: ["Rask respons ved praktiske problemer", "Tydelig forklaring av anbefalt løsning", "Ryddig tilbud før større arbeid", "Lokalkjent fagperson med relevant erfaring"],
+    faq: [
+      { question: "Kan jeg be om befaring?", answer: "Ja. Beskriv behovet og legg gjerne ved bilder, så kan rørleggeren foreslå befaring." },
+      { question: "Hva gjør jeg ved lekkasje?", answer: "Steng vannet hvis mulig og kontakt fagperson raskt med adresse og kort beskrivelse." },
+    ],
+    call_to_action: "Be om rorleggerhjelp",
+    contact_text: "Send kort hva saken gjelder, adresseområde og bilder ved behov, så tar {companyName} kontakt.",
+    brand_color: "#0284c7",
+    secondary_color: "#0f172a",
+    accent_color: "#38bdf8",
+    suggested_sections: ["Hero", "Rorleggertjenester", "Bad", "Service", "Priser", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  snekker: {
+    template_name: "Snekker",
+    hero_title: "{companyName} bygger, reparerer og tilpasser med presisjon",
+    hero_subtitle: "Snekkerarbeid, terrasser, innredning, vedlikehold og befaring med tydelige tilbud.",
+    intro_text:
+      "{companyName} kan vise referanser, tjenester, prosess og kontakt på en nettside som gjør det enkelt å starte et prosjekt.",
+    services: ["Terrasse, levegg og uteprosjekter", "Innvendig tilpasning og listverk", "Reparasjon, vedlikehold og småjobber", "Dører, gulv og enkel ombygging", "Befaring og prosjektplan"],
+    products: ["Befaringstime", "Terrasseprosjekt", "Innvendig oppgradering", "Vedlikeholdspakke"],
+    prices: ["Befaring etter avtale", "Timearbeid eller fastpris etter oppdrag", "Materialer avklares før oppstart", "Tilbud sendes etter behovsavklaring"],
+    trust_points: ["Ryddig prosess fra befaring til levering", "Tydelig avtale om materialer og omfang", "Praktiske råd før kunden bestemmer seg", "Lokal oppfølging og god kommunikasjon"],
+    faq: [
+      { question: "Tar dere småjobber?", answer: "Ja, mindre reparasjoner og tilpasninger kan ofte løses som egne oppdrag." },
+      { question: "Kan jeg få fastpris?", answer: "Ja, når omfanget er tydelig kan bedriften gi fastpris eller ramme for arbeidet." },
+    ],
+    call_to_action: "Be om befaring",
+    contact_text: "Beskriv prosjektet kort og legg gjerne ved bilder, så følger {companyName} opp med forslag.",
+    brand_color: "#92400e",
+    secondary_color: "#1c1917",
+    accent_color: "#fbbf24",
+    suggested_sections: ["Hero", "Snekkerarbeid", "Prosjekter", "Priser", "Referanser", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  eiendomsmegler: {
+    template_name: "Eiendomsmegler",
+    hero_title: "{companyName} hjelper deg trygt gjennom boligvalget",
+    hero_subtitle: "Verdivurdering, salg, kjøpsrådgivning, områdekunnskap og leadfangst for boliginteresserte.",
+    intro_text:
+      "{companyName} kan presentere profil, områder, tjenester og kontaktskjema på en side som bygger tillit før første samtale.",
+    services: ["Verdivurdering og salgsvurdering", "Boligsalg fra plan til overtakelse", "Kjøpsrådgivning og områdeinnsikt", "Oppfølging av interessenter", "Rådgivning før visning eller budrunde"],
+    products: ["Gratis verdivurdering", "Salgspakke", "Kjøperrådgivning", "Områdeguide"],
+    prices: ["Verdivurdering kan tilbys gratis", "Salgshonorar avtales per oppdrag", "Rådgivning prises etter behov", "Tilbud gis etter første samtale"],
+    trust_points: ["Tydelig prosess og forventningsavklaring", "Lokal markedskunnskap", "Rask oppfølging av nye henvendelser", "ChatGenius kan kvalifisere boligbehov"],
+    faq: [
+      { question: "Kan jeg be om verdivurdering?", answer: "Ja. Legg igjen boligtype, område og kontaktinfo, så kan megleren følge opp." },
+      { question: "Hjelper dere kjøpere også?", answer: "Ja, rådgivning kan tilpasses både salg, kjøp og områdevalg." },
+    ],
+    call_to_action: "Book boligsamtale",
+    contact_text: "Fortell om bolig, område eller planene dine, så tar {companyName} kontakt med forslag til neste steg.",
+    brand_color: "#0f766e",
+    secondary_color: "#0f172a",
+    accent_color: "#14b8a6",
+    suggested_sections: ["Hero", "Tjenester", "Områder", "Verdivurdering", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  advokat: {
+    template_name: "Advokat",
+    hero_title: "{companyName} gir tydelig juridisk hjelp når valgene betyr mye",
+    hero_subtitle: "Rådgivning, kontrakter, tvister, familie, eiendom og første kontakt med trygg forventningsavklaring.",
+    intro_text:
+      "{companyName} kan vise fagområder, prosess, kontakt og vanlige spørsmål på en nettside som gjør terskelen lavere.",
+    services: ["Juridisk rådgivning og vurdering", "Kontrakter og avtalegjennomgang", "Eiendom, arv eller familie etter fagområde", "Tvister og forhandlinger", "Første avklaring av sak og behov"],
+    products: ["Innledende samtale", "Dokumentgjennomgang", "Rådgivningspakke", "Saksoppfølging"],
+    prices: ["Første vurdering etter avtale", "Timepris eller fastpris der saken passer", "Pris avklares før oppdrag", "Rettshjelp vurderes ved relevante saker"],
+    trust_points: ["Konfidensiell og ryddig dialog", "Tydelig avklaring av sak og risiko", "Praktiske råd før neste steg", "Profesjonell presentasjon av fagområder"],
+    faq: [
+      { question: "Hva bør jeg sende inn først?", answer: "Skriv kort hva saken gjelder, frister og hvilke dokumenter som finnes." },
+      { question: "Får jeg vite pris før oppdrag?", answer: "Ja, advokaten kan avklare timepris, ramme eller fastpris før oppdraget starter." },
+    ],
+    call_to_action: "Be om juridisk vurdering",
+    contact_text: "Beskriv saken kort og legg ved frister hvis relevant, så følger {companyName} opp konfidensielt.",
+    brand_color: "#4338ca",
+    secondary_color: "#111827",
+    accent_color: "#a5b4fc",
+    suggested_sections: ["Hero", "Fagområder", "Prosess", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  fysioterapi: {
+    template_name: "Fysioterapi",
+    hero_title: "{companyName} hjelper kroppen tilbake i bedre flyt",
+    hero_subtitle: "Undersøkelse, behandling, trening, rehabilitering og enkel timeforespørsel for nye pasienter.",
+    intro_text:
+      "{companyName} kan vise behandlinger, kompetanse, priser og praktisk info på en side som gjør det enkelt å ta kontakt.",
+    services: ["Undersøkelse og behandlingsplan", "Manuell behandling og øvelser", "Rehabilitering etter skade", "Idrettsrelaterte plager", "Forebyggende trening og veiledning"],
+    products: ["Førstegangskonsultasjon", "Oppfølgingstime", "Treningsprogram", "Rehabiliteringsløp"],
+    prices: ["Førstegangstime fra kr 790", "Oppfølging fra kr 620", "Pakker etter behandlingsplan", "Pris avklares ved booking"],
+    trust_points: ["Tydelig plan etter første vurdering", "Praktiske øvelser kunden kan følge", "Enkel booking og oppfølging", "Trygg informasjon før første time"],
+    faq: [
+      { question: "Trenger jeg henvisning?", answer: "Det kommer an på avtaleform og behandling. Klinikken kan forklare hva som gjelder." },
+      { question: "Hva bør jeg ta med?", answer: "Ta med relevant informasjon om plagen, tidligere behandling og klær du kan bevege deg i." },
+    ],
+    call_to_action: "Book fysiotime",
+    contact_text: "Fortell kort om plagen og ønsket tidspunkt, så tar {companyName} kontakt med forslag til time.",
+    brand_color: "#16a34a",
+    secondary_color: "#14532d",
+    accent_color: "#86efac",
+    suggested_sections: ["Hero", "Behandlinger", "Rehabilitering", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  klinikk: {
+    template_name: "Skjonnhet og klinikk",
+    hero_title: "{companyName} tilbyr behandlinger med ro, kvalitet og trygghet",
+    hero_subtitle: "Behandlinger, konsultasjon, priser, før- og etterinformasjon og enkel bookingforespørsel.",
+    intro_text:
+      "{companyName} kan presentere behandlinger, resultater, trygghet og kontakt på en nettside som hjelper kunden å velge riktig.",
+    services: ["Hudpleie og konsultasjon", "Velvære- og skjønnhetsbehandlinger", "Behandlingsplan etter behov", "Produktveiledning og oppfølging", "Booking og spørsmål før time"],
+    products: ["Konsultasjon", "Hudpleiebehandling", "Behandlingspakke", "Produktanbefaling"],
+    prices: ["Konsultasjon fra kr 490", "Behandling fra kr 990", "Pakker prises etter behov", "Endelig pris avklares før behandling"],
+    trust_points: ["Trygg forklaring før behandling", "Tydelige priser og forventninger", "Rolig kundereise fra spørsmål til booking", "Profesjonell presentasjon av behandlinger"],
+    faq: [
+      { question: "Kan jeg få råd før jeg booker?", answer: "Ja. Beskriv hva du ønsker hjelp med, så kan klinikken anbefale riktig behandling." },
+      { question: "Når får jeg pris?", answer: "Pris kan avklares før behandling basert på ønsket resultat og behov." },
+    ],
+    call_to_action: "Book konsultasjon",
+    contact_text: "Fortell hva du ønsker hjelp med, så følger {companyName} opp med anbefaling og ledig tid.",
+    brand_color: "#db2777",
+    secondary_color: "#4c0519",
+    accent_color: "#fbcfe8",
+    suggested_sections: ["Hero", "Behandlinger", "Priser", "Trygghet", "Resultater", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  hotell: {
+    template_name: "Hotell og overnatting",
+    hero_title: "{companyName} gir gjestene et godt sted å lande",
+    hero_subtitle: "Rom, fasiliteter, opphold, møter, lokale opplevelser og enkel forespørsel om tilgjengelighet.",
+    intro_text:
+      "{companyName} kan vise rom, stemning, fasiliteter og kontakt på en nettside som gjør det lettere å velge overnatting.",
+    services: ["Rom og overnatting", "Frokost og fasiliteter", "Møte- eller selskapsforespørsel", "Lokale tips og opplevelser", "Direkte kontakt om tilgjengelighet"],
+    products: ["Standardrom", "Familierom", "Møtepakke", "Weekendopphold"],
+    prices: ["Rom fra kr 1 190 per natt", "Frokost kan inkluderes", "Gruppepris etter dato og behov", "Tilbud sendes ved forespørsel"],
+    trust_points: ["Tydelige rom- og fasilitetsbeskrivelser", "Enkel forespørsel før booking", "Rask oppfølging av grupper og møter", "ChatGenius kan svare på vanlige gjestespørsmål"],
+    faq: [
+      { question: "Kan jeg spørre om ledige rom?", answer: "Ja. Oppgi dato, antall gjester og rombehov, så kan hotellet svare." },
+      { question: "Tar dere grupper eller møter?", answer: "Ja, send dato, antall personer og behov, så kan det lages forslag." },
+    ],
+    call_to_action: "Sjekk tilgjengelighet",
+    contact_text: "Send dato, antall gjester og ønsket romtype, så følger {companyName} opp med tilgjengelighet.",
+    brand_color: "#7c3aed",
+    secondary_color: "#1e1b4b",
+    accent_color: "#c4b5fd",
+    suggested_sections: ["Hero", "Rom", "Fasiliteter", "Priser", "Opplevelser", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  kafe: {
+    template_name: "Kafe",
+    hero_title: "{companyName} er stedet for kaffe, lunsj og små pauser",
+    hero_subtitle: "Meny, kaker, kaffe, åpningstider, arrangementer og enkel kontakt for gjester og grupper.",
+    intro_text:
+      "{companyName} kan vise frem meny, atmosfære, dagens tilbud og kontakt på en nettside som gjør besøket lett å planlegge.",
+    services: ["Kaffe, bakst og lunsj", "Dagens tilbud og sesongmeny", "Takeaway når det tilbys", "Små arrangementer og grupper", "Åpningstider og praktisk info"],
+    products: ["Kaffe og varme drikker", "Lunsjretter", "Kaker og bakst", "Gavekort eller cateringforespørsel"],
+    prices: ["Kaffe fra kr 45", "Lunsj fra kr 149", "Kaker prises per stykk eller bestilling", "Grupper får tilbud etter behov"],
+    trust_points: ["Oppdatert meny og åpningstider", "Enkel kontakt for grupper og bestillinger", "Tydelig lokal profil", "ChatGenius kan svare på vanlige spørsmål"],
+    faq: [
+      { question: "Kan jeg se dagens meny?", answer: "Ja, dagens utvalg kan vises på nettsiden og oppdateres ved behov." },
+      { question: "Kan jeg spørre om gruppebord?", answer: "Ja. Oppgi dato, tidspunkt og antall personer, så kan kafeen svare." },
+    ],
+    call_to_action: "Se dagens tilbud",
+    contact_text: "Send spørsmål om meny, gruppebord eller bestilling, så tar {companyName} kontakt.",
+    brand_color: "#a16207",
+    secondary_color: "#292524",
+    accent_color: "#fbbf24",
+    suggested_sections: ["Hero", "Meny", "Dagens tilbud", "Kaker", "Åpningstider", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  bygg: {
+    template_name: "Bygg og anlegg",
+    hero_title: "{companyName} tar prosjekter fra plan til ferdig levert",
+    hero_subtitle: "Bygg, rehabilitering, anlegg, befaring, prosjektplan og tilbudsforespørsel for private og bedrifter.",
+    intro_text:
+      "{companyName} kan presentere prosjekter, tjenester, kapasitet og kontakt på en nettside som gjør første dialog enklere.",
+    services: ["Rehabilitering og byggprosjekter", "Grunnarbeid og anlegg etter kapasitet", "Befaring og prosjektavklaring", "Prosjektledelse og koordinering", "Vedlikehold og oppgradering"],
+    products: ["Prosjektbefaring", "Rehabiliteringspakke", "Anleggsvurdering", "Service- og vedlikeholdsavtale"],
+    prices: ["Befaring etter avtale", "Prosjekt prises etter omfang", "Tilbud gis etter behovsavklaring", "Fast ramme kan avtales før oppstart"],
+    trust_points: ["Tydelig prosjektavklaring før tilbud", "Praktisk kommunikasjon underveis", "Erfaring med lokale forhold", "Ryddig dokumentasjon av avtalt omfang"],
+    faq: [
+      { question: "Kan jeg be om prosjektbefaring?", answer: "Ja. Beskriv prosjekt, adresseområde og ønsket tid, så kan bedriften vurdere kapasitet." },
+      { question: "Hvordan får jeg tilbud?", answer: "Etter kort behovsavklaring eller befaring kan det lages tilbud basert på omfang." },
+    ],
+    call_to_action: "Be om prosjektprat",
+    contact_text: "Beskriv prosjektet, ønsket tidsrom og adresseområde, så følger {companyName} opp.",
+    brand_color: "#ca8a04",
+    secondary_color: "#111827",
+    accent_color: "#facc15",
+    suggested_sections: ["Hero", "Prosjekter", "Tjenester", "Befaring", "Priser", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
 };
 
 function personalizeTemplateText(value: string, companyName: string) {
@@ -411,8 +828,8 @@ function copyTemplateList(values: string[], companyName: string) {
 }
 
 export function getDemoSiteTemplateDefaults(templateSlug: string | null | undefined, companyName = DEFAULT_COMPANY_NAME): DemoSiteTemplateDefaults {
-  const normalizedSlug = String(templateSlug || "").toLowerCase().trim();
-  const slug = DEMO_SITE_TEMPLATE_DEFAULTS[normalizedSlug] ? normalizedSlug : "elektro";
+  const normalizedSlug = normalizeDemoSiteTemplateSlug(templateSlug);
+  const slug = DEMO_SITE_TEMPLATE_DEFAULTS[normalizedSlug] ? normalizedSlug : GENERIC_TEMPLATE_SLUG;
   const defaults = DEMO_SITE_TEMPLATE_DEFAULTS[slug];
   const displayName = companyName.trim() || DEFAULT_COMPANY_NAME;
   const templateSeed = DEMO_SITE_TEMPLATE_SEEDS.find((template) => template.slug === slug);
@@ -539,6 +956,58 @@ const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   {
     slug: "renhold",
     keywords: ["renhold", "vask", "cleaning", "rengjøring", "cleaner", "maid"],
+  },
+  {
+    slug: "restaurant",
+    keywords: ["restaurant", "servering", "meny", "middag", "lunsj", "bordbestilling", "catering"],
+  },
+  {
+    slug: "frisor",
+    keywords: ["frisør", "frisor", "salong", "hår", "hair", "klipp", "farge"],
+  },
+  {
+    slug: "tannlege",
+    keywords: ["tannlege", "tannklinikk", "dental", "tannrens", "akutt tann"],
+  },
+  {
+    slug: "bilverksted",
+    keywords: ["bilverksted", "verksted", "bilservice", "eu-kontroll", "mekaniker"],
+  },
+  {
+    slug: "rorlegger",
+    keywords: ["rørlegger", "rorlegger", "vvs", "bad", "lekkasje", "varmtvann"],
+  },
+  {
+    slug: "snekker",
+    keywords: ["snekker", "tømrer", "tomrer", "terrasse", "trearbeid"],
+  },
+  {
+    slug: "eiendomsmegler",
+    keywords: ["eiendomsmegler", "megler", "boligsalg", "verdivurdering", "real estate"],
+  },
+  {
+    slug: "advokat",
+    keywords: ["advokat", "juridisk", "lawyer", "kontrakt", "rettshjelp"],
+  },
+  {
+    slug: "fysioterapi",
+    keywords: ["fysioterapi", "fysioterapeut", "rehabilitering", "fysio", "trening"],
+  },
+  {
+    slug: "klinikk",
+    keywords: ["klinikk", "skjønnhet", "skjonnhet", "hudpleie", "beauty", "behandling"],
+  },
+  {
+    slug: "hotell",
+    keywords: ["hotell", "overnatting", "hotel", "rom", "gjest", "booking"],
+  },
+  {
+    slug: "kafe",
+    keywords: ["kafé", "kafe", "kaffe", "bakeri", "bakst", "lunsj"],
+  },
+  {
+    slug: "bygg",
+    keywords: ["bygg", "anlegg", "entreprenør", "entreprenor", "rehabilitering", "prosjekt"],
   },
 ];
 

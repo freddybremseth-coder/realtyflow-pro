@@ -140,7 +140,7 @@ async function repairOrderLinks(supabase: SupabaseClientLike, order: DemoSiteOrd
   if (!hasClaimUrl(order.claim_url)) patch.claim_url = buildClaimUrl(token);
   if (!hasCustomerPreviewUrl(order.preview_url)) patch.preview_url = buildPreviewUrl(token);
   if (!order.expires_at) patch.expires_at = daysFromNow(DEFAULT_EXPIRY_DAYS);
-  if (!order.template_slug || order.template_slug === "local-service") patch.template_slug = DEFAULT_TEMPLATE_SLUG;
+  if (!order.template_slug) patch.template_slug = DEFAULT_TEMPLATE_SLUG;
 
   if (Object.keys(patch).length === 0) return order;
 
