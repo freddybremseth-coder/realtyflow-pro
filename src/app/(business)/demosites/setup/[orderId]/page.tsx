@@ -51,8 +51,53 @@ type SetupForm = {
   gallery_images: string;
 };
 
+type TemplateDefaults = Pick<SetupForm, "hero_subtitle" | "intro_text" | "services" | "products" | "prices" | "brand_color" | "secondary_color" | "accent_color">;
+
 const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
+
+const TEMPLATE_DEFAULTS: Record<string, TemplateDefaults> = {
+  elektro: {
+    hero_subtitle: "Elektrikertjenester med tydelig kontakt og enkel jobbforespørsel.",
+    intro_text: "Denne demoen viser hvordan en lokal elektriker kan presentere tjenester, trygghet og forespørsler bedre.",
+    services: ["Elektriske installasjoner", "Feilsøking og reparasjon", "Sikkerhet og kontroll"].join("\n"),
+    products: ["Serviceavtale", "El-sjekk", "Installasjon"].join("\n"),
+    prices: ["Timepris eller fastpris etter oppdrag", "Uforpliktende pristilbud", "Befaring ved behov"].join("\n"),
+    brand_color: "#eab308",
+    secondary_color: "#0f172a",
+    accent_color: "#facc15",
+  },
+  dekk: {
+    hero_subtitle: "Dekkskift, hjulhotell og dekkservice med enkel timeforespørsel.",
+    intro_text: "Denne demoen viser hvordan et dekkverksted kan få flere timeforespørsler, vise tjenester tydelig og svare kunder med AI-assistent.",
+    services: ["Dekkskift og hjulhotell", "Nye sommer- og vinterdekk", "Balansering og kontroll"].join("\n"),
+    products: ["Sommerdekk", "Vinterdekk", "Felger og hjulpakker"].join("\n"),
+    prices: ["Dekkskift fra 690 kr", "Hjulhotell fra 990 kr per sesong", "Tilbud på dekkpakker etter dimensjon"].join("\n"),
+    brand_color: "#dc2626",
+    secondary_color: "#111827",
+    accent_color: "#f87171",
+  },
+  frakt: {
+    hero_subtitle: "Transport og frakt med enkel tilbudsforespørsel.",
+    intro_text: "Denne demoen viser hvordan et transportselskap kan hente inn rute, godstype og kontaktinfo raskt.",
+    services: ["Lokal transport", "Bud og varelevering", "Frakttilbud etter rute"].join("\n"),
+    products: ["Budbil", "Varetransport", "Fast transportavtale"].join("\n"),
+    prices: ["Pris etter rute og volum", "Fast avtale for bedrifter", "Raskt tilbud på frakt"].join("\n"),
+    brand_color: "#2563eb",
+    secondary_color: "#172554",
+    accent_color: "#93c5fd",
+  },
+  renhold: {
+    hero_subtitle: "Renhold for hjem og bedrift med enkel prisforespørsel.",
+    intro_text: "Denne demoen viser hvordan et renholdsfirma kan presentere tjenester, frekvens og pristilbud tydelig.",
+    services: ["Privat renhold", "Bedriftsrenhold", "Flyttevask og periodisk vask"].join("\n"),
+    products: ["Ukentlig vask", "Kontoravtale", "Flyttevask"].join("\n"),
+    prices: ["Pris etter areal og frekvens", "Fast avtale etter befaring", "Uforpliktende pristilbud"].join("\n"),
+    brand_color: "#0d9488",
+    secondary_color: "#134e4a",
+    accent_color: "#5eead4",
+  },
+};
 
 const EMPTY_FORM: SetupForm = {
   template_slug: DEFAULT_TEMPLATE_SLUG,
@@ -79,20 +124,37 @@ function listValue(value: unknown) {
 }
 
 function buildForm(fields: Record<string, unknown>, selectedTemplateSlug: string): SetupForm {
+  const defaults = TEMPLATE_DEFAULTS[selectedTemplateSlug] || TEMPLATE_DEFAULTS[DEFAULT_TEMPLATE_SLUG];
   return {
     template_slug: selectedTemplateSlug || DEFAULT_TEMPLATE_SLUG,
     hero_title: stringValue(fields.hero_title),
-    hero_subtitle: stringValue(fields.hero_subtitle),
-    intro_text: stringValue(fields.intro_text),
-    services: listValue(fields.services),
-    products: listValue(fields.products),
-    prices: listValue(fields.prices),
+    hero_subtitle: stringValue(fields.hero_subtitle) || defaults.hero_subtitle,
+    intro_text: stringValue(fields.intro_text) || defaults.intro_text,
+    services: listValue(fields.services) || defaults.services,
+    products: listValue(fields.products) || defaults.products,
+    prices: listValue(fields.prices) || defaults.prices,
     contact_text: stringValue(fields.contact_text),
     logo_url: stringValue(fields.logo_url),
-    brand_color: stringValue(fields.brand_color),
-    secondary_color: stringValue(fields.secondary_color),
-    accent_color: stringValue(fields.accent_color),
+    brand_color: stringValue(fields.brand_color) || defaults.brand_color,
+    secondary_color: stringValue(fields.secondary_color) || defaults.secondary_color,
+    accent_color: stringValue(fields.accent_color) || defaults.accent_color,
     gallery_images: listValue(fields.gallery_images),
+  };
+}
+
+function applyTemplateDefaults(form: SetupForm, templateSlug: string): SetupForm {
+  const defaults = TEMPLATE_DEFAULTS[templateSlug] || TEMPLATE_DEFAULTS[DEFAULT_TEMPLATE_SLUG];
+  return {
+    ...form,
+    template_slug: templateSlug,
+    hero_subtitle: defaults.hero_subtitle,
+    intro_text: defaults.intro_text,
+    services: defaults.services,
+    products: defaults.products,
+    prices: defaults.prices,
+    brand_color: defaults.brand_color,
+    secondary_color: defaults.secondary_color,
+    accent_color: defaults.accent_color,
   };
 }
 
@@ -172,6 +234,10 @@ export default function DemoSitesSetupEditorPage() {
     }
   }
 
+  function changeTemplate(templateSlug: string) {
+    setForm((prev) => applyTemplateDefaults(prev, templateSlug));
+  }
+
   const selectedTemplate = templates.find((template) => template.slug === form.template_slug);
   const previewUrl = customerPreviewUrl(order);
 
@@ -202,7 +268,7 @@ export default function DemoSitesSetupEditorPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={saveSetup} className="space-y-4">
-              <Select label="Demo-mal" value={form.template_slug} onChange={(value) => setForm((prev) => ({ ...prev, template_slug: value }))} options={templates.map((template) => ({ value: template.slug, label: template.name }))} />
+              <Select label="Demo-mal" value={form.template_slug} onChange={changeTemplate} options={templates.map((template) => ({ value: template.slug, label: template.name }))} />
               {selectedTemplate?.description && <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">{selectedTemplate.description}</div>}
               <Input label="Logo URL" value={form.logo_url} onChange={(value) => setForm((prev) => ({ ...prev, logo_url: value }))} />
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
