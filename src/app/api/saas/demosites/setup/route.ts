@@ -114,7 +114,7 @@ function color(value: unknown) {
 function templateSlug(value: unknown) {
   const output = text(value, 80);
   if (!output) return null;
-  return /^[a-z0-9-]+$/i.test(output) ? output : null;
+  return /^[a-z0-9æøåé-]+$/iu.test(output) ? output.toLowerCase() : null;
 }
 
 function daysFromNow(days: number) {
@@ -153,7 +153,7 @@ async function repairOrderLinks(supabase: SupabaseClientLike, order: SetupOrder)
   if (!hasClaimUrl(order.claim_url)) patch.claim_url = buildClaimUrl(token);
   if (!hasCustomerPreviewUrl(order.preview_url)) patch.preview_url = buildPreviewUrl(token);
   if (!order.expires_at) patch.expires_at = daysFromNow(DEFAULT_EXPIRY_DAYS);
-  if (!order.template_slug || order.template_slug === "local-service") patch.template_slug = DEFAULT_TEMPLATE_SLUG;
+  if (!order.template_slug) patch.template_slug = DEFAULT_TEMPLATE_SLUG;
 
   if (Object.keys(patch).length === 0) return order;
 

@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import {
   DEMO_SITE_PACKAGES,
-  DEMO_SITE_TEMPLATE_SEEDS,
   getDemoSiteTemplateDefaults,
   type DemoSiteFaqItem,
   type DemoSiteTemplateDefaults,
@@ -159,9 +158,7 @@ function getTemplateSlug(order: DemoOrder) {
   const fields = order.editable_fields || {};
   const fieldSlug = text(fields.template_slug);
   const orderSlug = text(order.template_slug);
-  const slug = (fieldSlug || orderSlug).toLowerCase();
-  if (DEMO_SITE_TEMPLATE_SEEDS.some((item) => item.slug === slug)) return slug;
-  return DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
+  return (fieldSlug || orderSlug || "local-service").toLowerCase();
 }
 
 function getBrandColors(order: DemoOrder, defaults: DemoSiteTemplateDefaults): BrandColors {
