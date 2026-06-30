@@ -24,10 +24,10 @@ function request(body: unknown, headers: Record<string, string> = {}) {
   });
 }
 
-function htmlResponse(html: string) {
+function htmlResponse(html: string, status = 200) {
   return Promise.resolve(
     new Response(html, {
-      status: 200,
+      status,
       headers: { "content-type": "text/html; charset=utf-8" },
     }),
   );
@@ -134,6 +134,52 @@ test("profile import detects restaurant websites and returns editable fields", a
   assert.equal(body.editable_fields.template_slug, "restaurant");
   assert.equal(body.editable_fields.brand_color, "#b45309");
   assert.equal(calls.length, 2);
+});
+
+test("profile import skips protected secondary pages without failing analysis", async () => {
+  publicDns();
+  const calls: string[] = [];
+  setProfileImportFetchForTests((async (url: string) => {
+    calls.push(url);
+    if (url.endsWith("/protected")) return htmlResponse("Protected", 401);
+    if (url.includes("drupal_cbp_check")) throw new Error("Protected action URL should not be fetched");
+
+    return htmlResponse(`
+      <html>
+        <head><title>Point S - Dekk og bilverksted</title><meta name="description" content="Dekkhotell, dekkskift og bilservice."></head>
+        <body>
+          <h1>Dekk, felg og bilservice</h1>
+          <p>Dekkhotell, dekkskift og verkstedtjenester for bilen din.</p>
+          <a href="/protected">Beskyttet underside</a>
+          <a href="/book-en-avtale?drupal_cbp_check=1">Book en avtale</a>
+        </body>
+      </html>
+    `);
+  }) as typeof fetch);
+
+  const response = await POST(
+    request({ website_url: "https://point-s.example.com", company_name: "Point S" }, { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.profile.company_name, "Point S");
+  assert.equal(body.warnings.includes("Noen undersider var beskyttet og ble hoppet over."), true);
+  assert.equal(JSON.stringify(body.warnings).includes("HTTP 401"), false);
+  assert.equal(calls.some((url) => url.includes("drupal_cbp_check")), false);
+});
+
+test("profile import treats protected homepages as a real error", async () => {
+  publicDns();
+  setProfileImportFetchForTests((async () => htmlResponse("Protected", 403)) as typeof fetch);
+
+  const response = await POST(
+    request({ website_url: "https://protected-home.example.com", company_name: "Protected Home" }, { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.match(body.error, /startsiden|HTTP 403/i);
 });
 
 test("profile import falls back to local-service for unknown businesses", async () => {

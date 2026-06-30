@@ -70,6 +70,19 @@ const BLOCKED_HOSTNAMES = new Set([
   "ip6-loopback",
 ]);
 const BLOCKED_FILE_EXTENSIONS = /\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|gz|tar|mp3|mp4|mov|avi|webm|woff2?|ttf|eot)$/i;
+const PROTECTED_SECONDARY_PAGE_WARNING = "Noen undersider var beskyttet og ble hoppet over.";
+const PROTECTED_ACTION_QUERY_KEYS = new Set([
+  "drupal_cbp_check",
+  "login",
+  "logout",
+  "user",
+  "account",
+  "checkout",
+  "cart",
+  "session",
+  "token",
+]);
+const PROTECTED_ACTION_PATH_PATTERN = /(?:^|\/)(?:login|logout|user|account|checkout|cart|handlekurv|kasse|min-side|my-account|booking|book-en-avtale|bestill|avtale)(?:\/|$)/i;
 const OPTIONAL_IMPORT_COLUMNS = [
   "recommended_template_slug",
   "profile_import_status",
@@ -133,6 +146,10 @@ function uniqueList(values: Array<string | null | undefined>, limit = 12) {
   }
 
   return output;
+}
+
+function addWarningOnce(warnings: string[], warning: string) {
+  if (!warnings.includes(warning)) warnings.push(warning);
 }
 
 function asRequestText(body: RequestBody, snakeCase: string, camelCase: string, maxLength = 500) {
@@ -296,6 +313,24 @@ function resolveCandidateUrl(value: string, baseUrl: string) {
   }
 }
 
+function isLikelyProtectedOrActionUrl(value: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return true;
+  }
+
+  if (PROTECTED_ACTION_PATH_PATTERN.test(parsed.pathname)) return true;
+  for (const key of parsed.searchParams.keys()) {
+    const normalizedKey = key.toLowerCase().replace(/[\s_-]+/g, "_");
+    if (PROTECTED_ACTION_QUERY_KEYS.has(normalizedKey)) return true;
+  }
+
+  const queryText = parsed.search.toLowerCase();
+  return /\b(?:login|logout|account|checkout|cart|booking|token|session)\b/.test(queryText);
+}
+
 function htmlToVisibleLines(html: string) {
   const visible = html
     .replace(/<!--[\s\S]*?-->/g, " ")
@@ -406,7 +441,11 @@ async function readLimitedResponseText(response: Response) {
   return output;
 }
 
-async function fetchHtml(url: string, warnings: string[], redirectCount = 0): Promise<{ html: string; finalUrl: string } | null> {
+async function fetchHtml(
+  url: string,
+  warnings: string[],
+  { isStartPage = false, redirectCount = 0 }: { isStartPage?: boolean; redirectCount?: number } = {},
+): Promise<{ html: string; finalUrl: string } | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -428,10 +467,17 @@ async function fetchHtml(url: string, warnings: string[], redirectCount = 0): Pr
         return null;
       }
       const nextUrl = await validatePublicWebsiteUrl(new URL(response.headers.get("location") || "", url).toString());
-      return fetchHtml(nextUrl, warnings, redirectCount + 1);
+      return fetchHtml(nextUrl, warnings, { isStartPage, redirectCount: redirectCount + 1 });
     }
 
     if (!response.ok) {
+      if (isStartPage && (response.status === 401 || response.status === 403)) {
+        throw new ProfileImportError(`Startsiden kunne ikke hentes: HTTP ${response.status}.`, response.status);
+      }
+      if (!isStartPage && (response.status === 401 || response.status === 403)) {
+        addWarningOnce(warnings, PROTECTED_SECONDARY_PAGE_WARNING);
+        return null;
+      }
       warnings.push(`Could not fetch ${url}: HTTP ${response.status}.`);
       return null;
     }
@@ -444,6 +490,7 @@ async function fetchHtml(url: string, warnings: string[], redirectCount = 0): Pr
 
     return { html: await readLimitedResponseText(response), finalUrl: response.url || url };
   } catch (error) {
+    if (error instanceof ProfileImportError) throw error;
     warnings.push(error instanceof Error && error.name === "AbortError" ? `Timed out fetching ${url}.` : `Could not fetch ${url}.`);
     return null;
   } finally {
@@ -461,8 +508,14 @@ async function crawlWebsite(startUrl: string, warnings: string[]) {
     const current = queue.shift();
     if (!current || seen.has(current)) continue;
     seen.add(current);
+    const isStartPage = current === startUrl && pages.length === 0;
 
-    const fetched = await fetchHtml(current, warnings);
+    if (!isStartPage && isLikelyProtectedOrActionUrl(current)) {
+      addWarningOnce(warnings, PROTECTED_SECONDARY_PAGE_WARNING);
+      continue;
+    }
+
+    const fetched = await fetchHtml(current, warnings, { isStartPage });
     if (!fetched) continue;
 
     const finalUrl = await validatePublicWebsiteUrl(fetched.finalUrl);
@@ -476,6 +529,10 @@ async function crawlWebsite(startUrl: string, warnings: string[]) {
 
     for (const link of page.links) {
       if (pages.length + queue.length >= MAX_PAGES) break;
+      if (isLikelyProtectedOrActionUrl(link)) {
+        addWarningOnce(warnings, PROTECTED_SECONDARY_PAGE_WARNING);
+        continue;
+      }
       if (!seen.has(link) && new URL(link).hostname === startHostname) queue.push(link);
     }
   }
