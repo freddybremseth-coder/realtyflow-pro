@@ -159,6 +159,10 @@ function getImportFallbackEmail(companyName: string) {
   return `demosites-import+${slug}@chatgenius.pro`;
 }
 
+function getApiErrorMessage(data: Record<string, unknown>) {
+  return [data.error, data.details, data.code].filter(Boolean).join(" ");
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
@@ -281,7 +285,7 @@ export default function DemoSitesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: "draft_preview",
+          status: "in_setup",
           company_name: companyName,
           customer_name: customerName,
           customer_email: customerEmail,
@@ -302,13 +306,15 @@ export default function DemoSitesPage() {
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Ukjent API-feil.");
+      if (!response.ok) {
+        console.error("DemoSites import create failed:", data);
+        throw new Error(getApiErrorMessage(data) || "Ukjent API-feil.");
+      }
       const createdOrder = (data.order || null) as DemoSiteOrder | null;
       setImportSuccess({ title: `${companyName} er opprettet som ny demo.`, order: createdOrder });
       await loadData();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Ukjent feil.";
-      console.error("DemoSites import create failed:", message);
       setImportError(`Kunne ikke opprette demo fra analyse: ${message}`);
     } finally {
       setImportSaving(false);
@@ -348,12 +354,16 @@ export default function DemoSitesPage() {
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Kunne ikke oppdatere valgt demo.");
+      if (!response.ok) {
+        console.error("DemoSites import update failed:", data);
+        throw new Error(getApiErrorMessage(data) || "Kunne ikke oppdatere valgt demo.");
+      }
       const updatedOrder = (data.order || selectedOrder) as DemoSiteOrder;
       setImportSuccess({ title: `${updatedOrder.company_name} er oppdatert fra analysen.`, order: updatedOrder });
       await loadData();
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Kunne ikke oppdatere valgt demo.");
+      const message = err instanceof Error ? err.message : "Ukjent feil.";
+      setImportError(`Kunne ikke oppdatere valgt demo: ${message}`);
     } finally {
       setImportSaving(false);
     }
