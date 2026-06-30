@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, CreditCard, ExternalLink, Globe, Loader2, MonitorSmartphone, Rocket, Send, Wallet } from "lucide-react";
+import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Wallet, XCircle } from "lucide-react";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
 import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
@@ -33,6 +33,7 @@ type DemoSiteOrder = {
   expires_at?: string | null;
   production_url?: string | null;
   logo_url?: string | null;
+  brand_color?: string | null;
   editable_fields?: Record<string, unknown> | null;
   notes?: string | null;
   created_at?: string;
@@ -41,6 +42,32 @@ type DemoSiteOrder = {
 type DemoSiteTemplate = { slug: string; name: string; description?: string; preview_url?: string };
 type DemoSiteSummary = { totalOrders: number; activeOrders: number; paidOrders: number; bookedSetupRevenue: number; activeMrr: number; setupCosts: number; monthlyCosts: number; netSetup: number; netMrr: number; arr: number };
 type DemoSiteEvent = { id: string; order_id: string; event_type: string; title: string; description?: string | null; created_at?: string };
+type WebsiteImportMode = "new" | "existing";
+type WebsiteImportFormState = { website_url: string; company_name: string; mode: WebsiteImportMode; order_id: string };
+type WebsiteImportContactState = { customer_name: string; customer_email: string; customer_phone: string };
+type ImportedFaqItem = { question?: string; answer?: string };
+type ImportedProfile = {
+  company_name?: string;
+  website_url?: string;
+  title?: string;
+  description?: string;
+  summary?: string;
+  detected_industry?: string;
+  recommended_template_slug?: string;
+  logo_url?: string;
+  image_urls?: string[];
+  colors?: { primary?: string; secondary?: string; accent?: string };
+  services?: string[];
+  products?: string[];
+  prices?: string[];
+  trust_points?: string[];
+  faq?: ImportedFaqItem[];
+  contact?: { email?: string; phone?: string; address?: string };
+  confidence_score?: number;
+  source_pages?: string[];
+};
+type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[] };
+type WebsiteImportSuccess = { title: string; order?: DemoSiteOrder | null };
 
 type OrderFormState = {
   company_name: string;
@@ -60,6 +87,8 @@ const EMPTY_SUMMARY: DemoSiteSummary = { totalOrders: 0, activeOrders: 0, paidOr
 const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
 const INITIAL_FORM: OrderFormState = { company_name: "", customer_name: "", customer_email: "", customer_phone: "", industry: "", website_url: "", package_id: "standard", template_slug: DEFAULT_TEMPLATE_SLUG, setup_cost_nok: "0", monthly_cost_nok: "0", notes: "" };
+const INITIAL_IMPORT_FORM: WebsiteImportFormState = { website_url: "", company_name: "", mode: "new", order_id: "" };
+const INITIAL_IMPORT_CONTACT: WebsiteImportContactState = { customer_name: "", customer_email: "", customer_phone: "" };
 
 const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", draft_preview: "Midlertidig demo", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", expired: "Utløpt", cancelled: "Kansellert" };
 const billingLabel: Record<DemoSiteBillingStatus, string> = { not_invoiced: "Ikke fakturert", pending: "Venter", paid: "Betalt", overdue: "Forfalt", cancelled: "Stoppet" };
@@ -96,12 +125,42 @@ function customerPreviewUrl(order: DemoSiteOrder) {
   return order.preview_url || "";
 }
 
+function getTemplateLabel(templates: DemoSiteTemplate[], slug?: string | null) {
+  if (!slug) return "Ikke valgt";
+  return templates.find((template) => template.slug === slug)?.name || slug;
+}
+
+function getColorSwatches(colors?: ImportedProfile["colors"]) {
+  if (!colors) return [];
+  return [
+    { label: "Primær", value: colors.primary },
+    { label: "Sekundær", value: colors.secondary },
+    { label: "Aksent", value: colors.accent },
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value));
+}
+
+function getImportOrderLinks(order?: DemoSiteOrder | null) {
+  if (!order) return { previewUrl: "", setupUrl: "", claimUrl: "" };
+  return {
+    previewUrl: customerPreviewUrl(order),
+    setupUrl: order.id ? `/demosites/setup/${order.id}` : "",
+    claimUrl: order.claim_url || "",
+  };
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
   const [events, setEvents] = useState<DemoSiteEvent[]>([]);
   const [summary, setSummary] = useState<DemoSiteSummary>(EMPTY_SUMMARY);
   const [form, setForm] = useState<OrderFormState>(INITIAL_FORM);
+  const [importForm, setImportForm] = useState<WebsiteImportFormState>(INITIAL_IMPORT_FORM);
+  const [importContact, setImportContact] = useState<WebsiteImportContactState>(INITIAL_IMPORT_CONTACT);
+  const [importResult, setImportResult] = useState<WebsiteImportResult | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSaving, setImportSaving] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<WebsiteImportSuccess | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +214,138 @@ export default function DemoSitesPage() {
     await loadData();
   }
 
+  async function analyzeWebsiteImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImportLoading(true);
+    setImportError(null);
+    setImportSuccess(null);
+    setImportResult(null);
+    try {
+      const response = await fetch("/api/saas/demosites/profile-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          website_url: importForm.website_url,
+          company_name: importForm.company_name || undefined,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kunne ikke analysere nettsiden.");
+      if (!data.profile || !data.editable_fields) throw new Error("Analysen mangler profil eller redigerbare felt.");
+      const nextResult = {
+        profile: data.profile as ImportedProfile,
+        editable_fields: data.editable_fields as Record<string, unknown>,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      };
+      setImportResult(nextResult);
+      setImportContact({
+        customer_name: nextResult.profile.company_name || importForm.company_name || "",
+        customer_email: nextResult.profile.contact?.email || "",
+        customer_phone: nextResult.profile.contact?.phone || "",
+      });
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Kunne ikke analysere nettsiden.");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function createDemoFromImport() {
+    if (!importResult) return;
+    const profile = importResult.profile;
+    const companyName = (profile.company_name || importForm.company_name || "").trim();
+    const customerName = (importContact.customer_name || companyName).trim();
+    const customerEmail = importContact.customer_email.trim();
+    if (!companyName) {
+      setImportError("Analysen mangler bedriftsnavn.");
+      return;
+    }
+    if (!customerEmail) {
+      setImportError("Legg inn en kontakt-e-post før demoen opprettes.");
+      return;
+    }
+
+    setImportSaving(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const response = await fetch("/api/saas/demosites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "draft_preview",
+          company_name: companyName,
+          customer_name: customerName,
+          customer_email: customerEmail,
+          customer_phone: importContact.customer_phone || profile.contact?.phone || undefined,
+          industry: profile.detected_industry || undefined,
+          website_url: profile.website_url || importForm.website_url,
+          source_url: profile.website_url || importForm.website_url,
+          package_id: "standard",
+          template_slug: profile.recommended_template_slug || DEFAULT_TEMPLATE_SLUG,
+          logo_url: profile.logo_url || importResult.editable_fields.logo_url || undefined,
+          brand_color: profile.colors?.primary || importResult.editable_fields.brand_color || undefined,
+          extracted_profile: profile,
+          editable_fields: importResult.editable_fields,
+          notes: `Importert fra nettsideanalyse: ${profile.website_url || importForm.website_url}`,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kunne ikke opprette demo fra analyse.");
+      const createdOrder = (data.order || null) as DemoSiteOrder | null;
+      setImportSuccess({ title: `${companyName} er opprettet som ny demo.`, order: createdOrder });
+      await loadData();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Kunne ikke opprette demo fra analyse.");
+    } finally {
+      setImportSaving(false);
+    }
+  }
+
+  async function applyImportToSelectedOrder() {
+    if (!importResult || !importForm.order_id) return;
+    const selectedOrder = orders.find((order) => order.id === importForm.order_id);
+    if (!selectedOrder) {
+      setImportError("Velg en demo som skal oppdateres.");
+      return;
+    }
+
+    const profile = importResult.profile;
+    setImportSaving(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const response = await fetch("/api/saas/demosites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedOrder.id,
+          company_name: profile.company_name || selectedOrder.company_name,
+          industry: profile.detected_industry || selectedOrder.industry,
+          website_url: profile.website_url || selectedOrder.website_url,
+          source_url: profile.website_url || selectedOrder.website_url,
+          template_slug: profile.recommended_template_slug || selectedOrder.template_slug || DEFAULT_TEMPLATE_SLUG,
+          logo_url: profile.logo_url || importResult.editable_fields.logo_url || selectedOrder.logo_url,
+          brand_color: profile.colors?.primary || importResult.editable_fields.brand_color || selectedOrder.brand_color,
+          extracted_profile: profile,
+          editable_fields: {
+            ...getEditableFields(selectedOrder),
+            ...importResult.editable_fields,
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kunne ikke oppdatere valgt demo.");
+      const updatedOrder = (data.order || selectedOrder) as DemoSiteOrder;
+      setImportSuccess({ title: `${updatedOrder.company_name} er oppdatert fra analysen.`, order: updatedOrder });
+      await loadData();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Kunne ikke oppdatere valgt demo.");
+    } finally {
+      setImportSaving(false);
+    }
+  }
+
   const orderNameById = new Map(orders.map((order) => [order.id, order.company_name]));
   const templateOptions = templates.length ? templates : DEFAULT_TEMPLATES;
 
@@ -171,6 +362,28 @@ export default function DemoSitesPage() {
       </div>
 
       {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+
+      <WebsiteImportCard
+        form={importForm}
+        contact={importContact}
+        result={importResult}
+        success={importSuccess}
+        error={importError}
+        loading={importLoading}
+        saving={importSaving}
+        orders={orders}
+        templates={templateOptions}
+        onAnalyze={analyzeWebsiteImport}
+        onCreate={createDemoFromImport}
+        onApplyToOrder={applyImportToSelectedOrder}
+        onDiscard={() => {
+          setImportResult(null);
+          setImportSuccess(null);
+          setImportError(null);
+        }}
+        onFormChange={(patch) => setImportForm((prev) => ({ ...prev, ...patch }))}
+        onContactChange={(patch) => setImportContact((prev) => ({ ...prev, ...patch }))}
+      />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
         <Metric label="Bestillinger" value={String(summary.totalOrders)} />
@@ -263,7 +476,241 @@ export default function DemoSitesPage() {
   );
 }
 
+type WebsiteImportCardProps = {
+  form: WebsiteImportFormState;
+  contact: WebsiteImportContactState;
+  result: WebsiteImportResult | null;
+  success: WebsiteImportSuccess | null;
+  error: string | null;
+  loading: boolean;
+  saving: boolean;
+  orders: DemoSiteOrder[];
+  templates: DemoSiteTemplate[];
+  onAnalyze: (event: FormEvent<HTMLFormElement>) => void;
+  onCreate: () => void;
+  onApplyToOrder: () => void;
+  onDiscard: () => void;
+  onFormChange: (patch: Partial<WebsiteImportFormState>) => void;
+  onContactChange: (patch: Partial<WebsiteImportContactState>) => void;
+};
+
+function WebsiteImportCard({
+  form,
+  contact,
+  result,
+  success,
+  error,
+  loading,
+  saving,
+  orders,
+  templates,
+  onAnalyze,
+  onCreate,
+  onApplyToOrder,
+  onDiscard,
+  onFormChange,
+  onContactChange,
+}: WebsiteImportCardProps) {
+  const profile = result?.profile;
+  const sourcePages = profile?.source_pages || [];
+  const colorSwatches = getColorSwatches(profile?.colors);
+  const successLinks = getImportOrderLinks(success?.order);
+  const selectedTemplateLabel = getTemplateLabel(templates, profile?.recommended_template_slug);
+  const existingOrderOptions = [
+    { value: "", label: "Velg demo" },
+    ...orders.map((order) => ({ value: order.id, label: `${order.company_name} (${order.order_number})` })),
+  ];
+
+  return (
+    <Card className="border-cyan-500/20 bg-slate-800/50">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-white">
+          <Search className="h-5 w-5 text-cyan-300" />
+          Importer fra nettside
+        </CardTitle>
+        <CardDescription>Analyser en offentlig bedriftsnettside, se forslagene og opprett eller oppdater demo manuelt.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form onSubmit={onAnalyze} className="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr_220px_auto] lg:items-end">
+          <Input label="Nettside-URL" required type="url" value={form.website_url} onChange={(value) => onFormChange({ website_url: value })} placeholder="https://example.com" />
+          <Input label="Bedriftsnavn" value={form.company_name} onChange={(value) => onFormChange({ company_name: value })} placeholder="Valgfritt" />
+          <Select
+            label="Handling"
+            value={form.mode}
+            onChange={(value) => onFormChange({ mode: value as WebsiteImportMode })}
+            options={[
+              { value: "new", label: "Ny demo" },
+              { value: "existing", label: "Oppdater eksisterende demo" },
+            ]}
+          />
+          <Button type="submit" disabled={loading} className="h-10 bg-cyan-600 hover:bg-cyan-500">
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+            {loading ? "Analyserer nettside..." : "Analyser nettside"}
+          </Button>
+        </form>
+
+        {form.mode === "existing" && (
+          <div className="max-w-xl">
+            <Select label="Valgt demo" value={form.order_id} onChange={(value) => onFormChange({ order_id: value })} options={existingOrderOptions} />
+          </div>
+        )}
+
+        {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+
+        {success && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+            <CheckCircle className="mr-2 inline h-4 w-4" />
+            {success.title}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {successLinks.previewUrl && <a href={successLinks.previewUrl} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-emerald-500/50 text-emerald-100">Åpne preview</Button></a>}
+              {successLinks.setupUrl && <a href={successLinks.setupUrl}><Button size="sm" variant="outline" className="border-slate-600 text-slate-100">Oppsett</Button></a>}
+              {successLinks.claimUrl && <a href={successLinks.claimUrl} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-slate-600 text-slate-100">Åpne claim</Button></a>}
+            </div>
+          </div>
+        )}
+
+        {profile && (
+          <div className="space-y-4 rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-semibold text-white">{profile.company_name || "Bedrift"}</h2>
+                  <Badge className="bg-cyan-600 text-white">{Math.round(Number(profile.confidence_score) || 0)}% confidence</Badge>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                  <span>{profile.detected_industry || "Bransje ikke funnet"}</span>
+                  <span>{selectedTemplateLabel}</span>
+                  {profile.website_url && <a href={profile.website_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-200 hover:text-cyan-100"><ExternalLink className="h-3 w-3" />Nettside</a>}
+                </div>
+              </div>
+              {profile.logo_url && (
+                <div className="flex h-16 w-36 items-center justify-center rounded-lg border border-slate-700 bg-white p-2">
+                  <img src={profile.logo_url} alt={`${profile.company_name || "Bedrift"} logo`} className="max-h-12 max-w-32 object-contain" />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+              <ReviewInfo label="Bedriftsnavn" value={profile.company_name || "Ikke funnet"} />
+              <ReviewInfo label="Foreslått bransje" value={profile.detected_industry || "Ikke funnet"} />
+              <ReviewInfo label="Foreslått demo-mal" value={selectedTemplateLabel} />
+              <ReviewInfo label="Kildesider" value={`${sourcePages.length} side${sourcePages.length === 1 ? "" : "r"}`} />
+            </div>
+
+            {colorSwatches.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Palette className="h-3.5 w-3.5" />Farger</div>
+                <div className="flex flex-wrap gap-2">
+                  {colorSwatches.map((swatch) => <ColorSwatch key={swatch.label} label={swatch.label} value={swatch.value} />)}
+                </div>
+              </div>
+            )}
+
+            <ReviewText icon={<FileText className="h-4 w-4" />} label="Summary" value={profile.summary || profile.description || "Ingen oppsummering funnet."} />
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <ReviewList title="Services" items={profile.services} />
+              <ReviewList title="Products" items={profile.products} />
+              <ReviewList title="Prices" items={profile.prices} />
+              <ReviewList title="Trust points" items={profile.trust_points} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <FaqList items={profile.faq} />
+              <ContactPanel contact={profile.contact} />
+            </div>
+
+            {sourcePages.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Link2 className="h-3.5 w-3.5" />Source pages</div>
+                <div className="space-y-1">
+                  {sourcePages.map((url) => (
+                    <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="block truncate rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-cyan-200 hover:text-cyan-100">
+                      {url}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {profile.image_urls && profile.image_urls.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><ImageIcon className="h-3.5 w-3.5" />Bilder</div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  {profile.image_urls.slice(0, 4).map((url) => <img key={url} src={url} alt="" className="h-20 w-full rounded-lg border border-slate-800 object-cover" />)}
+                </div>
+              </div>
+            )}
+
+            {result.warnings.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                <div className="mb-2 font-semibold">Warnings</div>
+                <ul className="space-y-1">
+                  {result.warnings.map((warning) => <li key={warning}>• {warning}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Input label="Kontaktperson" value={contact.customer_name} onChange={(value) => onContactChange({ customer_name: value })} />
+              <Input label="Kontakt-e-post" type="email" value={contact.customer_email} onChange={(value) => onContactChange({ customer_email: value })} />
+              <Input label="Telefon" value={contact.customer_phone} onChange={(value) => onContactChange({ customer_phone: value })} />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={onCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                Opprett demo fra analyse
+              </Button>
+              {form.mode === "existing" && (
+                <Button type="button" onClick={onApplyToOrder} disabled={saving || !form.order_id} variant="outline" className="border-cyan-500/50 text-cyan-100">
+                  Bruk på valgt demo
+                </Button>
+              )}
+              <Button type="button" onClick={onDiscard} disabled={saving} variant="outline" className="border-slate-600">
+                <XCircle className="mr-2 h-4 w-4" />
+                Forkast
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReviewInfo({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg bg-slate-900/70 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 truncate text-sm text-slate-200">{value}</div></div>;
+}
+
+function ReviewText({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{icon}{label}</div><p className="text-sm leading-6 text-slate-300">{value}</p></div>;
+}
+
+function ReviewList({ title, items }: { title: string; items?: string[] }) {
+  const list = Array.isArray(items) ? items.filter(Boolean).slice(0, 8) : [];
+  return <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"><div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>{list.length === 0 ? <div className="text-sm text-slate-500">Ingen tydelige treff.</div> : <ul className="space-y-1.5">{list.map((item) => <li key={item} className="text-sm text-slate-300">• {item}</li>)}</ul>}</div>;
+}
+
+function FaqList({ items }: { items?: ImportedFaqItem[] }) {
+  const list = Array.isArray(items) ? items.filter((item) => item?.question || item?.answer).slice(0, 6) : [];
+  return <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"><div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">FAQ</div>{list.length === 0 ? <div className="text-sm text-slate-500">Ingen tydelige spørsmål funnet.</div> : <div className="space-y-2">{list.map((item) => <div key={`${item.question || ""}-${item.answer || ""}`}><div className="text-sm font-medium text-slate-200">{item.question || "Spørsmål"}</div>{item.answer && <div className="mt-1 text-xs leading-5 text-slate-400">{item.answer}</div>}</div>)}</div>}</div>;
+}
+
+function ContactPanel({ contact }: { contact?: ImportedProfile["contact"] }) {
+  const items = [
+    contact?.email && `E-post: ${contact.email}`,
+    contact?.phone && `Telefon: ${contact.phone}`,
+    contact?.address && `Adresse: ${contact.address}`,
+  ].filter((item): item is string => Boolean(item));
+  return <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"><div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Public contact info</div>{items.length === 0 ? <div className="text-sm text-slate-500">Ingen tydelig kontaktinfo funnet.</div> : <ul className="space-y-1.5">{items.map((item) => <li key={item} className="text-sm text-slate-300">{item}</li>)}</ul>}</div>;
+}
+
+function ColorSwatch({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2"><span className="h-5 w-5 rounded-full border border-white/20" style={{ backgroundColor: value }} /><span className="text-xs text-slate-300">{label}: {value}</span></div>;
+}
+
 function Metric({ label, value }: { label: string; value: string }) { return <Card className="border-slate-700/50 bg-slate-800/50"><CardContent className="p-4 text-center"><Wallet className="mx-auto mb-2 h-5 w-5 text-purple-300" /><div className="text-xl font-bold text-white">{value}</div><div className="text-xs text-slate-500">{label}</div></CardContent></Card>; }
-function Input({ label, value, onChange, required, type = "text" }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><input required={required} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500" /></div>; }
+function Input({ label, value, onChange, required, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; placeholder?: string }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><input required={required} type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500" /></div>; }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>; }
 function Info({ label, value, href }: { label: string; value: string; href?: string }) { return <div className="rounded-lg bg-slate-950/60 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>{href ? <a href={href} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1 truncate text-sm text-purple-300 hover:text-purple-200">{value}<ExternalLink className="h-3 w-3" /></a> : <div className="mt-1 truncate text-sm text-slate-300">{value}</div>}</div>; }
