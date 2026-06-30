@@ -164,6 +164,11 @@ test("profile import skips protected secondary pages without failing analysis", 
 
   assert.equal(response.status, 200);
   assert.equal(body.profile.company_name, "Point S");
+  assert.ok(["dekk", "bilverksted"].includes(body.profile.recommended_template_slug));
+  assert.match(body.editable_fields.call_to_action, /(dekk|time|verksted)/i);
+  assert.equal(body.editable_fields.profile_import_field_sources.services, "website");
+  assert.equal(body.editable_fields.profile_import_field_sources.prices, "missing");
+  assert.ok(body.editable_fields.prices.some((price: string) => /Eksempel: Dekkskift/i.test(price)));
   assert.equal(body.warnings.includes("Noen undersider var beskyttet og ble hoppet over."), true);
   assert.equal(JSON.stringify(body.warnings).includes("HTTP 401"), false);
   assert.equal(calls.some((url) => url.includes("drupal_cbp_check")), false);

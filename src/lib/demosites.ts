@@ -948,8 +948,12 @@ const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
     keywords: ["elektro", "elektriker", "strøm", "electric", "electrician", "installasjon"],
   },
   {
+    slug: "bilverksted",
+    keywords: ["bilverksted", "verksted", "bilservice", "eu-kontroll", "mekaniker", "oljeskift", "bremser"],
+  },
+  {
     slug: "dekk",
-    keywords: ["dekk", "bil", "verksted", "auto", "car", "tire", "tyre", "garage"],
+    keywords: ["dekk", "dekkskift", "dekkhotell", "hjulhotell", "felg", "hjul", "tire", "tyre"],
   },
   {
     slug: "frakt",
@@ -970,10 +974,6 @@ const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   {
     slug: "tannlege",
     keywords: ["tannlege", "tannklinikk", "dental", "tannrens", "akutt tann"],
-  },
-  {
-    slug: "bilverksted",
-    keywords: ["bilverksted", "verksted", "bilservice", "eu-kontroll", "mekaniker"],
   },
   {
     slug: "rorlegger",
