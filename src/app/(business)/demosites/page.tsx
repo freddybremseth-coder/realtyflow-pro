@@ -67,6 +67,7 @@ type ImportedProfile = {
   source_pages?: string[];
 };
 type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[]; import_id?: string | null };
+type WebsiteImportReviewPatch = { profile?: Partial<ImportedProfile>; editable_fields?: Record<string, unknown> };
 type WebsiteImportSuccess = { title: string; order?: DemoSiteOrder | null };
 type WebsiteImportHistoryItem = {
   id: string;
@@ -106,6 +107,7 @@ const DEFAULT_TEMPLATES = DEMO_SITE_TEMPLATE_SEEDS as DemoSiteTemplate[];
 const INITIAL_FORM: OrderFormState = { company_name: "", customer_name: "", customer_email: "", customer_phone: "", industry: "", website_url: "", package_id: "standard", template_slug: DEFAULT_TEMPLATE_SLUG, setup_cost_nok: "0", monthly_cost_nok: "0", notes: "" };
 const INITIAL_IMPORT_FORM: WebsiteImportFormState = { website_url: "", company_name: "", mode: "new", order_id: "" };
 const INITIAL_IMPORT_CONTACT: WebsiteImportContactState = { customer_name: "", customer_email: "", customer_phone: "" };
+const IMPORT_REVIEW_MANUAL_SOURCE = "manual";
 
 const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", draft_preview: "Midlertidig demo", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", expired: "Utløpt", cancelled: "Kansellert" };
 const billingLabel: Record<DemoSiteBillingStatus, string> = { not_invoiced: "Ikke fakturert", pending: "Venter", paid: "Betalt", overdue: "Forfalt", cancelled: "Stoppet" };
@@ -192,6 +194,7 @@ function hasPreviewValue(value: unknown) {
 }
 
 function previewSourceLabel(source: unknown, value: unknown) {
+  if (source === IMPORT_REVIEW_MANUAL_SOURCE) return "Redigert";
   if (source === "website") return "Fra nettside";
   if (source === "template") return "Fra mal";
   if (source === "missing") return "Mangler – bruker standard";
@@ -255,6 +258,51 @@ function isUsedImportHistoryItem(importItem: WebsiteImportHistoryItem) {
   );
 }
 
+function cloneImportResult(result: WebsiteImportResult): WebsiteImportResult {
+  return JSON.parse(JSON.stringify(result)) as WebsiteImportResult;
+}
+
+function stringField(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function listFieldToText(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).join("\n") : "";
+}
+
+function textToListField(value: string) {
+  return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+}
+
+function faqToText(items?: unknown) {
+  const list = Array.isArray(items) ? items : [];
+  return list
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (!isRecord(item)) return "";
+      return [item.question || "", item.answer || ""].map((part) => String(part || "").trim()).filter(Boolean).join(" | ");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function textToFaq(value: string): ImportedFaqItem[] {
+  return value.split(/\r?\n/).map((line) => {
+    const [question = "", ...answerParts] = line.split("|");
+    return { question: question.trim(), answer: answerParts.join("|").trim() };
+  }).filter((item) => item.question || item.answer);
+}
+
+function withManualImportReviewSources(fields: Record<string, unknown>, editedKeys: string[]) {
+  if (!editedKeys.length) return fields;
+  const currentSources = isRecord(fields.profile_import_field_sources) ? fields.profile_import_field_sources : {};
+  const nextSources = { ...currentSources };
+  editedKeys.forEach((key) => {
+    if (key !== "profile_import_field_sources") nextSources[key] = IMPORT_REVIEW_MANUAL_SOURCE;
+  });
+  return { ...fields, profile_import_field_sources: nextSources };
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
@@ -264,10 +312,13 @@ export default function DemoSitesPage() {
   const [importForm, setImportForm] = useState<WebsiteImportFormState>(INITIAL_IMPORT_FORM);
   const [importContact, setImportContact] = useState<WebsiteImportContactState>(INITIAL_IMPORT_CONTACT);
   const [importResult, setImportResult] = useState<WebsiteImportResult | null>(null);
+  const [originalImportResult, setOriginalImportResult] = useState<WebsiteImportResult | null>(null);
   const [importHistory, setImportHistory] = useState<WebsiteImportHistoryItem[]>([]);
   const [importHistoryWarning, setImportHistoryWarning] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importSaving, setImportSaving] = useState(false);
+  const [importReviewSaving, setImportReviewSaving] = useState(false);
+  const [importReviewMessage, setImportReviewMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<WebsiteImportSuccess | null>(null);
   const [loading, setLoading] = useState(true);
@@ -343,7 +394,9 @@ export default function DemoSitesPage() {
     setImportLoading(true);
     setImportError(null);
     setImportSuccess(null);
+    setImportReviewMessage(null);
     setImportResult(null);
+    setOriginalImportResult(null);
     try {
       const response = await fetch("/api/saas/demosites/profile-import", {
         method: "POST",
@@ -363,6 +416,7 @@ export default function DemoSitesPage() {
         import_id: data.import_id || null,
       };
       setImportResult(nextResult);
+      setOriginalImportResult(cloneImportResult(nextResult));
       setImportContact({
         customer_name: nextResult.profile.company_name || importForm.company_name || "",
         customer_email: nextResult.profile.contact?.email || "",
@@ -385,8 +439,10 @@ export default function DemoSitesPage() {
 
     const nextContact = buildContactFromImportProfile(importItem);
     setImportResult(nextResult);
+    setOriginalImportResult(cloneImportResult(nextResult));
     setImportError(null);
     setImportSuccess(null);
+    setImportReviewMessage(null);
     setImportForm((prev) => ({
       ...prev,
       website_url: nextResult.profile.website_url || prev.website_url,
@@ -419,7 +475,9 @@ export default function DemoSitesPage() {
     await patchImportHistory(importItem.id, { status: "discarded" });
     if (importResult?.import_id === importItem.id) {
       setImportResult(null);
+      setOriginalImportResult(null);
       setImportSuccess(null);
+      setImportReviewMessage(null);
     }
   }
 
@@ -496,8 +554,10 @@ export default function DemoSitesPage() {
 
     const nextContact = buildContactFromImportProfile(importItem);
     setImportResult(nextResult);
+    setOriginalImportResult(cloneImportResult(nextResult));
     setImportError(null);
     setImportSuccess(null);
+    setImportReviewMessage(null);
     setImportForm((prev) => ({
       ...prev,
       website_url: nextResult.profile.website_url || prev.website_url,
@@ -506,6 +566,102 @@ export default function DemoSitesPage() {
     }));
     setImportContact(nextContact);
     await createDemoFromImport(nextResult, nextContact);
+  }
+
+  function updateImportReview(patch: WebsiteImportReviewPatch) {
+    const previousCompanyName = importResult?.profile.company_name || "";
+    setImportResult((current) => {
+      if (!current) return current;
+      const editedKeys = Object.keys(patch.editable_fields || {});
+      const nextEditableFields = withManualImportReviewSources(
+        {
+          ...current.editable_fields,
+          ...(patch.editable_fields || {}),
+        },
+        editedKeys,
+      );
+
+      return {
+        ...current,
+        profile: {
+          ...current.profile,
+          ...(patch.profile || {}),
+        },
+        editable_fields: nextEditableFields,
+      };
+    });
+    if (patch.profile?.company_name !== undefined) {
+      const nextCompanyName = patch.profile.company_name || "";
+      setImportForm((prev) => ({ ...prev, company_name: nextCompanyName }));
+      setImportContact((prev) => (
+        !prev.customer_name || prev.customer_name === previousCompanyName
+          ? { ...prev, customer_name: nextCompanyName }
+          : prev
+      ));
+    }
+    setImportReviewMessage(null);
+    setImportError(null);
+  }
+
+  function resetImportReview() {
+    if (!originalImportResult) return;
+    const nextResult = cloneImportResult(originalImportResult);
+    setImportResult(nextResult);
+    setImportContact({
+      customer_name: nextResult.profile.company_name || "",
+      customer_email: nextResult.profile.contact?.email || "",
+      customer_phone: nextResult.profile.contact?.phone || "",
+    });
+    setImportForm((prev) => ({
+      ...prev,
+      website_url: nextResult.profile.website_url || prev.website_url,
+      company_name: nextResult.profile.company_name || prev.company_name,
+    }));
+    setImportReviewMessage(null);
+    setImportError(null);
+  }
+
+  async function saveImportReviewChanges() {
+    if (!importResult) return;
+    if (!importResult.import_id) {
+      setImportError("Analysen mangler import-ID og kan ikke lagres i historikk. Lokale endringer beholdes.");
+      return;
+    }
+
+    setImportReviewSaving(true);
+    setImportReviewMessage(null);
+    setImportError(null);
+    try {
+      const profile = importResult.profile;
+      const response = await fetch("/api/saas/demosites/imports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: importResult.import_id,
+          company_name: profile.company_name || null,
+          detected_industry: profile.detected_industry || null,
+          recommended_template_slug: profile.recommended_template_slug || null,
+          confidence_score: profile.confidence_score ?? null,
+          profile,
+          editable_fields: importResult.editable_fields,
+          warnings: importResult.warnings,
+          source_pages: profile.source_pages || [],
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error("DemoSites import review save failed:", data);
+        throw new Error(getApiErrorMessage(data) || "Kunne ikke lagre endringer i analyse.");
+      }
+      setOriginalImportResult(cloneImportResult(importResult));
+      setImportReviewMessage("Endringer lagret i analyse.");
+      await loadImportHistory();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Ukjent feil.";
+      setImportError(`Kunne ikke lagre endringer i analyse: ${message}`);
+    } finally {
+      setImportReviewSaving(false);
+    }
   }
 
   async function applyImportToSelectedOrder() {
@@ -592,13 +748,21 @@ export default function DemoSitesPage() {
         onUseSavedImport={useSavedImport}
         onCreateFromSavedImport={createDemoFromSavedImport}
         onDiscardImport={discardImport}
+        onReviewChange={updateImportReview}
+        onSaveReview={saveImportReviewChanges}
+        onResetReview={resetImportReview}
         onDiscard={() => {
           setImportResult(null);
+          setOriginalImportResult(null);
           setImportSuccess(null);
           setImportError(null);
+          setImportReviewMessage(null);
         }}
         onFormChange={(patch) => setImportForm((prev) => ({ ...prev, ...patch }))}
         onContactChange={(patch) => setImportContact((prev) => ({ ...prev, ...patch }))}
+        reviewSaving={importReviewSaving}
+        reviewMessage={importReviewMessage}
+        canResetReview={Boolean(originalImportResult)}
       />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
@@ -710,9 +874,15 @@ type WebsiteImportCardProps = {
   onUseSavedImport: (importItem: WebsiteImportHistoryItem, mode?: WebsiteImportMode) => void;
   onCreateFromSavedImport: (importItem: WebsiteImportHistoryItem) => void;
   onDiscardImport: (importItem: WebsiteImportHistoryItem) => void;
+  onReviewChange: (patch: WebsiteImportReviewPatch) => void;
+  onSaveReview: () => void;
+  onResetReview: () => void;
   onDiscard: () => void;
   onFormChange: (patch: Partial<WebsiteImportFormState>) => void;
   onContactChange: (patch: Partial<WebsiteImportContactState>) => void;
+  reviewSaving: boolean;
+  reviewMessage: string | null;
+  canResetReview: boolean;
 };
 
 function WebsiteImportCard({
@@ -733,9 +903,15 @@ function WebsiteImportCard({
   onUseSavedImport,
   onCreateFromSavedImport,
   onDiscardImport,
+  onReviewChange,
+  onSaveReview,
+  onResetReview,
   onDiscard,
   onFormChange,
   onContactChange,
+  reviewSaving,
+  reviewMessage,
+  canResetReview,
 }: WebsiteImportCardProps) {
   const profile = result?.profile;
   const sourcePages = profile?.source_pages || [];
@@ -844,6 +1020,16 @@ function WebsiteImportCard({
             )}
 
             <ReviewText icon={<FileText className="h-4 w-4" />} label="Summary" value={profile.summary || profile.description || "Ingen oppsummering funnet."} />
+            <EditableImportReviewFields
+              result={result}
+              templates={templates}
+              saving={reviewSaving}
+              message={reviewMessage}
+              canReset={canResetReview}
+              onChange={onReviewChange}
+              onSave={onSaveReview}
+              onReset={onResetReview}
+            />
             <PreviewUsagePanel result={result} />
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -933,6 +1119,111 @@ const PREVIEW_USAGE_FIELDS = [
   { key: "secondary_color", label: "Sekundærfarge" },
   { key: "accent_color", label: "Aksentfarge" },
 ];
+
+function EditableImportReviewFields({
+  result,
+  templates,
+  saving,
+  message,
+  canReset,
+  onChange,
+  onSave,
+  onReset,
+}: {
+  result: WebsiteImportResult;
+  templates: DemoSiteTemplate[];
+  saving: boolean;
+  message: string | null;
+  canReset: boolean;
+  onChange: (patch: WebsiteImportReviewPatch) => void;
+  onSave: () => void;
+  onReset: () => void;
+}) {
+  const profile = result.profile;
+  const fields = result.editable_fields || {};
+  const colors = profile.colors || {};
+  const galleryImages = fields.gallery_images || profile.image_urls || [];
+
+  const updateEditableField = (key: string, value: unknown, profilePatch?: Partial<ImportedProfile>) => {
+    onChange({ profile: profilePatch, editable_fields: { [key]: value } });
+  };
+
+  const updateListField = (key: "services" | "products" | "prices" | "trust_points", value: string) => {
+    const list = textToListField(value);
+    onChange({ profile: { [key]: list } as Partial<ImportedProfile>, editable_fields: { [key]: list } });
+  };
+
+  const updateColor = (key: "primary" | "secondary" | "accent", editableKey: "brand_color" | "secondary_color" | "accent_color", value: string) => {
+    onChange({
+      profile: { colors: { ...colors, [key]: value } },
+      editable_fields: { [editableKey]: value },
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-white">Rediger importforslag</div>
+          <p className="mt-1 text-xs text-slate-400">Korriger tekst, tjenester, priser, logo, bilder og farger før demoen opprettes eller oppdateres.</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={!canReset || saving} className="border-slate-700 text-slate-200" onClick={onReset}>
+            Tilbakestill fra analyse
+          </Button>
+          <Button type="button" size="sm" disabled={saving} title={!result.import_id ? "Analysen mangler import-ID og kan ikke lagres i historikk." : undefined} className="bg-cyan-600 hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60" onClick={onSave}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+            Lagre endringer i analyse
+          </Button>
+        </div>
+      </div>
+
+      {message && (
+        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-100">
+          {message}
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Input label="Bedriftsnavn" value={profile.company_name || ""} onChange={(value) => onChange({ profile: { company_name: value } })} />
+        <Input label="Foreslått bransje" value={profile.detected_industry || ""} onChange={(value) => onChange({ profile: { detected_industry: value } })} />
+        <Select
+          label="Foreslått demo-mal"
+          value={profile.recommended_template_slug || ""}
+          onChange={(value) => onChange({ profile: { recommended_template_slug: value }, editable_fields: { template_slug: value } })}
+          options={[{ value: "", label: "Ikke valgt" }, ...templates.map((template) => ({ value: template.slug, label: template.name }))]}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <Input label="Hero-tittel" value={stringField(fields.hero_title)} onChange={(value) => updateEditableField("hero_title", value)} />
+        <Input label="Logo-URL" type="url" value={stringField(fields.logo_url) || profile.logo_url || ""} onChange={(value) => updateEditableField("logo_url", value, { logo_url: value })} />
+        <Textarea label="Hero-undertittel" value={stringField(fields.hero_subtitle)} onChange={(value) => updateEditableField("hero_subtitle", value)} rows={3} />
+        <Textarea label="Intro" value={stringField(fields.intro_text)} onChange={(value) => updateEditableField("intro_text", value, { summary: value })} rows={3} />
+        <Textarea label="Tjenester" value={listFieldToText(fields.services || profile.services)} onChange={(value) => updateListField("services", value)} rows={5} placeholder="Én tjeneste per linje" />
+        <Textarea label="Produkter/pakker" value={listFieldToText(fields.products || profile.products)} onChange={(value) => updateListField("products", value)} rows={5} placeholder="Én pakke per linje" />
+        <Textarea label="Priser" value={listFieldToText(fields.prices || profile.prices)} onChange={(value) => updateListField("prices", value)} rows={5} placeholder="Én prislinje per linje" />
+        <Textarea label="Trygghetspunkter" value={listFieldToText(fields.trust_points || profile.trust_points)} onChange={(value) => updateListField("trust_points", value)} rows={5} placeholder="Én trygghetstekst per linje" />
+        <Textarea label="FAQ" value={faqToText((Array.isArray(fields.faq) ? fields.faq : profile.faq) as ImportedFaqItem[] | undefined)} onChange={(value) => {
+          const faq = textToFaq(value);
+          onChange({ profile: { faq }, editable_fields: { faq } });
+        }} rows={5} placeholder="Spørsmål | Svar" />
+        <Textarea label="Bilder" value={listFieldToText(galleryImages)} onChange={(value) => {
+          const images = textToListField(value);
+          onChange({ profile: { image_urls: images }, editable_fields: { gallery_images: images } });
+        }} rows={5} placeholder="Én bilde-URL per linje" />
+        <Textarea label="CTA" value={stringField(fields.call_to_action)} onChange={(value) => updateEditableField("call_to_action", value)} rows={3} />
+        <Textarea label="Kontakttekst" value={stringField(fields.contact_text)} onChange={(value) => updateEditableField("contact_text", value)} rows={3} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <Input label="Primærfarge" value={stringField(fields.brand_color) || colors.primary || ""} onChange={(value) => updateColor("primary", "brand_color", value)} placeholder="#0f172a" />
+        <Input label="Sekundærfarge" value={stringField(fields.secondary_color) || colors.secondary || ""} onChange={(value) => updateColor("secondary", "secondary_color", value)} placeholder="#64748b" />
+        <Input label="Aksentfarge" value={stringField(fields.accent_color) || colors.accent || ""} onChange={(value) => updateColor("accent", "accent_color", value)} placeholder="#22c55e" />
+      </div>
+    </div>
+  );
+}
 
 function PreviewUsagePanel({ result }: { result: WebsiteImportResult }) {
   const fields = result.editable_fields || {};
@@ -1165,5 +1456,6 @@ function ColorSwatch({ label, value }: { label: string; value: string }) {
 
 function Metric({ label, value }: { label: string; value: string }) { return <Card className="border-slate-700/50 bg-slate-800/50"><CardContent className="p-4 text-center"><Wallet className="mx-auto mb-2 h-5 w-5 text-purple-300" /><div className="text-xl font-bold text-white">{value}</div><div className="text-xs text-slate-500">{label}</div></CardContent></Card>; }
 function Input({ label, value, onChange, required, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; placeholder?: string }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><input required={required} type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500" /></div>; }
+function Textarea({ label, value, onChange, rows = 3, placeholder }: { label: string; value: string; onChange: (value: string) => void; rows?: number; placeholder?: string }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><textarea rows={rows} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-purple-500" /></div>; }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <div><label className="mb-1 block text-xs font-medium text-slate-300">{label}</label><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>; }
 function Info({ label, value, href }: { label: string; value: string; href?: string }) { return <div className="rounded-lg bg-slate-950/60 p-3"><div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>{href ? <a href={href} target="_blank" rel="noopener noreferrer" className="mt-1 flex items-center gap-1 truncate text-sm text-purple-300 hover:text-purple-200">{value}<ExternalLink className="h-3 w-3" /></a> : <div className="mt-1 truncate text-sm text-slate-300">{value}</div>}</div>; }
