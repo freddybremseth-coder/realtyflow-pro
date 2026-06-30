@@ -48,6 +48,27 @@ function asPositiveLimit(value: string | null) {
   return Math.min(Math.floor(parsed), 50);
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringOrNull(value: unknown) {
+  if (value === null || value === undefined) return null;
+  return String(value).trim() || null;
+}
+
+function stringArrayOrError(value: unknown, fieldName: string) {
+  if (!Array.isArray(value)) return { error: `${fieldName} must be an array` };
+  return { value: value.map((item) => String(item || "").trim()).filter(Boolean) };
+}
+
+function numberOrNull(value: unknown, fieldName: string) {
+  if (value === null || value === undefined || value === "") return { value: null };
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return { error: `${fieldName} must be a number` };
+  return { value: Math.max(0, Math.min(100, parsed)) };
+}
+
 async function requireAdmin(request: NextRequest) {
   const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
   return Boolean(session);
@@ -96,6 +117,32 @@ export async function PATCH(request: NextRequest) {
       const status = String(body.status || "").trim();
       if (!ALLOWED_IMPORT_STATUSES.has(status)) return NextResponse.json({ error: "Unsupported import status" }, { status: 400 });
       patch.status = status;
+    }
+    if (body.company_name !== undefined) patch.company_name = stringOrNull(body.company_name);
+    if (body.detected_industry !== undefined) patch.detected_industry = stringOrNull(body.detected_industry);
+    if (body.recommended_template_slug !== undefined) patch.recommended_template_slug = stringOrNull(body.recommended_template_slug);
+    if (body.confidence_score !== undefined) {
+      const parsed = numberOrNull(body.confidence_score, "confidence_score");
+      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      patch.confidence_score = parsed.value;
+    }
+    if (body.profile !== undefined) {
+      if (!isPlainRecord(body.profile)) return NextResponse.json({ error: "profile must be an object" }, { status: 400 });
+      patch.profile = body.profile;
+    }
+    if (body.editable_fields !== undefined) {
+      if (!isPlainRecord(body.editable_fields)) return NextResponse.json({ error: "editable_fields must be an object" }, { status: 400 });
+      patch.editable_fields = body.editable_fields;
+    }
+    if (body.warnings !== undefined) {
+      const parsed = stringArrayOrError(body.warnings, "warnings");
+      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      patch.warnings = parsed.value;
+    }
+    if (body.source_pages !== undefined) {
+      const parsed = stringArrayOrError(body.source_pages, "source_pages");
+      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      patch.source_pages = parsed.value;
     }
 
     const { data, error } = await supabase.from("demo_site_imports").update(patch).eq("id", id).select("*").single();
