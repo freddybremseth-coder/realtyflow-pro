@@ -71,6 +71,7 @@ const BLOCKED_HOSTNAMES = new Set([
 ]);
 const BLOCKED_FILE_EXTENSIONS = /\.(?:pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|gz|tar|mp3|mp4|mov|avi|webm|woff2?|ttf|eot)$/i;
 const PROTECTED_SECONDARY_PAGE_WARNING = "Noen undersider var beskyttet og ble hoppet over.";
+const IMPORT_HISTORY_INACTIVE_WARNING = "Importhistorikk er ikke aktivert ennå.";
 const PROTECTED_ACTION_QUERY_KEYS = new Set([
   "drupal_cbp_check",
   "login",
@@ -844,6 +845,49 @@ function isOptionalColumnError(error: unknown) {
   return OPTIONAL_IMPORT_COLUMNS.some((column) => message.includes(column)) || message.includes("schema cache");
 }
 
+function isImportHistoryUnavailable(error: unknown) {
+  const message = `${(error as { code?: string; message?: string; details?: string })?.code || ""} ${(error as { message?: string })?.message || ""} ${(error as { details?: string })?.details || ""}`.toLowerCase();
+  return message.includes("42p01") || message.includes("demo_site_imports") || message.includes("schema cache") || message.includes("could not find");
+}
+
+async function saveImportHistory(profile: ImportedProfile, editableFields: Record<string, unknown>, warnings: string[]) {
+  const supabase = getSupabase();
+  if (!supabase) {
+    addWarningOnce(warnings, IMPORT_HISTORY_INACTIVE_WARNING);
+    return "";
+  }
+
+  const historyWarnings = [...warnings];
+  try {
+    const { data, error } = await supabase
+      .from("demo_site_imports")
+      .insert({
+        website_url: profile.website_url,
+        company_name: profile.company_name || null,
+        detected_industry: profile.detected_industry || null,
+        recommended_template_slug: profile.recommended_template_slug || null,
+        confidence_score: profile.confidence_score || null,
+        profile,
+        editable_fields: editableFields,
+        warnings: historyWarnings,
+        source_pages: profile.source_pages || [],
+        status: "analyzed",
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      addWarningOnce(warnings, isImportHistoryUnavailable(error) ? IMPORT_HISTORY_INACTIVE_WARNING : "Importhistorikk kunne ikke lagres.");
+      return "";
+    }
+
+    return String(data?.id || "");
+  } catch (error) {
+    addWarningOnce(warnings, isImportHistoryUnavailable(error) ? IMPORT_HISTORY_INACTIVE_WARNING : "Importhistorikk kunne ikke lagres.");
+    return "";
+  }
+}
+
 async function updateOrderIfRequested(orderId: string, profile: ImportedProfile, editableFields: Record<string, unknown>, warnings: string[]) {
   if (!orderId) return;
   const supabase = getSupabase();
@@ -912,11 +956,13 @@ export async function POST(request: NextRequest) {
     const { profile, editableFields } = buildImportedProfile({ websiteUrl: normalizedUrl, companyName, pages });
 
     await updateOrderIfRequested(orderId, profile, editableFields, warnings);
+    const importId = await saveImportHistory(profile, editableFields, warnings);
 
     return NextResponse.json({
       profile,
       editable_fields: editableFields,
       warnings,
+      import_id: importId || null,
     });
   } catch (error) {
     if (error instanceof ProfileImportError) {
