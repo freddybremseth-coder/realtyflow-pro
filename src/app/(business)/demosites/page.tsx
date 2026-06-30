@@ -66,8 +66,25 @@ type ImportedProfile = {
   confidence_score?: number;
   source_pages?: string[];
 };
-type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[] };
+type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[]; import_id?: string | null };
 type WebsiteImportSuccess = { title: string; order?: DemoSiteOrder | null };
+type WebsiteImportHistoryItem = {
+  id: string;
+  website_url: string;
+  company_name?: string | null;
+  detected_industry?: string | null;
+  recommended_template_slug?: string | null;
+  confidence_score?: number | string | null;
+  profile?: ImportedProfile | null;
+  editable_fields?: Record<string, unknown> | null;
+  warnings?: string[] | null;
+  source_pages?: string[] | null;
+  created_order_id?: string | null;
+  applied_order_id?: string | null;
+  status?: "analyzed" | "created_demo" | "applied_to_demo" | "discarded" | string;
+  created_at?: string;
+  updated_at?: string;
+};
 
 type OrderFormState = {
   company_name: string;
@@ -92,6 +109,7 @@ const INITIAL_IMPORT_CONTACT: WebsiteImportContactState = { customer_name: "", c
 
 const statusLabel: Record<DemoSiteStatus, string> = { lead: "Lead", draft_preview: "Midlertidig demo", ordered: "Bestilt", in_setup: "Oppsett", preview_ready: "Preview", approved: "Godkjent", deployed: "Live", paused: "Pauset", expired: "Utløpt", cancelled: "Kansellert" };
 const billingLabel: Record<DemoSiteBillingStatus, string> = { not_invoiced: "Ikke fakturert", pending: "Venter", paid: "Betalt", overdue: "Forfalt", cancelled: "Stoppet" };
+const importStatusLabel: Record<string, string> = { analyzed: "Analysert", created_demo: "Demo opprettet", applied_to_demo: "Brukt på demo", discarded: "Forkastet" };
 
 function formatDate(value?: string | null) {
   if (!value) return "";
@@ -202,6 +220,8 @@ export default function DemoSitesPage() {
   const [importForm, setImportForm] = useState<WebsiteImportFormState>(INITIAL_IMPORT_FORM);
   const [importContact, setImportContact] = useState<WebsiteImportContactState>(INITIAL_IMPORT_CONTACT);
   const [importResult, setImportResult] = useState<WebsiteImportResult | null>(null);
+  const [importHistory, setImportHistory] = useState<WebsiteImportHistoryItem[]>([]);
+  const [importHistoryWarning, setImportHistoryWarning] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importSaving, setImportSaving] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -209,6 +229,20 @@ export default function DemoSitesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const loadImportHistory = useCallback(async () => {
+    setImportHistoryWarning(null);
+    try {
+      const response = await fetch("/api/saas/demosites/imports?limit=25", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kunne ikke hente importhistorikk.");
+      setImportHistory(Array.isArray(data.imports) ? data.imports : []);
+      setImportHistoryWarning(data.warning || null);
+    } catch (err) {
+      setImportHistoryWarning(err instanceof Error ? err.message : "Kunne ikke hente importhistorikk.");
+      setImportHistory([]);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -222,12 +256,13 @@ export default function DemoSitesPage() {
       setEvents(Array.isArray(data.events) ? data.events : []);
       setSummary(data.summary || EMPTY_SUMMARY);
       if (data.error) setError(data.error);
+      await loadImportHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke hente DemoSites CRM.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadImportHistory]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -281,6 +316,7 @@ export default function DemoSitesPage() {
         profile: data.profile as ImportedProfile,
         editable_fields: data.editable_fields as Record<string, unknown>,
         warnings: Array.isArray(data.warnings) ? data.warnings : [],
+        import_id: data.import_id || null,
       };
       setImportResult(nextResult);
       setImportContact({
@@ -288,10 +324,66 @@ export default function DemoSitesPage() {
         customer_email: nextResult.profile.contact?.email || "",
         customer_phone: nextResult.profile.contact?.phone || "",
       });
+      await loadImportHistory();
     } catch (err) {
       setImportError(err instanceof Error ? err.message : "Kunne ikke analysere nettsiden.");
     } finally {
       setImportLoading(false);
+    }
+  }
+
+  function useSavedImport(importItem: WebsiteImportHistoryItem, mode: WebsiteImportMode = "new") {
+    if (!importItem.profile || !importItem.editable_fields) {
+      setImportError("Analysen mangler lagret profil eller redigerbare felt.");
+      return;
+    }
+
+    const nextResult: WebsiteImportResult = {
+      profile: importItem.profile,
+      editable_fields: importItem.editable_fields,
+      warnings: Array.isArray(importItem.warnings) ? importItem.warnings : [],
+      import_id: importItem.id,
+    };
+    setImportResult(nextResult);
+    setImportError(null);
+    setImportSuccess(null);
+    setImportForm((prev) => ({
+      ...prev,
+      website_url: importItem.website_url || importItem.profile?.website_url || prev.website_url,
+      company_name: importItem.company_name || importItem.profile?.company_name || prev.company_name,
+      mode,
+    }));
+    setImportContact({
+      customer_name: importItem.profile.company_name || importItem.company_name || "",
+      customer_email: importItem.profile.contact?.email || "",
+      customer_phone: importItem.profile.contact?.phone || "",
+    });
+  }
+
+  async function patchImportHistory(importId: string | null | undefined, patch: Record<string, unknown>) {
+    if (!importId) return;
+    try {
+      const response = await fetch("/api/saas/demosites/imports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: importId, ...patch }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error("DemoSites import history update failed:", data);
+        return;
+      }
+      await loadImportHistory();
+    } catch (err) {
+      console.error("DemoSites import history update failed:", err);
+    }
+  }
+
+  async function discardImport(importItem: WebsiteImportHistoryItem) {
+    await patchImportHistory(importItem.id, { status: "discarded" });
+    if (importResult?.import_id === importItem.id) {
+      setImportResult(null);
+      setImportSuccess(null);
     }
   }
 
@@ -341,6 +433,7 @@ export default function DemoSitesPage() {
         throw new Error(getApiErrorMessage(data) || "Ukjent API-feil.");
       }
       const createdOrder = (data.order || null) as DemoSiteOrder | null;
+      await patchImportHistory(importResult.import_id, { created_order_id: createdOrder?.id || null, status: "created_demo" });
       setImportSuccess({ title: `${companyName} er opprettet som ny demo.`, order: createdOrder });
       await loadData();
     } catch (err) {
@@ -389,6 +482,7 @@ export default function DemoSitesPage() {
         throw new Error(getApiErrorMessage(data) || "Kunne ikke oppdatere valgt demo.");
       }
       const updatedOrder = (data.order || selectedOrder) as DemoSiteOrder;
+      await patchImportHistory(importResult.import_id, { applied_order_id: updatedOrder.id, status: "applied_to_demo" });
       setImportSuccess({ title: `${updatedOrder.company_name} er oppdatert fra analysen.`, order: updatedOrder });
       await loadData();
     } catch (err) {
@@ -421,6 +515,8 @@ export default function DemoSitesPage() {
         contact={importContact}
         result={importResult}
         success={importSuccess}
+        history={importHistory}
+        historyWarning={importHistoryWarning}
         error={importError}
         loading={importLoading}
         saving={importSaving}
@@ -429,6 +525,8 @@ export default function DemoSitesPage() {
         onAnalyze={analyzeWebsiteImport}
         onCreate={createDemoFromImport}
         onApplyToOrder={applyImportToSelectedOrder}
+        onUseSavedImport={useSavedImport}
+        onDiscardImport={discardImport}
         onDiscard={() => {
           setImportResult(null);
           setImportSuccess(null);
@@ -534,6 +632,8 @@ type WebsiteImportCardProps = {
   contact: WebsiteImportContactState;
   result: WebsiteImportResult | null;
   success: WebsiteImportSuccess | null;
+  history: WebsiteImportHistoryItem[];
+  historyWarning: string | null;
   error: string | null;
   loading: boolean;
   saving: boolean;
@@ -542,6 +642,8 @@ type WebsiteImportCardProps = {
   onAnalyze: (event: FormEvent<HTMLFormElement>) => void;
   onCreate: () => void;
   onApplyToOrder: () => void;
+  onUseSavedImport: (importItem: WebsiteImportHistoryItem, mode?: WebsiteImportMode) => void;
+  onDiscardImport: (importItem: WebsiteImportHistoryItem) => void;
   onDiscard: () => void;
   onFormChange: (patch: Partial<WebsiteImportFormState>) => void;
   onContactChange: (patch: Partial<WebsiteImportContactState>) => void;
@@ -552,6 +654,8 @@ function WebsiteImportCard({
   contact,
   result,
   success,
+  history,
+  historyWarning,
   error,
   loading,
   saving,
@@ -560,6 +664,8 @@ function WebsiteImportCard({
   onAnalyze,
   onCreate,
   onApplyToOrder,
+  onUseSavedImport,
+  onDiscardImport,
   onDiscard,
   onFormChange,
   onContactChange,
@@ -609,6 +715,15 @@ function WebsiteImportCard({
         )}
 
         {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+
+        <ImportHistoryList
+          history={history}
+          warning={historyWarning}
+          templates={templates}
+          mode={form.mode}
+          onUseSavedImport={onUseSavedImport}
+          onDiscardImport={onDiscardImport}
+        />
 
         {success && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
@@ -772,6 +887,82 @@ function PreviewUsagePanel({ result }: { result: WebsiteImportResult }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ImportHistoryList({
+  history,
+  warning,
+  templates,
+  mode,
+  onUseSavedImport,
+  onDiscardImport,
+}: {
+  history: WebsiteImportHistoryItem[];
+  warning: string | null;
+  templates: DemoSiteTemplate[];
+  mode: WebsiteImportMode;
+  onUseSavedImport: (importItem: WebsiteImportHistoryItem, mode?: WebsiteImportMode) => void;
+  onDiscardImport: (importItem: WebsiteImportHistoryItem) => void;
+}) {
+  const visibleHistory = history.filter((item) => item.status !== "discarded").slice(0, 8);
+
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-950/40 p-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Siste analyser</h3>
+          <p className="mt-1 text-xs text-slate-400">Tidligere nettsideanalyser kan brukes igjen uten ny crawling.</p>
+        </div>
+        {warning && <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-100">{warning}</span>}
+      </div>
+
+      {visibleHistory.length === 0 ? (
+        <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">Ingen lagrede analyser ennå.</div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {visibleHistory.map((item) => {
+            const warningCount = Array.isArray(item.warnings) ? item.warnings.length : 0;
+            const confidence = Math.round(Number(item.confidence_score) || Number(item.profile?.confidence_score) || 0);
+            const templateSlug = item.recommended_template_slug || item.profile?.recommended_template_slug || "";
+            return (
+              <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="truncate text-sm font-semibold text-slate-100">{item.company_name || item.profile?.company_name || "Ukjent bedrift"}</div>
+                      <Badge className="bg-slate-700 text-slate-100">{importStatusLabel[item.status || "analyzed"] || item.status || "Analysert"}</Badge>
+                      {confidence > 0 && <Badge className="bg-cyan-600 text-white">{confidence}%</Badge>}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                      <span>{item.detected_industry || item.profile?.detected_industry || "Bransje ikke funnet"}</span>
+                      <span>{getTemplateLabel(templates, templateSlug)}</span>
+                      {item.created_at && <span>{formatDateTime(item.created_at)}</span>}
+                      {warningCount > 0 && <span>{warningCount} {warningCount === 1 ? "advarsel" : "advarsler"}</span>}
+                    </div>
+                    <a href={item.website_url} target="_blank" rel="noopener noreferrer" className="mt-2 block truncate text-xs text-cyan-200 hover:text-cyan-100">
+                      {item.website_url}
+                    </a>
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" className="border-cyan-500/50 text-cyan-100" onClick={() => onUseSavedImport(item, mode)}>
+                      Bruk analyse
+                    </Button>
+                    <Button type="button" size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => onUseSavedImport(item, "new")}>
+                      Opprett demo
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={() => onDiscardImport(item)}>
+                      Forkast
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

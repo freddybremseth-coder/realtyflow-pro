@@ -174,6 +174,88 @@ test("profile import skips protected secondary pages without failing analysis", 
   assert.equal(calls.some((url) => url.includes("drupal_cbp_check")), false);
 });
 
+test("profile import saves import history and returns import_id when table exists", async () => {
+  publicDns();
+  setProfileImportFetchForTests((async () =>
+    htmlResponse(`
+      <html>
+        <head><title>Point S</title><meta name="description" content="Dekk, hjulhotell og bilverksted."></head>
+        <body><h1>Dekk og bilverksted</h1><p>Dekkskift, hjulhotell og verkstedtjenester.</p></body>
+      </html>
+    `)) as typeof fetch);
+
+  let insertedPayload: Record<string, unknown> | null = null;
+  setProfileImportSupabaseFactoryForTests(() => ({
+    from(table: string) {
+      assert.equal(table, "demo_site_imports");
+      return {
+        insert(payload: Record<string, unknown>) {
+          insertedPayload = payload;
+          return {
+            select(selection: string) {
+              assert.equal(selection, "id");
+              return {
+                single() {
+                  return Promise.resolve({ data: { id: "import-1" }, error: null });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  }));
+
+  const response = await POST(
+    request({ website_url: "https://point-s.example.com", company_name: "Point S" }, { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.import_id, "import-1");
+  assert.equal(insertedPayload?.website_url, "https://point-s.example.com/");
+  assert.equal(insertedPayload?.company_name, "Point S");
+  assert.equal(insertedPayload?.status, "analyzed");
+});
+
+test("profile import still succeeds with warning when import history table is missing", async () => {
+  publicDns();
+  setProfileImportFetchForTests((async () =>
+    htmlResponse(`
+      <html>
+        <head><title>Fjord Bistro</title><meta name="description" content="Restaurant med meny og bordbestilling."></head>
+        <body><h1>Restaurant og meny</h1><p>Bordbestilling for lunsj og middag.</p></body>
+      </html>
+    `)) as typeof fetch);
+
+  setProfileImportSupabaseFactoryForTests(() => ({
+    from() {
+      return {
+        insert() {
+          return {
+            select() {
+              return {
+                single() {
+                  return Promise.resolve({ data: null, error: { code: "42P01", message: "relation demo_site_imports does not exist" } });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  }));
+
+  const response = await POST(
+    request({ website_url: "https://restaurant.example.com", company_name: "Fjord Bistro" }, { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.import_id, null);
+  assert.equal(body.warnings.includes("Importhistorikk er ikke aktivert ennå."), true);
+});
+
 test("profile import treats protected homepages as a real error", async () => {
   publicDns();
   setProfileImportFetchForTests((async () => htmlResponse("Protected", 403)) as typeof fetch);
