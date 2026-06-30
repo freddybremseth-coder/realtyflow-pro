@@ -4,6 +4,7 @@ import {
   DEMO_SITE_PACKAGES,
   DEMO_SITE_TEMPLATE_SEEDS,
   buildDefaultTemplateFields,
+  getDemoSiteTemplateDefaults,
   getDemoSitePackage,
   slugifyCompanyName,
   type DemoSiteBillingStatus,
@@ -67,12 +68,28 @@ type DemoSiteEventRow = {
 type SupabaseClientLike = any;
 
 type SaasAppLookup = { id?: string };
+type FormattedApiError = { error: string; details?: string; hint?: string; code?: string };
 
 const ACTIVE_REVENUE_STATUSES = new Set(["ordered", "in_setup", "preview_ready", "approved", "deployed"]);
 const ACTIVE_MRR_STATUSES = new Set(["in_setup", "preview_ready", "approved", "deployed"]);
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_EXPIRY_DAYS = 7;
+const IMPORT_SAFE_STATUS: DemoSiteStatus = "in_setup";
+const TEMPLATE_FK_FALLBACKS: Record<string, string> = {
+  bilverksted: "dekk",
+  rorlegger: "local-service",
+  snekker: "local-service",
+  bygg: "local-service",
+  "bygg-anlegg": "local-service",
+  restaurant: "restaurant-cafe",
+  kafe: "restaurant-cafe",
+  hotell: "restaurant-cafe",
+  klinikk: "local-service",
+  tannlege: "local-service",
+  advokat: "local-service",
+  fysioterapi: "local-service",
+};
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -85,6 +102,74 @@ function isMissingTable(error: unknown) {
   const candidate = error as { code?: string; message?: string } | null;
   const message = `${candidate?.code || ""} ${candidate?.message || ""}`.toLowerCase();
   return message.includes("42p01") || message.includes("does not exist") || message.includes("schema cache");
+}
+
+function formatApiError(error: unknown, fallback: string): FormattedApiError {
+  if (error instanceof Error) return { error: error.message || fallback };
+  if (error && typeof error === "object") {
+    const record = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const message = typeof record.message === "string" && record.message.trim() ? record.message.trim() : fallback;
+    return {
+      error: message,
+      details: typeof record.details === "string" && record.details.trim() ? record.details.trim() : undefined,
+      hint: typeof record.hint === "string" && record.hint.trim() ? record.hint.trim() : undefined,
+      code: typeof record.code === "string" && record.code.trim() ? record.code.trim() : undefined,
+    };
+  }
+  return { error: fallback };
+}
+
+function errorText(error: unknown) {
+  const formatted = formatApiError(error, "");
+  return `${formatted.code || ""} ${formatted.error || ""} ${formatted.details || ""} ${formatted.hint || ""}`.toLowerCase();
+}
+
+function isSchemaOrConstraintError(error: unknown) {
+  const text = errorText(error);
+  return (
+    text.includes("pgrst204") ||
+    text.includes("42703") ||
+    text.includes("23503") ||
+    text.includes("23514") ||
+    text.includes("schema cache") ||
+    text.includes("could not find") ||
+    text.includes("column") ||
+    text.includes("does not exist") ||
+    text.includes("foreign key") ||
+    text.includes("check constraint") ||
+    text.includes("status_check")
+  );
+}
+
+function isTemplateForeignKeyError(error: unknown) {
+  const text = errorText(error);
+  return text.includes("template_slug") && (text.includes("23503") || text.includes("foreign key"));
+}
+
+function logApiError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  console.error(context, { ...formatApiError(error, "Unknown DemoSites API error"), ...extra });
+}
+
+function normalizeCreateStatus(status: unknown): DemoSiteStatus {
+  const value = String(status || "").trim() as DemoSiteStatus;
+  if (value === "draft_preview") return IMPORT_SAFE_STATUS;
+  if (
+    value === "lead" ||
+    value === "ordered" ||
+    value === "in_setup" ||
+    value === "preview_ready" ||
+    value === "approved" ||
+    value === "deployed" ||
+    value === "paused" ||
+    value === "cancelled"
+  ) {
+    return value;
+  }
+  return "ordered";
+}
+
+function getTemplateForeignKeyFallback(templateSlug: string) {
+  return TEMPLATE_FK_FALLBACKS[templateSlug] || (DEMO_SITE_TEMPLATE_SEEDS.some((template) => template.slug === templateSlug) ? templateSlug : "local-service");
 }
 
 function asNumber(value: unknown) {
@@ -233,6 +318,31 @@ async function ensureDemositesApp(supabase: SupabaseClientLike) {
   return insertedApp.id;
 }
 
+async function tryEnsureDemositesApp(supabase: SupabaseClientLike) {
+  try {
+    return await ensureDemositesApp(supabase);
+  } catch (error) {
+    logApiError("DemoSites app lookup failed; continuing without app_id", error);
+    return null;
+  }
+}
+
+async function ensureDemoSiteTemplate(supabase: SupabaseClientLike, templateSlug: string, companyName: string) {
+  if (!templateSlug) return;
+  const seed = DEMO_SITE_TEMPLATE_SEEDS.find((template) => template.slug === templateSlug);
+  const defaults = getDemoSiteTemplateDefaults(templateSlug, companyName || "Bedriften");
+  const payload = {
+    slug: templateSlug,
+    name: seed?.name || defaults.template_name || templateSlug,
+    category: seed?.category || "service",
+    description: seed?.description || defaults.hero_subtitle || "",
+    repo_url: seed?.repoUrl || "https://github.com/freddybremseth-coder/demosites",
+    preview_url: seed?.previewUrl || null,
+  };
+  const { error } = await supabase.from("demo_site_templates").upsert(payload, { onConflict: "slug" });
+  if (error) logApiError("DemoSites template upsert failed; order insert may use fallback template", error, { templateSlug });
+}
+
 async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrder[]) {
   const summary = computeSummary(orders);
   const appId = await ensureDemositesApp(supabase);
@@ -248,6 +358,95 @@ async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrd
     })
     .eq("id", appId);
   return { ...summary, appId };
+}
+
+async function getSummaryAfterOrderMutation(supabase: SupabaseClientLike) {
+  try {
+    const orders = await getOrders(supabase);
+    try {
+      return await syncSaasMetrics(supabase, orders);
+    } catch (error) {
+      logApiError("DemoSites metrics sync failed after order mutation", error);
+      return computeSummary(orders);
+    }
+  } catch (error) {
+    logApiError("DemoSites order summary refresh failed after mutation", error);
+    return computeSummary([]);
+  }
+}
+
+function buildMinimalOrderPayload(payload: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
+  return {
+    order_number: payload.order_number,
+    status: IMPORT_SAFE_STATUS,
+    billing_status: payload.billing_status,
+    customer_name: payload.customer_name,
+    customer_email: payload.customer_email,
+    customer_phone: payload.customer_phone,
+    company_name: payload.company_name,
+    industry: payload.industry,
+    website_url: payload.website_url,
+    package_id: payload.package_id,
+    setup_fee_nok: payload.setup_fee_nok,
+    monthly_fee_nok: payload.monthly_fee_nok,
+    setup_cost_nok: payload.setup_cost_nok,
+    monthly_cost_nok: payload.monthly_cost_nok,
+    currency: payload.currency,
+    template_slug: payload.template_slug,
+    target_subdomain: payload.target_subdomain,
+    preview_url: payload.preview_url,
+    claim_token: payload.claim_token,
+    claim_url: payload.claim_url,
+    expires_at: payload.expires_at,
+    logo_url: payload.logo_url,
+    brand_color: payload.brand_color,
+    editable_fields: payload.editable_fields,
+    notes: payload.notes,
+    ...overrides,
+  };
+}
+
+function buildCoreOrderPayload(payload: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
+  const minimalPayload = buildMinimalOrderPayload(payload, overrides);
+  delete (minimalPayload as Record<string, unknown>).logo_url;
+  delete (minimalPayload as Record<string, unknown>).brand_color;
+  delete (minimalPayload as Record<string, unknown>).editable_fields;
+  return minimalPayload;
+}
+
+async function insertDemoSiteOrderWithRetry(supabase: SupabaseClientLike, payload: Record<string, unknown>) {
+  const attempts = [
+    { name: "full", payload },
+    { name: "minimal", payload: buildMinimalOrderPayload(payload) },
+    {
+      name: "minimal_template_fallback",
+      payload: buildMinimalOrderPayload(payload, { template_slug: getTemplateForeignKeyFallback(String(payload.template_slug || "")) }),
+    },
+    {
+      name: "core_template_fallback",
+      payload: buildCoreOrderPayload(payload, { template_slug: getTemplateForeignKeyFallback(String(payload.template_slug || "")) }),
+    },
+  ];
+  let lastError: unknown = null;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
+    const { data, error } = await supabase.from("demo_site_orders").insert(attempt.payload).select("*").single();
+    if (!error) return { data: data as DemoSiteOrderRow, fallbackUsed: attempt.name !== "full", fallbackName: attempt.name };
+
+    lastError = error;
+    logApiError("DemoSites order insert failed", error, {
+      attempt: attempt.name,
+      template_slug: attempt.payload.template_slug,
+      status: attempt.payload.status,
+    });
+
+    if (attempt.name === "full" && !isSchemaOrConstraintError(error)) break;
+    if (attempt.name === "minimal" && !isSchemaOrConstraintError(error)) break;
+    if (attempt.name === "minimal" && !isTemplateForeignKeyError(error) && !errorText(error).includes("column")) break;
+  }
+
+  return { data: null, error: lastError };
 }
 
 async function getOrders(supabase: SupabaseClientLike) {
@@ -338,8 +537,9 @@ export async function POST(request: NextRequest) {
     const claimUrl = buildClaimUrl(claimToken);
     const previewUrl = buildPreviewUrl(claimToken);
     const expiresAt = body.expires_at || daysFromNow(DEFAULT_EXPIRY_DAYS);
-    const appId = await ensureDemositesApp(supabase);
+    const appId = await tryEnsureDemositesApp(supabase);
     const selectedTemplateSlug = String(body.template_slug || DEFAULT_TEMPLATE_SLUG).trim() || DEFAULT_TEMPLATE_SLUG;
+    await ensureDemoSiteTemplate(supabase, selectedTemplateSlug, companyName);
     const defaultEditableFields = buildDefaultTemplateFields({
       companyName,
       customerName,
@@ -357,7 +557,7 @@ export async function POST(request: NextRequest) {
 
     const payload = {
       order_number: generateOrderNumber(),
-      status: body.status || "ordered",
+      status: normalizeCreateStatus(body.status || "ordered"),
       billing_status: body.billing_status || "not_invoiced",
       customer_name: customerName,
       customer_email: customerEmail,
@@ -402,26 +602,34 @@ export async function POST(request: NextRequest) {
       notes: body.notes || null,
     };
 
-    const { data, error } = await supabase.from("demo_site_orders").insert(payload).select("*").single();
-    if (error) throw error;
-    const createdOrder = data as DemoSiteOrderRow;
+    const insertResult = await insertDemoSiteOrderWithRetry(supabase, payload);
+    if (insertResult.error || !insertResult.data) {
+      const formatted = formatApiError(insertResult.error, "Could not create DemoSites order");
+      return NextResponse.json(formatted, { status: 500 });
+    }
+    const createdOrder = insertResult.data;
 
-    await supabase.from("demo_site_order_events").insert({
+    const eventInsert = await supabase.from("demo_site_order_events").insert({
       order_id: createdOrder.id,
       event_type: "order_created",
       title: "Bestilling opprettet",
       description: `${companyName} valgte ${selectedPackage.shortName}.`,
-      metadata: { package_id: selectedPackage.id, preview_url: payload.preview_url, claim_url: payload.claim_url, template_slug: payload.template_slug },
+      metadata: {
+        package_id: selectedPackage.id,
+        preview_url: payload.preview_url,
+        claim_url: payload.claim_url,
+        template_slug: createdOrder.template_slug || payload.template_slug,
+        insert_fallback_used: insertResult.fallbackUsed,
+        insert_fallback_name: insertResult.fallbackName,
+      },
     });
+    if (eventInsert.error) logApiError("DemoSites order event insert failed", eventInsert.error, { order_id: createdOrder.id });
 
-    const orders = await getOrders(supabase);
-    const summary = await syncSaasMetrics(supabase, orders);
-    return NextResponse.json({ order: createdOrder, summary }, { status: 201 });
+    const summary = await getSummaryAfterOrderMutation(supabase);
+    return NextResponse.json({ order: createdOrder, summary, insert_fallback_used: insertResult.fallbackUsed }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not create DemoSites order" },
-      { status: 500 },
-    );
+    logApiError("DemoSites POST failed", error);
+    return NextResponse.json(formatApiError(error, "Could not create DemoSites order"), { status: 500 });
   }
 }
 
@@ -472,24 +680,25 @@ export async function PATCH(request: NextRequest) {
     if (body.status === "deployed") patch.deployed_at = new Date().toISOString();
 
     const { data, error } = await supabase.from("demo_site_orders").update(patch).eq("id", body.id).select("*").single();
-    if (error) throw error;
+    if (error) {
+      logApiError("DemoSites PATCH update failed", error, { order_id: body.id });
+      return NextResponse.json(formatApiError(error, "Could not update DemoSites order"), { status: 500 });
+    }
     const updatedOrder = await repairOrderLinks(supabase, data as DemoSiteOrderRow);
 
-    await supabase.from("demo_site_order_events").insert({
+    const eventInsert = await supabase.from("demo_site_order_events").insert({
       order_id: body.id,
       event_type: "order_updated",
       title: "Bestilling oppdatert",
       description: `Status: ${updatedOrder.status}. Betaling: ${updatedOrder.billing_status}.`,
       metadata: patch,
     });
+    if (eventInsert.error) logApiError("DemoSites order update event insert failed", eventInsert.error, { order_id: body.id });
 
-    const orders = await getOrders(supabase);
-    const summary = await syncSaasMetrics(supabase, orders);
+    const summary = await getSummaryAfterOrderMutation(supabase);
     return NextResponse.json({ order: updatedOrder, summary });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not update DemoSites order" },
-      { status: 500 },
-    );
+    logApiError("DemoSites PATCH failed", error);
+    return NextResponse.json(formatApiError(error, "Could not update DemoSites order"), { status: 500 });
   }
 }
