@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
+import { DemoSitesHistoryCreateButtonBridge } from "@/components/demosites/history-create-button-bridge";
 
 export const metadata: Metadata = {
   title: "RealtyFlow Pro",
@@ -46,6 +47,7 @@ export default function RootLayout({
           <main className="min-h-screen">{children}</main>
         ) : (
           <>
+            <DemoSitesHistoryCreateButtonBridge />
             <Sidebar />
             <main className="lg:ml-60 min-h-screen p-6 pt-16 lg:pt-6">
               {children}
