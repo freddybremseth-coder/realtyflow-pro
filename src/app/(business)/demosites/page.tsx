@@ -46,6 +46,7 @@ type WebsiteImportMode = "new" | "existing";
 type WebsiteImportFormState = { website_url: string; company_name: string; mode: WebsiteImportMode; order_id: string };
 type WebsiteImportContactState = { customer_name: string; customer_email: string; customer_phone: string };
 type ImportedFaqItem = { question?: string; answer?: string };
+type ImportReviewQualityLevel = "ready" | "improve" | "missing";
 type ImportedProfile = {
   company_name?: string;
   website_url?: string;
@@ -68,6 +69,8 @@ type ImportedProfile = {
 };
 type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[]; import_id?: string | null };
 type WebsiteImportReviewPatch = { profile?: Partial<ImportedProfile>; editable_fields?: Record<string, unknown> };
+type ImportReviewQualityItem = { id: string; label: string; status: ImportReviewQualityLevel; detail: string; critical?: boolean };
+type ImportReviewQuality = { readyCount: number; totalCount: number; criticalMissing: boolean; items: ImportReviewQualityItem[] };
 type WebsiteImportSuccess = { title: string; order?: DemoSiteOrder | null };
 type WebsiteImportHistoryItem = {
   id: string;
@@ -301,6 +304,151 @@ function withManualImportReviewSources(fields: Record<string, unknown>, editedKe
     if (key !== "profile_import_field_sources") nextSources[key] = IMPORT_REVIEW_MANUAL_SOURCE;
   });
   return { ...fields, profile_import_field_sources: nextSources };
+}
+
+function getImportReviewValue(result: WebsiteImportResult, key: string) {
+  const fields = result.editable_fields || {};
+  const profile = result.profile || {};
+  if (key === "company_name") return profile.company_name || "";
+  if (key === "recommended_template_slug") return profile.recommended_template_slug || fields.template_slug || "";
+  if (key === "logo_url") return fields.logo_url || profile.logo_url || "";
+  if (key === "brand_color") return fields.brand_color || profile.colors?.primary || "";
+  if (key === "secondary_color") return fields.secondary_color || profile.colors?.secondary || "";
+  if (key === "accent_color") return fields.accent_color || profile.colors?.accent || "";
+  if (fields[key] !== undefined) return fields[key];
+  return (profile as Record<string, unknown>)[key];
+}
+
+function getImportReviewList(result: WebsiteImportResult, key: string) {
+  const value = getImportReviewValue(result, key);
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (typeof value === "string") return textToListField(value);
+  if (key === "gallery_images") return getImportReviewList({ ...result, editable_fields: { ...result.editable_fields, gallery_images: result.profile.image_urls || [] } }, "gallery_images");
+  return [];
+}
+
+function getImportReviewFaqList(result: WebsiteImportResult) {
+  const value = getImportReviewValue(result, "faq") || result.profile.faq || [];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => {
+    if (typeof item === "string") return item.trim().length > 0;
+    if (!isRecord(item)) return false;
+    return String(item.question || item.answer || "").trim().length > 0;
+  });
+}
+
+function getImportReviewStatus(hasValue: boolean, hasPartial = false): ImportReviewQualityLevel {
+  if (hasValue) return "ready";
+  if (hasPartial) return "improve";
+  return "missing";
+}
+
+function getImportReviewQuality(result: WebsiteImportResult): ImportReviewQuality {
+  const services = getImportReviewList(result, "services");
+  const products = getImportReviewList(result, "products");
+  const prices = getImportReviewList(result, "prices");
+  const trustPoints = getImportReviewList(result, "trust_points");
+  const galleryImages = getImportReviewList(result, "gallery_images");
+  const faq = getImportReviewFaqList(result);
+
+  const items: ImportReviewQualityItem[] = [
+    {
+      id: "company_name",
+      label: "Bedriftsnavn",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "company_name") || "").trim())),
+      detail: "Brukes i hero, CRM og demooppsett.",
+      critical: true,
+    },
+    {
+      id: "recommended_template_slug",
+      label: "Demo-mal",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "recommended_template_slug") || "").trim())),
+      detail: "Avgjør bransjeuttrykk og standardfelter.",
+      critical: true,
+    },
+    {
+      id: "hero_title",
+      label: "Hero-tittel",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "hero_title") || "").trim())),
+      detail: "Første store budskap i preview.",
+      critical: true,
+    },
+    {
+      id: "hero_subtitle",
+      label: "Hero-undertittel",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "hero_subtitle") || "").trim())),
+      detail: "Forklarer tilbudet raskt.",
+    },
+    {
+      id: "intro_text",
+      label: "Intro",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "intro_text") || "").trim())),
+      detail: "Gjør demoen mindre generisk.",
+      critical: true,
+    },
+    {
+      id: "services",
+      label: "Minst 3 tjenester",
+      status: getImportReviewStatus(services.length >= 3, services.length > 0),
+      detail: `${services.length} tjeneste${services.length === 1 ? "" : "r"} funnet.`,
+      critical: true,
+    },
+    {
+      id: "products_or_prices",
+      label: "Pakker eller priser",
+      status: getImportReviewStatus(products.length > 0 || prices.length > 0),
+      detail: `${products.length} pakke${products.length === 1 ? "" : "r"}, ${prices.length} prislinje${prices.length === 1 ? "" : "r"}.`,
+    },
+    {
+      id: "trust_points",
+      label: "Minst 2 trygghetspunkter",
+      status: getImportReviewStatus(trustPoints.length >= 2, trustPoints.length > 0),
+      detail: `${trustPoints.length} punkt${trustPoints.length === 1 ? "" : "er"} funnet.`,
+    },
+    {
+      id: "call_to_action",
+      label: "CTA",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "call_to_action") || "").trim())),
+      detail: "Forteller kunden hva neste steg er.",
+    },
+    {
+      id: "contact_text",
+      label: "Kontakttekst",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "contact_text") || "").trim())),
+      detail: "Brukes i kontaktseksjonen.",
+    },
+    {
+      id: "logo_url",
+      label: "Logo",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "logo_url") || "").trim())),
+      detail: "Gir demoen tydelig kundepreg.",
+    },
+    {
+      id: "gallery_images",
+      label: "Minst 1 bilde",
+      status: getImportReviewStatus(galleryImages.length > 0),
+      detail: `${galleryImages.length} bilde${galleryImages.length === 1 ? "" : "r"} funnet.`,
+    },
+    {
+      id: "brand_color",
+      label: "Brand-farge",
+      status: getImportReviewStatus(Boolean(String(getImportReviewValue(result, "brand_color") || "").trim())),
+      detail: "Brukes som primærfarge i preview.",
+    },
+    {
+      id: "faq",
+      label: "Minst 2 FAQ",
+      status: getImportReviewStatus(faq.length >= 2, faq.length > 0),
+      detail: `${faq.length} spørsmål/svar funnet.`,
+    },
+  ];
+
+  return {
+    readyCount: items.filter((item) => item.status === "ready").length,
+    totalCount: items.length,
+    criticalMissing: items.some((item) => item.critical && item.status !== "ready"),
+    items,
+  };
 }
 
 export default function DemoSitesPage() {
@@ -918,6 +1066,7 @@ function WebsiteImportCard({
   const colorSwatches = getColorSwatches(profile?.colors);
   const successLinks = getImportOrderLinks(success?.order);
   const selectedTemplateLabel = getTemplateLabel(templates, profile?.recommended_template_slug);
+  const reviewQuality = result ? getImportReviewQuality(result) : null;
   const existingOrderOptions = [
     { value: "", label: "Velg demo" },
     ...orders.map((order) => ({ value: order.id, label: `${order.company_name} (${order.order_number})` })),
@@ -1030,6 +1179,7 @@ function WebsiteImportCard({
               onSave={onSaveReview}
               onReset={onResetReview}
             />
+            {reviewQuality && <ImportReviewQualityPanel quality={reviewQuality} />}
             <PreviewUsagePanel result={result} />
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -1081,20 +1231,27 @@ function WebsiteImportCard({
               <Input label="Telefon" value={contact.customer_phone} onChange={(value) => onContactChange({ customer_phone: value })} />
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={onCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                Opprett demo fra analyse
-              </Button>
-              {form.mode === "existing" && (
-                <Button type="button" onClick={onApplyToOrder} disabled={saving || !form.order_id} variant="outline" className="border-cyan-500/50 text-cyan-100">
-                  Bruk på valgt demo
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={onCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+                  Opprett demo fra analyse
                 </Button>
+                {form.mode === "existing" && (
+                  <Button type="button" onClick={onApplyToOrder} disabled={saving || !form.order_id} variant="outline" className="border-cyan-500/50 text-cyan-100">
+                    Bruk på valgt demo
+                  </Button>
+                )}
+                <Button type="button" onClick={onDiscard} disabled={saving} variant="outline" className="border-slate-600">
+                  <XCircle className="mr-2 h-4 w-4" />
+                  Forkast
+                </Button>
+              </div>
+              {reviewQuality?.criticalMissing && (
+                <div className="text-xs text-amber-200">
+                  Du kan opprette demo nå, men noen viktige felt mangler.
+                </div>
               )}
-              <Button type="button" onClick={onDiscard} disabled={saving} variant="outline" className="border-slate-600">
-                <XCircle className="mr-2 h-4 w-4" />
-                Forkast
-              </Button>
             </div>
           </div>
         )}
@@ -1225,13 +1382,77 @@ function EditableImportReviewFields({
   );
 }
 
+function getQualitySummary(quality: ImportReviewQuality): { label: string; className: string } {
+  if (quality.readyCount === quality.totalCount) return { label: "Klar", className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100" };
+  if (quality.criticalMissing) return { label: "Mangler", className: "border-red-500/40 bg-red-500/10 text-red-100" };
+  return { label: "Bør forbedres", className: "border-amber-500/40 bg-amber-500/10 text-amber-100" };
+}
+
+function getQualityItemStyle(status: ImportReviewQualityLevel) {
+  if (status === "ready") return { label: "Klar", className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100", icon: <CheckCircle className="h-4 w-4 text-emerald-300" /> };
+  if (status === "improve") return { label: "Bør forbedres", className: "border-amber-500/30 bg-amber-500/10 text-amber-100", icon: <AlertCircle className="h-4 w-4 text-amber-300" /> };
+  return { label: "Mangler", className: "border-red-500/30 bg-red-500/10 text-red-100", icon: <XCircle className="h-4 w-4 text-red-300" /> };
+}
+
+function ImportReviewQualityPanel({ quality }: { quality: ImportReviewQuality }) {
+  const summary = getQualitySummary(quality);
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-white">Kvalitetssjekk</div>
+            <span className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${summary.className}`}>{summary.label}</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            Preview bruker de redigerte feltene slik de står her.
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100">
+          {quality.readyCount} av {quality.totalCount} punkter klare
+        </div>
+      </div>
+
+      {quality.criticalMissing && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <AlertCircle className="mr-2 inline h-4 w-4" />
+          Demo kan opprettes, men bør kvalitetssikres først.
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {quality.items.map((item) => {
+          const style = getQualityItemStyle(item.status);
+          return (
+            <div key={item.id} className={`rounded-lg border p-3 ${style.className}`}>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0">{style.icon}</span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-semibold text-slate-100">{item.label}</span>
+                    {item.critical && <span className="rounded bg-slate-950/50 px-1.5 py-0.5 text-[10px] text-slate-300">Viktig</span>}
+                  </div>
+                  <div className="mt-1 text-[11px] leading-4 text-slate-300">{item.detail}</div>
+                  <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide">{style.label}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PreviewUsagePanel({ result }: { result: WebsiteImportResult }) {
   const fields = result.editable_fields || {};
   const sources = isRecord(fields.profile_import_field_sources) ? fields.profile_import_field_sources : {};
 
   return (
     <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-cyan-100">Brukes i preview</div>
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-cyan-100">Brukes i preview</div>
+      <div className="mb-3 text-xs text-cyan-100/80">Preview bruker de redigerte feltene slik de står her.</div>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
         {PREVIEW_USAGE_FIELDS.map((field) => {
           const value = fields[field.key];
