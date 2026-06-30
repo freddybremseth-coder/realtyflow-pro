@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Wallet, XCircle } from "lucide-react";
+import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
 import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
@@ -71,26 +72,6 @@ type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<s
 type WebsiteImportReviewPatch = { profile?: Partial<ImportedProfile>; editable_fields?: Record<string, unknown> };
 type ImportReviewQualityItem = { id: string; label: string; status: ImportReviewQualityLevel; detail: string; critical?: boolean };
 type ImportReviewQuality = { readyCount: number; totalCount: number; criticalMissing: boolean; items: ImportReviewQualityItem[] };
-type ImportReviewLivePreviewColors = { primary: string; secondary: string; accent: string; primaryText: string; secondaryText: string; missing: string[] };
-type ImportReviewLivePreviewContent = {
-  companyName: string;
-  templateLabel: string;
-  websiteUrl: string;
-  logoUrl: string;
-  heroTitle: string;
-  heroSubtitle: string;
-  introText: string;
-  services: string[];
-  products: string[];
-  prices: string[];
-  trustPoints: string[];
-  faq: ImportedFaqItem[];
-  callToAction: string;
-  contactText: string;
-  galleryImages: string[];
-  colors: ImportReviewLivePreviewColors;
-  contact: { email: string; phone: string; address: string };
-};
 type WebsiteImportSuccess = { title: string; order?: DemoSiteOrder | null };
 type WebsiteImportHistoryItem = {
   id: string;
@@ -468,105 +449,6 @@ function getImportReviewQuality(result: WebsiteImportResult): ImportReviewQualit
     totalCount: items.length,
     criticalMissing: items.some((item) => item.critical && item.status !== "ready"),
     items,
-  };
-}
-
-function getImportReviewText(result: WebsiteImportResult, key: string, fallback: string) {
-  return String(getImportReviewValue(result, key) || "").trim() || fallback;
-}
-
-function getImportReviewUrl(value: unknown) {
-  const url = String(value || "").trim();
-  if (url.startsWith("data:image/") || url.startsWith("http://") || url.startsWith("https://")) return url;
-  return "";
-}
-
-function isHexColor(value: unknown) {
-  return /^#[0-9A-Fa-f]{6}$/.test(String(value || "").trim());
-}
-
-function hexToRgb(hex: string) {
-  const normalized = hex.replace("#", "");
-  return {
-    r: parseInt(normalized.slice(0, 2), 16),
-    g: parseInt(normalized.slice(2, 4), 16),
-    b: parseInt(normalized.slice(4, 6), 16),
-  };
-}
-
-function readableTextColor(hex: string) {
-  const { r, g, b } = hexToRgb(hex);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.62 ? "#111827" : "#ffffff";
-}
-
-function withColorAlpha(hex: string, alpha: string) {
-  return `${hex}${alpha}`;
-}
-
-function getLivePreviewColor(value: unknown, fallback: string, missingLabel: string, missing: string[]) {
-  if (isHexColor(value)) return String(value).trim();
-  missing.push(missingLabel);
-  return fallback;
-}
-
-function getImportReviewLivePreview(result: WebsiteImportResult, templates: DemoSiteTemplate[]): ImportReviewLivePreviewContent {
-  const fields = result.editable_fields || {};
-  const profile = result.profile || {};
-  const brandColor = getImportReviewValue(result, "brand_color");
-  const secondaryColor = getImportReviewValue(result, "secondary_color");
-  const accentColor = getImportReviewValue(result, "accent_color");
-  const missingColors: string[] = [];
-  const primary = getLivePreviewColor(brandColor, "#0f766e", "Primærfarge", missingColors);
-  const secondary = getLivePreviewColor(secondaryColor, "#1e293b", "Sekundærfarge", missingColors);
-  const accent = getLivePreviewColor(accentColor, "#f59e0b", "Aksentfarge", missingColors);
-  const contactInfo = isRecord(fields.contact_info) ? fields.contact_info : {};
-  const profileContact = profile.contact || {};
-  const faq = getImportReviewFaqList(result)
-    .map((item) => {
-      if (typeof item === "string") {
-        const [question = "", ...answerParts] = item.split("|");
-        return { question: question.trim(), answer: answerParts.join("|").trim() };
-      }
-      if (!isRecord(item)) return null;
-      return {
-        question: String(item.question || "").trim(),
-        answer: String(item.answer || "").trim(),
-      };
-    })
-    .filter((item): item is { question: string; answer: string } => Boolean(item && (item.question || item.answer)));
-  const templateSlug = String(getImportReviewValue(result, "recommended_template_slug") || "").trim();
-  const galleryImages = getImportReviewList(result, "gallery_images").map(getImportReviewUrl).filter(Boolean);
-
-  return {
-    companyName: getImportReviewText(result, "company_name", "Mangler bedriftsnavn"),
-    templateLabel: getTemplateLabel(templates, templateSlug),
-    websiteUrl: String(profile.website_url || "").trim(),
-    logoUrl: getImportReviewUrl(getImportReviewValue(result, "logo_url")),
-    heroTitle: getImportReviewText(result, "hero_title", "Mangler hero-tittel"),
-    heroSubtitle: getImportReviewText(result, "hero_subtitle", "Mangler hero-undertittel"),
-    introText: getImportReviewText(result, "intro_text", "Mangler intro"),
-    services: getImportReviewList(result, "services"),
-    products: getImportReviewList(result, "products"),
-    prices: getImportReviewList(result, "prices"),
-    trustPoints: getImportReviewList(result, "trust_points"),
-    faq,
-    callToAction: getImportReviewText(result, "call_to_action", "Mangler CTA"),
-    contactText: getImportReviewText(result, "contact_text", "Mangler kontakttekst"),
-    galleryImages,
-    colors: {
-      primary,
-      secondary,
-      accent,
-      primaryText: readableTextColor(primary),
-      secondaryText: readableTextColor(secondary),
-      missing: missingColors,
-    },
-    contact: {
-      email: String(contactInfo.email || profileContact.email || "").trim(),
-      phone: String(contactInfo.phone || profileContact.phone || "").trim(),
-      address: String(contactInfo.address || profileContact.address || "").trim(),
-    },
   };
 }
 
@@ -1595,9 +1477,7 @@ function PreviewUsagePanel({ result }: { result: WebsiteImportResult }) {
 function ImportReviewLivePreviewPanel({ result, templates }: { result: WebsiteImportResult; templates: DemoSiteTemplate[] }) {
   const [showFullPreview, setShowFullPreview] = useState(false);
   const resetKey = `${result.import_id || ""}:${result.profile.website_url || ""}`;
-  const preview = getImportReviewLivePreview(result, templates);
-  const previewImages = showFullPreview ? preview.galleryImages.slice(0, 6) : preview.galleryImages.slice(0, 3);
-  const previewServices = showFullPreview ? preview.services : preview.services.slice(0, 3);
+  const templateSlug = String(getImportReviewValue(result, "recommended_template_slug") || "").trim();
 
   useEffect(() => {
     setShowFullPreview(false);
@@ -1623,238 +1503,19 @@ function ImportReviewLivePreviewPanel({ result, templates }: { result: WebsiteIm
         </Button>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-slate-700 bg-slate-50 text-slate-950 shadow-xl">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            {preview.logoUrl ? (
-              <span className="flex h-11 max-w-[10rem] shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2 py-1">
-                <img src={preview.logoUrl} alt={`${preview.companyName} logo`} className="max-h-9 w-auto max-w-[8.5rem] object-contain" />
-              </span>
-            ) : (
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-black" style={{ backgroundColor: preview.colors.primary, color: preview.colors.primaryText }}>
-                {preview.companyName.slice(0, 1).toUpperCase()}
-              </span>
-            )}
-            <div className="min-w-0">
-              <div className="truncate text-sm font-black text-slate-950 md:text-base">{preview.companyName}</div>
-              <div className="truncate text-xs text-slate-500">{preview.templateLabel}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <LivePreviewColorSwatch label="Primær" value={preview.colors.primary} />
-            <LivePreviewColorSwatch label="Sekundær" value={preview.colors.secondary} />
-            <LivePreviewColorSwatch label="Aksent" value={preview.colors.accent} />
-            <span className="rounded-lg px-3 py-2 text-xs font-bold" style={{ backgroundColor: preview.colors.secondary, color: preview.colors.secondaryText }}>
-              {preview.callToAction}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 p-4 lg:grid-cols-[1.05fr_0.95fr] lg:p-5">
-          <div className="flex flex-col justify-center">
-            <div className="mb-3 inline-flex w-fit items-center rounded-lg border px-2.5 py-1 text-[11px] font-bold" style={{ borderColor: preview.colors.primary, backgroundColor: withColorAlpha(preview.colors.primary, "14"), color: preview.colors.secondary }}>
-              Intern preview
-            </div>
-            <h3 className="text-3xl font-black leading-tight text-slate-950 md:text-4xl">{preview.heroTitle}</h3>
-            <p className="mt-3 text-base leading-7 text-slate-700">{preview.heroSubtitle}</p>
-            <p className="mt-3 text-sm leading-7 text-slate-600">{preview.introText}</p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="inline-flex items-center rounded-lg px-4 py-3 text-sm font-bold" style={{ backgroundColor: preview.colors.primary, color: preview.colors.primaryText }}>
-                {preview.callToAction}
-              </span>
-              {preview.websiteUrl && (
-                <span className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700">
-                  Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid min-h-[260px] grid-cols-1 gap-3 sm:grid-cols-[1fr_0.72fr]">
-            <LivePreviewImage image={previewImages[0]} label={`${preview.companyName} hovedbilde`} color={preview.colors.secondary} large />
-            <div className="grid gap-3">
-              <LivePreviewImage image={previewImages[1]} label={`${preview.companyName} detaljbilde`} color={preview.colors.primary} />
-              <div className="flex flex-col justify-between rounded-lg p-4 text-white" style={{ backgroundColor: preview.colors.secondary }}>
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: preview.colors.accent }}>
-                    <CheckCircle className="h-4 w-4" /> Klar til kvalitetssjekk
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-white/80">Innhold, bilder og farger speiler import-reviewen akkurat nå.</p>
-                </div>
-                <div className="mt-5 text-xs text-white/60">{previewImages.length} bilde{previewImages.length === 1 ? "" : "r"} i preview</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {previewImages.length > 0 && (
-          <div className="border-t border-slate-200 bg-white px-4 py-5 lg:px-5">
-            <LivePreviewSectionHeader label="Bilder" title="Visuell profil" text="Bildene under er hentet fra de redigerte bildefeltene." />
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-              {previewImages.map((image, index) => <LivePreviewImage key={`${image}-${index}`} image={image} label={`${preview.companyName} bilde`} color={preview.colors.primary} />)}
-            </div>
-          </div>
-        )}
-
-        <div className="border-t border-slate-200 bg-white px-4 py-5 lg:px-5">
-          <LivePreviewSectionHeader label="Tjenester" title={`Dette kan ${preview.companyName} hjelpe med`} text="Kompakt preview viser de tre første tjenestene. Full preview viser alle." />
-          <LivePreviewList items={previewServices} emptyText="Mangler tjenester" color={preview.colors.primary} columns="md:grid-cols-3" />
-        </div>
-
-        {showFullPreview && (
-          <>
-            <div className="border-t border-slate-200 px-4 py-5 text-white lg:px-5" style={{ backgroundColor: preview.colors.secondary }}>
-              <LivePreviewSectionHeader label="Hvorfor velge oss" title="Tryggere valg før kunden tar kontakt" text="Trygghetspunktene gir demoen mer troverdighet." inverted />
-              <LivePreviewTrustList items={preview.trustPoints} emptyText="Mangler trygghetspunkter" accent={preview.colors.accent} />
-            </div>
-
-            <div className="grid grid-cols-1 border-t border-slate-200 bg-slate-50 lg:grid-cols-2">
-              <div className="border-b border-slate-200 px-4 py-5 lg:border-b-0 lg:border-r lg:px-5">
-                <LivePreviewSectionHeader label="Produkter" title="Pakker og produkter" text="Vises som konkrete valg i demoen." />
-                <LivePreviewList items={preview.products} emptyText="Mangler produkter eller pakker" color={preview.colors.primary} />
-              </div>
-              <div className="px-4 py-5 lg:px-5">
-                <LivePreviewSectionHeader label="Priser" title="Priser og prisforespørsel" text="Viser importerte prislinjer eller tydelige neste steg." />
-                <LivePreviewList items={preview.prices} emptyText="Mangler priser" color={preview.colors.primary} />
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 bg-white px-4 py-5 lg:px-5">
-              <LivePreviewSectionHeader label="FAQ" title="Svar på vanlige spørsmål" text="FAQ bruker de redigerte spørsmålene og svarene." />
-              <LivePreviewFaqList items={preview.faq} />
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-950 px-4 py-5 text-white lg:px-5">
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[0.95fr_1.05fr]">
-                <div>
-                  <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withColorAlpha(preview.colors.primary, "28"), color: preview.colors.accent }}>
-                    Kontakt
-                  </div>
-                  <h3 className="mt-4 text-2xl font-black leading-tight">Klar for flere riktige henvendelser?</h3>
-                  <p className="mt-3 text-sm leading-7 text-slate-300">{preview.contactText}</p>
-                  <div className="mt-4 grid gap-2 text-sm text-slate-300">
-                    <LivePreviewContactLine label="Telefon" value={preview.contact.phone} />
-                    <LivePreviewContactLine label="E-post" value={preview.contact.email} />
-                    <LivePreviewContactLine label="Adresse" value={preview.contact.address} />
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-white/10 bg-white p-4 text-slate-950">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                    <div className="font-bold">ChatGenius AI-assistent</div>
-                    <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Preview</span>
-                  </div>
-                  <div className="space-y-3 py-4">
-                    <LivePreviewChatBubble align="left">Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {preview.companyName}.</LivePreviewChatBubble>
-                    <LivePreviewChatBubble align="right" color={withColorAlpha(preview.colors.primary, "20")}>Hva er neste steg?</LivePreviewChatBubble>
-                    <LivePreviewChatBubble align="left">{preview.prices[0] || preview.products[0] || preview.services[0] || "Mangler pris- eller tjenestegrunnlag."}</LivePreviewChatBubble>
-                  </div>
-                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                    <Send className="h-4 w-4" /> Skriv et spørsmål om {preview.companyName}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {preview.colors.missing.length > 0 && (
-              <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 lg:px-5">
-                Mangler fargefelt: {preview.colors.missing.join(", ")}. Midlertidige preview-farger vises her.
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LivePreviewColorSwatch({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
-      <span className="h-3 w-3 rounded-sm border border-slate-300" style={{ backgroundColor: value }} />
-      {label}
-    </span>
-  );
-}
-
-function LivePreviewImage({ image, label, color, large = false }: { image?: string; label: string; color: string; large?: boolean }) {
-  if (image) {
-    return <img src={image} alt={label} className={large ? "h-full min-h-[260px] w-full rounded-lg object-cover" : "h-40 min-h-0 w-full rounded-lg object-cover"} />;
-  }
-
-  return (
-    <div className={large ? "flex h-full min-h-[260px] w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-100 text-sm font-semibold text-slate-500" : "flex h-40 w-full items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-100 text-sm font-semibold text-slate-500"}>
-      <ImageIcon className="mr-2 h-4 w-4" style={{ color }} />
-      Mangler bilde
-    </div>
-  );
-}
-
-function LivePreviewSectionHeader({ label, title, text, inverted = false }: { label: string; title: string; text: string; inverted?: boolean }) {
-  return (
-    <div className="max-w-3xl">
-      <div className={inverted ? "text-xs font-bold text-white/70" : "text-xs font-bold text-slate-500"}>{label}</div>
-      <h3 className={inverted ? "mt-2 text-2xl font-black leading-tight text-white" : "mt-2 text-2xl font-black leading-tight text-slate-950"}>{title}</h3>
-      <p className={inverted ? "mt-2 text-sm leading-6 text-white/75" : "mt-2 text-sm leading-6 text-slate-600"}>{text}</p>
-    </div>
-  );
-}
-
-function LivePreviewList({ items, emptyText, color, columns = "md:grid-cols-2" }: { items: string[]; emptyText: string; color: string; columns?: string }) {
-  const visibleItems = items.length ? items : [emptyText];
-  return (
-    <div className={`mt-4 grid grid-cols-1 gap-3 ${columns}`}>
-      {visibleItems.map((item, index) => (
-        <div key={`${item}-${index}`} className={items.length ? "rounded-lg border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-800" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-4 text-sm font-semibold text-slate-500"}>
-          <CheckCircle className="mb-3 h-5 w-5" style={{ color }} />
-          {item}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LivePreviewTrustList({ items, emptyText, accent }: { items: string[]; emptyText: string; accent: string }) {
-  const visibleItems = items.length ? items : [emptyText];
-  return (
-    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-      {visibleItems.map((item, index) => (
-        <div key={`${item}-${index}`} className={items.length ? "rounded-lg border border-white/15 bg-white/10 p-4 text-sm leading-6 text-white/85" : "rounded-lg border border-dashed border-white/25 bg-white/5 p-4 text-sm leading-6 text-white/60"}>
-          <CheckCircle className="mb-3 h-5 w-5" style={{ color: accent }} />
-          {item}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LivePreviewFaqList({ items }: { items: ImportedFaqItem[] }) {
-  const visibleItems = items.length ? items : [{ question: "Mangler FAQ", answer: "Legg inn minst to spørsmål og svar for en tryggere demo." }];
-  return (
-    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-      {visibleItems.map((item, index) => (
-        <div key={`${item.question || ""}-${item.answer || ""}-${index}`} className={items.length ? "rounded-lg border border-slate-200 bg-white p-4" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-4"}>
-          <h4 className="font-bold text-slate-950">{item.question || "Mangler spørsmål"}</h4>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{item.answer || "Mangler svar"}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LivePreviewContactLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={value ? "rounded-lg border border-white/10 bg-white/5 p-3" : "rounded-lg border border-dashed border-white/15 bg-white/5 p-3 text-slate-500"}>
-      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      <span className="mt-1 block break-words">{value || `Mangler ${label.toLowerCase()}`}</span>
-    </div>
-  );
-}
-
-function LivePreviewChatBubble({ children, align, color = "#f8fafc" }: { children: ReactNode; align: "left" | "right"; color?: string }) {
-  return (
-    <div className={align === "right" ? "ml-auto max-w-[82%] rounded-lg p-3 text-sm leading-6" : "mr-auto max-w-[82%] rounded-lg p-3 text-sm leading-6"} style={{ backgroundColor: color }}>
-      {children}
+      <DemoSitePreviewRenderer
+        mode="internal"
+        compact
+        showFull={showFullPreview}
+        companyName={result.profile.company_name}
+        templateSlug={templateSlug}
+        templateLabel={getTemplateLabel(templates, templateSlug)}
+        websiteUrl={result.profile.website_url}
+        profile={result.profile}
+        editableFields={result.editable_fields}
+        fallbackMode="placeholders"
+        className="mt-4"
+      />
     </div>
   );
 }
