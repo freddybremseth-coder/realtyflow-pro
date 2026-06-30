@@ -558,6 +558,16 @@ function extractServices(lines: string[]) {
   );
 }
 
+function extractProducts(lines: string[]) {
+  return uniqueList(
+    lines
+      .filter((line) => /\b(meny|pakke|produkt|dekk|felg|hjulhotell|eu-kontroll|service|lunsj|middag|takeaway|rom|behandling|befaring|tilbud)\b/i.test(line))
+      .filter((line) => !/\b(cookie|personvern|kontakt|telefon|e-post)\b/i.test(line))
+      .filter((line) => line.length >= 8 && line.length <= 120),
+    6,
+  );
+}
+
 function extractTrustPoints(lines: string[]) {
   return uniqueList(
     lines
@@ -575,6 +585,104 @@ function extractFaq(lines: string[]) {
       question: question.slice(0, 180),
       answer: "Dette kan avklares direkte med bedriften før kunden bestemmer seg.",
     }));
+}
+
+function normalizeListKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function mergeUniqueLists(primary: string[], fallback: string[], limit = 8) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  for (const value of [...primary, ...fallback]) {
+    const item = text(value, 160);
+    const key = normalizeListKey(item);
+    if (!item || !key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+    if (output.length >= limit) break;
+  }
+
+  return output;
+}
+
+function normalizeTemplateSlug(templateSlug: string) {
+  const normalized = normalizeListKey(templateSlug).replace(/\s+/g, "-");
+  if (normalized === "restaurant-cafe") return "restaurant";
+  if (normalized === "bygg-anlegg") return "bygg";
+  if (normalized === "rorlegger") return "rorlegger";
+  if (normalized === "frisor") return "frisor";
+  return normalized || "local-service";
+}
+
+function getIndustryCallToAction(templateSlug: string) {
+  switch (normalizeTemplateSlug(templateSlug)) {
+    case "dekk":
+      return "Få tilbud på dekk";
+    case "bilverksted":
+      return "Bestill time";
+    case "restaurant":
+    case "kafe":
+      return "Book bord";
+    case "renhold":
+      return "Få gratis befaring";
+    case "elektro":
+    case "rorlegger":
+    case "snekker":
+    case "bygg":
+      return "Bestill befaring";
+    case "hotell":
+      return "Sjekk tilgjengelighet";
+    case "eiendomsmegler":
+      return "Bestill verdivurdering";
+    default:
+      return "";
+  }
+}
+
+function getIndustryFallbackProducts(templateSlug: string) {
+  switch (normalizeTemplateSlug(templateSlug)) {
+    case "dekk":
+    case "bilverksted":
+      return ["Dekkskift", "Hjulhotell", "EU-kontroll / verkstedtjenester", "Dekk og felg"];
+    case "restaurant":
+    case "kafe":
+      return ["Meny", "Lunsj og middag", "Bordbestilling", "Selskaper og grupper"];
+    case "renhold":
+      return ["Fast renhold", "Flyttevask", "Bedriftsrenhold", "Befaring og pristilbud"];
+    case "hotell":
+      return ["Rom og overnatting", "Frokost og fasiliteter", "Gruppeforespørsel", "Tilgjengelighet på dato"];
+    case "eiendomsmegler":
+      return ["Verdivurdering", "Salgsvurdering", "Boligsalg", "Rådgivning før salg"];
+    default:
+      return [];
+  }
+}
+
+function getIndustryFallbackPrices(templateSlug: string) {
+  switch (normalizeTemplateSlug(templateSlug)) {
+    case "dekk":
+    case "bilverksted":
+      return [
+        "Eksempel: Dekkskift - pris avklares med verkstedet",
+        "Eksempel: Hjulhotell - pris avklares med verkstedet",
+        "Eksempel: EU-kontroll / verkstedtjenester - pris avklares ved bestilling",
+        "Eksempel: Dekk og felg - tilbud gis etter behov",
+      ];
+    case "restaurant":
+    case "kafe":
+      return ["Eksempel: Meny og grupper - pris avklares med stedet", "Eksempel: Bord eller arrangement - forespørsel sendes før bekreftelse"];
+    case "renhold":
+      return ["Eksempel: Befaring før fastpris", "Eksempel: Flyttevask eller fast renhold prises etter areal og behov"];
+    default:
+      return [];
+  }
 }
 
 function pickCompanyName(inputCompanyName: string, pages: CrawledPage[]) {
@@ -605,6 +713,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
   const description = input.pages[0]?.ogDescription || input.pages[0]?.description || defaults.hero_subtitle;
   const lines = uniqueList(input.pages.flatMap((page) => [...page.headings, ...page.snippets]), 80);
   const services = extractServices(lines);
+  const products = extractProducts(lines);
   const prices = extractPrices(lines);
   const trustPoints = extractTrustPoints(lines);
   const faq = extractFaq(lines);
@@ -634,6 +743,22 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     ),
   );
   const summary = description || lines[0] || defaults.intro_text;
+  const industryCta = getIndustryCallToAction(analysis.templateSlug) || defaults.call_to_action;
+  const fallbackProducts = getIndustryFallbackProducts(analysis.templateSlug);
+  const fallbackPrices = getIndustryFallbackPrices(analysis.templateSlug);
+  const profileServices = services.length ? mergeUniqueLists(services, [], 8) : defaults.services;
+  const profileProducts = products.length
+    ? mergeUniqueLists(products, fallbackProducts, 8)
+    : fallbackProducts.length
+      ? fallbackProducts
+      : defaults.products;
+  const profilePrices = prices.length
+    ? mergeUniqueLists(prices, [], 6)
+    : fallbackPrices.length
+      ? fallbackPrices
+      : defaults.prices;
+  const profileTrustPoints = trustPoints.length ? mergeUniqueLists(trustPoints, [], 6) : defaults.trust_points;
+  const profileFaq = faq.length ? faq : defaults.faq;
 
   const profile: ImportedProfile = {
     company_name: companyName,
@@ -646,11 +771,11 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     logo_url: logoUrl,
     image_urls: imageUrls,
     colors,
-    services: services.length ? services : defaults.services,
-    products: services.length ? services.slice(0, 6) : defaults.products,
-    prices: prices.length ? prices : defaults.prices,
-    trust_points: trustPoints.length ? trustPoints : defaults.trust_points,
-    faq: faq.length ? faq : defaults.faq,
+    services: profileServices,
+    products: profileProducts,
+    prices: profilePrices,
+    trust_points: profileTrustPoints,
+    faq: profileFaq,
     contact: { email, phone, address },
     confidence_score: confidenceScore,
     source_pages: sourcePages,
@@ -659,7 +784,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
   const editableFields = {
     ...defaults,
     template_slug: profile.recommended_template_slug,
-    hero_title: companyName ? `${companyName} - ${defaults.call_to_action.toLowerCase()}` : defaults.hero_title,
+    hero_title: companyName ? `${companyName} - ${industryCta.toLowerCase()}` : defaults.hero_title,
     hero_subtitle: profile.description || defaults.hero_subtitle,
     intro_text: profile.summary || defaults.intro_text,
     services: profile.services,
@@ -667,8 +792,8 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     prices: profile.prices,
     trust_points: profile.trust_points,
     faq: profile.faq,
-    call_to_action: defaults.call_to_action,
-    contact_text: email || phone ? `Ta kontakt med ${companyName} for spørsmål, pris eller neste steg.` : defaults.contact_text,
+    call_to_action: industryCta,
+    contact_text: email || phone ? `Ta kontakt med ${companyName} for spørsmål, booking eller et konkret prisforslag.` : defaults.contact_text,
     logo_url: profile.logo_url,
     gallery_images: profile.image_urls.length ? profile.image_urls : defaults.gallery_images,
     brand_color: colors.primary,
@@ -688,6 +813,23 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     },
     profile_import_requires_review: true,
     profile_import_source_pages: sourcePages,
+    profile_import_field_sources: {
+      hero_title: companyName ? "website" : "template",
+      hero_subtitle: profile.description ? "website" : "template",
+      intro_text: profile.summary ? "website" : "template",
+      services: services.length ? "website" : "missing",
+      products: products.length ? "website" : fallbackProducts.length ? "missing" : "template",
+      prices: prices.length ? "website" : fallbackPrices.length ? "missing" : "template",
+      trust_points: trustPoints.length ? "website" : "missing",
+      faq: faq.length ? "website" : "missing",
+      call_to_action: getIndustryCallToAction(analysis.templateSlug) ? "template" : "missing",
+      contact_text: email || phone ? "website" : "template",
+      logo_url: profile.logo_url ? "website" : "missing",
+      gallery_images: profile.image_urls.length ? "website" : "template",
+      brand_color: colorCandidates[0] ? "website" : "template",
+      secondary_color: colorCandidates[1] ? "website" : "template",
+      accent_color: colorCandidates[2] ? "website" : "template",
+    },
   };
 
   return { profile, editableFields };

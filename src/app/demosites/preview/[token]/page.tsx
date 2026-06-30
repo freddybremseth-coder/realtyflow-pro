@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
   Mail,
+  MapPin,
   MessageCircle,
   Phone,
   ShieldCheck,
@@ -60,6 +61,13 @@ type PreviewContent = DemoSiteTemplateDefaults & {
   logo_url: string;
 };
 
+type PreviewContact = {
+  email: string;
+  phone: string;
+  address: string;
+  website: string;
+};
+
 type ThemeStyle = CSSProperties & {
   "--brand": string;
   "--brand-soft": string;
@@ -83,10 +91,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function stringList(value: unknown, fallback: string[], maxItems = 8) {
-  if (!Array.isArray(value)) return fallback;
-  const items = value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, maxItems);
-  return items.length ? items : fallback;
+function normalizeListKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function uniqueStringItems(values: string[], maxItems = 8, exclude: string[] = []) {
+  const seen = new Set(exclude.map((item) => normalizeListKey(item)).filter(Boolean));
+  const output: string[] = [];
+
+  for (const value of values) {
+    const item = String(value || "").trim();
+    const key = normalizeListKey(item);
+    if (!item || !key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+    if (output.length >= maxItems) break;
+  }
+
+  return output;
+}
+
+function stringList(value: unknown, fallback: string[], maxItems = 8, exclude: string[] = []) {
+  const source = Array.isArray(value) ? value.map((item) => String(item || "")) : [];
+  const items = uniqueStringItems(source, maxItems, exclude);
+  if (items.length) return items;
+  return uniqueStringItems(fallback, maxItems, exclude);
 }
 
 function faqList(value: unknown, fallback: DemoSiteFaqItem[]) {
@@ -114,10 +148,12 @@ function faqList(value: unknown, fallback: DemoSiteFaqItem[]) {
 
 function imageList(value: unknown, fallback: string[]) {
   const source = Array.isArray(value) ? value : fallback;
-  const images = source
-    .map((item) => String(item || "").trim())
-    .filter((item) => item.startsWith("data:image/") || item.startsWith("http://") || item.startsWith("https://"))
-    .slice(0, 6);
+  const images = uniqueStringItems(
+    source
+      .map((item) => String(item || "").trim())
+      .filter((item) => item.startsWith("data:image/") || item.startsWith("http://") || item.startsWith("https://")),
+    6,
+  );
 
   return images.length ? images : fallback;
 }
@@ -191,23 +227,69 @@ function getBrandColors(order: DemoOrder, defaults: DemoSiteTemplateDefaults): B
   };
 }
 
-function getPreviewContent(order: DemoOrder): { content: PreviewContent; colors: BrandColors } {
+function isInternalImportEmail(value: string) {
+  return /^demosites-import\+[^@\s]+@chatgenius\.pro$/i.test(value.trim());
+}
+
+function getContactInfo(order: DemoOrder): PreviewContact {
+  const fields = order.editable_fields || {};
+  const contactInfo = isPlainObject(fields.contact_info) ? fields.contact_info : {};
+  const extractedProfile = isPlainObject(order.extracted_profile) ? order.extracted_profile : {};
+  const extractedContact = isPlainObject(extractedProfile.contact) ? extractedProfile.contact : {};
+  const fieldEmail = text(contactInfo.email) || text(extractedContact.email);
+  const orderEmail = text(order.customer_email);
+  const email = fieldEmail || (orderEmail && !isInternalImportEmail(orderEmail) ? orderEmail : "");
+
+  return {
+    email,
+    phone: text(contactInfo.phone, text(extractedContact.phone, text(order.customer_phone))),
+    address: text(contactInfo.address, text(extractedContact.address)),
+    website: text(contactInfo.website, text(order.website_url)),
+  };
+}
+
+function getSourcePages(order: DemoOrder) {
+  const fields = order.editable_fields || {};
+  const extractedProfile = isPlainObject(order.extracted_profile) ? order.extracted_profile : {};
+  return stringList(fields.profile_import_source_pages, stringList(extractedProfile.source_pages, [], 5), 5);
+}
+
+function isImportedPreview(order: DemoOrder, sourcePages: string[]) {
+  return Boolean(sourcePages.length || order.extracted_profile || order.notes?.toLowerCase().includes("importert fra nettsideanalyse"));
+}
+
+function getPrimaryContactHref(contact: PreviewContact) {
+  if (contact.email) return `mailto:${contact.email}`;
+  if (contact.phone) return `tel:${contact.phone}`;
+  if (contact.website) return contact.website;
+  return "#kontakt";
+}
+
+function getPreviewContent(order: DemoOrder): { content: PreviewContent; colors: BrandColors; contact: PreviewContact; sourcePages: string[]; isImported: boolean } {
   const templateSlug = getTemplateSlug(order);
   const defaults = getDemoSiteTemplateDefaults(templateSlug, order.company_name);
   const fields = order.editable_fields || {};
   const colors = getBrandColors(order, defaults);
   const galleryImages = imageList(fields.gallery_images, defaults.gallery_images);
+  const services = stringList(fields.services, defaults.services, 9);
+  const products = stringList(fields.products, defaults.products, 8, services);
+  const prices = stringList(fields.prices, defaults.prices, 8);
+  const contact = getContactInfo(order);
+  const sourcePages = getSourcePages(order);
 
   return {
     colors,
+    contact,
+    sourcePages,
+    isImported: isImportedPreview(order, sourcePages),
     content: {
       ...defaults,
       hero_title: text(fields.hero_title, text(fields.hero_text, defaults.hero_title)),
       hero_subtitle: text(fields.hero_subtitle, defaults.hero_subtitle),
       intro_text: text(fields.intro_text, text(fields.about_text, order.notes || defaults.intro_text)),
-      services: stringList(fields.services, defaults.services, 9),
-      products: stringList(fields.products, defaults.products, 8),
-      prices: stringList(fields.prices, defaults.prices, 8),
+      services,
+      products,
+      prices,
       trust_points: stringList(fields.trust_points, defaults.trust_points, 8),
       faq: faqList(fields.faq, defaults.faq),
       call_to_action: text(fields.call_to_action, defaults.call_to_action),
@@ -244,8 +326,9 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
   const order = data as DemoOrder;
   const pkg = getPackage(order.package_id);
   const companyName = order.company_name;
-  const { content, colors } = getPreviewContent(order);
-  const contactHref = `mailto:${order.customer_email}`;
+  const { content, colors, contact, sourcePages, isImported } = getPreviewContent(order);
+  const contactHref = getPrimaryContactHref(contact);
+  const chatPrice = content.prices[0] || content.products[0] || content.services[0] || "Send inn detaljer, så følger vi opp med et mer presist forslag.";
   const themeStyle: ThemeStyle = {
     "--brand": colors.primary,
     "--brand-soft": withAlpha(colors.primary, "18"),
@@ -259,7 +342,9 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
           <a href="#top" className="flex min-w-0 items-center gap-3">
             {content.logo_url ? (
-              <img src={content.logo_url} alt={`${companyName} logo`} className="h-11 w-11 shrink-0 rounded-lg border border-slate-200 object-contain p-1" />
+              <span className="flex h-12 max-w-[11rem] shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2 py-1">
+                <img src={content.logo_url} alt={`${companyName} logo`} className="max-h-10 w-auto max-w-[9.5rem] object-contain" />
+              </span>
             ) : (
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
                 {companyName.slice(0, 1)}
@@ -282,6 +367,13 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
 
       <section id="top" className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-12 lg:grid-cols-[1.02fr_0.98fr] lg:py-16">
         <div className="flex flex-col justify-center">
+          {content.logo_url && (
+            <div className="mb-5 flex">
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <img src={content.logo_url} alt={`${companyName} logo`} className="max-h-16 w-auto max-w-[14rem] object-contain" />
+              </div>
+            </div>
+          )}
           <div className="mb-5 inline-flex w-fit items-center rounded-lg border px-3 py-1 text-xs font-semibold" style={{ borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, "14"), color: colors.secondary }}>
             <Sparkles className="mr-2 h-3.5 w-3.5" /> {content.template_name}
           </div>
@@ -298,6 +390,11 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
               </a>
             )}
           </div>
+          {isImported && (
+            <p className="mt-4 max-w-2xl text-xs font-medium text-slate-500">
+              Demo basert på offentlig informasjon fra nettsiden.
+            </p>
+          )}
         </div>
 
         <div className="grid min-h-[420px] grid-cols-[1fr_0.72fr] gap-3">
@@ -316,6 +413,19 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
           </div>
         </div>
       </section>
+
+      {content.gallery_images.length > 0 && (
+        <section id="bilder" className="bg-white py-12">
+          <div className="mx-auto max-w-6xl px-4">
+            <SectionIntro eyebrow="Bilder" title="Visuell profil fra demoen" text={isImported ? "Bilder fra nettsideanalysen vises tidlig, slik at previewen raskt føles som kundens egen." : "Bildene kan byttes med kundens egne foto, logo og profilbilder i oppsettet."} />
+            <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+              {content.gallery_images.slice(0, 3).map((image, index) => (
+                <img key={image + index} src={image} alt={`${companyName} bilde ${index + 1}`} className="h-72 w-full rounded-lg object-cover" />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section id="tjenester" className="bg-white py-16">
         <div className="mx-auto max-w-6xl px-4">
@@ -350,17 +460,6 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
         </div>
       </section>
 
-      <section id="bilder" className="bg-white py-16">
-        <div className="mx-auto max-w-6xl px-4">
-          <SectionIntro eyebrow="Bilder" title="Vis frem arbeid, miljø og tjenester" text="Bildene kan byttes med kundens egne foto, logo og profilbilder i oppsettet." />
-          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-            {content.gallery_images.slice(0, 3).map((image, index) => (
-              <img key={image + index} src={image} alt={`${companyName} bilde ${index + 1}`} className="h-72 w-full rounded-lg object-cover" />
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section id="faq" className="mx-auto max-w-6xl px-4 py-16">
         <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text="Ofte stilte spørsmål reduserer friksjon og gjør flere henvendelser klare nok til å følge opp." />
         <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -381,12 +480,21 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
             </div>
             <h2 className="mt-5 text-3xl font-black leading-tight md:text-5xl">Klar for flere riktige henvendelser?</h2>
             <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text}</p>
+            <div className="mt-6 grid gap-2 text-sm text-slate-300">
+              {contact.phone && <ContactLine icon={<Phone className="h-4 w-4" />} label="Telefon" value={contact.phone} href={`tel:${contact.phone}`} />}
+              {contact.email && <ContactLine icon={<Mail className="h-4 w-4" />} label="E-post" value={contact.email} href={`mailto:${contact.email}`} />}
+              {contact.address && <ContactLine icon={<MapPin className="h-4 w-4" />} label="Adresse" value={contact.address} />}
+              {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label="Nettside" value={contact.website} href={contact.website} />}
+            </div>
+            {isImported && sourcePages.length > 0 && (
+              <p className="mt-4 text-xs text-slate-500">Kilder brukt i analysen: {sourcePages.length} offentlig side{sourcePages.length === 1 ? "" : "r"}.</p>
+            )}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href={contactHref} className="inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
                 <Mail className="mr-2 h-4 w-4" /> {content.call_to_action}
               </a>
-              {order.customer_phone && (
-                <a href={`tel:${order.customer_phone}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
+              {contact.phone && (
+                <a href={`tel:${contact.phone}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
                   <Phone className="mr-2 h-4 w-4" /> Ring oss
                 </a>
               )}
@@ -409,7 +517,7 @@ export default async function DemoPreviewPage({ params }: PreviewPageProps) {
             <div className="space-y-3 py-5">
               <ChatBubble align="left" color="#f1f5f9">Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {companyName}.</ChatBubble>
               <ChatBubble align="right" color={withAlpha(colors.primary, "20")}>Hva koster dette vanligvis?</ChatBubble>
-              <ChatBubble align="left" color="#f8fafc">{content.prices[0]} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
+              <ChatBubble align="left" color="#f8fafc">{chatPrice} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
               <ImageIcon className="h-4 w-4" /> Skriv et spørsmål om {companyName}
@@ -433,6 +541,28 @@ function SectionIntro({ eyebrow, title, text, inverted = false }: { eyebrow: str
       <p className={inverted ? "mt-4 text-base leading-7 text-white/75" : "mt-4 text-base leading-7 text-slate-600"}>{text}</p>
     </div>
   );
+}
+
+function ContactLine({ icon, label, value, href }: { icon: ReactNode; label: string; value: string; href?: string }) {
+  const content = (
+    <>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">{icon}</span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="block break-words text-slate-200">{value}</span>
+      </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel={href.startsWith("http") ? "noopener noreferrer" : undefined} className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 p-3 hover:bg-white/10">
+        {content}
+      </a>
+    );
+  }
+
+  return <div className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 p-3">{content}</div>;
 }
 
 function FeatureCard({ title, color }: { title: string; color: string }) {

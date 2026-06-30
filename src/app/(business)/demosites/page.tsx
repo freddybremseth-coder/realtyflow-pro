@@ -163,6 +163,36 @@ function getApiErrorMessage(data: Record<string, unknown>) {
   return [data.error, data.details, data.code].filter(Boolean).join(" ");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasPreviewValue(value: unknown) {
+  if (Array.isArray(value)) return value.filter(Boolean).length > 0;
+  if (isRecord(value)) return Object.values(value).some((item) => String(item || "").trim().length > 0);
+  return String(value || "").trim().length > 0;
+}
+
+function previewSourceLabel(source: unknown, value: unknown) {
+  if (source === "website") return "Fra nettside";
+  if (source === "template") return "Fra mal";
+  if (source === "missing") return "Mangler – bruker standard";
+  return hasPreviewValue(value) ? "Fra mal" : "Mangler – bruker standard";
+}
+
+function previewValueSummary(value: unknown) {
+  if (Array.isArray(value)) {
+    const list = value.map((item) => String(item || "").trim()).filter(Boolean);
+    if (!list.length) return "Bruker standard fra valgt mal.";
+    return `${list[0]}${list.length > 1 ? ` + ${list.length - 1} til` : ""}`;
+  }
+  if (isRecord(value)) {
+    const count = Object.values(value).filter((item) => String(item || "").trim()).length;
+    return count ? `${count} felt fylt ut` : "Bruker standard fra valgt mal.";
+  }
+  return String(value || "").trim() || "Bruker standard fra valgt mal.";
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
@@ -630,6 +660,7 @@ function WebsiteImportCard({
             )}
 
             <ReviewText icon={<FileText className="h-4 w-4" />} label="Summary" value={profile.summary || profile.description || "Ingen oppsummering funnet."} />
+            <PreviewUsagePanel result={result} />
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <ReviewList title="Services" items={profile.services} />
@@ -699,6 +730,49 @@ function WebsiteImportCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+const PREVIEW_USAGE_FIELDS = [
+  { key: "hero_title", label: "Hero-tittel" },
+  { key: "hero_subtitle", label: "Hero-undertittel" },
+  { key: "intro_text", label: "Intro" },
+  { key: "services", label: "Tjenester" },
+  { key: "products", label: "Produkter/pakker" },
+  { key: "prices", label: "Priser" },
+  { key: "trust_points", label: "Trygghetspunkter" },
+  { key: "call_to_action", label: "CTA" },
+  { key: "contact_text", label: "Kontakttekst" },
+  { key: "logo_url", label: "Logo" },
+  { key: "gallery_images", label: "Bilder" },
+  { key: "brand_color", label: "Primærfarge" },
+  { key: "secondary_color", label: "Sekundærfarge" },
+  { key: "accent_color", label: "Aksentfarge" },
+];
+
+function PreviewUsagePanel({ result }: { result: WebsiteImportResult }) {
+  const fields = result.editable_fields || {};
+  const sources = isRecord(fields.profile_import_field_sources) ? fields.profile_import_field_sources : {};
+
+  return (
+    <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-cyan-100">Brukes i preview</div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {PREVIEW_USAGE_FIELDS.map((field) => {
+          const value = fields[field.key];
+          const sourceLabel = previewSourceLabel(sources[field.key], value);
+          return (
+            <div key={field.key} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs font-semibold text-slate-200">{field.label}</div>
+                <span className="shrink-0 rounded-md bg-slate-800 px-2 py-1 text-[10px] font-semibold text-slate-300">{sourceLabel}</span>
+              </div>
+              <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{previewValueSummary(value)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

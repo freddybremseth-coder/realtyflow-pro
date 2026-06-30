@@ -102,3 +102,14 @@ test("DemoSites profile analysis recommends restaurant or local-service without 
   assert.equal(restaurant.templateSlug, "restaurant");
   assert.equal(unknown.templateSlug, "local-service");
 });
+
+test("DemoSites profile analysis recognizes tire and workshop wording", () => {
+  const pointSLike = analyzeDemoSiteProfile({
+    companyName: "Point S",
+    websiteUrl: "https://www.point-s.no",
+    industry: "Dekk, felg, hjulhotell, dekkskift og bilverksted",
+    notes: "Dekkhotell, dekkskift, EU-kontroll og verkstedtjenester for bilen din.",
+  });
+
+  assert.ok(["dekk", "bilverksted"].includes(pointSLike.templateSlug));
+});
