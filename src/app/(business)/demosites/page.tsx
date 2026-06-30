@@ -211,6 +211,50 @@ function previewValueSummary(value: unknown) {
   return String(value || "").trim() || "Bruker standard fra valgt mal.";
 }
 
+function normalizeImportHistorySearch(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function buildImportResultFromHistory(importItem: WebsiteImportHistoryItem): WebsiteImportResult | null {
+  if (!importItem.profile || !importItem.editable_fields) return null;
+  return {
+    profile: {
+      ...importItem.profile,
+      company_name: importItem.profile.company_name || importItem.company_name || "",
+      website_url: importItem.profile.website_url || importItem.website_url,
+      detected_industry: importItem.profile.detected_industry || importItem.detected_industry || undefined,
+      recommended_template_slug: importItem.profile.recommended_template_slug || importItem.recommended_template_slug || undefined,
+      confidence_score: importItem.profile.confidence_score ?? (Number(importItem.confidence_score) || undefined),
+      source_pages: importItem.profile.source_pages || importItem.source_pages || [],
+    },
+    editable_fields: importItem.editable_fields,
+    warnings: Array.isArray(importItem.warnings) ? importItem.warnings : [],
+    import_id: importItem.id,
+  };
+}
+
+function buildContactFromImportProfile(importItem: WebsiteImportHistoryItem): WebsiteImportContactState {
+  const profile = importItem.profile;
+  return {
+    customer_name: profile?.company_name || importItem.company_name || "",
+    customer_email: profile?.contact?.email || "",
+    customer_phone: profile?.contact?.phone || "",
+  };
+}
+
+function isUsedImportHistoryItem(importItem: WebsiteImportHistoryItem) {
+  return Boolean(
+    importItem.status === "created_demo" ||
+    importItem.status === "applied_to_demo" ||
+    importItem.created_order_id ||
+    importItem.applied_order_id,
+  );
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
@@ -333,31 +377,23 @@ export default function DemoSitesPage() {
   }
 
   function useSavedImport(importItem: WebsiteImportHistoryItem, mode: WebsiteImportMode = "new") {
-    if (!importItem.profile || !importItem.editable_fields) {
+    const nextResult = buildImportResultFromHistory(importItem);
+    if (!nextResult) {
       setImportError("Analysen mangler lagret profil eller redigerbare felt.");
       return;
     }
 
-    const nextResult: WebsiteImportResult = {
-      profile: importItem.profile,
-      editable_fields: importItem.editable_fields,
-      warnings: Array.isArray(importItem.warnings) ? importItem.warnings : [],
-      import_id: importItem.id,
-    };
+    const nextContact = buildContactFromImportProfile(importItem);
     setImportResult(nextResult);
     setImportError(null);
     setImportSuccess(null);
     setImportForm((prev) => ({
       ...prev,
-      website_url: importItem.website_url || importItem.profile?.website_url || prev.website_url,
-      company_name: importItem.company_name || importItem.profile?.company_name || prev.company_name,
+      website_url: nextResult.profile.website_url || prev.website_url,
+      company_name: nextResult.profile.company_name || prev.company_name,
       mode,
     }));
-    setImportContact({
-      customer_name: importItem.profile.company_name || importItem.company_name || "",
-      customer_email: importItem.profile.contact?.email || "",
-      customer_phone: importItem.profile.contact?.phone || "",
-    });
+    setImportContact(nextContact);
   }
 
   async function patchImportHistory(importId: string | null | undefined, patch: Record<string, unknown>) {
@@ -387,12 +423,14 @@ export default function DemoSitesPage() {
     }
   }
 
-  async function createDemoFromImport() {
-    if (!importResult) return;
-    const profile = importResult.profile;
+  async function createDemoFromImport(resultOverride?: WebsiteImportResult, contactOverride?: WebsiteImportContactState) {
+    const activeResult = resultOverride || importResult;
+    if (!activeResult) return;
+    const activeContact = contactOverride || importContact;
+    const profile = activeResult.profile;
     const companyName = (profile.company_name || importForm.company_name || "").trim();
-    const customerName = (importContact.customer_name || companyName).trim();
-    const importedCustomerEmail = importContact.customer_email.trim();
+    const customerName = (activeContact.customer_name || companyName).trim();
+    const importedCustomerEmail = activeContact.customer_email.trim();
     const customerEmail = importedCustomerEmail || getImportFallbackEmail(companyName);
     if (!companyName) {
       setImportError("Kunne ikke opprette demo fra analyse: analysen mangler bedriftsnavn.");
@@ -411,16 +449,16 @@ export default function DemoSitesPage() {
           company_name: companyName,
           customer_name: customerName,
           customer_email: customerEmail,
-          customer_phone: importContact.customer_phone || profile.contact?.phone || undefined,
+          customer_phone: activeContact.customer_phone || profile.contact?.phone || undefined,
           industry: profile.detected_industry || undefined,
           website_url: profile.website_url || importForm.website_url,
           source_url: profile.website_url || importForm.website_url,
           package_id: "standard",
           template_slug: profile.recommended_template_slug || DEFAULT_TEMPLATE_SLUG,
-          logo_url: profile.logo_url || importResult.editable_fields.logo_url || undefined,
-          brand_color: profile.colors?.primary || importResult.editable_fields.brand_color || undefined,
+          logo_url: profile.logo_url || activeResult.editable_fields.logo_url || undefined,
+          brand_color: profile.colors?.primary || activeResult.editable_fields.brand_color || undefined,
           extracted_profile: profile,
-          editable_fields: importResult.editable_fields,
+          editable_fields: activeResult.editable_fields,
           notes: [
             `Importert fra nettsideanalyse: ${profile.website_url || importForm.website_url}`,
             !importedCustomerEmail && "Ingen offentlig e-post funnet; intern importadresse brukt for CRM-rad. Ingen automatisk kundekontakt er sendt.",
@@ -433,7 +471,7 @@ export default function DemoSitesPage() {
         throw new Error(getApiErrorMessage(data) || "Ukjent API-feil.");
       }
       const createdOrder = (data.order || null) as DemoSiteOrder | null;
-      await patchImportHistory(importResult.import_id, { created_order_id: createdOrder?.id || null, status: "created_demo" });
+      await patchImportHistory(activeResult.import_id, { created_order_id: createdOrder?.id || null, status: "created_demo" });
       setImportSuccess({ title: `${companyName} er opprettet som ny demo.`, order: createdOrder });
       await loadData();
     } catch (err) {
@@ -442,6 +480,32 @@ export default function DemoSitesPage() {
     } finally {
       setImportSaving(false);
     }
+  }
+
+  async function createDemoFromSavedImport(importItem: WebsiteImportHistoryItem) {
+    if (isUsedImportHistoryItem(importItem)) {
+      setImportError("Denne analysen er allerede brukt til demo.");
+      return;
+    }
+
+    const nextResult = buildImportResultFromHistory(importItem);
+    if (!nextResult) {
+      setImportError("Analysen mangler lagret profil eller redigerbare felt.");
+      return;
+    }
+
+    const nextContact = buildContactFromImportProfile(importItem);
+    setImportResult(nextResult);
+    setImportError(null);
+    setImportSuccess(null);
+    setImportForm((prev) => ({
+      ...prev,
+      website_url: nextResult.profile.website_url || prev.website_url,
+      company_name: nextResult.profile.company_name || prev.company_name,
+      mode: "new",
+    }));
+    setImportContact(nextContact);
+    await createDemoFromImport(nextResult, nextContact);
   }
 
   async function applyImportToSelectedOrder() {
@@ -526,6 +590,7 @@ export default function DemoSitesPage() {
         onCreate={createDemoFromImport}
         onApplyToOrder={applyImportToSelectedOrder}
         onUseSavedImport={useSavedImport}
+        onCreateFromSavedImport={createDemoFromSavedImport}
         onDiscardImport={discardImport}
         onDiscard={() => {
           setImportResult(null);
@@ -643,6 +708,7 @@ type WebsiteImportCardProps = {
   onCreate: () => void;
   onApplyToOrder: () => void;
   onUseSavedImport: (importItem: WebsiteImportHistoryItem, mode?: WebsiteImportMode) => void;
+  onCreateFromSavedImport: (importItem: WebsiteImportHistoryItem) => void;
   onDiscardImport: (importItem: WebsiteImportHistoryItem) => void;
   onDiscard: () => void;
   onFormChange: (patch: Partial<WebsiteImportFormState>) => void;
@@ -665,6 +731,7 @@ function WebsiteImportCard({
   onCreate,
   onApplyToOrder,
   onUseSavedImport,
+  onCreateFromSavedImport,
   onDiscardImport,
   onDiscard,
   onFormChange,
@@ -721,7 +788,9 @@ function WebsiteImportCard({
           warning={historyWarning}
           templates={templates}
           mode={form.mode}
+          saving={saving}
           onUseSavedImport={onUseSavedImport}
+          onCreateFromSavedImport={onCreateFromSavedImport}
           onDiscardImport={onDiscardImport}
         />
 
@@ -896,17 +965,53 @@ function ImportHistoryList({
   warning,
   templates,
   mode,
+  saving,
   onUseSavedImport,
+  onCreateFromSavedImport,
   onDiscardImport,
 }: {
   history: WebsiteImportHistoryItem[];
   warning: string | null;
   templates: DemoSiteTemplate[];
   mode: WebsiteImportMode;
+  saving: boolean;
   onUseSavedImport: (importItem: WebsiteImportHistoryItem, mode?: WebsiteImportMode) => void;
+  onCreateFromSavedImport: (importItem: WebsiteImportHistoryItem) => void;
   onDiscardImport: (importItem: WebsiteImportHistoryItem) => void;
 }) {
-  const visibleHistory = history.filter((item) => item.status !== "discarded").slice(0, 8);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [usageFilter, setUsageFilter] = useState("active");
+
+  const resetFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setUsageFilter("active");
+  };
+
+  const applySearch = () => setSearch((value) => value.trim());
+  const normalizedSearch = normalizeImportHistorySearch(search);
+  const filteredHistory = history.filter((item) => {
+    const status = item.status || "analyzed";
+    const used = isUsedImportHistoryItem(item);
+    const templateSlug = item.recommended_template_slug || item.profile?.recommended_template_slug || "";
+    const searchText = normalizeImportHistorySearch([
+      item.company_name,
+      item.profile?.company_name,
+      item.website_url,
+      item.profile?.website_url,
+      item.detected_industry,
+      item.profile?.detected_industry,
+      templateSlug,
+      getTemplateLabel(templates, templateSlug),
+    ].filter(Boolean).join(" "));
+
+    if (normalizedSearch && !searchText.includes(normalizedSearch)) return false;
+    if (statusFilter !== "all" && status !== statusFilter) return false;
+    if (usageFilter === "active" && (used || status === "discarded")) return false;
+    if (usageFilter === "used" && !used) return false;
+    return true;
+  });
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-950/40 p-4">
@@ -918,16 +1023,69 @@ function ImportHistoryList({
         {warning && <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-100">{warning}</span>}
       </div>
 
-      {visibleHistory.length === 0 ? (
+      <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto_auto_180px_180px] lg:items-end">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-slate-300">Søk</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Skriv firmanavn, nettside eller bransje..."
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applySearch();
+                }
+                if (event.key === "Escape") resetFilters();
+              }}
+              className="h-10 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 text-sm text-white outline-none focus:border-purple-500"
+            />
+          </label>
+          <Button type="button" onClick={applySearch} className="h-10 bg-cyan-600 hover:bg-cyan-500">
+            Søk
+          </Button>
+          <Button type="button" variant="outline" onClick={resetFilters} className="h-10 border-slate-700 text-slate-200">
+            Nullstill
+          </Button>
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: "all", label: "Alle statuser" },
+              { value: "analyzed", label: "Analysert" },
+              { value: "created_demo", label: "Demo opprettet" },
+              { value: "applied_to_demo", label: "Brukt på demo" },
+            ]}
+          />
+          <Select
+            label="Vis"
+            value={usageFilter}
+            onChange={setUsageFilter}
+            options={[
+              { value: "active", label: "Skjul brukte" },
+              { value: "all", label: "Vis alle" },
+              { value: "used", label: "Kun brukte" },
+            ]}
+          />
+        </div>
+        <div className="mt-2 text-xs text-slate-500">{filteredHistory.length} analyser vises</div>
+      </div>
+
+      {history.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">Ingen lagrede analyser ennå.</div>
+      ) : filteredHistory.length === 0 ? (
+        <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">Ingen analyser matcher filteret.</div>
       ) : (
         <div className="mt-4 space-y-3">
-          {visibleHistory.map((item) => {
+          {filteredHistory.map((item) => {
             const warningCount = Array.isArray(item.warnings) ? item.warnings.length : 0;
             const confidence = Math.round(Number(item.confidence_score) || Number(item.profile?.confidence_score) || 0);
             const templateSlug = item.recommended_template_slug || item.profile?.recommended_template_slug || "";
+            const used = isUsedImportHistoryItem(item);
             return (
-              <div key={item.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+              <div key={item.id} className={`rounded-lg border border-slate-800 p-3 ${used ? "bg-slate-900/40 opacity-70" : "bg-slate-900/70"}`}>
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -950,8 +1108,15 @@ function ImportHistoryList({
                     <Button type="button" size="sm" variant="outline" className="border-cyan-500/50 text-cyan-100" onClick={() => onUseSavedImport(item, mode)}>
                       Bruk analyse
                     </Button>
-                    <Button type="button" size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => onUseSavedImport(item, "new")}>
-                      Opprett demo
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={used || saving}
+                      title={used ? "Denne analysen er allerede brukt til demo." : "Opprett demo fra denne analysen."}
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => onCreateFromSavedImport(item)}
+                    >
+                      {used ? "Demo finnes" : "Opprett demo"}
                     </Button>
                     <Button type="button" size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={() => onDiscardImport(item)}>
                       Forkast
