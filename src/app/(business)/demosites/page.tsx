@@ -148,6 +148,17 @@ function getImportOrderLinks(order?: DemoSiteOrder | null) {
   };
 }
 
+function getImportFallbackEmail(companyName: string) {
+  const slug = companyName
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "kunde";
+  return `demosites-import+${slug}@chatgenius.pro`;
+}
+
 export default function DemoSitesPage() {
   const [orders, setOrders] = useState<DemoSiteOrder[]>([]);
   const [templates, setTemplates] = useState<DemoSiteTemplate[]>(DEFAULT_TEMPLATES);
@@ -255,13 +266,10 @@ export default function DemoSitesPage() {
     const profile = importResult.profile;
     const companyName = (profile.company_name || importForm.company_name || "").trim();
     const customerName = (importContact.customer_name || companyName).trim();
-    const customerEmail = importContact.customer_email.trim();
+    const importedCustomerEmail = importContact.customer_email.trim();
+    const customerEmail = importedCustomerEmail || getImportFallbackEmail(companyName);
     if (!companyName) {
-      setImportError("Analysen mangler bedriftsnavn.");
-      return;
-    }
-    if (!customerEmail) {
-      setImportError("Legg inn en kontakt-e-post før demoen opprettes.");
+      setImportError("Kunne ikke opprette demo fra analyse: analysen mangler bedriftsnavn.");
       return;
     }
 
@@ -287,16 +295,21 @@ export default function DemoSitesPage() {
           brand_color: profile.colors?.primary || importResult.editable_fields.brand_color || undefined,
           extracted_profile: profile,
           editable_fields: importResult.editable_fields,
-          notes: `Importert fra nettsideanalyse: ${profile.website_url || importForm.website_url}`,
+          notes: [
+            `Importert fra nettsideanalyse: ${profile.website_url || importForm.website_url}`,
+            !importedCustomerEmail && "Ingen offentlig e-post funnet; intern importadresse brukt for CRM-rad. Ingen automatisk kundekontakt er sendt.",
+          ].filter(Boolean).join("\n"),
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Kunne ikke opprette demo fra analyse.");
+      if (!response.ok) throw new Error(data.error || "Ukjent API-feil.");
       const createdOrder = (data.order || null) as DemoSiteOrder | null;
       setImportSuccess({ title: `${companyName} er opprettet som ny demo.`, order: createdOrder });
       await loadData();
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Kunne ikke opprette demo fra analyse.");
+      const message = err instanceof Error ? err.message : "Ukjent feil.";
+      console.error("DemoSites import create failed:", message);
+      setImportError(`Kunne ikke opprette demo fra analyse: ${message}`);
     } finally {
       setImportSaving(false);
     }
