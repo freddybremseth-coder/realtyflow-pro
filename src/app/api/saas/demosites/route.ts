@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
   DEMO_SITE_PACKAGES,
   DEMO_SITE_TEMPLATE_SEEDS,
@@ -10,6 +9,8 @@ import {
   type DemoSiteBillingStatus,
   type DemoSiteStatus,
 } from "@/lib/demosites";
+import { verifyAdminSession } from "@/lib/admin-auth";
+import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,7 +66,7 @@ type DemoSiteEventRow = {
   created_at?: string;
 };
 
-type SupabaseClientLike = any;
+type SupabaseClientLike = DemoSitesSupabaseClientLike;
 
 type SaasAppLookup = { id?: string };
 type FormattedApiError = { error: string; details?: string; hint?: string; code?: string };
@@ -92,10 +93,7 @@ const TEMPLATE_FK_FALLBACKS: Record<string, string> = {
 };
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function isMissingTable(error: unknown) {
@@ -148,6 +146,18 @@ function isTemplateForeignKeyError(error: unknown) {
 
 function logApiError(context: string, error: unknown, extra?: Record<string, unknown>) {
   console.error(context, { ...formatApiError(error, "Unknown DemoSites API error"), ...extra });
+}
+
+async function requireAdmin(request: NextRequest) {
+  const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
+  return Boolean(session);
+}
+
+function getOrderIdFromRequest(request: NextRequest): { id: string; error?: never } | { id?: never; error: string } {
+  const id = String(request.nextUrl.searchParams.get("id") || request.nextUrl.searchParams.get("order_id") || "").trim();
+  if (!id) return { error: "id is required" };
+  if (id.length > 80 || !/^[a-zA-Z0-9_-]+$/.test(id)) return { error: "id is invalid" };
+  return { id };
 }
 
 function normalizeCreateStatus(status: unknown): DemoSiteStatus {
@@ -467,6 +477,24 @@ async function getEvents(supabase: SupabaseClientLike) {
   return (data || []) as DemoSiteEventRow[];
 }
 
+async function clearDeletedOrderImportReferences(supabase: SupabaseClientLike, orderId: string) {
+  const updates = [
+    { column: "created_order_id", patch: { created_order_id: null, status: "analyzed", updated_at: new Date().toISOString() } },
+    { column: "applied_order_id", patch: { applied_order_id: null, status: "analyzed", updated_at: new Date().toISOString() } },
+  ];
+
+  for (const update of updates) {
+    try {
+      const { error } = await supabase.from("demo_site_imports").update(update.patch).eq(update.column, orderId);
+      if (error && !isMissingTable(error) && !isSchemaOrConstraintError(error)) {
+        logApiError("DemoSites import history reference cleanup failed", error, { order_id: orderId, column: update.column });
+      }
+    } catch (error) {
+      logApiError("DemoSites import history reference cleanup failed", error, { order_id: orderId, column: update.column });
+    }
+  }
+}
+
 export async function GET() {
   const supabase = getSupabase();
   if (!supabase) {
@@ -700,5 +728,45 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     logApiError("DemoSites PATCH failed", error);
     return NextResponse.json(formatApiError(error, "Could not update DemoSites order"), { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!(await requireAdmin(request))) return NextResponse.json({ error: "Admin session required" }, { status: 401 });
+
+  const parsedId = getOrderIdFromRequest(request);
+  if (parsedId.error) return NextResponse.json({ error: parsedId.error }, { status: 400 });
+  const orderId = parsedId.id;
+  if (!orderId) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
+
+  try {
+    const existing = await supabase
+      .from("demo_site_orders")
+      .select("id, order_number, company_name, status")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (existing.error) {
+      logApiError("DemoSites DELETE lookup failed", existing.error, { order_id: orderId });
+      return NextResponse.json(formatApiError(existing.error, "Could not find DemoSites order"), { status: 500 });
+    }
+    if (!existing.data) return NextResponse.json({ error: "DemoSites order not found" }, { status: 404 });
+
+    await clearDeletedOrderImportReferences(supabase, orderId);
+
+    const deleted = await supabase.from("demo_site_orders").delete().eq("id", orderId).select("id").single();
+    if (deleted.error) {
+      logApiError("DemoSites DELETE failed", deleted.error, { order_id: orderId });
+      return NextResponse.json(formatApiError(deleted.error, "Could not delete DemoSites order"), { status: 500 });
+    }
+
+    const summary = await getSummaryAfterOrderMutation(supabase);
+    return NextResponse.json({ deleted: true, order: existing.data, summary });
+  } catch (error) {
+    logApiError("DemoSites DELETE failed", error, { order_id: orderId });
+    return NextResponse.json(formatApiError(error, "Could not delete DemoSites order"), { status: 500 });
   }
 }
