@@ -76,7 +76,7 @@ export async function PATCH(request: NextRequest) {
 
     if (error) throw error;
 
-    await supabase.from("demo_site_events").insert({
+    await supabase.from("demo_site_order_events").insert({
       order_id: orderId,
       event_type: "fees_updated",
       title: "Priser oppdatert",
