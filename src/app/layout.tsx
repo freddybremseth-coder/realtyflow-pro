@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
+import { ImportHistoryVisibilityBridge } from "@/components/demosites/import-history-visibility-bridge";
 
 export const metadata: Metadata = {
   title: "RealtyFlow Pro",
@@ -42,6 +43,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen">
+        <ImportHistoryVisibilityBridge />
         {bareRoute ? (
           <main className="min-h-screen">{children}</main>
         ) : (
