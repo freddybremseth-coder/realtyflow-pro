@@ -272,6 +272,10 @@ function isUsedImportHistoryItem(importItem: WebsiteImportHistoryItem) {
   );
 }
 
+function getImportHistoryOrderId(importItem: WebsiteImportHistoryItem) {
+  return importItem.created_order_id || importItem.applied_order_id || "";
+}
+
 function cloneImportResult(result: WebsiteImportResult): WebsiteImportResult {
   return JSON.parse(JSON.stringify(result)) as WebsiteImportResult;
 }
@@ -1301,6 +1305,7 @@ function WebsiteImportCard({
         <ImportHistoryList
           history={history}
           warning={historyWarning}
+          orders={orders}
           templates={templates}
           mode={form.mode}
           saving={saving}
@@ -1801,6 +1806,7 @@ function ImportReviewLivePreviewPanel({ result, templates }: { result: WebsiteIm
 function ImportHistoryList({
   history,
   warning,
+  orders,
   templates,
   mode,
   saving,
@@ -1810,6 +1816,7 @@ function ImportHistoryList({
 }: {
   history: WebsiteImportHistoryItem[];
   warning: string | null;
+  orders: DemoSiteOrder[];
   templates: DemoSiteTemplate[];
   mode: WebsiteImportMode;
   saving: boolean;
@@ -1940,6 +1947,9 @@ function ImportHistoryList({
             const confidence = Math.round(Number(item.confidence_score) || Number(item.profile?.confidence_score) || 0);
             const templateSlug = item.recommended_template_slug || item.profile?.recommended_template_slug || "";
             const used = isUsedImportHistoryItem(item);
+            const relatedOrderId = getImportHistoryOrderId(item);
+            const relatedOrder = relatedOrderId ? orders.find((order) => order.id === relatedOrderId) || null : null;
+            const relatedOrderLinks = getImportOrderLinks(relatedOrder);
             return (
               <div key={item.id} className={`rounded-lg border border-slate-800 p-3 ${used ? "bg-slate-900/40 opacity-70" : "bg-slate-900/70"}`}>
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -1955,6 +1965,11 @@ function ImportHistoryList({
                       {item.created_at && <span>{formatDateTime(item.created_at)}</span>}
                       {warningCount > 0 && <span>{warningCount} {warningCount === 1 ? "advarsel" : "advarsler"}</span>}
                     </div>
+                    {used && relatedOrder ? (
+                      <div className="mt-2 text-xs text-slate-400">Tilknyttet demo: {relatedOrder.order_number}</div>
+                    ) : used ? (
+                      <div className="mt-2 text-xs text-slate-500">Demoen er slettet eller ikke lastet i listen.</div>
+                    ) : null}
                     <a href={item.website_url} target="_blank" rel="noopener noreferrer" className="mt-2 block truncate text-xs text-cyan-200 hover:text-cyan-100">
                       {item.website_url}
                     </a>
@@ -1974,6 +1989,20 @@ function ImportHistoryList({
                     >
                       {used ? "Demo finnes" : "Opprett demo"}
                     </Button>
+                    {relatedOrderLinks.previewUrl && (
+                      <a href={relatedOrderLinks.previewUrl} target="_blank" rel="noopener noreferrer">
+                        <Button type="button" size="sm" variant="outline" className="border-emerald-500/50 text-emerald-100">
+                          Åpne preview
+                        </Button>
+                      </a>
+                    )}
+                    {relatedOrderLinks.setupUrl && (
+                      <a href={relatedOrderLinks.setupUrl}>
+                        <Button type="button" size="sm" variant="outline" className="border-slate-600 text-slate-100">
+                          Oppsett
+                        </Button>
+                      </a>
+                    )}
                     <Button type="button" size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={() => onDiscardImport(item)}>
                       Forkast
                     </Button>
