@@ -1819,12 +1819,12 @@ function ImportHistoryList({
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [usageFilter, setUsageFilter] = useState("active");
+  const [usageFilter, setUsageFilter] = useState("all");
 
   const resetFilters = () => {
     setSearch("");
     setStatusFilter("all");
-    setUsageFilter("active");
+    setUsageFilter("all");
   };
 
   const applySearch = () => setSearch((value) => value.trim());
@@ -1833,6 +1833,7 @@ function ImportHistoryList({
     const status = item.status || "analyzed";
     const used = isUsedImportHistoryItem(item);
     const templateSlug = item.recommended_template_slug || item.profile?.recommended_template_slug || "";
+    const fields = isRecord(item.editable_fields) ? item.editable_fields : {};
     const searchText = normalizeImportHistorySearch([
       item.company_name,
       item.profile?.company_name,
@@ -1842,6 +1843,17 @@ function ImportHistoryList({
       item.profile?.detected_industry,
       templateSlug,
       getTemplateLabel(templates, templateSlug),
+      fields.hero_title,
+      fields.hero_subtitle,
+      fields.intro_text,
+      fields.services,
+      fields.products,
+      fields.prices,
+      fields.call_to_action,
+      item.profile?.summary,
+      item.profile?.source_pages,
+      item.source_pages,
+      item.warnings,
     ].filter(Boolean).join(" "));
 
     if (normalizedSearch && !searchText.includes(normalizedSearch)) return false;
@@ -1895,6 +1907,7 @@ function ImportHistoryList({
               { value: "analyzed", label: "Analysert" },
               { value: "created_demo", label: "Demo opprettet" },
               { value: "applied_to_demo", label: "Brukt på demo" },
+              { value: "discarded", label: "Forkastet" },
             ]}
           />
           <Select
@@ -1908,13 +1921,18 @@ function ImportHistoryList({
             ]}
           />
         </div>
-        <div className="mt-2 text-xs text-slate-500">{filteredHistory.length} analyser vises</div>
+        <div className="mt-2 text-xs text-slate-500">{filteredHistory.length} av {history.length} analyser vises</div>
       </div>
 
       {history.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">Ingen lagrede analyser ennå.</div>
       ) : filteredHistory.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">Ingen analyser matcher filteret.</div>
+        <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4">
+          <div className="text-sm text-slate-400">Noen analyser finnes, men filtrene skjuler dem.</div>
+          <Button type="button" size="sm" variant="outline" onClick={resetFilters} className="mt-3 border-cyan-500/50 text-cyan-100">
+            Vis alle analyser
+          </Button>
+        </div>
       ) : (
         <div className="mt-4 space-y-3">
           {filteredHistory.map((item) => {
