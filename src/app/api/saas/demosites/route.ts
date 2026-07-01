@@ -78,6 +78,12 @@ const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_EXPIRY_DAYS = 7;
 const IMPORT_SAFE_STATUS: DemoSiteStatus = "in_setup";
 const TEMPLATE_FK_FALLBACKS: Record<string, string> = {
+  "ai-teknologi": "local-service",
+  ai: "local-service",
+  teknologi: "local-service",
+  tech: "local-service",
+  software: "local-service",
+  saas: "local-service",
   bilverksted: "dekk",
   rorlegger: "local-service",
   snekker: "local-service",
@@ -180,6 +186,31 @@ function normalizeCreateStatus(status: unknown): DemoSiteStatus {
 
 function getTemplateForeignKeyFallback(templateSlug: string) {
   return TEMPLATE_FK_FALLBACKS[templateSlug] || (DEMO_SITE_TEMPLATE_SEEDS.some((template) => template.slug === templateSlug) ? templateSlug : "local-service");
+}
+
+function mergeDemoSiteTemplates(databaseTemplates: unknown[]) {
+  const merged = new Map<string, Record<string, unknown>>();
+
+  for (const template of DEMO_SITE_TEMPLATE_SEEDS) {
+    merged.set(template.slug, {
+      slug: template.slug,
+      name: template.name,
+      category: template.category,
+      description: template.description,
+      repo_url: template.repoUrl,
+      preview_url: template.previewUrl,
+    });
+  }
+
+  for (const template of databaseTemplates) {
+    if (!template || typeof template !== "object" || Array.isArray(template)) continue;
+    const record = template as Record<string, unknown>;
+    const slug = typeof record.slug === "string" ? record.slug.trim() : "";
+    if (!slug) continue;
+    merged.set(slug, { ...(merged.get(slug) || {}), ...record, slug });
+  }
+
+  return Array.from(merged.values()).sort((a, b) => String(a.name || a.slug).localeCompare(String(b.name || b.slug), "nb"));
 }
 
 function asNumber(value: unknown) {
@@ -531,7 +562,7 @@ export async function GET() {
     const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];
     const templates =
       templatesResult.status === "fulfilled" && !templatesResult.value.error
-        ? templatesResult.value.data || []
+        ? mergeDemoSiteTemplates(templatesResult.value.data || [])
         : DEMO_SITE_TEMPLATE_SEEDS;
     const events = eventsResult.status === "fulfilled" ? eventsResult.value : [];
     const summary = await syncSaasMetrics(supabase, orders);

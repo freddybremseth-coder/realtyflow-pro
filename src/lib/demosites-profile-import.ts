@@ -617,6 +617,7 @@ function normalizeTemplateSlug(templateSlug: string) {
   const normalized = normalizeListKey(templateSlug).replace(/\s+/g, "-");
   if (normalized === "restaurant-cafe") return "restaurant";
   if (normalized === "bygg-anlegg") return "bygg";
+  if (["ai", "ai-tech", "teknologi", "teknobedrift", "tech", "software", "saas", "automasjon"].includes(normalized)) return "ai-teknologi";
   if (normalized === "rorlegger") return "rorlegger";
   if (normalized === "frisor") return "frisor";
   return normalized || "local-service";
@@ -624,6 +625,8 @@ function normalizeTemplateSlug(templateSlug: string) {
 
 function getIndustryCallToAction(templateSlug: string) {
   switch (normalizeTemplateSlug(templateSlug)) {
+    case "ai-teknologi":
+      return "Book AI-workshop";
     case "dekk":
       return "Få tilbud på dekk";
     case "bilverksted":
@@ -649,6 +652,8 @@ function getIndustryCallToAction(templateSlug: string) {
 
 function getIndustryFallbackProducts(templateSlug: string) {
   switch (normalizeTemplateSlug(templateSlug)) {
+    case "ai-teknologi":
+      return ["AI-workshop", "Automatiseringspilot", "Integrasjonspakke", "Dataplattform og dashboard"];
     case "dekk":
     case "bilverksted":
       return ["Dekkskift", "Hjulhotell", "EU-kontroll / verkstedtjenester", "Dekk og felg"];
@@ -668,6 +673,12 @@ function getIndustryFallbackProducts(templateSlug: string) {
 
 function getIndustryFallbackPrices(templateSlug: string) {
   switch (normalizeTemplateSlug(templateSlug)) {
+    case "ai-teknologi":
+      return [
+        "Eksempel: AI-workshop - fast startpakke kan avtales",
+        "Eksempel: Pilotprosjekt - pris avklares etter scope og datagrunnlag",
+        "Eksempel: Integrasjoner - tilbud gis etter systemer og kompleksitet",
+      ];
     case "dekk":
     case "bilverksted":
       return [
@@ -760,6 +771,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
       : defaults.prices;
   const profileTrustPoints = trustPoints.length ? mergeUniqueLists(trustPoints, [], 6) : defaults.trust_points;
   const profileFaq = faq.length ? faq : defaults.faq;
+  const detectedIndustry = analysis.templateSlug === "local-service" ? "Ikke valgt - standard moderne mal" : defaults.template_name;
 
   const profile: ImportedProfile = {
     company_name: companyName,
@@ -767,7 +779,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     title,
     description,
     summary,
-    detected_industry: defaults.template_name,
+    detected_industry: detectedIndustry,
     recommended_template_slug: analysis.templateSlug,
     logo_url: logoUrl,
     image_urls: imageUrls,
