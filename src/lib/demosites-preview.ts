@@ -170,12 +170,26 @@ export function previewImageUrl(value: unknown) {
   return "";
 }
 
-function imageList(values: unknown[], fallback: string[]) {
+function normalizePreviewUrl(value: string) {
+  return value.trim().toLowerCase().replace(/[#?].*$/, "").replace(/\/+$/, "");
+}
+
+function isLikelyLogoImage(value: string) {
+  const normalized = normalizePreviewUrl(value);
+  return /(^|[-_/])(logo|favicon|apple-touch-icon|brandmark|wordmark|symbol)([-_.]|\d|\/|$)/i.test(normalized);
+}
+
+function imageList(values: unknown[], fallback: string[], exclude: string[] = []) {
+  const excluded = new Set(exclude.map(normalizePreviewUrl).filter(Boolean));
   const images = uniqueStringItems(
     values
       .flatMap(listFromUnknown)
       .map(previewImageUrl)
-      .filter(Boolean),
+      .filter((url) => {
+        if (!url) return false;
+        const normalized = normalizePreviewUrl(url);
+        return !excluded.has(normalized) && !isLikelyLogoImage(url);
+      }),
     6,
   );
 
@@ -360,9 +374,11 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     fallbackMode === "placeholders" ? [] : defaults.prices,
     8,
   );
+  const logoUrl = previewImageUrl(fields.logo_url) || previewImageUrl(input.logoUrl) || previewImageUrl(profile.logo_url);
   const galleryImages = imageList(
     [fields.gallery_images, profile.image_urls],
     fallbackMode === "placeholders" ? [] : defaults.gallery_images,
+    logoUrl ? [logoUrl] : [],
   );
   const trustPoints = stringList(
     [fields.trust_points, profile.trust_points],
@@ -393,7 +409,7 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     accent_color: accent,
     suggested_sections: stringList([fields.suggested_sections], defaults.suggested_sections, 10),
     gallery_images: galleryImages,
-    logo_url: previewImageUrl(fields.logo_url) || previewImageUrl(input.logoUrl) || previewImageUrl(profile.logo_url),
+    logo_url: logoUrl,
   };
 
   return {
