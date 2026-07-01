@@ -1022,9 +1022,21 @@ const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
     keywords: [
       "kunstig intelligens",
       "artificial intelligence",
+      "ai",
+      "ai service",
+      "ai-service",
+      "ai tjenester",
+      "ai-tjenester",
+      "ai løsning",
+      "ai-løsning",
       "ai-agent",
       "ai agent",
       "ai-workshop",
+      "ai automasjon",
+      "ai automation",
+      "generativ ai",
+      "generative ai",
+      "llm",
       "automatisering",
       "automasjon",
       "maskinlaering",
@@ -1106,7 +1118,22 @@ const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   },
   {
     slug: "bygg",
-    keywords: ["bygg", "anlegg", "entreprenør", "entreprenor", "rehabilitering", "prosjekt"],
+    keywords: [
+      "bygg og anlegg",
+      "byggfirma",
+      "byggmester",
+      "entreprenør",
+      "entreprenor",
+      "totalentreprise",
+      "grunnarbeid",
+      "gravearbeid",
+      "betong",
+      "nybygg",
+      "tilbygg",
+      "anleggsarbeid",
+      "rehabilitering av bygg",
+      "prosjektledelse bygg",
+    ],
   },
 ];
 
@@ -1117,21 +1144,55 @@ function normalizeProfileText(value: string | null | undefined) {
     .toLowerCase();
 }
 
+function normalizeProfileSearchText(value: string | null | undefined) {
+  return normalizeProfileText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function profileTextHasKeyword(profileText: string, keyword: string) {
+  const normalizedKeyword = normalizeProfileSearchText(keyword);
+  if (!normalizedKeyword) return false;
+  const keywordPattern = normalizedKeyword.split(/\s+/).map(escapeRegex).join("\\s+");
+  return new RegExp(`(^|\\s)${keywordPattern}(?=\\s|$)`).test(profileText);
+}
+
+function getTemplateKeywordWeight(templateSlug: string, keyword: string) {
+  const normalizedKeyword = normalizeProfileSearchText(keyword);
+  if (!normalizedKeyword) return 0;
+
+  if (templateSlug === "bygg" && ["bygg", "anlegg", "prosjekt", "rehabilitering"].includes(normalizedKeyword)) return 1;
+  if (templateSlug === "ai-teknologi" && normalizedKeyword === "ai") return 2;
+  if (normalizedKeyword.includes(" ")) return 5;
+  if (normalizedKeyword.length > 8) return 5;
+  return 4;
+}
+
 function scoreTemplateMatch(profileText: string, template: { slug: string; keywords: string[] }) {
-  return template.keywords.reduce((score, keyword) => {
-    const normalizedKeyword = normalizeProfileText(keyword);
-    if (!normalizedKeyword || !profileText.includes(normalizedKeyword)) return score;
-    return score + Math.max(2, normalizedKeyword.length > 8 ? 4 : 2);
-  }, profileText.includes(template.slug) ? 3 : 0);
+  let score = profileTextHasKeyword(profileText, template.slug) ? 3 : 0;
+  let matchedKeywords = 0;
+
+  for (const keyword of template.keywords) {
+    if (!profileTextHasKeyword(profileText, keyword)) continue;
+    score += getTemplateKeywordWeight(template.slug, keyword);
+    matchedKeywords += 1;
+  }
+
+  return { score, matchedKeywords };
 }
 
 export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): DemoSiteProfileAnalyzeResult {
   const companyName = (input.companyName || "").trim();
-  const profileText = normalizeProfileText(
+  const profileText = normalizeProfileSearchText(
     [companyName, input.websiteUrl, input.industry, input.notes].filter(Boolean).join(" "),
   );
-  const matchedTemplate = TEMPLATE_KEYWORDS.map((template) => ({ template, score: scoreTemplateMatch(profileText, template) }))
-    .filter((item) => item.score > 0)
+  const matchedTemplate = TEMPLATE_KEYWORDS.map((template) => ({ template, ...scoreTemplateMatch(profileText, template) }))
+    .filter((item) => item.score >= 4 && item.matchedKeywords > 0)
     .sort((a, b) => b.score - a.score)[0]?.template;
 
   const missingFields = [

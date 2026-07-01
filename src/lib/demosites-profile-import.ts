@@ -771,6 +771,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
       : defaults.prices;
   const profileTrustPoints = trustPoints.length ? mergeUniqueLists(trustPoints, [], 6) : defaults.trust_points;
   const profileFaq = faq.length ? faq : defaults.faq;
+  const detectedIndustry = analysis.templateSlug === "local-service" ? "Ikke valgt - standard moderne mal" : defaults.template_name;
 
   const profile: ImportedProfile = {
     company_name: companyName,
@@ -778,7 +779,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     title,
     description,
     summary,
-    detected_industry: defaults.template_name,
+    detected_industry: detectedIndustry,
     recommended_template_slug: analysis.templateSlug,
     logo_url: logoUrl,
     image_urls: imageUrls,

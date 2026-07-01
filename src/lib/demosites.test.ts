@@ -134,3 +134,28 @@ test("DemoSites profile analysis recognizes AI and technology wording", () => {
   assert.equal(defaults.template_slug, "ai-teknologi");
   assert.match(JSON.stringify(defaults).toLowerCase(), /ai|automatisering|pilot|integrasjon/);
 });
+
+test("DemoSites profile analysis does not confuse AI service wording with bygg", () => {
+  const aiService = analyzeDemoSiteProfile({
+    companyName: "Flow AI Service",
+    websiteUrl: "https://flow-ai.example",
+    industry: "AI service, generativ AI og automatisering for kundedialog",
+    notes: "Vi bygger AI-løsninger, chatbots og integrasjoner for små og mellomstore bedrifter.",
+  });
+  const genericBuilder = analyzeDemoSiteProfile({
+    companyName: "Nordic Digital",
+    websiteUrl: "https://nordicdigital.example",
+    industry: "Vi bygger digitale løsninger og moderne nettsider for bedrifter.",
+    notes: "Prosjekt, rådgivning og kundeoppfølging uten tydelig bransje.",
+  });
+  const buildingContractor = analyzeDemoSiteProfile({
+    companyName: "Vestfold Bygg",
+    websiteUrl: "https://vestfoldbygg.example",
+    industry: "Bygg og anlegg, entreprenør, grunnarbeid og totalentreprise",
+    notes: "Nybygg, tilbygg og rehabilitering av bygg for private og bedrifter.",
+  });
+
+  assert.equal(aiService.templateSlug, "ai-teknologi");
+  assert.equal(genericBuilder.templateSlug, "local-service");
+  assert.equal(buildingContractor.templateSlug, "bygg");
+});
