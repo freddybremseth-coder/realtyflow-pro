@@ -278,7 +278,7 @@ export async function PATCH(request: NextRequest) {
 
     const repairedOrder = await repairOrderLinks(supabase, data as SetupOrder);
 
-    await supabase.from("demo_site_events").insert({
+    await supabase.from("demo_site_order_events").insert({
       order_id: orderId,
       event_type: "setup_content_updated",
       title: "Oppsettinnhold oppdatert",
