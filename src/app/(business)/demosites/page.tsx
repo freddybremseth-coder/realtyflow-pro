@@ -4,7 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Wallet, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Trash2, Wallet, XCircle } from "lucide-react";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
@@ -34,6 +34,7 @@ type DemoSiteOrder = {
   claimed_at?: string | null;
   expires_at?: string | null;
   production_url?: string | null;
+  claim_token?: string | null;
   logo_url?: string | null;
   brand_color?: string | null;
   editable_fields?: Record<string, unknown> | null;
@@ -148,6 +149,14 @@ function customerPreviewUrl(order: DemoSiteOrder) {
   if (order.preview_url?.includes("/demosites/preview/")) return order.preview_url;
   if (order.claim_url?.includes("/demosites/claim/")) return order.claim_url.replace("/demosites/claim/", "/demosites/preview/");
   return order.preview_url || "";
+}
+
+function getPreviewToken(order: DemoSiteOrder) {
+  if (order.claim_token) return order.claim_token;
+  const tokenMatch = [order.preview_url, order.claim_url]
+    .map((url) => String(url || "").match(/\/demosites\/(?:preview|claim)\/([^/?#]+)/)?.[1])
+    .find(Boolean);
+  return tokenMatch || "";
 }
 
 function getTemplateLabel(templates: DemoSiteTemplate[], slug?: string | null) {
@@ -474,6 +483,10 @@ export default function DemoSitesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DemoSiteOrder | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
 
   const loadImportHistory = useCallback(async () => {
     setImportHistoryWarning(null);
@@ -537,6 +550,46 @@ export default function DemoSitesPage() {
     const data = await response.json();
     if (!response.ok) setError(data.error || "Oppdatering feilet.");
     await loadData();
+  }
+
+  function openDeleteOrder(order: DemoSiteOrder) {
+    setDeleteTarget(order);
+    setDeleteConfirmText("");
+    setDeleteMessage(null);
+    setError(null);
+  }
+
+  function closeDeleteOrder() {
+    if (deletingOrderId) return;
+    setDeleteTarget(null);
+    setDeleteConfirmText("");
+  }
+
+  async function deleteOrder() {
+    if (!deleteTarget || deleteConfirmText !== "SLETT") return;
+    const order = deleteTarget;
+    setDeletingOrderId(order.id);
+    setError(null);
+    setDeleteMessage(null);
+    try {
+      const response = await fetch(`/api/saas/demosites?id=${encodeURIComponent(order.id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(getApiErrorMessage(data) || data.error || "Sletting feilet.");
+
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+      setEvents((current) => current.filter((event) => event.order_id !== order.id));
+      setSummary(data.summary || EMPTY_SUMMARY);
+      setImportForm((current) => (current.order_id === order.id ? { ...current, order_id: "" } : current));
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      setDeleteMessage("Demo slettet.");
+      await loadImportHistory();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Ukjent feil.";
+      setError(`Kunne ikke slette demo: ${message}`);
+    } finally {
+      setDeletingOrderId(null);
+    }
   }
 
   async function analyzeWebsiteImport(event: FormEvent<HTMLFormElement>) {
@@ -929,6 +982,7 @@ export default function DemoSitesPage() {
       </div>
 
       {error && <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>}
+      {deleteMessage && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"><CheckCircle className="mr-2 inline h-4 w-4" />{deleteMessage}</div>}
 
       <WebsiteImportCard
         form={importForm}
@@ -1046,12 +1100,93 @@ export default function DemoSitesPage() {
                     <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button>
                     <Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Sett live-status</Button>
                     <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button>
+                    <Button size="sm" variant="outline" className="border-red-500/50 text-red-200 hover:bg-red-500/10" disabled={deletingOrderId === order.id} onClick={() => openDeleteOrder(order)}>
+                      {deletingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1 h-3.5 w-3.5" />}
+                      Slett
+                    </Button>
                   </div>
                 </div>
               );
             })}
           </CardContent>
         </Card>
+      </div>
+
+      {deleteTarget && (
+        <DeleteDemoOrderModal
+          order={deleteTarget}
+          confirmText={deleteConfirmText}
+          deleting={deletingOrderId === deleteTarget.id}
+          onConfirmTextChange={setDeleteConfirmText}
+          onCancel={closeDeleteOrder}
+          onDelete={deleteOrder}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteDemoOrderModal({
+  order,
+  confirmText,
+  deleting,
+  onConfirmTextChange,
+  onCancel,
+  onDelete,
+}: {
+  order: DemoSiteOrder;
+  confirmText: string;
+  deleting: boolean;
+  onConfirmTextChange: (value: string) => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const previewToken = getPreviewToken(order);
+  const isApprovedOrLive = order.status === "approved" || order.status === "deployed";
+  const canDelete = confirmText === "SLETT" && !deleting;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4">
+      <div className="w-full max-w-lg rounded-xl border border-red-500/40 bg-slate-950 p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15 text-red-200">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Slett demo</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Er du sikker på at du vil slette denne demoen? Dette kan ikke angres.
+            </p>
+          </div>
+        </div>
+
+        {isApprovedOrLive && (
+          <div className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-100">
+            <AlertCircle className="mr-2 inline h-4 w-4" />
+            Denne demoen kan være godkjent eller live. Sletting kan påvirke aktiv preview.
+          </div>
+        )}
+
+        <div className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm md:grid-cols-2">
+          <Info label="Bedrift" value={order.company_name || "Ukjent"} />
+          <Info label="Ordrenummer" value={order.order_number || "Ukjent"} />
+          <Info label="Status" value={statusLabel[order.status] || order.status} />
+          <Info label="Preview-token" value={previewToken || "Ikke funnet"} />
+        </div>
+
+        <div className="mt-4">
+          <Input label="Skriv SLETT for å bekrefte" value={confirmText} onChange={onConfirmTextChange} placeholder="SLETT" />
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" className="border-slate-700 text-slate-200" disabled={deleting} onClick={onCancel}>
+            Avbryt
+          </Button>
+          <Button type="button" className="bg-red-600 text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60" disabled={!canDelete} onClick={onDelete}>
+            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Slett demo
+          </Button>
+        </div>
       </div>
     </div>
   );
