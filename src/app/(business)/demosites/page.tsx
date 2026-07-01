@@ -4,10 +4,11 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Wallet, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Wallet, XCircle } from "lucide-react";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
+import { buildVersionedImportReviewEditableFields, getImportReviewVersions, IMPORT_REVIEW_VERSIONS_KEY, type ImportReviewVersion } from "@/lib/demosites-import-review-versions";
 import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
 
 type DemoSiteOrder = {
@@ -770,6 +771,37 @@ export default function DemoSitesPage() {
     setImportError(null);
   }
 
+  function restoreImportReviewVersion(version: ImportReviewVersion) {
+    const nextProfile = version.profile as ImportedProfile;
+    setImportResult((current) => {
+      if (!current) return current;
+      const existingVersions = getImportReviewVersions(current.editable_fields);
+      const nextEditableFields = {
+        ...version.editable_fields,
+        ...(existingVersions.length ? { [IMPORT_REVIEW_VERSIONS_KEY]: existingVersions } : {}),
+      };
+
+      return {
+        ...current,
+        profile: nextProfile,
+        editable_fields: nextEditableFields,
+        warnings: version.warnings,
+      };
+    });
+    setImportContact({
+      customer_name: nextProfile.company_name || "",
+      customer_email: nextProfile.contact?.email || "",
+      customer_phone: nextProfile.contact?.phone || "",
+    });
+    setImportForm((prev) => ({
+      ...prev,
+      website_url: nextProfile.website_url || prev.website_url,
+      company_name: nextProfile.company_name || "",
+    }));
+    setImportReviewMessage("Versjon gjenopprettet. Husk å lagre hvis du vil gjøre den aktiv.");
+    setImportError(null);
+  }
+
   async function saveImportReviewChanges() {
     if (!importResult) return;
     if (!importResult.import_id) {
@@ -781,7 +813,25 @@ export default function DemoSitesPage() {
     setImportReviewMessage(null);
     setImportError(null);
     try {
-      const profile = importResult.profile;
+      const versionedEditableFields = buildVersionedImportReviewEditableFields({
+        current: {
+          profile: importResult.profile,
+          editable_fields: importResult.editable_fields,
+          warnings: importResult.warnings,
+        },
+        previous: originalImportResult
+          ? {
+              profile: originalImportResult.profile,
+              editable_fields: originalImportResult.editable_fields,
+              warnings: originalImportResult.warnings,
+            }
+          : null,
+      });
+      const nextResult: WebsiteImportResult = {
+        ...importResult,
+        editable_fields: versionedEditableFields.editable_fields,
+      };
+      const profile = nextResult.profile;
       const response = await fetch("/api/saas/demosites/imports", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -792,8 +842,8 @@ export default function DemoSitesPage() {
           recommended_template_slug: profile.recommended_template_slug || null,
           confidence_score: profile.confidence_score ?? null,
           profile,
-          editable_fields: importResult.editable_fields,
-          warnings: importResult.warnings,
+          editable_fields: nextResult.editable_fields,
+          warnings: nextResult.warnings,
           source_pages: profile.source_pages || [],
         }),
       });
@@ -802,7 +852,8 @@ export default function DemoSitesPage() {
         console.error("DemoSites import review save failed:", data);
         throw new Error(getApiErrorMessage(data) || "Kunne ikke lagre endringer i analyse.");
       }
-      setOriginalImportResult(cloneImportResult(importResult));
+      setImportResult(nextResult);
+      setOriginalImportResult(cloneImportResult(nextResult));
       setImportReviewMessage("Endringer lagret i analyse.");
       await loadImportHistory();
     } catch (err) {
@@ -900,6 +951,7 @@ export default function DemoSitesPage() {
         onReviewChange={updateImportReview}
         onSaveReview={saveImportReviewChanges}
         onResetReview={resetImportReview}
+        onRestoreReviewVersion={restoreImportReviewVersion}
         onDiscard={() => {
           setImportResult(null);
           setOriginalImportResult(null);
@@ -1026,6 +1078,7 @@ type WebsiteImportCardProps = {
   onReviewChange: (patch: WebsiteImportReviewPatch) => void;
   onSaveReview: () => void;
   onResetReview: () => void;
+  onRestoreReviewVersion: (version: ImportReviewVersion) => void;
   onDiscard: () => void;
   onFormChange: (patch: Partial<WebsiteImportFormState>) => void;
   onContactChange: (patch: Partial<WebsiteImportContactState>) => void;
@@ -1055,6 +1108,7 @@ function WebsiteImportCard({
   onReviewChange,
   onSaveReview,
   onResetReview,
+  onRestoreReviewVersion,
   onDiscard,
   onFormChange,
   onContactChange,
@@ -1180,6 +1234,7 @@ function WebsiteImportCard({
               onSave={onSaveReview}
               onReset={onResetReview}
             />
+            <ImportReviewVersionHistoryPanel result={result} onRestoreVersion={onRestoreReviewVersion} />
             {reviewQuality && <ImportReviewQualityPanel quality={reviewQuality} />}
             <PreviewUsagePanel result={result} />
             <ImportReviewLivePreviewPanel result={result} templates={templates} />
@@ -1278,6 +1333,94 @@ const PREVIEW_USAGE_FIELDS = [
   { key: "secondary_color", label: "Sekundærfarge" },
   { key: "accent_color", label: "Aksentfarge" },
 ];
+
+function getImportReviewVersionFieldLabel(field: string) {
+  const previewField = PREVIEW_USAGE_FIELDS.find((item) => item.key === field);
+  if (previewField) return previewField.label;
+  const labels: Record<string, string> = {
+    company_name: "Bedriftsnavn",
+    detected_industry: "Bransje",
+    recommended_template_slug: "Demo-mal",
+    confidence_score: "Confidence",
+    summary: "Oppsummering",
+    description: "Beskrivelse",
+    image_urls: "Bilder",
+    colors: "Farger",
+    warnings: "Advarsler",
+    profile_import_field_sources: "Kildeetiketter",
+  };
+  return labels[field] || field.replace(/_/g, " ");
+}
+
+function getImportReviewVersionChangeSummary(fields: string[]) {
+  if (!fields.length) return "Tidligere aktivt forslag";
+  const labels = fields.slice(0, 4).map(getImportReviewVersionFieldLabel);
+  const rest = fields.length - labels.length;
+  return `Endret etterpå: ${labels.join(", ")}${rest > 0 ? ` + ${rest} til` : ""}`;
+}
+
+function ImportReviewVersionHistoryPanel({
+  result,
+  onRestoreVersion,
+}: {
+  result: WebsiteImportResult;
+  onRestoreVersion: (version: ImportReviewVersion) => void;
+}) {
+  const versions = getImportReviewVersions(result.editable_fields);
+
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <History className="h-4 w-4 text-cyan-300" />
+            Tidligere lagrede versjoner
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            Gjenopprett en tidligere lagret versjon lokalt, sjekk preview og lagre hvis den skal være aktiv.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-md border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs font-semibold text-slate-300">
+          {versions.length} av 10 lagret
+        </span>
+      </div>
+
+      {versions.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-400">
+          Ingen tidligere lagrede versjoner ennå. Når du lagrer nye endringer, beholdes forrige aktive versjon her.
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {versions.map((version) => (
+            <div key={version.id} className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-100">{version.label}</div>
+                  <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                    {formatDateTime(version.saved_at) || "Ukjent tidspunkt"}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {getImportReviewVersionChangeSummary(version.changed_fields)}
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0 border-cyan-500/50 text-cyan-100"
+                title="Gjenoppretter lokalt. Lagre etterpå hvis denne versjonen skal være aktiv."
+                onClick={() => onRestoreVersion(version)}
+              >
+                Gjenopprett
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EditableImportReviewFields({
   result,

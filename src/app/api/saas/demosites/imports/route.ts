@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyAdminSession } from "@/lib/admin-auth";
+import { sanitizeImportReviewEditableFieldsForStorage } from "@/lib/demosites-import-review-versions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -131,8 +132,9 @@ export async function PATCH(request: NextRequest) {
       patch.profile = body.profile;
     }
     if (body.editable_fields !== undefined) {
-      if (!isPlainRecord(body.editable_fields)) return NextResponse.json({ error: "editable_fields must be an object" }, { status: 400 });
-      patch.editable_fields = body.editable_fields;
+      const parsed = sanitizeImportReviewEditableFieldsForStorage(body.editable_fields);
+      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      patch.editable_fields = parsed.value;
     }
     if (body.warnings !== undefined) {
       const parsed = stringArrayOrError(body.warnings, "warnings");
