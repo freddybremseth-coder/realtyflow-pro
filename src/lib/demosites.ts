@@ -136,6 +136,14 @@ export const DEMO_SITE_TEMPLATE_SEEDS = [
     repoUrl: "https://github.com/freddybremseth-coder/demosites/blob/main/renhold.html",
     previewUrl: "https://realtyflow.chatgenius.pro/saas/renhold.html",
   },
+  {
+    slug: "ai-teknologi",
+    name: "Neon AI Studio",
+    category: "technology",
+    description: "AI- og teknologimal med neon glass, automatisering, pilotløp og tydelig demo-/workshop-forespørsel.",
+    repoUrl: "https://github.com/freddybremseth-coder/demosites",
+    previewUrl: "https://realtyflow.chatgenius.pro/saas?template=ai-teknologi",
+  },
 ];
 
 export type DemoSiteFaqItem = {
@@ -188,6 +196,14 @@ const DEMO_SITE_TEMPLATE_ALIASES: Record<string, string> = {
   "hotell-overnatting": "hotell",
   anlegg: "bygg",
   "bygg-anlegg": "bygg",
+  ai: "ai-teknologi",
+  "ai-tech": "ai-teknologi",
+  teknologi: "ai-teknologi",
+  teknobedrift: "ai-teknologi",
+  tech: "ai-teknologi",
+  software: "ai-teknologi",
+  saas: "ai-teknologi",
+  automasjon: "ai-teknologi",
 };
 
 function normalizeDemoSiteTemplateSlug(value: string | null | undefined) {
@@ -259,6 +275,64 @@ const DEMO_SITE_TEMPLATE_DEFAULTS: Record<string, DemoSiteTemplateDefaultBase> =
     accent_color: "#22c55e",
     suggested_sections: ["Hero", "Tjenester", "Tilbud", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
     gallery_images: GENERIC_SERVICE_GALLERY_IMAGES,
+  },
+  "ai-teknologi": {
+    template_name: "AI og teknologi",
+    hero_title: "{companyName} bygger smartere digitale arbeidsflyter",
+    hero_subtitle: "AI-agenter, automasjon, integrasjoner og dataløsninger som gjør teamet raskere, tryggere og mer skalerbart.",
+    intro_text:
+      "{companyName} kan presentere AI-løsninger, teknologi, pilotløp og rådgivning på en moderne side som gjør det lett å booke workshop, se demo eller starte en kontrollert pilot.",
+    services: [
+      "AI-agenter for kundeservice, salg og interne prosesser",
+      "Automatisering av manuelle arbeidsflyter",
+      "API-integrasjoner mellom CRM, nettside og fagsystemer",
+      "Dataplattform, dashboards og innsikt for ledelsen",
+      "Prototype, MVP og pilotlansering på få uker",
+      "Sikkerhetsvurdering, GDPR og praktisk AI-governance",
+    ],
+    products: [
+      "AI-workshop for ledergruppe eller team",
+      "Pilotpakke for automatisering",
+      "Integrasjonspakke for CRM og nettside",
+      "Drift, videreutvikling og teknisk sparring",
+    ],
+    prices: [
+      "AI-workshop fra kr 12 900",
+      "Pilotprosjekt prises etter scope og datagrunnlag",
+      "Integrasjoner prises etter systemer og kompleksitet",
+      "Fast rådgivningsavtale kan avtales for videre utvikling",
+    ],
+    trust_points: [
+      "Starter med avgrenset pilot før større investering",
+      "Tydelig kartlegging av risiko, data og ansvar",
+      "Integrasjoner bygges rundt eksisterende arbeidsflyt",
+      "Måling av effekt før løsningen skaleres videre",
+    ],
+    faq: [
+      {
+        question: "Hvordan starter vi med AI uten å ta for stor risiko?",
+        answer: "Begynn med en workshop og en avgrenset pilot. Da kan verdi, data og sikkerhet vurderes før dere skalerer.",
+      },
+      {
+        question: "Kan løsningen kobles til systemene vi allerede bruker?",
+        answer: "Ja. Integrasjoner mot CRM, nettside, skjemaer og fagsystemer kan planlegges etter behov og tilgang.",
+      },
+      {
+        question: "Hva bør vi ha klart før en AI-workshop?",
+        answer: "Ta med mål, eksempler på manuelle prosesser og spørsmål rundt data, sikkerhet og ønsket effekt.",
+      },
+    ],
+    call_to_action: "Book AI-workshop",
+    contact_text: "Fortell kort hvilken prosess, dataflyt eller kundeopplevelse dere vil forbedre, så kan {companyName} foreslå riktig workshop, demo eller pilot.",
+    brand_color: "#22d3ee",
+    secondary_color: "#020617",
+    accent_color: "#a78bfa",
+    suggested_sections: ["Hero", "AI-tjenester", "Pilot", "Integrasjoner", "Priser", "Trygghet", "FAQ", "Kontakt", "ChatGenius"],
+    gallery_images: [
+      "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=80",
+    ],
   },
   elektro: {
     template_name: "Pindsle Elektro",
@@ -943,6 +1017,29 @@ export interface DemoSiteProfileAnalyzeResult {
 const DEFAULT_ANALYZED_TEMPLATE_SLUG = "local-service";
 
 const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
+  {
+    slug: "ai-teknologi",
+    keywords: [
+      "kunstig intelligens",
+      "artificial intelligence",
+      "ai-agent",
+      "ai agent",
+      "ai-workshop",
+      "automatisering",
+      "automasjon",
+      "maskinlaering",
+      "maskinlæring",
+      "dataplattform",
+      "software",
+      "saas",
+      "api-integrasjon",
+      "integrasjoner",
+      "teknologi",
+      "chatbot",
+      "prototype",
+      "mvp",
+    ],
+  },
   {
     slug: "elektro",
     keywords: ["elektro", "elektriker", "strøm", "electric", "electrician", "installasjon"],

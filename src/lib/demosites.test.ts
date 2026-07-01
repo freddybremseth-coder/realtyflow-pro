@@ -29,6 +29,13 @@ const REQUIRED_TEMPLATE_SLUGS = [
   "kafé",
   "bygg",
   "bygg-anlegg",
+  "ai-teknologi",
+  "ai",
+  "teknologi",
+  "teknobedrift",
+  "tech",
+  "software",
+  "saas",
 ];
 
 const FORBIDDEN_ELECTRO_WORDS = ["elektriker", "strøm", "el-sjekk", "installasjon"];
@@ -112,4 +119,18 @@ test("DemoSites profile analysis recognizes tire and workshop wording", () => {
   });
 
   assert.ok(["dekk", "bilverksted"].includes(pointSLike.templateSlug));
+});
+
+test("DemoSites profile analysis recognizes AI and technology wording", () => {
+  const aiTech = analyzeDemoSiteProfile({
+    companyName: "Nordic AI Studio",
+    websiteUrl: "https://ai.example",
+    industry: "Kunstig intelligens, software, dataplattform og API-integrasjoner",
+    notes: "AI-workshop, automatisering, chatbot, MVP og pilotprosjekt for teknologibedrifter.",
+  });
+  const defaults = getDemoSiteTemplateDefaults(aiTech.templateSlug, "Nordic AI Studio");
+
+  assert.equal(aiTech.templateSlug, "ai-teknologi");
+  assert.equal(defaults.template_slug, "ai-teknologi");
+  assert.match(JSON.stringify(defaults).toLowerCase(), /ai|automatisering|pilot|integrasjon/);
 });

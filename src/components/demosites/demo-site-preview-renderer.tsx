@@ -100,7 +100,8 @@ export function DemoSitePreviewRenderer({
   const serviceLimit = fullPreview ? 9 : 3;
   const images = content.gallery_images.slice(0, imageLimit);
   const services = content.services.slice(0, serviceLimit);
-  const useDarkHero = prefersDarkBusinessHero(preview.templateSlug);
+  const useNeonGlass = prefersNeonGlassPreview(preview.templateSlug);
+  const useDarkHero = useNeonGlass || prefersDarkBusinessHero(preview.templateSlug);
   const heroBackground = useDarkHero ? getHeroBackground(colors) : "#ffffff";
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
@@ -110,25 +111,40 @@ export function DemoSitePreviewRenderer({
   };
   const rootClass =
     mode === "public"
-      ? `min-h-screen bg-[#f8fafc] text-slate-950 ${className}`
-      : `overflow-hidden rounded-lg border border-slate-700 bg-slate-50 text-slate-950 shadow-xl ${className}`;
+      ? useNeonGlass
+        ? `min-h-screen bg-[#020617] text-white ${className}`
+        : `min-h-screen bg-[#f8fafc] text-slate-950 ${className}`
+      : useNeonGlass
+        ? `overflow-hidden rounded-lg border border-cyan-300/20 bg-[#020617] text-white shadow-2xl shadow-cyan-950/40 ${className}`
+        : `overflow-hidden rounded-lg border border-slate-700 bg-slate-50 text-slate-950 shadow-xl ${className}`;
   const maxWidthClass = mode === "public" ? "mx-auto max-w-7xl" : "max-w-none";
   const heroPaddingClass = mode === "public" ? "px-4 py-12 lg:py-20" : "p-4 lg:p-6";
   const heroTitleClass = mode === "public" ? "max-w-3xl text-4xl font-black leading-[0.96] tracking-normal md:text-6xl xl:text-7xl" : "text-3xl font-black leading-tight tracking-normal md:text-4xl";
   const heroTextClass = useDarkHero ? "text-white" : "text-slate-950";
   const heroMutedClass = useDarkHero ? "text-slate-300" : "text-slate-700";
   const heroSoftClass = useDarkHero ? "text-slate-400" : "text-slate-600";
+  const headerClass =
+    mode === "public"
+      ? useNeonGlass
+        ? "sticky top-0 z-30 border-b border-white/10 bg-slate-950/80 text-white shadow-lg shadow-cyan-950/20 backdrop-blur-xl"
+        : "sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur"
+      : useNeonGlass
+        ? "border-b border-white/10 bg-slate-950/85 text-white"
+        : "border-b border-slate-200 bg-white";
+  const headerCtaStyle: CSSProperties = useNeonGlass
+    ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" }
+    : { backgroundColor: colors.secondary, color: colors.secondaryText };
   const Root = mode === "public" ? "main" : "div";
 
   return (
     <Root className={rootClass} style={rootStyle}>
-      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} />}
+      {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} />}
 
-      <header className={mode === "public" ? "sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur" : "border-b border-slate-200 bg-white"}>
+      <header className={headerClass}>
         <div className={`${maxWidthClass} flex items-center justify-between gap-4 px-4 py-4`}>
           <a href="#top" className="flex min-w-0 items-center gap-3">
             {content.logo_url ? (
-              <span className="flex h-10 max-w-[9rem] shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
+              <span className={useNeonGlass ? "flex h-10 max-w-[9rem] shrink-0 items-center rounded-lg border border-white/15 bg-white px-2 py-1 shadow-lg shadow-cyan-950/30" : "flex h-10 max-w-[9rem] shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm"}>
                 <img src={content.logo_url} alt={`${companyName} logo`} className="max-h-8 w-auto max-w-[7.5rem] object-contain" />
               </span>
             ) : (
@@ -139,31 +155,32 @@ export function DemoSitePreviewRenderer({
             <span className="truncate text-base font-bold md:text-lg">{companyName}</span>
           </a>
           {mode === "public" && (
-            <nav className="hidden items-center gap-5 text-sm text-slate-600 lg:flex">
-              <a href="#tjenester" className="hover:text-slate-950">Tjenester</a>
-              <a href="#fordeler" className="hover:text-slate-950">Hvorfor oss</a>
-              <a href="#tilbud" className="hover:text-slate-950">{copy.navOffer}</a>
-              <a href="#faq" className="hover:text-slate-950">FAQ</a>
-              <a href="#kontakt" className="hover:text-slate-950">Kontakt</a>
+            <nav className={useNeonGlass ? "hidden items-center gap-5 text-sm text-slate-300 lg:flex" : "hidden items-center gap-5 text-sm text-slate-600 lg:flex"}>
+              <a href="#tjenester" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Tjenester</a>
+              <a href="#fordeler" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Hvorfor oss</a>
+              <a href="#tilbud" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>{copy.navOffer}</a>
+              <a href="#faq" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>FAQ</a>
+              <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Kontakt</a>
             </nav>
           )}
-          <a href={preview.contactHref} className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold" style={{ backgroundColor: colors.secondary, color: colors.secondaryText }}>
+          <a href={preview.contactHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black shadow-lg shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"} style={headerCtaStyle}>
             {content.call_to_action}
           </a>
         </div>
       </header>
 
-      <section id="top" className={useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
+      <section id="top" className={useNeonGlass ? "relative overflow-hidden border-b border-cyan-300/20" : useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
+        {useNeonGlass && <NeonGridBackground colors={colors} />}
         <div className={`${maxWidthClass} grid grid-cols-1 gap-10 ${heroPaddingClass} lg:grid-cols-[1.02fr_0.98fr]`}>
         <div className="flex flex-col justify-center">
-          <div className="mb-5 inline-flex w-fit items-center rounded-lg border px-3 py-1 text-xs font-semibold" style={{ borderColor: colors.primary, backgroundColor: withPreviewAlpha(colors.primary, useDarkHero ? "28" : "14"), color: useDarkHero ? colors.accent : colors.secondary }}>
+          <div className={useNeonGlass ? "mb-5 inline-flex w-fit items-center rounded-lg border border-cyan-300/30 bg-white/10 px-3 py-1 text-xs font-bold text-cyan-100 shadow-lg shadow-cyan-950/30 backdrop-blur" : "mb-5 inline-flex w-fit items-center rounded-lg border px-3 py-1 text-xs font-semibold"} style={useNeonGlass ? undefined : { borderColor: colors.primary, backgroundColor: withPreviewAlpha(colors.primary, useDarkHero ? "28" : "14"), color: useDarkHero ? colors.accent : colors.secondary }}>
             <Sparkles className="mr-2 h-3.5 w-3.5" /> {mode === "internal" ? "Intern preview" : copy.heroBadge}
           </div>
           <h1 className={`${heroTitleClass} ${heroTextClass}`}>{content.hero_title}</h1>
           <p className={`mt-5 max-w-2xl text-xl leading-8 ${heroMutedClass}`}>{content.hero_subtitle}</p>
           <p className={`mt-5 max-w-2xl text-base leading-8 md:text-lg ${heroSoftClass}`}>{content.intro_text}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a href={preview.contactHref} className="inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
+            <a href={preview.contactHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-black shadow-xl shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold"} style={useNeonGlass ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" } : { backgroundColor: colors.primary, color: colors.primaryText }}>
               {content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" />
             </a>
             {preview.websiteUrl && (
@@ -192,6 +209,7 @@ export function DemoSitePreviewRenderer({
           images={images}
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
+          neonGlass={useNeonGlass}
           useDarkHero={useDarkHero}
         />
         </div>
@@ -202,28 +220,29 @@ export function DemoSitePreviewRenderer({
           colors={colors}
           copy={copy}
           maxWidthClass={maxWidthClass}
+          neonGlass={useNeonGlass}
         />
       )}
 
       {images.length > 0 && (
-        <section id="bilder" className="bg-white py-12">
+        <section id="bilder" className={useNeonGlass ? "border-b border-white/10 bg-[#020617] py-12 text-white" : "bg-white py-12"}>
           <div className={`${maxWidthClass} px-4`}>
-            <SectionIntro eyebrow={copy.galleryEyebrow} title={copy.galleryTitle} text={preview.isImported ? copy.galleryText : "Bilder og faglige detaljer gir siden mer troverdighet før kunden tar kontakt."} />
+            <SectionIntro eyebrow={copy.galleryEyebrow} title={copy.galleryTitle} text={preview.isImported ? copy.galleryText : "Bilder og faglige detaljer gir siden mer troverdighet før kunden tar kontakt."} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {images.slice(0, 3).map((image, index) => (
-                <PreviewImage key={`${image}-${index}`} image={image} alt={`${companyName} bilde ${index + 1}`} className="h-80 w-full rounded-lg bg-slate-100 object-cover" color={colors.primary} />
+                <PreviewImage key={`${image}-${index}`} image={image} alt={`${companyName} bilde ${index + 1}`} className={useNeonGlass ? "h-80 w-full rounded-lg border border-white/10 bg-slate-900 object-cover shadow-xl shadow-cyan-950/20" : "h-80 w-full rounded-lg bg-slate-100 object-cover"} color={colors.primary} />
               ))}
             </div>
           </div>
         </section>
       )}
 
-      <section id="tjenester" className="bg-[#f8fafc] py-16">
+      <section id="tjenester" className={useNeonGlass ? "border-b border-white/10 bg-[#06111f] py-16 text-white" : "bg-[#f8fafc] py-16"}>
         <div className={`${maxWidthClass} px-4`}>
-          <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} />
+          <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} inverted={useNeonGlass} />
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
             {(services.length ? services : [DEMO_SITES_PREVIEW_PLACEHOLDERS.service]).map((service, index) => (
-              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} />
+              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} dark={useNeonGlass} />
             ))}
           </div>
         </div>
@@ -231,12 +250,12 @@ export function DemoSitePreviewRenderer({
 
       {fullPreview && (
         <>
-          <section id="fordeler" className="py-16 text-white" style={{ backgroundColor: colors.secondary }}>
+          <section id="fordeler" className={useNeonGlass ? "border-b border-white/10 py-16 text-white" : "py-16 text-white"} style={{ backgroundColor: useNeonGlass ? "#030712" : colors.secondary }}>
             <div className={`${maxWidthClass} px-4`}>
               <SectionIntro eyebrow={copy.trustEyebrow} title={copy.trustTitle} text={copy.trustText} inverted />
               <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-4">
                 {(content.trust_points.length ? content.trust_points.slice(0, 4) : copy.proofItems).map((point, index) => (
-                  <div key={`${point}-${index}`} className={content.trust_points.length ? "rounded-lg border border-white/15 bg-white/10 p-5" : "rounded-lg border border-white/15 bg-white/5 p-5 text-white/80"}>
+                  <div key={`${point}-${index}`} className={content.trust_points.length ? "rounded-lg border border-white/15 bg-white/10 p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-white/15 bg-white/5 p-5 text-white/80"}>
                     <Star className="h-5 w-5" style={{ color: colors.accent }} />
                     <p className="mt-4 text-sm leading-6 text-white/85">{point}</p>
                   </div>
@@ -245,27 +264,31 @@ export function DemoSitePreviewRenderer({
             </div>
           </section>
 
-          <section id="tilbud" className={`${maxWidthClass} px-4 py-16`}>
-            <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={copy.offerText} />
+          <section id="tilbud" className={useNeonGlass ? "bg-[#020617] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
+            <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
+            <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={copy.offerText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <ListCard title={copy.productsTitle} items={content.products} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.product} color={colors.primary} />
-              <ListCard title={copy.pricesTitle} items={content.prices} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.price} color={colors.primary} />
+              <ListCard title={copy.productsTitle} items={content.products} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.product} color={colors.primary} dark={useNeonGlass} />
+              <ListCard title={copy.pricesTitle} items={content.prices} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.price} color={colors.primary} dark={useNeonGlass} />
+            </div>
             </div>
           </section>
 
-          <section id="faq" className={`${maxWidthClass} px-4 py-16`}>
-            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={copy.faqText} />
+          <section id="faq" className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
+            <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
+            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={copy.faqText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {(content.faq.length ? content.faq.slice(0, 6) : [{ question: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqQuestion, answer: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqAnswer }]).map((item, index) => (
-                <div key={`${item.question}-${index}`} className={content.faq.length ? "rounded-lg border border-slate-200 bg-white p-5" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-5"}>
-                  <h3 className="font-bold text-slate-950">{item.question || "Mangler spørsmål"}</h3>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{item.answer || "Mangler svar"}</p>
+                <div key={`${item.question}-${index}`} className={useNeonGlass ? content.faq.length ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-5" : content.faq.length ? "rounded-lg border border-slate-200 bg-white p-5" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-5"}>
+                  <h3 className={useNeonGlass ? "font-bold text-white" : "font-bold text-slate-950"}>{item.question || "Mangler spørsmål"}</h3>
+                  <p className={useNeonGlass ? "mt-3 text-sm leading-6 text-slate-300" : "mt-3 text-sm leading-6 text-slate-600"}>{item.answer || "Mangler svar"}</p>
                 </div>
               ))}
             </div>
+            </div>
           </section>
 
-          <section id="kontakt" className="bg-slate-950 py-16 text-white">
+          <section id="kontakt" className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-slate-950 py-16 text-white"}>
             <div className={`${maxWidthClass} grid grid-cols-1 gap-8 px-4 lg:grid-cols-[0.95fr_1.05fr]`}>
               <div>
                 <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withPreviewAlpha(colors.primary, "28"), color: colors.accent }}>
@@ -294,25 +317,25 @@ export function DemoSitePreviewRenderer({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-white/10 bg-white p-5 text-slate-950">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div className={useNeonGlass ? "rounded-lg border border-cyan-300/20 bg-white/[0.08] p-5 text-white shadow-2xl shadow-cyan-950/30 backdrop-blur" : "rounded-lg border border-white/10 bg-white p-5 text-slate-950"}>
+                <div className={useNeonGlass ? "flex items-center justify-between border-b border-white/10 pb-4" : "flex items-center justify-between border-b border-slate-200 pb-4"}>
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
                       <Bot className="h-5 w-5" />
                     </span>
                     <div>
-                      <div className="font-bold">ChatGenius AI-assistent</div>
-                      <div className="text-xs text-slate-500">Svarforslag basert på demoens innhold</div>
+                      <div className={useNeonGlass ? "font-bold text-white" : "font-bold"}>ChatGenius AI-assistent</div>
+                      <div className={useNeonGlass ? "text-xs text-slate-400" : "text-xs text-slate-500"}>Svarforslag basert på demoens innhold</div>
                     </div>
                   </div>
                   <span className="rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{mode === "internal" ? "Preview" : "Online"}</span>
                 </div>
                 <div className="space-y-3 py-5">
-                  <ChatBubble align="left" color="#f1f5f9">Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {companyName}.</ChatBubble>
-                  <ChatBubble align="right" color={withPreviewAlpha(colors.primary, "20")}>{mode === "internal" ? "Hva er neste steg?" : copy.chatQuestion}</ChatBubble>
-                  <ChatBubble align="left" color="#f8fafc">{preview.chatPrice} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
+                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.10)" : "#f1f5f9"} dark={useNeonGlass}>Hei! Jeg kan hjelpe deg med tjenester, priser og kontakt hos {companyName}.</ChatBubble>
+                  <ChatBubble align="right" color={withPreviewAlpha(colors.primary, useNeonGlass ? "2e" : "20")} dark={useNeonGlass}>{mode === "internal" ? "Hva er neste steg?" : copy.chatQuestion}</ChatBubble>
+                  <ChatBubble align="left" color={useNeonGlass ? "rgba(255,255,255,0.08)" : "#f8fafc"} dark={useNeonGlass}>{preview.chatPrice} Du kan også sende inn detaljer, så følger vi opp med et mer presist forslag.</ChatBubble>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                <div className={useNeonGlass ? "flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-sm text-slate-300" : "flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500"}>
                   <ImageIcon className="h-4 w-4" /> Skriv et spørsmål om {companyName}
                 </div>
               </div>
@@ -328,7 +351,7 @@ export function DemoSitePreviewRenderer({
       )}
 
       {mode === "public" && (
-        <footer className="bg-white px-4 py-8 text-center text-xs text-slate-500">
+        <footer className={useNeonGlass ? "border-t border-white/10 bg-[#020617] px-4 py-8 text-center text-xs text-slate-500" : "bg-white px-4 py-8 text-center text-xs text-slate-500"}>
           Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"}.
         </footer>
       )}
@@ -336,9 +359,9 @@ export function DemoSitePreviewRenderer({
   );
 }
 
-function BusinessTopStrip({ contact, copy, colors }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors }) {
+function BusinessTopStrip({ contact, copy, colors, neonGlass = false }: { contact: ReturnType<typeof getDemoSitesPreviewModel>["contact"]; copy: ResolvedPreviewBusinessCopy; colors: DemoSitesPreviewColors; neonGlass?: boolean }) {
   return (
-    <div className="border-b border-slate-200 bg-slate-950 text-xs text-slate-300">
+    <div className={neonGlass ? "border-b border-white/10 bg-[#020617] text-xs text-slate-300" : "border-b border-slate-200 bg-slate-950 text-xs text-slate-300"}>
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: colors.accent }} />
@@ -381,6 +404,7 @@ function HeroMediaPanel({
   expiresAt,
   images,
   mode,
+  neonGlass,
   primaryService,
   useDarkHero,
 }: {
@@ -390,11 +414,26 @@ function HeroMediaPanel({
   expiresAt: string;
   images: string[];
   mode: DemoSitesPreviewMode;
+  neonGlass: boolean;
   primaryService: string;
   useDarkHero: boolean;
 }) {
   const mainImage = images[0];
   const heroImageClass = mode === "public" ? "h-full min-h-[460px] w-full rounded-lg object-cover" : "h-full min-h-[300px] w-full rounded-lg object-cover";
+
+  if (neonGlass) {
+    return (
+      <NeonTechnologyPanel
+        colors={colors}
+        companyName={companyName}
+        copy={copy}
+        expiresAt={expiresAt}
+        images={images}
+        mode={mode}
+        primaryService={primaryService}
+      />
+    );
+  }
 
   if (mainImage) {
     return (
@@ -440,23 +479,128 @@ function HeroMediaPanel({
   );
 }
 
-function ProcessStrip({ colors, copy, maxWidthClass }: { colors: DemoSitesPreviewColors; copy: ResolvedPreviewBusinessCopy; maxWidthClass: string }) {
+function NeonGridBackground({ colors }: { colors: DemoSitesPreviewColors }) {
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute inset-0 opacity-35"
+        style={{
+          backgroundImage: `linear-gradient(${withPreviewAlpha(colors.primary, "22")} 1px, transparent 1px), linear-gradient(90deg, ${withPreviewAlpha(colors.accent, "1f")} 1px, transparent 1px)`,
+          backgroundSize: "54px 54px",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `linear-gradient(115deg, ${withPreviewAlpha(colors.primary, "1f")} 0%, transparent 36%, ${withPreviewAlpha(colors.accent, "19")} 70%, transparent 100%)`,
+        }}
+      />
+    </>
+  );
+}
+
+function NeonTechnologyPanel({
+  colors,
+  companyName,
+  copy,
+  expiresAt,
+  images,
+  mode,
+  primaryService,
+}: {
+  colors: DemoSitesPreviewColors;
+  companyName: string;
+  copy: ResolvedPreviewBusinessCopy;
+  expiresAt: string;
+  images: string[];
+  mode: DemoSitesPreviewMode;
+  primaryService: string;
+}) {
+  const signals = ["AI-pilot", "API-flyt", "Sikker skalering"];
+  const stack = ["Kundeinnsikt", "Automatisering", "Integrasjoner", "Dashboard"];
+
+  return (
+    <div className="relative min-h-[420px] overflow-hidden rounded-lg border border-cyan-300/20 bg-slate-950 p-5 text-white shadow-2xl shadow-cyan-950/40">
+      <NeonGridBackground colors={colors} />
+      <div className="relative flex h-full min-h-[380px] flex-col justify-between">
+        <div className="flex items-center justify-between gap-3">
+          <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-cyan-100 backdrop-blur">
+            <Bot className="mr-2 h-3.5 w-3.5" />
+            AI demo hub
+          </div>
+          <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-200">
+            {mode === "internal" ? "Ikke publisert" : `Aktiv til ${formatPreviewDate(expiresAt)}`}
+          </div>
+        </div>
+
+        <div className="my-8 rounded-lg border border-white/10 bg-white/[0.08] p-5 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-cyan-200">Pipeline</p>
+              <h3 className="mt-2 text-3xl font-black leading-tight text-white">{primaryService}</h3>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-right">
+              <div className="text-xs text-slate-400">Status</div>
+              <div className="text-sm font-black text-emerald-200">Pilotklar</div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            {stack.map((item, index) => (
+              <div key={item} className="rounded-lg border border-white/10 bg-slate-950/55 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-400">0{index + 1}</span>
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: index % 2 === 0 ? colors.primary : colors.accent }} />
+                </div>
+                <div className="mt-4 text-sm font-black text-white">{item}</div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full" style={{ width: `${64 + index * 8}%`, background: `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm leading-6 text-cyan-50">
+            {copy.heroStatusText} For {companyName} betyr det kort vei fra ide til testbar pilot, med data og sikkerhet med fra start.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {signals.map((item) => (
+            <div key={item} className="rounded-lg border border-white/10 bg-white/[0.07] p-4 text-sm font-bold text-white backdrop-blur">
+              <Sparkles className="mb-3 h-5 w-5" style={{ color: colors.primary }} />
+              {item}
+            </div>
+          ))}
+        </div>
+
+        {images.length > 0 && (
+          <div className="mt-4 text-xs font-semibold text-slate-500">
+            {images.length} bilde{images.length === 1 ? "" : "r"} brukes videre i demoen.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProcessStrip({ colors, copy, maxWidthClass, neonGlass = false }: { colors: DemoSitesPreviewColors; copy: ResolvedPreviewBusinessCopy; maxWidthClass: string; neonGlass?: boolean }) {
   const icons = [<ClipboardCheck key="need" className="h-5 w-5" />, <Wrench key="work" className="h-5 w-5" />, <CalendarCheck key="next" className="h-5 w-5" />];
 
   return (
-    <section className="border-b border-slate-200 bg-white">
+    <section className={neonGlass ? "border-b border-white/10 bg-[#020617] text-white" : "border-b border-slate-200 bg-white"}>
       <div className={`${maxWidthClass} grid grid-cols-1 gap-4 px-4 py-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center`}>
         <div>
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{copy.proofLabel}</div>
-          <h2 className="mt-2 text-2xl font-black leading-tight text-slate-950 md:text-3xl">{copy.processTitle}</h2>
+          <div className={neonGlass ? "text-xs font-bold uppercase tracking-wide text-cyan-200" : "text-xs font-bold uppercase tracking-wide text-slate-500"}>{copy.proofLabel}</div>
+          <h2 className={neonGlass ? "mt-2 text-2xl font-black leading-tight text-white md:text-3xl" : "mt-2 text-2xl font-black leading-tight text-slate-950 md:text-3xl"}>{copy.processTitle}</h2>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {copy.processSteps.map((step, index) => (
-            <div key={step} className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: colors.primary }}>
+            <div key={step} className={neonGlass ? "flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.07] p-4 shadow-lg shadow-cyan-950/10 backdrop-blur" : "flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4"}>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
                 {icons[index] || <CheckCircle className="h-5 w-5" />}
               </span>
-              <span className="text-sm font-semibold leading-6 text-slate-700">{step}</span>
+              <span className={neonGlass ? "text-sm font-semibold leading-6 text-slate-200" : "text-sm font-semibold leading-6 text-slate-700"}>{step}</span>
             </div>
           ))}
         </div>
@@ -498,26 +642,26 @@ function ContactLine({ icon, label, value, href }: { icon: ReactNode; label: str
   return <div className={hasValue ? "flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 p-3" : "flex items-start gap-3 rounded-lg border border-dashed border-white/15 bg-white/5 p-3 text-slate-500"}>{content}</div>;
 }
 
-function FeatureCard({ title, color, description, placeholder = false }: { title: string; color: string; description: string; placeholder?: boolean }) {
+function FeatureCard({ title, color, description, placeholder = false, dark = false }: { title: string; color: string; description: string; placeholder?: boolean; dark?: boolean }) {
   return (
-    <div className={placeholder ? "rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-500" : "rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"}>
-      <span className="flex h-11 w-11 items-center justify-center rounded-lg" style={{ backgroundColor: withPreviewAlpha(color, "16"), color }}>
+    <div className={dark ? placeholder ? "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-6 text-slate-400" : "rounded-lg border border-white/10 bg-white/[0.07] p-6 text-white shadow-lg shadow-cyan-950/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-white/[0.1]" : placeholder ? "rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-500" : "rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"}>
+      <span className="flex h-11 w-11 items-center justify-center rounded-lg" style={{ backgroundColor: withPreviewAlpha(color, dark ? "24" : "16"), color }}>
         <CheckCircle className="h-6 w-6" />
       </span>
-      <h3 className="mt-4 font-bold text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{placeholder ? "Legg inn konkrete tjenester for å gjøre demoen mer salgsklar." : description}</p>
+      <h3 className={dark ? "mt-4 font-bold text-white" : "mt-4 font-bold text-slate-950"}>{title}</h3>
+      <p className={dark ? "mt-2 text-sm leading-6 text-slate-300" : "mt-2 text-sm leading-6 text-slate-600"}>{placeholder ? "Legg inn konkrete tjenester for å gjøre demoen mer salgsklar." : description}</p>
     </div>
   );
 }
 
-function ListCard({ title, items, emptyText, color }: { title: string; items: string[]; emptyText: string; color: string }) {
+function ListCard({ title, items, emptyText, color, dark = false }: { title: string; items: string[]; emptyText: string; color: string; dark?: boolean }) {
   const visibleItems = items.length ? items : [emptyText];
   return (
-    <div className={items.length ? "rounded-lg border border-slate-200 bg-white p-6" : "rounded-lg border border-dashed border-slate-300 bg-white p-6"}>
+    <div className={dark ? items.length ? "rounded-lg border border-white/10 bg-white/[0.07] p-6 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-6" : items.length ? "rounded-lg border border-slate-200 bg-white p-6" : "rounded-lg border border-dashed border-slate-300 bg-white p-6"}>
       <h3 className="text-2xl font-black">{title}</h3>
       <div className="mt-5 space-y-3">
         {visibleItems.slice(0, 8).map((item, index) => (
-          <div key={`${item}-${index}`} className={items.length ? "flex gap-3 rounded-lg bg-slate-50 p-4 text-sm" : "flex gap-3 rounded-lg bg-slate-100 p-4 text-sm text-slate-500"}>
+          <div key={`${item}-${index}`} className={dark ? items.length ? "flex gap-3 rounded-lg border border-white/10 bg-slate-950/45 p-4 text-sm text-slate-200" : "flex gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-slate-400" : items.length ? "flex gap-3 rounded-lg bg-slate-50 p-4 text-sm" : "flex gap-3 rounded-lg bg-slate-100 p-4 text-sm text-slate-500"}>
             <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color }} />
             <span>{item}</span>
           </div>
@@ -527,9 +671,9 @@ function ListCard({ title, items, emptyText, color }: { title: string; items: st
   );
 }
 
-function ChatBubble({ children, align, color }: { children: ReactNode; align: "left" | "right"; color: string }) {
+function ChatBubble({ children, align, color, dark = false }: { children: ReactNode; align: "left" | "right"; color: string; dark?: boolean }) {
   return (
-    <div className={align === "right" ? "ml-auto max-w-[82%] rounded-lg p-3 text-sm leading-6" : "mr-auto max-w-[82%] rounded-lg p-3 text-sm leading-6"} style={{ backgroundColor: color }}>
+    <div className={`${align === "right" ? "ml-auto" : "mr-auto"} max-w-[82%] rounded-lg p-3 text-sm leading-6 ${dark ? "border border-white/10 text-slate-100" : "text-slate-800"}`} style={{ backgroundColor: color }}>
       {children}
     </div>
   );
@@ -552,6 +696,15 @@ function prefersDarkBusinessHero(templateSlug: string) {
   return ["dekk", "bilverksted", "elektro", "rorlegger", "snekker", "bygg", "frakt"].some((keyword) => slug.includes(keyword));
 }
 
+function isTechnologyBusinessTemplate(templateSlug: string) {
+  const slug = templateSlug.toLowerCase();
+  return ["ai-teknologi", "teknologi", "teknobedrift", "tech", "software", "saas", "automasjon"].some((keyword) => slug.includes(keyword));
+}
+
+function prefersNeonGlassPreview(templateSlug: string) {
+  return isTechnologyBusinessTemplate(templateSlug);
+}
+
 function getHeroBackground(colors: DemoSitesPreviewColors) {
   return colors.secondaryText === "#ffffff" ? colors.secondary : "#111827";
 }
@@ -559,6 +712,16 @@ function getHeroBackground(colors: DemoSitesPreviewColors) {
 function getServiceCardDescription(service: string, templateSlug: string, copy: ResolvedPreviewBusinessCopy) {
   const value = service.toLowerCase();
   const slug = templateSlug.toLowerCase();
+
+  if (isTechnologyBusinessTemplate(slug)) {
+    if (value.includes("agent")) return "Presenter AI-agenten som et konkret verktøy for kundeservice, salg eller interne oppgaver.";
+    if (value.includes("automatisering") || value.includes("automasjon")) return "Vis hvilke manuelle steg som kan kuttes ned, måles og skaleres trygt.";
+    if (value.includes("api") || value.includes("integrasjon")) return "Gjør tekniske koblinger forståelige med tydelig verdi for arbeidsflyten.";
+    if (value.includes("data") || value.includes("dashboard")) return "Knytter data, innsikt og beslutninger sammen i en lettlest demo.";
+    if (value.includes("pilot") || value.includes("mvp") || value.includes("prototype")) return "Gir kunden en trygg vei fra idé til testbar løsning uten stort førstesteg.";
+    if (value.includes("sikker") || value.includes("gdpr")) return "Bygger tillit rundt data, ansvar og kontroll før løsningen tas i bruk.";
+    return "Vises som et tydelig teknologivalg med vei til workshop, demo eller pilot.";
+  }
 
   if (slug.includes("dekk") || slug.includes("bilverksted")) {
     if (value.includes("hjulhotell")) return "Trygg lagring, sesongbytte og enkel oppfølging når dekkene skal på igjen.";
@@ -602,6 +765,42 @@ function getServiceCardDescription(service: string, templateSlug: string, copy: 
 
 function getPreviewBusinessCopy(templateSlug: string, companyName: string): PreviewBusinessCopy {
   const slug = templateSlug.toLowerCase();
+
+  if (isTechnologyBusinessTemplate(slug)) {
+    return {
+      navOffer: "Pilot og demo",
+      heroBadge: "AI, automasjon og teknologi",
+      heroStatusTitle: "Klar for AI-pilot",
+      heroStatusText: "Kunden ser hva som kan automatiseres, hvordan teknologien kobles på og hvilket første steg som er trygt å ta.",
+      heroPrimaryService: "AI-agenter, integrasjoner og pilotløp",
+      galleryEyebrow: "Teknologiprofil",
+      galleryTitle: "Et visuelt uttrykk for en moderne teknobedrift",
+      galleryText: "Bilder, farger og glasspaneler løfter AI, dataflyt og produktfølelse uten å gjøre siden rotete.",
+      servicesEyebrow: "AI-tjenester",
+      servicesTitle: "Fra manuell prosess til smart arbeidsflyt",
+      servicesText: "Gjør AI, automasjon og integrasjoner forståelig for ledere som vil starte kontrollert.",
+      serviceCardText: "Knyttes til workshop, demo, pilot eller teknisk avklaring.",
+      trustEyebrow: "Trygg teknologi",
+      trustTitle: "Nytt og fancy, men fortsatt forankret i drift",
+      trustText: "Denne delen viser hvordan AI-løsningen kan bygges rundt sikkerhet, data, integrasjoner og målbar effekt.",
+      offerEyebrow: "Pakketering",
+      offerTitle: "Tydelige veier fra idé til pilot",
+      offerText: "Workshop, pilot og integrasjoner presenteres som konkrete kjøpsvalg, ikke bare teknisk buzz.",
+      productsTitle: "AI-pakker og leveranser",
+      pricesTitle: "Pris og pilotstart",
+      faqText: "Svar på spørsmål om data, sikkerhet, integrasjoner, scope og hvordan et pilotløp starter.",
+      contactTitle: `Start en smartere tech-dialog med ${companyName}`,
+      contactText: "Gjør det enkelt å booke workshop, se demo eller beskrive en prosess som bør automatiseres.",
+      chatQuestion: "Kan vi starte med en AI-pilot?",
+      metricServiceLabel: "AI-flyt",
+      metricOfferLabel: "Pilot",
+      metricContactLabel: "Demo",
+      proofLabel: "Sikker innovasjon",
+      proofItems: ["Avgrenset pilot før skalering", "Data og GDPR vurderes tidlig", "Integrasjoner planlegges ryddig", "Effekt måles før videre investering"],
+      processTitle: "Fra AI-idé til testbar løsning",
+      processSteps: ["Kartlegg prosess og datagrunnlag", "Velg workshop, demo eller pilot", "Mål effekt før løsningen skaleres"],
+    };
+  }
 
   if (slug.includes("dekk") || slug.includes("bilverksted")) {
     return {
