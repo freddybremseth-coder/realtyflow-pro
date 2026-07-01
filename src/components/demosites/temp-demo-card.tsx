@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Rocket, Loader2, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, Loader2, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DEMO_SITE_PACKAGES, type DemoSitePackageId } from "@/lib/demosites";
@@ -25,6 +25,7 @@ type DemoRequestFormState = {
 };
 
 type CreatedDemo = {
+  companyName: string;
   actionUrl?: string;
   previewUrl?: string;
   expiresAt?: string;
@@ -57,6 +58,18 @@ function formatDate(value?: string) {
   return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium" }).format(new Date(value));
 }
 
+function buildShareMessage(demo: CreatedDemo) {
+  const expiryText = formatDate(demo.expiresAt);
+  return [
+    `Hei! Vi har laget en privat DemoSites-preview for ${demo.companyName}.`,
+    "",
+    `Se og godkjenn demoen her: ${demo.actionUrl || demo.previewUrl || "lenke kommer"}`,
+    `Demoen er tilgjengelig til ${expiryText}. Etter dette slettes den hvis den ikke blir kjøpt/claimet.`,
+    "",
+    "Gi meg beskjed om du ønsker endringer, eller om vi skal gjøre demoen om til en permanent nettside.",
+  ].join("\n");
+}
+
 async function uploadAsset(file: File, companyName: string, kind: "logo" | "image") {
   if (file.size > MAX_FILE_SIZE) {
     throw new Error("Filen er for stor. Maks størrelse er 5 MB.");
@@ -81,6 +94,7 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<AssetField | null>(null);
   const [createdDemo, setCreatedDemo] = useState<CreatedDemo | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(field: AssetField, file?: File) {
@@ -97,13 +111,26 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
     }
   }
 
+  async function copyShareMessage() {
+    if (!createdDemo) return;
+    setCopyStatus(null);
+    try {
+      await navigator.clipboard.writeText(buildShareMessage(createdDemo));
+      setCopyStatus("Melding kopiert");
+    } catch {
+      setCopyStatus("Kunne ikke kopiere automatisk");
+    }
+  }
+
   async function createDemo(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setError(null);
     setCreatedDemo(null);
+    setCopyStatus(null);
 
     try {
+      const companyName = form.company_name;
       const response = await fetch("/api/saas/demosites/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -111,7 +138,7 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke lage demo.");
-      setCreatedDemo({ actionUrl: data.claimUrl, previewUrl: data.previewUrl, expiresAt: data.expiresAt });
+      setCreatedDemo({ companyName, actionUrl: data.claimUrl, previewUrl: data.previewUrl, expiresAt: data.expiresAt });
       setForm(INITIAL_FORM);
       await onCreated();
     } catch (err) {
@@ -166,7 +193,28 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
             <Button type="submit" disabled={saving || Boolean(uploadingField)} className="h-full min-h-10 bg-emerald-600 hover:bg-emerald-500">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}Lag demo</Button>
           </div>
         </form>
-        {createdDemo && <div className="grid grid-cols-1 gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 md:grid-cols-3"><Info label="Kundelenke" value={createdDemo.actionUrl || "Ikke klar"} href={createdDemo.actionUrl} /><Info label="Preview" value={createdDemo.previewUrl || "Ikke klar"} href={createdDemo.previewUrl} /><Info label="Utløper" value={formatDate(createdDemo.expiresAt)} /></div>}
+        {createdDemo && (
+          <div className="space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Info label="Kundelenke" value={createdDemo.actionUrl || "Ikke klar"} href={createdDemo.actionUrl} />
+              <Info label="Preview" value={createdDemo.previewUrl || "Ikke klar"} href={createdDemo.previewUrl} />
+              <Info label="Utløper" value={formatDate(createdDemo.expiresAt)} />
+            </div>
+            <div className="rounded-lg bg-slate-950/60 p-3">
+              <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Kundemelding</div>
+                  <p className="mt-1 text-xs text-slate-400">Kopier denne til e-post, WhatsApp eller SMS.</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" className="border-emerald-500/40 text-emerald-100" onClick={copyShareMessage}>
+                  <Copy className="mr-2 h-4 w-4" />Kopier melding
+                </Button>
+              </div>
+              <pre className="whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-200">{buildShareMessage(createdDemo)}</pre>
+              {copyStatus && <div className="mt-2 text-xs text-emerald-200">{copyStatus}</div>}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
