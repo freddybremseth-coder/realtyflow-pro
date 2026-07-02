@@ -4,18 +4,27 @@ import {
   BadgeCheck,
   Bot,
   CalendarCheck,
+  Car,
   CheckCircle,
   ClipboardCheck,
   Clock,
+  Cpu,
   ExternalLink,
+  Hammer,
+  Home,
+  Hotel,
   Image as ImageIcon,
   Mail,
   MapPin,
   MessageCircle,
   Phone,
+  Scale,
   ShieldCheck,
   Sparkles,
   Star,
+  Stethoscope,
+  Truck,
+  Utensils,
   Wrench,
 } from "lucide-react";
 import {
@@ -27,6 +36,12 @@ import {
   type DemoSitesPreviewMode,
   type DemoSitesPreviewColors,
 } from "@/lib/demosites-preview";
+import {
+  getDemoSitePreviewIndustryVisual,
+  isDemoSiteTechnologyTemplate,
+  type DemoSitesPreviewIndustryVariant,
+  type DemoSitesPreviewIndustryVisual,
+} from "@/lib/demosites-preview-visuals";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -95,13 +110,15 @@ export function DemoSitePreviewRenderer({
   const preview = getDemoSitesPreviewModel(input);
   const { content, colors, contact, companyName } = preview;
   const copy = resolvePreviewBusinessCopy(getPreviewBusinessCopy(preview.templateSlug, companyName));
+  const visual = getDemoSitePreviewIndustryVisual(preview.templateSlug);
   const fullPreview = mode === "public" || showFull || !compact;
   const imageLimit = fullPreview ? 6 : 3;
   const serviceLimit = fullPreview ? 9 : 3;
   const images = content.gallery_images.slice(0, imageLimit);
   const services = content.services.slice(0, serviceLimit);
-  const useNeonGlass = prefersNeonGlassPreview(preview.templateSlug);
+  const useNeonGlass = visual.variant === "neon";
   const useDarkHero = useNeonGlass || prefersDarkBusinessHero(preview.templateSlug);
+  const visualSection = getPreviewVisualSectionClasses(visual.variant, useNeonGlass);
   const heroBackground = useDarkHero ? getHeroBackground(colors) : "#ffffff";
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
@@ -204,13 +221,13 @@ export function DemoSitePreviewRenderer({
         <HeroMediaPanel
           colors={colors}
           companyName={companyName}
-          copy={copy}
           expiresAt={preview.expiresAt}
           images={images}
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
           neonGlass={useNeonGlass}
           useDarkHero={useDarkHero}
+          visual={visual}
         />
         </div>
       </section>
@@ -221,6 +238,15 @@ export function DemoSitePreviewRenderer({
           copy={copy}
           maxWidthClass={maxWidthClass}
           neonGlass={useNeonGlass}
+        />
+      )}
+
+      {fullPreview && (
+        <IndustrySignalStrip
+          colors={colors}
+          maxWidthClass={maxWidthClass}
+          neonGlass={useNeonGlass}
+          visual={visual}
         />
       )}
 
@@ -237,12 +263,12 @@ export function DemoSitePreviewRenderer({
         </section>
       )}
 
-      <section id="tjenester" className={useNeonGlass ? "border-b border-white/10 bg-[#06111f] py-16 text-white" : "bg-[#f8fafc] py-16"}>
+      <section id="tjenester" className={visualSection.services}>
         <div className={`${maxWidthClass} px-4`}>
-          <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} inverted={useNeonGlass} />
+          <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} inverted={visualSection.invertedServices} />
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
             {(services.length ? services : [DEMO_SITES_PREVIEW_PLACEHOLDERS.service]).map((service, index) => (
-              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} dark={useNeonGlass} />
+              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} dark={visualSection.darkCards} variant={visual.variant} />
             ))}
           </div>
         </div>
@@ -400,23 +426,23 @@ function HeroMetric({ label, value, dark = false }: { label: string; value: stri
 function HeroMediaPanel({
   colors,
   companyName,
-  copy,
   expiresAt,
   images,
   mode,
   neonGlass,
   primaryService,
   useDarkHero,
+  visual,
 }: {
   colors: DemoSitesPreviewColors;
   companyName: string;
-  copy: ResolvedPreviewBusinessCopy;
   expiresAt: string;
   images: string[];
   mode: DemoSitesPreviewMode;
   neonGlass: boolean;
   primaryService: string;
   useDarkHero: boolean;
+  visual: DemoSitesPreviewIndustryVisual;
 }) {
   const mainImage = images[0];
   const heroImageClass = mode === "public" ? "h-full min-h-[460px] w-full rounded-lg object-cover" : "h-full min-h-[300px] w-full rounded-lg object-cover";
@@ -426,11 +452,10 @@ function HeroMediaPanel({
       <NeonTechnologyPanel
         colors={colors}
         companyName={companyName}
-        copy={copy}
         expiresAt={expiresAt}
         images={images}
         mode={mode}
-        primaryService={primaryService}
+        visual={visual}
       />
     );
   }
@@ -445,8 +470,15 @@ function HeroMediaPanel({
               <ShieldCheck className="h-5 w-5" />
             </span>
             <div>
-              <div className="text-sm font-black text-slate-950">{copy.heroStatusTitle}</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{copy.heroStatusText}</p>
+              <div className="text-sm font-black text-slate-950">{visual.heroPanelTitle}</div>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{visual.heroPanelText}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {visual.signalItems.map((item) => (
+                  <span key={item} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                    {item}
+                  </span>
+                ))}
+              </div>
               <div className="mt-3 text-xs font-semibold text-slate-500">
                 {mode === "internal" ? `${images.length} bilde${images.length === 1 ? "" : "r"} i preview` : `Preview utløper ${formatPreviewDate(expiresAt)}`}
               </div>
@@ -461,16 +493,16 @@ function HeroMediaPanel({
     <div className={useDarkHero ? "flex min-h-[380px] flex-col justify-between rounded-lg border border-white/10 bg-white/10 p-6 text-white shadow-2xl backdrop-blur" : "flex min-h-[380px] flex-col justify-between rounded-lg border border-slate-200 bg-white p-6 shadow-sm"}>
       <div>
         <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withPreviewAlpha(colors.primary, useDarkHero ? "28" : "16"), color: useDarkHero ? colors.accent : colors.secondary }}>
-          <ShieldCheck className="mr-2 h-3.5 w-3.5" />
-          {copy.heroStatusTitle}
+          <VisualVariantIcon variant={visual.variant} className="mr-2 h-3.5 w-3.5" />
+          {visual.label}
         </div>
         <h3 className={useDarkHero ? "mt-5 max-w-lg text-3xl font-black leading-tight text-white" : "mt-5 max-w-lg text-3xl font-black leading-tight text-slate-950"}>{primaryService}</h3>
-        <p className={useDarkHero ? "mt-4 max-w-lg text-base leading-7 text-slate-300" : "mt-4 max-w-lg text-base leading-7 text-slate-600"}>{copy.heroStatusText}</p>
+        <p className={useDarkHero ? "mt-4 max-w-lg text-base leading-7 text-slate-300" : "mt-4 max-w-lg text-base leading-7 text-slate-600"}>{visual.heroPanelText}</p>
       </div>
       <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-        {[copy.heroPrimaryService, copy.navOffer, "Kontakt"].map((item) => (
+        {visual.signalItems.map((item) => (
           <div key={item} className={useDarkHero ? "rounded-lg border border-white/10 bg-white/10 p-4 text-sm font-bold text-white" : "rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-800"}>
-            <CheckCircle className="mb-3 h-5 w-5" style={{ color: colors.primary }} />
+            <VisualVariantIcon variant={visual.variant} className="mb-3 h-5 w-5" style={{ color: colors.primary }} />
             {item}
           </div>
         ))}
@@ -502,22 +534,20 @@ function NeonGridBackground({ colors }: { colors: DemoSitesPreviewColors }) {
 function NeonTechnologyPanel({
   colors,
   companyName,
-  copy,
   expiresAt,
   images,
   mode,
-  primaryService,
+  visual,
 }: {
   colors: DemoSitesPreviewColors;
   companyName: string;
-  copy: ResolvedPreviewBusinessCopy;
   expiresAt: string;
   images: string[];
   mode: DemoSitesPreviewMode;
-  primaryService: string;
+  visual: DemoSitesPreviewIndustryVisual;
 }) {
-  const signals = ["AI-pilot", "API-flyt", "Sikker skalering"];
-  const stack = ["Kundeinnsikt", "Automatisering", "Integrasjoner", "Dashboard"];
+  const signals = visual.signalItems;
+  const stack = visual.panelStages;
 
   return (
     <div className="relative min-h-[420px] overflow-hidden rounded-lg border border-cyan-300/20 bg-slate-950 p-5 text-white shadow-2xl shadow-cyan-950/40">
@@ -526,7 +556,7 @@ function NeonTechnologyPanel({
         <div className="flex items-center justify-between gap-3">
           <div className="inline-flex items-center rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-cyan-100 backdrop-blur">
             <Bot className="mr-2 h-3.5 w-3.5" />
-            AI demo hub
+            {visual.label}
           </div>
           <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-200">
             {mode === "internal" ? "Ikke publisert" : `Aktiv til ${formatPreviewDate(expiresAt)}`}
@@ -537,7 +567,7 @@ function NeonTechnologyPanel({
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-cyan-200">Pipeline</p>
-              <h3 className="mt-2 text-3xl font-black leading-tight text-white">{primaryService}</h3>
+              <h3 className="mt-2 text-3xl font-black leading-tight text-white">{visual.heroPanelTitle}</h3>
             </div>
             <div className="rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-right">
               <div className="text-xs text-slate-400">Status</div>
@@ -561,7 +591,7 @@ function NeonTechnologyPanel({
           </div>
 
           <div className="mt-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm leading-6 text-cyan-50">
-            {copy.heroStatusText} For {companyName} betyr det kort vei fra ide til testbar pilot, med data og sikkerhet med fra start.
+            {visual.heroPanelText} For {companyName} betyr det kort vei fra ide til testbar pilot, med data og sikkerhet med fra start.
           </div>
         </div>
 
@@ -609,6 +639,36 @@ function ProcessStrip({ colors, copy, maxWidthClass, neonGlass = false }: { colo
   );
 }
 
+function IndustrySignalStrip({ colors, maxWidthClass, neonGlass = false, visual }: { colors: DemoSitesPreviewColors; maxWidthClass: string; neonGlass?: boolean; visual: DemoSitesPreviewIndustryVisual }) {
+  const classes = getPreviewVisualSignalClasses(visual.variant, neonGlass);
+
+  return (
+    <section className={classes.section}>
+      <div className={`${maxWidthClass} grid grid-cols-1 gap-5 px-4 py-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center`}>
+        <div>
+          <div className={classes.label}>{visual.label}</div>
+          <h2 className={classes.title}>{visual.signalTitle}</h2>
+          <p className={classes.text}>{visual.signalText}</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {visual.signalItems.map((item, index) => (
+            <div key={item} className={classes.item}>
+              <div className="flex items-center justify-between gap-3">
+                <span className={classes.itemIndex}>0{index + 1}</span>
+                <span className={classes.iconWrap} style={{ backgroundColor: withPreviewAlpha(colors.primary, neonGlass ? "28" : "18"), color: neonGlass ? colors.accent : colors.primary }}>
+                  <VisualVariantIcon variant={visual.variant} className="h-5 w-5" />
+                </span>
+              </div>
+              <div className={classes.itemTitle}>{item}</div>
+              <div className={classes.itemLine} style={{ background: `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SectionIntro({ eyebrow, title, text, inverted = false }: { eyebrow: string; title: string; text: string; inverted?: boolean }) {
   return (
     <div className="max-w-3xl">
@@ -642,11 +702,25 @@ function ContactLine({ icon, label, value, href }: { icon: ReactNode; label: str
   return <div className={hasValue ? "flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 p-3" : "flex items-start gap-3 rounded-lg border border-dashed border-white/15 bg-white/5 p-3 text-slate-500"}>{content}</div>;
 }
 
-function FeatureCard({ title, color, description, placeholder = false, dark = false }: { title: string; color: string; description: string; placeholder?: boolean; dark?: boolean }) {
+function FeatureCard({
+  title,
+  color,
+  description,
+  placeholder = false,
+  dark = false,
+  variant,
+}: {
+  title: string;
+  color: string;
+  description: string;
+  placeholder?: boolean;
+  dark?: boolean;
+  variant: DemoSitesPreviewIndustryVariant;
+}) {
   return (
     <div className={dark ? placeholder ? "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-6 text-slate-400" : "rounded-lg border border-white/10 bg-white/[0.07] p-6 text-white shadow-lg shadow-cyan-950/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-white/[0.1]" : placeholder ? "rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-500" : "rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"}>
       <span className="flex h-11 w-11 items-center justify-center rounded-lg" style={{ backgroundColor: withPreviewAlpha(color, dark ? "24" : "16"), color }}>
-        <CheckCircle className="h-6 w-6" />
+        <VisualVariantIcon variant={variant} className="h-6 w-6" />
       </span>
       <h3 className={dark ? "mt-4 font-bold text-white" : "mt-4 font-bold text-slate-950"}>{title}</h3>
       <p className={dark ? "mt-2 text-sm leading-6 text-slate-300" : "mt-2 text-sm leading-6 text-slate-600"}>{placeholder ? "Legg inn konkrete tjenester for å gjøre demoen mer salgsklar." : description}</p>
@@ -679,6 +753,151 @@ function ChatBubble({ children, align, color, dark = false }: { children: ReactN
   );
 }
 
+function VisualVariantIcon({ variant, className, style }: { variant: DemoSitesPreviewIndustryVariant; className?: string; style?: CSSProperties }) {
+  switch (variant) {
+    case "auto":
+      return <Car className={className} style={style} />;
+    case "hospitality":
+      return <Utensils className={className} style={style} />;
+    case "clean":
+      return <Sparkles className={className} style={style} />;
+    case "trade":
+      return <Hammer className={className} style={style} />;
+    case "clinic":
+      return <Stethoscope className={className} style={style} />;
+    case "professional":
+      return <Scale className={className} style={style} />;
+    case "stay":
+      return <Hotel className={className} style={style} />;
+    case "property":
+      return <Home className={className} style={style} />;
+    case "logistics":
+      return <Truck className={className} style={style} />;
+    case "neon":
+      return <Cpu className={className} style={style} />;
+    default:
+      return <CheckCircle className={className} style={style} />;
+  }
+}
+
+function getPreviewVisualSectionClasses(variant: DemoSitesPreviewIndustryVariant, neonGlass: boolean) {
+  if (neonGlass) {
+    return {
+      services: "border-b border-white/10 bg-[#06111f] py-16 text-white",
+      invertedServices: true,
+      darkCards: true,
+    };
+  }
+
+  if (variant === "auto" || variant === "trade" || variant === "logistics") {
+    return {
+      services: "border-b border-slate-800 bg-slate-950 py-16 text-white",
+      invertedServices: true,
+      darkCards: true,
+    };
+  }
+
+  if (variant === "hospitality") {
+    return {
+      services: "bg-[#fff7ed] py-16",
+      invertedServices: false,
+      darkCards: false,
+    };
+  }
+
+  if (variant === "clean" || variant === "clinic") {
+    return {
+      services: "bg-[#f0fdfa] py-16",
+      invertedServices: false,
+      darkCards: false,
+    };
+  }
+
+  if (variant === "professional" || variant === "property" || variant === "stay") {
+    return {
+      services: "bg-[#f8fafc] py-16",
+      invertedServices: false,
+      darkCards: false,
+    };
+  }
+
+  return {
+    services: "bg-[#f8fafc] py-16",
+    invertedServices: false,
+    darkCards: false,
+  };
+}
+
+function getPreviewVisualSignalClasses(variant: DemoSitesPreviewIndustryVariant, neonGlass: boolean) {
+  if (neonGlass) {
+    return {
+      section: "border-b border-white/10 bg-[#020617] text-white",
+      label: "text-xs font-bold uppercase tracking-wide text-cyan-200",
+      title: "mt-2 text-2xl font-black leading-tight text-white md:text-3xl",
+      text: "mt-3 max-w-2xl text-sm leading-6 text-slate-300",
+      item: "rounded-lg border border-cyan-300/20 bg-white/[0.07] p-5 shadow-lg shadow-cyan-950/20 backdrop-blur",
+      itemIndex: "text-xs font-bold text-cyan-200",
+      iconWrap: "flex h-10 w-10 items-center justify-center rounded-lg",
+      itemTitle: "mt-5 text-sm font-black text-white",
+      itemLine: "mt-4 h-1 rounded-full",
+    };
+  }
+
+  if (variant === "auto" || variant === "trade" || variant === "logistics") {
+    return {
+      section: "border-b border-slate-800 bg-slate-950 text-white",
+      label: "text-xs font-bold uppercase tracking-wide text-slate-400",
+      title: "mt-2 text-2xl font-black leading-tight text-white md:text-3xl",
+      text: "mt-3 max-w-2xl text-sm leading-6 text-slate-300",
+      item: "rounded-lg border border-white/10 bg-white/[0.06] p-5 shadow-lg shadow-slate-950/20",
+      itemIndex: "text-xs font-bold text-slate-400",
+      iconWrap: "flex h-10 w-10 items-center justify-center rounded-lg",
+      itemTitle: "mt-5 text-sm font-black text-white",
+      itemLine: "mt-4 h-1 rounded-full",
+    };
+  }
+
+  if (variant === "hospitality") {
+    return {
+      section: "border-b border-orange-100 bg-[#fff7ed] text-slate-950",
+      label: "text-xs font-bold uppercase tracking-wide text-orange-700",
+      title: "mt-2 text-2xl font-black leading-tight text-slate-950 md:text-3xl",
+      text: "mt-3 max-w-2xl text-sm leading-6 text-slate-700",
+      item: "rounded-lg border border-orange-100 bg-white p-5 shadow-sm",
+      itemIndex: "text-xs font-bold text-orange-700",
+      iconWrap: "flex h-10 w-10 items-center justify-center rounded-lg",
+      itemTitle: "mt-5 text-sm font-black text-slate-950",
+      itemLine: "mt-4 h-1 rounded-full",
+    };
+  }
+
+  if (variant === "clean" || variant === "clinic") {
+    return {
+      section: "border-b border-teal-100 bg-[#f0fdfa] text-slate-950",
+      label: "text-xs font-bold uppercase tracking-wide text-teal-700",
+      title: "mt-2 text-2xl font-black leading-tight text-slate-950 md:text-3xl",
+      text: "mt-3 max-w-2xl text-sm leading-6 text-slate-700",
+      item: "rounded-lg border border-teal-100 bg-white p-5 shadow-sm",
+      itemIndex: "text-xs font-bold text-teal-700",
+      iconWrap: "flex h-10 w-10 items-center justify-center rounded-lg",
+      itemTitle: "mt-5 text-sm font-black text-slate-950",
+      itemLine: "mt-4 h-1 rounded-full",
+    };
+  }
+
+  return {
+    section: "border-b border-slate-200 bg-white text-slate-950",
+    label: "text-xs font-bold uppercase tracking-wide text-slate-500",
+    title: "mt-2 text-2xl font-black leading-tight text-slate-950 md:text-3xl",
+    text: "mt-3 max-w-2xl text-sm leading-6 text-slate-600",
+    item: "rounded-lg border border-slate-200 bg-slate-50 p-5 shadow-sm",
+    itemIndex: "text-xs font-bold text-slate-500",
+    iconWrap: "flex h-10 w-10 items-center justify-center rounded-lg",
+    itemTitle: "mt-5 text-sm font-black text-slate-950",
+    itemLine: "mt-4 h-1 rounded-full",
+  };
+}
+
 function resolvePreviewBusinessCopy(copy: PreviewBusinessCopy): ResolvedPreviewBusinessCopy {
   return {
     ...copy,
@@ -696,15 +915,6 @@ function prefersDarkBusinessHero(templateSlug: string) {
   return ["dekk", "bilverksted", "elektro", "rorlegger", "snekker", "bygg", "frakt"].some((keyword) => slug.includes(keyword));
 }
 
-function isTechnologyBusinessTemplate(templateSlug: string) {
-  const slug = templateSlug.toLowerCase();
-  return ["ai-teknologi", "teknologi", "teknobedrift", "tech", "software", "saas", "automasjon"].some((keyword) => slug.includes(keyword));
-}
-
-function prefersNeonGlassPreview(templateSlug: string) {
-  return isTechnologyBusinessTemplate(templateSlug);
-}
-
 function getHeroBackground(colors: DemoSitesPreviewColors) {
   return colors.secondaryText === "#ffffff" ? colors.secondary : "#111827";
 }
@@ -713,7 +923,7 @@ function getServiceCardDescription(service: string, templateSlug: string, copy: 
   const value = service.toLowerCase();
   const slug = templateSlug.toLowerCase();
 
-  if (isTechnologyBusinessTemplate(slug)) {
+  if (isDemoSiteTechnologyTemplate(slug)) {
     if (value.includes("agent")) return "Presenter AI-agenten som et konkret verktøy for kundeservice, salg eller interne oppgaver.";
     if (value.includes("automatisering") || value.includes("automasjon")) return "Vis hvilke manuelle steg som kan kuttes ned, måles og skaleres trygt.";
     if (value.includes("api") || value.includes("integrasjon")) return "Gjør tekniske koblinger forståelige med tydelig verdi for arbeidsflyten.";
@@ -766,7 +976,7 @@ function getServiceCardDescription(service: string, templateSlug: string, copy: 
 function getPreviewBusinessCopy(templateSlug: string, companyName: string): PreviewBusinessCopy {
   const slug = templateSlug.toLowerCase();
 
-  if (isTechnologyBusinessTemplate(slug)) {
+  if (isDemoSiteTechnologyTemplate(slug)) {
     return {
       navOffer: "Pilot og demo",
       heroBadge: "AI, automasjon og teknologi",
