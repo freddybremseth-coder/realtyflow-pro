@@ -365,8 +365,8 @@ export async function GET() {
     }
 
     if (brand.id === "mondeo") {
-      // Mondeo is not a lead/CRM/commission business. It is a house sale with seller credit.
-      // Business Overview should show house sale value plus monthly interest/payment income.
+      // Mondeo is not a lead/CRM/commission business. It is internal property/admin follow-up.
+      // Business Overview should show property value plus monthly interest/payment income.
       data.revenueAmount = Math.max(data.revenueAmount, MONDEO_CONTRACT.purchasePriceNok);
       data.commissionTotal = 0;
       data.commissionPaid = 0;

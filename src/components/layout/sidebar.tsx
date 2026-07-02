@@ -22,15 +22,6 @@ const iconMap: Record<string, React.ElementType> = {
   BookOpen, Database,
 };
 
-const sidebarNav = {
-  ...SIDEBAR_NAV,
-  properties: [
-    SIDEBAR_NAV.properties[0],
-    { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
-    ...SIDEBAR_NAV.properties.slice(1),
-  ],
-} as const;
-
 const sectionLabels: Record<string, string> = {
   overview: "OVERSIKT",
   operations: "DRIFT",
@@ -76,7 +67,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-        {Object.entries(sidebarNav).map(([section, items]) => (
+        {Object.entries(SIDEBAR_NAV).map(([section, items]) => (
           <div key={section}>
             {!collapsed && (
               <p className="px-3 mb-1.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">

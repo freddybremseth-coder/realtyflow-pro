@@ -26,13 +26,13 @@ export const BRANDS: Brand[] = [
   {
     id: "mondeo",
     name: "Mondeo Eiendom AS",
-    type: "real_estate",
-    description: "Salg av bolig/aksjer, selgerkreditt, renteinntekter, KPI og betalingsoppfølging",
+    type: "other",
+    description: "Intern oppfølging av boligdrift, utleie, betalinger, renter, KPI og sikkerheter",
     color: "#f97316",
     website: "",
     tone: "presis, kontrollert, finansiell, juridisk ryddig",
-    target_audience: "Egen business-oversikt for selgerkreditt, renter og oppgjør",
-    specialties: ["selgerkreditt", "renteinntekter", "KPI", "betalingsplan", "sikkerhet"],
+    target_audience: "Egen admin- og økonomioversikt for Raveien 152E",
+    specialties: ["boligdrift", "utleie", "renteinntekter", "KPI", "betalingsplan", "sikkerhet"],
   },
   {
     id: "chatgenius",
@@ -138,7 +138,6 @@ export const SIDEBAR_NAV = {
   ],
   properties: [
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
-    { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
     { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
@@ -168,6 +167,7 @@ export const SIDEBAR_NAV = {
   admin: [
     { label: "Brands", href: "/brands", icon: "Palette" },
     { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
+    { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
     { label: "Data Health", href: "/data-health", icon: "Database" },
     { label: "Scanner", href: "/scanner", icon: "ScanLine" },
     { label: "Innstillinger", href: "/settings", icon: "Settings" },
