@@ -295,6 +295,35 @@ test("profile import falls back to local-service for unknown businesses", async 
   assert.equal(serialized.includes("el-sjekk"), false);
 });
 
+test("profile import detects AI services without falling into bygg", async () => {
+  publicDns();
+  setProfileImportFetchForTests((async () =>
+    htmlResponse(`
+      <html>
+        <head>
+          <title>Nexa AI Services</title>
+          <meta name="description" content="AI service, automasjon og chatbots for bedrifter.">
+        </head>
+        <body>
+          <h1>AI service og automatisering</h1>
+          <p>Vi bygger AI-agenter, integrasjoner og digitale arbeidsflyter for kundeservice.</p>
+          <p>Book AI-workshop for å se hva som kan automatiseres trygt.</p>
+        </body>
+      </html>
+    `)) as typeof fetch);
+
+  const response = await POST(
+    request({ website_url: "https://nexa.example.com", company_name: "Nexa AI Services" }, { cookie: await adminCookie() }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.profile.recommended_template_slug, "ai-teknologi");
+  assert.notEqual(body.profile.recommended_template_slug, "bygg");
+  assert.match(body.profile.detected_industry, /AI|Neon|teknologi/i);
+  assert.match(body.editable_fields.call_to_action, /AI|workshop/i);
+});
+
 test("profile import saves base order fields when optional import columns are missing", async () => {
   publicDns();
   setProfileImportFetchForTests((async () =>
