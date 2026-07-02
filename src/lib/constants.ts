@@ -130,6 +130,7 @@ export const SIDEBAR_NAV = {
   saas: [
     { label: "SaaS & abonnement", href: "/saas", icon: "Rocket" },
     { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
+    { label: "Revenue Engine", href: "/revenue-engine", icon: "Target" },
   ],
   operations: [
     { label: "CRM Pipeline", href: "/pipeline", icon: "Users" },

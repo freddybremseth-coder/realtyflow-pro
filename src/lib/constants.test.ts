@@ -27,7 +27,9 @@ test("RealtyFlow sidebar keeps Mondeo as a single admin item", () => {
 test("RealtyFlow sidebar groups SaaS and DemoSites outside the main overview", () => {
   assert.equal(SIDEBAR_NAV.saas.some((item) => item.href === "/saas"), true);
   assert.equal(SIDEBAR_NAV.saas.some((item) => item.href === "/demosites"), true);
+  assert.equal(SIDEBAR_NAV.saas.some((item) => item.href === "/revenue-engine"), true);
   assert.equal(SIDEBAR_NAV.overview.some((item) => item.href === "/saas" || item.href === "/demosites"), false);
+  assert.equal(SIDEBAR_NAV.overview.some((item) => item.href === "/revenue-engine"), false);
 });
 
 test("RealtyFlow sidebar keeps property scanner with property tools", () => {
