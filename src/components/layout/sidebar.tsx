@@ -24,6 +24,7 @@ const iconMap: Record<string, React.ElementType> = {
 
 const sectionLabels: Record<string, string> = {
   overview: "OVERSIKT",
+  saas: "SAAS & DEMO",
   operations: "DRIFT",
   properties: "EIENDOM",
   content: "MARKEDSFØRING",

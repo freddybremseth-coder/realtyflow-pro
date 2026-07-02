@@ -126,11 +126,13 @@ export const SIDEBAR_NAV = {
   overview: [
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
+  ],
+  saas: [
     { label: "SaaS & abonnement", href: "/saas", icon: "Rocket" },
     { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
   ],
   operations: [
-    { label: "CRM", href: "/pipeline", icon: "Users" },
+    { label: "CRM Pipeline", href: "/pipeline", icon: "Users" },
     { label: "AI Lead Inbox", href: "/lead-intelligence", icon: "Sparkles" },
     { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
     { label: "Booking Admin", href: "/booking-admin", icon: "Calendar" },
@@ -138,6 +140,7 @@ export const SIDEBAR_NAV = {
   ],
   properties: [
     { label: "Eiendommer", href: "/inventory", icon: "Building2" },
+    { label: "Scanner", href: "/scanner", icon: "ScanLine" },
     { label: "Tomtebase", href: "/tomtebase", icon: "Map" },
     { label: "Områder", href: "/areas", icon: "MapPin" },
     { label: "Vurdering", href: "/valuation", icon: "Calculator" },
@@ -169,7 +172,6 @@ export const SIDEBAR_NAV = {
     { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
     { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
     { label: "Data Health", href: "/data-health", icon: "Database" },
-    { label: "Scanner", href: "/scanner", icon: "ScanLine" },
     { label: "Innstillinger", href: "/settings", icon: "Settings" },
   ],
 } as const;
