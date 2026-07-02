@@ -49,8 +49,11 @@ export type RevenueEngineLead = {
   lead_status?: string | null;
   outreach_status?: string | null;
   demo_preview_url?: string | null;
+  demo_claim_url?: string | null;
   notes?: string | null;
+  metadata?: Record<string, unknown> | null;
   created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type RevenueEngineStage =
@@ -79,9 +82,20 @@ export type RevenueEngineOpportunity = {
   reasons: string[];
   risks: string[];
   nextAction: string;
+  followUpAt?: string | null;
+  workflowNote?: string | null;
   sessionBrief: RevenueSessionBrief;
   outreach: RevenueOutreachDrafts;
   createdAt?: string | null;
+};
+
+export type RevenueWorklistItem = {
+  id: string;
+  companyName: string;
+  stage: RevenueEngineStage;
+  priorityScore: number;
+  action: string;
+  followUpAt?: string | null;
 };
 
 export type RevenueSessionBrief = {
@@ -213,6 +227,16 @@ function findLeadForImport(item: RevenueEngineImport, leads: RevenueEngineLead[]
     || null;
 }
 
+function getLeadWorkflow(lead: RevenueEngineLead | null) {
+  const metadata = record(lead?.metadata);
+  const revenueEngine = record(metadata.revenue_engine);
+
+  return {
+    followUpAt: text(revenueEngine.next_follow_up_at),
+    workflowNote: text(revenueEngine.note || revenueEngine.last_action),
+  };
+}
+
 function stageFromData(item: RevenueEngineImport, order: RevenueEngineOrder | null, lead: RevenueEngineLead | null): RevenueEngineStage {
   const leadStatus = text(lead?.lead_status).toLowerCase();
   const outreachStatus = text(lead?.outreach_status).toLowerCase();
@@ -225,6 +249,19 @@ function stageFromData(item: RevenueEngineImport, order: RevenueEngineOrder | nu
   if (leadStatus === "contacted" || outreachStatus === "sent") return "follow_up";
   if (leadStatus === "outreach_ready" || outreachStatus === "approved") return "outreach_ready";
   if (order || importStatus === "created_demo" || importStatus === "applied_to_demo") return "demo_ready";
+  return "analysis_ready";
+}
+
+function stageFromLead(lead: RevenueEngineLead): RevenueEngineStage {
+  const leadStatus = text(lead.lead_status).toLowerCase();
+  const outreachStatus = text(lead.outreach_status).toLowerCase();
+
+  if (leadStatus === "converted") return "won";
+  if (leadStatus === "not_fit" || leadStatus === "opted_out" || leadStatus === "archived") return "not_fit";
+  if (leadStatus === "responded") return "session_booked";
+  if (leadStatus === "contacted" || outreachStatus === "sent") return "follow_up";
+  if (leadStatus === "outreach_ready" || outreachStatus === "approved") return "outreach_ready";
+  if (leadStatus === "demo_created") return "demo_ready";
   return "analysis_ready";
 }
 
@@ -336,6 +373,24 @@ function stageNextAction(stage: RevenueEngineStage) {
   }
 }
 
+function stageWorklistWeight(stage: RevenueEngineStage) {
+  switch (stage) {
+    case "follow_up":
+      return 50;
+    case "outreach_ready":
+      return 45;
+    case "demo_ready":
+      return 40;
+    case "session_booked":
+      return 35;
+    case "analysis_ready":
+      return 20;
+    case "won":
+    case "not_fit":
+      return 0;
+  }
+}
+
 function firstThree(values: string[], fallback: string[]) {
   const output = values.map((item) => text(item)).filter(Boolean).slice(0, 3);
   return output.length ? output : fallback;
@@ -422,6 +477,7 @@ export function buildRevenueOpportunities(
     const priority = buildPriority(item, order, lead);
     const previewUrl = orderPreviewUrl(order || undefined) || text(lead?.demo_preview_url);
     const claimUrl = text(order?.claim_url);
+    const workflow = getLeadWorkflow(lead);
     const sessionBrief = buildSessionBrief(companyName, industry, campaign, priority.signals);
 
     return {
@@ -441,6 +497,8 @@ export function buildRevenueOpportunities(
       reasons: priority.reasons,
       risks: priority.risks,
       nextAction: stageNextAction(stage),
+      followUpAt: workflow.followUpAt,
+      workflowNote: workflow.workflowNote,
       sessionBrief,
       outreach: buildOutreach(companyName, websiteUrl, previewUrl, campaign, sessionBrief),
       createdAt: item.created_at,
@@ -456,7 +514,8 @@ export function buildRevenueOpportunities(
     .map((lead) => {
       const companyName = text(lead.company_name, "Ukjent lead");
       const websiteUrl = normalizeUrl(lead.website_url);
-      const stage: RevenueEngineStage = lead.lead_status === "converted" ? "won" : lead.outreach_status === "sent" ? "follow_up" : "analysis_ready";
+      const stage = stageFromLead(lead);
+      const workflow = getLeadWorkflow(lead);
       const sessionBrief = buildSessionBrief(companyName, text(lead.industry, campaign.industry), campaign, {
         confidence: 0,
         services: [],
@@ -489,6 +548,8 @@ export function buildRevenueOpportunities(
         reasons: ["Lead finnes i pipeline, men bør analyseres før outreach."],
         risks: ["Ingen importanalyse koblet til leadet ennå."],
         nextAction: stageNextAction(stage),
+        followUpAt: workflow.followUpAt,
+        workflowNote: workflow.workflowNote,
         sessionBrief,
         outreach: buildOutreach(companyName, websiteUrl, text(lead.demo_preview_url), campaign, sessionBrief),
         createdAt: lead.created_at,
@@ -496,6 +557,28 @@ export function buildRevenueOpportunities(
     });
 
   return [...opportunities, ...leadOnlyOpportunities].sort((a, b) => b.priorityScore - a.priorityScore);
+}
+
+export function buildRevenueDailyWorklist(opportunities: RevenueEngineOpportunity[], limit = 5): RevenueWorklistItem[] {
+  return opportunities
+    .filter((item) => item.stage !== "won" && item.stage !== "not_fit")
+    .map((item) => ({
+      id: item.id,
+      companyName: item.companyName,
+      stage: item.stage,
+      priorityScore: item.priorityScore,
+      action: item.nextAction,
+      followUpAt: item.followUpAt,
+    }))
+    .sort((a, b) => {
+      const stageDelta = stageWorklistWeight(b.stage) - stageWorklistWeight(a.stage);
+      if (stageDelta) return stageDelta;
+      if (a.followUpAt && b.followUpAt && a.followUpAt !== b.followUpAt) return a.followUpAt.localeCompare(b.followUpAt);
+      if (a.followUpAt && !b.followUpAt) return -1;
+      if (!a.followUpAt && b.followUpAt) return 1;
+      return b.priorityScore - a.priorityScore;
+    })
+    .slice(0, limit);
 }
 
 export function buildRevenueSummary(opportunities: RevenueEngineOpportunity[]) {
