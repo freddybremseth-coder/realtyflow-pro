@@ -1009,12 +1009,28 @@ export interface DemoSiteProfileAnalyzeResult {
   slug: string;
   recommendedPackage: DemoSitePackage;
   templateSlug: string;
+  templateDetection: DemoSiteTemplateDetection;
   readinessScore: number;
   missingFields: string[];
   suggestedNextSteps: string[];
 }
 
 const DEFAULT_ANALYZED_TEMPLATE_SLUG = "local-service";
+
+export type DemoSiteTemplateDetection = {
+  selected_template_slug: string;
+  confidence_level: "high" | "medium" | "low";
+  reason: string;
+  matched_keywords: string[];
+  score: number;
+  fallback_used: boolean;
+  considered_templates: Array<{
+    template_slug: string;
+    score: number;
+    matched_keywords: string[];
+    accepted: boolean;
+  }>;
+};
 
 const TEMPLATE_KEYWORDS: Array<{ slug: string; keywords: string[] }> = [
   {
@@ -1188,6 +1204,8 @@ function scoreTemplateMatch(profileText: string, template: { slug: string; keywo
   return { score, matchedKeywords, matchedKeywordValues };
 }
 
+type TemplateMatch = ReturnType<typeof scoreTemplateMatch> & { template: { slug: string; keywords: string[] } };
+
 const TEMPLATE_MATCH_MINIMUMS: Record<string, { score: number; keywords: number }> = {
   "ai-teknologi": { score: 5, keywords: 1 },
   bygg: { score: 8, keywords: 2 },
@@ -1212,7 +1230,7 @@ const BUILDING_SPECIFIC_KEYWORDS = new Set([
   "prosjektledelse bygg",
 ]);
 
-function isConfidentTemplateMatch(match: ReturnType<typeof scoreTemplateMatch> & { template: { slug: string } }) {
+function isConfidentTemplateMatch(match: TemplateMatch) {
   const minimum = TEMPLATE_MATCH_MINIMUMS[match.template.slug] || { score: 5, keywords: 1 };
   if (match.score < minimum.score || match.matchedKeywords < minimum.keywords) return false;
 
@@ -1228,14 +1246,78 @@ function isConfidentTemplateMatch(match: ReturnType<typeof scoreTemplateMatch> &
   return true;
 }
 
+function getTemplateDisplayName(templateSlug: string) {
+  const seed = DEMO_SITE_TEMPLATE_SEEDS.find((template) => template.slug === templateSlug);
+  const defaults = DEMO_SITE_TEMPLATE_DEFAULTS[templateSlug];
+  return seed?.name || defaults?.template_name || templateSlug;
+}
+
+function uniqueMatchedKeywords(keywords: string[], limit = 8) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  for (const keyword of keywords) {
+    const cleaned = String(keyword || "").trim();
+    const normalized = normalizeProfileSearchText(cleaned);
+    if (!cleaned || !normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    output.push(cleaned);
+    if (output.length >= limit) break;
+  }
+
+  return output;
+}
+
+function getTemplateDetectionReason(selectedMatch: TemplateMatch | null, fallbackUsed: boolean) {
+  if (!selectedMatch || fallbackUsed) {
+    return "Ingen bransje hadde tydelige nok signaler. Bruker standard moderne mal.";
+  }
+
+  const templateName = getTemplateDisplayName(selectedMatch.template.slug);
+  const matchedKeywords = uniqueMatchedKeywords(selectedMatch.matchedKeywordValues, 4);
+  if (!matchedKeywords.length) return `Valgte ${templateName} fordi bransjenavnet traff valgt mal.`;
+  return `Valgte ${templateName} fordi teksten inneholder ${matchedKeywords.join(", ")}.`;
+}
+
+function getTemplateDetectionConfidence(match: TemplateMatch | null): DemoSiteTemplateDetection["confidence_level"] {
+  if (!match) return "low";
+  if (match.score >= 14 || match.matchedKeywords >= 3) return "high";
+  return "medium";
+}
+
+function buildTemplateDetection(matches: TemplateMatch[], selectedMatch: TemplateMatch | null): DemoSiteTemplateDetection {
+  const fallbackUsed = !selectedMatch;
+  const selectedTemplateSlug = selectedMatch?.template.slug || DEFAULT_ANALYZED_TEMPLATE_SLUG;
+
+  return {
+    selected_template_slug: selectedTemplateSlug,
+    confidence_level: getTemplateDetectionConfidence(selectedMatch),
+    reason: getTemplateDetectionReason(selectedMatch, fallbackUsed),
+    matched_keywords: selectedMatch ? uniqueMatchedKeywords(selectedMatch.matchedKeywordValues) : [],
+    score: selectedMatch?.score || 0,
+    fallback_used: fallbackUsed,
+    considered_templates: matches
+      .filter((match) => match.score > 0 || match.matchedKeywords > 0)
+      .slice(0, 5)
+      .map((match) => ({
+        template_slug: match.template.slug,
+        score: match.score,
+        matched_keywords: uniqueMatchedKeywords(match.matchedKeywordValues, 6),
+        accepted: isConfidentTemplateMatch(match),
+      })),
+  };
+}
+
 export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): DemoSiteProfileAnalyzeResult {
   const companyName = (input.companyName || "").trim();
   const profileText = normalizeProfileSearchText(
     [companyName, input.industry, input.notes].filter(Boolean).join(" "),
   );
-  const matchedTemplate = TEMPLATE_KEYWORDS.map((template) => ({ template, ...scoreTemplateMatch(profileText, template) }))
-    .filter(isConfidentTemplateMatch)
-    .sort((a, b) => b.score - a.score)[0]?.template;
+  const templateMatches = TEMPLATE_KEYWORDS
+    .map((template) => ({ template, ...scoreTemplateMatch(profileText, template) }))
+    .sort((a, b) => b.score - a.score);
+  const selectedMatch = templateMatches.find(isConfidentTemplateMatch) || null;
+  const templateDetection = buildTemplateDetection(templateMatches, selectedMatch);
 
   const missingFields = [
     !companyName && "companyName",
@@ -1253,7 +1335,8 @@ export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): Demo
   return {
     slug: slugifyCompanyName(companyName || input.industry || "demosite"),
     recommendedPackage,
-    templateSlug: matchedTemplate?.slug || DEFAULT_ANALYZED_TEMPLATE_SLUG,
+    templateSlug: templateDetection.selected_template_slug,
+    templateDetection,
     readinessScore,
     missingFields,
     suggestedNextSteps: missingFields.length

@@ -55,6 +55,7 @@ type ImportedProfile = {
   };
   confidence_score: number;
   source_pages: string[];
+  template_detection?: ReturnType<typeof analyzeDemoSiteProfile>["templateDetection"];
 };
 
 const USER_AGENT = "RealtyFlow DemoSites Profile Import (+https://realtyflow.chatgenius.pro)";
@@ -792,6 +793,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     contact: { email, phone, address },
     confidence_score: confidenceScore,
     source_pages: sourcePages,
+    template_detection: analysis.templateDetection,
   };
 
   const editableFields = {
@@ -826,6 +828,7 @@ function buildImportedProfile(input: { websiteUrl: string; companyName: string; 
     },
     profile_import_requires_review: true,
     profile_import_source_pages: sourcePages,
+    profile_import_template_detection: analysis.templateDetection,
     profile_import_field_sources: {
       hero_title: companyName ? "website" : "template",
       hero_subtitle: profile.description ? "website" : "template",

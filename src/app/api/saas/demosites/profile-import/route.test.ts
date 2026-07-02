@@ -320,6 +320,10 @@ test("profile import detects AI services without falling into bygg", async () =>
   assert.equal(response.status, 200);
   assert.equal(body.profile.recommended_template_slug, "ai-teknologi");
   assert.notEqual(body.profile.recommended_template_slug, "bygg");
+  assert.equal(body.profile.template_detection.selected_template_slug, "ai-teknologi");
+  assert.equal(body.profile.template_detection.fallback_used, false);
+  assert.ok(body.profile.template_detection.matched_keywords.length > 0);
+  assert.equal(body.editable_fields.profile_import_template_detection.selected_template_slug, "ai-teknologi");
   assert.match(body.profile.detected_industry, /AI|Neon|teknologi/i);
   assert.match(body.editable_fields.call_to_action, /AI|workshop/i);
 });

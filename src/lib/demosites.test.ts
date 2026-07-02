@@ -131,6 +131,9 @@ test("DemoSites profile analysis recognizes AI and technology wording", () => {
   const defaults = getDemoSiteTemplateDefaults(aiTech.templateSlug, "Nordic AI Studio");
 
   assert.equal(aiTech.templateSlug, "ai-teknologi");
+  assert.equal(aiTech.templateDetection.selected_template_slug, "ai-teknologi");
+  assert.equal(aiTech.templateDetection.fallback_used, false);
+  assert.ok(aiTech.templateDetection.matched_keywords.length > 0);
   assert.equal(defaults.template_slug, "ai-teknologi");
   assert.match(JSON.stringify(defaults).toLowerCase(), /ai|automatisering|pilot|integrasjon/);
 });
@@ -181,8 +184,12 @@ test("DemoSites profile analysis requires clear industry evidence before selecti
   });
 
   assert.equal(aiServicesThatBuild.templateSlug, "ai-teknologi");
+  assert.match(aiServicesThatBuild.templateDetection.reason, /AI|Neon|teknologi/i);
   assert.equal(generalDigitalService.templateSlug, "local-service");
+  assert.equal(generalDigitalService.templateDetection.fallback_used, true);
+  assert.match(generalDigitalService.templateDetection.reason, /standard moderne mal/i);
   assert.equal(constructionCompany.templateSlug, "bygg");
+  assert.equal(constructionCompany.templateDetection.fallback_used, false);
 });
 
 test("DemoSites profile analysis ignores template words that only appear in the URL", () => {
