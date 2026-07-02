@@ -50,6 +50,20 @@ type WebsiteImportFormState = { website_url: string; company_name: string; mode:
 type WebsiteImportContactState = { customer_name: string; customer_email: string; customer_phone: string };
 type ImportedFaqItem = { question?: string; answer?: string };
 type ImportReviewQualityLevel = "ready" | "improve" | "missing";
+type TemplateDetection = {
+  selected_template_slug?: string;
+  confidence_level?: "high" | "medium" | "low" | string;
+  reason?: string;
+  matched_keywords?: string[];
+  score?: number;
+  fallback_used?: boolean;
+  considered_templates?: Array<{
+    template_slug?: string;
+    score?: number;
+    matched_keywords?: string[];
+    accepted?: boolean;
+  }>;
+};
 type ImportedProfile = {
   company_name?: string;
   website_url?: string;
@@ -69,6 +83,7 @@ type ImportedProfile = {
   contact?: { email?: string; phone?: string; address?: string };
   confidence_score?: number;
   source_pages?: string[];
+  template_detection?: TemplateDetection;
 };
 type WebsiteImportResult = { profile: ImportedProfile; editable_fields: Record<string, unknown>; warnings: string[]; import_id?: string | null };
 type WebsiteImportReviewPatch = { profile?: Partial<ImportedProfile>; editable_fields?: Record<string, unknown> };
@@ -238,6 +253,11 @@ function normalizeImportHistorySearch(value: string) {
 
 function buildImportResultFromHistory(importItem: WebsiteImportHistoryItem): WebsiteImportResult | null {
   if (!importItem.profile || !importItem.editable_fields) return null;
+  const templateDetection = isRecord(importItem.profile.template_detection)
+    ? importItem.profile.template_detection
+    : isRecord(importItem.editable_fields.profile_import_template_detection)
+      ? importItem.editable_fields.profile_import_template_detection
+      : undefined;
   return {
     profile: {
       ...importItem.profile,
@@ -247,6 +267,7 @@ function buildImportResultFromHistory(importItem: WebsiteImportHistoryItem): Web
       recommended_template_slug: importItem.profile.recommended_template_slug || importItem.recommended_template_slug || undefined,
       confidence_score: importItem.profile.confidence_score ?? (Number(importItem.confidence_score) || undefined),
       source_pages: importItem.profile.source_pages || importItem.source_pages || [],
+      template_detection: templateDetection,
     },
     editable_fields: importItem.editable_fields,
     warnings: Array.isArray(importItem.warnings) ? importItem.warnings : [],
@@ -1354,6 +1375,8 @@ function WebsiteImportCard({
               <ReviewInfo label="Kildesider" value={`${sourcePages.length} side${sourcePages.length === 1 ? "" : "r"}`} />
             </div>
 
+            <TemplateDetectionPanel detection={profile.template_detection} templates={templates} />
+
             {colorSwatches.length > 0 && (
               <div>
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Palette className="h-3.5 w-3.5" />Farger</div>
@@ -2011,6 +2034,72 @@ function ImportHistoryList({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getTemplateDetectionTone(level?: string) {
+  if (level === "high") return { label: "Høy trygghet", badge: "bg-emerald-600 text-white", border: "border-emerald-500/30 bg-emerald-500/10", text: "text-emerald-100" };
+  if (level === "medium") return { label: "Middels trygghet", badge: "bg-amber-500 text-slate-950", border: "border-amber-500/30 bg-amber-500/10", text: "text-amber-100" };
+  return { label: "Lav trygghet", badge: "bg-slate-700 text-slate-100", border: "border-slate-700 bg-slate-900/70", text: "text-slate-200" };
+}
+
+function TemplateDetectionPanel({ detection, templates }: { detection?: TemplateDetection | null; templates: DemoSiteTemplate[] }) {
+  if (!detection || !isRecord(detection)) return null;
+
+  const tone = getTemplateDetectionTone(detection.confidence_level);
+  const matchedKeywords = Array.isArray(detection.matched_keywords) ? detection.matched_keywords.filter(Boolean).slice(0, 8) : [];
+  const consideredTemplates = Array.isArray(detection.considered_templates)
+    ? detection.considered_templates.filter((item) => item && item.template_slug).slice(0, 3)
+    : [];
+  const selectedTemplate = getTemplateLabel(templates, detection.selected_template_slug || "");
+
+  return (
+    <div className={`rounded-lg border p-3 ${tone.border}`}>
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-white">Hvorfor denne malen?</div>
+            <Badge className={tone.badge}>{tone.label}</Badge>
+            {detection.fallback_used && <Badge className="bg-slate-800 text-slate-200">Standard moderne mal</Badge>}
+          </div>
+          <p className={`mt-1 max-w-3xl text-xs leading-5 ${tone.text}`}>
+            {detection.reason || `Valgt mal: ${selectedTemplate}.`}
+          </p>
+        </div>
+        <div className="text-xs text-slate-400">Score {Number(detection.score || 0)}</div>
+      </div>
+
+      {matchedKeywords.length > 0 ? (
+        <div className="mt-3">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Signaler fra nettsiden</div>
+          <div className="flex flex-wrap gap-1.5">
+            {matchedKeywords.map((keyword) => (
+              <span key={keyword} className="rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-[11px] text-slate-200">
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-slate-400">Ingen tydelige bransjesignaler funnet. Admin kan velge en annen mal manuelt.</p>
+      )}
+
+      {consideredTemplates.length > 0 && (
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+          {consideredTemplates.map((item) => (
+            <div key={`${item.template_slug}-${item.score}`} className="rounded-lg border border-slate-800 bg-slate-950/50 p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-slate-200">{getTemplateLabel(templates, item.template_slug || "")}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${item.accepted ? "bg-emerald-500/20 text-emerald-100" : "bg-slate-800 text-slate-400"}`}>
+                  {item.accepted ? "Tydelig" : "Svakt"}
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">Score {Number(item.score || 0)}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
