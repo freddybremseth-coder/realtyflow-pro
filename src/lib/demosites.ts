@@ -1176,23 +1176,65 @@ function getTemplateKeywordWeight(templateSlug: string, keyword: string) {
 function scoreTemplateMatch(profileText: string, template: { slug: string; keywords: string[] }) {
   let score = profileTextHasKeyword(profileText, template.slug) ? 3 : 0;
   let matchedKeywords = 0;
+  const matchedKeywordValues: string[] = [];
 
   for (const keyword of template.keywords) {
     if (!profileTextHasKeyword(profileText, keyword)) continue;
     score += getTemplateKeywordWeight(template.slug, keyword);
     matchedKeywords += 1;
+    matchedKeywordValues.push(keyword);
   }
 
-  return { score, matchedKeywords };
+  return { score, matchedKeywords, matchedKeywordValues };
+}
+
+const TEMPLATE_MATCH_MINIMUMS: Record<string, { score: number; keywords: number }> = {
+  "ai-teknologi": { score: 5, keywords: 1 },
+  bygg: { score: 8, keywords: 2 },
+  hotell: { score: 8, keywords: 2 },
+  klinikk: { score: 8, keywords: 2 },
+};
+
+const BUILDING_SPECIFIC_KEYWORDS = new Set([
+  "bygg og anlegg",
+  "byggfirma",
+  "byggmester",
+  "entreprenør",
+  "entreprenor",
+  "totalentreprise",
+  "grunnarbeid",
+  "gravearbeid",
+  "betong",
+  "nybygg",
+  "tilbygg",
+  "anleggsarbeid",
+  "rehabilitering av bygg",
+  "prosjektledelse bygg",
+]);
+
+function isConfidentTemplateMatch(match: ReturnType<typeof scoreTemplateMatch> & { template: { slug: string } }) {
+  const minimum = TEMPLATE_MATCH_MINIMUMS[match.template.slug] || { score: 5, keywords: 1 };
+  if (match.score < minimum.score || match.matchedKeywords < minimum.keywords) return false;
+
+  if (match.template.slug === "ai-teknologi") {
+    const normalizedMatches = match.matchedKeywordValues.map(normalizeProfileSearchText);
+    return normalizedMatches.some((keyword) => keyword !== "ai") || match.matchedKeywords >= 2;
+  }
+
+  if (match.template.slug === "bygg") {
+    return match.matchedKeywordValues.some((keyword) => BUILDING_SPECIFIC_KEYWORDS.has(normalizeProfileSearchText(keyword)));
+  }
+
+  return true;
 }
 
 export function analyzeDemoSiteProfile(input: DemoSiteProfileAnalyzeInput): DemoSiteProfileAnalyzeResult {
   const companyName = (input.companyName || "").trim();
   const profileText = normalizeProfileSearchText(
-    [companyName, input.websiteUrl, input.industry, input.notes].filter(Boolean).join(" "),
+    [companyName, input.industry, input.notes].filter(Boolean).join(" "),
   );
   const matchedTemplate = TEMPLATE_KEYWORDS.map((template) => ({ template, ...scoreTemplateMatch(profileText, template) }))
-    .filter((item) => item.score >= 4 && item.matchedKeywords > 0)
+    .filter(isConfidentTemplateMatch)
     .sort((a, b) => b.score - a.score)[0]?.template;
 
   const missingFields = [

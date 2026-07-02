@@ -159,3 +159,39 @@ test("DemoSites profile analysis does not confuse AI service wording with bygg",
   assert.equal(genericBuilder.templateSlug, "local-service");
   assert.equal(buildingContractor.templateSlug, "bygg");
 });
+
+test("DemoSites profile analysis requires clear industry evidence before selecting bygg", () => {
+  const aiServicesThatBuild = analyzeDemoSiteProfile({
+    companyName: "Nexa AI Services",
+    websiteUrl: "https://nexa.example",
+    industry: "AI service, automasjon, chatbots og integrasjoner for bedrifter.",
+    notes: "Vi bygger digitale arbeidsflyter, AI-agenter og beslutningsstøtte for kundeservice.",
+  });
+  const generalDigitalService = analyzeDemoSiteProfile({
+    companyName: "Digital Prosjektpartner",
+    websiteUrl: "https://digitalpartner.example",
+    industry: "Prosjektledelse, rådgivning og moderne nettsider.",
+    notes: "Vi bygger gode kundeopplevelser og følger opp leveranser fra idé til lansering.",
+  });
+  const constructionCompany = analyzeDemoSiteProfile({
+    companyName: "Fjord Byggmester",
+    websiteUrl: "https://fjordbyggmester.example",
+    industry: "Byggmester, bygg og anlegg, totalentreprise og rehabilitering av bygg.",
+    notes: "Nybygg, tilbygg, grunnarbeid og prosjektledelse bygg for private og næring.",
+  });
+
+  assert.equal(aiServicesThatBuild.templateSlug, "ai-teknologi");
+  assert.equal(generalDigitalService.templateSlug, "local-service");
+  assert.equal(constructionCompany.templateSlug, "bygg");
+});
+
+test("DemoSites profile analysis ignores template words that only appear in the URL", () => {
+  const urlOnlySignal = analyzeDemoSiteProfile({
+    companyName: "Nordvik Partner AS",
+    websiteUrl: "https://bygg-ai-restaurant.example",
+    industry: "Lokal rådgivning og praktisk koordinering for bedrifter.",
+    notes: "Kundeoppfølging, analyse og service uten tydelig bransje.",
+  });
+
+  assert.equal(urlOnlySignal.templateSlug, "local-service");
+});
