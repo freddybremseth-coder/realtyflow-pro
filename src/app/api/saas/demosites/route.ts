@@ -384,6 +384,33 @@ async function ensureDemoSiteTemplate(supabase: SupabaseClientLike, templateSlug
   if (error) logApiError("DemoSites template upsert failed; order insert may use fallback template", error, { templateSlug });
 }
 
+async function syncDefaultDemoSiteTemplates(supabase: SupabaseClientLike) {
+  const rows = DEMO_SITE_TEMPLATE_SEEDS.map((template) => ({
+    slug: template.slug,
+    name: template.name,
+    category: template.category,
+    description: template.description,
+    repo_url: template.repoUrl,
+    preview_url: template.previewUrl,
+  }));
+
+  const { error } = await supabase
+    .from("demo_site_templates")
+    .upsert(rows, { onConflict: "slug", ignoreDuplicates: true });
+
+  if (error && !isMissingTable(error) && !isSchemaOrConstraintError(error)) {
+    logApiError("DemoSites default template sync failed; using in-code template list", error);
+  }
+}
+
+async function trySyncDefaultDemoSiteTemplates(supabase: SupabaseClientLike) {
+  try {
+    await syncDefaultDemoSiteTemplates(supabase);
+  } catch (error) {
+    logApiError("DemoSites default template sync failed; using in-code template list", error);
+  }
+}
+
 async function syncSaasMetrics(supabase: SupabaseClientLike, orders: DemoSiteOrder[]) {
   const summary = computeSummary(orders);
   const appId = await ensureDemositesApp(supabase);
@@ -541,6 +568,8 @@ export async function GET() {
   }
 
   try {
+    await trySyncDefaultDemoSiteTemplates(supabase);
+
     const [ordersResult, templatesResult, eventsResult] = await Promise.allSettled([
       getOrders(supabase),
       supabase.from("demo_site_templates").select("*").order("name", { ascending: true }),
