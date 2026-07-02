@@ -55,6 +55,10 @@ function safeOutreachStatus(value: unknown, fallback: DemoSiteOutreachStatus): D
   return OUTREACH_STATUSES.includes(value as DemoSiteOutreachStatus) ? (value as DemoSiteOutreachStatus) : fallback;
 }
 
+function safeMetadata(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as RequestBody : {};
+}
+
 async function insertLeadEvent(supabase: SupabaseClientLike, leadId: string, title: string, eventType: string, description?: string, metadata: RequestBody = {}) {
   await supabase.from("demo_site_lead_events").insert({
     lead_id: leadId,
@@ -130,10 +134,13 @@ export async function POST(request: NextRequest) {
       industry: text(body, "industry", "industry"),
       source: text(body, "source", "source") || "manual",
       source_query: text(body, "source_query", "sourceQuery"),
-      lead_status: websiteUrl ? "queued" : "new",
-      outreach_status: "not_prepared",
+      lead_status: safeLeadStatus(body.lead_status ?? body.leadStatus, websiteUrl ? "queued" : "new"),
+      outreach_status: safeOutreachStatus(body.outreach_status ?? body.outreachStatus, "not_prepared"),
+      demo_preview_url: text(body, "demo_preview_url", "demoPreviewUrl"),
+      demo_claim_url: text(body, "demo_claim_url", "demoClaimUrl"),
+      demo_expires_at: text(body, "demo_expires_at", "demoExpiresAt"),
       notes: text(body, "notes", "notes"),
-      metadata: {},
+      metadata: safeMetadata(body.metadata),
     };
 
     const { data, error } = await supabase.from("demo_site_leads").insert(payload).select("*").single();
@@ -159,6 +166,14 @@ export async function PATCH(request: NextRequest) {
     const patch: RequestBody = { updated_at: new Date().toISOString() };
     if (body.lead_status || body.leadStatus) patch.lead_status = safeLeadStatus(body.lead_status ?? body.leadStatus, "new");
     if (body.outreach_status || body.outreachStatus) patch.outreach_status = safeOutreachStatus(body.outreach_status ?? body.outreachStatus, "not_prepared");
+    if (body.demo_preview_url !== undefined || body.demoPreviewUrl !== undefined) patch.demo_preview_url = text(body, "demo_preview_url", "demoPreviewUrl");
+    if (body.demo_claim_url !== undefined || body.demoClaimUrl !== undefined) patch.demo_claim_url = text(body, "demo_claim_url", "demoClaimUrl");
+    if (body.demo_expires_at !== undefined || body.demoExpiresAt !== undefined) patch.demo_expires_at = text(body, "demo_expires_at", "demoExpiresAt");
+    if (body.metadata !== undefined) {
+      const existing = await supabase.from("demo_site_leads").select("metadata").eq("id", id).maybeSingle();
+      if (existing.error) throw existing.error;
+      patch.metadata = { ...safeMetadata(existing.data?.metadata), ...safeMetadata(body.metadata) };
+    }
     if (body.notes !== undefined) patch.notes = text(body, "notes", "notes");
 
     const { data, error } = await supabase.from("demo_site_leads").update(patch).eq("id", id).select("*").single();

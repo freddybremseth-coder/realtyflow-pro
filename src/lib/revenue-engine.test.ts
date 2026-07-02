@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildRevenueDailyWorklist,
   buildRevenueOpportunities,
   buildRevenueSummary,
   getDefaultRevenueCampaign,
@@ -125,4 +126,49 @@ test("Revenue Engine summary counts stages and high-priority opportunities", () 
   assert.equal(summary.followUp, 1);
   assert.equal(summary.highPriority, 1);
   assert.equal(getRevenueStageLabel("follow_up"), "Følg opp");
+});
+
+test("Revenue Engine uses lead workflow metadata for follow-up focus", () => {
+  const leads: RevenueEngineLead[] = [
+    {
+      id: "lead-1",
+      company_name: "Kontaktet AI AS",
+      website_url: "https://kontaktet-ai.no",
+      industry: "AI service",
+      lead_status: "contacted",
+      outreach_status: "sent",
+      metadata: {
+        revenue_engine: {
+          next_follow_up_at: "2026-07-05",
+          note: "Ring daglig leder etter at preview er sett.",
+        },
+      },
+    },
+    {
+      id: "lead-2",
+      company_name: "Ikke Fit AS",
+      website_url: "https://ikkefit.no",
+      lead_status: "not_fit",
+    },
+  ];
+
+  const opportunities = buildRevenueOpportunities([], [], leads);
+  const followUp = opportunities.find((item) => item.id === "lead-1");
+  const worklist = buildRevenueDailyWorklist(opportunities);
+
+  assert.equal(followUp?.stage, "follow_up");
+  assert.equal(followUp?.followUpAt, "2026-07-05");
+  assert.equal(followUp?.workflowNote, "Ring daglig leder etter at preview er sett.");
+  assert.equal(worklist[0]?.id, "lead-1");
+  assert.equal(worklist.some((item) => item.id === "lead-2"), false);
+});
+
+test("Revenue Engine maps lead-only session and won statuses", () => {
+  const opportunities = buildRevenueOpportunities([], [], [
+    { id: "lead-session", company_name: "Session AS", website_url: "https://session.no", lead_status: "responded" },
+    { id: "lead-won", company_name: "Vunnet AS", website_url: "https://vunnet.no", lead_status: "converted" },
+  ]);
+
+  assert.equal(opportunities.find((item) => item.id === "lead-session")?.stage, "session_booked");
+  assert.equal(opportunities.find((item) => item.id === "lead-won")?.stage, "won");
 });

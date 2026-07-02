@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   BarChart3,
+  CalendarClock,
   CheckCircle,
   Clipboard,
   ExternalLink,
@@ -14,11 +15,14 @@ import {
   PhoneCall,
   RefreshCw,
   Rocket,
+  Send,
   ShieldCheck,
   Sparkles,
   Target,
   TimerReset,
   TrendingUp,
+  Trophy,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   buildRevenueOpportunities,
+  buildRevenueDailyWorklist,
   buildRevenueSummary,
   getDefaultRevenueCampaign,
   getRevenueStageLabel,
@@ -35,6 +40,7 @@ import {
   type RevenueEngineOpportunity,
   type RevenueEngineOrder,
   type RevenueEngineStage,
+  type RevenueWorklistItem,
 } from "@/lib/revenue-engine";
 
 type DemoSitesResponse = {
@@ -51,6 +57,14 @@ type ImportsResponse = {
 type LeadsResponse = {
   leads?: RevenueEngineLead[];
   error?: string;
+};
+
+type RevenueWorkflowAction = {
+  label: string;
+  leadStatus: string;
+  outreachStatus: string;
+  note: string;
+  followUpAt?: string | null;
 };
 
 const STAGE_STYLES: Record<RevenueEngineStage, string> = {
@@ -149,17 +163,28 @@ export default function RevenueEnginePage() {
   const [campaign, setCampaign] = useState<RevenueCampaignSettings>(() => getDefaultRevenueCampaign());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [workflowLoadingId, setWorkflowLoadingId] = useState<string | null>(null);
+  const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [followUpDate, setFollowUpDate] = useState("");
 
   const opportunities = useMemo(
     () => buildRevenueOpportunities(imports, orders, leads, campaign),
     [campaign, imports, leads, orders],
   );
   const summary = useMemo(() => buildRevenueSummary(opportunities), [opportunities]);
+  const worklist = useMemo(() => buildRevenueDailyWorklist(opportunities, 5), [opportunities]);
   const selectedOpportunity = opportunities.find((item) => item.id === selectedId) || opportunities[0] || null;
 
   useEffect(() => {
     if (!selectedId && opportunities[0]) setSelectedId(opportunities[0].id);
   }, [opportunities, selectedId]);
+
+  useEffect(() => {
+    setFollowUpDate(selectedOpportunity?.followUpAt || "");
+    setWorkflowError(null);
+    setWorkflowMessage(null);
+  }, [selectedOpportunity?.followUpAt, selectedOpportunity?.id]);
 
   async function copyText(label: string, value: string) {
     try {
@@ -169,6 +194,62 @@ export default function RevenueEnginePage() {
     } catch {
       setCopied("Kunne ikke kopiere");
       window.setTimeout(() => setCopied(null), 1800);
+    }
+  }
+
+  async function updateOpportunityWorkflow(opportunity: RevenueEngineOpportunity, action: RevenueWorkflowAction) {
+    setWorkflowLoadingId(opportunity.id);
+    setWorkflowError(null);
+    setWorkflowMessage(null);
+
+    const now = new Date().toISOString();
+    const metadata = {
+      revenue_engine: {
+        last_action: action.label,
+        last_action_at: now,
+        next_follow_up_at: action.followUpAt || null,
+        note: action.note,
+      },
+    };
+    const payload = opportunity.leadId
+      ? {
+          id: opportunity.leadId,
+          lead_status: action.leadStatus,
+          outreach_status: action.outreachStatus,
+          demo_preview_url: opportunity.previewUrl || undefined,
+          demo_claim_url: opportunity.claimUrl || undefined,
+          metadata,
+          notes: action.note,
+        }
+      : {
+          company_name: opportunity.companyName,
+          website_url: opportunity.websiteUrl,
+          industry: opportunity.industry,
+          source: "revenue_engine",
+          source_query: "Revenue Engine",
+          lead_status: action.leadStatus,
+          outreach_status: action.outreachStatus,
+          demo_preview_url: opportunity.previewUrl || undefined,
+          demo_claim_url: opportunity.claimUrl || undefined,
+          metadata,
+          notes: action.note,
+        };
+
+    try {
+      const response = await fetch("/api/saas/demosites/leads", {
+        method: opportunity.leadId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(getErrorMessage(data, "Kunne ikke oppdatere Revenue Engine-status."));
+
+      setWorkflowMessage(`${opportunity.companyName}: ${action.label}`);
+      await loadData();
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : "Kunne ikke oppdatere Revenue Engine-status.");
+    } finally {
+      setWorkflowLoadingId(null);
     }
   }
 
@@ -219,6 +300,7 @@ export default function RevenueEnginePage() {
         )}
 
         <CampaignPanel campaign={campaign} onChange={setCampaign} />
+        <DailyWorklistPanel items={worklist} selectedId={selectedOpportunity?.id || null} onSelect={setSelectedId} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <Card className="border-slate-800 bg-slate-900/80 text-white">
@@ -258,6 +340,7 @@ export default function RevenueEnginePage() {
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                         {item.previewUrl && <span>Preview klar</span>}
                         {item.orderId && <span>Demo koblet</span>}
+                        {item.followUpAt && <span>Oppfølging {formatDate(item.followUpAt)}</span>}
                         {item.createdAt && <span>{formatDate(item.createdAt)}</span>}
                       </div>
                     </button>
@@ -271,7 +354,13 @@ export default function RevenueEnginePage() {
             <OpportunityPanel
               opportunity={selectedOpportunity}
               copied={copied}
+              followUpDate={followUpDate}
+              workflowError={workflowError}
+              workflowLoading={workflowLoadingId === selectedOpportunity.id}
+              workflowMessage={workflowMessage}
+              onFollowUpDateChange={setFollowUpDate}
               onCopy={copyText}
+              onWorkflowAction={updateOpportunityWorkflow}
             />
           ) : (
             <Card className="border-slate-800 bg-slate-900/80 text-white">
@@ -281,6 +370,40 @@ export default function RevenueEnginePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function DailyWorklistPanel({ items, selectedId, onSelect }: { items: RevenueWorklistItem[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  return (
+    <Card className="border-slate-800 bg-slate-900/80 text-white">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-amber-300" /> Dagens salgsfokus</CardTitle>
+        <CardDescription>De viktigste manuelle neste stegene fra demoer, leads og importhistorikk.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
+            Ingen aktive salgssteg akkurat nå.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+            {items.map((item, index) => (
+              <button
+                key={item.id}
+                onClick={() => onSelect(item.id)}
+                className={`rounded-lg border p-4 text-left transition hover:border-amber-300/50 ${selectedId === item.id ? "border-amber-300/50 bg-amber-300/10" : "border-slate-800 bg-slate-950/60"}`}
+              >
+                <div className="text-xs font-bold uppercase tracking-wide text-amber-200">#{index + 1}</div>
+                <h3 className="mt-2 line-clamp-2 font-bold text-white">{item.companyName}</h3>
+                <Badge className={`${STAGE_STYLES[item.stage]} mt-3`} variant="outline">{getRevenueStageLabel(item.stage)}</Badge>
+                <p className="mt-3 text-sm leading-5 text-slate-300">{item.action}</p>
+                {item.followUpAt && <p className="mt-3 text-xs text-slate-500">Oppfølging {formatDate(item.followUpAt)}</p>}
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -330,7 +453,32 @@ function Field({ label, value, onChange, className = "" }: { label: string; valu
   );
 }
 
-function OpportunityPanel({ opportunity, copied, onCopy }: { opportunity: RevenueEngineOpportunity; copied: string | null; onCopy: (label: string, value: string) => void }) {
+function OpportunityPanel({
+  opportunity,
+  copied,
+  followUpDate,
+  workflowError,
+  workflowLoading,
+  workflowMessage,
+  onCopy,
+  onFollowUpDateChange,
+  onWorkflowAction,
+}: {
+  opportunity: RevenueEngineOpportunity;
+  copied: string | null;
+  followUpDate: string;
+  workflowError: string | null;
+  workflowLoading: boolean;
+  workflowMessage: string | null;
+  onCopy: (label: string, value: string) => void;
+  onFollowUpDateChange: (value: string) => void;
+  onWorkflowAction: (opportunity: RevenueEngineOpportunity, action: RevenueWorkflowAction) => void;
+}) {
+  const actionBase = `${opportunity.companyName} ble oppdatert fra Revenue Engine. Ingen automatisk kundekontakt er sendt.`;
+  const followUpNote = followUpDate
+    ? `${actionBase} Neste manuelle oppfølging: ${followUpDate}.`
+    : `${actionBase} Neste manuelle oppfølging bør settes.`;
+
   return (
     <div className="space-y-6">
       <Card className="border-slate-800 bg-slate-900/80 text-white">
@@ -348,6 +496,7 @@ function OpportunityPanel({ opportunity, copied, onCopy }: { opportunity: Revenu
             <Badge className={STAGE_STYLES[opportunity.stage]} variant="outline">{getRevenueStageLabel(opportunity.stage)}</Badge>
             <Badge variant="outline" className="border-slate-700 bg-slate-950 text-slate-300">Confidence {opportunity.confidenceScore}</Badge>
             <Badge variant="outline" className="border-slate-700 bg-slate-950 text-slate-300">{opportunity.source === "import" ? "Fra import" : "Fra lead"}</Badge>
+            {opportunity.followUpAt && <Badge variant="outline" className="border-amber-400/30 bg-amber-400/10 text-amber-100">Oppfølging {formatDate(opportunity.followUpAt)}</Badge>}
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -365,6 +514,104 @@ function OpportunityPanel({ opportunity, copied, onCopy }: { opportunity: Revenu
 
           <InfoList title="Hvorfor denne er interessant" items={opportunity.reasons} />
           <InfoList title="Sjekk før kontakt" items={opportunity.risks} muted />
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-800 bg-slate-900/80 text-white">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-emerald-300" /> Pipeline-styring</CardTitle>
+          <CardDescription>Oppdater status og neste oppfølging manuelt. Ingen e-post, SMS eller kundekontakt sendes her.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!opportunity.leadId && (
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 p-3 text-sm text-cyan-100">
+              Denne muligheten kommer fra importhistorikk. Første statusendring oppretter en lead-rad automatisk.
+            </div>
+          )}
+          {workflowMessage && <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{workflowMessage}</div>}
+          {workflowError && <div className="rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-100">{workflowError}</div>}
+          {opportunity.workflowNote && <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-sm text-slate-300">{opportunity.workflowNote}</div>}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <WorkflowButton
+              disabled={workflowLoading}
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label="Klar til kontakt"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Klar til kontakt",
+                leadStatus: "outreach_ready",
+                outreachStatus: "approved",
+                note: `${actionBase} Outreach er manuelt godkjent og klart for kontakt.`,
+              })}
+            />
+            <WorkflowButton
+              disabled={workflowLoading}
+              icon={<Send className="h-4 w-4" />}
+              label="Kontaktet"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Kontaktet manuelt",
+                leadStatus: "contacted",
+                outreachStatus: "sent",
+                note: followUpNote,
+                followUpAt: followUpDate || null,
+              })}
+            />
+            <WorkflowButton
+              disabled={workflowLoading}
+              icon={<CalendarClock className="h-4 w-4" />}
+              label="Session booket"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Session booket",
+                leadStatus: "responded",
+                outreachStatus: "replied",
+                note: `${actionBase} Session er booket eller kunden har svart positivt.`,
+                followUpAt: followUpDate || null,
+              })}
+            />
+            <WorkflowButton
+              disabled={workflowLoading}
+              icon={<Trophy className="h-4 w-4" />}
+              label="Vunnet"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Vunnet",
+                leadStatus: "converted",
+                outreachStatus: "replied",
+                note: `${actionBase} Muligheten er markert som vunnet.`,
+              })}
+            />
+            <WorkflowButton
+              disabled={workflowLoading}
+              icon={<XCircle className="h-4 w-4" />}
+              label="Ikke fit"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Ikke fit",
+                leadStatus: "not_fit",
+                outreachStatus: "declined",
+                note: `${actionBase} Muligheten er markert som ikke fit akkurat nå.`,
+              })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+            <label>
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Neste oppfølging</span>
+              <Input type="date" value={followUpDate} onChange={(event) => onFollowUpDateChange(event.target.value)} className="mt-1 border-slate-700 bg-slate-950 text-white" />
+            </label>
+            <Button
+              disabled={workflowLoading}
+              variant="outline"
+              className="self-end border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
+              onClick={() => onWorkflowAction(opportunity, {
+                label: "Oppfølging lagret",
+                leadStatus: "contacted",
+                outreachStatus: "sent",
+                note: followUpNote,
+                followUpAt: followUpDate || null,
+              })}
+            >
+              {workflowLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TimerReset className="mr-2 h-4 w-4" />} Lagre oppfølging
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -400,6 +647,20 @@ function OpportunityPanel({ opportunity, copied, onCopy }: { opportunity: Revenu
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function WorkflowButton({ disabled, icon, label, onClick }: { disabled: boolean; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <Button
+      disabled={disabled}
+      variant="outline"
+      className="justify-start border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
+      onClick={onClick}
+    >
+      {icon}
+      <span className="ml-2">{label}</span>
+    </Button>
   );
 }
 
