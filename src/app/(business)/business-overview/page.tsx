@@ -139,12 +139,12 @@ export default function BusinessOverviewPage() {
             <div className="mb-4 flex items-center gap-3">
               <Home size={24} className="text-orange-400" />
               <div>
-                <h2 className="text-lg font-bold text-white">Mondeo Eiendom AS — boligsalg og selgerkreditt</h2>
-                <p className="text-xs text-slate-400">Salgsverdi, renter, KPI og innbetalinger. Ikke leads eller kommisjon.</p>
+                <h2 className="text-lg font-bold text-white">Mondeo Eiendom AS — boligdrift og økonomioppfølging</h2>
+                <p className="text-xs text-slate-400">Boligverdi, renter, KPI og innbetalinger. Ikke leads eller kommisjon.</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <Metric label="Salgsverdi bolig" value={mondeoData.revenue} />
+              <Metric label="Boligverdi" value={mondeoData.revenue} />
               <Metric label="Månedlig rente" value={money(MONDEO_MONTHLY_INTEREST_NOK, "NOK")} tone="text-amber-400" />
               <Metric label="Minimum betaling" value={money(MONDEO_MIN_PAYMENT_NOK, "NOK")} tone="text-blue-400" />
               <Metric label="Mottatt / KPI" value={money(Number(mondeoData.financialNet || 0), "NOK")} tone="text-emerald-400" />
