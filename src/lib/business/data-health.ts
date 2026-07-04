@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { summarizeFamilyEconomyRows } from "@/lib/business/family-economy";
 
 export type HealthStatus = "ok" | "warning" | "error" | "missing" | "not_configured";
 
@@ -480,22 +481,6 @@ async function buildOliviaBatchSummary(client: SupabaseClientLike | null, schema
   };
 }
 
-function monthFromRow(row: Record<string, unknown>): string | null {
-  const value = first(row, ["month", "period", "date", "event_date", "created_at"]);
-  if (!value) return null;
-  return String(value).slice(0, 7);
-}
-
-function monthlyTotalNok(row: Record<string, unknown>): number {
-  const direct = numberValue(first(row, ["total_net_nok", "totalNetNok", "total_nok", "net_nok"]));
-  if (direct) return direct;
-  return (
-    numberValue(first(row, ["olivia_net_nok", "oliviaNetNok"])) +
-    numberValue(first(row, ["realtyflow_net_nok", "realtyflowNetNok"])) +
-    numberValue(first(row, ["mondeo_interest_nok", "mondeoInterestNok"]))
-  );
-}
-
 async function buildFamilySummary(
   familyClient: SupabaseClientLike | null,
   mainClient: SupabaseClientLike | null,
@@ -510,30 +495,28 @@ async function buildFamilySummary(
 
   const monthlyRows = familyMonthly.rows.length > 0 ? familyMonthly.rows : publicMonthly.rows;
   if (monthlyRows.length > 0) {
-    const currentYear = new Date().getFullYear();
-    const ytdRows = monthlyRows.filter((row) => {
-      const month = monthFromRow(row);
-      return month ? Number(month.slice(0, 4)) === currentYear : false;
-    });
-    const sortedMonths = monthlyRows
-      .map((row) => ({ month: monthFromRow(row), value: monthlyTotalNok(row) }))
-      .filter((row): row is { month: string; value: number } => Boolean(row.month))
-      .sort((a, b) => a.month.localeCompare(b.month));
+    const summary = summarizeFamilyEconomyRows(monthlyRows);
+    const warnings: string[] = [];
+    if (summary.ignoredFutureRows > 0) {
+      warnings.push(`Ignorerer ${summary.ignoredFutureRows} framtidsrad(er) etter ${summary.currentMonth}-01 i Family-resultat.`);
+    }
+    if (summary.ignoredPlannedRows > 0) {
+      warnings.push(`Ignorerer ${summary.ignoredPlannedRows} plan-/budsjett-rad(er) i Family-resultat.`);
+    }
+    if (summary.ignoredRowsWithoutMonth > 0) {
+      warnings.push(`Ignorerer ${summary.ignoredRowsWithoutMonth} Family-rad(er) uten gyldig måned.`);
+    }
+    if (familyMonthly.rows.length === 0 && publicMonthly.error && isMissingError(publicMonthly.error)) {
+      warnings.push(publicMonthly.error);
+    }
 
     return {
-      status: familyMonthly.rows.length > 0 ? "ok" : "warning",
+      status: familyMonthly.rows.length > 0 && warnings.length === 0 ? "ok" : "warning",
       sourceSchema: familyMonthly.schema || publicMonthly.schema,
       currency: "NOK",
-      metrics: {
-        months: monthlyRows.length,
-        ytdTotal: ytdRows.reduce((sum, row) => sum + monthlyTotalNok(row), 0),
-        lastMonthTotal: sortedMonths.at(-1)?.value || 0,
-        oliviaNet: ytdRows.reduce((sum, row) => sum + numberValue(first(row, ["olivia_net_nok", "oliviaNetNok"])), 0),
-        realtyflowNet: ytdRows.reduce((sum, row) => sum + numberValue(first(row, ["realtyflow_net_nok", "realtyflowNetNok"])), 0),
-        mondeoInterest: ytdRows.reduce((sum, row) => sum + numberValue(first(row, ["mondeo_interest_nok", "mondeoInterestNok"])), 0),
-      },
-      latestDate: sortedMonths.at(-1)?.month ? `${sortedMonths.at(-1)?.month}-01` : null,
-      warnings: publicMonthly.error && isMissingError(publicMonthly.error) ? [publicMonthly.error] : [],
+      metrics: summary.metrics,
+      latestDate: summary.latestDate,
+      warnings,
     };
   }
 
