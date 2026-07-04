@@ -27,6 +27,10 @@ const contactCandidatesPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-contact-candidates-panel.tsx",
 );
+const reviewSavePath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-review-save-panel.tsx",
+);
 const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
@@ -54,6 +58,7 @@ async function readLeadIntelligenceUiSource() {
     analysisOverview,
     criteriaReview,
     contactCandidates,
+    reviewSave,
     presentationPreview,
     propertyMatchDisplay,
     shortlistPresentationDrafts,
@@ -65,12 +70,13 @@ async function readLeadIntelligenceUiSource() {
     readFile(analysisOverviewPath, "utf8"),
     readFile(criteriaReviewPath, "utf8"),
     readFile(contactCandidatesPath, "utf8"),
+    readFile(reviewSavePath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
@@ -403,7 +409,7 @@ test("Lead Intelligence preview sends stable criterion fingerprints instead of a
 });
 
 test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("idempotencySeed: response.correlationId"), true);
   assert.equal(source.includes("Identisk review var allerede lagret."), true);
@@ -426,14 +432,14 @@ test("Lead Intelligence preview clears stale save results when reviewed payload 
 });
 
 test("Lead Intelligence preview surfaces safe review diagnostics", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("saveError.details"), true);
   assert.equal(source.includes("prettyJson(saveError.details)"), true);
 });
 
 test("Lead Intelligence preview explains duplicate and conflict review saves", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("saveError.code === \"REVIEW_CONFLICT\""), true);
   assert.equal(source.includes("Systemet har ikke"), true);

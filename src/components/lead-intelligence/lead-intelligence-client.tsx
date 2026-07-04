@@ -84,6 +84,7 @@ import {
   type LeadContactDecision,
   type LeadIntelligenceCrmContextItem,
 } from "@/components/lead-intelligence/lead-intelligence-contact-candidates-panel";
+import { LeadIntelligenceReviewSavePanel } from "@/components/lead-intelligence/lead-intelligence-review-save-panel";
 
 type Source = LeadIntelligenceSource;
 
@@ -2846,101 +2847,18 @@ export function LeadIntelligenceClient({
                   />
                 </div>
 
-                <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <h2 className="text-sm font-semibold text-slate-200">Lagre review</h2>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Lagrer godkjent intake og buyer profile bak server-side feature flag. Ingen kommunikasjon sendes.
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={saveReview}
-                      disabled={
-                        saveLoading ||
-                        !persistenceEnabled ||
-                        Boolean(jsonEditor.error) ||
-                        !allCriteriaReviewed ||
-                        (contactDecision === "connect_existing" && !selectedContactId)
-                      }
-                    >
-                      {saveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                      Lagre intake og kjøperprofil
-                    </Button>
-                  </div>
-
-                  {!allCriteriaReviewed && (
-                    <p className="mt-3 text-sm text-amber-300">
-                      Alle kriterier må godkjennes eller avvises før lagring.
-                    </p>
-                  )}
-
-                  {!persistenceEnabled && (
-                    <p className="mt-3 text-sm text-amber-300">
-                      Lagring er av i dette miljøet. Analyse og lokal redigering fungerer fortsatt, men ingen intake eller buyer profile skrives.
-                    </p>
-                  )}
-
-                  {saveError && (
-                    <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                      <p className="font-semibold">{saveError.code}</p>
-                      <p className="mt-1">{saveError.message}</p>
-                      {saveError.code === "REVIEW_CONFLICT" && (
-                        <div className="mt-2 rounded-md border border-red-400/30 bg-red-950/40 p-2 text-xs text-red-50">
-                          Dette reviewet er allerede lagret med en annen versjon av innholdet. Systemet har ikke
-                          overskrevet buyer profile eller kriterier. Start på nytt eller analyser henvendelsen på
-                          nytt dersom du vil lagre en ny godkjent versjon.
-                        </div>
-                      )}
-                      {saveError.details && (
-                        <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                          {prettyJson(saveError.details)}
-                        </pre>
-                      )}
-                      <p className="mt-2 text-xs text-red-100/80">Correlation ID: {saveError.correlationId}</p>
-                    </div>
-                  )}
-
-                  {saveResult && (
-                    <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                      <div className="flex items-start gap-2">
-                        <Users className="mt-0.5 h-4 w-4 text-emerald-300" />
-                        <div>
-                          <p className="font-semibold">
-                            {activeWorklistItem
-                              ? "Lagret buyer profile valgt fra arbeidslisten."
-                              : saveResult.result.status.duplicate
-                              ? "Identisk review var allerede lagret."
-                              : "Review lagret uten eksterne sideeffekter."}
-                          </p>
-                          <p className="mt-1 text-emerald-100/80">
-                            Intake {saveResult.result.intake.id} · Buyer profile {saveResult.result.buyerProfile.id} ·
-                            kriterier {saveResult.result.buyerProfile.criterionCount}
-                          </p>
-                          {activeWorklistItem && (
-                            <p className="mt-1 text-xs text-emerald-100/80">
-                              Du kan kjøre ny eiendomsmatch på denne lagrede profilen uten å analysere henvendelsen
-                              på nytt. Presentasjonsutkast fra gammel analyse åpnes ikke i denne fasen.
-                            </p>
-                          )}
-                          {saveResult.result.status.duplicate && (
-                            <p className="mt-1 text-xs text-emerald-100/80">
-                              Ingen nye rader ble opprettet. Du ser samme intake, analyse og buyer profile som ved
-                              første lagring.
-                            </p>
-                          )}
-                          <p className="mt-1 text-xs text-emerald-100/70">
-                            Ny lagring: {saveResult.result.status.newlySaved ? "ja" : "nei"} ·
-                            Duplicate: {saveResult.result.status.duplicate ? "ja" : "nei"} ·
-                            Conflict: {saveResult.result.status.conflict ? "ja" : "nei"} ·
-                            E-post sendt: nei · Property matching: nei · Kontakt opprettet: nei
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <LeadIntelligenceReviewSavePanel
+                  saveLoading={saveLoading}
+                  persistenceEnabled={persistenceEnabled}
+                  hasJsonError={Boolean(jsonEditor.error)}
+                  allCriteriaReviewed={allCriteriaReviewed}
+                  contactDecision={contactDecision}
+                  selectedContactId={selectedContactId}
+                  saveError={saveError}
+                  saveResult={saveResult?.result ?? null}
+                  hasActiveWorklistItem={Boolean(activeWorklistItem)}
+                  onSave={saveReview}
+                />
 
                 {saveResult && (
                   <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
