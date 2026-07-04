@@ -10,7 +10,7 @@ import type {
   LeadIntelligenceSourceOption,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 
-interface LinkedContactPreview {
+export interface LinkedContactPreview {
   contactId: string;
   name: string | null;
   maskedPhone: string | null;

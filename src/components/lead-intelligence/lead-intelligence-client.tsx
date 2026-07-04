@@ -12,8 +12,6 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-  Trash2,
-  UserCheck,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +87,7 @@ import {
   LeadIntelligenceWorklistHistoryPanel,
   type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
+import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-intelligence/lead-intelligence-saved-profile-contact-panel";
 
 type Source = LeadIntelligenceSource;
 
@@ -1778,233 +1777,34 @@ export function LeadIntelligenceClient({
                           </p>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-100">Kontaktkort</p>
-                              <p className="mt-1 text-xs text-slate-400">
-                                Se koblet kontakt eller finn en eksisterende kontakt for denne lagrede profilen.
-                                Ingen ny kontakt opprettes her.
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              onClick={archiveActiveProfile}
-                              disabled={profileArchiveLoading}
-                            >
-                              {profileArchiveLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="mr-2 h-4 w-4" />
-                              )}
-                              Arkiver profil
-                            </Button>
-                          </div>
-
-                          {activeWorklistItem.linkedContact ? (
-                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-100">
-                              <p className="text-xs uppercase tracking-wide text-emerald-200/80">
-                                Koblet eksisterende kontakt
-                              </p>
-                              <p className="mt-1 font-semibold text-emerald-50">
-                                {activeWorklistItem.linkedContact.name || "Uten navn"}
-                              </p>
-                              <p className="mt-1 text-xs text-emerald-100/75">
-                                {activeWorklistItem.linkedContact.maskedPhone || "ingen telefon"} ·{" "}
-                                {activeWorklistItem.linkedContact.maskedEmail || "ingen e-post"}
-                              </p>
-                              <p className="mt-2 text-xs text-emerald-100/70">
-                                Kontaktdata er hentet read-only og ble ikke overskrevet av Lead Intelligence.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
-                              <p className="font-semibold">Ingen kontakt koblet ennå.</p>
-                              <p className="mt-1 text-xs text-amber-100/80">
-                                Du kan søke etter eksisterende kontakt fra den lagrede analysen. Opprett ny kontakt er
-                                fortsatt en egen godkjenningsfase.
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={loadSavedProfileContactCandidates}
-                              disabled={profileContactCandidatesLoading || !persistenceEnabled}
-                            >
-                              {profileContactCandidatesLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Search className="mr-2 h-4 w-4" />
-                              )}
-                              Finn kontaktkandidater
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={createContactFromSavedProfile}
-                              disabled={
-                                profileContactCreateLoading ||
-                                !createContactEnabled ||
-                                Boolean(activeWorklistItem.linkedContact)
-                              }
-                            >
-                              {profileContactCreateLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Users className="mr-2 h-4 w-4" />
-                              )}
-                              {createContactEnabled ? "Opprett ny kontakt" : "Kontaktoppretting låst"}
-                            </Button>
-                          </div>
-
-                          {!createContactEnabled && (
-                            <p className="mt-2 text-xs text-slate-500">
-                              Oppretting av ny kontakt krever server-side feature flag og egen produksjonsgate.
-                            </p>
-                          )}
-
-                          {profileContactCreateResult && (
-                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                              <p className="font-semibold">
-                                Kontakt opprettet og koblet uten lead, e-post eller matching.
-                              </p>
-                              <p className="mt-1">
-                                {profileContactCreateResult.result.linkedContact.name || "Uten navn"} ·{" "}
-                                {profileContactCreateResult.result.linkedContact.maskedPhone || "ingen telefon"} ·{" "}
-                                {profileContactCreateResult.result.linkedContact.maskedEmail || "ingen e-post"}
-                              </p>
-                              <p className="mt-2 text-emerald-100/70">
-                                Correlation ID: {profileContactCreateResult.correlationId}
-                              </p>
-                            </div>
-                          )}
-
-                          {profileContactCreateError && (
-                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
-                              <p className="font-semibold">{profileContactCreateError.code}</p>
-                              <p className="mt-1">{profileContactCreateError.message}</p>
-                              <p className="mt-2 text-red-100/70">
-                                Correlation ID: {profileContactCreateError.correlationId}
-                              </p>
-                            </div>
-                          )}
-
-                          {profileArchiveResult && (
-                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                              Profil {shortPropertyId(profileArchiveResult.result.buyerProfileId)} er arkivert.
-                              Den er fjernet fra arbeidslisten, men ikke fysisk slettet.
-                            </div>
-                          )}
-
-                          {profileArchiveError && (
-                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
-                              <p className="font-semibold">{profileArchiveError.code}</p>
-                              <p className="mt-1">{profileArchiveError.message}</p>
-                              <p className="mt-2 text-red-100/70">Correlation ID: {profileArchiveError.correlationId}</p>
-                            </div>
-                          )}
-
-                          {profileContactCandidatesError && (
-                            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                              <p className="font-semibold">{profileContactCandidatesError.code}</p>
-                              <p className="mt-1">{profileContactCandidatesError.message}</p>
-                              <p className="mt-2 text-amber-100/80">
-                                Correlation ID: {profileContactCandidatesError.correlationId}
-                              </p>
-                            </div>
-                          )}
-
-                          {profileContactLinkError && (
-                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
-                              <p className="font-semibold">{profileContactLinkError.code}</p>
-                              <p className="mt-1">{profileContactLinkError.message}</p>
-                              <p className="mt-2 text-red-100/70">Correlation ID: {profileContactLinkError.correlationId}</p>
-                            </div>
-                          )}
-
-                          {profileContactLinkResult && (
-                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                              Kontakt {profileContactLinkResult.result.linkedContact.name || shortPropertyId(profileContactLinkResult.result.contactId)}
-                              {" "}er koblet til buyer profile. Ingen kontakt, lead eller e-post ble opprettet.
-                            </div>
-                          )}
-
-                          {profileContactCandidatesResult && (
-                            <div className="mt-3 space-y-2">
-                              {profileContactCandidatesResult.result.candidates.length === 0 ? (
-                                <p className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
-                                  Ingen eksisterende kontaktkandidater funnet for denne profilen.
-                                </p>
-                              ) : (
-                                profileContactCandidatesResult.result.candidates.map((candidate) => (
-                                  <div
-                                    key={`${candidate.matchType}:${candidate.contactId}`}
-                                    className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
-                                  >
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                      <label className="flex min-w-0 cursor-pointer items-start gap-3">
-                                        <input
-                                          type="radio"
-                                          name="saved-profile-contact-candidate"
-                                          checked={profileSelectedContactId === candidate.contactId}
-                                          onChange={() => {
-                                            setProfileSelectedContactId(candidate.contactId);
-                                            setProfileContactLinkError(null);
-                                            setProfileContactLinkResult(null);
-                                          }}
-                                          className="mt-1 h-4 w-4"
-                                          disabled={Boolean(activeWorklistItem.linkedContact) || !connectExistingEnabled}
-                                        />
-                                        <span className="min-w-0">
-                                          <span className="block font-medium text-slate-100">
-                                            {candidate.name || "Uten navn"}
-                                          </span>
-                                          <span className="mt-1 block text-xs text-slate-500">
-                                            {candidate.maskedPhone || "ingen telefon"} ·{" "}
-                                            {candidate.maskedEmail || "ingen e-post"}
-                                          </span>
-                                          <span className="mt-1 block text-xs text-slate-400">
-                                            {candidate.matchType} · {Math.round(candidate.confidence * 100)}%
-                                          </span>
-                                        </span>
-                                      </label>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => linkSavedProfileContact(candidate.contactId)}
-                                        disabled={
-                                          profileContactLinkLoading ||
-                                          Boolean(activeWorklistItem.linkedContact) ||
-                                          !connectExistingEnabled
-                                        }
-                                      >
-                                        {profileContactLinkLoading && profileSelectedContactId === candidate.contactId ? (
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <UserCheck className="mr-2 h-4 w-4" />
-                                        )}
-                                        Koble
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))
-                              )}
-                              {!connectExistingEnabled && (
-                                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
-                                  Kobling til eksisterende kontakt er ikke aktivert i dette miljøet.
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        <LeadIntelligenceSavedProfileContactPanel
+                          activeWorklistItem={activeWorklistItem}
+                          persistenceEnabled={persistenceEnabled}
+                          connectExistingEnabled={connectExistingEnabled}
+                          createContactEnabled={createContactEnabled}
+                          contactCandidates={profileContactCandidatesResult?.result.candidates ?? null}
+                          selectedContactId={profileSelectedContactId}
+                          contactCandidatesLoading={profileContactCandidatesLoading}
+                          contactLinkLoading={profileContactLinkLoading}
+                          contactCreateLoading={profileContactCreateLoading}
+                          profileArchiveLoading={profileArchiveLoading}
+                          contactCandidatesError={profileContactCandidatesError}
+                          contactLinkError={profileContactLinkError}
+                          contactCreateError={profileContactCreateError}
+                          profileArchiveError={profileArchiveError}
+                          contactCreateResult={profileContactCreateResult}
+                          contactLinkResult={profileContactLinkResult}
+                          profileArchiveResult={profileArchiveResult}
+                          onLoadContactCandidates={loadSavedProfileContactCandidates}
+                          onCreateContact={createContactFromSavedProfile}
+                          onArchiveProfile={archiveActiveProfile}
+                          onSelectContactCandidate={(contactId) => {
+                            setProfileSelectedContactId(contactId);
+                            setProfileContactLinkError(null);
+                            setProfileContactLinkResult(null);
+                          }}
+                          onLinkContact={linkSavedProfileContact}
+                        />
 
                         {activeWorklistItem.latestPresentationId && (
                           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
