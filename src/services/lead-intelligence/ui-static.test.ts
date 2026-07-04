@@ -7,6 +7,10 @@ const clientPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-client.tsx",
 );
+const clientHelpersPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-client-helpers.tsx",
+);
 const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
@@ -27,14 +31,22 @@ const inventoryPath = path.join(process.cwd(), "src/app/(realty)/inventory/page.
 const pipelinePath = path.join(process.cwd(), "src/app/(realty)/pipeline/page.tsx");
 
 async function readLeadIntelligenceUiSource() {
-  const [client, presentationPreview, propertyMatchDisplay, shortlistPresentationDrafts, propertyQualityReview] = await Promise.all([
+  const [
+    client,
+    clientHelpers,
+    presentationPreview,
+    propertyMatchDisplay,
+    shortlistPresentationDrafts,
+    propertyQualityReview,
+  ] = await Promise.all([
     readFile(clientPath, "utf8"),
+    readFile(clientHelpersPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
@@ -359,7 +371,7 @@ test("Lead Intelligence preview does not expose contact lookup hashes", async ()
 });
 
 test("Lead Intelligence preview sends stable criterion fingerprints instead of array indexes", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("criterionReviewFingerprint"), true);
   assert.equal(source.includes("fingerprint: criterion.fingerprint"), true);
