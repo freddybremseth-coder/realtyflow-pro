@@ -43,6 +43,10 @@ const loadedPresentationDraftPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel.tsx",
 );
+const activeProfileMatchControlsPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-active-profile-match-controls.tsx",
+);
 const worklistHistoryPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-worklist-history-panel.tsx",
@@ -78,6 +82,7 @@ async function readLeadIntelligenceUiSource() {
     savedProfileContact,
     presentationHistory,
     loadedPresentationDraft,
+    activeProfileMatchControls,
     worklistHistory,
     presentationPreview,
     propertyMatchDisplay,
@@ -94,13 +99,14 @@ async function readLeadIntelligenceUiSource() {
     readFile(savedProfileContactPath, "utf8"),
     readFile(presentationHistoryPath, "utf8"),
     readFile(loadedPresentationDraftPath, "utf8"),
+    readFile(activeProfileMatchControlsPath, "utf8"),
     readFile(worklistHistoryPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${activeProfileMatchControls}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
@@ -246,7 +252,7 @@ test("Lead Intelligence worklist is read-only and does not expose raw stored pay
 });
 
 test("Lead Intelligence worklist auto-loads and can activate a saved buyer profile for matching", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("useEffect"), true);
   assert.equal(source.includes("void loadWorklist();"), true);
