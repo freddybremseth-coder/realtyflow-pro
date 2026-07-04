@@ -15,6 +15,10 @@ const requestCardPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-request-card.tsx",
 );
+const analysisOverviewPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-analysis-overview.tsx",
+);
 const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
@@ -39,6 +43,7 @@ async function readLeadIntelligenceUiSource() {
     client,
     clientHelpers,
     requestCard,
+    analysisOverview,
     presentationPreview,
     propertyMatchDisplay,
     shortlistPresentationDrafts,
@@ -47,12 +52,13 @@ async function readLeadIntelligenceUiSource() {
     readFile(clientPath, "utf8"),
     readFile(clientHelpersPath, "utf8"),
     readFile(requestCardPath, "utf8"),
+    readFile(analysisOverviewPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
