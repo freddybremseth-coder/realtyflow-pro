@@ -3,6 +3,7 @@
 //      file: File (required)
 //      title?, description?, kind?, tags? (csv)
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import { uploadThumbnail } from "@/services/storage/media";
 
@@ -44,6 +45,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
 
   const fd = await req.formData();

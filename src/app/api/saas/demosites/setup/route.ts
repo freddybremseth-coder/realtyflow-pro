@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
+import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 import { DEMO_SITE_TEMPLATE_SEEDS, buildDefaultTemplateFields } from "@/lib/demosites";
 
 export const dynamic = "force-dynamic";
@@ -48,10 +49,7 @@ const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_EXPIRY_DAYS = 7;
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function text(value: unknown, maxLength = 4000) {
@@ -210,6 +208,9 @@ function mergeSetupContentDefaults(order: SetupOrder) {
 }
 
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
@@ -229,6 +230,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 

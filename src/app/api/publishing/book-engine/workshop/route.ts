@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ function safeJsonParse<T>(value: string, fallback: T): T {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const mode = String(body.mode || "discover");
   const theme = String(body.theme || "").trim();

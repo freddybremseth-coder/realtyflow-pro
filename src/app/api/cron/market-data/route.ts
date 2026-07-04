@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { MarketDataFetcher } from '@/services/market/data-fetcher';
+import { requireCronApi } from '@/lib/api-cron';
 import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/market-data", "schedule": "0 3 * * *" }]
@@ -10,7 +11,7 @@ export const maxDuration = 120; // Perplexity queries take extra time
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -20,11 +21,9 @@ function getSupabase() {
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const unauthorized = requireCronApi(request);
+    if (unauthorized) return unauthorized;
+
     const safeMode = await evaluateCronSafeMode('/api/cron/market-data');
     if (safeMode.skip) {
       return NextResponse.json({

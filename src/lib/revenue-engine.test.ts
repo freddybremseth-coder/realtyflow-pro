@@ -6,8 +6,10 @@ import {
   buildRevenueSummary,
   getDefaultRevenueCampaign,
   getRevenueStageLabel,
+  getRevenueSuggestedFollowUpDate,
   type RevenueEngineImport,
   type RevenueEngineLead,
+  type RevenueEngineOpportunity,
   type RevenueEngineOrder,
 } from "@/lib/revenue-engine";
 
@@ -59,6 +61,8 @@ test("Revenue Engine prioritizes demo-ready imports and creates manual outreach 
   assert.equal(opportunity.previewUrl, "https://realtyflow.test/demosites/preview/token-1");
   assert.equal(opportunity.confidenceScore, 84);
   assert.ok(opportunity.priorityScore >= 80);
+  assert.equal(opportunity.nextPlay.channelLabel, "E-post");
+  assert.equal(opportunity.nextPlay.primaryCopyLabel, "E-post 1");
   assert.match(opportunity.sessionBrief.hook, /privat demo/i);
   assert.match(opportunity.outreach.emailOne, /Eidskog Dekk/);
   assert.match(opportunity.outreach.emailOne, /private? demo|privat demo/i);
@@ -83,6 +87,7 @@ test("Revenue Engine keeps lead-only opportunities manual and analysis-ready", (
   assert.equal(opportunity.stage, "analysis_ready");
   assert.equal(opportunity.templateSlug, "local-service");
   assert.equal(opportunity.priorityScore, 35);
+  assert.equal(opportunity.nextPlay.primaryCopyLabel, "Ingen outreach");
   assert.ok(opportunity.risks.some((risk) => risk.includes("Ingen importanalyse")));
   assert.match(opportunity.outreach.dm, /Vil du se den/);
 });
@@ -134,6 +139,7 @@ test("Revenue Engine uses lead workflow metadata for follow-up focus", () => {
       id: "lead-1",
       company_name: "Kontaktet AI AS",
       website_url: "https://kontaktet-ai.no",
+      contact_phone: "12345678",
       industry: "AI service",
       lead_status: "contacted",
       outreach_status: "sent",
@@ -159,8 +165,119 @@ test("Revenue Engine uses lead workflow metadata for follow-up focus", () => {
   assert.equal(followUp?.stage, "follow_up");
   assert.equal(followUp?.followUpAt, "2026-07-05");
   assert.equal(followUp?.workflowNote, "Ring daglig leder etter at preview er sett.");
+  assert.equal(followUp?.nextPlay.channelLabel, "Telefon");
+  assert.equal(followUp?.nextPlay.primaryCopyLabel, "Telefon");
   assert.equal(worklist[0]?.id, "lead-1");
+  assert.equal(worklist[0]?.urgency, "scheduled");
+  assert.equal(worklist[0]?.urgencyLabel, "Planlagt");
+  assert.equal(worklist[0]?.channelLabel, "Telefon");
+  assert.match(worklist[0]?.playTitle || "", /Ring/);
   assert.equal(worklist.some((item) => item.id === "lead-2"), false);
+});
+
+test("Revenue Engine daily worklist prioritizes due manual follow-ups", () => {
+  const baseOpportunity: RevenueEngineOpportunity = {
+    id: "base",
+    companyName: "Base AS",
+    websiteUrl: "https://base.no",
+    industry: "Lokale bedrifter",
+    templateSlug: "local-service",
+    stage: "demo_ready",
+    priorityScore: 95,
+    confidenceScore: 80,
+    previewUrl: "",
+    claimUrl: "",
+    source: "lead",
+    reasons: [],
+    risks: [],
+    nextAction: "Godkjenn outreach.",
+    nextPlay: {
+      title: "Godkjenn outreach.",
+      channel: "email",
+      channelLabel: "E-post",
+      primaryCopyLabel: "E-post 1",
+      timing: "I dag",
+      rationale: "Test opportunity.",
+      checklist: [],
+    },
+    sessionBrief: {
+      hook: "",
+      problems: [],
+      improvements: [],
+      agenda: [],
+      closeQuestion: "",
+    },
+    outreach: {
+      emailSubject: "",
+      emailOne: "",
+      emailTwo: "",
+      emailThree: "",
+      emailFour: "",
+      dm: "",
+      callOpener: "",
+    },
+  };
+  const opportunities: RevenueEngineOpportunity[] = [
+    {
+      ...baseOpportunity,
+      id: "high-priority-demo",
+      companyName: "High Priority Demo AS",
+      stage: "demo_ready",
+      priorityScore: 100,
+    },
+    {
+      ...baseOpportunity,
+      id: "future-follow-up",
+      companyName: "Future Followup AS",
+      stage: "follow_up",
+      priorityScore: 70,
+      followUpAt: "2026-07-09",
+    },
+    {
+      ...baseOpportunity,
+      id: "today-follow-up",
+      companyName: "Today Followup AS",
+      stage: "follow_up",
+      priorityScore: 60,
+      followUpAt: "2026-07-03",
+    },
+    {
+      ...baseOpportunity,
+      id: "overdue-follow-up",
+      companyName: "Overdue Followup AS",
+      stage: "follow_up",
+      priorityScore: 55,
+      followUpAt: "2026-07-01",
+    },
+  ];
+
+  const worklist = buildRevenueDailyWorklist(
+    opportunities,
+    4,
+    new Date("2026-07-03T12:00:00.000Z"),
+  );
+
+  assert.deepEqual(worklist.map((item) => item.id), [
+    "overdue-follow-up",
+    "today-follow-up",
+    "high-priority-demo",
+    "future-follow-up",
+  ]);
+  assert.equal(worklist[0]?.urgency, "overdue");
+  assert.equal(worklist[0]?.urgencyLabel, "Forfalt");
+  assert.equal(worklist[1]?.urgency, "today");
+  assert.equal(worklist[1]?.urgencyLabel, "I dag");
+});
+
+test("Revenue Engine suggests follow-up dates by stage using business days", () => {
+  const friday = new Date("2026-07-03T12:00:00.000Z");
+
+  assert.equal(getRevenueSuggestedFollowUpDate("outreach_ready", friday), "2026-07-07");
+  assert.equal(getRevenueSuggestedFollowUpDate("demo_ready", friday), "2026-07-07");
+  assert.equal(getRevenueSuggestedFollowUpDate("follow_up", friday), "2026-07-06");
+  assert.equal(getRevenueSuggestedFollowUpDate("session_booked", friday), "2026-07-06");
+  assert.equal(getRevenueSuggestedFollowUpDate("analysis_ready", friday), "");
+  assert.equal(getRevenueSuggestedFollowUpDate("won", friday), "");
 });
 
 test("Revenue Engine maps lead-only session and won statuses", () => {

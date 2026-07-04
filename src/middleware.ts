@@ -60,6 +60,17 @@ function isRemasterProxyPath(pathname: string) {
   );
 }
 
+function hasValidCronCredential(request: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return false;
+
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  const headerSecret = request.headers.get("x-cron-secret")?.trim();
+  const querySecret = request.nextUrl.searchParams.get("key")?.trim();
+
+  return bearer === cronSecret || headerSecret === cronSecret || querySecret === cronSecret;
+}
+
 function safeLeadIntelligenceReturnPath(value: string | null) {
   if (!value) return null;
   const trimmed = value.trim();
@@ -183,9 +194,8 @@ export async function middleware(request: NextRequest) {
   // CRON_SECRET er satt. Slipp gjennom cron-ruter som bærer riktig token, slik
   // at de faktisk kjører i produksjon (uten dette redirectes de til /login).
   // Hver cron-rute verifiserer CRON_SECRET på nytt internt, så dette er trygt.
-  const cronSecret = process.env.CRON_SECRET;
   const isCronPath = pathname.startsWith("/api/cron") || pathname === "/api/neural-beat/cron";
-  if (isCronPath && cronSecret && request.headers.get("authorization") === `Bearer ${cronSecret}`) {
+  if (isCronPath && hasValidCronCredential(request)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 import { slugifyCompanyName } from "@/lib/demosites";
+import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,10 +13,7 @@ const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/g
 type UploadKind = "logo" | "image";
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function getExtension(file: File) {
@@ -34,6 +32,9 @@ function safeKind(value: FormDataEntryValue | null): UploadKind {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 

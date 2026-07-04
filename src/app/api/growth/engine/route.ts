@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { AutonomousGrowthEngine } from '@/services/growth/growth-engine';
+import { requireAdminApi } from '@/lib/api-admin';
 
 export const maxDuration = 120;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -14,6 +15,9 @@ function getSupabase() {
 // GET: Returns recent growth actions and current strategy
 export async function GET(request: NextRequest) {
   try {
+    const adminError = await requireAdminApi(request, { success: false, actions: [] });
+    if (adminError) return adminError;
+
     const supabase = getSupabase();
     const { searchParams } = new URL(request.url);
     const brand = searchParams.get('brand');
@@ -81,6 +85,9 @@ export async function GET(request: NextRequest) {
 // POST: Trigger a growth cycle or specific action
 export async function POST(request: NextRequest) {
   try {
+    const adminError = await requireAdminApi(request);
+    if (adminError) return adminError;
+
     const body = await request.json();
     const {
       brands,

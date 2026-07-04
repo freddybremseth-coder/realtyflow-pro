@@ -136,26 +136,26 @@ function hostFor(url: string): string | null {
 
 function mainConfig(): EnvConfig {
   const url = firstEnv(["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"]);
-  const key = firstEnv(["SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY"]);
+  const key = firstEnv(["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
   return { url, key, host: hostFor(url) };
 }
 
 function oliviaConfig(main: EnvConfig): EnvConfig {
   const url = firstEnv(["OLIVIA_SUPABASE_URL", "DONAANNA_SUPABASE_URL", "DONA_ANNA_SUPABASE_URL"]) || main.url;
   const key = firstEnv([
+    "OLIVIA_SUPABASE_SERVICE_ROLE_KEY",
     "OLIVIA_SUPABASE_KEY",
-    "OLIVIA_SUPABASE_ANON_KEY",
+    "DONAANNA_SUPABASE_SERVICE_ROLE_KEY",
     "DONAANNA_SUPABASE_KEY",
-    "DONAANNA_SUPABASE_ANON_KEY",
+    "DONA_ANNA_SUPABASE_SERVICE_ROLE_KEY",
     "DONA_ANNA_SUPABASE_KEY",
-    "DONA_ANNA_SUPABASE_ANON_KEY",
   ]) || main.key;
   return { url, key, host: hostFor(url) };
 }
 
 function familyConfig(main: EnvConfig): EnvConfig {
   const url = firstEnv(["FAMILY_SUPABASE_URL", "FAMILYHUB_SUPABASE_URL"]) || main.url;
-  const key = firstEnv(["FAMILY_SUPABASE_SERVICE_ROLE_KEY", "FAMILY_SUPABASE_KEY", "FAMILY_SUPABASE_ANON_KEY"]) || main.key;
+  const key = firstEnv(["FAMILY_SUPABASE_SERVICE_ROLE_KEY", "FAMILY_SUPABASE_KEY"]) || main.key;
   return { url, key, host: hostFor(url) };
 }
 

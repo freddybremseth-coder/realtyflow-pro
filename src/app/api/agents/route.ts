@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { AgentOrchestrator } from "@/services/agents/orchestrator";
 import { getConfiguredAIProviders } from "@/services/ai/claude-client";
 
-const orchestrator = new AgentOrchestrator();
+export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req, { agents: [], providers: getConfiguredAIProviders() });
+  if (unauthorized) return unauthorized;
 
-export async function GET() {
+  const orchestrator = new AgentOrchestrator();
   const capabilities = orchestrator.getAgentCapabilities();
   return NextResponse.json({ agents: capabilities, providers: getConfiguredAIProviders() });
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
     const { agent, command, tasks, multiAgent, agents: agentNames } = body;
+    const orchestrator = new AgentOrchestrator();
 
     if (multiAgent && agentNames) {
       const result = await orchestrator.runMultiAgentTask(command, agentNames);

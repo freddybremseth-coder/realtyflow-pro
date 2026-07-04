@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { saveTrendingTags, type TrendingTagsRecord } from '@/services/integrations/trending-tags-store';
+import { requireCronApi } from '@/lib/api-cron';
 import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/trending-tags", "schedule": "0 5 * * 1" }]
@@ -93,10 +94,9 @@ function rankTags(videos: YouTubeVideoItem[]): string[] {
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const unauthorized = requireCronApi(request);
+    if (unauthorized) return unauthorized;
+
     const safeMode = await evaluateCronSafeMode('/api/cron/trending-tags');
     if (safeMode.skip) {
       return NextResponse.json({

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
+import { getSaasSupabase } from '@/lib/saas-api-supabase';
 import { sortSaasPortfolio } from '@/lib/saas-portfolio';
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getSaasSupabase();
 }
 
 /**
@@ -14,6 +12,9 @@ function getSupabase() {
  * List all SaaS apps with optional status filter
  */
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request, { apps: [] });
+  if (unauthorized) return unauthorized;
+
   try {
     const status = request.nextUrl.searchParams.get('status');
     const supabase = getSupabase();
@@ -79,6 +80,9 @@ export async function GET(request: NextRequest) {
  * Create or update a SaaS app
  */
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const body = await request.json();
     const supabase = getSupabase();
@@ -138,6 +142,9 @@ export async function POST(request: NextRequest) {
  * Delete a SaaS app by id
  */
 export async function DELETE(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });

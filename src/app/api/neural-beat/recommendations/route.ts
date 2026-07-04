@@ -7,6 +7,7 @@ import {
   isConfigured as ytConfigured,
 } from "@/services/integrations/youtube-client";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 
 const YOUTUBE_BRAND_ID = "remasterfreddy";
 
@@ -28,12 +29,12 @@ function extractJSON(text: string): Record<string, unknown> {
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
 
-export async function GET() {
+export async function generateNeuralBeatRecommendations() {
   try {
     if (!ytConfigured()) {
       return NextResponse.json({ error: "YouTube ikke konfigurert" }, { status: 503 });
@@ -295,8 +296,18 @@ RULES:
   }
 }
 
+export async function GET(request: NextRequest) {
+  const adminError = await requireAdminApi(request);
+  if (adminError) return adminError;
+
+  return generateNeuralBeatRecommendations();
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const adminError = await requireAdminApi(request);
+    if (adminError) return adminError;
+
     const { action } = await request.json();
     if (!action) {
       return NextResponse.json({ error: "No action provided" }, { status: 400 });

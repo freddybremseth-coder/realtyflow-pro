@@ -9,6 +9,7 @@ import {
   CheckCircle,
   Clipboard,
   ExternalLink,
+  ListChecks,
   Loader2,
   Mail,
   MessageSquareText,
@@ -34,6 +35,7 @@ import {
   buildRevenueSummary,
   getDefaultRevenueCampaign,
   getRevenueStageLabel,
+  getRevenueSuggestedFollowUpDate,
   type RevenueCampaignSettings,
   type RevenueEngineImport,
   type RevenueEngineLead,
@@ -65,6 +67,7 @@ type RevenueWorkflowAction = {
   outreachStatus: string;
   note: string;
   followUpAt?: string | null;
+  requiresFollowUp?: boolean;
 };
 
 const STAGE_STYLES: Record<RevenueEngineStage, string> = {
@@ -81,6 +84,38 @@ function scoreTone(score: number) {
   if (score >= 80) return "text-emerald-300";
   if (score >= 60) return "text-amber-300";
   return "text-slate-300";
+}
+
+function worklistUrgencyStyle(urgency: RevenueWorklistItem["urgency"]) {
+  switch (urgency) {
+    case "overdue":
+      return "border-red-400/30 bg-red-400/10 text-red-100";
+    case "today":
+      return "border-amber-400/30 bg-amber-400/10 text-amber-100";
+    case "scheduled":
+      return "border-slate-600 bg-slate-800 text-slate-300";
+    case "none":
+      return "border-slate-700 bg-slate-950 text-slate-500";
+  }
+}
+
+function nextPlayChannelStyle(channel: RevenueEngineOpportunity["nextPlay"]["channel"]) {
+  switch (channel) {
+    case "quality_check":
+      return "border-cyan-400/30 bg-cyan-400/10 text-cyan-100";
+    case "email":
+      return "border-sky-400/30 bg-sky-400/10 text-sky-100";
+    case "phone":
+      return "border-amber-400/30 bg-amber-400/10 text-amber-100";
+    case "dm":
+      return "border-purple-400/30 bg-purple-400/10 text-purple-100";
+    case "session":
+      return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+    case "ops":
+      return "border-teal-400/30 bg-teal-400/10 text-teal-100";
+    case "hold":
+      return "border-slate-700 bg-slate-950 text-slate-500";
+  }
 }
 
 function formatDate(value?: string | null) {
@@ -175,16 +210,20 @@ export default function RevenueEnginePage() {
   const summary = useMemo(() => buildRevenueSummary(opportunities), [opportunities]);
   const worklist = useMemo(() => buildRevenueDailyWorklist(opportunities, 5), [opportunities]);
   const selectedOpportunity = opportunities.find((item) => item.id === selectedId) || opportunities[0] || null;
+  const suggestedFollowUpDate = useMemo(
+    () => selectedOpportunity ? getRevenueSuggestedFollowUpDate(selectedOpportunity.stage) : "",
+    [selectedOpportunity?.stage],
+  );
 
   useEffect(() => {
     if (!selectedId && opportunities[0]) setSelectedId(opportunities[0].id);
   }, [opportunities, selectedId]);
 
   useEffect(() => {
-    setFollowUpDate(selectedOpportunity?.followUpAt || "");
+    setFollowUpDate(selectedOpportunity?.followUpAt || suggestedFollowUpDate);
     setWorkflowError(null);
     setWorkflowMessage(null);
-  }, [selectedOpportunity?.followUpAt, selectedOpportunity?.id]);
+  }, [selectedOpportunity?.followUpAt, selectedOpportunity?.id, suggestedFollowUpDate]);
 
   async function copyText(label: string, value: string) {
     try {
@@ -198,6 +237,11 @@ export default function RevenueEnginePage() {
   }
 
   async function updateOpportunityWorkflow(opportunity: RevenueEngineOpportunity, action: RevenueWorkflowAction) {
+    if (action.requiresFollowUp && !action.followUpAt) {
+      setWorkflowError("Sett neste oppfølgingsdato før du markerer denne som kontaktet.");
+      return;
+    }
+
     setWorkflowLoadingId(opportunity.id);
     setWorkflowError(null);
     setWorkflowMessage(null);
@@ -328,6 +372,7 @@ export default function RevenueEnginePage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-bold text-white">{item.companyName}</h3>
                             <Badge className={STAGE_STYLES[item.stage]} variant="outline">{getRevenueStageLabel(item.stage)}</Badge>
+                            <Badge className={nextPlayChannelStyle(item.nextPlay.channel)} variant="outline">{item.nextPlay.channelLabel}</Badge>
                           </div>
                           <p className="mt-1 text-sm text-slate-400">{item.industry} · {item.templateSlug}</p>
                         </div>
@@ -336,7 +381,8 @@ export default function RevenueEnginePage() {
                           <div className="text-[10px] uppercase tracking-wide text-slate-500">Prioritet</div>
                         </div>
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-300">{item.nextAction}</p>
+                      <p className="mt-3 text-sm font-semibold leading-6 text-slate-200">{item.nextPlay.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{item.nextAction}</p>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                         {item.previewUrl && <span>Preview klar</span>}
                         {item.orderId && <span>Demo koblet</span>}
@@ -355,6 +401,7 @@ export default function RevenueEnginePage() {
               opportunity={selectedOpportunity}
               copied={copied}
               followUpDate={followUpDate}
+              suggestedFollowUpDate={suggestedFollowUpDate}
               workflowError={workflowError}
               workflowLoading={workflowLoadingId === selectedOpportunity.id}
               workflowMessage={workflowMessage}
@@ -395,8 +442,13 @@ function DailyWorklistPanel({ items, selectedId, onSelect }: { items: RevenueWor
               >
                 <div className="text-xs font-bold uppercase tracking-wide text-amber-200">#{index + 1}</div>
                 <h3 className="mt-2 line-clamp-2 font-bold text-white">{item.companyName}</h3>
-                <Badge className={`${STAGE_STYLES[item.stage]} mt-3`} variant="outline">{getRevenueStageLabel(item.stage)}</Badge>
-                <p className="mt-3 text-sm leading-5 text-slate-300">{item.action}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge className={STAGE_STYLES[item.stage]} variant="outline">{getRevenueStageLabel(item.stage)}</Badge>
+                  <Badge className={worklistUrgencyStyle(item.urgency)} variant="outline">{item.urgencyLabel}</Badge>
+                  <Badge className="border-slate-700 bg-slate-950 text-slate-300" variant="outline">{item.channelLabel}</Badge>
+                </div>
+                <p className="mt-3 text-sm font-semibold leading-5 text-slate-200">{item.playTitle}</p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">{item.timing}</p>
                 {item.followUpAt && <p className="mt-3 text-xs text-slate-500">Oppfølging {formatDate(item.followUpAt)}</p>}
               </button>
             ))}
@@ -460,6 +512,7 @@ function OpportunityPanel({
   workflowError,
   workflowLoading,
   workflowMessage,
+  suggestedFollowUpDate,
   onCopy,
   onFollowUpDateChange,
   onWorkflowAction,
@@ -467,6 +520,7 @@ function OpportunityPanel({
   opportunity: RevenueEngineOpportunity;
   copied: string | null;
   followUpDate: string;
+  suggestedFollowUpDate: string;
   workflowError: string | null;
   workflowLoading: boolean;
   workflowMessage: string | null;
@@ -496,7 +550,25 @@ function OpportunityPanel({
             <Badge className={STAGE_STYLES[opportunity.stage]} variant="outline">{getRevenueStageLabel(opportunity.stage)}</Badge>
             <Badge variant="outline" className="border-slate-700 bg-slate-950 text-slate-300">Confidence {opportunity.confidenceScore}</Badge>
             <Badge variant="outline" className="border-slate-700 bg-slate-950 text-slate-300">{opportunity.source === "import" ? "Fra import" : "Fra lead"}</Badge>
+            <Badge className={nextPlayChannelStyle(opportunity.nextPlay.channel)} variant="outline">{opportunity.nextPlay.channelLabel}</Badge>
             {opportunity.followUpAt && <Badge variant="outline" className="border-amber-400/30 bg-amber-400/10 text-amber-100">Oppfølging {formatDate(opportunity.followUpAt)}</Badge>}
+          </div>
+
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-cyan-100">
+                <ListChecks className="h-4 w-4" /> Anbefalt neste play
+              </h3>
+              <Badge className={nextPlayChannelStyle(opportunity.nextPlay.channel)} variant="outline">{opportunity.nextPlay.primaryCopyLabel}</Badge>
+            </div>
+            <p className="mt-3 text-base font-bold text-white">{opportunity.nextPlay.title}</p>
+            <p className="mt-2 text-sm leading-6 text-cyan-50/80">{opportunity.nextPlay.rationale}</p>
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-cyan-200">{opportunity.nextPlay.timing}</p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {opportunity.nextPlay.checklist.map((item) => (
+                <div key={item} className="rounded-md border border-cyan-300/10 bg-slate-950/40 p-3 text-xs leading-5 text-slate-200">{item}</div>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -554,6 +626,7 @@ function OpportunityPanel({
                 outreachStatus: "sent",
                 note: followUpNote,
                 followUpAt: followUpDate || null,
+                requiresFollowUp: true,
               })}
             />
             <WorkflowButton
@@ -596,21 +669,36 @@ function OpportunityPanel({
             <label>
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Neste oppfølging</span>
               <Input type="date" value={followUpDate} onChange={(event) => onFollowUpDateChange(event.target.value)} className="mt-1 border-slate-700 bg-slate-950 text-white" />
+              {suggestedFollowUpDate && <span className="mt-1 block text-xs text-slate-500">Foreslått: {formatDate(suggestedFollowUpDate)}</span>}
             </label>
-            <Button
-              disabled={workflowLoading}
-              variant="outline"
-              className="self-end border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
-              onClick={() => onWorkflowAction(opportunity, {
-                label: "Oppfølging lagret",
-                leadStatus: "contacted",
-                outreachStatus: "sent",
-                note: followUpNote,
-                followUpAt: followUpDate || null,
-              })}
-            >
-              {workflowLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TimerReset className="mr-2 h-4 w-4" />} Lagre oppfølging
-            </Button>
+            <div className="flex flex-wrap items-end gap-2 sm:justify-end">
+              {suggestedFollowUpDate && followUpDate !== suggestedFollowUpDate && (
+                <Button
+                  disabled={workflowLoading}
+                  type="button"
+                  variant="outline"
+                  className="border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
+                  onClick={() => onFollowUpDateChange(suggestedFollowUpDate)}
+                >
+                  <CalendarClock className="mr-2 h-4 w-4" /> Bruk forslag
+                </Button>
+              )}
+              <Button
+                disabled={workflowLoading || !followUpDate}
+                variant="outline"
+                className="border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                onClick={() => onWorkflowAction(opportunity, {
+                  label: "Oppfølging lagret",
+                  leadStatus: "contacted",
+                  outreachStatus: "sent",
+                  note: followUpNote,
+                  followUpAt: followUpDate || null,
+                  requiresFollowUp: true,
+                })}
+              >
+                {workflowLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TimerReset className="mr-2 h-4 w-4" />} Lagre oppfølging
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -638,12 +726,12 @@ function OpportunityPanel({
         </CardHeader>
         <CardContent className="space-y-4">
           {copied && <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{copied}</div>}
-          <CopyBlock title={`Emne: ${opportunity.outreach.emailSubject}`} value={opportunity.outreach.emailOne} label="E-post 1" icon={<Mail className="h-4 w-4" />} onCopy={onCopy} />
-          <CopyBlock title="Follow-up: 3 ting" value={opportunity.outreach.emailTwo} label="E-post 2" icon={<Mail className="h-4 w-4" />} onCopy={onCopy} />
-          <CopyBlock title="Follow-up: demoen er laget for henvendelser" value={opportunity.outreach.emailThree} label="E-post 3" icon={<Mail className="h-4 w-4" />} onCopy={onCopy} />
-          <CopyBlock title="Siste follow-up" value={opportunity.outreach.emailFour} label="E-post 4" icon={<Mail className="h-4 w-4" />} onCopy={onCopy} />
-          <CopyBlock title="LinkedIn/DM" value={opportunity.outreach.dm} label="DM" icon={<MessageSquareText className="h-4 w-4" />} onCopy={onCopy} />
-          <CopyBlock title="Telefonåpning" value={opportunity.outreach.callOpener} label="Telefon" icon={<PhoneCall className="h-4 w-4" />} onCopy={onCopy} />
+          <CopyBlock title={`Emne: ${opportunity.outreach.emailSubject}`} value={opportunity.outreach.emailOne} label="E-post 1" icon={<Mail className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "E-post 1"} onCopy={onCopy} />
+          <CopyBlock title="Follow-up: 3 ting" value={opportunity.outreach.emailTwo} label="E-post 2" icon={<Mail className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "E-post 2"} onCopy={onCopy} />
+          <CopyBlock title="Follow-up: demoen er laget for henvendelser" value={opportunity.outreach.emailThree} label="E-post 3" icon={<Mail className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "E-post 3"} onCopy={onCopy} />
+          <CopyBlock title="Siste follow-up" value={opportunity.outreach.emailFour} label="E-post 4" icon={<Mail className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "E-post 4"} onCopy={onCopy} />
+          <CopyBlock title="LinkedIn/DM" value={opportunity.outreach.dm} label="DM" icon={<MessageSquareText className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "DM"} onCopy={onCopy} />
+          <CopyBlock title="Telefonåpning" value={opportunity.outreach.callOpener} label="Telefon" icon={<PhoneCall className="h-4 w-4" />} recommended={opportunity.nextPlay.primaryCopyLabel === "Telefon"} onCopy={onCopy} />
         </CardContent>
       </Card>
     </div>
@@ -679,11 +767,14 @@ function InfoList({ title, items, muted = false }: { title: string; items: strin
   );
 }
 
-function CopyBlock({ title, value, label, icon, onCopy }: { title: string; value: string; label: string; icon: ReactNode; onCopy: (label: string, value: string) => void }) {
+function CopyBlock({ title, value, label, icon, recommended = false, onCopy }: { title: string; value: string; label: string; icon: ReactNode; recommended?: boolean; onCopy: (label: string, value: string) => void }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
+    <div className={`rounded-lg border p-4 ${recommended ? "border-emerald-400/30 bg-emerald-400/10" : "border-slate-800 bg-slate-950/70"}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-white">{icon}{title}</h3>
+        <h3 className="flex items-center gap-2 text-sm font-bold text-white">
+          {icon}{title}
+          {recommended && <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100" variant="outline">Anbefalt</Badge>}
+        </h3>
         <Button size="sm" variant="outline" className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800" onClick={() => onCopy(`${label} kopiert`, value)}>
           <Clipboard className="mr-2 h-3.5 w-3.5" /> Kopier
         </Button>

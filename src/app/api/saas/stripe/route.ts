@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSaasSupabase } from '@/lib/saas-api-supabase';
+import { verifyStripeWebhookSignature } from '@/lib/stripe-webhook';
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getSaasSupabase();
 }
 
 /**
@@ -24,24 +22,18 @@ export async function POST(request: NextRequest) {
     const sig = request.headers.get('stripe-signature');
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-    // Verify webhook signature if secret is configured
+    const signatureCheck = verifyStripeWebhookSignature(body, sig, webhookSecret);
+    if (!signatureCheck.ok) {
+      console.warn('[Stripe Webhook] Signature verification failed', { reason: signatureCheck.reason });
+      const status = signatureCheck.reason === 'missing-secret' ? 500 : 401;
+      return NextResponse.json({ error: 'Invalid Stripe webhook signature' }, { status });
+    }
+
     let event: any;
-    if (webhookSecret && sig) {
-      // In production, use Stripe SDK to verify:
-      // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-      // event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
-      // For now, parse directly (add Stripe SDK verification later)
-      try {
-        event = JSON.parse(body);
-      } catch {
-        return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-      }
-    } else {
-      try {
-        event = JSON.parse(body);
-      } catch {
-        return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-      }
+    try {
+      event = JSON.parse(body);
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
     const supabase = getSupabase();

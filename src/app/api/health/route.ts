@@ -9,8 +9,9 @@
  * summary and know immediately which env var needs re-setting.
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 export const maxDuration = 30;
 
@@ -106,7 +107,7 @@ async function checkYouTube(): Promise<Check> {
 
 async function checkSupabase(): Promise<Check> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return { name: 'supabase', ok: false, error: 'URL or key missing' };
   try {
     const supabase = createClient(url, key);
@@ -143,7 +144,10 @@ async function checkFacebookApp(): Promise<Check> {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const adminError = await requireAdminApi(request);
+  if (adminError) return adminError;
+
   const envChecks = await checkEnv([
     'NEXT_PUBLIC_SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',

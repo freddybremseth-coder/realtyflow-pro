@@ -1,16 +1,16 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/nurture/overview
- * Admin-only (middleware setter x-admin-authenticated etter verifisert cookie).
+ * Admin-only.
  * Returnerer aggregater + siste hendelser for nurture-oversiktssiden.
  */
 export async function GET(request: NextRequest) {
-  if (request.headers.get("x-admin-authenticated") !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
 
   const supabase = createServerClient();
 

@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RealtyFlow Pro
 
-## Getting Started
+RealtyFlow Pro is Freddy Bremseth's AI-assisted business operating system for real estate, lead handling, content, SaaS sales, and revenue follow-up.
 
-First, run the development server:
+The app is a Next.js 14 + TypeScript + Supabase platform. It is currently optimized as an internal admin and sales system, not as a fully external multi-tenant SaaS product.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Current Product Focus
+
+The near-term priority is to make two workflows excellent before widening scope:
+
+1. **Lead Intelligence for real estate**
+   - Analyze customer messages into structured buyer profiles.
+   - Review requirements manually.
+   - Match properties safely.
+   - Save quality-reviewed shortlists.
+   - Generate internal customer presentations and email drafts.
+   - Keep contact creation, lead creation, and sending behind explicit gates.
+
+2. **DemoSites Revenue Engine**
+   - Import or analyze local business websites.
+   - Generate private DemoSite previews.
+   - Prioritize opportunities.
+   - Produce manual outreach and follow-up worklists.
+   - Track lead state toward booked sessions, wins, or not-fit.
+
+The operating rule is:
+
+```text
+AI suggests. Freddy reviews. Freddy approves. The system acts only after explicit approval.
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Key Areas
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `src/app/(realty)/lead-intelligence` - AI lead intake, buyer profiles, property matching, shortlists, and draft presentations.
+- `src/app/(realty)/pipeline` - CRM pipeline, lead import, buying signals, commissions, and customer follow-up.
+- `src/app/(realty)/inventory` - Property inventory, RedSP/XML/CSV import, brand visibility, PDFs, and marketing copy.
+- `src/app/(business)/demosites` - DemoSite order/preview/claim workflow.
+- `src/app/(business)/revenue-engine` - Opportunity prioritization and manual outreach workflow.
+- `src/services/lead-intelligence` - Structured contracts, extraction, persistence, matching, shortlist, presentation, and safety gates.
+- `src/lib/revenue-engine.ts` - Revenue opportunity scoring, worklist logic, and outreach drafts.
+- `supabase/migrations` - Reviewed schema source of truth. Production migrations are not applied automatically.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Docs To Read First
 
-## Learn More
+- `docs/product-focus-and-golden-flow.md`
+- `docs/lead-intelligence-send-crm-gate-plan.md`
+- `docs/lead-intelligence-production-activation-plan.md`
+- `docs/realtyflow-production-migration-path.md`
+- `docs/supabase-pro-unification-plan.md`
 
-To learn more about Next.js, take a look at the following resources:
+## Development
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm ci
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open `http://localhost:3000`.
 
-## Deploy on Vercel
+## Server Secrets
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set these in `.env.local` for local development and as server-side deployment secrets in production:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `REALTYFLOW_SESSION_SECRET` and `REALTYFLOW_ADMIN_EMAILS` for internal admin sessions.
+- `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for server-side Supabase access.
+- `STRIPE_WEBHOOK_SECRET` for `/api/saas/stripe`; unsigned or misconfigured webhooks are rejected before database access.
+- `CRON_SECRET` for `/api/cron/*`; these routes fail closed when the secret is missing.
+- `DEMOSITES_CRON_SECRET` or `CRON_SECRET` for `/api/saas/demosites/expire`.
+- `NEXT_PUBLIC_REALTYFLOW_URL` when generated DemoSites links should point somewhere other than the default production URL.
+
+## Verification
+
+```bash
+npm run test:lead-intelligence
+npm run test:contacts-api
+npx tsx --test src/lib/api-admin.test.ts src/lib/api-cron.test.ts src/lib/cron/safe-mode.test.ts src/lib/saas-api-supabase.test.ts src/app/api/cron/cron-routes-auth.test.ts src/app/api/outbound-actions-auth.test.ts src/app/api/maintenance-actions-auth.test.ts src/app/api/saas/service-role-auth-coverage.test.ts src/app/api/saas/internal-routes-auth.test.ts src/app/api/saas/stripe/route.test.ts src/app/api/saas/demosites/route.test.ts src/app/api/saas/demosites/internal-routes-auth.test.ts src/app/api/saas/demosites/public-routes-boundary.test.ts src/app/api/saas/demosites/leads/route.test.ts src/app/api/saas/demosites/profile-import/route.test.ts src/lib/stripe-webhook.test.ts src/lib/revenue-engine.test.ts src/lib/demosites.test.ts src/lib/demosites-preview.test.ts src/lib/demosites-import-review-versions.test.ts src/lib/constants.test.ts
+```
+
+Use `npm run build` before production-impacting changes.
+
+## Production Safety
+
+- Do not run broad historical Supabase migrations in production.
+- Do not enable send, contact creation, lead creation, or property matching flags without a specific activation plan.
+- Keep `REALTYFLOW_AUTO_SEND_ENABLED=false`.
+- Browser code must never receive service-role credentials, runtime database URLs, HMAC lookup secrets, or contact lookup hashes.

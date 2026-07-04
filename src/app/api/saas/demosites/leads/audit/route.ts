@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
+import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 import { buildDemoSiteAuditIssues, scoreDemoSiteLead, shouldQualifyLead } from "@/lib/demosites-leads";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +18,7 @@ type PageAssetProfile = {
 };
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function text(body: RequestBody, snakeCase: string, camelCase = snakeCase) {
@@ -127,6 +125,9 @@ async function insertLeadEvent(supabase: SupabaseClientLike, leadId: string, tit
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 

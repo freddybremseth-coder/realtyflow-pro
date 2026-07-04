@@ -1,16 +1,13 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 
 /**
  * CMS for publisert nettside-innhold (website_posts).
- * Admin-only (middleware setter x-admin-authenticated etter verifisert cookie).
+ * Admin-only.
  * GET = list alle · POST = opprett · PATCH = oppdater · DELETE = slett.
  */
-
-function requireAdmin(req: NextRequest) {
-  return req.headers.get("x-admin-authenticated") === "true";
-}
 
 const EDITABLE = [
   "brand_id",
@@ -41,7 +38,9 @@ function pick(body: Record<string, unknown>) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!requireAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const unauthorized = await requireAdminApi(req, { posts: [] });
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("website_posts")
@@ -55,7 +54,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!requireAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
   const body = await req.json().catch(() => ({}));
   const payload = pick(body);
@@ -73,7 +74,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!requireAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
   const body = await req.json().catch(() => ({}));
   const id = body.id as string | undefined;
@@ -91,7 +94,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!requireAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
   const body = await req.json().catch(() => ({}));
   const id = body.id as string | undefined;

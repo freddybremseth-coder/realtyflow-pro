@@ -45,6 +45,9 @@ export type RevenueEngineLead = {
   company_name?: string | null;
   website_url?: string | null;
   domain?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
   industry?: string | null;
   lead_status?: string | null;
   outreach_status?: string | null;
@@ -84,6 +87,7 @@ export type RevenueEngineOpportunity = {
   nextAction: string;
   followUpAt?: string | null;
   workflowNote?: string | null;
+  nextPlay: RevenueNextPlay;
   sessionBrief: RevenueSessionBrief;
   outreach: RevenueOutreachDrafts;
   createdAt?: string | null;
@@ -96,6 +100,34 @@ export type RevenueWorklistItem = {
   priorityScore: number;
   action: string;
   followUpAt?: string | null;
+  urgency: RevenueWorklistUrgency;
+  urgencyLabel: string;
+  playTitle: string;
+  channelLabel: string;
+  timing: string;
+};
+
+export type RevenueWorklistUrgency = "overdue" | "today" | "scheduled" | "none";
+export type RevenueRecommendedChannel = "quality_check" | "email" | "phone" | "dm" | "session" | "ops" | "hold";
+export type RevenuePrimaryCopyLabel =
+  | "Ingen outreach"
+  | "E-post 1"
+  | "E-post 2"
+  | "E-post 3"
+  | "E-post 4"
+  | "DM"
+  | "Telefon"
+  | "Session brief"
+  | "Oppsett";
+
+export type RevenueNextPlay = {
+  title: string;
+  channel: RevenueRecommendedChannel;
+  channelLabel: string;
+  primaryCopyLabel: RevenuePrimaryCopyLabel;
+  timing: string;
+  rationale: string;
+  checklist: string[];
 };
 
 export type RevenueSessionBrief = {
@@ -268,6 +300,7 @@ function stageFromLead(lead: RevenueEngineLead): RevenueEngineStage {
 function getLeadSignals(item: RevenueEngineImport, order: RevenueEngineOrder | null, lead: RevenueEngineLead | null) {
   const fields = getImportFields(item);
   const profile = getImportProfile(item);
+  const contact = record(profile.contact);
   const services = list(fields.services).length ? list(fields.services) : list(profile.services);
   const products = list(fields.products).length ? list(fields.products) : list(profile.products);
   const prices = list(fields.prices).length ? list(fields.prices) : list(profile.prices);
@@ -278,7 +311,9 @@ function getLeadSignals(item: RevenueEngineImport, order: RevenueEngineOrder | n
   const hasContactText = Boolean(text(fields.contact_text));
   const hasLogo = Boolean(text(fields.logo_url) || text(profile.logo_url));
   const hasGallery = list(fields.gallery_images).length > 0 || list(profile.image_urls).length > 0;
-  const hasContact = Boolean(text(record(profile.contact).email) || text(record(profile.contact).phone) || text(lead?.website_url));
+  const hasEmail = Boolean(text(contact.email) || text(lead?.contact_email));
+  const hasPhone = Boolean(text(contact.phone) || text(lead?.contact_phone));
+  const hasContact = hasEmail || hasPhone || Boolean(text(fields.contact_info) || text(fields.contact_text));
 
   return {
     confidence,
@@ -291,6 +326,8 @@ function getLeadSignals(item: RevenueEngineImport, order: RevenueEngineOrder | n
     hasContactText,
     hasLogo,
     hasGallery,
+    hasEmail,
+    hasPhone,
     hasContact,
     hasOrder: Boolean(order),
   };
@@ -373,6 +410,152 @@ function stageNextAction(stage: RevenueEngineStage) {
   }
 }
 
+function channelLabel(channel: RevenueRecommendedChannel) {
+  switch (channel) {
+    case "quality_check":
+      return "Kvalitetssjekk";
+    case "email":
+      return "E-post";
+    case "phone":
+      return "Telefon";
+    case "dm":
+      return "DM";
+    case "session":
+      return "Session";
+    case "ops":
+      return "Oppsett";
+    case "hold":
+      return "Parkert";
+  }
+}
+
+function buildNextPlay(
+  stage: RevenueEngineStage,
+  priorityScore: number,
+  confidenceScore: number,
+  previewUrl: string,
+  followUpAt: string | null | undefined,
+  signals: ReturnType<typeof getLeadSignals>,
+): RevenueNextPlay {
+  const hasPreview = Boolean(previewUrl);
+  const followUpTiming = followUpAt ? `På oppfølgingsdatoen ${followUpAt}` : "Sett dato før du markerer som kontaktet";
+
+  if (stage === "analysis_ready") {
+    return {
+      title: "Kvalitetssikre lead og opprett privat demo",
+      channel: "quality_check",
+      channelLabel: channelLabel("quality_check"),
+      primaryCopyLabel: "Ingen outreach",
+      timing: priorityScore >= 70 ? "I første admin-blokk i dag" : "Etter høyere prioriterte demoer",
+      rationale: "Leadet mangler ferdig godkjent demo eller nok kvalitetssikrede signaler for trygg kontakt.",
+      checklist: [
+        "Sjekk at bransje, tjenester og CTA stemmer.",
+        "Fyll inn manglende kontakt- eller tillitspunkter.",
+        "Opprett preview før outreach godkjennes.",
+      ],
+    };
+  }
+
+  if (stage === "demo_ready") {
+    return {
+      title: hasPreview ? "Godkjenn preview og send første private demo-melding" : "Finn eller opprett preview før kontakt",
+      channel: hasPreview ? "email" : "quality_check",
+      channelLabel: channelLabel(hasPreview ? "email" : "quality_check"),
+      primaryCopyLabel: hasPreview ? "E-post 1" : "Ingen outreach",
+      timing: confidenceScore >= 75 ? "I dag" : "Etter manuell kvalitetssjekk",
+      rationale: hasPreview
+        ? "Demoen finnes allerede, så neste verdi ligger i manuell godkjenning og første kontakt."
+        : "Muligheten er nær outreach, men preview-lenken må finnes før kunden kontaktes.",
+      checklist: [
+        "Åpne preview og sjekk førsteinntrykket.",
+        "Sjekk at tilbud, CTA og kontakttekst ikke lover for mye.",
+        "Kopier første melding manuelt når alt er godkjent.",
+      ],
+    };
+  }
+
+  if (stage === "outreach_ready") {
+    return {
+      title: "Send første godkjente melding og sett oppfølging",
+      channel: signals.hasEmail ? "email" : "dm",
+      channelLabel: channelLabel(signals.hasEmail ? "email" : "dm"),
+      primaryCopyLabel: signals.hasEmail ? "E-post 1" : "DM",
+      timing: "I dag, med oppfølging 2-3 dager etterpå",
+      rationale: "Outreach er godkjent, men kontakten skal fortsatt skje manuelt og spores med neste dato.",
+      checklist: [
+        "Send kun én personlig første melding.",
+        "Sett neste oppfølging før status markeres som kontaktet.",
+        "Legg kort notat om kanal og hvem du kontaktet.",
+      ],
+    };
+  }
+
+  if (stage === "follow_up") {
+    const usePhone = signals.hasPhone || priorityScore >= 75;
+    return {
+      title: usePhone ? "Ring kort og følg opp med e-post 2" : "Send e-post 2 og legg ny dato",
+      channel: usePhone ? "phone" : "email",
+      channelLabel: channelLabel(usePhone ? "phone" : "email"),
+      primaryCopyLabel: usePhone ? "Telefon" : "E-post 2",
+      timing: followUpTiming,
+      rationale: usePhone
+        ? "Leadet har nok verdi eller telefon-signal til at en kort samtale er bedre enn mer passiv venting."
+        : "Leadet bør holdes varmt, men uten å bruke ringetid før det svarer eller prioriteten øker.",
+      checklist: [
+        "Se previewen før du kontakter dem igjen.",
+        "Vis til ett konkret problem demoen løser.",
+        "Avslutt med et enkelt ja/nei-spørsmål om 10 minutter.",
+      ],
+    };
+  }
+
+  if (stage === "session_booked") {
+    return {
+      title: "Kjør session og send tilbud samme dag",
+      channel: "session",
+      channelLabel: channelLabel("session"),
+      primaryCopyLabel: "Session brief",
+      timing: followUpAt ? `Før eller på ${followUpAt}` : "Før booket tidspunkt",
+      rationale: "Når kunden har svart positivt, er farten mellom demo, behov og enkelt tilbud viktigst.",
+      checklist: [
+        "Start med hva du fant på dagens nettside.",
+        "Vis tre forbedringer i previewen.",
+        "Avslutt med konkret pakke, pris og neste beslutning.",
+      ],
+    };
+  }
+
+  if (stage === "won") {
+    return {
+      title: "Onboard kunden og sikre første MRR-steg",
+      channel: "ops",
+      channelLabel: channelLabel("ops"),
+      primaryCopyLabel: "Oppsett",
+      timing: "Samme dag som kunden sier ja",
+      rationale: "Vunnet salg må raskt bli trygg levering, fakturering og en tydelig neste oppgave.",
+      checklist: [
+        "Bekreft pakke og betalingsløp.",
+        "Flytt demo til produksjonsoppsett.",
+        "Lag første kundestatus med forventet leveringsdato.",
+      ],
+    };
+  }
+
+  return {
+    title: "Parker muligheten uten videre salgstid",
+    channel: "hold",
+    channelLabel: channelLabel("hold"),
+    primaryCopyLabel: "Ingen outreach",
+    timing: "Ingen aktiv oppfølging",
+    rationale: "Status tilsier at tiden bør brukes på bedre leads nå.",
+    checklist: [
+      "Behold historikk og notat.",
+      "Ikke send flere meldinger uten ny grunn.",
+      "Reaktiver kun hvis kunden selv tar kontakt eller ny analyse gir bedre fit.",
+    ],
+  };
+}
+
 function stageWorklistWeight(stage: RevenueEngineStage) {
   switch (stage) {
     case "follow_up":
@@ -388,6 +571,76 @@ function stageWorklistWeight(stage: RevenueEngineStage) {
     case "won":
     case "not_fit":
       return 0;
+  }
+}
+
+function dateKey(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function inputDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addBusinessDays(value: Date, days: number) {
+  const output = new Date(value);
+  let remaining = days;
+  while (remaining > 0) {
+    output.setDate(output.getDate() + 1);
+    const day = output.getDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+  return output;
+}
+
+function followUpDateKey(value?: string | null) {
+  const raw = text(value);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] || "";
+}
+
+function getWorklistUrgency(followUpAt: string | null | undefined, today: Date) {
+  const followUpKey = followUpDateKey(followUpAt);
+  if (!followUpKey) {
+    return {
+      urgency: "none" as const,
+      urgencyLabel: "Ingen dato",
+    };
+  }
+
+  const todayKey = dateKey(today);
+  if (followUpKey < todayKey) {
+    return {
+      urgency: "overdue" as const,
+      urgencyLabel: "Forfalt",
+    };
+  }
+  if (followUpKey === todayKey) {
+    return {
+      urgency: "today" as const,
+      urgencyLabel: "I dag",
+    };
+  }
+
+  return {
+    urgency: "scheduled" as const,
+    urgencyLabel: "Planlagt",
+  };
+}
+
+function urgencyWorklistWeight(urgency: RevenueWorklistUrgency) {
+  switch (urgency) {
+    case "overdue":
+      return 80;
+    case "today":
+      return 70;
+    case "none":
+      return 0;
+    case "scheduled":
+      return -10;
   }
 }
 
@@ -459,6 +712,22 @@ export function getDefaultRevenueCampaign(): RevenueCampaignSettings {
   return { ...DEFAULT_CAMPAIGN };
 }
 
+export function getRevenueSuggestedFollowUpDate(stage: RevenueEngineStage, today = new Date()) {
+  switch (stage) {
+    case "demo_ready":
+    case "outreach_ready":
+      return inputDateKey(addBusinessDays(today, 2));
+    case "follow_up":
+      return inputDateKey(addBusinessDays(today, 1));
+    case "session_booked":
+      return inputDateKey(addBusinessDays(today, 1));
+    case "analysis_ready":
+    case "won":
+    case "not_fit":
+      return "";
+  }
+}
+
 export function buildRevenueOpportunities(
   imports: RevenueEngineImport[],
   orders: RevenueEngineOrder[],
@@ -479,6 +748,7 @@ export function buildRevenueOpportunities(
     const claimUrl = text(order?.claim_url);
     const workflow = getLeadWorkflow(lead);
     const sessionBrief = buildSessionBrief(companyName, industry, campaign, priority.signals);
+    const nextPlay = buildNextPlay(stage, priority.score, priority.confidence, previewUrl, workflow.followUpAt, priority.signals);
 
     return {
       id: item.id,
@@ -499,6 +769,7 @@ export function buildRevenueOpportunities(
       nextAction: stageNextAction(stage),
       followUpAt: workflow.followUpAt,
       workflowNote: workflow.workflowNote,
+      nextPlay,
       sessionBrief,
       outreach: buildOutreach(companyName, websiteUrl, previewUrl, campaign, sessionBrief),
       createdAt: item.created_at,
@@ -527,7 +798,25 @@ export function buildRevenueOpportunities(
         hasContactText: false,
         hasLogo: false,
         hasGallery: false,
-        hasContact: Boolean(lead.website_url),
+        hasEmail: Boolean(text(lead.contact_email)),
+        hasPhone: Boolean(text(lead.contact_phone)),
+        hasContact: Boolean(text(lead.contact_email) || text(lead.contact_phone)),
+        hasOrder: false,
+      });
+      const nextPlay = buildNextPlay(stage, 35, 0, text(lead.demo_preview_url), workflow.followUpAt, {
+        confidence: 0,
+        services: [],
+        products: [],
+        prices: [],
+        trust: [],
+        warnings: [],
+        hasCta: false,
+        hasContactText: false,
+        hasLogo: false,
+        hasGallery: false,
+        hasEmail: Boolean(text(lead.contact_email)),
+        hasPhone: Boolean(text(lead.contact_phone)),
+        hasContact: Boolean(text(lead.contact_email) || text(lead.contact_phone)),
         hasOrder: false,
       });
 
@@ -550,6 +839,7 @@ export function buildRevenueOpportunities(
         nextAction: stageNextAction(stage),
         followUpAt: workflow.followUpAt,
         workflowNote: workflow.workflowNote,
+        nextPlay,
         sessionBrief,
         outreach: buildOutreach(companyName, websiteUrl, text(lead.demo_preview_url), campaign, sessionBrief),
         createdAt: lead.created_at,
@@ -559,18 +849,31 @@ export function buildRevenueOpportunities(
   return [...opportunities, ...leadOnlyOpportunities].sort((a, b) => b.priorityScore - a.priorityScore);
 }
 
-export function buildRevenueDailyWorklist(opportunities: RevenueEngineOpportunity[], limit = 5): RevenueWorklistItem[] {
+export function buildRevenueDailyWorklist(
+  opportunities: RevenueEngineOpportunity[],
+  limit = 5,
+  today = new Date(),
+): RevenueWorklistItem[] {
   return opportunities
     .filter((item) => item.stage !== "won" && item.stage !== "not_fit")
-    .map((item) => ({
-      id: item.id,
-      companyName: item.companyName,
-      stage: item.stage,
-      priorityScore: item.priorityScore,
-      action: item.nextAction,
-      followUpAt: item.followUpAt,
-    }))
+    .map((item) => {
+      const urgency = getWorklistUrgency(item.followUpAt, today);
+      return {
+        id: item.id,
+        companyName: item.companyName,
+        stage: item.stage,
+        priorityScore: item.priorityScore,
+        action: item.nextAction,
+        followUpAt: item.followUpAt,
+        playTitle: item.nextPlay.title,
+        channelLabel: item.nextPlay.channelLabel,
+        timing: item.nextPlay.timing,
+        ...urgency,
+      };
+    })
     .sort((a, b) => {
+      const urgencyDelta = urgencyWorklistWeight(b.urgency) - urgencyWorklistWeight(a.urgency);
+      if (urgencyDelta) return urgencyDelta;
       const stageDelta = stageWorklistWeight(b.stage) - stageWorklistWeight(a.stage);
       if (stageDelta) return stageDelta;
       if (a.followUpAt && b.followUpAt && a.followUpAt !== b.followUpAt) return a.followUpAt.localeCompare(b.followUpAt);

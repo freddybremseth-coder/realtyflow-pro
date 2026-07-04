@@ -25,6 +25,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 interface BrandRow {
   brand_id: string;
@@ -79,9 +80,12 @@ function sanitize(raw: unknown): string {
   return raw.trim().replace(/^["']|["']$/g, '').trim();
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
   }
@@ -246,11 +250,14 @@ export async function GET() {
  * Returns: { removed: [brand_ids], kept: [brand_ids] }
  */
 export async function DELETE(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const mode = req.nextUrl.searchParams.get('mode') || 'revoked';
   const targetBrand = req.nextUrl.searchParams.get('brand_id');
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
   }

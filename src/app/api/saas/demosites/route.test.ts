@@ -3,7 +3,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { setDemoSitesSupabaseFactoryForTests } from "@/lib/demosites-api-supabase";
-import { DELETE } from "./route";
+import { DELETE, GET, PATCH, POST } from "./route";
 
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
   return `realtyflow_admin=${await createAdminSession(email)}`;
@@ -15,6 +15,17 @@ function deleteRequest(id?: string, cookie?: string) {
   return new NextRequest(url, {
     method: "DELETE",
     headers: cookie ? { cookie } : {},
+  });
+}
+
+function jsonRequest(method: string, body?: Record<string, unknown>, cookie?: string) {
+  return new NextRequest("https://realtyflow.test/api/saas/demosites", {
+    method,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...(cookie ? { cookie } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
 }
 
@@ -107,6 +118,28 @@ test("DemoSites DELETE requires an admin session before database access", async 
 
   assert.equal(response.status, 401);
   assert.equal(body.error, "Admin session required");
+  assert.equal(called, false);
+});
+
+test("DemoSites admin collection routes require an admin session before database access", async () => {
+  let called = false;
+  setDemoSitesSupabaseFactoryForTests(() => {
+    called = true;
+    return null;
+  });
+
+  const responses = await Promise.all([
+    GET(jsonRequest("GET") as any),
+    POST(jsonRequest("POST", { company_name: "Demo AS", customer_name: "Demo", customer_email: "demo@example.no" }) as any),
+    PATCH(jsonRequest("PATCH", { id: "order_123", status: "approved" }) as any),
+    DELETE(deleteRequest("order_123") as any),
+  ]);
+
+  for (const response of responses) {
+    const body = await response.json();
+    assert.equal(response.status, 401);
+    assert.equal(body.error, "Admin session required");
+  }
   assert.equal(called, false);
 });
 

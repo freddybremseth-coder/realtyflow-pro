@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GET as getLegacyRecommendations } from "@/app/api/neural-beat/recommendations/route";
+import { generateNeuralBeatRecommendations } from "@/app/api/neural-beat/recommendations/route";
+import { requireAdminApi } from "@/lib/api-admin";
 import {
   buildRemasterActionFingerprint,
   findRemasterActionByFingerprint,
@@ -15,10 +16,10 @@ import { updateRemasterVideoMetadata } from "@/services/integrations/remaster-yo
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function authorizeMigration(request: NextRequest) {
+async function authorizeMigration(request: NextRequest) {
   const expected = process.env.REALTYFLOW_MIGRATION_SECRET;
-  if (!expected) return true;
-  return (request.headers.get("x-remaster-migration-secret") || "") === expected;
+  if (expected && (request.headers.get("x-remaster-migration-secret") || "") === expected) return null;
+  return requireAdminApi(request);
 }
 
 function actionContext(body: Record<string, any>, request: NextRequest): RemasterActionContext {
@@ -36,9 +37,8 @@ function actionContext(body: Record<string, any>, request: NextRequest): Remaste
 }
 
 export async function GET(request: NextRequest) {
-  if (!authorizeMigration(request)) {
-    return NextResponse.json({ error: "Unauthorized migration client" }, { status: 401 });
-  }
+  const authError = await authorizeMigration(request);
+  if (authError) return authError;
 
   const health = await checkBrandYouTubeHealth("remasterfreddy");
   if (!health.connected) {
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const recommendationResponse = await getLegacyRecommendations();
+  const recommendationResponse = await generateNeuralBeatRecommendations();
   const recommendationData = await recommendationResponse.json().catch(() => ({}));
   if (!recommendationResponse.ok) {
     return NextResponse.json(recommendationData, { status: recommendationResponse.status });
@@ -88,9 +88,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!authorizeMigration(request)) {
-    return NextResponse.json({ error: "Unauthorized migration client" }, { status: 401 });
-  }
+  const authError = await authorizeMigration(request);
+  if (authError) return authError;
 
   const body = await request.json().catch(() => ({}));
   const action = body?.action as RemasterRecommendationAction | undefined;

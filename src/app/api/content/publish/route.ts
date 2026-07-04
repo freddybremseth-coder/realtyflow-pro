@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ContentPublishingPipeline } from '@/services/pipelines/content-pipeline';
+import { requireAdminApi } from '@/lib/api-admin';
 
 export const maxDuration = 300;
 
@@ -10,6 +10,9 @@ export const maxDuration = 300;
  */
 export async function POST(request: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(request);
+    if (unauthorized) return unauthorized;
+
     const body = await request.json();
     const { brandId, contentType, platforms, title } = body;
 
@@ -20,6 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { ContentPublishingPipeline } = await import('@/services/pipelines/content-pipeline');
     const pipelineId = `pub_${Date.now()}_${brandId}`;
     const encoder = new TextEncoder();
 

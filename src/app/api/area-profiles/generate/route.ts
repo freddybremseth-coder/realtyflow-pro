@@ -25,6 +25,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
 
 export const runtime = "nodejs";
@@ -148,6 +149,9 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
 
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const body = (await req.json()) as RequestBody;
     if (!body.name?.trim()) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });

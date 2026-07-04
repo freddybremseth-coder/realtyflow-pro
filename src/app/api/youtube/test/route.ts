@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 
 /**
  * GET /api/youtube/test?brandId=zeneco
@@ -11,6 +12,9 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const brandId = req.nextUrl.searchParams.get("brandId") || undefined;
   const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
@@ -36,7 +40,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (url && key) {
       const supabase = createClient(url, key);
 

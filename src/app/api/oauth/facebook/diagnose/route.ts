@@ -11,12 +11,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { debugToken, sanitizeToken } from '@/services/publishing/facebook-token-helper';
+import { requireAdminApi } from '@/lib/api-admin';
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 function normalizeBrand(b: string): string {
@@ -24,12 +25,17 @@ function normalizeBrand(b: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const brand = req.nextUrl.searchParams.get('brand');
   if (!brand) {
     return NextResponse.json({ error: 'brand is required' }, { status: 400 });
   }
 
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+
   const { data: allAccounts, error } = await supabase
     .from('social_accounts')
     .select('id, platform, account_id, account_name, access_token, brand, is_active')
@@ -109,6 +115,9 @@ export async function GET(req: NextRequest) {
  * Returns the updated row or a not-found error.
  */
 export async function PATCH(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const id = req.nextUrl.searchParams.get('id');
   const newBrand = req.nextUrl.searchParams.get('brand');
   if (!id || !newBrand) {
@@ -116,6 +125,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+
   const { data, error } = await supabase
     .from('social_accounts')
     .update({ brand: newBrand })
@@ -143,6 +154,9 @@ export async function PATCH(req: NextRequest) {
  * Returns: { removed: [...], kept: [...] }
  */
 export async function DELETE(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const brand = req.nextUrl.searchParams.get('brand');
   const mode = req.nextUrl.searchParams.get('mode') || 'invalid';
   const targetId = req.nextUrl.searchParams.get('id');
@@ -151,6 +165,8 @@ export async function DELETE(req: NextRequest) {
   }
 
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+
   const { data: allAccounts, error } = await supabase
     .from('social_accounts')
     .select('id, platform, account_id, account_name, access_token, brand, is_active')

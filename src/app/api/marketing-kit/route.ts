@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApi } from '@/lib/api-admin';
 import { askClaude } from '@/services/ai/claude-client';
 
 export const maxDuration = 120;
@@ -27,6 +28,9 @@ function extractJSON(text: string): Record<string, unknown> {
  */
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const { property } = await req.json();
 
     if (!property) {

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type SupabaseClientLike = any;
+type SupabaseClientLike = DemoSitesSupabaseClientLike;
 
 type ExpirableOrder = {
   id: string;
@@ -16,10 +16,7 @@ type ExpirableOrder = {
 };
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function isAuthorized(request: NextRequest) {

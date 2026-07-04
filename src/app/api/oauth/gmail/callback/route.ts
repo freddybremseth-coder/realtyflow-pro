@@ -28,10 +28,13 @@ export async function GET(req: NextRequest) {
 
     // Store Gmail refresh token in brand_settings _system
     const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      return NextResponse.redirect(`${req.nextUrl.origin}/settings?gmail_error=supabase_not_configured`);
+    }
+
+    const supabase = createClient(url, key);
 
     // Get current _system settings and merge
     const { data: existing } = await supabase.from("brand_settings").select("settings").eq("brand_id", "_system").single();

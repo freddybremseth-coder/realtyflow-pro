@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 /**
@@ -14,6 +15,9 @@ function getSupabase() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
     const { draft_id, platforms, scheduled_at, ai_recommended_time, ai_timing_reasoning } = body as {
       draft_id: string;
@@ -40,6 +44,9 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabase();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    }
 
     const updateData: Record<string, unknown> = {
         status: "scheduled",
@@ -94,9 +101,15 @@ export async function POST(req: NextRequest) {
 /**
  * GET /api/schedule - Get all scheduled posts
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req, { scheduled: [] });
+    if (unauthorized) return unauthorized;
+
     const supabase = getSupabase();
+    if (!supabase) {
+      return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    }
 
     const { data, error } = await supabase
       .from("content_publications")

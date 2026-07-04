@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 import { BRANDS } from "@/lib/constants";
 import { resolveWebsiteCmsConfig } from "@/lib/website-cms";
 
@@ -8,7 +9,7 @@ export const fetchCache = "force-no-store";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -64,6 +65,9 @@ function buildTargets(settings: Record<string, Record<string, unknown>>) {
 }
 
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request, { targets: [] });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   const requestedBrandId = request.nextUrl.searchParams.get("brand_id");
 

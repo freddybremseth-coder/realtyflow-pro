@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req, { content: [] });
+    if (unauthorized) return unauthorized;
+
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from("content_generations")
@@ -22,6 +26,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
     const { type, prompt, platform, brand_id } = body;
 

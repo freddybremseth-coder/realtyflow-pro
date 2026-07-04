@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -9,10 +10,11 @@ async function getGmailAccessToken(): Promise<string | null> {
 
   // Get Gmail refresh token from Supabase
   const { createClient } = await import("@supabase/supabase-js");
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+
+  const supabase = createClient(url, key);
   const { data } = await supabase.from("brand_settings").select("settings").eq("brand_id", "_system").single();
   const refreshToken = data?.settings?.gmail_refresh_token || process.env.GMAIL_REFRESH_TOKEN;
   if (!refreshToken) return null;
@@ -38,6 +40,9 @@ async function getGmailAccessToken(): Promise<string | null> {
  * Returns them as interaction objects for the CRM.
  */
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   const contactEmail = req.nextUrl.searchParams.get("contactEmail");
   if (!contactEmail) {
     return NextResponse.json({ error: "contactEmail required" }, { status: 400 });

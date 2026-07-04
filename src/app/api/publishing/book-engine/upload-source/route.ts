@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import mammoth from "mammoth";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ function extOf(name: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Ugyldig opplasting." }, { status: 400 });
   const file = form.get("file");
@@ -49,4 +53,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

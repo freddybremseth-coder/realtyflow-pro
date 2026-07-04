@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { BRANDS } from "@/lib/constants";
+import { requireAdminApi } from "@/lib/api-admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -40,7 +41,7 @@ const SOURCE_TYPES: WorkItemSource[] = [
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -239,6 +240,9 @@ async function synthesizedItems(supabase: NonNullable<ReturnType<typeof getSupab
 }
 
 export async function GET(request: NextRequest) {
+  const adminError = await requireAdminApi(request, { work_items: [] });
+  if (adminError) return adminError;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ work_items: [] });
 
@@ -275,6 +279,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const adminError = await requireAdminApi(request);
+  if (adminError) return adminError;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
@@ -319,6 +326,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const adminError = await requireAdminApi(request);
+  if (adminError) return adminError;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 

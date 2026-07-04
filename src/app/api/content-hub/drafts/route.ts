@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -49,6 +50,9 @@ function compactListRow(row: Record<string, unknown>) {
 }
 
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request, { drafts: [], count: 0 });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) {
     return NextResponse.json(

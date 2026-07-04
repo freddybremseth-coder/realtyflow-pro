@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 
 const BUCKET = "content-images";
@@ -9,9 +10,8 @@ const BUCKET = "content-images";
  * Laster opp et bilde til content-images-bucketen og returnerer offentlig URL.
  */
 export async function POST(req: NextRequest) {
-  if (req.headers.get("x-admin-authenticated") !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");

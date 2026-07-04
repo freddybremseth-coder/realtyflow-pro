@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type ClaimBody = Record<string, unknown>;
-type SupabaseClientLike = any;
+type SupabaseClientLike = DemoSitesSupabaseClientLike;
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function readToken(body: ClaimBody) {
   const token = String(body.token || body.claim_token || "").trim();
   return token || null;
+}
+
+function isValidClaimToken(token: string) {
+  return /^[a-zA-Z0-9_-]{12,120}$/.test(token);
 }
 
 async function getOrderByToken(supabase: SupabaseClientLike, token: string) {
@@ -36,9 +37,6 @@ function isExpired(expiresAt?: string | null) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
-
   try {
     const body = (await request.json().catch(() => ({}))) as ClaimBody;
     const token = readToken(body);
@@ -46,6 +44,12 @@ export async function POST(request: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: "token is required" }, { status: 400 });
     }
+    if (!isValidClaimToken(token)) {
+      return NextResponse.json({ error: "token is invalid" }, { status: 400 });
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
     const order = await getOrderByToken(supabase, token);
     if (!order) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import type { DemoSiteLeadStatus, DemoSiteOutreachStatus } from "@/lib/demosites-leads";
+import { requireAdminApi } from "@/lib/api-admin";
+import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,10 +14,7 @@ const LEAD_STATUSES: DemoSiteLeadStatus[] = ["new", "queued", "scanned", "qualif
 const OUTREACH_STATUSES: DemoSiteOutreachStatus[] = ["not_prepared", "drafted", "needs_review", "approved", "sent", "replied", "declined", "opted_out"];
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function text(body: RequestBody, snakeCase: string, camelCase = snakeCase) {
@@ -81,7 +79,10 @@ function buildSummary(leads: Array<{ lead_status?: string | null; outreach_statu
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request, { leads: [], events: [], summary: buildSummary([]) });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured", leads: [], events: [], summary: buildSummary([]) }, { status: 503 });
 
@@ -109,6 +110,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
@@ -155,6 +159,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 

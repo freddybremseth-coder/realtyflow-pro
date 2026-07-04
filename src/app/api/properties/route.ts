@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 import {
   classifyPropertyForBrands,
   normalizeBrandId,
@@ -7,17 +8,17 @@ import {
 } from "@/lib/realty/brand-rules";
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 function isWebsiteVisible(property: Record<string, unknown>) {
   return property.show_on_website !== false && property.website_visible !== false;
 }
 
-async function getAllProperties(supabase: ReturnType<typeof getSupabase>) {
+async function getAllProperties(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
   const allData: Record<string, unknown>[] = [];
   const pageSize = 1000;
   let from = 0;
@@ -41,7 +42,7 @@ async function getAllProperties(supabase: ReturnType<typeof getSupabase>) {
 }
 
 async function filterPropertiesForBrand(
-  supabase: ReturnType<typeof getSupabase>,
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
   properties: Record<string, unknown>[],
   rawBrandId: string,
 ) {
@@ -69,7 +70,7 @@ async function filterPropertiesForBrand(
 }
 
 async function upsertBrandVisibility(
-  supabase: ReturnType<typeof getSupabase>,
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
   properties: Record<string, unknown>[],
 ) {
   const propertyIds = properties
@@ -119,6 +120,8 @@ async function upsertBrandVisibility(
 
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const brandId = searchParams.get("brandId") || searchParams.get("brand_id");
@@ -146,7 +149,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
   const body = await req.json();
   const items: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
 
@@ -195,7 +203,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -211,7 +224,12 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

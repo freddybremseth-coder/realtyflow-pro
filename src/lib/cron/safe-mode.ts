@@ -26,7 +26,7 @@ function isPathAllowed(pathname: string): boolean {
 
 async function canReachSupabase(): Promise<boolean> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return true;
 
   const timeoutMs = Number(process.env.CRON_SAFE_MODE_HEALTH_TIMEOUT_MS || 2500);

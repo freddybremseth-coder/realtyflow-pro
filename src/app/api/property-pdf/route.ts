@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import fs from "fs/promises";
+import { requireAdminApi } from "@/lib/api-admin";
 import {
   renderPropertyProspect,
   type PdfPropertyInput,
@@ -31,7 +32,7 @@ export const runtime = "nodejs";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -179,6 +180,9 @@ async function buildPdfResponse(
 }
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const { searchParams } = req.nextUrl;
   const propertyId = searchParams.get("propertyId") || searchParams.get("id");
   const brandId = searchParams.get("brandId") || undefined;
@@ -197,6 +201,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const body = (await req.json().catch(() => ({}))) as {
     propertyId?: string;
     id?: string;

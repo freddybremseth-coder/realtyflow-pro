@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -14,6 +15,9 @@ function getSupabase() {
  */
 export async function GET(request: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(request, { campaigns: [] });
+    if (unauthorized) return unauthorized;
+
     const brandId = request.nextUrl.searchParams.get('brandId');
     const supabase = getSupabase();
 
@@ -53,6 +57,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(request);
+    if (unauthorized) return unauthorized;
+
     const body = await request.json();
     const { brandId, name, goal, platforms, contentTypes, targetAudience, description, startDate, endDate } = body;
 

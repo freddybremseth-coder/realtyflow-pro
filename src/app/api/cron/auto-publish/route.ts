@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { executePublishForDraft } from "@/services/publishing/publisher";
 import type { PublishResult } from "@/services/publishing/publisher";
+import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 
 // Vercel cron: runs every 15 minutes to check for scheduled posts
@@ -10,7 +11,7 @@ export const maxDuration = 120;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -60,11 +61,9 @@ async function publishDraftToWebsite(origin: string, post: {
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. Verify CRON_SECRET
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const unauthorized = requireCronApi(request);
+    if (unauthorized) return unauthorized;
+
     const safeMode = await evaluateCronSafeMode('/api/cron/auto-publish');
     if (safeMode.skip) {
       return NextResponse.json({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 /**
  * POST /api/marketing-kit/drafts
@@ -8,6 +9,9 @@ import { createClient } from '@supabase/supabase-js';
  */
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const { drafts, property_id } = await req.json();
 
     if (!drafts || !Array.isArray(drafts) || drafts.length === 0) {
@@ -15,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) {
       return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
     }

@@ -77,9 +77,13 @@ export default function NurtureOverviewPage() {
     setRunning(brand || "alle");
     setMessage(null);
     try {
-      const url = `/api/cron/lead-nurture?dry=1${brand ? `&brand=${brand}` : ""}`;
+      const url = `/api/nurture/run?dry=1${brand ? `&brand=${brand}` : ""}`;
       const res = await fetch(url, { cache: "no-store" });
       const j = await res.json();
+      if (!res.ok) {
+        setMessage(j.error || "Kunne ikke kjøre dry-run.");
+        return;
+      }
       if (j.skipped) {
         const why = j.reason ? ` (${j.reason})` : "";
         setMessage(

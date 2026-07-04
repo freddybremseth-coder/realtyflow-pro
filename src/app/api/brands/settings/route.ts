@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
 
 // GET - load all brand settings
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const adminError = await requireAdminApi(request, { settings: {} });
+  if (adminError) return adminError;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ settings: {} });
 
@@ -22,6 +26,9 @@ export async function GET() {
 
 // POST - save brand settings (or rename brand)
 export async function POST(request: NextRequest) {
+  const adminError = await requireAdminApi(request);
+  if (adminError) return adminError;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 

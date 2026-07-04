@@ -2,12 +2,16 @@
 // PATCH body fields: title, description, kind, tags, show_on_website,
 //                    visible_in_portal, visible_to_customer_ids, display_order
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string; assetId: string } }
 ) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const allowed = [
     "title", "description", "kind", "tags",
@@ -30,9 +34,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string; assetId: string } }
 ) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = createServerClient();
 
   // Get storage path so we can delete the file too

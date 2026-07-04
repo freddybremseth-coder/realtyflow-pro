@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { requireAdminApi } from "@/lib/api-admin";
+import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 import { sanitizeImportReviewEditableFieldsForStorage } from "@/lib/demosites-import-review-versions";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +12,7 @@ const IMPORT_HISTORY_INACTIVE_WARNING = "Importhistorikk er ikke aktivert ennå.
 const ALLOWED_IMPORT_STATUSES = new Set(["analyzed", "created_demo", "applied_to_demo", "discarded"]);
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function formatApiError(error: unknown, fallback: string): FormattedApiError {
@@ -70,13 +67,10 @@ function numberOrNull(value: unknown, fieldName: string) {
   return { value: Math.max(0, Math.min(100, parsed)) };
 }
 
-async function requireAdmin(request: NextRequest) {
-  const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
-  return Boolean(session);
-}
-
 export async function GET(request: NextRequest) {
-  if (!(await requireAdmin(request))) return NextResponse.json({ error: "Admin session required" }, { status: 401 });
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ imports: [], warning: "Supabase server key is not configured." });
 
@@ -102,7 +96,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!(await requireAdmin(request))) return NextResponse.json({ error: "Admin session required" }, { status: 401 });
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 

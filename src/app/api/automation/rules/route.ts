@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 import { runPublishingAutopilot } from "@/services/automation/publishing-autopilot";
 import { runPublishingGrowthLoop } from "@/services/automation/publishing-growth-loop";
 
@@ -140,7 +141,7 @@ function withDerivedLastRun(
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -219,7 +220,10 @@ async function insertRun(
   });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req, { rules: seedRules, runs: [], logs: [], synthetic: true });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ rules: seedRules, runs: [], logs: [], synthetic: true });
 
@@ -252,6 +256,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 

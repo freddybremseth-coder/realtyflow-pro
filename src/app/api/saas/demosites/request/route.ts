@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { DEMO_SITE_PACKAGES, analyzeDemoSiteProfile, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
+import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
@@ -10,13 +10,10 @@ const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://r
 const DEFAULT_EXPIRY_DAYS = 7;
 
 type RequestBody = Record<string, unknown>;
-type SupabaseClientLike = any;
+type SupabaseClientLike = DemoSitesSupabaseClientLike;
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env[["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_")];
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getDemoSitesSupabase();
 }
 
 function text(body: RequestBody, snakeCase: string, camelCase: string) {
@@ -80,9 +77,6 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
-
   try {
     const body = (await request.json().catch(() => ({}))) as RequestBody;
     const companyName = text(body, "company_name", "companyName");
@@ -92,6 +86,9 @@ export async function POST(request: NextRequest) {
     if (!companyName || !customerEmail) {
       return NextResponse.json({ error: "companyName and customerEmail are required" }, { status: 400 });
     }
+
+    const supabase = getSupabase();
+    if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
     const services = parseServiceList(body.services);
     const selectedPackage = getDemoSitePackage(String(body.package_id || body.packageId || "standard"));

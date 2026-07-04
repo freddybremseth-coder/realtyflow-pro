@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { executePublishForDraft } from "@/services/publishing/publisher";
+import { requireAdminApi } from "@/lib/api-admin";
 
 /**
  * POST /api/publish
@@ -29,6 +29,9 @@ import { executePublishForDraft } from "@/services/publishing/publisher";
  */
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
     const {
       draft_id,
@@ -61,6 +64,7 @@ export async function POST(req: NextRequest) {
         `hasImage=${!!image_url}`,
     );
 
+    const { executePublishForDraft } = await import("@/services/publishing/publisher");
     const { results, anySuccess, ambiguities } = await executePublishForDraft({
       draftId: draft_id,
       platforms,

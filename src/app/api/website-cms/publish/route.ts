@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { requireAdminApi } from "@/lib/api-admin";
 import { BRANDS } from "@/lib/constants";
 import { resolveWebsiteCmsConfig, slugifyCmsTitle, type WebsiteCmsDestination } from "@/lib/website-cms";
 
@@ -8,7 +9,7 @@ export const fetchCache = "force-no-store";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -159,6 +160,9 @@ async function postToWebsite(
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase er ikke konfigurert" }, { status: 503 });
 

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
+import { getSaasSupabase } from '@/lib/saas-api-supabase';
 import { SaaSOpportunityScanner } from '@/services/saas/opportunity-scanner';
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
+  return getSaasSupabase();
 }
 
 /**
@@ -16,6 +14,9 @@ function getSupabase() {
  * The actual build is done by Claude Code picking up queued tasks.
  */
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const body = await request.json();
     const {
@@ -102,7 +103,10 @@ export async function POST(request: NextRequest) {
  * GET /api/saas/build
  * Check build status and list queued tasks
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request, { ready: false });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
 
   if (!supabase) {

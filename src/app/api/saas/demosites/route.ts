@@ -9,7 +9,7 @@ import {
   type DemoSiteBillingStatus,
   type DemoSiteStatus,
 } from "@/lib/demosites";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 
 export const dynamic = "force-dynamic";
@@ -152,11 +152,6 @@ function isTemplateForeignKeyError(error: unknown) {
 
 function logApiError(context: string, error: unknown, extra?: Record<string, unknown>) {
   console.error(context, { ...formatApiError(error, "Unknown DemoSites API error"), ...extra });
-}
-
-async function requireAdmin(request: NextRequest) {
-  const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
-  return Boolean(session);
 }
 
 function getOrderIdFromRequest(request: NextRequest): { id: string; error?: never } | { id?: never; error: string } {
@@ -553,7 +548,10 @@ async function clearDeletedOrderImportReferences(supabase: SupabaseClientLike, o
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) {
     return NextResponse.json({
@@ -606,6 +604,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
@@ -722,6 +723,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
 
@@ -792,7 +796,8 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await requireAdmin(request))) return NextResponse.json({ error: "Admin session required" }, { status: 401 });
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
 
   const parsedId = getOrderIdFromRequest(request);
   if (parsedId.error) return NextResponse.json({ error: parsedId.error }, { status: 400 });

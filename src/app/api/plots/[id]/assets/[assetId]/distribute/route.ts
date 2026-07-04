@@ -10,6 +10,7 @@
 //   message?: string,          // for target=email or customer
 // }
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import type { DistributionLogEntry, DistributionTarget } from "@/types/plot-assets";
 
@@ -17,6 +18,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string; assetId: string } }
 ) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const target: DistributionTarget = body.target;
   if (!["customer", "content_studio", "email", "portal", "website"].includes(target)) {

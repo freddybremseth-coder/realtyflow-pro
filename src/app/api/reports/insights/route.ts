@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminApi } from '@/lib/api-admin';
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -50,7 +51,10 @@ async function ensureTable() {
 /**
  * GET /api/reports/insights - List saved market insights
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req, { insights: [] });
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ insights: [] });
 
@@ -76,6 +80,9 @@ export async function GET() {
  * POST /api/reports/insights - Save a manual market insight
  */
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 
@@ -136,6 +143,9 @@ export async function POST(req: NextRequest) {
  * DELETE /api/reports/insights - Delete an insight
  */
 export async function DELETE(req: NextRequest) {
+  const unauthorized = await requireAdminApi(req);
+  if (unauthorized) return unauthorized;
+
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: 'No DB' }, { status: 500 });
 

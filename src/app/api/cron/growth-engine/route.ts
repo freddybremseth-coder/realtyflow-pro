@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { AutonomousGrowthEngine } from '@/services/growth/growth-engine';
+import { requireCronApi } from '@/lib/api-cron';
 import { evaluateCronSafeMode } from '@/lib/cron/safe-mode';
 
 // Vercel cron: "crons": [{ "path": "/api/cron/growth-engine", "schedule": "0 6 * * *" }]
@@ -11,18 +12,16 @@ export const maxDuration = 120;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. Verify CRON_SECRET
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const unauthorized = requireCronApi(request);
+    if (unauthorized) return unauthorized;
+
     const safeMode = await evaluateCronSafeMode('/api/cron/growth-engine');
     if (safeMode.skip) {
       return NextResponse.json({

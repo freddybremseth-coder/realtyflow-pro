@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptPassword } from "@/services/email/crypto";
 import { sendEmail, type SmtpConfig, type OutgoingEmail } from "@/services/email/smtp-sender";
+import { requireAdminApi } from "@/lib/api-admin";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
 }
@@ -28,6 +29,9 @@ function getSupabase() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const adminError = await requireAdminApi(req);
+    if (adminError) return adminError;
+
     const body = await req.json();
     const supabase = getSupabase();
     if (!supabase) {

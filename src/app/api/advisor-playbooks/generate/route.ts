@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,9 @@ function contextToText(context: Record<string, unknown>) {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
   const body = await request.json().catch(() => ({}));
   const form = (body.form || {}) as Record<string, unknown>;
   const context = (body.context || {}) as Record<string, unknown>;
