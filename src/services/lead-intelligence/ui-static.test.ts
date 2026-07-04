@@ -39,6 +39,10 @@ const presentationHistoryPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-presentation-history-panel.tsx",
 );
+const loadedPresentationDraftPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel.tsx",
+);
 const worklistHistoryPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-worklist-history-panel.tsx",
@@ -73,6 +77,7 @@ async function readLeadIntelligenceUiSource() {
     reviewSave,
     savedProfileContact,
     presentationHistory,
+    loadedPresentationDraft,
     worklistHistory,
     presentationPreview,
     propertyMatchDisplay,
@@ -88,13 +93,14 @@ async function readLeadIntelligenceUiSource() {
     readFile(reviewSavePath, "utf8"),
     readFile(savedProfileContactPath, "utf8"),
     readFile(presentationHistoryPath, "utf8"),
+    readFile(loadedPresentationDraftPath, "utf8"),
     readFile(worklistHistoryPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
