@@ -7,8 +7,20 @@ const clientPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-client.tsx",
 );
+const presentationPreviewPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/presentation-preview-panel.tsx",
+);
 const inventoryPath = path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx");
 const pipelinePath = path.join(process.cwd(), "src/app/(realty)/pipeline/page.tsx");
+
+async function readLeadIntelligenceUiSource() {
+  const [client, presentationPreview] = await Promise.all([
+    readFile(clientPath, "utf8"),
+    readFile(presentationPreviewPath, "utf8"),
+  ]);
+  return `${client}\n${presentationPreview}`;
+}
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
   const source = await readFile(clientPath, "utf8");
@@ -69,7 +81,7 @@ test("Lead Intelligence preview does not call CRM, lead, email, property, or Sup
 });
 
 test("Lead Intelligence worklist is read-only and does not expose raw stored payloads", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("worklistResult"), true);
   assert.equal(source.includes("loadWorklist"), true);
@@ -226,7 +238,7 @@ test("CRM contact detail can open read-only Lead Intelligence history", async ()
 });
 
 test("Lead Intelligence property match preview is explicit and non-persistent", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("propertyMatchingEnabled"), true);
   assert.equal(source.includes("REALTYFLOW_PROPERTY_MATCHING_ENABLED=true"), true);
