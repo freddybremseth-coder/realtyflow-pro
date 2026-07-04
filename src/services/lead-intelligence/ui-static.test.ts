@@ -11,15 +11,20 @@ const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
 );
+const propertyQualityReviewPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/property-quality-review-controls.tsx",
+);
 const inventoryPath = path.join(process.cwd(), "src/app/(realty)/inventory/page.tsx");
 const pipelinePath = path.join(process.cwd(), "src/app/(realty)/pipeline/page.tsx");
 
 async function readLeadIntelligenceUiSource() {
-  const [client, presentationPreview] = await Promise.all([
+  const [client, presentationPreview, propertyQualityReview] = await Promise.all([
     readFile(clientPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
+    readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${presentationPreview}`;
+  return `${client}\n${presentationPreview}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
