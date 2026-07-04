@@ -23,6 +23,10 @@ const criteriaReviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-criteria-review-panel.tsx",
 );
+const contactCandidatesPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-contact-candidates-panel.tsx",
+);
 const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
@@ -49,6 +53,7 @@ async function readLeadIntelligenceUiSource() {
     requestCard,
     analysisOverview,
     criteriaReview,
+    contactCandidates,
     presentationPreview,
     propertyMatchDisplay,
     shortlistPresentationDrafts,
@@ -59,12 +64,13 @@ async function readLeadIntelligenceUiSource() {
     readFile(requestCardPath, "utf8"),
     readFile(analysisOverviewPath, "utf8"),
     readFile(criteriaReviewPath, "utf8"),
+    readFile(contactCandidatesPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
@@ -252,7 +258,7 @@ test("Inventory can open a property detail modal from Lead Intelligence internal
 });
 
 test("Lead Intelligence CRM context is read-only and safe", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("loadCrmContext"), true);
   assert.equal(source.includes("CRM-kontekst"), true);
@@ -372,7 +378,7 @@ test("Lead Intelligence preview clears stale candidates before review save", asy
 });
 
 test("Lead Intelligence preview distinguishes not-loaded and empty contact candidate lookup", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("Ingen kontaktkandidater hentet ennå."), true);
   assert.equal(
@@ -437,7 +443,7 @@ test("Lead Intelligence preview explains duplicate and conflict review saves", a
 });
 
 test("Lead Intelligence preview keeps connect_existing behind a server-side gate", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("connectExistingEnabled"), true);
   assert.equal(source.includes("Kandidatoppslag er kun read-only nå."), true);
@@ -445,7 +451,7 @@ test("Lead Intelligence preview keeps connect_existing behind a server-side gate
 });
 
 test("Lead Intelligence preview disables persistence actions when persistence is off", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("persistenceEnabled"), true);
   assert.equal(source.includes("Lagring er deaktivert i dette miljøet."), true);
