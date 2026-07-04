@@ -66,6 +66,7 @@ import {
   LeadIntelligenceRequestCard,
   type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
+import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
   LeadIntelligenceCriteriaReviewPanel,
@@ -1396,16 +1397,11 @@ export function LeadIntelligenceClient({
             )}
 
             {worklistError && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
-                <p className="font-semibold">{worklistError.code}</p>
-                <p className="mt-1">{worklistError.message}</p>
-                {worklistError.details && (
-                  <pre className="mt-3 max-h-40 overflow-auto rounded border border-red-400/20 bg-red-950/30 p-2 text-xs text-red-100/90">
-                    {prettyJson(worklistError.details)}
-                  </pre>
-                )}
-                <p className="mt-2 text-xs text-red-200/80">Correlation ID: {worklistError.correlationId}</p>
-              </div>
+              <LeadIntelligenceErrorAlert
+                error={worklistError}
+                className="p-4"
+                detailsClassName="mt-3 max-h-40 border border-red-400/20 bg-red-950/30 text-red-100/90"
+              />
             )}
 
             {persistenceEnabled && !worklistResult && !worklistLoading && !worklistError && (
@@ -1543,18 +1539,10 @@ export function LeadIntelligenceClient({
                         )}
 
                         {presentationDraftError && !propertyMatchResult && (
-                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                            <p className="font-semibold">{presentationDraftError.code}</p>
-                            <p className="mt-1">{presentationDraftError.message}</p>
-                            {presentationDraftError.details && (
-                              <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                                {prettyJson(presentationDraftError.details)}
-                              </pre>
-                            )}
-                            <p className="mt-2 text-xs text-red-100/70">
-                              Correlation ID: {presentationDraftError.correlationId}
-                            </p>
-                          </div>
+                          <LeadIntelligenceErrorAlert
+                            error={presentationDraftError}
+                            detailsClassName="max-h-40 bg-red-950/50 text-red-50"
+                          />
                         )}
 
                         <LeadIntelligenceActiveProfileMatchControls
@@ -1836,28 +1824,14 @@ export function LeadIntelligenceClient({
                                     )}
 
                                     {presentationDraftError && (
-                                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                                        <p className="font-semibold">{presentationDraftError.code}</p>
-                                        <p className="mt-1">{presentationDraftError.message}</p>
-                                        {presentationDraftError.details && (
-                                          <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                                            {prettyJson(presentationDraftError.details)}
-                                          </pre>
-                                        )}
-                                        <p className="mt-2 text-xs text-red-100/70">
-                                          Correlation ID: {presentationDraftError.correlationId}
-                                        </p>
-                                      </div>
+                                      <LeadIntelligenceErrorAlert error={presentationDraftError} className="mt-3" />
                                     )}
                                   </div>
                                 </div>
                               )}
 
                               {shortlistSaveError && (
-                                <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                                  <p className="font-semibold">{shortlistSaveError.code}</p>
-                                  <p className="mt-1">{shortlistSaveError.message}</p>
-                                </div>
+                                <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
                               )}
                             </div>
                           </>
@@ -2084,16 +2058,7 @@ export function LeadIntelligenceClient({
                     </div>
 
                     {propertyMatchError && (
-                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                        <p className="font-semibold">{propertyMatchError.code}</p>
-                        <p className="mt-1">{propertyMatchError.message}</p>
-                        {propertyMatchError.details && (
-                          <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                            {prettyJson(propertyMatchError.details)}
-                          </pre>
-                        )}
-                        <p className="mt-2 text-xs text-red-100/80">Correlation ID: {propertyMatchError.correlationId}</p>
-                      </div>
+                      <LeadIntelligenceErrorAlert error={propertyMatchError} className="mt-3" />
                     )}
 
                     {propertyMatchResult && (
@@ -2499,18 +2464,7 @@ export function LeadIntelligenceClient({
                               )}
 
                               {presentationDraftError && (
-                                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                                  <p className="font-semibold">{presentationDraftError.code}</p>
-                                  <p className="mt-1">{presentationDraftError.message}</p>
-                                  {presentationDraftError.details && (
-                                    <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                                      {prettyJson(presentationDraftError.details)}
-                                    </pre>
-                                  )}
-                                  <p className="mt-2 text-xs text-red-100/70">
-                                    Correlation ID: {presentationDraftError.correlationId}
-                                  </p>
-                                </div>
+                                <LeadIntelligenceErrorAlert error={presentationDraftError} />
                               )}
 
                               <div className="space-y-3">
@@ -2623,16 +2577,7 @@ export function LeadIntelligenceClient({
                           )}
 
                           {shortlistSaveError && (
-                            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                              <p className="font-semibold">{shortlistSaveError.code}</p>
-                              <p className="mt-1">{shortlistSaveError.message}</p>
-                              {shortlistSaveError.details && (
-                                <pre className="mt-2 max-h-48 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                                  {prettyJson(shortlistSaveError.details)}
-                                </pre>
-                              )}
-                              <p className="mt-2 text-xs text-red-100/80">Correlation ID: {shortlistSaveError.correlationId}</p>
-                            </div>
+                            <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
                           )}
                         </div>
 

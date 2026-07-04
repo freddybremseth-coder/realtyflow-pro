@@ -2,10 +2,8 @@
 
 import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  FieldLabel,
-  prettyJson,
-} from "@/components/lead-intelligence/lead-intelligence-client-helpers";
+import { FieldLabel } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
+import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 
 type PropertyMatchPreviewMode = "auto" | "explicit";
 
@@ -90,18 +88,7 @@ export function LeadIntelligenceActiveProfileMatchControls({
       </div>
 
       {propertyMatchError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-          <p className="font-semibold">{propertyMatchError.code}</p>
-          <p className="mt-1">{propertyMatchError.message}</p>
-          {propertyMatchError.details && (
-            <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-              {prettyJson(propertyMatchError.details)}
-            </pre>
-          )}
-          <p className="mt-2 text-xs text-red-100/80">
-            Correlation ID: {propertyMatchError.correlationId}
-          </p>
-        </div>
+        <LeadIntelligenceErrorAlert error={propertyMatchError} detailsClassName="max-h-40 bg-red-950/50 text-red-50" />
       )}
     </>
   );
