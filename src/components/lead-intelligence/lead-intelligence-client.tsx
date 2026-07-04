@@ -17,8 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BRANDS } from "@/lib/constants";
-import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead, type PhoneLookupNormalization } from "@/services/lead-intelligence/contracts";
+import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
   FieldLabel,
   JsonSection,
@@ -39,7 +38,6 @@ import {
   propertyDisplayName,
   propertyFactsLine,
   shortPropertyId,
-  type LeadIntelligencePropertyMatch,
   type MatchReviewDecision,
   type SelectedShortlistDecision,
 } from "@/components/lead-intelligence/property-match-display";
@@ -56,7 +54,6 @@ import {
   PropertyNavigationLinks,
   leadIntelligenceMatchAnchor,
   leadIntelligenceMatchReturnUrl,
-  type LeadIntelligencePresentationPreview,
 } from "@/components/lead-intelligence/presentation-preview-panel";
 import {
   PropertyQualityReviewControls,
@@ -68,7 +65,6 @@ import {
 import {
   LeadIntelligenceRequestCard,
   type LeadIntelligenceSource,
-  type LeadIntelligenceSourceOption,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
@@ -79,7 +75,6 @@ import {
   LeadIntelligenceContactCandidatesPanel,
   type LeadContactCandidatePreview,
   type LeadContactDecision,
-  type LeadIntelligenceCrmContextItem,
 } from "@/components/lead-intelligence/lead-intelligence-contact-candidates-panel";
 import { LeadIntelligenceReviewSavePanel } from "@/components/lead-intelligence/lead-intelligence-review-save-panel";
 import {
@@ -90,328 +85,31 @@ import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-inte
 import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-history-panel";
 import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel";
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
+import {
+  leadIntelligenceDraftReturnUrl,
+  realEstateBrands,
+  savedPropertyQualityDecision,
+  sourceOptions,
+} from "@/components/lead-intelligence/lead-intelligence-client-config";
+import type {
+  ContactCandidatesResponse,
+  LeadAnalysisResponse,
+  LeadIntelligenceClientProps,
+  LeadIntelligenceCrmContextResponse,
+  LeadIntelligenceWorklistResponse,
+  PresentationDraftHistoryResponse,
+  PresentationDraftResponse,
+  PropertyMatchPreviewResponse,
+  ReviewSaveResponse,
+  SafeErrorResponse,
+  SavedProfileArchiveResponse,
+  SavedProfileContactCandidatesResponse,
+  SavedProfileContactCreateResponse,
+  SavedProfileContactLinkResponse,
+  ShortlistSaveResponse,
+} from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 type Source = LeadIntelligenceSource;
-
-interface LeadAnalysisResponse {
-  ok: true;
-  correlationId: string;
-  result: ExtractedLead;
-  meta: {
-    model: string;
-    promptVersion: string;
-    durationMs: number;
-    repaired: boolean;
-    redaction: {
-      phoneCount: number;
-      emailCount: number;
-    };
-    phoneNormalization: PhoneLookupNormalization;
-  };
-}
-
-interface SafeErrorResponse {
-  ok: false;
-  error: {
-    correlationId: string;
-    code: string;
-    message: string;
-    details?: Record<string, unknown>;
-  };
-}
-
-interface ContactCandidatesResponse {
-  ok: true;
-  correlationId: string;
-  candidates: LeadContactCandidatePreview[];
-  requiresManualSelection: boolean;
-}
-
-interface LinkedContactPreview {
-  contactId: string;
-  name: string | null;
-  maskedPhone: string | null;
-  maskedEmail: string | null;
-}
-
-interface ReviewSaveResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    status: {
-      newlySaved: boolean;
-      duplicate: boolean;
-      conflict: boolean;
-    };
-    intake: { id: string; duplicate: boolean };
-    analysisRun: { id: string; duplicate: boolean };
-    buyerProfile: { id: string; criterionCount: number; duplicate: boolean };
-    contactCandidates: {
-      recorded: number;
-      selectedContactId: string | null;
-      decision: "connect_existing" | "create_new" | "continue_without_contact";
-      createdContact: false;
-      linkedContact: boolean;
-      duplicate?: boolean;
-    };
-  };
-  sideEffects: {
-    contactsCreated: false;
-    contactUpdated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-  };
-}
-
-interface Props {
-  featureEnabled: boolean;
-  persistenceEnabled: boolean;
-  connectExistingEnabled: boolean;
-  createContactEnabled: boolean;
-  propertyMatchingEnabled: boolean;
-}
-
-interface PropertyMatchPreviewResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    buyerProfileId: string;
-    discoveryMode: "explicit" | "auto";
-    bestEffort: boolean;
-    analyzed: number;
-    matched: number;
-    candidateLimit: number | null;
-    missingPropertyReferences: string[];
-    skippedProperties: Array<{
-      propertyId: string;
-      reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
-    }>;
-    matches: LeadIntelligencePropertyMatch[];
-    sideEffects: {
-      leadsCreated: false;
-      contactsCreated: false;
-      emailsSent: false;
-      matchesPersisted: false;
-      shortlistCreated: false;
-    };
-  };
-}
-
-interface ShortlistSaveResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    shortlistId: string;
-    duplicate: boolean;
-    conflict: boolean;
-    itemCount: number;
-    sideEffects: {
-      leadsCreated: false;
-      contactsCreated: false;
-      emailsSent: false;
-      propertyMatchingStarted: false;
-      presentationCreated: false;
-    };
-  };
-}
-
-interface PresentationDraftResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    presentationId: string;
-    buyerProfileId: string;
-    shortlistId: string;
-    messageDraftId: string;
-    duplicate: boolean;
-    conflict: boolean;
-    loadedFromHistory?: boolean;
-    status: "draft" | "approved" | "archived";
-    messageStatus: "draft" | "approved" | "cancelled";
-    itemCount: number;
-    title: string;
-    subject: string;
-    presentationPreview: LeadIntelligencePresentationPreview;
-    messageDraft: {
-      subject: string;
-      bodyText: string;
-      bodyHtml: string | null;
-    };
-    sideEffects: {
-      emailSent: false;
-      leadsCreated: false;
-      contactsCreated: false;
-      propertyMatchingStarted: false;
-      presentationPublished: false;
-    };
-  };
-}
-
-interface PresentationDraftHistoryResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    brand: string;
-    buyerProfileId: string;
-    limit: number;
-    items: Array<{
-      presentationId: string;
-      shortlistId: string;
-      messageDraftId: string;
-      status: "draft" | "approved" | "archived";
-      messageStatus: "draft" | "approved" | "cancelled";
-      title: string;
-      subject: string;
-      itemCount: number;
-      createdAt: string;
-      messageDraftCreatedAt: string;
-    }>;
-  };
-}
-
-interface LeadIntelligenceWorklistResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    brand: string;
-    limit: number;
-    items: LeadIntelligenceWorklistItem[];
-  };
-}
-
-interface LeadIntelligenceCrmContextResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    candidates: LeadContactCandidatePreview[];
-    context: LeadIntelligenceCrmContextItem[];
-  };
-  sideEffects: {
-    contactsCreated: false;
-    contactsUpdated: false;
-    leadsCreated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-  };
-}
-
-interface SavedProfileContactCandidatesResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    buyerProfileId: string;
-    linkedContact: LinkedContactPreview | null;
-    candidates: LeadContactCandidatePreview[];
-    requiresManualSelection: boolean;
-  };
-  sideEffects: {
-    contactsCreated: false;
-    contactsUpdated: false;
-    leadsCreated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-  };
-}
-
-interface SavedProfileContactLinkResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    buyerProfileId: string;
-    contactId: string;
-    duplicate: boolean;
-    linkedContact: LinkedContactPreview;
-  };
-  sideEffects: {
-    contactsCreated: false;
-    contactsUpdated: false;
-    buyerProfileUpdated: true;
-    leadsCreated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-  };
-}
-
-interface SavedProfileContactCreateResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    buyerProfileId: string;
-    contactId: string;
-    duplicate: boolean;
-    linkedContact: LinkedContactPreview;
-  };
-  sideEffects: {
-    contactsCreated: boolean;
-    contactsUpdated: false;
-    buyerProfileUpdated: boolean;
-    leadsCreated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-    presentationCreated: false;
-  };
-}
-
-interface SavedProfileArchiveResponse {
-  ok: true;
-  correlationId: string;
-  result: {
-    buyerProfileId: string;
-    status: "archived";
-    duplicate: boolean;
-    archived: true;
-  };
-  sideEffects: {
-    profileArchived: true;
-    contactsCreated: false;
-    contactsUpdated: false;
-    leadsCreated: false;
-    emailSent: false;
-    propertyMatchingStarted: false;
-    presentationCreated: false;
-  };
-}
-
-const sourceOptions: LeadIntelligenceSourceOption[] = [
-  { value: "phone_call", label: "Telefonsamtale" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "email", label: "E-post" },
-  { value: "sms", label: "SMS" },
-  { value: "meeting_note", label: "Møtenotat" },
-  { value: "other", label: "Annet" },
-];
-
-const realEstateBrands = BRANDS.filter((brand) => brand.type === "real_estate");
-
-function leadIntelligenceDraftReturnUrl({
-  buyerProfileId,
-  presentationId,
-  messageDraftId,
-}: {
-  buyerProfileId?: string | null;
-  presentationId?: string | null;
-  messageDraftId?: string | null;
-}) {
-  const params = new URLSearchParams();
-  if (buyerProfileId) params.set("buyerProfileId", buyerProfileId);
-  if (presentationId) params.set("presentationId", presentationId);
-  if (messageDraftId) params.set("messageDraftId", messageDraftId);
-  const query = params.toString();
-  return query ? `/lead-intelligence?${query}` : "/lead-intelligence";
-}
-
-function savedPropertyQualityDecision(
-  status: SavedPropertyQualityReviewStatus,
-  reviewDecision: MatchReviewDecision,
-): SelectedShortlistDecision {
-  if (status === "client_ready") {
-    return reviewDecision === "maybe" ? "maybe" : "current";
-  }
-  if (reviewDecision === "current" || reviewDecision === "maybe" || reviewDecision === "needs_research") {
-    return reviewDecision;
-  }
-  return "needs_research";
-}
 
 export function LeadIntelligenceClient({
   featureEnabled,
@@ -419,7 +117,7 @@ export function LeadIntelligenceClient({
   connectExistingEnabled,
   createContactEnabled,
   propertyMatchingEnabled,
-}: Props) {
+}: LeadIntelligenceClientProps) {
   const [source, setSource] = useState<Source>("phone_call");
   const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
   const [language, setLanguage] = useState("");
@@ -2250,7 +1948,7 @@ export function LeadIntelligenceClient({
                   response={response}
                   edited={edited}
                   sourceLabel={sourceOptions.find((option) => option.value === source)?.label || "Ikke satt"}
-                  brandLabel={BRANDS.find((item) => item.id === brand)?.name || brand}
+                  brandLabel={realEstateBrands.find((item) => item.id === brand)?.name || brand}
                   language={language}
                   rawText={rawText}
                   onUpdateEdited={updateEdited}
