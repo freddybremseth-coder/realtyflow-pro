@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Building2,
   CheckCircle2,
   Clipboard,
   Loader2,
@@ -26,6 +25,21 @@ import { Input } from "@/components/ui/input";
 import { BRANDS } from "@/lib/constants";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead, type PhoneLookupNormalization } from "@/services/lead-intelligence/contracts";
 import { criterionReviewFingerprint } from "@/services/lead-intelligence/review-shared";
+import {
+  MatchList,
+  MatchReviewDecisionBadge,
+  PropertyEligibilityBadge,
+  PropertyMatchHeroImage,
+  PropertyMatchThumbnail,
+  formatCurrency,
+  matchReviewDecisionLabel,
+  propertyDisplayName,
+  propertyFactsLine,
+  shortPropertyId,
+  type LeadIntelligencePropertyMatch,
+  type MatchReviewDecision,
+  type SelectedShortlistDecision,
+} from "@/components/lead-intelligence/property-match-display";
 import {
   InternalPresentationPreview,
   PropertyNavigationLinks,
@@ -149,10 +163,7 @@ interface ReviewCriterionRow {
   detail: string;
 }
 
-type PropertyMatchEligibility = "eligible" | "conditional" | "rejected";
-type MatchReviewDecision = "system" | "current" | "maybe" | "needs_research" | "rejected";
-type SelectedShortlistDecision = Exclude<MatchReviewDecision, "system" | "rejected">;
-type SelectedShortlistMatch = PropertyMatchPreviewResponse["result"]["matches"][number] & {
+type SelectedShortlistMatch = LeadIntelligencePropertyMatch & {
   decision: SelectedShortlistDecision;
   qualityReview: {
     status: "client_ready";
@@ -177,35 +188,7 @@ interface PropertyMatchPreviewResponse {
       propertyId: string;
       reason: "PROPERTY_BRAND_MISMATCH" | "PROPERTY_NORMALIZATION_FAILED";
     }>;
-    matches: Array<{
-      propertyId: string;
-      property: {
-        id: string;
-        reference: string | null;
-        title: string | null;
-        location: string | null;
-        propertyType: string | null;
-        price: number | null;
-        bedrooms: number | null;
-        bathrooms: number | null;
-        primaryImageUrl: string | null;
-        imageUrl?: string | null;
-        gallery?: string[] | null;
-        publicUrl: string | null;
-      };
-      score: number;
-      eligibility: PropertyMatchEligibility;
-      dataQualityScore: number;
-      reasonsForMatch: string[];
-      concerns: string[];
-      questionsToVerify: string[];
-      budgetResult: {
-        outcome: "pass" | "fail" | "unknown" | "penalty" | "not_applicable";
-        reason: string;
-        expected: unknown;
-        actual: unknown;
-      } | null;
-    }>;
+    matches: LeadIntelligencePropertyMatch[];
     sideEffects: {
       leadsCreated: false;
       contactsCreated: false;
@@ -456,10 +439,6 @@ function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-function shortPropertyId(propertyId: string) {
-  return propertyId.length > 12 ? `${propertyId.slice(0, 8)}...${propertyId.slice(-4)}` : propertyId;
-}
-
 function leadIntelligenceDraftReturnUrl({
   buyerProfileId,
   presentationId,
@@ -475,48 +454,6 @@ function leadIntelligenceDraftReturnUrl({
   if (messageDraftId) params.set("messageDraftId", messageDraftId);
   const query = params.toString();
   return query ? `/lead-intelligence?${query}` : "/lead-intelligence";
-}
-
-function matchPropertyImageUrl(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
-  return match.property.primaryImageUrl || match.property.imageUrl || match.property.gallery?.[0] || null;
-}
-
-function PropertyMatchThumbnail({ match }: { match: PropertyMatchPreviewResponse["result"]["matches"][number] }) {
-  const imageUrl = matchPropertyImageUrl(match);
-  const title = propertyDisplayName(match);
-
-  return (
-    <div className="h-20 w-28 flex-none overflow-hidden rounded-md border border-slate-800 bg-slate-950 sm:h-24 sm:w-32">
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt={title}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-slate-900 text-slate-500">
-          <Building2 className="h-6 w-6" aria-hidden="true" />
-          <span className="sr-only">Ingen bilde i eiendomsdata</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function formatCurrency(value: number | null, currency = "EUR") {
-  if (value === null) return null;
-  try {
-    return new Intl.NumberFormat("nb-NO", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return new Intl.NumberFormat("nb-NO", {
-      maximumFractionDigits: 0,
-    }).format(value);
-  }
 }
 
 function formatDateTime(value: string | null) {
@@ -536,33 +473,6 @@ function generateClientCorrelationId() {
     ? Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")
     : Math.random().toString(16).slice(2).padEnd(24, "0").slice(0, 24);
   return `rf_${Date.now().toString(36)}_${random}`;
-}
-
-function propertyFactsLine(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
-  const parts = [
-    match.property.reference ? `Ref ${match.property.reference}` : null,
-    match.property.location,
-    match.property.propertyType,
-    formatCurrency(match.property.price),
-    match.property.bedrooms === null ? null : `${match.property.bedrooms} sov`,
-    match.property.bathrooms === null ? null : `${match.property.bathrooms} bad`,
-  ].filter(Boolean);
-  return parts.join(" · ");
-}
-
-function propertyDisplayName(match: PropertyMatchPreviewResponse["result"]["matches"][number]) {
-  return match.property.title || match.property.reference || shortPropertyId(match.propertyId);
-}
-
-function decisionLabelForPresentation(decision: SelectedShortlistDecision) {
-  switch (decision) {
-    case "current":
-      return "Aktuell";
-    case "maybe":
-      return "Kanskje";
-    case "needs_research":
-      return "Må undersøkes";
-  }
 }
 
 function uniquePresentationItems(values: Array<string | null | undefined>, limit = 6) {
@@ -691,7 +601,7 @@ function buildShortlistPresentationText(
     ], 3).join(" ");
     return [
       `${index + 1}. ${propertyDisplayName(match)}${facts ? ` (${facts})` : ""}`,
-      `   Status: ${decisionLabelForPresentation(match.decision)}`,
+      `   Status: ${matchReviewDecisionLabel(match.decision)}`,
       `   Hvorfor den passer: ${reasons || "Matcher deler av behovet."}`,
       verification ? `   Må avklares: ${verification}` : "   Må avklares: Pris og tilgjengelighet må bekreftes.",
     ].filter(Boolean).join("\n");
@@ -766,37 +676,6 @@ function buildShortlistEmailDraft(
       "Freddy",
     ].join("\n"),
   };
-}
-
-function matchReviewDecisionLabel(decision: MatchReviewDecision) {
-  switch (decision) {
-    case "current":
-      return "Aktuell";
-    case "maybe":
-      return "Kanskje";
-    case "needs_research":
-      return "Må undersøkes";
-    case "rejected":
-      return "Avvist";
-    case "system":
-    default:
-      return "Systemforslag";
-  }
-}
-
-function matchReviewDecisionVariant(decision: MatchReviewDecision) {
-  switch (decision) {
-    case "current":
-      return "success";
-    case "maybe":
-    case "needs_research":
-      return "warning";
-    case "rejected":
-      return "destructive";
-    case "system":
-    default:
-      return "secondary";
-  }
 }
 
 function savedPropertyQualityDecision(
@@ -990,33 +869,6 @@ function parsePropertyReferences(value: string) {
   }
 
   return { references: unique, error: null };
-}
-
-function MatchList({
-  title,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  items: string[];
-  emptyLabel: string;
-}) {
-  return (
-    <div>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      {items.length > 0 ? (
-        <ul className="space-y-1 text-xs text-slate-300">
-          {items.map((item) => (
-            <li key={item} className="rounded border border-slate-800 bg-slate-950/50 px-2 py-1">
-              {item}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-slate-500">{emptyLabel}</p>
-      )}
-    </div>
-  );
 }
 
 export function LeadIntelligenceClient({
@@ -2949,17 +2801,7 @@ export function LeadIntelligenceClient({
                                       </div>
                                       <div className="flex flex-col items-end gap-2">
                                         <p className="text-sm text-slate-200">Score {match.score}</p>
-                                        <Badge
-                                          variant={
-                                            match.eligibility === "eligible"
-                                              ? "success"
-                                              : match.eligibility === "rejected"
-                                                ? "destructive"
-                                                : "warning"
-                                          }
-                                        >
-                                          {match.eligibility}
-                                        </Badge>
+                                        <PropertyEligibilityBadge eligibility={match.eligibility} />
                                       </div>
                                     </div>
                                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -4221,20 +4063,8 @@ export function LeadIntelligenceClient({
                                     <p className="text-sm text-slate-200">
                                       Score {match.score} · Data {match.dataQualityScore}
                                     </p>
-                                    <Badge
-                                      variant={
-                                        match.eligibility === "eligible"
-                                          ? "success"
-                                          : match.eligibility === "rejected"
-                                            ? "destructive"
-                                            : "warning"
-                                      }
-                                    >
-                                      {match.eligibility}
-                                    </Badge>
-                                    <Badge variant={matchReviewDecisionVariant(reviewDecision)}>
-                                      {matchReviewDecisionLabel(reviewDecision)}
-                                    </Badge>
+                                    <PropertyEligibilityBadge eligibility={match.eligibility} />
+                                    <MatchReviewDecisionBadge decision={reviewDecision} />
                                   </div>
                                 </div>
                                 <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
@@ -4572,18 +4402,7 @@ export function LeadIntelligenceClient({
                                     const reasons = humanizedMatchReasonItems(match.reasonsForMatch, 3);
                                     const cardContent = (
                                       <>
-                                        {matchPropertyImageUrl(match) ? (
-                                          <img
-                                            src={matchPropertyImageUrl(match) || ""}
-                                            alt={propertyDisplayName(match)}
-                                            className="h-44 w-full object-cover"
-                                          />
-                                        ) : (
-                                          <div className="flex h-44 items-center justify-center bg-slate-900 text-sm text-slate-500">
-                                            <Building2 className="mr-2 h-5 w-5" aria-hidden="true" />
-                                            Ingen bilde i eiendomsdata
-                                          </div>
-                                        )}
+                                        <PropertyMatchHeroImage match={match} />
                                         <div className="space-y-3 p-3">
                                           <div className="flex flex-wrap items-start justify-between gap-2">
                                             <div>
@@ -4592,24 +4411,12 @@ export function LeadIntelligenceClient({
                                                 <p className="mt-1 text-xs text-slate-400">{propertyFactsLine(match)}</p>
                                               )}
                                             </div>
-                                            <Badge variant={matchReviewDecisionVariant(match.decision)}>
-                                              {decisionLabelForPresentation(match.decision)}
-                                            </Badge>
+                                            <MatchReviewDecisionBadge decision={match.decision} />
                                           </div>
                                           <div className="flex flex-wrap gap-2 text-xs">
                                             <Badge variant="outline">Score {match.score}</Badge>
                                             <Badge variant="outline">Data {match.dataQualityScore}</Badge>
-                                            <Badge
-                                              variant={
-                                                match.eligibility === "eligible"
-                                                  ? "success"
-                                                  : match.eligibility === "rejected"
-                                                    ? "destructive"
-                                                    : "warning"
-                                              }
-                                            >
-                                              {match.eligibility}
-                                            </Badge>
+                                            <PropertyEligibilityBadge eligibility={match.eligibility} />
                                           </div>
                                           <PropertyNavigationLinks
                                             propertyId={match.propertyId}
