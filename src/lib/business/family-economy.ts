@@ -1,5 +1,3 @@
-import type { MondeoPaymentRecord } from "@/lib/mondeo";
-
 export type FamilyEconomyMetrics = {
   months: number;
   ytdTotal: number;
@@ -18,11 +16,6 @@ export type FamilyEconomySummary = {
   ignoredPlannedRows: number;
   ignoredRowsWithoutMonth: number;
   metrics: FamilyEconomyMetrics;
-};
-
-export type FamilyMondeoTransactionsSummary = {
-  payments: MondeoPaymentRecord[];
-  totalPaid: number;
 };
 
 type FamilyRow = Record<string, unknown>;
@@ -54,16 +47,6 @@ function monthKeyFromValue(value: unknown): string | null {
   if (!value) return null;
   const match = String(value).match(/^(\d{4})-(\d{2})/);
   return match ? `${match[1]}-${match[2]}` : null;
-}
-
-function dateFromRow(row: FamilyRow, keys = ["date", "month", "event_date", "created_at"]): string | null {
-  const value = first(row, keys);
-  if (!value) return null;
-  const direct = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (direct) return `${direct[1]}-${direct[2]}-${direct[3]}`;
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
 }
 
 export function familyMonthKey(row: FamilyRow): string | null {
@@ -145,46 +128,5 @@ export function summarizeFamilyEconomyRows(rows: FamilyRow[], asOf = new Date())
       realtyflowNet: ytdMonths.reduce((sum, row) => sum + row.realtyflowNet, 0),
       mondeoInterest: ytdMonths.reduce((sum, row) => sum + row.mondeoInterest, 0),
     },
-  };
-}
-
-function lowerText(value: unknown) {
-  return String(value || "").toLowerCase();
-}
-
-export function isFamilyMondeoPaymentTransaction(row: FamilyRow): boolean {
-  const amount = familyNumberValue(first(row, ["amount"]));
-  const currency = String(first(row, ["currency"]) || "NOK").toUpperCase();
-  const type = lowerText(first(row, ["type"]));
-  const category = lowerText(first(row, ["category"]));
-  const description = lowerText(first(row, ["description", "note"]));
-  const text = `${category} ${description}`;
-
-  return (
-    amount > 0 &&
-    currency === "NOK" &&
-    type === "income" &&
-    !isTruthy(first(row, ["is_accrual", "isAccrual"])) &&
-    (text.includes("mondeo") || text.includes("raveien 152") || text.includes("selgerkreditt"))
-  );
-}
-
-export function familyMondeoPaymentsFromTransactions(rows: FamilyRow[]): MondeoPaymentRecord[] {
-  return rows
-    .filter(isFamilyMondeoPaymentTransaction)
-    .map((row) => ({
-      date: dateFromRow(row) || new Date(0).toISOString().slice(0, 10),
-      amount: familyNumberValue(first(row, ["amount"])),
-      note: String(first(row, ["description", "note", "category"]) || "Family-transaksjon"),
-      source: "family.transactions",
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-}
-
-export function summarizeFamilyMondeoTransactions(rows: FamilyRow[]): FamilyMondeoTransactionsSummary {
-  const payments = familyMondeoPaymentsFromTransactions(rows);
-  return {
-    payments,
-    totalPaid: payments.reduce((sum, payment) => sum + payment.amount, 0),
   };
 }

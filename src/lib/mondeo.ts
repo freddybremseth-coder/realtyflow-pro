@@ -14,6 +14,18 @@ export type MondeoKpiAdjustment = {
   note?: string;
 };
 
+export type MondeoLedgerEvent = {
+  id?: string | null;
+  stream?: string | null;
+  direction?: string | null;
+  status?: string | null;
+  amount?: number | string | null;
+  currency?: string | null;
+  event_date?: string | null;
+  description?: string | null;
+  source_type?: string | null;
+};
+
 export type MondeoMonthRow = {
   month: string;
   label: string;
@@ -163,6 +175,77 @@ export function buildMinimumPaymentsThrough(asOf = new Date()): MondeoPaymentRec
     note: "Kontraktsmessig minimumstermin",
     source: "contract-model",
   }));
+}
+
+function normalizeLedgerText(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function ledgerEventAmount(event: MondeoLedgerEvent) {
+  const amount = Number(event.amount || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function isActiveLedgerEvent(event: MondeoLedgerEvent) {
+  const status = normalizeLedgerText(event.status);
+  return !["cancelled", "void", "deleted", "pending"].includes(status);
+}
+
+export function isMondeoLedgerPaymentEvent(event: MondeoLedgerEvent) {
+  const stream = normalizeLedgerText(event.stream);
+  const direction = normalizeLedgerText(event.direction);
+  const currency = String(event.currency || "NOK").trim().toUpperCase();
+
+  return (
+    isActiveLedgerEvent(event) &&
+    stream === "mondeo_payment" &&
+    direction === "income" &&
+    currency === "NOK" &&
+    ledgerEventAmount(event) > 0
+  );
+}
+
+export function isMondeoLedgerKpiEvent(event: MondeoLedgerEvent) {
+  const stream = normalizeLedgerText(event.stream);
+  return isActiveLedgerEvent(event) && stream === "kpi_adjustment" && ledgerEventAmount(event) > 0;
+}
+
+export function mondeoPaymentsFromLedgerEvents(events: MondeoLedgerEvent[]): MondeoPaymentRecord[] {
+  return events
+    .filter(isMondeoLedgerPaymentEvent)
+    .map((event) => ({
+      date: event.event_date || MONDEO_CONTRACT.firstPaymentDate,
+      amount: ledgerEventAmount(event),
+      note: event.description || event.stream || "Registrert betaling",
+      source: event.source_type || "business_financial_events",
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function mondeoKpiAdjustmentsFromLedgerEvents(events: MondeoLedgerEvent[]): MondeoKpiAdjustment[] {
+  return events
+    .filter(isMondeoLedgerKpiEvent)
+    .map((event) => ({
+      date: event.event_date || MONDEO_CONTRACT.kpiFirstAdjustmentDate,
+      amount: ledgerEventAmount(event),
+      note: event.description || event.stream || "KPI-justering",
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function summarizeMondeoLedgerEvents(events: MondeoLedgerEvent[]) {
+  const payments = mondeoPaymentsFromLedgerEvents(events);
+  const kpiAdjustments = mondeoKpiAdjustmentsFromLedgerEvents(events);
+  const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const totalKpiAdjustment = kpiAdjustments.reduce((sum, adjustment) => sum + Number(adjustment.amount || 0), 0);
+
+  return {
+    payments,
+    kpiAdjustments,
+    totalPaid,
+    totalKpiAdjustment,
+    totalReceivedAndKpi: totalPaid + totalKpiAdjustment,
+  };
 }
 
 export function calculateMondeoSnapshot(options?: {

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { BRANDS } from "@/lib/constants";
-import { summarizeFamilyMondeoTransactions } from "@/lib/business/family-economy";
-import { MONDEO_CONTRACT } from "@/lib/mondeo";
+import { MONDEO_CONTRACT, summarizeMondeoLedgerEvents } from "@/lib/mondeo";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import { requireAdminApi } from "@/lib/api-admin";
 
@@ -51,13 +50,6 @@ function getOliviaSupabase() {
   return createClient(url, key) as any;
 }
 
-function getFamilySupabase() {
-  const url = process.env.FAMILY_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.FAMILY_SUPABASE_SERVICE_ROLE_KEY || process.env.FAMILY_SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key) as any;
-}
-
 function safeRows<T>(result: PromiseSettledResult<{ data: T[] | null }>) {
   return result.status === "fulfilled" ? result.value.data || [] : [];
 }
@@ -93,12 +85,6 @@ function getOliviaSchemaCandidates() {
   return Array.from(new Set(ordered));
 }
 
-function getFamilySchemaCandidates() {
-  const configured = String(process.env.FAMILY_SCHEMA || process.env.FAMILYHUB_SCHEMA || "").trim();
-  const ordered = [configured, "family", "public"].filter(Boolean);
-  return Array.from(new Set(ordered));
-}
-
 async function queryOliviaTable(
   supabase: any,
   table: string,
@@ -123,24 +109,6 @@ async function queryOliviaTable(
   return { data: options?.single ? null : [], error: lastError, schema: null };
 }
 
-async function queryFamilyTable(
-  supabase: any,
-  table: string,
-  selectClause: string,
-  options?: { orderBy?: string; ascending?: boolean; limit?: number },
-) {
-  let lastError: any = null;
-  for (const schemaName of getFamilySchemaCandidates()) {
-    let q = supabase.schema(schemaName).from(table).select(selectClause);
-    if (options?.orderBy) q = q.order(options.orderBy, { ascending: options.ascending ?? false });
-    if (options?.limit) q = q.limit(options.limit);
-    const { data, error } = await q;
-    if (!error) return { data: data || [], error: null, schema: schemaName };
-    lastError = error;
-  }
-  return { data: [], error: lastError, schema: null };
-}
-
 function formatRevenue(value: number, currency = "EUR") {
   if (!value) return "Ikke tilgjengelig";
   return new Intl.NumberFormat("nb-NO", {
@@ -154,6 +122,22 @@ function getBrandRevenueCurrency(brandId: string) {
   if (brandId === "mondeo") return "NOK";
   if (brandId === "chatgenius" || brandId === "freddypublishing") return "USD";
   return "EUR";
+}
+
+function financialIncomeForTotals(event: Record<string, any>) {
+  if (normalizeBrandId(String(event.brand_id || "")) === "mondeo") {
+    return summarizeMondeoLedgerEvents([event]).totalReceivedAndKpi;
+  }
+  return event.direction === "income" ? Number(event.amount || 0) : 0;
+}
+
+function financialExpenseForTotals(event: Record<string, any>) {
+  if (normalizeBrandId(String(event.brand_id || "")) === "mondeo") return 0;
+  return event.direction === "expense" ? Number(event.amount || 0) : 0;
+}
+
+function financialNetForTotals(event: Record<string, any>) {
+  return financialIncomeForTotals(event) - financialExpenseForTotals(event);
 }
 
 async function getOliviaData() {
@@ -237,33 +221,6 @@ async function getOliviaData() {
   };
 }
 
-async function getFamilyMondeoData() {
-  const supabase = getFamilySupabase();
-  if (!supabase) {
-    return {
-      payments: [],
-      totalPaid: 0,
-      schema: null as string | null,
-      warnings: ["Family Supabase er ikke konfigurert, så Mondeo-fallback er deaktivert."],
-    };
-  }
-
-  const result = await queryFamilyTable(
-    supabase,
-    "transactions",
-    "id, date, amount, currency, type, category, description, payment_method, is_accrual, created_at",
-    { orderBy: "date", ascending: false, limit: 1000 },
-  );
-  const warning = result.error ? `Kunne ikke lese family.transactions for Mondeo: ${result.error.message || String(result.error)}` : null;
-  const summary = summarizeFamilyMondeoTransactions((result.data || []) as Record<string, unknown>[]);
-
-  return {
-    ...summary,
-    schema: result.schema,
-    warnings: warning ? [warning] : [],
-  };
-}
-
 function emptyBrandData(brandId: string): BrandData {
   return {
     brandId,
@@ -312,7 +269,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, publishingRes, ledgerRes, oliviaData, familyMondeoData] = await Promise.all([
+  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, publishingRes, ledgerRes, oliviaData] = await Promise.all([
     supabase.from("content_publications").select("id, brand_id, brand, status, created_at").order("created_at", { ascending: false }).limit(500),
     supabase.from("social_accounts").select("id, brand, brand_id, is_active"),
     supabase.from("contacts").select("id, brand_id, pipeline_status, pipeline_value, sale_price, commission_amount, commission_paid_date"),
@@ -321,7 +278,6 @@ export async function GET(request: NextRequest) {
     supabase.from("publishing_books").select("id, brand_id, title, orders, royalties, ad_spend, reviews_count, role, status"),
     supabase.from("business_financial_events").select("id, brand_id, source_type, stream, direction, status, amount, currency, event_date"),
     getOliviaData(),
-    getFamilyMondeoData(),
   ]);
 
   const publications: Record<string, any>[] = contentRes.data || [];
@@ -434,11 +390,11 @@ export async function GET(request: NextRequest) {
 
     if (brand.id === "mondeo") {
       // Mondeo is not a lead/CRM/commission business. It is internal property/admin follow-up.
-      // Business Overview should show property value plus monthly interest/payment income.
-      if (familyMondeoData.totalPaid > data.financialIncome) {
-        data.financialIncome = familyMondeoData.totalPaid;
-        data.financialNet = data.financialIncome - data.financialExpense;
-      }
+      // Only actual RealtyFlow ledger streams should count as received/KPI here.
+      const mondeoLedger = summarizeMondeoLedgerEvents(brandLedger);
+      data.financialIncome = mondeoLedger.totalReceivedAndKpi;
+      data.financialExpense = 0;
+      data.financialNet = mondeoLedger.totalReceivedAndKpi;
       data.revenueAmount = Math.max(data.revenueAmount, MONDEO_CONTRACT.purchasePriceNok);
       data.commissionTotal = 0;
       data.commissionPaid = 0;
@@ -487,9 +443,9 @@ export async function GET(request: NextRequest) {
         ? Number(oliviaData.financials.netProfit || 0)
         : 0,
     financeEvents: ledgerEvents.length,
-    financialIncome: ledgerEvents.filter((event) => event.direction === "income").reduce((sum, event) => sum + (Number(event.amount) || 0), 0),
-    financialExpense: ledgerEvents.filter((event) => event.direction === "expense").reduce((sum, event) => sum + (Number(event.amount) || 0), 0),
-    financialNet: ledgerEvents.reduce((sum, event) => sum + (event.direction === "expense" ? -Number(event.amount || 0) : event.direction === "income" ? Number(event.amount || 0) : 0), 0),
+    financialIncome: ledgerEvents.reduce((sum, event) => sum + financialIncomeForTotals(event), 0),
+    financialExpense: ledgerEvents.reduce((sum, event) => sum + financialExpenseForTotals(event), 0),
+    financialNet: ledgerEvents.reduce((sum, event) => sum + financialNetForTotals(event), 0),
   };
 
   return NextResponse.json({
@@ -502,7 +458,6 @@ export async function GET(request: NextRequest) {
       publishing: publishingRes.error?.message || null,
       contacts: contactsRes.error?.message || null,
       finance: ledgerRes.error?.message || null,
-      familyMondeo: familyMondeoData.warnings.join("; ") || null,
     },
   });
 }

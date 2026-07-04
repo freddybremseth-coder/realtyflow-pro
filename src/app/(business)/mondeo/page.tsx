@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { summarizeFamilyMondeoTransactions } from "@/lib/business/family-economy";
 import {
   AlertTriangle,
   Banknote,
@@ -22,25 +21,12 @@ import {
   formatDate,
   formatNok,
   formatPercent,
-  type MondeoKpiAdjustment,
-  type MondeoPaymentRecord,
+  summarizeMondeoLedgerEvents,
+  type MondeoLedgerEvent,
 } from "@/lib/mondeo";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type LedgerEvent = {
-  id: string;
-  stream?: string | null;
-  direction?: string | null;
-  status?: string | null;
-  amount?: number | string | null;
-  currency?: string | null;
-  event_date?: string | null;
-  description?: string | null;
-  source_type?: string | null;
-  metadata?: Record<string, unknown> | null;
-};
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -49,51 +35,10 @@ function getSupabase() {
   return createClient(url, key) as any;
 }
 
-function getFamilySupabase() {
-  const url = process.env.FAMILY_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.FAMILY_SUPABASE_SERVICE_ROLE_KEY || process.env.FAMILY_SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key) as any;
-}
-
-function getFamilySchemaCandidates() {
-  const configured = String(process.env.FAMILY_SCHEMA || process.env.FAMILYHUB_SCHEMA || "").trim();
-  const ordered = [configured, "family", "public"].filter(Boolean);
-  return Array.from(new Set(ordered));
-}
-
-async function getFamilyMondeoPayments() {
-  const supabase = getFamilySupabase();
-  const warnings: string[] = [];
-  if (!supabase) {
-    warnings.push("Family Supabase er ikke konfigurert, så Family-transaksjoner kan ikke brukes som Mondeo-kilde.");
-    return { payments: [] as MondeoPaymentRecord[], totalPaid: 0, warnings };
-  }
-
-  let lastError = "";
-  for (const schemaName of getFamilySchemaCandidates()) {
-    const { data, error } = await supabase
-      .schema(schemaName)
-      .from("transactions")
-      .select("id, date, amount, currency, type, category, description, payment_method, is_accrual, created_at")
-      .order("date", { ascending: false })
-      .limit(1000);
-
-    if (!error) {
-      return { ...summarizeFamilyMondeoTransactions((data || []) as Record<string, unknown>[]), warnings };
-    }
-
-    lastError = error.message || String(error);
-  }
-
-  warnings.push(`Kunne ikke lese family.transactions for Mondeo: ${lastError || "ukjent feil"}`);
-  return { payments: [] as MondeoPaymentRecord[], totalPaid: 0, warnings };
-}
-
 async function getMondeoLedger() {
   const supabase = getSupabase();
   const warnings: string[] = [];
-  let events: LedgerEvent[] = [];
+  let events: MondeoLedgerEvent[] = [];
 
   if (!supabase) {
     warnings.push("Supabase er ikke konfigurert i miljøvariablene, så siden viser kun kontraktsmodellen.");
@@ -107,58 +52,11 @@ async function getMondeoLedger() {
     if (error) {
       warnings.push(`Kunne ikke lese business_financial_events for Mondeo: ${error.message}`);
     } else {
-      events = (data || []) as LedgerEvent[];
+      events = (data || []) as MondeoLedgerEvent[];
     }
   }
 
-  const family = await getFamilyMondeoPayments();
-  return { events, familyPayments: family.payments, familyTotalPaid: family.totalPaid, warnings: [...warnings, ...family.warnings] };
-}
-
-function isCancelled(event: LedgerEvent) {
-  const status = String(event.status || "").toLowerCase();
-  return ["cancelled", "void", "deleted"].includes(status);
-}
-
-function eventAmount(event: LedgerEvent) {
-  return Number(event.amount || 0) || 0;
-}
-
-function isPaymentEvent(event: LedgerEvent) {
-  if (isCancelled(event)) return false;
-  const stream = String(event.stream || "").toLowerCase();
-  const direction = String(event.direction || "").toLowerCase();
-  const currency = String(event.currency || "NOK").toUpperCase();
-  return (
-    direction === "income" &&
-    currency === "NOK" &&
-    !stream.includes("kpi") &&
-    !stream.includes("adjustment") &&
-    eventAmount(event) > 0
-  );
-}
-
-function isKpiEvent(event: LedgerEvent) {
-  if (isCancelled(event)) return false;
-  const stream = String(event.stream || "").toLowerCase();
-  return stream.includes("kpi") && eventAmount(event) > 0;
-}
-
-function ledgerPayments(events: LedgerEvent[]): MondeoPaymentRecord[] {
-  return events.filter(isPaymentEvent).map((event) => ({
-    date: event.event_date || MONDEO_CONTRACT.firstPaymentDate,
-    amount: eventAmount(event),
-    note: event.description || event.stream || "Registrert betaling",
-    source: event.source_type || "business_financial_events",
-  }));
-}
-
-function ledgerKpiAdjustments(events: LedgerEvent[]): MondeoKpiAdjustment[] {
-  return events.filter(isKpiEvent).map((event) => ({
-    date: event.event_date || MONDEO_CONTRACT.kpiFirstAdjustmentDate,
-    amount: eventAmount(event),
-    note: event.description || event.stream || "KPI-justering",
-  }));
+  return { events, warnings };
 }
 
 function MetricCard({
@@ -194,21 +92,19 @@ function MetricCard({
 export default async function MondeoPage() {
   const asOf = new Date();
   const ledger = await getMondeoLedger();
-  const ledgerPaymentRows = ledgerPayments(ledger.events);
-  const ledgerPaid = ledgerPaymentRows.reduce((sum, payment) => sum + payment.amount, 0);
-  const usesFamilyPayments = ledger.familyTotalPaid > ledgerPaid;
-  const payments = usesFamilyPayments ? ledger.familyPayments : ledgerPaymentRows;
+  const ledgerSummary = summarizeMondeoLedgerEvents(ledger.events);
+  const payments = ledgerSummary.payments;
+  const kpiAdjustments = ledgerSummary.kpiAdjustments;
   const warnings = [...ledger.warnings];
-  if (usesFamilyPayments) {
-    warnings.push("RealtyFlow-ledger for Mondeo er tom eller ligger bak Family. Viser faktiske Family-transaksjoner som betalingskilde.");
+  if (ledger.events.length > 0 && payments.length === 0 && kpiAdjustments.length === 0) {
+    warnings.push("Fant Mondeo-rader i RealtyFlow-ledgeren, men ingen med stream=mondeo_payment eller stream=kpi_adjustment.");
   }
-  const kpiAdjustments = ledgerKpiAdjustments(ledger.events);
 
   const scheduledSnapshot = calculateMondeoSnapshot({
     asOf,
     payments: buildMinimumPaymentsThrough(asOf),
   });
-  const actualSnapshot = payments.length > 0
+  const actualSnapshot = payments.length > 0 || kpiAdjustments.length > 0
     ? calculateMondeoSnapshot({ asOf, payments, kpiAdjustments })
     : null;
   const activeSnapshot = actualSnapshot || scheduledSnapshot;
@@ -245,7 +141,7 @@ export default async function MondeoPage() {
             <AlertTriangle className="mt-0.5 shrink-0" size={18} />
             <div>
               <p className="font-semibold">
-                {usesFamilyPayments ? "Viser Family-transaksjoner fordi RealtyFlow-ledger ikke er ajour." : "Viser kontraktsmodell til faktisk ledger er synket."}
+                Viser kontraktsmodell til faktiske Mondeo-betalinger er registrert i RealtyFlow-ledger.
               </p>
               {warnings.map((warning) => <p key={warning} className="mt-1 text-amber-100/80">{warning}</p>)}
             </div>
@@ -280,7 +176,7 @@ export default async function MondeoPage() {
         <MetricCard label={actualSnapshot ? "Restgjeld faktisk" : "Restgjeld modell"} value={formatNok(activeSnapshot.balance)} sub={actualSnapshot ? "Fra ledger" : "Forutsatt min. betaling"} tone={activeSnapshot.needsSecurityFollowUp ? "red" : "white"} />
         <MetricCard label="Termin minimum" value={formatNok(MONDEO_CONTRACT.monthlyMinimumNok)} sub="Forfall hver 1. måned" tone="green" />
         <MetricCard label="Rente" value={formatPercent(MONDEO_CONTRACT.annualInterestRate)} sub={`${formatNok(activeSnapshot.currentMonthlyInterest)} / mnd nå`} tone="amber" />
-        <MetricCard label={usesFamilyPayments ? "Betalt i Family" : "Betalt i ledger"} value={formatNok(activeSnapshot.totalPaid)} sub={`${payments.length} registrerte betalinger`} tone={payments.length ? "green" : "amber"} />
+        <MetricCard label="Betalt i RealtyFlow" value={formatNok(activeSnapshot.totalPaid)} sub={`${payments.length} registrerte betalinger`} tone={payments.length ? "green" : "amber"} />
         <MetricCard label="Avvik mot minimum" value={formatNok(gapToMinimum)} sub={`${activeSnapshot.monthsDue} terminer forfalt`} tone={gapToMinimum > 0 ? "red" : "green"} />
       </div>
 
@@ -399,7 +295,7 @@ export default async function MondeoPage() {
           <CardContent>
             {recentPayments.length === 0 ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-                Ingen betalinger er registrert i RealtyFlow-ledger eller Family-transaksjoner for Mondeo ennå.
+                Ingen faktiske betalinger er registrert i RealtyFlow-ledger for Mondeo ennå.
               </div>
             ) : (
               <div className="space-y-2">
@@ -432,7 +328,7 @@ export default async function MondeoPage() {
               Selgers kjente månedlige lånebelastning: {formatNok(MONDEO_CONTRACT.sellerMonthlyLoanLoadNok)}. Kommunale avgifter: {formatNok(MONDEO_CONTRACT.municipalFeesMonthlyNok)} per måned.
             </div>
             <div className="rounded-lg bg-slate-800/40 p-3">
-              Betalinger leses fra <code>business_financial_events</code> når synken finnes, ellers fra faktiske Mondeo-inntekter i <code>family.transactions</code>. KPI kan legges som <code>stream=kpi_adjustment</code>.
+              Betalinger leses fra <code>business_financial_events</code> med <code>stream=mondeo_payment</code>. KPI kan legges som <code>stream=kpi_adjustment</code>.
             </div>
           </CardContent>
         </Card>
