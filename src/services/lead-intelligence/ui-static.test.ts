@@ -11,6 +11,10 @@ const clientHelpersPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-client-helpers.tsx",
 );
+const requestCardPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-request-card.tsx",
+);
 const presentationPreviewPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/presentation-preview-panel.tsx",
@@ -34,6 +38,7 @@ async function readLeadIntelligenceUiSource() {
   const [
     client,
     clientHelpers,
+    requestCard,
     presentationPreview,
     propertyMatchDisplay,
     shortlistPresentationDrafts,
@@ -41,16 +46,17 @@ async function readLeadIntelligenceUiSource() {
   ] = await Promise.all([
     readFile(clientPath, "utf8"),
     readFile(clientHelpersPath, "utf8"),
+    readFile(requestCardPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("Kopier JSON"), true);
   assert.equal(source.includes("Start på nytt"), true);
@@ -389,13 +395,14 @@ test("Lead Intelligence preview surfaces idempotent duplicate saves clearly", as
 });
 
 test("Lead Intelligence preview clears stale save results when reviewed payload changes", async () => {
-  const source = await readFile(clientPath, "utf8");
+  const source = await readLeadIntelligenceUiSource();
 
   assert.equal(source.includes("const clearContactCandidates = () =>"), true);
   assert.equal(source.includes("setSaveError(null);"), true);
   assert.equal(source.includes("setSaveResult(null);"), true);
   assert.equal(source.includes("const updateCriterionReview = "), true);
-  assert.equal(source.includes("setSource(event.target.value as Source);"), true);
+  assert.equal(source.includes("onSourceChange(event.target.value as LeadIntelligenceSource);"), true);
+  assert.equal(source.includes("setSource(nextSource);"), true);
   assert.equal(source.includes("setLanguage(value);"), true);
   assert.equal(source.includes("setContactDecision(\"connect_existing\");"), true);
 });

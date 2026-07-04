@@ -8,7 +8,6 @@ import {
   Loader2,
   MessageSquareText,
   RefreshCw,
-  RotateCcw,
   Save,
   Search,
   ShieldCheck,
@@ -74,8 +73,13 @@ import {
   type PropertyQualityReviewStatus,
   type SavedPropertyQualityReviewStatus,
 } from "@/components/lead-intelligence/property-quality-review-controls";
+import {
+  LeadIntelligenceRequestCard,
+  type LeadIntelligenceSource,
+  type LeadIntelligenceSourceOption,
+} from "@/components/lead-intelligence/lead-intelligence-request-card";
 
-type Source = "phone_call" | "whatsapp" | "email" | "sms" | "meeting_note" | "other";
+type Source = LeadIntelligenceSource;
 
 interface LeadAnalysisResponse {
   ok: true;
@@ -423,7 +427,7 @@ interface SavedProfileArchiveResponse {
   };
 }
 
-const sourceOptions: Array<{ value: Source; label: string }> = [
+const sourceOptions: LeadIntelligenceSourceOption[] = [
   { value: "phone_call", label: "Telefonsamtale" },
   { value: "whatsapp", label: "WhatsApp" },
   { value: "email", label: "E-post" },
@@ -537,7 +541,6 @@ export function LeadIntelligenceClient({
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
   const phoneBadge = response ? badgeForPhone(response.meta.phoneNormalization.status) : null;
-  const remaining = LEAD_INTELLIGENCE_LIMITS.bodyText - rawText.length;
   const reviewCriteria = useMemo(() => flattenReviewCriteria(edited), [edited]);
   const reviewedCount = reviewCriteria.filter(
     (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
@@ -2770,113 +2773,40 @@ export function LeadIntelligenceClient({
       )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquareText className="h-5 w-5 text-primary-400" />
-              Henvendelse
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-1">
-                <FieldLabel>Kilde</FieldLabel>
-                <select
-                  value={source}
-                  onChange={(event) => {
-                    setSource(event.target.value as Source);
-                    clearContactCandidates();
-                  }}
-                  className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
-                >
-                  {sourceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <FieldLabel>Brand</FieldLabel>
-                <select
-                  value={brand}
-                  onChange={(event) => {
-                    setBrand(event.target.value);
-                    clearContactCandidates();
-                    setSaveResult(null);
-                    setWorklistResult(null);
-                    setWorklistError(null);
-                  }}
-                  className="h-10 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100"
-                >
-                  {realEstateBrands.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-              <TextInput
-                label="Språk (valgfritt)"
-                value={language}
-                onChange={(value) => {
-                  setLanguage(value);
-                  clearContactCandidates();
-                }}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <FieldLabel>Rå tekst</FieldLabel>
-              <textarea
-                value={rawText}
-                onChange={(event) => {
-                  setRawText(event.target.value);
-                  clearContactCandidates();
-                  setSaveResult(null);
-                }}
-                maxLength={LEAD_INTELLIGENCE_LIMITS.bodyText}
-                rows={18}
-                className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-primary-500"
-                placeholder="Lim inn telefonsamtalenotat, WhatsApp, SMS, e-post eller møtenotat..."
-              />
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Bare tekst i denne fasen. Vedlegg og HTML analyseres ikke.</span>
-                <span className={remaining < 500 ? "text-amber-300" : undefined}>{remaining} tegn igjen</span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                disabled={!featureEnabled || loading || rawText.trim().length < 12}
-                onClick={analyze}
-              >
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Analyser henvendelse
-              </Button>
-              <Button type="button" variant="secondary" onClick={reset} disabled={loading}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Start på nytt
-              </Button>
-              {response && (
-                <Button type="button" variant="outline" onClick={analyze} disabled={loading || !featureEnabled}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Analyser på nytt
-                </Button>
-              )}
-            </div>
-
-            {error && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
-                <p className="font-semibold">{error.code}</p>
-                <p className="mt-1">{error.message}</p>
-                {error.details && (
-                  <pre className="mt-3 max-h-40 overflow-auto rounded border border-red-400/20 bg-red-950/30 p-2 text-xs text-red-100/90">
-                    {prettyJson(error.details)}
-                  </pre>
-                )}
-                <p className="mt-2 text-xs text-red-200/80">Correlation ID: {error.correlationId}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <LeadIntelligenceRequestCard
+          source={source}
+          sourceOptions={sourceOptions}
+          brand={brand}
+          brandOptions={realEstateBrands}
+          language={language}
+          rawText={rawText}
+          featureEnabled={featureEnabled}
+          loading={loading}
+          hasResponse={Boolean(response)}
+          error={error}
+          onSourceChange={(nextSource) => {
+            setSource(nextSource);
+            clearContactCandidates();
+          }}
+          onBrandChange={(nextBrand) => {
+            setBrand(nextBrand);
+            clearContactCandidates();
+            setSaveResult(null);
+            setWorklistResult(null);
+            setWorklistError(null);
+          }}
+          onLanguageChange={(value) => {
+            setLanguage(value);
+            clearContactCandidates();
+          }}
+          onRawTextChange={(value) => {
+            setRawText(value);
+            clearContactCandidates();
+            setSaveResult(null);
+          }}
+          onAnalyze={analyze}
+          onReset={reset}
+        />
 
         <Card>
           <CardHeader>
