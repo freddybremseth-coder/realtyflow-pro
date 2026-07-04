@@ -15,7 +15,6 @@ import {
   Trash2,
   UserCheck,
   Users,
-  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,6 @@ import {
   parseJsonEditor,
   parsePropertyReferences,
   prettyJson,
-  type ReviewCriterionRow,
 } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import {
   MatchList,
@@ -76,6 +74,10 @@ import {
   type LeadIntelligenceSourceOption,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
+import {
+  LeadIntelligenceCriteriaReviewPanel,
+  type CriterionReviewState,
+} from "@/components/lead-intelligence/lead-intelligence-criteria-review-panel";
 
 type Source = LeadIntelligenceSource;
 
@@ -165,13 +167,6 @@ interface Props {
   connectExistingEnabled: boolean;
   createContactEnabled: boolean;
   propertyMatchingEnabled: boolean;
-}
-
-type CriterionApprovalStatus = "pending" | "approved" | "rejected";
-
-interface CriterionReviewState {
-  approvalStatus: CriterionApprovalStatus;
-  customerConfirmed: boolean;
 }
 
 interface PropertyMatchPreviewResponse {
@@ -2838,90 +2833,13 @@ export function LeadIntelligenceClient({
                 />
 
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  <div className="rounded-lg border border-slate-700/60 bg-slate-950 p-4">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h2 className="text-sm font-semibold text-slate-200">Godkjenn kriterier</h2>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Hvert krav, ønske og avvisningskriterium må godkjennes eller avvises før buyer profile lagres.
-                        </p>
-                      </div>
-                      <Badge variant={allCriteriaReviewed ? "success" : "secondary"}>
-                        {reviewedCount}/{reviewCriteria.length} vurdert
-                      </Badge>
-                    </div>
-
-                    <div className="max-h-[32rem] space-y-3 overflow-auto pr-1">
-                      {reviewCriteria.map((criterion) => {
-                        const state = criterionReviews[criterion.id] || {
-                          approvalStatus: "pending",
-                          customerConfirmed: false,
-                        };
-                        return (
-                          <div
-                            key={criterion.id}
-                            className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-medium text-slate-200">{criterion.label}</p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {criterion.key} · {criterion.criterionType}
-                                </p>
-                              </div>
-                              <Badge
-                                variant={
-                                  state.approvalStatus === "approved"
-                                    ? "success"
-                                    : state.approvalStatus === "rejected"
-                                      ? "destructive"
-                                      : "secondary"
-                                }
-                              >
-                                {state.approvalStatus === "approved"
-                                  ? "Godkjent"
-                                  : state.approvalStatus === "rejected"
-                                    ? "Avvist"
-                                    : "Venter"}
-                              </Badge>
-                            </div>
-                            <p className="mt-2 text-sm text-slate-300">{criterion.detail}</p>
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <Button
-                                type="button"
-                                variant={state.approvalStatus === "approved" ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => updateCriterionReview(criterion.id, { approvalStatus: "approved" })}
-                              >
-                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                Godkjenn
-                              </Button>
-                              <Button
-                                type="button"
-                                variant={state.approvalStatus === "rejected" ? "destructive" : "outline"}
-                                size="sm"
-                                onClick={() => updateCriterionReview(criterion.id, { approvalStatus: "rejected" })}
-                              >
-                                <XCircle className="mr-2 h-4 w-4" />
-                                Avvis
-                              </Button>
-                              <label className="flex items-center gap-2 text-xs text-slate-400">
-                                <input
-                                  type="checkbox"
-                                  checked={state.customerConfirmed}
-                                  onChange={(event) =>
-                                    updateCriterionReview(criterion.id, { customerConfirmed: event.target.checked })
-                                  }
-                                  className="h-4 w-4 rounded border-slate-600 bg-slate-900"
-                                />
-                                Kunden har bekreftet
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <LeadIntelligenceCriteriaReviewPanel
+                    criteria={reviewCriteria}
+                    reviews={criterionReviews}
+                    reviewedCount={reviewedCount}
+                    allCriteriaReviewed={allCriteriaReviewed}
+                    onReviewChange={updateCriterionReview}
+                  />
 
                   <div className="space-y-4 rounded-lg border border-slate-700/60 bg-slate-950 p-4">
                     <div>
