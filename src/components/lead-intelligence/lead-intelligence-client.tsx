@@ -24,7 +24,6 @@ import {
   JsonSection,
   TextInput,
   flattenReviewCriteria,
-  formatDateTime,
   generateClientCorrelationId,
   parseJsonEditor,
   parsePropertyReferences,
@@ -88,6 +87,7 @@ import {
   type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
 import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-intelligence/lead-intelligence-saved-profile-contact-panel";
+import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-history-panel";
 
 type Source = LeadIntelligenceSource;
 
@@ -1806,113 +1806,18 @@ export function LeadIntelligenceClient({
                           onLinkContact={linkSavedProfileContact}
                         />
 
-                        {activeWorklistItem.latestPresentationId && (
-                          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                            <p className="font-semibold">Siste lagrede e-postutkast finnes</p>
-                            <p className="mt-1 text-xs text-emerald-100/75">
-                              Presentation {shortPropertyId(activeWorklistItem.latestPresentationId)}
-                              {activeWorklistItem.latestMessageDraftId
-                                ? ` · Message draft ${shortPropertyId(activeWorklistItem.latestMessageDraftId)}`
-                                : ""}
-                            </p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="mt-3"
-                              onClick={loadLatestPresentationDraft}
-                              disabled={presentationDraftLoading}
-                            >
-                              {presentationDraftLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                              )}
-                              Åpne siste e-postutkast
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="ml-2 mt-3"
-                              onClick={loadPresentationDraftHistory}
-                              disabled={presentationDraftHistoryLoading}
-                            >
-                              {presentationDraftHistoryLoading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <MessageSquareText className="mr-2 h-4 w-4" />
-                              )}
-                              Vis utkasthistorikk
-                            </Button>
-                            <p className="mt-2 text-xs text-emerald-100/70">
-                              Hentes read-only og vises lokalt. Det sendes fortsatt ingen e-post.
-                            </p>
-                          </div>
-                        )}
-
-                        {presentationDraftHistoryResult && (
-                          <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-200">
-                            <p className="font-semibold text-slate-100">
-                              Utkasthistorikk ({presentationDraftHistoryResult.result.items.length})
-                            </p>
-                            {presentationDraftHistoryResult.result.items.length === 0 ? (
-                              <p className="mt-2 text-xs text-slate-500">
-                                Ingen presentasjons- eller e-postutkast er lagret for denne profilen ennå.
-                              </p>
-                            ) : (
-                              <div className="mt-3 space-y-2">
-                                {presentationDraftHistoryResult.result.items.map((item) => (
-                                  <div
-                                    key={item.presentationId}
-                                    className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"
-                                  >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                      <div>
-                                        <p className="font-medium text-slate-100">{item.subject}</p>
-                                        <p className="mt-1 text-xs text-slate-400">
-                                          Presentation {shortPropertyId(item.presentationId)} · Message draft{" "}
-                                          {shortPropertyId(item.messageDraftId)} · {item.itemCount} bolig(er)
-                                        </p>
-                                        <p className="mt-1 text-xs text-slate-500">
-                                          Status: {item.status} · E-poststatus: {item.messageStatus} · Lagret{" "}
-                                          {formatDateTime(item.messageDraftCreatedAt)}
-                                        </p>
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => loadPresentationDraftById(item.presentationId)}
-                                        disabled={presentationDraftLoading}
-                                      >
-                                        Åpne
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <p className="mt-3 text-xs text-slate-500">
-                              Historikken henter bare metadata. Selve e-postteksten åpnes først når du trykker Åpne.
-                            </p>
-                          </div>
-                        )}
-
-                        {presentationDraftHistoryError && !propertyMatchResult && (
-                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                            <p className="font-semibold">{presentationDraftHistoryError.code}</p>
-                            <p className="mt-1">{presentationDraftHistoryError.message}</p>
-                            {presentationDraftHistoryError.details && (
-                              <pre className="mt-2 max-h-40 overflow-auto rounded bg-red-950/50 p-2 text-xs text-red-50">
-                                {prettyJson(presentationDraftHistoryError.details)}
-                              </pre>
-                            )}
-                            <p className="mt-2 text-xs text-red-100/70">
-                              Correlation ID: {presentationDraftHistoryError.correlationId}
-                            </p>
-                          </div>
-                        )}
+                        <LeadIntelligencePresentationHistoryPanel
+                          latestPresentationId={activeWorklistItem.latestPresentationId}
+                          latestMessageDraftId={activeWorklistItem.latestMessageDraftId}
+                          history={presentationDraftHistoryResult?.result ?? null}
+                          historyError={presentationDraftHistoryError}
+                          showHistoryError={!propertyMatchResult}
+                          presentationDraftLoading={presentationDraftLoading}
+                          presentationDraftHistoryLoading={presentationDraftHistoryLoading}
+                          onLoadLatestPresentationDraft={loadLatestPresentationDraft}
+                          onLoadPresentationDraftHistory={loadPresentationDraftHistory}
+                          onLoadPresentationDraftById={loadPresentationDraftById}
+                        />
 
                         {presentationDraftResult?.result.loadedFromHistory && (
                           <div
