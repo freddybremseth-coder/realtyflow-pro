@@ -47,6 +47,10 @@ const activeProfileMatchControlsPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-active-profile-match-controls.tsx",
 );
+const shortlistDraftPanelPath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-shortlist-draft-panel.tsx",
+);
 const worklistHistoryPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-worklist-history-panel.tsx",
@@ -83,6 +87,7 @@ async function readLeadIntelligenceUiSource() {
     presentationHistory,
     loadedPresentationDraft,
     activeProfileMatchControls,
+    shortlistDraftPanel,
     worklistHistory,
     presentationPreview,
     propertyMatchDisplay,
@@ -100,13 +105,14 @@ async function readLeadIntelligenceUiSource() {
     readFile(presentationHistoryPath, "utf8"),
     readFile(loadedPresentationDraftPath, "utf8"),
     readFile(activeProfileMatchControlsPath, "utf8"),
+    readFile(shortlistDraftPanelPath, "utf8"),
     readFile(worklistHistoryPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${activeProfileMatchControls}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${activeProfileMatchControls}\n${shortlistDraftPanel}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {

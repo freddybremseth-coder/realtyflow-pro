@@ -67,6 +67,7 @@ import {
   type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
+import { LeadIntelligenceShortlistDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-draft-panel";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
   LeadIntelligenceCriteriaReviewPanel,
@@ -1664,38 +1665,14 @@ export function LeadIntelligenceClient({
                               })}
                             </div>
 
-                            <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    Kvalitetssjekket: {selectedShortlistItems.length} · Klar for kunde:{" "}
-                                    {clientReadyShortlistItems.length}. Ingen e-post, lead eller kontakt opprettes.
-                                  </p>
-                                </div>
-                                <Button
-                                  type="button"
-                                  onClick={saveShortlistDraft}
-                                  disabled={shortlistSaveLoading || selectedShortlistItems.length === 0}
-                                >
-                                  {shortlistSaveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                  Lagre shortlist-utkast
-                                </Button>
-                              </div>
-
-                              {selectedShortlistItems.length === 0 && (
-                                <p className="mt-2 text-xs text-amber-200">
-                                  Kvalitetssjekk minst én bolig før shortlist-utkast kan lagres.
-                                </p>
-                              )}
-
-                              {selectedShortlistItems.length > 0 && clientReadyShortlistItems.length === 0 && (
-                                <p className="mt-2 text-xs text-amber-200">
-                                  Ingen boliger er markert «Klar for kunde». Du kan lagre intern kvalitetssjekk, men
-                                  presentasjonsutkast lages først når minst én bolig er klar.
-                                </p>
-                              )}
-
+                            <LeadIntelligenceShortlistDraftPanel
+                              selectedCount={selectedShortlistItems.length}
+                              clientReadyCount={clientReadyShortlistItems.length}
+                              loading={shortlistSaveLoading}
+                              description="Ingen e-post, lead eller kontakt opprettes."
+                              layout="md"
+                              onSave={saveShortlistDraft}
+                            >
                               {shortlistSaveResult && (
                                 <div className="mt-3 space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
                                   <div>
@@ -1833,7 +1810,7 @@ export function LeadIntelligenceClient({
                               {shortlistSaveError && (
                                 <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
                               )}
-                            </div>
+                            </LeadIntelligenceShortlistDraftPanel>
                           </>
                         </div>
                       )}
@@ -2222,39 +2199,16 @@ export function LeadIntelligenceClient({
                           })}
                         </div>
 
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-200">Shortlist-utkast</p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                Kvalitetssjekket: {selectedShortlistItems.length} · Klar for kunde:{" "}
-                                {clientReadyShortlistItems.length}. Utkastet lagrer bare Freddys
-                                kvalitetssjekk. Det oppretter ikke presentasjon, e-post, lead eller kontakt.
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              onClick={saveShortlistDraft}
-                              disabled={shortlistSaveLoading || selectedShortlistItems.length === 0}
-                            >
-                              {shortlistSaveLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                              Lagre shortlist-utkast
-                            </Button>
-                          </div>
-
-                          {selectedShortlistItems.length === 0 && (
-                            <p className="mt-2 text-xs text-amber-200">
-                              Kvalitetssjekk minst én bolig før shortlist-utkast kan lagres.
-                            </p>
-                          )}
-
-                          {selectedShortlistItems.length > 0 && clientReadyShortlistItems.length === 0 && (
-                            <p className="mt-2 text-xs text-amber-200">
-                              Ingen boliger er markert «Klar for kunde». Du kan lagre intern kvalitetssjekk, men
-                              presentasjonsutkast lages først når minst én bolig er klar.
-                            </p>
-                          )}
-
+                        <LeadIntelligenceShortlistDraftPanel
+                          selectedCount={selectedShortlistItems.length}
+                          clientReadyCount={clientReadyShortlistItems.length}
+                          loading={shortlistSaveLoading}
+                          description={
+                            "Utkastet lagrer bare Freddys kvalitetssjekk. " +
+                            "Det oppretter ikke presentasjon, e-post, lead eller kontakt."
+                          }
+                          onSave={saveShortlistDraft}
+                        >
                           {shortlistSaveResult && (
                             <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
                               <p className="font-semibold">
@@ -2579,7 +2533,7 @@ export function LeadIntelligenceClient({
                           {shortlistSaveError && (
                             <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
                           )}
-                        </div>
+                        </LeadIntelligenceShortlistDraftPanel>
 
                         {(propertyMatchResult.result.missingPropertyReferences.length > 0 ||
                           propertyMatchResult.result.skippedProperties.length > 0) && (
