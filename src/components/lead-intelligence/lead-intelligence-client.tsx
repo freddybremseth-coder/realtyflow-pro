@@ -1629,9 +1629,7 @@ export function LeadIntelligenceClient({
                                             ...current,
                                             [match.propertyId]: decision,
                                           }));
-                                          setShortlistSaveError(null);
-                                          setShortlistSaveResult(null);
-                                          clearPresentationDraftState();
+                                          clearShortlistAndPresentationState();
                                         }}
                                       />
                                     </div>
@@ -2079,9 +2077,7 @@ export function LeadIntelligenceClient({
                                         ...current,
                                         [match.propertyId]: decision,
                                       }));
-                                      setShortlistSaveError(null);
-                                      setShortlistSaveResult(null);
-                                      clearPresentationDraftState();
+                                      clearShortlistAndPresentationState();
                                     }}
                                   />
                                 {manualDecisionOverridesRejected && (
