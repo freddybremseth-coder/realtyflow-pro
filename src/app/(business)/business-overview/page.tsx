@@ -21,6 +21,8 @@ type BrandData = {
   crmContacts: number;
   growthActions: number;
   financialNet: number;
+  mondeoPaymentCount: number;
+  mondeoKpiAdjustmentCount: number;
 };
 
 type OliviaData = {
@@ -99,6 +101,8 @@ export default function BusinessOverviewPage() {
   }
 
   const mondeoData = brandDataMap.mondeo;
+  const mondeoPaymentCount = Number(mondeoData?.mondeoPaymentCount || 0);
+  const mondeoKpiAdjustmentCount = Number(mondeoData?.mondeoKpiAdjustmentCount || 0);
   const brandsToShow = selectedBrand === "all" ? BRANDS : BRANDS.filter((brand) => brand.id === selectedBrand);
   const regularBrandData = Object.values(brandDataMap).filter((data) => data.brandId !== "mondeo");
   const totalCommission = regularBrandData.reduce((sum, data) => sum + Number(data.commissionTotal || 0), 0);
@@ -155,7 +159,12 @@ export default function BusinessOverviewPage() {
               <Metric label="Boligverdi" value={mondeoData.revenue} />
               <Metric label="Månedlig rente" value={money(MONDEO_MONTHLY_INTEREST_NOK, "NOK")} tone="text-amber-400" />
               <Metric label="Minimum betaling" value={money(MONDEO_MIN_PAYMENT_NOK, "NOK")} tone="text-blue-400" />
-              <Metric label="Mottatt / KPI ledger" value={money(Number(mondeoData.financialNet || 0), "NOK")} tone="text-emerald-400" />
+              <Metric
+                label="Mottatt / KPI ledger"
+                value={money(Number(mondeoData.financialNet || 0), "NOK")}
+                tone="text-emerald-400"
+                sub={`${mondeoPaymentCount} betalinger, ${mondeoKpiAdjustmentCount} KPI`}
+              />
             </div>
           </CardContent>
         </Card>
@@ -255,11 +264,12 @@ export default function BusinessOverviewPage() {
   );
 }
 
-function Metric({ label, value, tone = "text-white" }: { label: string; value: string; tone?: string }) {
+function Metric({ label, value, tone = "text-white", sub }: { label: string; value: string; tone?: string; sub?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="mb-1 text-[10px] uppercase text-slate-500">{label}</p>
       <p className={`text-xl font-bold ${tone}`}>{value}</p>
+      {sub && <p className="mt-1 text-[11px] text-slate-500">{sub}</p>}
     </div>
   );
 }

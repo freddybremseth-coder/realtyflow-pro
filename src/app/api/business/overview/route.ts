@@ -34,6 +34,8 @@ type BrandData = {
   financialIncome: number;
   financialExpense: number;
   financialNet: number;
+  mondeoPaymentCount: number;
+  mondeoKpiAdjustmentCount: number;
 };
 
 function getSupabase() {
@@ -248,6 +250,8 @@ function emptyBrandData(brandId: string): BrandData {
     financialIncome: 0,
     financialExpense: 0,
     financialNet: 0,
+    mondeoPaymentCount: 0,
+    mondeoKpiAdjustmentCount: 0,
   };
 }
 
@@ -395,6 +399,8 @@ export async function GET(request: NextRequest) {
       data.financialIncome = mondeoLedger.totalReceivedAndKpi;
       data.financialExpense = 0;
       data.financialNet = mondeoLedger.totalReceivedAndKpi;
+      data.mondeoPaymentCount = mondeoLedger.payments.length;
+      data.mondeoKpiAdjustmentCount = mondeoLedger.kpiAdjustments.length;
       data.revenueAmount = Math.max(data.revenueAmount, MONDEO_CONTRACT.purchasePriceNok);
       data.commissionTotal = 0;
       data.commissionPaid = 0;
