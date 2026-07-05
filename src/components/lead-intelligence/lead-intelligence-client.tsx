@@ -308,6 +308,11 @@ export function LeadIntelligenceClient({
     clearShortlistAndPresentationState();
   };
 
+  const updatePropertyReferencesText = (value: string) => {
+    setPropertyReferencesText(value);
+    clearPropertyMatchPreview();
+  };
+
   const clearPresentationDraftState = () => {
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
@@ -1561,10 +1566,7 @@ export function LeadIntelligenceClient({
                           propertyMatchLoading={propertyMatchLoading}
                           propertyMatchingEnabled={propertyMatchingEnabled}
                           propertyMatchError={propertyMatchError}
-                          onPropertyReferencesChange={(value) => {
-                            setPropertyReferencesText(value);
-                            clearPropertyMatchPreview();
-                          }}
+                          onPropertyReferencesChange={updatePropertyReferencesText}
                           onPreviewPropertyMatches={previewPropertyMatches}
                         />
                       </div>
@@ -1970,10 +1972,7 @@ export function LeadIntelligenceClient({
                       propertyMatchLoading={propertyMatchLoading}
                       propertyMatchingEnabled={propertyMatchingEnabled}
                       propertyMatchError={propertyMatchError}
-                      onPropertyReferencesChange={(value) => {
-                        setPropertyReferencesText(value);
-                        clearPropertyMatchPreview();
-                      }}
+                      onPropertyReferencesChange={updatePropertyReferencesText}
                       onPreviewPropertyMatches={previewPropertyMatches}
                     />
 
