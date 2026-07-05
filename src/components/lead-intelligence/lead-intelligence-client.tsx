@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  CheckCircle2,
-  Clipboard,
   Loader2,
   RefreshCw,
   Save,
@@ -77,6 +75,7 @@ import { LeadIntelligenceShortlistPropertyCards } from "@/components/lead-intell
 import { LeadIntelligencePresentationDraftResultPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-result-panel";
 import { LeadIntelligenceActiveProfileMatchList } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-list";
 import { LeadIntelligenceAnalysisMatchList } from "@/components/lead-intelligence/lead-intelligence-analysis-match-list";
+import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -2012,37 +2011,17 @@ export function LeadIntelligenceClient({
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-sm font-semibold text-slate-200">Rediger hele AI-forslaget lokalt</h2>
-                    <Button type="button" variant="outline" size="sm" onClick={copyJson}>
-                      <Clipboard className="mr-2 h-4 w-4" />
-                      Kopier JSON
-                    </Button>
-                  </div>
-                  <textarea
-                    value={editableJson}
-                    onChange={(event) => {
-                      setEditableJson(event.target.value);
-                      clearContactCandidates();
-                      setSaveResult(null);
-                    }}
-                    rows={18}
-                    className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
-                  />
-                  <div className="flex items-center gap-2 text-xs">
-                    {jsonEditor.error ? (
-                      <span className="text-amber-300">JSON er ikke gyldig: {jsonEditor.error}</span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-emerald-300">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Lokalt preview er gyldig JSON.
-                      </span>
-                    )}
-                    {copyState === "copied" && <span className="text-primary-300">Kopiert.</span>}
-                    {copyState === "failed" && <span className="text-red-300">Kunne ikke kopiere.</span>}
-                  </div>
-                </div>
+                <LeadIntelligenceJsonEditorPanel
+                  value={editableJson}
+                  error={jsonEditor.error}
+                  copyState={copyState}
+                  onCopy={copyJson}
+                  onChange={(value) => {
+                    setEditableJson(value);
+                    clearContactCandidates();
+                    setSaveResult(null);
+                  }}
+                />
               </div>
             )}
           </CardContent>
