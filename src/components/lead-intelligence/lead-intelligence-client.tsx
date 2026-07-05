@@ -88,6 +88,7 @@ import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-inte
 import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-history-panel";
 import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel";
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
+import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1564,24 +1565,15 @@ export function LeadIntelligenceClient({
                       {propertyMatchResult && (
                         <div className="space-y-3">
                           <>
-                            <div className="grid gap-3 sm:grid-cols-4">
-                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Analysert</p>
-                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.analyzed}</p>
-                              </div>
-                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Aktuelle</p>
-                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.matched}</p>
-                              </div>
-                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Mangler</p>
-                                <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyReferences.length}</p>
-                              </div>
-                              <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Klar for kunde</p>
-                                <p className="mt-1 text-lg font-semibold text-slate-100">{clientReadyShortlistItems.length}</p>
-                              </div>
-                            </div>
+                            <LeadIntelligencePropertyMatchSummary
+                              className="sm:grid-cols-4"
+                              stats={[
+                                { label: "Analysert", value: propertyMatchResult.result.analyzed },
+                                { label: "Aktuelle", value: propertyMatchResult.result.matched },
+                                { label: "Mangler", value: propertyMatchResult.result.missingPropertyReferences.length },
+                                { label: "Klar for kunde", value: clientReadyShortlistItems.length },
+                              ]}
+                            />
 
                             {propertyMatchResult.result.bestEffort && (
                               <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
@@ -2040,24 +2032,14 @@ export function LeadIntelligenceClient({
                             ? ` · Kandidatgrense ${propertyMatchResult.result.candidateLimit}`
                             : ""}
                         </p>
-                        <div className="grid gap-3 md:grid-cols-4">
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Analysert</p>
-                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.analyzed}</p>
-                          </div>
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Aktuelle</p>
-                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.matched}</p>
-                          </div>
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Mangler</p>
-                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.missingPropertyReferences.length}</p>
-                          </div>
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
-                            <p className="mt-1 text-lg font-semibold text-slate-100">{propertyMatchResult.result.skippedProperties.length}</p>
-                          </div>
-                        </div>
+                        <LeadIntelligencePropertyMatchSummary
+                          stats={[
+                            { label: "Analysert", value: propertyMatchResult.result.analyzed },
+                            { label: "Aktuelle", value: propertyMatchResult.result.matched },
+                            { label: "Mangler", value: propertyMatchResult.result.missingPropertyReferences.length },
+                            { label: "Skipped", value: propertyMatchResult.result.skippedProperties.length },
+                          ]}
+                        />
 
                         {propertyMatchResult.result.bestEffort && (
                           <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
