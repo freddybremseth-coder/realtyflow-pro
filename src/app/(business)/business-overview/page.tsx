@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -136,18 +137,25 @@ export default function BusinessOverviewPage() {
       {mondeoData && (
         <Card className="border-orange-500/30 bg-gradient-to-r from-orange-500/10 to-amber-500/10">
           <CardContent className="p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <Home size={24} className="text-orange-400" />
-              <div>
-                <h2 className="text-lg font-bold text-white">Mondeo Eiendom AS — boligdrift og økonomioppfølging</h2>
-                <p className="text-xs text-slate-400">Boligverdi, renter, KPI og innbetalinger. Ikke leads eller kommisjon.</p>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-3">
+                <Home size={24} className="text-orange-400" />
+                <div>
+                  <h2 className="text-lg font-bold text-white">Mondeo Eiendom AS — boligdrift og økonomioppfølging</h2>
+                  <p className="text-xs text-slate-400">
+                    Boligverdi, renter, KPI og faktiske ledgerinnbetalinger. Ikke leads eller kommisjon.
+                  </p>
+                </div>
               </div>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/mondeo">Åpne Mondeo</Link>
+              </Button>
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <Metric label="Boligverdi" value={mondeoData.revenue} />
               <Metric label="Månedlig rente" value={money(MONDEO_MONTHLY_INTEREST_NOK, "NOK")} tone="text-amber-400" />
               <Metric label="Minimum betaling" value={money(MONDEO_MIN_PAYMENT_NOK, "NOK")} tone="text-blue-400" />
-              <Metric label="Mottatt / KPI" value={money(Number(mondeoData.financialNet || 0), "NOK")} tone="text-emerald-400" />
+              <Metric label="Mottatt / KPI ledger" value={money(Number(mondeoData.financialNet || 0), "NOK")} tone="text-emerald-400" />
             </div>
           </CardContent>
         </Card>
