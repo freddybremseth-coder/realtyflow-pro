@@ -46,7 +46,6 @@ import {
   type SelectedShortlistMatch,
 } from "@/components/lead-intelligence/shortlist-presentation-drafts";
 import {
-  InternalPresentationPreview,
   PropertyNavigationLinks,
   leadIntelligenceMatchAnchor,
   leadIntelligenceMatchReturnUrl,
@@ -92,6 +91,7 @@ import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-inte
 import { LeadIntelligenceShortlistPresentationPreviewPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-presentation-preview-panel";
 import { LeadIntelligenceEditableEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-editable-email-draft-panel";
 import { LeadIntelligenceShortlistPropertyCards } from "@/components/lead-intelligence/lead-intelligence-shortlist-property-cards";
+import { LeadIntelligencePresentationDraftResultPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-result-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1691,44 +1691,17 @@ export function LeadIntelligenceClient({
                                     </div>
 
                                     {presentationDraftResult && (
-                                      <div className="mt-3 rounded-lg border border-emerald-400/20 bg-slate-950/80 p-3">
-                                        <p className="font-semibold text-emerald-50">
-                                          {presentationDraftResult.result.loadedFromHistory
-                                            ? "Lagret presentasjonsutkast hentet read-only."
-                                            : presentationDraftResult.result.duplicate
-                                            ? "Identisk presentasjonsutkast var allerede lagret."
-                                            : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
-                                        </p>
-                                        <p className="mt-1 text-xs text-emerald-100/70">
-                                          Presentation {presentationDraftResult.result.presentationId} ·
-                                          Message draft {presentationDraftResult.result.messageDraftId}
-                                        </p>
-                                        <p className="mt-1 text-xs text-emerald-100/70">
-                                          Status: {presentationDraftResult.result.status} · E-poststatus:
-                                          {" "}{presentationDraftResult.result.messageStatus} · E-post sendt: nei ·
-                                          Presentasjon publisert: nei
-                                        </p>
-
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                          <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
-                                            <Clipboard className="mr-2 h-4 w-4" />
-                                            Kopier e-posttekst
-                                          </Button>
-                                          {presentationDraftResult.result.messageDraft.bodyHtml && (
-                                            <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftHtml}>
-                                              <Clipboard className="mr-2 h-4 w-4" />
-                                              Kopier HTML
-                                            </Button>
-                                          )}
-                                        </div>
-
-                                        <InternalPresentationPreview
-                                          preview={presentationDraftResult.result.presentationPreview}
-                                          returnTo={presentationDraftReturnUrl}
-                                          anchorCards={!propertyMatchResult}
-                                          highlightedMatchId={highlightedMatchId}
-                                        />
-
+                                      <LeadIntelligencePresentationDraftResultPanel
+                                        draft={presentationDraftResult.result}
+                                        returnTo={presentationDraftReturnUrl}
+                                        anchorCards={!propertyMatchResult}
+                                        highlightedMatchId={highlightedMatchId}
+                                        statusMode="compact"
+                                        className="mt-3 rounded-lg border border-emerald-400/20 bg-slate-950/80 p-3"
+                                        showCopyActions
+                                        onCopyEmailText={copyEmailDraftText}
+                                        onCopyEmailHtml={copyEmailDraftHtml}
+                                      >
                                         <LeadIntelligenceEditableEmailDraftPanel
                                           title="Rediger e-postutkast lokalt"
                                           description="Endringene lagres ikke i databasen. Kopier e-posttekst bruker teksten under."
@@ -1759,7 +1732,7 @@ export function LeadIntelligenceClient({
                                             resetDraftCopyState();
                                           }}
                                         />
-                                      </div>
+                                      </LeadIntelligencePresentationDraftResultPanel>
                                     )}
 
                                     {presentationDraftError && (
@@ -2108,32 +2081,14 @@ export function LeadIntelligenceClient({
                               />
 
                               {presentationDraftResult && (
-                                <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                                  <div>
-                                    <p className="font-semibold">
-                                      {presentationDraftResult.result.loadedFromHistory
-                                        ? "Lagret presentasjonsutkast hentet read-only."
-                                        : presentationDraftResult.result.duplicate
-                                        ? "Identisk presentasjonsutkast var allerede lagret."
-                                        : "Presentasjonsutkast lagret som draft uten eksterne sideeffekter."}
-                                    </p>
-                                    <p className="mt-1 text-emerald-100/80">
-                                      Presentation {presentationDraftResult.result.presentationId} · Message draft {presentationDraftResult.result.messageDraftId}
-                                    </p>
-                                    <p className="mt-1 text-xs text-emerald-100/70">
-                                      Status: {presentationDraftResult.result.status} · E-poststatus: {presentationDraftResult.result.messageStatus} ·
-                                      E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                                      Presentasjon publisert: nei · Property matching-jobb startet: nei
-                                    </p>
-                                  </div>
-
-                                  <InternalPresentationPreview
-                                    preview={presentationDraftResult.result.presentationPreview}
-                                    returnTo={presentationDraftReturnUrl}
-                                    anchorCards={!propertyMatchResult}
-                                    highlightedMatchId={highlightedMatchId}
-                                  />
-
+                                <LeadIntelligencePresentationDraftResultPanel
+                                  draft={presentationDraftResult.result}
+                                  returnTo={presentationDraftReturnUrl}
+                                  anchorCards={!propertyMatchResult}
+                                  highlightedMatchId={highlightedMatchId}
+                                  statusMode="full"
+                                  className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"
+                                >
                                   <LeadIntelligenceEditableEmailDraftPanel
                                     title="Rediger e-postutkast lokalt"
                                     description="Endringene lagres ikke i databasen. Kopier tekst bruker teksten du redigerer her."
@@ -2161,7 +2116,7 @@ export function LeadIntelligenceClient({
                                       resetDraftCopyState();
                                     }}
                                   />
-                                </div>
+                                </LeadIntelligencePresentationDraftResultPanel>
                               )}
 
                               {presentationDraftError && (
