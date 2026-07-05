@@ -300,6 +300,14 @@ export function LeadIntelligenceClient({
     clearShortlistAndPresentationState();
   };
 
+  const updateMatchReviewDecision = (propertyId: string, decision: MatchReviewDecision) => {
+    setMatchReviewDecisions((current) => ({
+      ...current,
+      [propertyId]: decision,
+    }));
+    clearShortlistAndPresentationState();
+  };
+
   const clearPresentationDraftState = () => {
     setPresentationDraftError(null);
     setPresentationDraftResult(null);
@@ -1624,13 +1632,7 @@ export function LeadIntelligenceClient({
                                         idPrefix="active-match-review"
                                         propertyId={match.propertyId}
                                         value={reviewDecision}
-                                        onChange={(decision) => {
-                                          setMatchReviewDecisions((current) => ({
-                                            ...current,
-                                            [match.propertyId]: decision,
-                                          }));
-                                          clearShortlistAndPresentationState();
-                                        }}
+                                        onChange={(decision) => updateMatchReviewDecision(match.propertyId, decision)}
                                       />
                                     </div>
                                     <PropertyQualityReviewControls
@@ -2072,13 +2074,7 @@ export function LeadIntelligenceClient({
                                     idPrefix="match-review"
                                     propertyId={match.propertyId}
                                     value={reviewDecision}
-                                    onChange={(decision) => {
-                                      setMatchReviewDecisions((current) => ({
-                                        ...current,
-                                        [match.propertyId]: decision,
-                                      }));
-                                      clearShortlistAndPresentationState();
-                                    }}
+                                    onChange={(decision) => updateMatchReviewDecision(match.propertyId, decision)}
                                   />
                                 {manualDecisionOverridesRejected && (
                                   <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
