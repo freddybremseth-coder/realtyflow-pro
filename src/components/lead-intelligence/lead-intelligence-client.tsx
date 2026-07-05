@@ -88,6 +88,7 @@ import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
 import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
 import { LeadIntelligenceMatchReviewSelect } from "@/components/lead-intelligence/lead-intelligence-match-review-select";
+import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1584,12 +1585,12 @@ export function LeadIntelligenceClient({
                               ]}
                             />
 
-                            {propertyMatchResult.result.bestEffort && (
-                              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                                Ingen eiendommer traff alle kravene. Systemet viser de nærmeste alternativene med
-                                synlige avvik.
-                              </p>
-                            )}
+                            <LeadIntelligencePropertyMatchAlerts
+                              variant="active-profile"
+                              bestEffort={propertyMatchResult.result.bestEffort}
+                              matched={propertyMatchResult.result.matched}
+                              matchCount={propertyMatchResult.result.matches.length}
+                            />
 
                             <div className="max-h-[34rem] space-y-3 overflow-auto pr-1">
                               {propertyMatchResult.result.matches.map((match) => {
@@ -1993,28 +1994,12 @@ export function LeadIntelligenceClient({
                           ]}
                         />
 
-                        {propertyMatchResult.result.bestEffort && (
-                          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                            Ingen eiendommer traff alle kravene. Systemet viser derfor de nærmeste alternativene
-                            fra eksisterende eiendommer, med avvik og risiko synlig.
-                          </p>
-                        )}
-
-                        {!propertyMatchResult.result.bestEffort &&
-                          propertyMatchResult.result.matched === 0 &&
-                          propertyMatchResult.result.matches.length > 0 && (
-                          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                            Ingen av de valgte eiendommene er aktuelle uten manuell vurdering. Avviste eller usikre
-                            treff vises under med forklaring.
-                          </p>
-                        )}
-
-                        {propertyMatchResult.result.matches.length > 0 && (
-                          <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-400">
-                            Systemstatusen viser regelmotorens vurdering. Bruk manuell vurdering for å merke boliger
-                            som Freddy vil ta videre, men dette er bare lokalt i previewen og lagres ikke som shortlist.
-                          </p>
-                        )}
+                        <LeadIntelligencePropertyMatchAlerts
+                          variant="analysis-preview"
+                          bestEffort={propertyMatchResult.result.bestEffort}
+                          matched={propertyMatchResult.result.matched}
+                          matchCount={propertyMatchResult.result.matches.length}
+                        />
 
                         <div className="space-y-3">
                           {propertyMatchResult.result.matches.map((match) => {
