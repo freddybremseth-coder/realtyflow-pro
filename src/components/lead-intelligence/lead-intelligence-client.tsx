@@ -68,6 +68,7 @@ import {
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 import { LeadIntelligenceShortlistDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-draft-panel";
+import { LeadIntelligenceShortlistSaveNotice } from "@/components/lead-intelligence/lead-intelligence-shortlist-save-notice";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
   LeadIntelligenceCriteriaReviewPanel,
@@ -1674,18 +1675,11 @@ export function LeadIntelligenceClient({
                               onSave={saveShortlistDraft}
                             >
                               {shortlistSaveResult && (
-                                <div className="mt-3 space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                                  <div>
-                                    <p className="font-semibold">
-                                      Shortlist {shortlistSaveResult.result.shortlistId} lagret med
-                                      {" "}{shortlistSaveResult.result.itemCount} bolig(er).
-                                    </p>
-                                    <p className="mt-1 text-xs text-emerald-100/70">
-                                      E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                                      Presentasjon opprettet: nei · Property matching-jobb startet: nei
-                                    </p>
-                                  </div>
-
+                                <LeadIntelligenceShortlistSaveNotice
+                                  result={shortlistSaveResult.result}
+                                  summary="saved-count"
+                                  className="space-y-3"
+                                >
                                   <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
                                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                       <div>
@@ -1804,7 +1798,7 @@ export function LeadIntelligenceClient({
                                       <LeadIntelligenceErrorAlert error={presentationDraftError} className="mt-3" />
                                     )}
                                   </div>
-                                </div>
+                                </LeadIntelligenceShortlistSaveNotice>
                               )}
 
                               {shortlistSaveError && (
@@ -2210,20 +2204,10 @@ export function LeadIntelligenceClient({
                           onSave={saveShortlistDraft}
                         >
                           {shortlistSaveResult && (
-                            <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
-                              <p className="font-semibold">
-                                {shortlistSaveResult.result.duplicate
-                                  ? "Identisk shortlist-utkast var allerede lagret."
-                                  : "Shortlist-utkast lagret uten eksterne sideeffekter."}
-                              </p>
-                              <p className="mt-1 text-emerald-100/80">
-                                Shortlist {shortlistSaveResult.result.shortlistId} · Boliger {shortlistSaveResult.result.itemCount}
-                              </p>
-                              <p className="mt-1 text-xs text-emerald-100/70">
-                                E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                                Presentasjon opprettet: nei · Property matching-jobb startet: nei
-                              </p>
-                            </div>
+                            <LeadIntelligenceShortlistSaveNotice
+                              result={shortlistSaveResult.result}
+                              summary="duplicate-aware"
+                            />
                           )}
 
                           {shortlistPresentation && shortlistEmailDraft && (

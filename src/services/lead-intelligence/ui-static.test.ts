@@ -51,6 +51,10 @@ const shortlistDraftPanelPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-shortlist-draft-panel.tsx",
 );
+const shortlistSaveNoticePath = path.join(
+  process.cwd(),
+  "src/components/lead-intelligence/lead-intelligence-shortlist-save-notice.tsx",
+);
 const worklistHistoryPath = path.join(
   process.cwd(),
   "src/components/lead-intelligence/lead-intelligence-worklist-history-panel.tsx",
@@ -88,6 +92,7 @@ async function readLeadIntelligenceUiSource() {
     loadedPresentationDraft,
     activeProfileMatchControls,
     shortlistDraftPanel,
+    shortlistSaveNotice,
     worklistHistory,
     presentationPreview,
     propertyMatchDisplay,
@@ -106,13 +111,14 @@ async function readLeadIntelligenceUiSource() {
     readFile(loadedPresentationDraftPath, "utf8"),
     readFile(activeProfileMatchControlsPath, "utf8"),
     readFile(shortlistDraftPanelPath, "utf8"),
+    readFile(shortlistSaveNoticePath, "utf8"),
     readFile(worklistHistoryPath, "utf8"),
     readFile(presentationPreviewPath, "utf8"),
     readFile(propertyMatchDisplayPath, "utf8"),
     readFile(shortlistPresentationDraftsPath, "utf8"),
     readFile(propertyQualityReviewPath, "utf8"),
   ]);
-  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${activeProfileMatchControls}\n${shortlistDraftPanel}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
+  return `${client}\n${clientHelpers}\n${requestCard}\n${analysisOverview}\n${criteriaReview}\n${contactCandidates}\n${reviewSave}\n${savedProfileContact}\n${presentationHistory}\n${loadedPresentationDraft}\n${activeProfileMatchControls}\n${shortlistDraftPanel}\n${shortlistSaveNotice}\n${worklistHistory}\n${presentationPreview}\n${propertyMatchDisplay}\n${shortlistPresentationDrafts}\n${propertyQualityReview}`;
 }
 
 test("Lead Intelligence preview exposes only local review actions", async () => {
@@ -273,7 +279,7 @@ test("Lead Intelligence worklist auto-loads and can activate a saved buyer profi
   assert.equal(source.includes("Ingen match-preview kjørt for denne lagrede profilen ennå."), false);
   assert.equal(source.includes('propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"'), true);
   assert.equal(source.includes("Tomt felt bruker automatisk søk i eksisterende eiendommer."), true);
-  assert.equal(source.includes("Shortlist {shortlistSaveResult.result.shortlistId}"), true);
+  assert.equal(source.includes("Shortlist {result.shortlistId}"), true);
   assert.equal(source.includes("Neste steg: presentasjons- og e-postutkast"), true);
   assert.equal(source.includes("Lager et internt draft fra lagret shortlist."), true);
   assert.equal(source.includes("createdContact: false"), true);
