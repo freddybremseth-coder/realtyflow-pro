@@ -270,7 +270,7 @@ export default async function DataHealthPage() {
             { label: "Siste måned", value: formatMoney(report.modules.familyResults.metrics.lastMonthTotal, familyCurrency) },
             { label: "Olivia net", value: formatMoney(report.modules.familyResults.metrics.oliviaNet, familyCurrency) },
             { label: "RealtyFlow net", value: formatMoney(report.modules.familyResults.metrics.realtyflowNet, familyCurrency) },
-            { label: "Mondeo rente", value: formatMoney(report.modules.familyResults.metrics.mondeoInterest, familyCurrency) },
+            { label: "Family Mondeo rente", value: formatMoney(report.modules.familyResults.metrics.mondeoInterest, familyCurrency) },
           ]}
         />
       </div>

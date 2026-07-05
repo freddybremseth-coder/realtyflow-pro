@@ -506,6 +506,11 @@ async function buildFamilySummary(
     if (summary.ignoredRowsWithoutMonth > 0) {
       warnings.push(`Ignorerer ${summary.ignoredRowsWithoutMonth} Family-rad(er) uten gyldig måned.`);
     }
+    if (summary.metrics.mondeoInterest !== 0) {
+      warnings.push(
+        "Mondeo rente her er Family-resultat, ikke registrert Mondeo-betaling eller KPI i RealtyFlow-ledger.",
+      );
+    }
     if (familyMonthly.rows.length === 0 && publicMonthly.error && isMissingError(publicMonthly.error)) {
       warnings.push(publicMonthly.error);
     }
