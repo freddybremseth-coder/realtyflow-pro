@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Clipboard,
   Loader2,
-  MessageSquareText,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -90,6 +89,7 @@ import { LeadIntelligenceMatchReviewSelect } from "@/components/lead-intelligenc
 import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
 import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
 import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-email-draft-panel";
+import { LeadIntelligenceShortlistPresentationPreviewPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-presentation-preview-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -2113,88 +2113,17 @@ export function LeadIntelligenceClient({
 
                           {shortlistPresentation && shortlistEmailDraft && (
                             <div className="mt-3 space-y-4 rounded-lg border border-primary-500/30 bg-slate-950/70 p-4">
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                  <p className="flex items-center gap-2 text-sm font-semibold text-primary-100">
-                                    <MessageSquareText className="h-4 w-4" />
-                                    Profesjonelt presentasjonsutkast
-                                  </p>
-                                  <p className="mt-1 text-xs text-primary-100/75">
-                                    {shortlistPresentation.title} · {shortlistPresentation.subtitle}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-400">
-                                    Dette er bare en preview basert på shortlist-utkastet. Ingen e-post er sendt,
-                                    og ingen presentasjon er lagret eller publisert.
-                                  </p>
-                                </div>
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={savePresentationDraft}
-                                    disabled={presentationDraftLoading}
-                                  >
-                                    {presentationDraftLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                    Lagre presentasjonsutkast
-                                  </Button>
-                                  <Button type="button" variant="outline" size="sm" onClick={copyPresentationDraft}>
-                                    <Clipboard className="mr-2 h-4 w-4" />
-                                    Kopier presentasjon
-                                  </Button>
-                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
-                                    <Clipboard className="mr-2 h-4 w-4" />
-                                    Kopier e-postutkast
-                                  </Button>
-                                </div>
-                              </div>
-
-                              <div className="grid gap-3 lg:grid-cols-3">
-                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Kundens behov
-                                  </p>
-                                  <ul className="mt-3 space-y-2 text-sm text-slate-200">
-                                    {shortlistPresentation.needBullets.map((item) => (
-                                      <li key={item} className="flex gap-2">
-                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                                        <span>{item}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-
-                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Før videre deling må dette avklares
-                                  </p>
-                                  <ul className="mt-3 space-y-2 text-sm text-slate-200">
-                                    {shortlistPresentation.verificationBullets.slice(0, 5).map((item) => (
-                                      <li key={item} className="flex gap-2">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                                        <span>{item}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-
-                                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Sikkerhetsstatus
-                                  </p>
-                                  <div className="mt-3 space-y-2 text-sm text-slate-200">
-                                    <p>E-post sendt: nei</p>
-                                    <p>Leads opprettet: nei</p>
-                                    <p>Kontakter opprettet: nei</p>
-                                    <p>Presentasjon publisert: nei</p>
-                                  </div>
-                                  {presentationCopyState === "copied" && (
-                                    <p className="mt-3 text-xs text-emerald-300">Presentasjonstekst kopiert.</p>
-                                  )}
-                                  {presentationCopyState === "failed" && (
-                                    <p className="mt-3 text-xs text-red-300">Kunne ikke kopiere presentasjonen.</p>
-                                  )}
-                                </div>
-                              </div>
+                              <LeadIntelligenceShortlistPresentationPreviewPanel
+                                title={shortlistPresentation.title}
+                                subtitle={shortlistPresentation.subtitle}
+                                needBullets={shortlistPresentation.needBullets}
+                                verificationBullets={shortlistPresentation.verificationBullets}
+                                copyState={presentationCopyState}
+                                loading={presentationDraftLoading}
+                                onSave={savePresentationDraft}
+                                onCopyPresentation={copyPresentationDraft}
+                                onCopyEmailDraft={copyEmailDraftText}
+                              />
 
                               {presentationDraftResult && (
                                 <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
