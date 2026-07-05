@@ -70,9 +70,8 @@ import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intellige
 import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
 import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-email-draft-panel";
 import { LeadIntelligenceShortlistPresentationPreviewPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-presentation-preview-panel";
-import { LeadIntelligenceEditableEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-editable-email-draft-panel";
 import { LeadIntelligenceShortlistPropertyCards } from "@/components/lead-intelligence/lead-intelligence-shortlist-property-cards";
-import { LeadIntelligencePresentationDraftResultPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-result-panel";
+import { LeadIntelligencePresentationDraftEmailPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-email-panel";
 import { LeadIntelligenceActiveProfileMatchList } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-list";
 import { LeadIntelligenceAnalysisMatchList } from "@/components/lead-intelligence/lead-intelligence-analysis-match-list";
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
@@ -1627,48 +1626,27 @@ export function LeadIntelligenceClient({
                                     </div>
 
                                     {presentationDraftResult && (
-                                      <LeadIntelligencePresentationDraftResultPanel
+                                      <LeadIntelligencePresentationDraftEmailPanel
+                                        variant="active-profile"
                                         draft={presentationDraftResult.result}
                                         returnTo={presentationDraftReturnUrl}
                                         anchorCards={!propertyMatchResult}
                                         highlightedMatchId={highlightedMatchId}
-                                        statusMode="compact"
-                                        className="mt-3 rounded-lg border border-emerald-400/20 bg-slate-950/80 p-3"
-                                        showCopyActions
+                                        editableEmailSubject={editableEmailSubject}
+                                        editableEmailBody={editableEmailBody}
+                                        emailDraftCopyState={emailDraftCopyState}
+                                        emailDraftHtmlCopyState={emailDraftHtmlCopyState}
                                         onCopyEmailText={copyEmailDraftText}
                                         onCopyEmailHtml={copyEmailDraftHtml}
-                                      >
-                                        <LeadIntelligenceEditableEmailDraftPanel
-                                          title="Rediger e-postutkast lokalt"
-                                          description="Endringene lagres ikke i databasen. Kopier e-posttekst bruker teksten under."
-                                          subjectInputId="active-profile-email-subject"
-                                          bodyInputId="active-profile-email-body"
-                                          subject={editableEmailSubject}
-                                          body={editableEmailBody}
-                                          rows={12}
-                                          copyTextLabel="Kopier e-posttekst"
-                                          textCopyState={emailDraftCopyState}
-                                          htmlCopyState={emailDraftHtmlCopyState}
-                                          textCopiedMessage="E-posttekst kopiert."
-                                          textFailedMessage="Kunne ikke kopiere e-posttekst."
-                                          htmlCopiedMessage="HTML-utkast kopiert."
-                                          htmlFailedMessage="Kunne ikke kopiere HTML-utkast."
-                                          bodyHtml={presentationDraftResult.result.messageDraft.bodyHtml}
-                                          showActions={false}
-                                          showHtmlPreview={false}
-                                          className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3"
-                                          onCopyText={copyEmailDraftText}
-                                          onCopyHtml={copyEmailDraftHtml}
-                                          onSubjectChange={(value) => {
-                                            setEditableEmailSubject(value);
-                                            resetDraftCopyState();
-                                          }}
-                                          onBodyChange={(value) => {
-                                            setEditableEmailBody(value);
-                                            resetDraftCopyState();
-                                          }}
-                                        />
-                                      </LeadIntelligencePresentationDraftResultPanel>
+                                        onEmailSubjectChange={(value) => {
+                                          setEditableEmailSubject(value);
+                                          resetDraftCopyState();
+                                        }}
+                                        onEmailBodyChange={(value) => {
+                                          setEditableEmailBody(value);
+                                          resetDraftCopyState();
+                                        }}
+                                      />
                                     )}
 
                                     {presentationDraftError && (
@@ -1936,42 +1914,27 @@ export function LeadIntelligenceClient({
                               />
 
                               {presentationDraftResult && (
-                                <LeadIntelligencePresentationDraftResultPanel
+                                <LeadIntelligencePresentationDraftEmailPanel
+                                  variant="analysis-preview"
                                   draft={presentationDraftResult.result}
                                   returnTo={presentationDraftReturnUrl}
                                   anchorCards={!propertyMatchResult}
                                   highlightedMatchId={highlightedMatchId}
-                                  statusMode="full"
-                                  className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-100"
-                                >
-                                  <LeadIntelligenceEditableEmailDraftPanel
-                                    title="Rediger e-postutkast lokalt"
-                                    description="Endringene lagres ikke i databasen. Kopier tekst bruker teksten du redigerer her."
-                                    subjectInputId="lead-intelligence-email-subject"
-                                    bodyInputId="lead-intelligence-email-body"
-                                    subject={editableEmailSubject}
-                                    body={editableEmailBody}
-                                    rows={14}
-                                    copyTextLabel="Kopier tekst"
-                                    textCopyState={emailDraftCopyState}
-                                    htmlCopyState={emailDraftHtmlCopyState}
-                                    textCopiedMessage="Lagret e-posttekst kopiert."
-                                    textFailedMessage="Kunne ikke kopiere lagret e-posttekst."
-                                    htmlCopiedMessage="Lagret HTML-utkast kopiert."
-                                    htmlFailedMessage="Kunne ikke kopiere lagret HTML-utkast."
-                                    bodyHtml={presentationDraftResult.result.messageDraft.bodyHtml}
-                                    onCopyText={copyEmailDraftText}
-                                    onCopyHtml={copyEmailDraftHtml}
-                                    onSubjectChange={(value) => {
-                                      setEditableEmailSubject(value);
-                                      resetDraftCopyState();
-                                    }}
-                                    onBodyChange={(value) => {
-                                      setEditableEmailBody(value);
-                                      resetDraftCopyState();
-                                    }}
-                                  />
-                                </LeadIntelligencePresentationDraftResultPanel>
+                                  editableEmailSubject={editableEmailSubject}
+                                  editableEmailBody={editableEmailBody}
+                                  emailDraftCopyState={emailDraftCopyState}
+                                  emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+                                  onCopyEmailText={copyEmailDraftText}
+                                  onCopyEmailHtml={copyEmailDraftHtml}
+                                  onEmailSubjectChange={(value) => {
+                                    setEditableEmailSubject(value);
+                                    resetDraftCopyState();
+                                  }}
+                                  onEmailBodyChange={(value) => {
+                                    setEditableEmailBody(value);
+                                    resetDraftCopyState();
+                                  }}
+                                />
                               )}
 
                               {presentationDraftError && (
