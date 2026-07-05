@@ -89,6 +89,7 @@ import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intellig
 import { LeadIntelligenceMatchReviewSelect } from "@/components/lead-intelligence/lead-intelligence-match-review-select";
 import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
 import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
+import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-email-draft-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -2390,27 +2391,12 @@ export function LeadIntelligenceClient({
                                 </div>
                               </div>
 
-                              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                  <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      E-postutkast
-                                    </p>
-                                    <p className="mt-3 text-sm font-semibold text-slate-100">{shortlistEmailDraft.subject}</p>
-                                  </div>
-                                  <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
-                                    <Clipboard className="mr-2 h-4 w-4" />
-                                    Kopier e-postutkast
-                                  </Button>
-                                </div>
-                                <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950/80 p-3 text-xs text-slate-200">{shortlistEmailDraft.body}</pre>
-                                {emailDraftCopyState === "copied" && (
-                                  <p className="mt-2 text-xs text-emerald-300">E-postutkast kopiert.</p>
-                                )}
-                                {emailDraftCopyState === "failed" && (
-                                  <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-postutkastet.</p>
-                                )}
-                              </div>
+                              <LeadIntelligenceShortlistEmailDraftPanel
+                                subject={shortlistEmailDraft.subject}
+                                body={shortlistEmailDraft.body}
+                                copyState={emailDraftCopyState}
+                                onCopy={copyEmailDraftText}
+                              />
                             </div>
                           )}
 
