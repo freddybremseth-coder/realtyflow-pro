@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { summarizeMondeoLedgerEvents } from "@/lib/mondeo";
+import { calculateMondeoMinimumPaymentStatus, summarizeMondeoLedgerEvents } from "@/lib/mondeo";
 
 test("Mondeo ledger summary only counts explicit RealtyFlow payment and KPI streams", () => {
   const summary = summarizeMondeoLedgerEvents([
@@ -66,4 +66,31 @@ test("Mondeo ledger summary only counts explicit RealtyFlow payment and KPI stre
   assert.equal(summary.totalPaid, 33_000);
   assert.equal(summary.totalKpiAdjustment, 12_000);
   assert.equal(summary.totalReceivedAndKpi, 45_000);
+});
+
+test("Mondeo minimum payment gap uses actual registered payments, not contract-model payments", () => {
+  const asOf = new Date(Date.UTC(2026, 6, 5));
+
+  assert.deepEqual(calculateMondeoMinimumPaymentStatus({ asOf, payments: [] }), {
+    monthsDue: 2,
+    totalMinimumDue: 66_000,
+    totalPaid: 0,
+    gapToMinimum: 66_000,
+  });
+
+  assert.deepEqual(
+    calculateMondeoMinimumPaymentStatus({
+      asOf,
+      payments: [
+        { date: "2026-06-01", amount: 33_000, source: "business_financial_events" },
+        { date: "2026-08-01", amount: 33_000, source: "business_financial_events" },
+      ],
+    }),
+    {
+      monthsDue: 2,
+      totalMinimumDue: 66_000,
+      totalPaid: 33_000,
+      gapToMinimum: 33_000,
+    },
+  );
 });

@@ -17,6 +17,7 @@ import {
   MONDEO_CONTRACT,
   buildForwardPaymentPlan,
   buildMinimumPaymentsThrough,
+  calculateMondeoMinimumPaymentStatus,
   calculateMondeoSnapshot,
   formatDate,
   formatNok,
@@ -99,6 +100,9 @@ export default async function MondeoPage() {
   if (ledger.events.length > 0 && payments.length === 0 && kpiAdjustments.length === 0) {
     warnings.push("Fant Mondeo-rader i RealtyFlow-ledgeren, men ingen med stream=mondeo_payment eller stream=kpi_adjustment.");
   }
+  if (payments.length === 0 && kpiAdjustments.length === 0) {
+    warnings.push("Ingen faktiske Mondeo-betalinger eller KPI-justeringer er registrert i RealtyFlow-ledger. Mottatt/KPI vises derfor som 0 kr; restgjeld og terminplan vises som kontraktsmodell.");
+  }
 
   const scheduledSnapshot = calculateMondeoSnapshot({
     asOf,
@@ -110,8 +114,9 @@ export default async function MondeoPage() {
   const activeSnapshot = actualSnapshot || scheduledSnapshot;
   const forwardPlan = buildForwardPaymentPlan(activeSnapshot.balance, new Date(activeSnapshot.nextDueDate), 12);
   const recentPayments = payments.slice(-8).reverse();
-  const gapToMinimum = Math.max(0, activeSnapshot.totalMinimumDue - activeSnapshot.totalPaid);
+  const minimumPaymentStatus = calculateMondeoMinimumPaymentStatus({ asOf, payments });
   const monthlyInterestGap = activeSnapshot.currentMonthlyInterest - MONDEO_CONTRACT.monthlyMinimumNok;
+  const totalReceivedAndKpi = ledgerSummary.totalReceivedAndKpi;
 
   return (
     <div className="space-y-6">
@@ -176,8 +181,18 @@ export default async function MondeoPage() {
         <MetricCard label={actualSnapshot ? "Restgjeld faktisk" : "Restgjeld modell"} value={formatNok(activeSnapshot.balance)} sub={actualSnapshot ? "Fra ledger" : "Forutsatt min. betaling"} tone={activeSnapshot.needsSecurityFollowUp ? "red" : "white"} />
         <MetricCard label="Termin minimum" value={formatNok(MONDEO_CONTRACT.monthlyMinimumNok)} sub="Forfall hver 1. måned" tone="green" />
         <MetricCard label="Rente" value={formatPercent(MONDEO_CONTRACT.annualInterestRate)} sub={`${formatNok(activeSnapshot.currentMonthlyInterest)} / mnd nå`} tone="amber" />
-        <MetricCard label="Betalt i RealtyFlow" value={formatNok(activeSnapshot.totalPaid)} sub={`${payments.length} registrerte betalinger`} tone={payments.length ? "green" : "amber"} />
-        <MetricCard label="Avvik mot minimum" value={formatNok(gapToMinimum)} sub={`${activeSnapshot.monthsDue} terminer forfalt`} tone={gapToMinimum > 0 ? "red" : "green"} />
+        <MetricCard
+          label="Mottatt / KPI i RealtyFlow"
+          value={formatNok(totalReceivedAndKpi)}
+          sub={`${payments.length} betalinger · ${kpiAdjustments.length} KPI`}
+          tone={totalReceivedAndKpi > 0 ? "green" : "amber"}
+        />
+        <MetricCard
+          label="Avvik mot minimum"
+          value={formatNok(minimumPaymentStatus.gapToMinimum)}
+          sub={`${minimumPaymentStatus.monthsDue} terminer forfalt · ${formatNok(minimumPaymentStatus.totalPaid)} betalt`}
+          tone={minimumPaymentStatus.gapToMinimum > 0 ? "red" : "green"}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -205,7 +220,9 @@ export default async function MondeoPage() {
               <div className="rounded-lg bg-slate-800/40 p-3">
                 <p className="text-[10px] uppercase text-slate-500">Kapitalisert rente</p>
                 <p className="mt-1 text-lg font-semibold text-amber-400">{formatNok(activeSnapshot.totalCapitalizedInterest)}</p>
-                <p className="mt-1 text-xs text-slate-400">Basert på registrerte/forutsatte betalinger.</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {actualSnapshot ? "Basert på registrerte ledgerbetalinger." : "Basert på kontraktsmodellen."}
+                </p>
               </div>
             </div>
 

@@ -177,6 +177,30 @@ export function buildMinimumPaymentsThrough(asOf = new Date()): MondeoPaymentRec
   }));
 }
 
+export function calculateMondeoMinimumPaymentStatus(options?: {
+  asOf?: Date;
+  payments?: MondeoPaymentRecord[];
+}) {
+  const asOf = options?.asOf || new Date();
+  const monthsDue = getDueMonthsThrough(asOf).length;
+  const totalMinimumDue = monthsDue * MONDEO_CONTRACT.monthlyMinimumNok;
+  const totalPaid = (options?.payments || []).reduce((sum, payment) => {
+    if (payment.date) {
+      const paymentDate = parseIsoDate(payment.date);
+      if (Number.isFinite(paymentDate.getTime()) && paymentDate > asOf) return sum;
+    }
+    const amount = Number(payment.amount || 0);
+    return Number.isFinite(amount) ? sum + amount : sum;
+  }, 0);
+
+  return {
+    monthsDue,
+    totalMinimumDue,
+    totalPaid,
+    gapToMinimum: Math.max(0, totalMinimumDue - totalPaid),
+  };
+}
+
 function normalizeLedgerText(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
