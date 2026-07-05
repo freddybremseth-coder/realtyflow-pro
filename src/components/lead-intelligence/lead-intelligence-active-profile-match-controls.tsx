@@ -6,6 +6,7 @@ import { FieldLabel } from "@/components/lead-intelligence/lead-intelligence-cli
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 
 type PropertyMatchPreviewMode = "auto" | "explicit";
+type MatchControlButtonVariant = "default" | "outline";
 
 interface SafePanelError {
   correlationId: string;
@@ -25,6 +26,13 @@ interface LeadIntelligenceActiveProfileMatchControlsProps {
   propertyMatchLoading: boolean;
   propertyMatchingEnabled: boolean;
   propertyMatchError: SafePanelError | null;
+  className?: string;
+  fieldLabel?: string;
+  helpText?: string;
+  rows?: number;
+  autoButtonVariant?: MatchControlButtonVariant;
+  errorClassName?: string;
+  errorDetailsClassName?: string;
   onPropertyReferencesChange: (value: string) => void;
   onPreviewPropertyMatches: (mode: PropertyMatchPreviewMode) => void;
 }
@@ -35,32 +43,38 @@ export function LeadIntelligenceActiveProfileMatchControls({
   propertyMatchLoading,
   propertyMatchingEnabled,
   propertyMatchError,
+  className = "",
+  fieldLabel = "Eiendomsreferanser, valgfritt",
+  helpText = "Tomt felt bruker automatisk søk i eksisterende eiendommer.",
+  rows = 3,
+  autoButtonVariant = "default",
+  errorClassName,
+  errorDetailsClassName = "max-h-40 bg-red-950/50 text-red-50",
   onPropertyReferencesChange,
   onPreviewPropertyMatches,
 }: LeadIntelligenceActiveProfileMatchControlsProps) {
   return (
-    <>
+    <div className={`space-y-3 ${className}`}>
       <div className="space-y-2">
-        <FieldLabel>Eiendomsreferanser, valgfritt</FieldLabel>
+        <FieldLabel>{fieldLabel}</FieldLabel>
         <textarea
           value={propertyReferencesText}
           onChange={(event) => onPropertyReferencesChange(event.target.value)}
-          rows={3}
+          rows={rows}
           placeholder="F.eks. N8513, N8514 eller én database-UUID per linje..."
           className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
         />
         {parsedPropertyReferences.error ? (
           <p className="text-sm text-amber-300">{parsedPropertyReferences.error}</p>
         ) : (
-          <p className="text-xs text-slate-500">
-            Tomt felt bruker automatisk søk i eksisterende eiendommer.
-          </p>
+          <p className="text-xs text-slate-500">{helpText}</p>
         )}
       </div>
 
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
+          variant={autoButtonVariant}
           onClick={() => onPreviewPropertyMatches("auto")}
           disabled={propertyMatchLoading || !propertyMatchingEnabled}
         >
@@ -88,8 +102,12 @@ export function LeadIntelligenceActiveProfileMatchControls({
       </div>
 
       {propertyMatchError && (
-        <LeadIntelligenceErrorAlert error={propertyMatchError} detailsClassName="max-h-40 bg-red-950/50 text-red-50" />
+        <LeadIntelligenceErrorAlert
+          error={propertyMatchError}
+          className={errorClassName}
+          detailsClassName={errorDetailsClassName}
+        />
       )}
-    </>
+    </div>
   );
 }

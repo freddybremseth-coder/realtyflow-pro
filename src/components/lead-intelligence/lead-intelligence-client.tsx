@@ -9,7 +9,6 @@ import {
   MessageSquareText,
   RefreshCw,
   Save,
-  Search,
   ShieldCheck,
   Sparkles,
   Users,
@@ -19,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
-  FieldLabel,
   JsonSection,
   TextInput,
   flattenReviewCriteria,
@@ -1968,61 +1966,24 @@ export function LeadIntelligenceClient({
                       </div>
                     )}
 
-                    <div className="mt-4 space-y-2">
-                      <FieldLabel>Eiendomsreferanser</FieldLabel>
-                      <textarea
-                        value={propertyReferencesText}
-                        onChange={(event) => {
-                          setPropertyReferencesText(event.target.value);
-                          clearPropertyMatchPreview();
-                        }}
-                        rows={4}
-                        placeholder="F.eks. N8513, N8514 eller én database-UUID per linje..."
-                        className="w-full resize-y rounded-lg border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
-                      />
-                      <p className="text-xs text-slate-500">
-                        Valgfritt. Maks 20 eksplisitte eiendomsreferanser hvis du vil teste bestemte boliger.
-                      </p>
-                    </div>
-
-                    {parsedPropertyReferences.error && (
-                      <p className="mt-2 text-sm text-amber-300">{parsedPropertyReferences.error}</p>
-                    )}
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => previewPropertyMatches("auto")}
-                        disabled={
-                          propertyMatchLoading ||
-                          !propertyMatchingEnabled ||
-                          !saveResult
-                        }
-                      >
-                        {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                        Finn aktuelle eiendommer automatisk
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => previewPropertyMatches("explicit")}
-                        disabled={
-                          propertyMatchLoading ||
-                          !propertyMatchingEnabled ||
-                          !saveResult ||
-                          parsedPropertyReferences.references.length === 0 ||
-                          Boolean(parsedPropertyReferences.error)
-                        }
-                      >
-                        {propertyMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                        Forhåndsvis valgte eiendommer
-                      </Button>
-                    </div>
-
-                    {propertyMatchError && (
-                      <LeadIntelligenceErrorAlert error={propertyMatchError} className="mt-3" />
-                    )}
+                    <LeadIntelligenceActiveProfileMatchControls
+                      className="mt-4"
+                      fieldLabel="Eiendomsreferanser"
+                      helpText="Valgfritt. Maks 20 eksplisitte eiendomsreferanser hvis du vil teste bestemte boliger."
+                      rows={4}
+                      autoButtonVariant="outline"
+                      errorDetailsClassName="max-h-48 bg-red-950/50 text-red-50"
+                      propertyReferencesText={propertyReferencesText}
+                      parsedPropertyReferences={parsedPropertyReferences}
+                      propertyMatchLoading={propertyMatchLoading}
+                      propertyMatchingEnabled={propertyMatchingEnabled}
+                      propertyMatchError={propertyMatchError}
+                      onPropertyReferencesChange={(value) => {
+                        setPropertyReferencesText(value);
+                        clearPropertyMatchPreview();
+                      }}
+                      onPreviewPropertyMatches={previewPropertyMatches}
+                    />
 
                     {propertyMatchResult && (
                       <div className="mt-4 space-y-3">
