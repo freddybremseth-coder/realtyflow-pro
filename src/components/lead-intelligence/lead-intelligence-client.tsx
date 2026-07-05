@@ -90,6 +90,7 @@ import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intellige
 import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
 import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-email-draft-panel";
 import { LeadIntelligenceShortlistPresentationPreviewPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-presentation-preview-panel";
+import { LeadIntelligenceEditableEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-editable-email-draft-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1727,56 +1728,36 @@ export function LeadIntelligenceClient({
                                           highlightedMatchId={highlightedMatchId}
                                         />
 
-                                        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3">
-                                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
-                                            Rediger e-postutkast lokalt
-                                          </p>
-                                          <p className="mt-1 text-xs text-emerald-100/70">
-                                            Endringene lagres ikke i databasen. Kopier e-posttekst bruker teksten under.
-                                          </p>
-                                          <div className="mt-3 space-y-3">
-                                            <label className="block text-xs font-semibold text-slate-300" htmlFor="active-profile-email-subject">
-                                              Emne
-                                            </label>
-                                            <input
-                                              id="active-profile-email-subject"
-                                              value={editableEmailSubject}
-                                              onChange={(event) => {
-                                                setEditableEmailSubject(event.target.value);
-                                                resetDraftCopyState();
-                                              }}
-                                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
-                                            />
-                                            <label className="block text-xs font-semibold text-slate-300" htmlFor="active-profile-email-body">
-                                              E-posttekst
-                                            </label>
-                                            <textarea
-                                              id="active-profile-email-body"
-                                              value={editableEmailBody}
-                                              onChange={(event) => {
-                                                setEditableEmailBody(event.target.value);
-                                                resetDraftCopyState();
-                                              }}
-                                              rows={12}
-                                              className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
-                                            />
-                                          </div>
-                                          <p className="mt-2 text-xs text-emerald-100/70">
-                                            Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
-                                          </p>
-                                          {emailDraftCopyState === "copied" && (
-                                            <p className="mt-2 text-xs text-emerald-300">E-posttekst kopiert.</p>
-                                          )}
-                                          {emailDraftCopyState === "failed" && (
-                                            <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere e-posttekst.</p>
-                                          )}
-                                          {emailDraftHtmlCopyState === "copied" && (
-                                            <p className="mt-2 text-xs text-emerald-300">HTML-utkast kopiert.</p>
-                                          )}
-                                          {emailDraftHtmlCopyState === "failed" && (
-                                            <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere HTML-utkast.</p>
-                                          )}
-                                        </div>
+                                        <LeadIntelligenceEditableEmailDraftPanel
+                                          title="Rediger e-postutkast lokalt"
+                                          description="Endringene lagres ikke i databasen. Kopier e-posttekst bruker teksten under."
+                                          subjectInputId="active-profile-email-subject"
+                                          bodyInputId="active-profile-email-body"
+                                          subject={editableEmailSubject}
+                                          body={editableEmailBody}
+                                          rows={12}
+                                          copyTextLabel="Kopier e-posttekst"
+                                          textCopyState={emailDraftCopyState}
+                                          htmlCopyState={emailDraftHtmlCopyState}
+                                          textCopiedMessage="E-posttekst kopiert."
+                                          textFailedMessage="Kunne ikke kopiere e-posttekst."
+                                          htmlCopiedMessage="HTML-utkast kopiert."
+                                          htmlFailedMessage="Kunne ikke kopiere HTML-utkast."
+                                          bodyHtml={presentationDraftResult.result.messageDraft.bodyHtml}
+                                          showActions={false}
+                                          showHtmlPreview={false}
+                                          className="mt-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3"
+                                          onCopyText={copyEmailDraftText}
+                                          onCopyHtml={copyEmailDraftHtml}
+                                          onSubjectChange={(value) => {
+                                            setEditableEmailSubject(value);
+                                            resetDraftCopyState();
+                                          }}
+                                          onBodyChange={(value) => {
+                                            setEditableEmailBody(value);
+                                            resetDraftCopyState();
+                                          }}
+                                        />
                                       </div>
                                     )}
 
@@ -2152,82 +2133,33 @@ export function LeadIntelligenceClient({
                                     highlightedMatchId={highlightedMatchId}
                                   />
 
-                                  <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                      <div>
-                                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/70">
-                                          Rediger e-postutkast lokalt
-                                        </p>
-                                        <p className="mt-1 text-xs text-emerald-100/70">
-                                          Endringene lagres ikke i databasen. Kopier tekst bruker teksten du redigerer her.
-                                        </p>
-                                      </div>
-                                      <div className="flex flex-wrap gap-2">
-                                        <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftText}>
-                                          <Clipboard className="mr-2 h-4 w-4" />
-                                          Kopier tekst
-                                        </Button>
-                                        {presentationDraftResult.result.messageDraft.bodyHtml && (
-                                          <Button type="button" variant="outline" size="sm" onClick={copyEmailDraftHtml}>
-                                            <Clipboard className="mr-2 h-4 w-4" />
-                                            Kopier HTML
-                                          </Button>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="mt-3 space-y-3">
-                                      <label className="block text-xs font-semibold text-slate-300" htmlFor="lead-intelligence-email-subject">
-                                        Emne
-                                      </label>
-                                      <input
-                                        id="lead-intelligence-email-subject"
-                                        value={editableEmailSubject}
-                                        onChange={(event) => {
-                                          setEditableEmailSubject(event.target.value);
-                                          resetDraftCopyState();
-                                        }}
-                                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-500"
-                                      />
-                                      <label className="block text-xs font-semibold text-slate-300" htmlFor="lead-intelligence-email-body">
-                                        E-posttekst
-                                      </label>
-                                      <textarea
-                                        id="lead-intelligence-email-body"
-                                        value={editableEmailBody}
-                                        onChange={(event) => {
-                                          setEditableEmailBody(event.target.value);
-                                          resetDraftCopyState();
-                                        }}
-                                        rows={14}
-                                        className="w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 font-mono text-xs text-slate-100 outline-none focus:border-primary-500"
-                                      />
-                                    </div>
-                                    {presentationDraftResult.result.messageDraft.bodyHtml && (
-                                      <details className="mt-3 rounded border border-slate-800 bg-slate-950/60 p-3">
-                                        <summary className="cursor-pointer text-xs font-semibold text-emerald-100">
-                                          HTML-versjon
-                                        </summary>
-                                        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-slate-100">
-                                          {presentationDraftResult.result.messageDraft.bodyHtml}
-                                        </pre>
-                                      </details>
-                                    )}
-                                    <p className="mt-2 text-xs text-emerald-100/70">
-                                      Dette er kun et draft-preview. Det finnes ingen send-knapp i denne fasen.
-                                    </p>
-                                    {emailDraftCopyState === "copied" && (
-                                      <p className="mt-2 text-xs text-emerald-300">Lagret e-posttekst kopiert.</p>
-                                    )}
-                                    {emailDraftCopyState === "failed" && (
-                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret e-posttekst.</p>
-                                    )}
-                                    {emailDraftHtmlCopyState === "copied" && (
-                                      <p className="mt-2 text-xs text-emerald-300">Lagret HTML-utkast kopiert.</p>
-                                    )}
-                                    {emailDraftHtmlCopyState === "failed" && (
-                                      <p className="mt-2 text-xs text-red-300">Kunne ikke kopiere lagret HTML-utkast.</p>
-                                    )}
-                                  </div>
+                                  <LeadIntelligenceEditableEmailDraftPanel
+                                    title="Rediger e-postutkast lokalt"
+                                    description="Endringene lagres ikke i databasen. Kopier tekst bruker teksten du redigerer her."
+                                    subjectInputId="lead-intelligence-email-subject"
+                                    bodyInputId="lead-intelligence-email-body"
+                                    subject={editableEmailSubject}
+                                    body={editableEmailBody}
+                                    rows={14}
+                                    copyTextLabel="Kopier tekst"
+                                    textCopyState={emailDraftCopyState}
+                                    htmlCopyState={emailDraftHtmlCopyState}
+                                    textCopiedMessage="Lagret e-posttekst kopiert."
+                                    textFailedMessage="Kunne ikke kopiere lagret e-posttekst."
+                                    htmlCopiedMessage="Lagret HTML-utkast kopiert."
+                                    htmlFailedMessage="Kunne ikke kopiere lagret HTML-utkast."
+                                    bodyHtml={presentationDraftResult.result.messageDraft.bodyHtml}
+                                    onCopyText={copyEmailDraftText}
+                                    onCopyHtml={copyEmailDraftHtml}
+                                    onSubjectChange={(value) => {
+                                      setEditableEmailSubject(value);
+                                      resetDraftCopyState();
+                                    }}
+                                    onBodyChange={(value) => {
+                                      setEditableEmailBody(value);
+                                      resetDraftCopyState();
+                                    }}
+                                  />
                                 </div>
                               )}
 
