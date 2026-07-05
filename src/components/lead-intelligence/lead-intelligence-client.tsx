@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
-  JsonSection,
   TextInput,
   flattenReviewCriteria,
   generateClientCorrelationId,
@@ -89,6 +88,7 @@ import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-in
 import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
 import { LeadIntelligenceMatchReviewSelect } from "@/components/lead-intelligence/lead-intelligence-match-review-select";
 import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
+import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -2419,16 +2419,10 @@ export function LeadIntelligenceClient({
                           )}
                         </LeadIntelligenceShortlistDraftPanel>
 
-                        {(propertyMatchResult.result.missingPropertyReferences.length > 0 ||
-                          propertyMatchResult.result.skippedProperties.length > 0) && (
-                          <JsonSection
-                            title="Diagnostics"
-                            value={{
-                              missingPropertyReferences: propertyMatchResult.result.missingPropertyReferences,
-                              skippedProperties: propertyMatchResult.result.skippedProperties,
-                            }}
-                          />
-                        )}
+                        <LeadIntelligencePropertyMatchDiagnostics
+                          missingPropertyReferences={propertyMatchResult.result.missingPropertyReferences}
+                          skippedProperties={propertyMatchResult.result.skippedProperties}
+                        />
 
                         <p className="text-xs text-slate-500">
                           E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
