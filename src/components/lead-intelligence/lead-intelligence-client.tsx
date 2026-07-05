@@ -87,6 +87,7 @@ import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-inte
 import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel";
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
 import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
+import { LeadIntelligenceMatchReviewSelect } from "@/components/lead-intelligence/lead-intelligence-match-review-select";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1618,30 +1619,21 @@ export function LeadIntelligenceClient({
                                         <PropertyEligibilityBadge eligibility={match.eligibility} />
                                       </div>
                                     </div>
-                                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                      <label htmlFor={`active-match-review-${match.propertyId}`} className="text-xs font-semibold text-slate-300">
-                                        Manuell vurdering
-                                      </label>
-                                      <select
-                                        id={`active-match-review-${match.propertyId}`}
+                                    <div className="mt-3">
+                                      <LeadIntelligenceMatchReviewSelect
+                                        idPrefix="active-match-review"
+                                        propertyId={match.propertyId}
                                         value={reviewDecision}
-                                        onChange={(event) => {
+                                        onChange={(decision) => {
                                           setMatchReviewDecisions((current) => ({
                                             ...current,
-                                            [match.propertyId]: event.target.value as MatchReviewDecision,
+                                            [match.propertyId]: decision,
                                           }));
                                           setShortlistSaveError(null);
                                           setShortlistSaveResult(null);
                                           clearPresentationDraftState();
                                         }}
-                                        className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
-                                      >
-                                        <option value="system">Systemforslag</option>
-                                        <option value="current">Aktuell</option>
-                                        <option value="maybe">Kanskje</option>
-                                        <option value="needs_research">Må undersøkes</option>
-                                        <option value="rejected">Avvist</option>
-                                      </select>
+                                      />
                                     </div>
                                     <PropertyQualityReviewControls
                                       propertyId={match.propertyId}
@@ -2078,31 +2070,20 @@ export function LeadIntelligenceClient({
                                   </div>
                                 </div>
                                 <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <label htmlFor={`match-review-${match.propertyId}`} className="text-xs font-semibold text-slate-300">
-                                      Manuell vurdering
-                                    </label>
-                                    <select
-                                      id={`match-review-${match.propertyId}`}
-                                      value={reviewDecision}
-                                      onChange={(event) => {
-                                        setMatchReviewDecisions((current) => ({
-                                          ...current,
-                                          [match.propertyId]: event.target.value as MatchReviewDecision,
-                                        }));
-                                        setShortlistSaveError(null);
-                                        setShortlistSaveResult(null);
-                                        clearPresentationDraftState();
-                                      }}
-                                      className="h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
-                                    >
-                                      <option value="system">Systemforslag</option>
-                                      <option value="current">Aktuell</option>
-                                      <option value="maybe">Kanskje</option>
-                                      <option value="needs_research">Må undersøkes</option>
-                                      <option value="rejected">Avvist</option>
-                                    </select>
-                                  </div>
+                                  <LeadIntelligenceMatchReviewSelect
+                                    idPrefix="match-review"
+                                    propertyId={match.propertyId}
+                                    value={reviewDecision}
+                                    onChange={(decision) => {
+                                      setMatchReviewDecisions((current) => ({
+                                        ...current,
+                                        [match.propertyId]: decision,
+                                      }));
+                                      setShortlistSaveError(null);
+                                      setShortlistSaveResult(null);
+                                      clearPresentationDraftState();
+                                    }}
+                                  />
                                 {manualDecisionOverridesRejected && (
                                   <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
                                     Denne boligen er fortsatt avvist av systemreglene. Den kan bare tas med som
