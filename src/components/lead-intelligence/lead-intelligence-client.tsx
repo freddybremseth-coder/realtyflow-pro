@@ -67,13 +67,9 @@ import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
 import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
 import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
-import { LeadIntelligencePropertyMatchDiagnostics } from "@/components/lead-intelligence/lead-intelligence-property-match-diagnostics";
-import { LeadIntelligenceShortlistEmailDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-email-draft-panel";
-import { LeadIntelligenceShortlistPresentationPreviewPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-presentation-preview-panel";
-import { LeadIntelligenceShortlistPropertyCards } from "@/components/lead-intelligence/lead-intelligence-shortlist-property-cards";
 import { LeadIntelligencePresentationDraftEmailPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-email-panel";
 import { LeadIntelligenceActiveProfileMatchList } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-list";
-import { LeadIntelligenceAnalysisMatchList } from "@/components/lead-intelligence/lead-intelligence-analysis-match-list";
+import { LeadIntelligenceAnalysisPropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-panel";
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import {
   leadIntelligenceDraftReturnUrl,
@@ -1848,128 +1844,46 @@ export function LeadIntelligenceClient({
                     />
 
                     {propertyMatchResult && (
-                      <div className="mt-4 space-y-3">
-                        <p className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">
-                          Modus: {propertyMatchResult.result.discoveryMode === "auto" ? "Automatisk søk i eksisterende eiendommer" : "Valgte referanser"}
-                          {propertyMatchResult.result.candidateLimit
-                            ? ` · Kandidatgrense ${propertyMatchResult.result.candidateLimit}`
-                            : ""}
-                        </p>
-                        <LeadIntelligencePropertyMatchSummary
-                          stats={[
-                            { label: "Analysert", value: propertyMatchResult.result.analyzed },
-                            { label: "Aktuelle", value: propertyMatchResult.result.matched },
-                            { label: "Mangler", value: propertyMatchResult.result.missingPropertyReferences.length },
-                            { label: "Skipped", value: propertyMatchResult.result.skippedProperties.length },
-                          ]}
-                        />
-
-                        <LeadIntelligencePropertyMatchAlerts
-                          variant="analysis-preview"
-                          bestEffort={propertyMatchResult.result.bestEffort}
-                          matched={propertyMatchResult.result.matched}
-                          matchCount={propertyMatchResult.result.matches.length}
-                        />
-
-                        <LeadIntelligenceAnalysisMatchList
-                          matches={propertyMatchResult.result.matches}
-                          matchReviewDecisions={matchReviewDecisions}
-                          highlightedMatchId={highlightedMatchId}
-                          returnBaseUrl={propertyMatchReturnBaseUrl}
-                          qualityReviews={propertyQualityReviews}
-                          onMatchReviewDecisionChange={updateMatchReviewDecision}
-                          onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-                          onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                        />
-
-                        <LeadIntelligenceShortlistDraftPanel
-                          selectedCount={selectedShortlistItems.length}
-                          clientReadyCount={clientReadyShortlistItems.length}
-                          loading={shortlistSaveLoading}
-                          description={
-                            "Utkastet lagrer bare Freddys kvalitetssjekk. " +
-                            "Det oppretter ikke presentasjon, e-post, lead eller kontakt."
-                          }
-                          onSave={saveShortlistDraft}
-                        >
-                          {shortlistSaveResult && (
-                            <LeadIntelligenceShortlistSaveNotice
-                              result={shortlistSaveResult.result}
-                              summary="duplicate-aware"
-                            />
-                          )}
-
-                          {shortlistPresentation && shortlistEmailDraft && (
-                            <div className="mt-3 space-y-4 rounded-lg border border-primary-500/30 bg-slate-950/70 p-4">
-                              <LeadIntelligenceShortlistPresentationPreviewPanel
-                                title={shortlistPresentation.title}
-                                subtitle={shortlistPresentation.subtitle}
-                                needBullets={shortlistPresentation.needBullets}
-                                verificationBullets={shortlistPresentation.verificationBullets}
-                                copyState={presentationCopyState}
-                                loading={presentationDraftLoading}
-                                onSave={savePresentationDraft}
-                                onCopyPresentation={copyPresentationDraft}
-                                onCopyEmailDraft={copyEmailDraftText}
-                              />
-
-                              {presentationDraftResult && (
-                                <LeadIntelligencePresentationDraftEmailPanel
-                                  variant="analysis-preview"
-                                  draft={presentationDraftResult.result}
-                                  returnTo={presentationDraftReturnUrl}
-                                  anchorCards={!propertyMatchResult}
-                                  highlightedMatchId={highlightedMatchId}
-                                  editableEmailSubject={editableEmailSubject}
-                                  editableEmailBody={editableEmailBody}
-                                  emailDraftCopyState={emailDraftCopyState}
-                                  emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                                  onCopyEmailText={copyEmailDraftText}
-                                  onCopyEmailHtml={copyEmailDraftHtml}
-                                  onEmailSubjectChange={(value) => {
-                                    setEditableEmailSubject(value);
-                                    resetDraftCopyState();
-                                  }}
-                                  onEmailBodyChange={(value) => {
-                                    setEditableEmailBody(value);
-                                    resetDraftCopyState();
-                                  }}
-                                />
-                              )}
-
-                              {presentationDraftError && (
-                                <LeadIntelligenceErrorAlert error={presentationDraftError} />
-                              )}
-
-                              <LeadIntelligenceShortlistPropertyCards
-                                matches={selectedShortlistMatches}
-                                returnBaseUrl={propertyMatchReturnBaseUrl}
-                              />
-
-                              <LeadIntelligenceShortlistEmailDraftPanel
-                                subject={shortlistEmailDraft.subject}
-                                body={shortlistEmailDraft.body}
-                                copyState={emailDraftCopyState}
-                                onCopy={copyEmailDraftText}
-                              />
-                            </div>
-                          )}
-
-                          {shortlistSaveError && (
-                            <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
-                          )}
-                        </LeadIntelligenceShortlistDraftPanel>
-
-                        <LeadIntelligencePropertyMatchDiagnostics
-                          missingPropertyReferences={propertyMatchResult.result.missingPropertyReferences}
-                          skippedProperties={propertyMatchResult.result.skippedProperties}
-                        />
-
-                        <p className="text-xs text-slate-500">
-                          E-post sendt: nei · Leads opprettet: nei · Kontakter opprettet: nei ·
-                          Matcher lagret: nei · Correlation ID: {propertyMatchResult.correlationId}
-                        </p>
-                      </div>
+                      <LeadIntelligenceAnalysisPropertyMatchPanel
+                        propertyMatchResult={propertyMatchResult}
+                        selectedShortlistCount={selectedShortlistItems.length}
+                        clientReadyShortlistCount={clientReadyShortlistItems.length}
+                        selectedShortlistMatches={selectedShortlistMatches}
+                        shortlistSaveLoading={shortlistSaveLoading}
+                        shortlistSaveResult={shortlistSaveResult}
+                        shortlistSaveError={shortlistSaveError}
+                        shortlistPresentation={shortlistPresentation}
+                        shortlistEmailDraft={shortlistEmailDraft}
+                        presentationCopyState={presentationCopyState}
+                        presentationDraftLoading={presentationDraftLoading}
+                        presentationDraftResult={presentationDraftResult}
+                        presentationDraftReturnUrl={presentationDraftReturnUrl}
+                        presentationDraftError={presentationDraftError}
+                        highlightedMatchId={highlightedMatchId}
+                        propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
+                        matchReviewDecisions={matchReviewDecisions}
+                        propertyQualityReviews={propertyQualityReviews}
+                        editableEmailSubject={editableEmailSubject}
+                        editableEmailBody={editableEmailBody}
+                        emailDraftCopyState={emailDraftCopyState}
+                        emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+                        onMatchReviewDecisionChange={updateMatchReviewDecision}
+                        onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
+                        onQualityReviewNoteChange={updatePropertyQualityReviewNote}
+                        onSaveShortlistDraft={saveShortlistDraft}
+                        onSavePresentationDraft={savePresentationDraft}
+                        onCopyPresentationDraft={copyPresentationDraft}
+                        onCopyEmailDraftText={copyEmailDraftText}
+                        onCopyEmailDraftHtml={copyEmailDraftHtml}
+                        onEmailSubjectChange={(value) => {
+                          setEditableEmailSubject(value);
+                          resetDraftCopyState();
+                        }}
+                        onEmailBodyChange={(value) => {
+                          setEditableEmailBody(value);
+                          resetDraftCopyState();
+                        }}
+                      />
                     )}
                   </div>
                 )}
