@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
-  Save,
   ShieldCheck,
   Sparkles,
   Users,
@@ -44,8 +43,6 @@ import {
   type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
-import { LeadIntelligenceShortlistDraftPanel } from "@/components/lead-intelligence/lead-intelligence-shortlist-draft-panel";
-import { LeadIntelligenceShortlistSaveNotice } from "@/components/lead-intelligence/lead-intelligence-shortlist-save-notice";
 import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
   LeadIntelligenceCriteriaReviewPanel,
@@ -65,10 +62,7 @@ import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-inte
 import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-history-panel";
 import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel";
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
-import { LeadIntelligencePropertyMatchSummary } from "@/components/lead-intelligence/lead-intelligence-property-match-summary";
-import { LeadIntelligencePropertyMatchAlerts } from "@/components/lead-intelligence/lead-intelligence-property-match-alerts";
-import { LeadIntelligencePresentationDraftEmailPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-draft-email-panel";
-import { LeadIntelligenceActiveProfileMatchList } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-list";
+import { LeadIntelligenceActiveProfilePropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-active-profile-property-match-panel";
 import { LeadIntelligenceAnalysisPropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-panel";
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import {
@@ -1555,109 +1549,41 @@ export function LeadIntelligenceClient({
                       </div>
 
                       {propertyMatchResult && (
-                        <div className="space-y-3">
-                          <>
-                            <LeadIntelligencePropertyMatchSummary
-                              className="sm:grid-cols-4"
-                              stats={[
-                                { label: "Analysert", value: propertyMatchResult.result.analyzed },
-                                { label: "Aktuelle", value: propertyMatchResult.result.matched },
-                                { label: "Mangler", value: propertyMatchResult.result.missingPropertyReferences.length },
-                                { label: "Klar for kunde", value: clientReadyShortlistItems.length },
-                              ]}
-                            />
-
-                            <LeadIntelligencePropertyMatchAlerts
-                              variant="active-profile"
-                              bestEffort={propertyMatchResult.result.bestEffort}
-                              matched={propertyMatchResult.result.matched}
-                              matchCount={propertyMatchResult.result.matches.length}
-                            />
-
-                            <LeadIntelligenceActiveProfileMatchList
-                              matches={propertyMatchResult.result.matches}
-                              matchReviewDecisions={matchReviewDecisions}
-                              highlightedMatchId={highlightedMatchId}
-                              returnBaseUrl={propertyMatchReturnBaseUrl}
-                              qualityReviews={propertyQualityReviews}
-                              onMatchReviewDecisionChange={updateMatchReviewDecision}
-                              onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-                              onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                            />
-
-                            <LeadIntelligenceShortlistDraftPanel
-                              selectedCount={selectedShortlistItems.length}
-                              clientReadyCount={clientReadyShortlistItems.length}
-                              loading={shortlistSaveLoading}
-                              description="Ingen e-post, lead eller kontakt opprettes."
-                              layout="md"
-                              onSave={saveShortlistDraft}
-                            >
-                              {shortlistSaveResult && (
-                                <LeadIntelligenceShortlistSaveNotice
-                                  result={shortlistSaveResult.result}
-                                  summary="saved-count"
-                                  className="space-y-3"
-                                >
-                                  <div className="rounded-lg border border-emerald-400/20 bg-slate-950/70 p-3">
-                                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                      <div>
-                                        <p className="text-sm font-semibold text-emerald-50">
-                                          Neste steg: presentasjons- og e-postutkast
-                                        </p>
-                                        <p className="mt-1 text-xs text-emerald-100/75">
-                                          Lager et internt draft fra lagret shortlist. Det sendes ikke e-post,
-                                          publiseres ikke presentasjon og opprettes ikke lead eller kontakt.
-                                        </p>
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={savePresentationDraft}
-                                        disabled={presentationDraftLoading}
-                                      >
-                                        {presentationDraftLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                        Lagre presentasjonsutkast
-                                      </Button>
-                                    </div>
-
-                                    {presentationDraftResult && (
-                                      <LeadIntelligencePresentationDraftEmailPanel
-                                        variant="active-profile"
-                                        draft={presentationDraftResult.result}
-                                        returnTo={presentationDraftReturnUrl}
-                                        anchorCards={!propertyMatchResult}
-                                        highlightedMatchId={highlightedMatchId}
-                                        editableEmailSubject={editableEmailSubject}
-                                        editableEmailBody={editableEmailBody}
-                                        emailDraftCopyState={emailDraftCopyState}
-                                        emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                                        onCopyEmailText={copyEmailDraftText}
-                                        onCopyEmailHtml={copyEmailDraftHtml}
-                                        onEmailSubjectChange={(value) => {
-                                          setEditableEmailSubject(value);
-                                          resetDraftCopyState();
-                                        }}
-                                        onEmailBodyChange={(value) => {
-                                          setEditableEmailBody(value);
-                                          resetDraftCopyState();
-                                        }}
-                                      />
-                                    )}
-
-                                    {presentationDraftError && (
-                                      <LeadIntelligenceErrorAlert error={presentationDraftError} className="mt-3" />
-                                    )}
-                                  </div>
-                                </LeadIntelligenceShortlistSaveNotice>
-                              )}
-
-                              {shortlistSaveError && (
-                                <LeadIntelligenceErrorAlert error={shortlistSaveError} className="mt-3" />
-                              )}
-                            </LeadIntelligenceShortlistDraftPanel>
-                          </>
-                        </div>
+                        <LeadIntelligenceActiveProfilePropertyMatchPanel
+                          propertyMatchResult={propertyMatchResult}
+                          selectedShortlistCount={selectedShortlistItems.length}
+                          clientReadyShortlistCount={clientReadyShortlistItems.length}
+                          shortlistSaveLoading={shortlistSaveLoading}
+                          shortlistSaveResult={shortlistSaveResult}
+                          shortlistSaveError={shortlistSaveError}
+                          presentationDraftLoading={presentationDraftLoading}
+                          presentationDraftResult={presentationDraftResult}
+                          presentationDraftReturnUrl={presentationDraftReturnUrl}
+                          presentationDraftError={presentationDraftError}
+                          highlightedMatchId={highlightedMatchId}
+                          propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
+                          matchReviewDecisions={matchReviewDecisions}
+                          propertyQualityReviews={propertyQualityReviews}
+                          editableEmailSubject={editableEmailSubject}
+                          editableEmailBody={editableEmailBody}
+                          emailDraftCopyState={emailDraftCopyState}
+                          emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+                          onMatchReviewDecisionChange={updateMatchReviewDecision}
+                          onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
+                          onQualityReviewNoteChange={updatePropertyQualityReviewNote}
+                          onSaveShortlistDraft={saveShortlistDraft}
+                          onSavePresentationDraft={savePresentationDraft}
+                          onCopyEmailDraftText={copyEmailDraftText}
+                          onCopyEmailDraftHtml={copyEmailDraftHtml}
+                          onEmailSubjectChange={(value) => {
+                            setEditableEmailSubject(value);
+                            resetDraftCopyState();
+                          }}
+                          onEmailBodyChange={(value) => {
+                            setEditableEmailBody(value);
+                            resetDraftCopyState();
+                          }}
+                        />
                       )}
                     </div>
                   </div>
