@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -65,6 +64,7 @@ import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-in
 import { LeadIntelligenceActiveProfilePropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-active-profile-property-match-panel";
 import { LeadIntelligenceAnalysisPropertyMatchPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-preview-card";
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
+import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1324,34 +1324,10 @@ export function LeadIntelligenceClient({
         </div>
       </div>
 
-      {!featureEnabled && (
-        <Card className="border-amber-500/30 bg-amber-500/10">
-          <CardContent className="flex items-start gap-3 pt-5 text-amber-100">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
-            <div>
-              <p className="font-semibold">Lead Intelligence er deaktivert i dette miljøet.</p>
-              <p className="text-sm text-amber-100/80">
-                Serveren må ha REALTYFLOW_LEAD_INTELLIGENCE_ENABLED=true for å åpne analysepreviewet.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {featureEnabled && !persistenceEnabled && (
-        <Card className="border-amber-500/30 bg-amber-500/10">
-          <CardContent className="flex items-start gap-3 pt-5 text-amber-100">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
-            <div>
-              <p className="font-semibold">Lagring er deaktivert i dette miljøet.</p>
-              <p className="text-sm text-amber-100/80">
-                Analysepreviewet kan brukes, men kontaktkandidatoppslag og lagring krever
-                REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED=true på serveren.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <LeadIntelligenceEnvironmentAlerts
+        featureEnabled={featureEnabled}
+        persistenceEnabled={persistenceEnabled}
+      />
 
       {featureEnabled && (
         <Card>
