@@ -60,6 +60,7 @@ import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intellige
 import { LeadIntelligenceWorklistCardHeader } from "@/components/lead-intelligence/lead-intelligence-worklist-card-header";
 import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
 import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
+import { LeadIntelligenceActiveProfileNextActionNotice } from "@/components/lead-intelligence/lead-intelligence-active-profile-next-action-notice";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1356,13 +1357,7 @@ export function LeadIntelligenceClient({
 
                     <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
                       <div className="space-y-3">
-                        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
-                          <p className="font-semibold text-slate-100">Neste handling</p>
-                          <p className="mt-1 text-xs text-slate-400">
-                            Kjør automatisk søk i eksisterende eiendommer, eller lim inn referanser hvis du vil teste
-                            konkrete boliger. Dette oppretter ikke lead, kontakt, e-post eller matchingjobb.
-                          </p>
-                        </div>
+                        <LeadIntelligenceActiveProfileNextActionNotice />
 
                         <LeadIntelligenceSavedProfileContactPanel
                           activeWorklistItem={activeWorklistItem}
