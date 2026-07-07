@@ -12,7 +12,6 @@ import {
   prettyJson,
 } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import {
-  shortPropertyId,
   type MatchReviewDecision,
   type SelectedShortlistDecision,
 } from "@/components/lead-intelligence/property-match-display";
@@ -60,6 +59,7 @@ import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-
 import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
 import { LeadIntelligenceWorklistCardHeader } from "@/components/lead-intelligence/lead-intelligence-worklist-card-header";
 import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
+import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1339,24 +1339,11 @@ export function LeadIntelligenceClient({
 
             {worklistResult && worklistResult.result.items.length > 0 && (
               <>
-                <div className="rounded-lg border border-primary-500/30 bg-primary-500/10 p-4 text-sm text-primary-100">
-                  <p className="font-semibold">{worklistResult.result.items.length} lagrede sak(er) hentet.</p>
-                  <p className="mt-1 text-primary-100/80">
-                    Dette er historikken over tidligere tester for valgt brand. Knappen Fortsett med denne profilen
-                    setter buyer profile som aktiv for match-preview uten å opprette lead, kontakt eller e-post.
-                  </p>
-                </div>
-                {profileArchiveResult && !activeWorklistItem && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
-                    <p className="font-semibold">
-                      Profil {shortPropertyId(profileArchiveResult.result.buyerProfileId)} er arkivert.
-                    </p>
-                    <p className="mt-1 text-xs text-emerald-100/75">
-                      Den er fjernet fra arbeidslisten, men ikke fysisk slettet. Ingen kontakt, lead, e-post,
-                      presentasjon eller matchingjobb ble opprettet.
-                    </p>
-                  </div>
-                )}
+                <LeadIntelligenceWorklistResultNotice
+                  itemCount={worklistResult.result.items.length}
+                  archivedBuyerProfileId={profileArchiveResult?.result.buyerProfileId ?? null}
+                  hasActiveWorklistItem={Boolean(activeWorklistItem)}
+                />
                 {activeWorklistItem && saveResult && (
                   <div
                     id="lead-intelligence-active-profile"
@@ -1557,9 +1544,9 @@ export function LeadIntelligenceClient({
         />
 
         <LeadIntelligenceAnalysisPreviewCard loading={loading} hasResponse={Boolean(response)}>
-            {response && edited && (
-              <div className="space-y-5">
-                <LeadIntelligenceAnalysisOverview
+          {response && edited && (
+            <div className="space-y-5">
+              <LeadIntelligenceAnalysisOverview
                   response={response}
                   edited={edited}
                   sourceLabel={sourceOptions.find((option) => option.value === source)?.label || "Ikke satt"}
