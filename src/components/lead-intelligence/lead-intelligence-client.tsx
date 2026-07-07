@@ -7,7 +7,6 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
@@ -65,6 +64,7 @@ import { LeadIntelligenceAnalysisPropertyMatchPreviewCard } from "@/components/l
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
+import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1387,26 +1387,10 @@ export function LeadIntelligenceClient({
                     id="lead-intelligence-active-profile"
                     className="rounded-lg border border-primary-400/60 bg-slate-950 p-4 shadow-lg shadow-primary-950/20"
                   >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-primary-300">Aktiv lagret profil</p>
-                        <h2 className="mt-1 text-base font-semibold text-slate-100">
-                          {activeWorklistItem.summary || `Buyer profile ${shortPropertyId(activeWorklistItem.buyerProfileId)}`}
-                        </h2>
-                        <p className="mt-1 text-sm text-slate-400">
-                          Buyer profile {activeWorklistItem.buyerProfileId} · kriterier {activeWorklistItem.criterionCount}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="default">Valgt for videre arbeid</Badge>
-                        <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
-                          {propertyMatchingEnabled ? "Match aktivert" : "Matching av"}
-                        </Badge>
-                        <Badge variant={activeWorklistItem.contactLinked ? "success" : "outline"}>
-                          {activeWorklistItem.contactLinked ? "Kontakt koblet" : "Kontakt ikke koblet"}
-                        </Badge>
-                      </div>
-                    </div>
+                    <LeadIntelligenceActiveProfileHeader
+                      activeWorklistItem={activeWorklistItem}
+                      propertyMatchingEnabled={propertyMatchingEnabled}
+                    />
 
                     <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
                       <div className="space-y-3">
