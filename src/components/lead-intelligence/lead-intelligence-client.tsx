@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
   TextInput,
@@ -57,10 +56,10 @@ import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
 import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
-import { LeadIntelligenceWorklistCardHeader } from "@/components/lead-intelligence/lead-intelligence-worklist-card-header";
 import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
 import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
 import { LeadIntelligenceActiveProfileNextActionNotice } from "@/components/lead-intelligence/lead-intelligence-active-profile-next-action-notice";
+import { LeadIntelligenceWorklistCard } from "@/components/lead-intelligence/lead-intelligence-worklist-card";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1303,172 +1302,114 @@ export function LeadIntelligenceClient({
       />
 
       {featureEnabled && (
-        <Card>
-          <LeadIntelligenceWorklistCardHeader
-            persistenceEnabled={persistenceEnabled}
-            worklistLoading={worklistLoading}
-            onLoadWorklist={loadWorklist}
-          />
-          <CardContent className="space-y-4">
-            {!persistenceEnabled && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-                Arbeidslisten krever persistence-flagget, fordi den bare leser allerede lagrede intake- og
-                buyer-profile-rader.
-              </div>
-            )}
+        <LeadIntelligenceWorklistCard
+          persistenceEnabled={persistenceEnabled}
+          worklistLoading={worklistLoading}
+          onLoadWorklist={loadWorklist}
+        >
+          {!persistenceEnabled && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              Arbeidslisten krever persistence-flagget, fordi den bare leser allerede lagrede intake- og
+              buyer-profile-rader.
+            </div>
+          )}
 
-            {worklistError && (
-              <LeadIntelligenceErrorAlert
-                error={worklistError}
-                className="p-4"
-                detailsClassName="mt-3 max-h-40 border border-red-400/20 bg-red-950/30 text-red-100/90"
+          {worklistError && (
+            <LeadIntelligenceErrorAlert
+              error={worklistError}
+              className="p-4"
+              detailsClassName="mt-3 max-h-40 border border-red-400/20 bg-red-950/30 text-red-100/90"
+            />
+          )}
+
+          {persistenceEnabled && !worklistResult && !worklistLoading && !worklistError && (
+            <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
+              Arbeidslisten hentes automatisk. Trykk Oppdater lagrede saker hvis du nettopp har lagret noe
+              i en annen fane.
+            </div>
+          )}
+
+          {worklistResult && worklistResult.result.items.length === 0 && (
+            <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
+              Ingen lagrede Lead Intelligence-saker for dette brandet ennå.
+            </div>
+          )}
+
+          {worklistResult && worklistResult.result.items.length > 0 && (
+            <>
+              <LeadIntelligenceWorklistResultNotice
+                itemCount={worklistResult.result.items.length}
+                archivedBuyerProfileId={profileArchiveResult?.result.buyerProfileId ?? null}
+                hasActiveWorklistItem={Boolean(activeWorklistItem)}
               />
-            )}
+              {activeWorklistItem && saveResult && (
+                <div
+                  id="lead-intelligence-active-profile"
+                  className="rounded-lg border border-primary-400/60 bg-slate-950 p-4 shadow-lg shadow-primary-950/20"
+                >
+                  <LeadIntelligenceActiveProfileHeader
+                    activeWorklistItem={activeWorklistItem}
+                    propertyMatchingEnabled={propertyMatchingEnabled}
+                  />
 
-            {persistenceEnabled && !worklistResult && !worklistLoading && !worklistError && (
-              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
-                Arbeidslisten hentes automatisk. Trykk Oppdater lagrede saker hvis du nettopp har lagret noe
-                i en annen fane.
-              </div>
-            )}
+                  <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
+                    <div className="space-y-3">
+                      <LeadIntelligenceActiveProfileNextActionNotice />
 
-            {worklistResult && worklistResult.result.items.length === 0 && (
-              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-6 text-sm text-slate-400">
-                Ingen lagrede Lead Intelligence-saker for dette brandet ennå.
-              </div>
-            )}
+                      <LeadIntelligenceSavedProfileContactPanel
+                        activeWorklistItem={activeWorklistItem}
+                        persistenceEnabled={persistenceEnabled}
+                        connectExistingEnabled={connectExistingEnabled}
+                        createContactEnabled={createContactEnabled}
+                        contactCandidates={profileContactCandidatesResult?.result.candidates ?? null}
+                        selectedContactId={profileSelectedContactId}
+                        contactCandidatesLoading={profileContactCandidatesLoading}
+                        contactLinkLoading={profileContactLinkLoading}
+                        contactCreateLoading={profileContactCreateLoading}
+                        profileArchiveLoading={profileArchiveLoading}
+                        contactCandidatesError={profileContactCandidatesError}
+                        contactLinkError={profileContactLinkError}
+                        contactCreateError={profileContactCreateError}
+                        profileArchiveError={profileArchiveError}
+                        contactCreateResult={profileContactCreateResult}
+                        contactLinkResult={profileContactLinkResult}
+                        profileArchiveResult={profileArchiveResult}
+                        onLoadContactCandidates={loadSavedProfileContactCandidates}
+                        onCreateContact={createContactFromSavedProfile}
+                        onArchiveProfile={archiveActiveProfile}
+                        onSelectContactCandidate={(contactId) => {
+                          setProfileSelectedContactId(contactId);
+                          setProfileContactLinkError(null);
+                          setProfileContactLinkResult(null);
+                        }}
+                        onLinkContact={linkSavedProfileContact}
+                      />
 
-            {worklistResult && worklistResult.result.items.length > 0 && (
-              <>
-                <LeadIntelligenceWorklistResultNotice
-                  itemCount={worklistResult.result.items.length}
-                  archivedBuyerProfileId={profileArchiveResult?.result.buyerProfileId ?? null}
-                  hasActiveWorklistItem={Boolean(activeWorklistItem)}
-                />
-                {activeWorklistItem && saveResult && (
-                  <div
-                    id="lead-intelligence-active-profile"
-                    className="rounded-lg border border-primary-400/60 bg-slate-950 p-4 shadow-lg shadow-primary-950/20"
-                  >
-                    <LeadIntelligenceActiveProfileHeader
-                      activeWorklistItem={activeWorklistItem}
-                      propertyMatchingEnabled={propertyMatchingEnabled}
-                    />
+                      <LeadIntelligencePresentationHistoryPanel
+                        latestPresentationId={activeWorklistItem.latestPresentationId}
+                        latestMessageDraftId={activeWorklistItem.latestMessageDraftId}
+                        history={presentationDraftHistoryResult?.result ?? null}
+                        historyError={presentationDraftHistoryError}
+                        showHistoryError={!propertyMatchResult}
+                        presentationDraftLoading={presentationDraftLoading}
+                        presentationDraftHistoryLoading={presentationDraftHistoryLoading}
+                        onLoadLatestPresentationDraft={loadLatestPresentationDraft}
+                        onLoadPresentationDraftHistory={loadPresentationDraftHistory}
+                        onLoadPresentationDraftById={loadPresentationDraftById}
+                      />
 
-                    <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
-                      <div className="space-y-3">
-                        <LeadIntelligenceActiveProfileNextActionNotice />
-
-                        <LeadIntelligenceSavedProfileContactPanel
-                          activeWorklistItem={activeWorklistItem}
-                          persistenceEnabled={persistenceEnabled}
-                          connectExistingEnabled={connectExistingEnabled}
-                          createContactEnabled={createContactEnabled}
-                          contactCandidates={profileContactCandidatesResult?.result.candidates ?? null}
-                          selectedContactId={profileSelectedContactId}
-                          contactCandidatesLoading={profileContactCandidatesLoading}
-                          contactLinkLoading={profileContactLinkLoading}
-                          contactCreateLoading={profileContactCreateLoading}
-                          profileArchiveLoading={profileArchiveLoading}
-                          contactCandidatesError={profileContactCandidatesError}
-                          contactLinkError={profileContactLinkError}
-                          contactCreateError={profileContactCreateError}
-                          profileArchiveError={profileArchiveError}
-                          contactCreateResult={profileContactCreateResult}
-                          contactLinkResult={profileContactLinkResult}
-                          profileArchiveResult={profileArchiveResult}
-                          onLoadContactCandidates={loadSavedProfileContactCandidates}
-                          onCreateContact={createContactFromSavedProfile}
-                          onArchiveProfile={archiveActiveProfile}
-                          onSelectContactCandidate={(contactId) => {
-                            setProfileSelectedContactId(contactId);
-                            setProfileContactLinkError(null);
-                            setProfileContactLinkResult(null);
-                          }}
-                          onLinkContact={linkSavedProfileContact}
-                        />
-
-                        <LeadIntelligencePresentationHistoryPanel
-                          latestPresentationId={activeWorklistItem.latestPresentationId}
-                          latestMessageDraftId={activeWorklistItem.latestMessageDraftId}
-                          history={presentationDraftHistoryResult?.result ?? null}
-                          historyError={presentationDraftHistoryError}
-                          showHistoryError={!propertyMatchResult}
-                          presentationDraftLoading={presentationDraftLoading}
-                          presentationDraftHistoryLoading={presentationDraftHistoryLoading}
-                          onLoadLatestPresentationDraft={loadLatestPresentationDraft}
-                          onLoadPresentationDraftHistory={loadPresentationDraftHistory}
-                          onLoadPresentationDraftById={loadPresentationDraftById}
-                        />
-
-                        {presentationDraftResult?.result.loadedFromHistory && (
-                          <LeadIntelligenceLoadedPresentationDraftPanel
-                            draft={presentationDraftResult.result}
-                            returnTo={presentationDraftReturnUrl}
-                            anchorCards={!propertyMatchResult}
-                            highlightedMatchId={highlightedMatchId}
-                            editableEmailSubject={editableEmailSubject}
-                            editableEmailBody={editableEmailBody}
-                            emailDraftCopyState={emailDraftCopyState}
-                            emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                            onCopyEmailText={copyEmailDraftText}
-                            onCopyEmailHtml={copyEmailDraftHtml}
-                            onEmailSubjectChange={(value) => {
-                              setEditableEmailSubject(value);
-                              resetDraftCopyState();
-                            }}
-                            onEmailBodyChange={(value) => {
-                              setEditableEmailBody(value);
-                              resetDraftCopyState();
-                            }}
-                          />
-                        )}
-
-                        {presentationDraftError && !propertyMatchResult && (
-                          <LeadIntelligenceErrorAlert
-                            error={presentationDraftError}
-                            detailsClassName="max-h-40 bg-red-950/50 text-red-50"
-                          />
-                        )}
-
-                        <LeadIntelligenceActiveProfileMatchControls
-                          propertyReferencesText={propertyReferencesText}
-                          parsedPropertyReferences={parsedPropertyReferences}
-                          propertyMatchLoading={propertyMatchLoading}
-                          propertyMatchingEnabled={propertyMatchingEnabled}
-                          propertyMatchError={propertyMatchError}
-                          onPropertyReferencesChange={updatePropertyReferencesText}
-                          onPreviewPropertyMatches={previewPropertyMatches}
-                        />
-                      </div>
-
-                      {propertyMatchResult && (
-                        <LeadIntelligenceActiveProfilePropertyMatchPanel
-                          propertyMatchResult={propertyMatchResult}
-                          selectedShortlistCount={selectedShortlistItems.length}
-                          clientReadyShortlistCount={clientReadyShortlistItems.length}
-                          shortlistSaveLoading={shortlistSaveLoading}
-                          shortlistSaveResult={shortlistSaveResult}
-                          shortlistSaveError={shortlistSaveError}
-                          presentationDraftLoading={presentationDraftLoading}
-                          presentationDraftResult={presentationDraftResult}
-                          presentationDraftReturnUrl={presentationDraftReturnUrl}
-                          presentationDraftError={presentationDraftError}
+                      {presentationDraftResult?.result.loadedFromHistory && (
+                        <LeadIntelligenceLoadedPresentationDraftPanel
+                          draft={presentationDraftResult.result}
+                          returnTo={presentationDraftReturnUrl}
+                          anchorCards={!propertyMatchResult}
                           highlightedMatchId={highlightedMatchId}
-                          propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
-                          matchReviewDecisions={matchReviewDecisions}
-                          propertyQualityReviews={propertyQualityReviews}
                           editableEmailSubject={editableEmailSubject}
                           editableEmailBody={editableEmailBody}
                           emailDraftCopyState={emailDraftCopyState}
                           emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                          onMatchReviewDecisionChange={updateMatchReviewDecision}
-                          onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-                          onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                          onSaveShortlistDraft={saveShortlistDraft}
-                          onSavePresentationDraft={savePresentationDraft}
-                          onCopyEmailDraftText={copyEmailDraftText}
-                          onCopyEmailDraftHtml={copyEmailDraftHtml}
+                          onCopyEmailText={copyEmailDraftText}
+                          onCopyEmailHtml={copyEmailDraftHtml}
                           onEmailSubjectChange={(value) => {
                             setEditableEmailSubject(value);
                             resetDraftCopyState();
@@ -1479,27 +1420,82 @@ export function LeadIntelligenceClient({
                           }}
                         />
                       )}
+
+                      {presentationDraftError && !propertyMatchResult && (
+                        <LeadIntelligenceErrorAlert
+                          error={presentationDraftError}
+                          detailsClassName="max-h-40 bg-red-950/50 text-red-50"
+                        />
+                      )}
+
+                      <LeadIntelligenceActiveProfileMatchControls
+                        propertyReferencesText={propertyReferencesText}
+                        parsedPropertyReferences={parsedPropertyReferences}
+                        propertyMatchLoading={propertyMatchLoading}
+                        propertyMatchingEnabled={propertyMatchingEnabled}
+                        propertyMatchError={propertyMatchError}
+                        onPropertyReferencesChange={updatePropertyReferencesText}
+                        onPreviewPropertyMatches={previewPropertyMatches}
+                      />
                     </div>
+
+                    {propertyMatchResult && (
+                      <LeadIntelligenceActiveProfilePropertyMatchPanel
+                        propertyMatchResult={propertyMatchResult}
+                        selectedShortlistCount={selectedShortlistItems.length}
+                        clientReadyShortlistCount={clientReadyShortlistItems.length}
+                        shortlistSaveLoading={shortlistSaveLoading}
+                        shortlistSaveResult={shortlistSaveResult}
+                        shortlistSaveError={shortlistSaveError}
+                        presentationDraftLoading={presentationDraftLoading}
+                        presentationDraftResult={presentationDraftResult}
+                        presentationDraftReturnUrl={presentationDraftReturnUrl}
+                        presentationDraftError={presentationDraftError}
+                        highlightedMatchId={highlightedMatchId}
+                        propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
+                        matchReviewDecisions={matchReviewDecisions}
+                        propertyQualityReviews={propertyQualityReviews}
+                        editableEmailSubject={editableEmailSubject}
+                        editableEmailBody={editableEmailBody}
+                        emailDraftCopyState={emailDraftCopyState}
+                        emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+                        onMatchReviewDecisionChange={updateMatchReviewDecision}
+                        onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
+                        onQualityReviewNoteChange={updatePropertyQualityReviewNote}
+                        onSaveShortlistDraft={saveShortlistDraft}
+                        onSavePresentationDraft={savePresentationDraft}
+                        onCopyEmailDraftText={copyEmailDraftText}
+                        onCopyEmailDraftHtml={copyEmailDraftHtml}
+                        onEmailSubjectChange={(value) => {
+                          setEditableEmailSubject(value);
+                          resetDraftCopyState();
+                        }}
+                        onEmailBodyChange={(value) => {
+                          setEditableEmailBody(value);
+                          resetDraftCopyState();
+                        }}
+                      />
+                    )}
                   </div>
-                )}
-                <LeadIntelligenceWorklistHistoryPanel
-                  items={worklistResult.result.items}
-                  activeBuyerProfileId={activeWorklistItem?.buyerProfileId ?? null}
-                  expanded={worklistHistoryExpanded}
-                  sourceOptions={sourceOptions}
-                  onToggleExpanded={() => setWorklistHistoryExpanded((current) => !current)}
-                  onScrollToActiveProfile={() => {
-                    document.getElementById("lead-intelligence-active-profile")?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "start",
-                    });
-                  }}
-                  onContinueFromItem={continueFromWorklistItem}
-                />
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              )}
+              <LeadIntelligenceWorklistHistoryPanel
+                items={worklistResult.result.items}
+                activeBuyerProfileId={activeWorklistItem?.buyerProfileId ?? null}
+                expanded={worklistHistoryExpanded}
+                sourceOptions={sourceOptions}
+                onToggleExpanded={() => setWorklistHistoryExpanded((current) => !current)}
+                onScrollToActiveProfile={() => {
+                  document.getElementById("lead-intelligence-active-profile")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }}
+                onContinueFromItem={continueFromWorklistItem}
+              />
+            </>
+          )}
+        </LeadIntelligenceWorklistCard>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
