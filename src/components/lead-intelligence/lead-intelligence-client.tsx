@@ -46,20 +46,14 @@ import {
   LeadIntelligenceWorklistHistoryPanel,
   type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
-import { LeadIntelligenceSavedProfileContactPanel } from "@/components/lead-intelligence/lead-intelligence-saved-profile-contact-panel";
-import { LeadIntelligencePresentationHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-presentation-history-panel";
-import { LeadIntelligenceLoadedPresentationDraftPanel } from "@/components/lead-intelligence/lead-intelligence-loaded-presentation-draft-panel";
-import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
-import { LeadIntelligenceActiveProfilePropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-active-profile-property-match-panel";
 import { LeadIntelligenceAnalysisPropertyMatchPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-preview-card";
 import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
-import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
 import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
 import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
-import { LeadIntelligenceActiveProfileNextActionNotice } from "@/components/lead-intelligence/lead-intelligence-active-profile-next-action-notice";
 import { LeadIntelligenceWorklistCard } from "@/components/lead-intelligence/lead-intelligence-worklist-card";
+import { LeadIntelligenceActiveWorklistProfilePanel } from "@/components/lead-intelligence/lead-intelligence-active-worklist-profile-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1343,141 +1337,80 @@ export function LeadIntelligenceClient({
                 hasActiveWorklistItem={Boolean(activeWorklistItem)}
               />
               {activeWorklistItem && saveResult && (
-                <div
-                  id="lead-intelligence-active-profile"
-                  className="rounded-lg border border-primary-400/60 bg-slate-950 p-4 shadow-lg shadow-primary-950/20"
-                >
-                  <LeadIntelligenceActiveProfileHeader
-                    activeWorklistItem={activeWorklistItem}
-                    propertyMatchingEnabled={propertyMatchingEnabled}
-                  />
-
-                  <div className={`mt-4 grid gap-4 ${propertyMatchResult ? "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "lg:grid-cols-1"}`}>
-                    <div className="space-y-3">
-                      <LeadIntelligenceActiveProfileNextActionNotice />
-
-                      <LeadIntelligenceSavedProfileContactPanel
-                        activeWorklistItem={activeWorklistItem}
-                        persistenceEnabled={persistenceEnabled}
-                        connectExistingEnabled={connectExistingEnabled}
-                        createContactEnabled={createContactEnabled}
-                        contactCandidates={profileContactCandidatesResult?.result.candidates ?? null}
-                        selectedContactId={profileSelectedContactId}
-                        contactCandidatesLoading={profileContactCandidatesLoading}
-                        contactLinkLoading={profileContactLinkLoading}
-                        contactCreateLoading={profileContactCreateLoading}
-                        profileArchiveLoading={profileArchiveLoading}
-                        contactCandidatesError={profileContactCandidatesError}
-                        contactLinkError={profileContactLinkError}
-                        contactCreateError={profileContactCreateError}
-                        profileArchiveError={profileArchiveError}
-                        contactCreateResult={profileContactCreateResult}
-                        contactLinkResult={profileContactLinkResult}
-                        profileArchiveResult={profileArchiveResult}
-                        onLoadContactCandidates={loadSavedProfileContactCandidates}
-                        onCreateContact={createContactFromSavedProfile}
-                        onArchiveProfile={archiveActiveProfile}
-                        onSelectContactCandidate={(contactId) => {
-                          setProfileSelectedContactId(contactId);
-                          setProfileContactLinkError(null);
-                          setProfileContactLinkResult(null);
-                        }}
-                        onLinkContact={linkSavedProfileContact}
-                      />
-
-                      <LeadIntelligencePresentationHistoryPanel
-                        latestPresentationId={activeWorklistItem.latestPresentationId}
-                        latestMessageDraftId={activeWorklistItem.latestMessageDraftId}
-                        history={presentationDraftHistoryResult?.result ?? null}
-                        historyError={presentationDraftHistoryError}
-                        showHistoryError={!propertyMatchResult}
-                        presentationDraftLoading={presentationDraftLoading}
-                        presentationDraftHistoryLoading={presentationDraftHistoryLoading}
-                        onLoadLatestPresentationDraft={loadLatestPresentationDraft}
-                        onLoadPresentationDraftHistory={loadPresentationDraftHistory}
-                        onLoadPresentationDraftById={loadPresentationDraftById}
-                      />
-
-                      {presentationDraftResult?.result.loadedFromHistory && (
-                        <LeadIntelligenceLoadedPresentationDraftPanel
-                          draft={presentationDraftResult.result}
-                          returnTo={presentationDraftReturnUrl}
-                          anchorCards={!propertyMatchResult}
-                          highlightedMatchId={highlightedMatchId}
-                          editableEmailSubject={editableEmailSubject}
-                          editableEmailBody={editableEmailBody}
-                          emailDraftCopyState={emailDraftCopyState}
-                          emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                          onCopyEmailText={copyEmailDraftText}
-                          onCopyEmailHtml={copyEmailDraftHtml}
-                          onEmailSubjectChange={(value) => {
-                            setEditableEmailSubject(value);
-                            resetDraftCopyState();
-                          }}
-                          onEmailBodyChange={(value) => {
-                            setEditableEmailBody(value);
-                            resetDraftCopyState();
-                          }}
-                        />
-                      )}
-
-                      {presentationDraftError && !propertyMatchResult && (
-                        <LeadIntelligenceErrorAlert
-                          error={presentationDraftError}
-                          detailsClassName="max-h-40 bg-red-950/50 text-red-50"
-                        />
-                      )}
-
-                      <LeadIntelligenceActiveProfileMatchControls
-                        propertyReferencesText={propertyReferencesText}
-                        parsedPropertyReferences={parsedPropertyReferences}
-                        propertyMatchLoading={propertyMatchLoading}
-                        propertyMatchingEnabled={propertyMatchingEnabled}
-                        propertyMatchError={propertyMatchError}
-                        onPropertyReferencesChange={updatePropertyReferencesText}
-                        onPreviewPropertyMatches={previewPropertyMatches}
-                      />
-                    </div>
-
-                    {propertyMatchResult && (
-                      <LeadIntelligenceActiveProfilePropertyMatchPanel
-                        propertyMatchResult={propertyMatchResult}
-                        selectedShortlistCount={selectedShortlistItems.length}
-                        clientReadyShortlistCount={clientReadyShortlistItems.length}
-                        shortlistSaveLoading={shortlistSaveLoading}
-                        shortlistSaveResult={shortlistSaveResult}
-                        shortlistSaveError={shortlistSaveError}
-                        presentationDraftLoading={presentationDraftLoading}
-                        presentationDraftResult={presentationDraftResult}
-                        presentationDraftReturnUrl={presentationDraftReturnUrl}
-                        presentationDraftError={presentationDraftError}
-                        highlightedMatchId={highlightedMatchId}
-                        propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
-                        matchReviewDecisions={matchReviewDecisions}
-                        propertyQualityReviews={propertyQualityReviews}
-                        editableEmailSubject={editableEmailSubject}
-                        editableEmailBody={editableEmailBody}
-                        emailDraftCopyState={emailDraftCopyState}
-                        emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                        onMatchReviewDecisionChange={updateMatchReviewDecision}
-                        onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-                        onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                        onSaveShortlistDraft={saveShortlistDraft}
-                        onSavePresentationDraft={savePresentationDraft}
-                        onCopyEmailDraftText={copyEmailDraftText}
-                        onCopyEmailDraftHtml={copyEmailDraftHtml}
-                        onEmailSubjectChange={(value) => {
-                          setEditableEmailSubject(value);
-                          resetDraftCopyState();
-                        }}
-                        onEmailBodyChange={(value) => {
-                          setEditableEmailBody(value);
-                          resetDraftCopyState();
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
+                <LeadIntelligenceActiveWorklistProfilePanel
+                  activeWorklistItem={activeWorklistItem}
+                  propertyMatchingEnabled={propertyMatchingEnabled}
+                  persistenceEnabled={persistenceEnabled}
+                  connectExistingEnabled={connectExistingEnabled}
+                  createContactEnabled={createContactEnabled}
+                  profileContactCandidatesResult={profileContactCandidatesResult}
+                  profileSelectedContactId={profileSelectedContactId}
+                  profileContactCandidatesLoading={profileContactCandidatesLoading}
+                  profileContactLinkLoading={profileContactLinkLoading}
+                  profileContactCreateLoading={profileContactCreateLoading}
+                  profileArchiveLoading={profileArchiveLoading}
+                  profileContactCandidatesError={profileContactCandidatesError}
+                  profileContactLinkError={profileContactLinkError}
+                  profileContactCreateError={profileContactCreateError}
+                  profileArchiveError={profileArchiveError}
+                  profileContactCreateResult={profileContactCreateResult}
+                  profileContactLinkResult={profileContactLinkResult}
+                  profileArchiveResult={profileArchiveResult}
+                  presentationDraftHistoryResult={presentationDraftHistoryResult}
+                  presentationDraftHistoryError={presentationDraftHistoryError}
+                  presentationDraftLoading={presentationDraftLoading}
+                  presentationDraftHistoryLoading={presentationDraftHistoryLoading}
+                  presentationDraftResult={presentationDraftResult}
+                  presentationDraftReturnUrl={presentationDraftReturnUrl}
+                  presentationDraftError={presentationDraftError}
+                  highlightedMatchId={highlightedMatchId}
+                  editableEmailSubject={editableEmailSubject}
+                  editableEmailBody={editableEmailBody}
+                  emailDraftCopyState={emailDraftCopyState}
+                  emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+                  propertyReferencesText={propertyReferencesText}
+                  parsedPropertyReferences={parsedPropertyReferences}
+                  propertyMatchLoading={propertyMatchLoading}
+                  propertyMatchError={propertyMatchError}
+                  propertyMatchResult={propertyMatchResult}
+                  selectedShortlistCount={selectedShortlistItems.length}
+                  clientReadyShortlistCount={clientReadyShortlistItems.length}
+                  shortlistSaveLoading={shortlistSaveLoading}
+                  shortlistSaveResult={shortlistSaveResult}
+                  shortlistSaveError={shortlistSaveError}
+                  propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
+                  matchReviewDecisions={matchReviewDecisions}
+                  propertyQualityReviews={propertyQualityReviews}
+                  onLoadContactCandidates={loadSavedProfileContactCandidates}
+                  onCreateContact={createContactFromSavedProfile}
+                  onArchiveProfile={archiveActiveProfile}
+                  onSelectContactCandidate={(contactId) => {
+                    setProfileSelectedContactId(contactId);
+                    setProfileContactLinkError(null);
+                    setProfileContactLinkResult(null);
+                  }}
+                  onLinkContact={linkSavedProfileContact}
+                  onLoadLatestPresentationDraft={loadLatestPresentationDraft}
+                  onLoadPresentationDraftHistory={loadPresentationDraftHistory}
+                  onLoadPresentationDraftById={loadPresentationDraftById}
+                  onCopyEmailDraftText={copyEmailDraftText}
+                  onCopyEmailDraftHtml={copyEmailDraftHtml}
+                  onEmailSubjectChange={(value) => {
+                    setEditableEmailSubject(value);
+                    resetDraftCopyState();
+                  }}
+                  onEmailBodyChange={(value) => {
+                    setEditableEmailBody(value);
+                    resetDraftCopyState();
+                  }}
+                  onPropertyReferencesChange={updatePropertyReferencesText}
+                  onPreviewPropertyMatches={previewPropertyMatches}
+                  onMatchReviewDecisionChange={updateMatchReviewDecision}
+                  onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
+                  onQualityReviewNoteChange={updatePropertyQualityReviewNote}
+                  onSaveShortlistDraft={saveShortlistDraft}
+                  onSavePresentationDraft={savePresentationDraft}
+                />
               )}
               <LeadIntelligenceWorklistHistoryPanel
                 items={worklistResult.result.items}
