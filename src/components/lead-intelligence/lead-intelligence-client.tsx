@@ -3,11 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
-  RefreshCw,
   Sparkles,
-  Users,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
@@ -65,6 +62,7 @@ import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
 import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
+import { LeadIntelligenceWorklistCardHeader } from "@/components/lead-intelligence/lead-intelligence-worklist-card-header";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1308,31 +1306,11 @@ export function LeadIntelligenceClient({
 
       {featureEnabled && (
         <Card>
-          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary-400" />
-                Lagrede tester og kjøperprofiler
-              </CardTitle>
-              <p className="mt-1 text-sm text-slate-400">
-                Tidligere lagrede tester ligger her. Velg en lagret buyer profile for å fortsette med
-                eiendomsmatch uten å analysere henvendelsen på nytt.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={loadWorklist}
-              disabled={!persistenceEnabled || worklistLoading}
-            >
-              {worklistLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              Oppdater lagrede saker
-            </Button>
-          </CardHeader>
+          <LeadIntelligenceWorklistCardHeader
+            persistenceEnabled={persistenceEnabled}
+            worklistLoading={worklistLoading}
+            onLoadWorklist={loadWorklist}
+          />
           <CardContent className="space-y-4">
             {!persistenceEnabled && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
