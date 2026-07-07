@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Loader2,
-  Sparkles,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
   TextInput,
@@ -63,6 +59,7 @@ import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligenc
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
 import { LeadIntelligenceActiveProfileHeader } from "@/components/lead-intelligence/lead-intelligence-active-profile-header";
 import { LeadIntelligenceWorklistCardHeader } from "@/components/lead-intelligence/lead-intelligence-worklist-card-header";
+import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1559,26 +1556,7 @@ export function LeadIntelligenceClient({
           onReset={reset}
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Analysepreview</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!response && !loading && (
-              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-8 text-center text-slate-400">
-                <Sparkles className="mx-auto mb-3 h-8 w-8 text-slate-500" />
-                <p className="font-medium text-slate-300">Ingen analyse ennå.</p>
-                <p className="mt-1 text-sm">Lim inn en henvendelse og kjør analysen for å se forslag her.</p>
-              </div>
-            )}
-
-            {loading && (
-              <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-8 text-center text-slate-300">
-                <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary-400" />
-                <p>Analyserer henvendelsen med strukturert output...</p>
-              </div>
-            )}
-
+        <LeadIntelligenceAnalysisPreviewCard loading={loading} hasResponse={Boolean(response)}>
             {response && edited && (
               <div className="space-y-5">
                 <LeadIntelligenceAnalysisOverview
@@ -1706,8 +1684,7 @@ export function LeadIntelligenceClient({
                 />
               </div>
             )}
-          </CardContent>
-        </Card>
+        </LeadIntelligenceAnalysisPreviewCard>
       </div>
     </div>
   );
