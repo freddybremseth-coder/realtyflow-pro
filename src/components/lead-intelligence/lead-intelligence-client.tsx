@@ -18,10 +18,6 @@ import {
   type CriterionReviewState,
 } from "@/components/lead-intelligence/lead-intelligence-criteria-review-panel";
 import {
-  type LeadContactCandidatePreview,
-  type LeadContactDecision,
-} from "@/components/lead-intelligence/lead-intelligence-contact-candidates-panel";
-import {
   LeadIntelligenceWorklistHistoryPanel,
   type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
@@ -42,11 +38,10 @@ import { useLeadIntelligencePresentationDrafts } from "@/components/lead-intelli
 import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-actions";
 import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intelligence/use-lead-intelligence-property-match-flow";
 import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-lead-intelligence-worklist";
+import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/use-lead-intelligence-contact-flow";
 import type {
-  ContactCandidatesResponse,
   LeadAnalysisResponse,
   LeadIntelligenceClientProps,
-  LeadIntelligenceCrmContextResponse,
   ReviewSaveResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
@@ -70,20 +65,11 @@ export function LeadIntelligenceClient({
   const [editableJson, setEditableJson] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [criterionReviews, setCriterionReviews] = useState<Record<string, CriterionReviewState>>({});
-  const [candidateLoading, setCandidateLoading] = useState(false);
-  const [contactCandidatesLoaded, setContactCandidatesLoaded] = useState(false);
-  const [contactCandidates, setContactCandidates] = useState<LeadContactCandidatePreview[]>([]);
-  const [contactCandidateError, setContactCandidateError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [contactDecision, setContactDecision] = useState<LeadContactDecision>("continue_without_contact");
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
   const returnUrlHydratedRef = useRef(false);
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
-  const [crmContextLoading, setCrmContextLoading] = useState(false);
-  const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
   const {
     worklistLoading,
@@ -108,6 +94,33 @@ export function LeadIntelligenceClient({
     (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
   ).length;
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
+  const {
+    candidateLoading,
+    contactCandidatesLoaded,
+    contactCandidates,
+    contactCandidateError,
+    contactDecision,
+    selectedContactId,
+    crmContextLoading,
+    crmContextError,
+    crmContextResult,
+    clearContactCandidatesState,
+    selectExistingContact,
+    changeContactDecision,
+    loadContactCandidates,
+    loadCrmContext,
+  } = useLeadIntelligenceContactFlow({
+    brand,
+    edited,
+    persistenceEnabled,
+    onReviewResultInvalidated: () => {
+      setSaveResult(null);
+    },
+    onReviewSelectionChanged: () => {
+      setSaveError(null);
+      setSaveResult(null);
+    },
+  });
   const {
     propertyReferencesText,
     parsedPropertyReferences,
@@ -291,19 +304,8 @@ export function LeadIntelligenceClient({
     },
   });
 
-  const clearCrmContext = () => {
-    setCrmContextLoading(false);
-    setCrmContextError(null);
-    setCrmContextResult(null);
-  };
-
   const clearContactCandidates = () => {
-    setContactCandidatesLoaded(false);
-    setContactCandidates([]);
-    setContactCandidateError(null);
-    clearCrmContext();
-    setContactDecision("continue_without_contact");
-    setSelectedContactId(null);
+    clearContactCandidatesState();
     setSaveError(null);
     setSaveResult(null);
     clearWorklistSelection();
@@ -373,12 +375,7 @@ export function LeadIntelligenceClient({
     setEditableJson("");
     setCopyState("idle");
     setCriterionReviews({});
-    setContactCandidatesLoaded(false);
-    setContactCandidates([]);
-    setContactCandidateError(null);
-    clearCrmContext();
-    setContactDecision("continue_without_contact");
-    setSelectedContactId(null);
+    clearContactCandidatesState();
     setSaveError(null);
     setSaveResult(null);
     clearWorklistSelection();
@@ -407,88 +404,6 @@ export function LeadIntelligenceClient({
     setSaveResult(null);
     clearWorklistSelection();
     clearPropertyMatchPreview();
-  };
-
-  const loadContactCandidates = async () => {
-    if (!edited || !persistenceEnabled) return;
-    setCandidateLoading(true);
-    setContactCandidatesLoaded(false);
-    setContactCandidateError(null);
-    try {
-      const res = await fetch("/api/lead-intelligence/contact-candidates", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          brand,
-          contact: edited.contact,
-        }),
-      });
-      const body = (await res.json()) as ContactCandidatesResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setContactCandidateError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente kontaktkandidater.",
-        });
-        return;
-      }
-      setContactCandidates(body.candidates);
-      setContactCandidatesLoaded(true);
-      clearCrmContext();
-      setContactDecision("continue_without_contact");
-      setSelectedContactId(null);
-      setSaveResult(null);
-    } catch {
-      setContactCandidateError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kandidat-API-et.",
-      });
-    } finally {
-      setCandidateLoading(false);
-    }
-  };
-
-  const loadCrmContext = async () => {
-    if (!edited || !persistenceEnabled) return;
-    setCrmContextLoading(true);
-    setCrmContextError(null);
-    setCrmContextResult(null);
-    try {
-      const res = await fetch("/api/lead-intelligence/crm-context", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          brand,
-          contact: edited.contact,
-          contactIds: contactCandidates.map((candidate) => candidate.contactId),
-        }),
-      });
-      const body = (await res.json()) as LeadIntelligenceCrmContextResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setCrmContextError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente CRM-kontekst.",
-        });
-        return;
-      }
-      setCrmContextResult(body);
-      setContactCandidates(body.result.candidates);
-      setContactCandidatesLoaded(true);
-      setContactCandidateError(null);
-      setContactDecision("continue_without_contact");
-      setSelectedContactId(null);
-      setSaveResult(null);
-    } catch {
-      setCrmContextError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte CRM-kontekst-API-et.",
-      });
-    } finally {
-      setCrmContextLoading(false);
-    }
   };
 
   const saveReview = async () => {
@@ -917,18 +832,8 @@ export function LeadIntelligenceClient({
               onReviewChange={updateCriterionReview}
               onLoadContactCandidates={loadContactCandidates}
               onLoadCrmContext={loadCrmContext}
-              onSelectExistingContact={(contactId) => {
-                setContactDecision("connect_existing");
-                setSelectedContactId(contactId);
-                setSaveError(null);
-                setSaveResult(null);
-              }}
-              onContactDecisionChange={(decision) => {
-                setContactDecision(decision);
-                setSelectedContactId(null);
-                setSaveError(null);
-                setSaveResult(null);
-              }}
+              onSelectExistingContact={selectExistingContact}
+              onContactDecisionChange={changeContactDecision}
               onSave={saveReview}
               onPropertyReferencesChange={updatePropertyReferencesText}
               onPreviewPropertyMatches={previewPropertyMatches}
