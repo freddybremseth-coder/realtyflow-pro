@@ -32,10 +32,10 @@ import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intellig
 import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-lead-intelligence-worklist";
 import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/use-lead-intelligence-contact-flow";
 import { useLeadIntelligenceReviewEditor } from "@/components/lead-intelligence/use-lead-intelligence-review-editor";
+import { useLeadIntelligenceReviewSave } from "@/components/lead-intelligence/use-lead-intelligence-review-save";
 import type {
   LeadAnalysisResponse,
   LeadIntelligenceClientProps,
-  ReviewSaveResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
@@ -55,9 +55,6 @@ export function LeadIntelligenceClient({
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<LeadAnalysisResponse | null>(null);
   const [error, setError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
   const returnUrlHydratedRef = useRef(false);
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
@@ -98,8 +95,8 @@ export function LeadIntelligenceClient({
       clearContactCandidates();
     },
     onCriterionReviewChanged: () => {
-      setSaveError(null);
-      setSaveResult(null);
+      clearSaveError();
+      clearSaveResult();
       clearWorklistSelection();
       clearPropertyMatchPreview();
     },
@@ -124,11 +121,40 @@ export function LeadIntelligenceClient({
     edited,
     persistenceEnabled,
     onReviewResultInvalidated: () => {
-      setSaveResult(null);
+      clearSaveResult();
     },
     onReviewSelectionChanged: () => {
-      setSaveError(null);
-      setSaveResult(null);
+      clearSaveError();
+      clearSaveResult();
+    },
+  });
+  const {
+    saveLoading,
+    saveError,
+    saveResult,
+    setSaveResult,
+    clearSaveError,
+    clearSaveResult,
+    clearSaveFeedback,
+    saveReview,
+  } = useLeadIntelligenceReviewSave({
+    brand,
+    source,
+    rawText,
+    language,
+    response,
+    edited,
+    persistenceEnabled,
+    allCriteriaReviewed,
+    hasJsonError: Boolean(jsonEditor.error),
+    contactDecision,
+    selectedContactId,
+    reviewCriteria,
+    criterionReviews,
+    onReviewSaved: () => {
+      clearWorklistSelection();
+      clearPropertyMatchPreview();
+      void loadWorklist();
     },
   });
   const {
@@ -316,8 +342,7 @@ export function LeadIntelligenceClient({
 
   const clearContactCandidates = () => {
     clearContactCandidatesState();
-    setSaveError(null);
-    setSaveResult(null);
+    clearSaveFeedback();
     clearWorklistSelection();
     clearActiveProfileActions();
     clearPropertyMatchPreview();
@@ -350,8 +375,7 @@ export function LeadIntelligenceClient({
       setResponse(body);
       loadAnalysisResult(body.result);
       clearContactCandidates();
-      setSaveError(null);
-      setSaveResult(null);
+      clearSaveFeedback();
     } catch {
       setError({
         correlationId: "client",
@@ -368,73 +392,9 @@ export function LeadIntelligenceClient({
     setError(null);
     clearReviewEditor();
     clearContactCandidatesState();
-    setSaveError(null);
-    setSaveResult(null);
+    clearSaveFeedback();
     clearWorklistSelection();
     resetPropertyMatchFlow();
-  };
-
-  const saveReview = async () => {
-    if (!edited || !response || !persistenceEnabled || !allCriteriaReviewed || jsonEditor.error) return;
-    setSaveLoading(true);
-    setSaveError(null);
-    setSaveResult(null);
-
-    try {
-      const res = await fetch("/api/lead-intelligence/review", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": response.correlationId,
-        },
-        body: JSON.stringify({
-          brand,
-          source,
-          rawText,
-          language: language.trim() || null,
-          idempotencySeed: response.correlationId,
-          analysis: edited,
-          analysisMeta: {
-            model: response.meta.model,
-            promptVersion: response.meta.promptVersion,
-            durationMs: response.meta.durationMs,
-            repaired: response.meta.repaired,
-          },
-          contactDecision: {
-            action: contactDecision,
-            contactId: contactDecision === "connect_existing" ? selectedContactId : null,
-            explicitApproval: true,
-          },
-          reviewedCriteria: reviewCriteria.map((criterion) => ({
-            criterionType: criterion.criterionType,
-            fingerprint: criterion.fingerprint,
-            approvalStatus: criterionReviews[criterion.id]?.approvalStatus,
-            customerConfirmed: criterionReviews[criterion.id]?.customerConfirmed || false,
-          })),
-        }),
-      });
-      const body = (await res.json()) as ReviewSaveResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setSaveError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke lagre review.",
-        });
-        return;
-      }
-      setSaveResult(body);
-      clearWorklistSelection();
-      clearPropertyMatchPreview();
-      void loadWorklist();
-    } catch {
-      setSaveError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte review-API-et.",
-      });
-    } finally {
-      setSaveLoading(false);
-    }
   };
 
   const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
@@ -446,7 +406,7 @@ export function LeadIntelligenceClient({
     clearReviewEditor();
     setActiveWorklistItem(item);
     setWorklistHistoryExpanded(false);
-    setSaveError(null);
+    clearSaveError();
     setSaveResult({
       ok: true,
       correlationId: generateClientCorrelationId(),
@@ -719,7 +679,7 @@ export function LeadIntelligenceClient({
           onBrandChange={(nextBrand) => {
             setBrand(nextBrand);
             clearContactCandidates();
-            setSaveResult(null);
+            clearSaveResult();
             resetWorklist();
           }}
           onLanguageChange={(value) => {
@@ -729,7 +689,7 @@ export function LeadIntelligenceClient({
           onRawTextChange={(value) => {
             setRawText(value);
             clearContactCandidates();
-            setSaveResult(null);
+            clearSaveResult();
           }}
           onAnalyze={analyze}
           onReset={reset}
