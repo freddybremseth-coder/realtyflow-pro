@@ -1,14 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  LeadIntelligenceRequestCard,
-} from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
-import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
+import { LeadIntelligenceAnalysisSection } from "@/components/lead-intelligence/lead-intelligence-analysis-section";
 import { LeadIntelligenceWorklistSection } from "@/components/lead-intelligence/lead-intelligence-worklist-section";
-import { LeadIntelligenceAnalysisResultPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-result-panel";
 import {
   realEstateBrands,
   sourceOptions,
@@ -425,110 +421,111 @@ export function LeadIntelligenceClient({
         }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <LeadIntelligenceRequestCard
-          source={source}
-          sourceOptions={sourceOptions}
-          brand={brand}
-          brandOptions={realEstateBrands}
-          language={language}
-          rawText={rawText}
-          featureEnabled={featureEnabled}
-          loading={loading}
-          hasResponse={Boolean(response)}
-          error={error}
-          onSourceChange={changeSource}
-          onBrandChange={changeBrand}
-          onLanguageChange={changeLanguage}
-          onRawTextChange={changeRawText}
-          onAnalyze={analyze}
-          onReset={reset}
-        />
-
-        <LeadIntelligenceAnalysisPreviewCard loading={loading} hasResponse={Boolean(response)}>
-          {response && edited && (
-            <LeadIntelligenceAnalysisResultPanel
-              response={response}
-              edited={edited}
-              sourceLabel={sourceOptions.find((option) => option.value === source)?.label || "Ikke satt"}
-              brandLabel={realEstateBrands.find((item) => item.id === brand)?.name || brand}
-              language={language}
-              rawText={rawText}
-              reviewCriteria={reviewCriteria}
-              criterionReviews={criterionReviews}
-              reviewedCount={reviewedCount}
-              allCriteriaReviewed={allCriteriaReviewed}
-              persistenceEnabled={persistenceEnabled}
-              connectExistingEnabled={connectExistingEnabled}
-              candidateLoading={candidateLoading}
-              crmContextLoading={crmContextLoading}
-              contactCandidatesLoaded={contactCandidatesLoaded}
-              contactCandidates={contactCandidates}
-              contactCandidateError={contactCandidateError}
-              crmContextError={crmContextError}
-              crmContextResult={crmContextResult}
-              contactDecision={contactDecision}
-              selectedContactId={selectedContactId}
-              saveLoading={saveLoading}
-              hasJsonError={Boolean(jsonEditor.error)}
-              saveError={saveError}
-              saveResult={saveResult}
-              hasActiveWorklistItem={Boolean(activeWorklistItem)}
-              propertyMatchingEnabled={propertyMatchingEnabled}
-              propertyReferencesText={propertyReferencesText}
-              parsedPropertyReferences={parsedPropertyReferences}
-              propertyMatchLoading={propertyMatchLoading}
-              propertyMatchError={propertyMatchError}
-              propertyMatchResult={propertyMatchResult}
-              selectedShortlistCount={selectedShortlistItems.length}
-              clientReadyShortlistCount={clientReadyShortlistItems.length}
-              selectedShortlistMatches={selectedShortlistMatches}
-              shortlistSaveLoading={shortlistSaveLoading}
-              shortlistSaveResult={shortlistSaveResult}
-              shortlistSaveError={shortlistSaveError}
-              shortlistPresentation={shortlistPresentation}
-              shortlistEmailDraft={shortlistEmailDraft}
-              presentationCopyState={presentationCopyState}
-              presentationDraftLoading={presentationDraftLoading}
-              presentationDraftResult={presentationDraftResult}
-              presentationDraftReturnUrl={presentationDraftReturnUrl}
-              presentationDraftError={presentationDraftError}
-              highlightedMatchId={highlightedMatchId}
-              propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
-              matchReviewDecisions={matchReviewDecisions}
-              propertyQualityReviews={propertyQualityReviews}
-              editableEmailSubject={editableEmailSubject}
-              editableEmailBody={editableEmailBody}
-              emailDraftCopyState={emailDraftCopyState}
-              emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-              editableJson={editableJson}
-              jsonEditorError={jsonEditor.error}
-              jsonCopyState={copyState}
-              onUpdateEdited={updateEdited}
-              onReviewChange={updateCriterionReview}
-              onLoadContactCandidates={loadContactCandidates}
-              onLoadCrmContext={loadCrmContext}
-              onSelectExistingContact={selectExistingContact}
-              onContactDecisionChange={changeContactDecision}
-              onSave={saveReview}
-              onPropertyReferencesChange={updatePropertyReferencesText}
-              onPreviewPropertyMatches={previewPropertyMatches}
-              onMatchReviewDecisionChange={updateMatchReviewDecision}
-              onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-              onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-              onSaveShortlistDraft={saveSelectedShortlistDraft}
-              onSavePresentationDraft={savePresentationDraft}
-              onCopyPresentationDraft={copyPresentationDraft}
-              onCopyEmailDraftText={copyEmailDraftText}
-              onCopyEmailDraftHtml={copyEmailDraftHtml}
-              onEmailSubjectChange={updateEditableEmailSubject}
-              onEmailBodyChange={updateEditableEmailBody}
-              onCopyJson={copyJson}
-              onEditableJsonChange={updateEditableJson}
-            />
-          )}
-        </LeadIntelligenceAnalysisPreviewCard>
-      </div>
+      <LeadIntelligenceAnalysisSection
+        loading={loading}
+        hasResponse={Boolean(response)}
+        requestCardProps={{
+          source,
+          sourceOptions,
+          brand,
+          brandOptions: realEstateBrands,
+          language,
+          rawText,
+          featureEnabled,
+          loading,
+          hasResponse: Boolean(response),
+          error,
+          onSourceChange: changeSource,
+          onBrandChange: changeBrand,
+          onLanguageChange: changeLanguage,
+          onRawTextChange: changeRawText,
+          onAnalyze: analyze,
+          onReset: reset,
+        }}
+        resultPanelProps={
+          response && edited
+            ? {
+                response,
+                edited,
+                sourceLabel: sourceOptions.find((option) => option.value === source)?.label || "Ikke satt",
+                brandLabel: realEstateBrands.find((item) => item.id === brand)?.name || brand,
+                language,
+                rawText,
+                reviewCriteria,
+                criterionReviews,
+                reviewedCount,
+                allCriteriaReviewed,
+                persistenceEnabled,
+                connectExistingEnabled,
+                candidateLoading,
+                crmContextLoading,
+                contactCandidatesLoaded,
+                contactCandidates,
+                contactCandidateError,
+                crmContextError,
+                crmContextResult,
+                contactDecision,
+                selectedContactId,
+                saveLoading,
+                hasJsonError: Boolean(jsonEditor.error),
+                saveError,
+                saveResult,
+                hasActiveWorklistItem: Boolean(activeWorklistItem),
+                propertyMatchingEnabled,
+                propertyReferencesText,
+                parsedPropertyReferences,
+                propertyMatchLoading,
+                propertyMatchError,
+                propertyMatchResult,
+                selectedShortlistCount: selectedShortlistItems.length,
+                clientReadyShortlistCount: clientReadyShortlistItems.length,
+                selectedShortlistMatches,
+                shortlistSaveLoading,
+                shortlistSaveResult,
+                shortlistSaveError,
+                shortlistPresentation,
+                shortlistEmailDraft,
+                presentationCopyState,
+                presentationDraftLoading,
+                presentationDraftResult,
+                presentationDraftReturnUrl,
+                presentationDraftError,
+                highlightedMatchId,
+                propertyMatchReturnBaseUrl,
+                matchReviewDecisions,
+                propertyQualityReviews,
+                editableEmailSubject,
+                editableEmailBody,
+                emailDraftCopyState,
+                emailDraftHtmlCopyState,
+                editableJson,
+                jsonEditorError: jsonEditor.error,
+                jsonCopyState: copyState,
+                onUpdateEdited: updateEdited,
+                onReviewChange: updateCriterionReview,
+                onLoadContactCandidates: loadContactCandidates,
+                onLoadCrmContext: loadCrmContext,
+                onSelectExistingContact: selectExistingContact,
+                onContactDecisionChange: changeContactDecision,
+                onSave: saveReview,
+                onPropertyReferencesChange: updatePropertyReferencesText,
+                onPreviewPropertyMatches: previewPropertyMatches,
+                onMatchReviewDecisionChange: updateMatchReviewDecision,
+                onQualityReviewStatusChange: updatePropertyQualityReviewStatus,
+                onQualityReviewNoteChange: updatePropertyQualityReviewNote,
+                onSaveShortlistDraft: saveSelectedShortlistDraft,
+                onSavePresentationDraft: savePresentationDraft,
+                onCopyPresentationDraft: copyPresentationDraft,
+                onCopyEmailDraftText: copyEmailDraftText,
+                onCopyEmailDraftHtml: copyEmailDraftHtml,
+                onEmailSubjectChange: updateEditableEmailSubject,
+                onEmailBodyChange: updateEditableEmailBody,
+                onCopyJson: copyJson,
+                onEditableJsonChange: updateEditableJson,
+              }
+            : null
+        }
+      />
     </div>
   );
 }
