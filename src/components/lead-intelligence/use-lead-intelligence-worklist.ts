@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   LeadIntelligenceWorklistResponse,
   SafeErrorResponse,
@@ -9,11 +9,13 @@ import type { LeadIntelligenceWorklistItem } from "@/components/lead-intelligenc
 
 interface UseLeadIntelligenceWorklistParams {
   brand: string;
+  featureEnabled: boolean;
   persistenceEnabled: boolean;
 }
 
 export function useLeadIntelligenceWorklist({
   brand,
+  featureEnabled,
   persistenceEnabled,
 }: UseLeadIntelligenceWorklistParams) {
   const [worklistLoading, setWorklistLoading] = useState(false);
@@ -22,7 +24,7 @@ export function useLeadIntelligenceWorklist({
   const [activeWorklistItem, setActiveWorklistItem] = useState<LeadIntelligenceWorklistItem | null>(null);
   const [worklistHistoryExpanded, setWorklistHistoryExpanded] = useState(true);
 
-  const loadWorklist = async () => {
+  const loadWorklist = useCallback(async () => {
     if (!persistenceEnabled) return;
     setWorklistLoading(true);
     setWorklistError(null);
@@ -55,7 +57,12 @@ export function useLeadIntelligenceWorklist({
     } finally {
       setWorklistLoading(false);
     }
-  };
+  }, [brand, persistenceEnabled]);
+
+  useEffect(() => {
+    if (!featureEnabled || !persistenceEnabled) return;
+    void loadWorklist();
+  }, [featureEnabled, loadWorklist, persistenceEnabled]);
 
   const clearWorklistSelection = () => {
     setActiveWorklistItem(null);

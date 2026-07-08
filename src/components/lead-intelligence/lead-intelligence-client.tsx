@@ -89,6 +89,7 @@ export function LeadIntelligenceClient({
     loadWorklist,
   } = useLeadIntelligenceWorklist({
     brand,
+    featureEnabled,
     persistenceEnabled,
   });
 
@@ -312,13 +313,6 @@ export function LeadIntelligenceClient({
     setSaveResult,
     loadPresentationDraftById,
   });
-
-  useEffect(() => {
-    if (!featureEnabled || !persistenceEnabled) return;
-    void loadWorklist();
-    // Auto-refresh when the user changes brand; loadWorklist is intentionally not a dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featureEnabled, persistenceEnabled, brand]);
 
   useEffect(() => {
     clearHighlightedMatchRef.current = clearHighlightedMatch;
