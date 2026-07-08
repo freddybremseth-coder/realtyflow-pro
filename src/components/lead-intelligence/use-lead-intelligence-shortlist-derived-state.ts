@@ -28,6 +28,17 @@ interface UseLeadIntelligenceShortlistDerivedStateParams {
   shortlistSaveResult: ShortlistSaveResponse | null;
 }
 
+export type SelectedShortlistItem = {
+  propertyId: string;
+  decision: SelectedShortlistDecision;
+  qualityReview: {
+    status: SavedPropertyQualityReviewStatus;
+    note: string | null;
+    checkedAt: string;
+    checkedBy: string;
+  };
+};
+
 export function useLeadIntelligenceShortlistDerivedState({
   edited,
   propertyMatchResult,
@@ -53,16 +64,7 @@ export function useLeadIntelligenceShortlistDerivedState({
           },
         };
       })
-      .filter((item): item is {
-        propertyId: string;
-        decision: SelectedShortlistDecision;
-        qualityReview: {
-          status: SavedPropertyQualityReviewStatus;
-          note: string | null;
-          checkedAt: string;
-          checkedBy: string;
-        };
-      } => Boolean(item));
+      .filter((item): item is SelectedShortlistItem => Boolean(item));
   }, [matchReviewDecisions, propertyMatchResult, propertyQualityReviews]);
 
   const clientReadyShortlistItems = useMemo(

@@ -1,21 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LEAD_INTELLIGENCE_LIMITS, type ExtractedLead } from "@/services/lead-intelligence/contracts";
+import { type ExtractedLead } from "@/services/lead-intelligence/contracts";
 import {
   TextInput,
   flattenReviewCriteria,
   generateClientCorrelationId,
   parseJsonEditor,
-  parsePropertyReferences,
   prettyJson,
 } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
-import { type MatchReviewDecision } from "@/components/lead-intelligence/property-match-display";
-import {
-  defaultPropertyQualityReview,
-  type PropertyQualityReviewState,
-  type PropertyQualityReviewStatus,
-} from "@/components/lead-intelligence/property-quality-review-controls";
 import {
   LeadIntelligenceRequestCard,
   type LeadIntelligenceSource,
@@ -47,16 +40,15 @@ import {
 import { useLeadIntelligenceShortlistDerivedState } from "@/components/lead-intelligence/use-lead-intelligence-shortlist-derived-state";
 import { useLeadIntelligencePresentationDrafts } from "@/components/lead-intelligence/use-lead-intelligence-presentation-drafts";
 import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-actions";
+import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intelligence/use-lead-intelligence-property-match-flow";
 import type {
   ContactCandidatesResponse,
   LeadAnalysisResponse,
   LeadIntelligenceClientProps,
   LeadIntelligenceCrmContextResponse,
   LeadIntelligenceWorklistResponse,
-  PropertyMatchPreviewResponse,
   ReviewSaveResponse,
   SafeErrorResponse,
-  ShortlistSaveResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 type Source = LeadIntelligenceSource;
@@ -87,21 +79,13 @@ export function LeadIntelligenceClient({
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
-  const [propertyReferencesText, setPropertyReferencesText] = useState("");
-  const [propertyMatchLoading, setPropertyMatchLoading] = useState(false);
-  const [propertyMatchError, setPropertyMatchError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [propertyMatchResult, setPropertyMatchResult] = useState<PropertyMatchPreviewResponse | null>(null);
-  const [matchReviewDecisions, setMatchReviewDecisions] = useState<Record<string, MatchReviewDecision>>({});
-  const [propertyQualityReviews, setPropertyQualityReviews] = useState<Record<string, PropertyQualityReviewState>>({});
-  const [shortlistSaveLoading, setShortlistSaveLoading] = useState(false);
-  const [shortlistSaveError, setShortlistSaveError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [shortlistSaveResult, setShortlistSaveResult] = useState<ShortlistSaveResponse | null>(null);
   const [worklistLoading, setWorklistLoading] = useState(false);
   const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
   const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
   const [activeWorklistItem, setActiveWorklistItem] = useState<LeadIntelligenceWorklistItem | null>(null);
   const [worklistHistoryExpanded, setWorklistHistoryExpanded] = useState(true);
   const returnUrlHydratedRef = useRef(false);
+  const clearPresentationDraftStateRef = useRef<() => void>(() => {});
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
@@ -114,10 +98,33 @@ export function LeadIntelligenceClient({
     (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
   ).length;
   const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
-  const parsedPropertyReferences = useMemo(
-    () => parsePropertyReferences(propertyReferencesText),
-    [propertyReferencesText],
-  );
+  const {
+    propertyReferencesText,
+    parsedPropertyReferences,
+    propertyMatchLoading,
+    propertyMatchError,
+    propertyMatchResult,
+    matchReviewDecisions,
+    propertyQualityReviews,
+    shortlistSaveLoading,
+    shortlistSaveError,
+    shortlistSaveResult,
+    clearPropertyMatchPreview,
+    resetPropertyMatchFlow,
+    updatePropertyReferencesText,
+    updatePropertyQualityReviewStatus,
+    updatePropertyQualityReviewNote,
+    updateMatchReviewDecision,
+    loadShortlistSaveResult,
+    previewPropertyMatches,
+    saveShortlistDraft,
+  } = useLeadIntelligencePropertyMatchFlow({
+    brand,
+    propertyMatchingEnabled,
+    saveResult,
+    onPresentationDraftInvalidated: () => clearPresentationDraftStateRef.current(),
+    onHighlightedMatchCleared: () => setHighlightedMatchId(null),
+  });
   const {
     selectedShortlistItems,
     clientReadyShortlistItems,
@@ -163,8 +170,13 @@ export function LeadIntelligenceClient({
     shortlistPresentation,
     shortlistPresentationText,
     shortlistEmailDraft,
-    onShortlistSaveResultLoaded: setShortlistSaveResult,
+    onShortlistSaveResultLoaded: loadShortlistSaveResult,
   });
+
+  useEffect(() => {
+    clearPresentationDraftStateRef.current = clearPresentationDraftState;
+  }, [clearPresentationDraftState]);
+
   const {
     profileContactCandidatesLoading,
     profileContactCandidatesError,
@@ -270,59 +282,6 @@ export function LeadIntelligenceClient({
     },
   });
 
-  const clearShortlistAndPresentationState = () => {
-    setShortlistSaveError(null);
-    setShortlistSaveResult(null);
-    clearPresentationDraftState();
-  };
-
-  const updatePropertyQualityReviewStatus = (propertyId: string, status: PropertyQualityReviewStatus) => {
-    setPropertyQualityReviews((current) => ({
-      ...current,
-      [propertyId]: {
-        ...(current[propertyId] || defaultPropertyQualityReview()),
-        status,
-        checkedAt: status === "unreviewed" ? null : new Date().toISOString(),
-        checkedBy: status === "unreviewed" ? null : "Freddy",
-      },
-    }));
-    clearShortlistAndPresentationState();
-  };
-
-  const updatePropertyQualityReviewNote = (propertyId: string, note: string) => {
-    setPropertyQualityReviews((current) => ({
-      ...current,
-      [propertyId]: {
-        ...(current[propertyId] || defaultPropertyQualityReview()),
-        note: note.slice(0, LEAD_INTELLIGENCE_LIMITS.mediumText),
-      },
-    }));
-    clearShortlistAndPresentationState();
-  };
-
-  const updateMatchReviewDecision = (propertyId: string, decision: MatchReviewDecision) => {
-    setMatchReviewDecisions((current) => ({
-      ...current,
-      [propertyId]: decision,
-    }));
-    clearShortlistAndPresentationState();
-  };
-
-  const updatePropertyReferencesText = (value: string) => {
-    setPropertyReferencesText(value);
-    clearPropertyMatchPreview();
-  };
-
-  const clearPropertyMatchPreview = () => {
-    setPropertyMatchError(null);
-    setPropertyMatchResult(null);
-    setMatchReviewDecisions({});
-    setShortlistSaveError(null);
-    setShortlistSaveResult(null);
-    setHighlightedMatchId(null);
-    clearPresentationDraftState();
-  };
-
   const clearCrmContext = () => {
     setCrmContextLoading(false);
     setCrmContextError(null);
@@ -416,8 +375,7 @@ export function LeadIntelligenceClient({
     setSaveResult(null);
     setActiveWorklistItem(null);
     setWorklistHistoryExpanded(true);
-    setPropertyReferencesText("");
-    clearPropertyMatchPreview();
+    resetPropertyMatchFlow();
   };
 
   const copyJson = async () => {
@@ -591,105 +549,6 @@ export function LeadIntelligenceClient({
     }
   };
 
-  const previewPropertyMatches = async (mode: "auto" | "explicit") => {
-    if (!saveResult || !propertyMatchingEnabled) return;
-    if (mode === "explicit" && parsedPropertyReferences.error) return;
-    setPropertyMatchLoading(true);
-    setPropertyMatchError(null);
-    setPropertyMatchResult(null);
-
-    try {
-      const res = await fetch("/api/lead-intelligence/property-matches/preview", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": saveResult.correlationId,
-        },
-        body: JSON.stringify({
-          brand,
-          buyerProfileId: saveResult.result.buyerProfile.id,
-          ...(mode === "auto"
-            ? {
-                autoDiscover: true,
-                candidateLimit: 120,
-                maxResults: 10,
-              }
-            : {
-                propertyReferences: parsedPropertyReferences.references,
-                maxResults: parsedPropertyReferences.references.length,
-              }),
-        }),
-      });
-      const body = (await res.json()) as PropertyMatchPreviewResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setPropertyMatchError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke forhåndsvise eiendomsmatcher.",
-        });
-        return;
-      }
-      setPropertyMatchResult(body);
-      setMatchReviewDecisions({});
-      setPropertyQualityReviews({});
-      setShortlistSaveError(null);
-      setShortlistSaveResult(null);
-      clearPresentationDraftState();
-    } catch {
-      setPropertyMatchError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte property-match-preview-API-et.",
-      });
-    } finally {
-      setPropertyMatchLoading(false);
-    }
-  };
-
-  const saveShortlistDraft = async () => {
-    if (!saveResult || !propertyMatchResult || selectedShortlistItems.length === 0) return;
-    setShortlistSaveLoading(true);
-    setShortlistSaveError(null);
-    setShortlistSaveResult(null);
-    clearPresentationDraftState();
-
-    try {
-      const res = await fetch("/api/lead-intelligence/shortlists", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": propertyMatchResult.correlationId,
-        },
-        body: JSON.stringify({
-          brand,
-          buyerProfileId: saveResult.result.buyerProfile.id,
-          title: `Shortlist ${new Date().toLocaleDateString("nb-NO")}`,
-          idempotencySeed: propertyMatchResult.correlationId,
-          items: selectedShortlistItems,
-        }),
-      });
-      const body = (await res.json()) as ShortlistSaveResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setShortlistSaveError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke lagre shortlist-utkast.",
-        });
-        return;
-      }
-      setShortlistSaveResult(body);
-      clearPresentationDraftState();
-    } catch {
-      setShortlistSaveError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte shortlist-API-et.",
-      });
-    } finally {
-      setShortlistSaveLoading(false);
-    }
-  };
-
   const loadWorklist = async () => {
     if (!persistenceEnabled) return;
     setWorklistLoading(true);
@@ -851,6 +710,9 @@ export function LeadIntelligenceClient({
     leadIntelligenceDraftReturnUrl({
       buyerProfileId: activeWorklistItem?.buyerProfileId || saveResult?.result.buyerProfile.id || null,
     });
+  const saveSelectedShortlistDraft = () => {
+    void saveShortlistDraft(selectedShortlistItems);
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -964,7 +826,7 @@ export function LeadIntelligenceClient({
                   onMatchReviewDecisionChange={updateMatchReviewDecision}
                   onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
                   onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                  onSaveShortlistDraft={saveShortlistDraft}
+                  onSaveShortlistDraft={saveSelectedShortlistDraft}
                   onSavePresentationDraft={savePresentationDraft}
                 />
               )}
@@ -1104,7 +966,7 @@ export function LeadIntelligenceClient({
               onMatchReviewDecisionChange={updateMatchReviewDecision}
               onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
               onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-              onSaveShortlistDraft={saveShortlistDraft}
+              onSaveShortlistDraft={saveSelectedShortlistDraft}
               onSavePresentationDraft={savePresentationDraft}
               onCopyPresentationDraft={copyPresentationDraft}
               onCopyEmailDraftText={copyEmailDraftText}
