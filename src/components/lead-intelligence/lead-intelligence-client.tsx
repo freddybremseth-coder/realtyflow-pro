@@ -41,12 +41,12 @@ import { useLeadIntelligenceShortlistDerivedState } from "@/components/lead-inte
 import { useLeadIntelligencePresentationDrafts } from "@/components/lead-intelligence/use-lead-intelligence-presentation-drafts";
 import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-actions";
 import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intelligence/use-lead-intelligence-property-match-flow";
+import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-lead-intelligence-worklist";
 import type {
   ContactCandidatesResponse,
   LeadAnalysisResponse,
   LeadIntelligenceClientProps,
   LeadIntelligenceCrmContextResponse,
-  LeadIntelligenceWorklistResponse,
   ReviewSaveResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
@@ -79,17 +79,27 @@ export function LeadIntelligenceClient({
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
-  const [worklistLoading, setWorklistLoading] = useState(false);
-  const [worklistError, setWorklistError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [worklistResult, setWorklistResult] = useState<LeadIntelligenceWorklistResponse | null>(null);
-  const [activeWorklistItem, setActiveWorklistItem] = useState<LeadIntelligenceWorklistItem | null>(null);
-  const [worklistHistoryExpanded, setWorklistHistoryExpanded] = useState(true);
   const returnUrlHydratedRef = useRef(false);
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
+  const {
+    worklistLoading,
+    worklistError,
+    worklistResult,
+    activeWorklistItem,
+    worklistHistoryExpanded,
+    setActiveWorklistItem,
+    setWorklistHistoryExpanded,
+    clearWorklistSelection,
+    resetWorklist,
+    loadWorklist,
+  } = useLeadIntelligenceWorklist({
+    brand,
+    persistenceEnabled,
+  });
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
   const edited = jsonEditor.parsed || response?.result || null;
@@ -274,10 +284,9 @@ export function LeadIntelligenceClient({
       void loadWorklist();
     },
     onProfileArchived: () => {
-      setActiveWorklistItem(null);
       setSaveResult(null);
       clearPropertyMatchPreview();
-      setWorklistHistoryExpanded(true);
+      clearWorklistSelection();
       void loadWorklist();
     },
   });
@@ -297,8 +306,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
-    setActiveWorklistItem(null);
-    setWorklistHistoryExpanded(true);
+    clearWorklistSelection();
     clearActiveProfileActions();
     clearPropertyMatchPreview();
   };
@@ -373,8 +381,7 @@ export function LeadIntelligenceClient({
     setSelectedContactId(null);
     setSaveError(null);
     setSaveResult(null);
-    setActiveWorklistItem(null);
-    setWorklistHistoryExpanded(true);
+    clearWorklistSelection();
     resetPropertyMatchFlow();
   };
 
@@ -398,8 +405,7 @@ export function LeadIntelligenceClient({
     }));
     setSaveError(null);
     setSaveResult(null);
-    setActiveWorklistItem(null);
-    setWorklistHistoryExpanded(true);
+    clearWorklistSelection();
     clearPropertyMatchPreview();
   };
 
@@ -534,8 +540,7 @@ export function LeadIntelligenceClient({
         return;
       }
       setSaveResult(body);
-      setActiveWorklistItem(null);
-      setWorklistHistoryExpanded(true);
+      clearWorklistSelection();
       clearPropertyMatchPreview();
       void loadWorklist();
     } catch {
@@ -546,41 +551,6 @@ export function LeadIntelligenceClient({
       });
     } finally {
       setSaveLoading(false);
-    }
-  };
-
-  const loadWorklist = async () => {
-    if (!persistenceEnabled) return;
-    setWorklistLoading(true);
-    setWorklistError(null);
-
-    try {
-      const params = new URLSearchParams({
-        brand,
-        limit: "20",
-      });
-      const res = await fetch(`/api/lead-intelligence/worklist?${params.toString()}`, {
-        method: "GET",
-        headers: { accept: "application/json" },
-      });
-      const body = (await res.json()) as LeadIntelligenceWorklistResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setWorklistError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente arbeidslisten.",
-        });
-        return;
-      }
-      setWorklistResult(body);
-    } catch {
-      setWorklistError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte arbeidsliste-API-et.",
-      });
-    } finally {
-      setWorklistLoading(false);
     }
   };
 
@@ -869,8 +839,7 @@ export function LeadIntelligenceClient({
             setBrand(nextBrand);
             clearContactCandidates();
             setSaveResult(null);
-            setWorklistResult(null);
-            setWorklistError(null);
+            resetWorklist();
           }}
           onLanguageChange={(value) => {
             setLanguage(value);
