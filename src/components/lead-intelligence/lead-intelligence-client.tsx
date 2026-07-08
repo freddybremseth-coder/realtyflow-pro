@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { generateClientCorrelationId } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import {
   LeadIntelligenceRequestCard,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 import {
   LeadIntelligenceWorklistHistoryPanel,
-  type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
@@ -31,6 +29,7 @@ import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/u
 import { useLeadIntelligenceReviewEditor } from "@/components/lead-intelligence/use-lead-intelligence-review-editor";
 import { useLeadIntelligenceReviewSave } from "@/components/lead-intelligence/use-lead-intelligence-review-save";
 import { useLeadIntelligenceAnalysisFlow } from "@/components/lead-intelligence/use-lead-intelligence-analysis-flow";
+import { useLeadIntelligenceWorklistNavigation } from "@/components/lead-intelligence/use-lead-intelligence-worklist-navigation";
 import type { LeadIntelligenceClientProps } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 export function LeadIntelligenceClient({
@@ -40,7 +39,6 @@ export function LeadIntelligenceClient({
   createContactEnabled,
   propertyMatchingEnabled,
 }: LeadIntelligenceClientProps) {
-  const returnUrlHydratedRef = useRef(false);
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
   const {
@@ -367,60 +365,18 @@ export function LeadIntelligenceClient({
     clearPropertyMatchPreview();
   };
 
-  const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
-    if (!item.analysisRunId) return;
-    clearContactCandidates();
-    clearActiveProfileActions();
-    clearAnalysisResult();
-    clearReviewEditor();
-    setActiveWorklistItem(item);
-    setWorklistHistoryExpanded(false);
-    clearSaveError();
-    setSaveResult({
-      ok: true,
-      correlationId: generateClientCorrelationId(),
-      result: {
-        status: {
-          newlySaved: false,
-          duplicate: true,
-          conflict: false,
-        },
-        intake: {
-          id: item.intakeId,
-          duplicate: true,
-        },
-        analysisRun: {
-          id: item.analysisRunId,
-          duplicate: true,
-        },
-        buyerProfile: {
-          id: item.buyerProfileId,
-          criterionCount: item.criterionCount,
-          duplicate: true,
-        },
-        contactCandidates: {
-          recorded: 0,
-          selectedContactId: null,
-          decision: "continue_without_contact",
-          createdContact: false,
-          linkedContact: item.contactLinked,
-          duplicate: true,
-        },
-      },
-      sideEffects: {
-        contactsCreated: false,
-        contactUpdated: false,
-        emailSent: false,
-        propertyMatchingStarted: false,
-      },
-    });
-    window.setTimeout(() => {
-      document.getElementById("lead-intelligence-active-profile")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 50);
-  };
+  const { continueFromWorklistItem, scrollToActiveProfile } = useLeadIntelligenceWorklistNavigation({
+    worklistResult,
+    clearContactCandidates,
+    clearActiveProfileActions,
+    clearAnalysisResult,
+    clearReviewEditor,
+    setActiveWorklistItem,
+    setWorklistHistoryExpanded,
+    clearSaveError,
+    setSaveResult,
+    loadPresentationDraftById,
+  });
 
   useEffect(() => {
     if (!featureEnabled || !persistenceEnabled) return;
@@ -428,30 +384,6 @@ export function LeadIntelligenceClient({
     // Auto-refresh when the user changes brand; loadWorklist is intentionally not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureEnabled, persistenceEnabled, brand]);
-
-  useEffect(() => {
-    if (returnUrlHydratedRef.current || !worklistResult || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const buyerProfileId = params.get("buyerProfileId");
-    const presentationId = params.get("presentationId");
-    if (!buyerProfileId && !presentationId) return;
-
-    const item = worklistResult.result.items.find((candidate) =>
-      (buyerProfileId && candidate.buyerProfileId === buyerProfileId) ||
-      (presentationId && candidate.latestPresentationId === presentationId),
-    );
-    if (!item) return;
-
-    returnUrlHydratedRef.current = true;
-    continueFromWorklistItem(item);
-    if (presentationId) {
-      void loadPresentationDraftById(presentationId);
-    } else if (item.latestPresentationId) {
-      void loadPresentationDraftById(item.latestPresentationId);
-    }
-    // Restore should run once against the first loaded worklist snapshot from the URL.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worklistResult]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -616,12 +548,7 @@ export function LeadIntelligenceClient({
                 expanded={worklistHistoryExpanded}
                 sourceOptions={sourceOptions}
                 onToggleExpanded={() => setWorklistHistoryExpanded((current) => !current)}
-                onScrollToActiveProfile={() => {
-                  document.getElementById("lead-intelligence-active-profile")?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  });
-                }}
+                onScrollToActiveProfile={scrollToActiveProfile}
                 onContinueFromItem={continueFromWorklistItem}
               />
             </>
