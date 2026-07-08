@@ -7,6 +7,10 @@ import type {
   LeadIntelligenceCrmContextResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
+import {
+  apiResponseError,
+  clientApiError,
+} from "@/components/lead-intelligence/lead-intelligence-client-errors";
 import type {
   LeadContactCandidatePreview,
   LeadContactDecision,
@@ -80,11 +84,7 @@ export function useLeadIntelligenceContactFlow({
       });
       const body = (await res.json()) as ContactCandidatesResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setContactCandidateError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente kontaktkandidater.",
-        });
+        setContactCandidateError(apiResponseError(res, body, "Kunne ikke hente kontaktkandidater."));
         return;
       }
       setContactCandidates(body.candidates);
@@ -94,11 +94,7 @@ export function useLeadIntelligenceContactFlow({
       setSelectedContactId(null);
       onReviewResultInvalidated();
     } catch {
-      setContactCandidateError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kandidat-API-et.",
-      });
+      setContactCandidateError(clientApiError("Kunne ikke kontakte kandidat-API-et."));
     } finally {
       setCandidateLoading(false);
     }
@@ -121,11 +117,7 @@ export function useLeadIntelligenceContactFlow({
       });
       const body = (await res.json()) as LeadIntelligenceCrmContextResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setCrmContextError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente CRM-kontekst.",
-        });
+        setCrmContextError(apiResponseError(res, body, "Kunne ikke hente CRM-kontekst."));
         return;
       }
       setCrmContextResult(body);
@@ -136,11 +128,7 @@ export function useLeadIntelligenceContactFlow({
       setSelectedContactId(null);
       onReviewResultInvalidated();
     } catch {
-      setCrmContextError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte CRM-kontekst-API-et.",
-      });
+      setCrmContextError(clientApiError("Kunne ikke kontakte CRM-kontekst-API-et."));
     } finally {
       setCrmContextLoading(false);
     }
