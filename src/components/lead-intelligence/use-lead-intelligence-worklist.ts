@@ -5,6 +5,10 @@ import type {
   LeadIntelligenceWorklistResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
+import {
+  apiResponseError,
+  clientApiError,
+} from "@/components/lead-intelligence/lead-intelligence-client-errors";
 import type { LeadIntelligenceWorklistItem } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
 
 interface UseLeadIntelligenceWorklistParams {
@@ -40,20 +44,12 @@ export function useLeadIntelligenceWorklist({
       });
       const body = (await res.json()) as LeadIntelligenceWorklistResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setWorklistError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente arbeidslisten.",
-        });
+        setWorklistError(apiResponseError(res, body, "Kunne ikke hente arbeidslisten."));
         return;
       }
       setWorklistResult(body);
     } catch {
-      setWorklistError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte arbeidsliste-API-et.",
-      });
+      setWorklistError(clientApiError("Kunne ikke kontakte arbeidsliste-API-et."));
     } finally {
       setWorklistLoading(false);
     }
