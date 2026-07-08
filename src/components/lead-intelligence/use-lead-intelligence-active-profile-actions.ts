@@ -8,6 +8,10 @@ import type {
   SavedProfileContactCreateResponse,
   SavedProfileContactLinkResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
+import {
+  apiResponseError,
+  clientApiError,
+} from "@/components/lead-intelligence/lead-intelligence-client-errors";
 import type { LeadIntelligenceWorklistItem } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
 
 interface UseLeadIntelligenceActiveProfileActionsParams {
@@ -92,21 +96,15 @@ export function useLeadIntelligenceActiveProfileActions({
       );
       const body = (await res.json()) as SavedProfileContactCandidatesResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setProfileContactCandidatesError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente kontaktkandidater for lagret profil.",
-        });
+        setProfileContactCandidatesError(
+          apiResponseError(res, body, "Kunne ikke hente kontaktkandidater for lagret profil."),
+        );
         return;
       }
       setProfileContactCandidatesResult(body);
       onContactCandidatesLoaded(body);
     } catch {
-      setProfileContactCandidatesError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte profil-kandidat-API-et.",
-      });
+      setProfileContactCandidatesError(clientApiError("Kunne ikke kontakte profil-kandidat-API-et."));
     } finally {
       setProfileContactCandidatesLoading(false);
     }
@@ -135,22 +133,14 @@ export function useLeadIntelligenceActiveProfileActions({
       );
       const body = (await res.json()) as SavedProfileContactLinkResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setProfileContactLinkError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke koble eksisterende kontakt.",
-        });
+        setProfileContactLinkError(apiResponseError(res, body, "Kunne ikke koble eksisterende kontakt."));
         return;
       }
 
       setProfileContactLinkResult(body);
       onContactLinked(body);
     } catch {
-      setProfileContactLinkError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kontaktkoblings-API-et.",
-      });
+      setProfileContactLinkError(clientApiError("Kunne ikke kontakte kontaktkoblings-API-et."));
     } finally {
       setProfileContactLinkLoading(false);
     }
@@ -178,22 +168,14 @@ export function useLeadIntelligenceActiveProfileActions({
       );
       const body = (await res.json()) as SavedProfileContactCreateResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setProfileContactCreateError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke opprette CRM-kontakt.",
-        });
+        setProfileContactCreateError(apiResponseError(res, body, "Kunne ikke opprette CRM-kontakt."));
         return;
       }
 
       setProfileContactCreateResult(body);
       onContactCreated(body);
     } catch {
-      setProfileContactCreateError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kontaktopprettings-API-et.",
-      });
+      setProfileContactCreateError(clientApiError("Kunne ikke kontakte kontaktopprettings-API-et."));
     } finally {
       setProfileContactCreateLoading(false);
     }
@@ -221,11 +203,7 @@ export function useLeadIntelligenceActiveProfileActions({
       );
       const body = (await res.json()) as SavedProfileArchiveResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setProfileArchiveError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke arkivere profilen.",
-        });
+        setProfileArchiveError(apiResponseError(res, body, "Kunne ikke arkivere profilen."));
         return;
       }
 
@@ -233,11 +211,7 @@ export function useLeadIntelligenceActiveProfileActions({
       setProfileArchiveResult(body);
       onProfileArchived(body);
     } catch {
-      setProfileArchiveError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte profilarkiv-API-et.",
-      });
+      setProfileArchiveError(clientApiError("Kunne ikke kontakte profilarkiv-API-et."));
     } finally {
       setProfileArchiveLoading(false);
     }
