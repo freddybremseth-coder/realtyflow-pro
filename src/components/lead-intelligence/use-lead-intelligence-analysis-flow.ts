@@ -6,6 +6,10 @@ import type {
   LeadAnalysisResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
+import {
+  apiResponseError,
+  clientApiError,
+} from "@/components/lead-intelligence/lead-intelligence-client-errors";
 
 interface UseLeadIntelligenceAnalysisFlowParams {
   defaultBrand: string;
@@ -73,22 +77,14 @@ export function useLeadIntelligenceAnalysisFlow({
       });
       const body = (await res.json()) as LeadAnalysisResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Analysen feilet",
-        });
+        setError(apiResponseError(res, body, "Analysen feilet"));
         return;
       }
       setResponse(body);
       onAnalysisLoaded(body.result);
       onAnalysisInvalidated();
     } catch {
-      setError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte analyse-API-et.",
-      });
+      setError(clientApiError("Kunne ikke kontakte analyse-API-et."));
     } finally {
       setLoading(false);
     }
