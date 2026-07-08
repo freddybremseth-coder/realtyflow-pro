@@ -46,6 +46,7 @@ import {
 } from "@/components/lead-intelligence/lead-intelligence-client-config";
 import { useLeadIntelligenceShortlistDerivedState } from "@/components/lead-intelligence/use-lead-intelligence-shortlist-derived-state";
 import { useLeadIntelligencePresentationDrafts } from "@/components/lead-intelligence/use-lead-intelligence-presentation-drafts";
+import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-actions";
 import type {
   ContactCandidatesResponse,
   LeadAnalysisResponse,
@@ -55,10 +56,6 @@ import type {
   PropertyMatchPreviewResponse,
   ReviewSaveResponse,
   SafeErrorResponse,
-  SavedProfileArchiveResponse,
-  SavedProfileContactCandidatesResponse,
-  SavedProfileContactCreateResponse,
-  SavedProfileContactLinkResponse,
   ShortlistSaveResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
@@ -108,19 +105,6 @@ export function LeadIntelligenceClient({
   const [crmContextLoading, setCrmContextLoading] = useState(false);
   const [crmContextError, setCrmContextError] = useState<SafeErrorResponse["error"] | null>(null);
   const [crmContextResult, setCrmContextResult] = useState<LeadIntelligenceCrmContextResponse | null>(null);
-  const [profileContactCandidatesLoading, setProfileContactCandidatesLoading] = useState(false);
-  const [profileContactCandidatesError, setProfileContactCandidatesError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [profileContactCandidatesResult, setProfileContactCandidatesResult] = useState<SavedProfileContactCandidatesResponse | null>(null);
-  const [profileSelectedContactId, setProfileSelectedContactId] = useState<string | null>(null);
-  const [profileContactLinkLoading, setProfileContactLinkLoading] = useState(false);
-  const [profileContactLinkError, setProfileContactLinkError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [profileContactLinkResult, setProfileContactLinkResult] = useState<SavedProfileContactLinkResponse | null>(null);
-  const [profileContactCreateLoading, setProfileContactCreateLoading] = useState(false);
-  const [profileContactCreateError, setProfileContactCreateError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [profileContactCreateResult, setProfileContactCreateResult] = useState<SavedProfileContactCreateResponse | null>(null);
-  const [profileArchiveLoading, setProfileArchiveLoading] = useState(false);
-  const [profileArchiveError, setProfileArchiveError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [profileArchiveResult, setProfileArchiveResult] = useState<SavedProfileArchiveResponse | null>(null);
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
 
   const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
@@ -181,6 +165,110 @@ export function LeadIntelligenceClient({
     shortlistEmailDraft,
     onShortlistSaveResultLoaded: setShortlistSaveResult,
   });
+  const {
+    profileContactCandidatesLoading,
+    profileContactCandidatesError,
+    profileContactCandidatesResult,
+    profileSelectedContactId,
+    profileContactLinkLoading,
+    profileContactLinkError,
+    profileContactLinkResult,
+    profileContactCreateLoading,
+    profileContactCreateError,
+    profileContactCreateResult,
+    profileArchiveLoading,
+    profileArchiveError,
+    profileArchiveResult,
+    clearActiveProfileActions,
+    selectProfileContactCandidate,
+    loadSavedProfileContactCandidates,
+    linkSavedProfileContact,
+    createContactFromSavedProfile,
+    archiveActiveProfile,
+  } = useLeadIntelligenceActiveProfileActions({
+    brand,
+    activeWorklistItem,
+    persistenceEnabled,
+    connectExistingEnabled,
+    createContactEnabled,
+    onContactCandidatesLoaded: (result) => {
+      if (!result.result.linkedContact) return;
+      setActiveWorklistItem((current) =>
+        current && current.buyerProfileId === result.result.buyerProfileId
+          ? {
+              ...current,
+              contactLinked: true,
+              linkedContact: result.result.linkedContact,
+            }
+          : current,
+      );
+    },
+    onContactLinked: (result) => {
+      setActiveWorklistItem((current) =>
+        current && current.buyerProfileId === result.result.buyerProfileId
+          ? {
+              ...current,
+              contactLinked: true,
+              linkedContact: result.result.linkedContact,
+            }
+          : current,
+      );
+      setSaveResult((current) =>
+        current
+          ? {
+              ...current,
+              result: {
+                ...current.result,
+                contactCandidates: {
+                  ...current.result.contactCandidates,
+                  selectedContactId: result.result.contactId,
+                  decision: "connect_existing",
+                  linkedContact: true,
+                  duplicate: result.result.duplicate,
+                },
+              },
+            }
+          : current,
+      );
+      void loadWorklist();
+    },
+    onContactCreated: (result) => {
+      setActiveWorklistItem((current) =>
+        current && current.buyerProfileId === result.result.buyerProfileId
+          ? {
+              ...current,
+              contactLinked: true,
+              linkedContact: result.result.linkedContact,
+            }
+          : current,
+      );
+      setSaveResult((current) =>
+        current
+          ? {
+              ...current,
+              result: {
+                ...current.result,
+                contactCandidates: {
+                  ...current.result.contactCandidates,
+                  selectedContactId: result.result.contactId,
+                  decision: "create_new",
+                  linkedContact: true,
+                  duplicate: result.result.duplicate,
+                },
+              },
+            }
+          : current,
+      );
+      void loadWorklist();
+    },
+    onProfileArchived: () => {
+      setActiveWorklistItem(null);
+      setSaveResult(null);
+      clearPropertyMatchPreview();
+      setWorklistHistoryExpanded(true);
+      void loadWorklist();
+    },
+  });
 
   const clearShortlistAndPresentationState = () => {
     setShortlistSaveError(null);
@@ -239,22 +327,6 @@ export function LeadIntelligenceClient({
     setCrmContextLoading(false);
     setCrmContextError(null);
     setCrmContextResult(null);
-  };
-
-  const clearActiveProfileActions = () => {
-    setProfileContactCandidatesLoading(false);
-    setProfileContactCandidatesError(null);
-    setProfileContactCandidatesResult(null);
-    setProfileSelectedContactId(null);
-    setProfileContactLinkLoading(false);
-    setProfileContactLinkError(null);
-    setProfileContactLinkResult(null);
-    setProfileContactCreateLoading(false);
-    setProfileContactCreateError(null);
-    setProfileContactCreateResult(null);
-    setProfileArchiveLoading(false);
-    setProfileArchiveError(null);
-    setProfileArchiveResult(null);
   };
 
   const clearContactCandidates = () => {
@@ -653,244 +725,6 @@ export function LeadIntelligenceClient({
     }
   };
 
-  const loadSavedProfileContactCandidates = async () => {
-    if (!activeWorklistItem || !persistenceEnabled) return;
-    setProfileContactCandidatesLoading(true);
-    setProfileContactCandidatesError(null);
-    setProfileContactLinkError(null);
-    setProfileContactLinkResult(null);
-    setProfileContactCreateError(null);
-    setProfileContactCreateResult(null);
-    setProfileSelectedContactId(null);
-
-    try {
-      const res = await fetch(
-        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-candidates`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ brand }),
-        },
-      );
-      const body = (await res.json()) as SavedProfileContactCandidatesResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setProfileContactCandidatesError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke hente kontaktkandidater for lagret profil.",
-        });
-        return;
-      }
-      setProfileContactCandidatesResult(body);
-      if (body.result.linkedContact) {
-        setActiveWorklistItem((current) =>
-          current && current.buyerProfileId === body.result.buyerProfileId
-            ? {
-                ...current,
-                contactLinked: true,
-                linkedContact: body.result.linkedContact,
-              }
-            : current,
-        );
-      }
-    } catch {
-      setProfileContactCandidatesError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte profil-kandidat-API-et.",
-      });
-    } finally {
-      setProfileContactCandidatesLoading(false);
-    }
-  };
-
-  const linkSavedProfileContact = async (contactId: string) => {
-    if (!activeWorklistItem || !persistenceEnabled || !connectExistingEnabled) return;
-    const confirmed = window.confirm(
-      "Koble denne buyer profile til den valgte eksisterende kontakten? Kontaktkortet oppdateres ikke, og det opprettes ikke lead eller e-post.",
-    );
-    if (!confirmed) return;
-
-    setProfileSelectedContactId(contactId);
-    setProfileContactLinkLoading(true);
-    setProfileContactLinkError(null);
-    setProfileContactLinkResult(null);
-
-    try {
-      const res = await fetch(
-        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-link`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ brand, contactId }),
-        },
-      );
-      const body = (await res.json()) as SavedProfileContactLinkResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setProfileContactLinkError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke koble eksisterende kontakt.",
-        });
-        return;
-      }
-
-      setProfileContactLinkResult(body);
-      setActiveWorklistItem((current) =>
-        current && current.buyerProfileId === body.result.buyerProfileId
-          ? {
-              ...current,
-              contactLinked: true,
-              linkedContact: body.result.linkedContact,
-            }
-          : current,
-      );
-      setSaveResult((current) =>
-        current
-          ? {
-              ...current,
-              result: {
-                ...current.result,
-                contactCandidates: {
-                  ...current.result.contactCandidates,
-                  selectedContactId: body.result.contactId,
-                  decision: "connect_existing",
-                  linkedContact: true,
-                  duplicate: body.result.duplicate,
-                },
-              },
-            }
-          : current,
-      );
-      void loadWorklist();
-    } catch {
-      setProfileContactLinkError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kontaktkoblings-API-et.",
-      });
-    } finally {
-      setProfileContactLinkLoading(false);
-    }
-  };
-
-  const createContactFromSavedProfile = async () => {
-    if (!activeWorklistItem || !persistenceEnabled || !createContactEnabled) return;
-    const confirmed = window.confirm(
-      "Opprett ny CRM-kontakt fra denne godkjente buyer profile? Dette oppretter én kontakt og kobler profilen, men oppretter ikke lead, e-post eller matchingjobb.",
-    );
-    if (!confirmed) return;
-
-    setProfileContactCreateLoading(true);
-    setProfileContactCreateError(null);
-    setProfileContactCreateResult(null);
-
-    try {
-      const res = await fetch(
-        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/contact-create`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ brand }),
-        },
-      );
-      const body = (await res.json()) as SavedProfileContactCreateResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setProfileContactCreateError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke opprette CRM-kontakt.",
-        });
-        return;
-      }
-
-      setProfileContactCreateResult(body);
-      setActiveWorklistItem((current) =>
-        current && current.buyerProfileId === body.result.buyerProfileId
-          ? {
-              ...current,
-              contactLinked: true,
-              linkedContact: body.result.linkedContact,
-            }
-          : current,
-      );
-      setSaveResult((current) =>
-        current
-          ? {
-              ...current,
-              result: {
-                ...current.result,
-                contactCandidates: {
-                  ...current.result.contactCandidates,
-                  selectedContactId: body.result.contactId,
-                  decision: "create_new",
-                  linkedContact: true,
-                  duplicate: body.result.duplicate,
-                },
-              },
-            }
-          : current,
-      );
-      void loadWorklist();
-    } catch {
-      setProfileContactCreateError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte kontaktopprettings-API-et.",
-      });
-    } finally {
-      setProfileContactCreateLoading(false);
-    }
-  };
-
-  const archiveActiveProfile = async () => {
-    if (!activeWorklistItem || !persistenceEnabled) return;
-    const confirmed = window.confirm(
-      "Arkiver denne buyer profile? Den fjernes fra arbeidslisten, men slettes ikke fysisk og kan beholdes som audit-historikk.",
-    );
-    if (!confirmed) return;
-
-    setProfileArchiveLoading(true);
-    setProfileArchiveError(null);
-    setProfileArchiveResult(null);
-
-    try {
-      const res = await fetch(
-        `/api/lead-intelligence/buyer-profiles/${activeWorklistItem.buyerProfileId}/archive`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ brand }),
-        },
-      );
-      const body = (await res.json()) as SavedProfileArchiveResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setProfileArchiveError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke arkivere profilen.",
-        });
-        return;
-      }
-
-      setActiveWorklistItem(null);
-      setSaveResult(null);
-      clearActiveProfileActions();
-      setProfileArchiveResult(body);
-      clearPropertyMatchPreview();
-      setWorklistHistoryExpanded(true);
-      void loadWorklist();
-    } catch {
-      setProfileArchiveError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte profilarkiv-API-et.",
-      });
-    } finally {
-      setProfileArchiveLoading(false);
-    }
-  };
-
   const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
     if (!item.analysisRunId) return;
     clearContactCandidates();
@@ -1116,11 +950,7 @@ export function LeadIntelligenceClient({
                   onLoadContactCandidates={loadSavedProfileContactCandidates}
                   onCreateContact={createContactFromSavedProfile}
                   onArchiveProfile={archiveActiveProfile}
-                  onSelectContactCandidate={(contactId) => {
-                    setProfileSelectedContactId(contactId);
-                    setProfileContactLinkError(null);
-                    setProfileContactLinkResult(null);
-                  }}
+                  onSelectContactCandidate={selectProfileContactCandidate}
                   onLinkContact={linkSavedProfileContact}
                   onLoadLatestPresentationDraft={loadLatestPresentationDraft}
                   onLoadPresentationDraftHistory={loadPresentationDraftHistory}
