@@ -2,6 +2,10 @@ import { youtube, type youtube_v3 } from '@googleapis/youtube';
 import { OAuth2Client } from 'google-auth-library';
 import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { BRANDS } from '@/lib/constants';
+import {
+  isRemasterBrand,
+  REMASTER_OAUTH_RETURN_PATH,
+} from '@/lib/remaster/oauth-return';
 import { Readable } from 'stream';
 
 // Cache per (brandId, token) so we can re-use OAuth clients but also invalidate
@@ -19,9 +23,8 @@ const BRAND_TOKEN_ALIASES: Record<string, string[]> = {
 };
 
 function reconnectUrlForBrand(brandId: string) {
-  const normalized = brandId.toLowerCase().replace(/[-_.\s]/g, '');
-  const returnTo = normalized === 'remasterfreddy' || normalized === 'neuralbeat'
-    ? (process.env.REMASTER_ADMIN_URL || process.env.NEXT_PUBLIC_REMASTER_ADMIN_URL || 'https://remasterfreddy.vercel.app/admin')
+  const returnTo = isRemasterBrand(brandId)
+    ? REMASTER_OAUTH_RETURN_PATH
     : '/settings?tab=sosiale-medier';
   return `/api/oauth/google?brand=${encodeURIComponent(brandId)}&return_to=${encodeURIComponent(returnTo)}`;
 }

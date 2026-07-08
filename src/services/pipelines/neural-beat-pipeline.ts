@@ -17,6 +17,7 @@ import {
   PipelineRun,
   PipelineStep,
 } from '@/lib/types';
+import { REMASTER_OAUTH_RETURN_PATH } from '@/lib/remaster/oauth-return';
 import { generateId } from '@/lib/utils';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -29,11 +30,7 @@ import { createClient } from '@supabase/supabase-js';
 // select the Re-Master Freddy channel on the Google consent screen if it
 // ever falls out of sync. Env var overrides for flexibility in preview deploys.
 const NEURAL_BEAT_BRAND_ID = process.env.NEURAL_BEAT_BRAND_ID || 'remasterfreddy';
-const REMASTER_ADMIN_URL =
-  process.env.REMASTER_ADMIN_URL ||
-  process.env.NEXT_PUBLIC_REMASTER_ADMIN_URL ||
-  'https://remasterfreddy.vercel.app/admin';
-const NEURAL_BEAT_RECONNECT_URL = `https://realtyflow.chatgenius.pro/api/oauth/google?brand=remasterfreddy&return_to=${encodeURIComponent(REMASTER_ADMIN_URL)}`;
+const NEURAL_BEAT_RECONNECT_URL = `https://realtyflow.chatgenius.pro/api/oauth/google?brand=remasterfreddy&return_to=${encodeURIComponent(REMASTER_OAUTH_RETURN_PATH)}`;
 
 const STEP_NAMES = [
   'Update Status to Processing',

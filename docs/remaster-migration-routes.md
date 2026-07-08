@@ -59,19 +59,22 @@ Current brand IDs:
 
 Re-Master reconnects through RealtyFlow, but the user must return to Re-Master admin.
 
-Default return URL:
+OAuth must use this same-origin return path:
 
 ```text
-https://remasterfreddy.vercel.app/admin
+/oauth/remaster-return
 ```
 
-If the custom domain is activated, set this RealtyFlow server env var:
+The bridge forwards the OAuth result to the configured Re-Master admin URL. If
+the custom domain is activated, set this RealtyFlow server env var:
 
 ```text
 REMASTER_ADMIN_URL=https://remaster.freddybremseth.com/admin
 ```
 
-The Google OAuth channel picker must preserve absolute `return_to` URLs. If the return target is outside RealtyFlow, it should use `window.location.assign(...)` instead of a Next.js internal router path.
+The OAuth state guard must continue to reject absolute `return_to` URLs. The
+public bridge forwards only the expected OAuth result parameters and prevents
+the OAuth callback from becoming an open redirect.
 
 ## Old RealtyFlow Neural Beat Frontend
 

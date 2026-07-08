@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  isRemasterBrand,
+  REMASTER_OAUTH_RETURN_PATH,
+} from "@/lib/remaster/oauth-return";
 import { checkBrandYouTubeHealth } from "@/services/integrations/youtube-health";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function remasterAdminUrl() {
-  return (
-    process.env.REMASTER_ADMIN_URL ||
-    process.env.NEXT_PUBLIC_REMASTER_ADMIN_URL ||
-    "https://remasterfreddy.vercel.app/admin"
-  );
-}
-
 function reconnectReturnTo(brandId: string) {
-  return brandId === "remasterfreddy" || brandId === "neuralbeat"
-    ? remasterAdminUrl()
+  return isRemasterBrand(brandId)
+    ? REMASTER_OAUTH_RETURN_PATH
     : "/settings?tab=sosiale-medier";
 }
 

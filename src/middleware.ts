@@ -23,6 +23,7 @@ const PUBLIC_PATHS = [
   "/api/oauth/google/callback",
   "/api/oauth/google/finalize",
   "/oauth/select",
+  "/oauth/remaster-return",
   "/demosites/preview",
   "/demosites/claim",
   "/api/saas/demosites/request",
