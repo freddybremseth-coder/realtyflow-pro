@@ -16,7 +16,6 @@ import { LeadIntelligenceWorklistCard } from "@/components/lead-intelligence/lea
 import { LeadIntelligenceActiveWorklistProfilePanel } from "@/components/lead-intelligence/lead-intelligence-active-worklist-profile-panel";
 import { LeadIntelligenceAnalysisResultPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-result-panel";
 import {
-  leadIntelligenceDraftReturnUrl,
   realEstateBrands,
   sourceOptions,
 } from "@/components/lead-intelligence/lead-intelligence-client-config";
@@ -31,6 +30,7 @@ import { useLeadIntelligenceAnalysisFlow } from "@/components/lead-intelligence/
 import { useLeadIntelligenceWorklistNavigation } from "@/components/lead-intelligence/use-lead-intelligence-worklist-navigation";
 import { useLeadIntelligenceActiveProfileFlow } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-flow";
 import { useLeadIntelligencePropertyMatchHighlight } from "@/components/lead-intelligence/use-lead-intelligence-property-match-highlight";
+import { useLeadIntelligencePresentationActions } from "@/components/lead-intelligence/use-lead-intelligence-presentation-actions";
 import type { LeadIntelligenceClientProps } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 export function LeadIntelligenceClient({
@@ -318,21 +318,17 @@ export function LeadIntelligenceClient({
     clearHighlightedMatchRef.current = clearHighlightedMatch;
   }, [clearHighlightedMatch]);
 
-  const presentationDraftReturnUrl = presentationDraftResult
-    ? leadIntelligenceDraftReturnUrl({
-        buyerProfileId: presentationDraftResult.result.buyerProfileId,
-        presentationId: presentationDraftResult.result.presentationId,
-        messageDraftId: presentationDraftResult.result.messageDraftId,
-      })
-    : null;
-  const propertyMatchReturnBaseUrl =
-    presentationDraftReturnUrl ||
-    leadIntelligenceDraftReturnUrl({
-      buyerProfileId: activeWorklistItem?.buyerProfileId || saveResult?.result.buyerProfile.id || null,
-    });
-  const saveSelectedShortlistDraft = () => {
-    void saveShortlistDraft(selectedShortlistItems);
-  };
+  const {
+    presentationDraftReturnUrl,
+    propertyMatchReturnBaseUrl,
+    saveSelectedShortlistDraft,
+  } = useLeadIntelligencePresentationActions({
+    activeWorklistItem,
+    saveResult,
+    presentationDraftResult,
+    selectedShortlistItems,
+    saveShortlistDraft,
+  });
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
