@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  generateClientCorrelationId,
-} from "@/components/lead-intelligence/lead-intelligence-client-helpers";
+import { generateClientCorrelationId } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import {
   LeadIntelligenceRequestCard,
-  type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
 import {
@@ -33,13 +30,8 @@ import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-
 import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/use-lead-intelligence-contact-flow";
 import { useLeadIntelligenceReviewEditor } from "@/components/lead-intelligence/use-lead-intelligence-review-editor";
 import { useLeadIntelligenceReviewSave } from "@/components/lead-intelligence/use-lead-intelligence-review-save";
-import type {
-  LeadAnalysisResponse,
-  LeadIntelligenceClientProps,
-  SafeErrorResponse,
-} from "@/components/lead-intelligence/lead-intelligence-client-types";
-
-type Source = LeadIntelligenceSource;
+import { useLeadIntelligenceAnalysisFlow } from "@/components/lead-intelligence/use-lead-intelligence-analysis-flow";
+import type { LeadIntelligenceClientProps } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 export function LeadIntelligenceClient({
   featureEnabled,
@@ -48,16 +40,43 @@ export function LeadIntelligenceClient({
   createContactEnabled,
   propertyMatchingEnabled,
 }: LeadIntelligenceClientProps) {
-  const [source, setSource] = useState<Source>("phone_call");
-  const [brand, setBrand] = useState(realEstateBrands[0]?.id || "soleada");
-  const [language, setLanguage] = useState("");
-  const [rawText, setRawText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [response, setResponse] = useState<LeadAnalysisResponse | null>(null);
-  const [error, setError] = useState<SafeErrorResponse["error"] | null>(null);
   const returnUrlHydratedRef = useRef(false);
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
   const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
+  const {
+    source,
+    brand,
+    language,
+    rawText,
+    loading,
+    response,
+    error,
+    changeSource,
+    changeBrand,
+    changeLanguage,
+    changeRawText,
+    clearAnalysisResult,
+    analyze,
+    reset,
+  } = useLeadIntelligenceAnalysisFlow({
+    defaultBrand: realEstateBrands[0]?.id || "soleada",
+    onAnalysisLoaded: (result) => {
+      loadAnalysisResult(result);
+    },
+    onAnalysisInvalidated: () => {
+      clearContactCandidates();
+    },
+    onAnalysisReset: () => {
+      clearReviewEditor();
+      clearContactCandidatesState();
+      clearSaveFeedback();
+      clearWorklistSelection();
+      resetPropertyMatchFlow();
+    },
+    onBrandChanged: () => {
+      resetWorklist();
+    },
+  });
   const {
     worklistLoading,
     worklistError,
@@ -348,61 +367,11 @@ export function LeadIntelligenceClient({
     clearPropertyMatchPreview();
   };
 
-  const analyze = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/lead-intelligence/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source,
-          brand,
-          rawText,
-          language: language.trim() || null,
-        }),
-      });
-      const body = (await res.json()) as LeadAnalysisResponse | SafeErrorResponse;
-      if (!res.ok || !body.ok) {
-        setError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Analysen feilet",
-        });
-        return;
-      }
-      setResponse(body);
-      loadAnalysisResult(body.result);
-      clearContactCandidates();
-      clearSaveFeedback();
-    } catch {
-      setError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte analyse-API-et.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const reset = () => {
-    setResponse(null);
-    setError(null);
-    clearReviewEditor();
-    clearContactCandidatesState();
-    clearSaveFeedback();
-    clearWorklistSelection();
-    resetPropertyMatchFlow();
-  };
-
   const continueFromWorklistItem = (item: LeadIntelligenceWorklistItem) => {
     if (!item.analysisRunId) return;
     clearContactCandidates();
     clearActiveProfileActions();
-    setResponse(null);
-    setError(null);
+    clearAnalysisResult();
     clearReviewEditor();
     setActiveWorklistItem(item);
     setWorklistHistoryExpanded(false);
@@ -672,25 +641,10 @@ export function LeadIntelligenceClient({
           loading={loading}
           hasResponse={Boolean(response)}
           error={error}
-          onSourceChange={(nextSource) => {
-            setSource(nextSource);
-            clearContactCandidates();
-          }}
-          onBrandChange={(nextBrand) => {
-            setBrand(nextBrand);
-            clearContactCandidates();
-            clearSaveResult();
-            resetWorklist();
-          }}
-          onLanguageChange={(value) => {
-            setLanguage(value);
-            clearContactCandidates();
-          }}
-          onRawTextChange={(value) => {
-            setRawText(value);
-            clearContactCandidates();
-            clearSaveResult();
-          }}
+          onSourceChange={changeSource}
+          onBrandChange={changeBrand}
+          onLanguageChange={changeLanguage}
+          onRawTextChange={changeRawText}
           onAnalyze={analyze}
           onReset={reset}
         />
