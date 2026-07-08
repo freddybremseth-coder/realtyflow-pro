@@ -10,21 +10,11 @@ import {
   parsePropertyReferences,
   prettyJson,
 } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
-import {
-  type MatchReviewDecision,
-  type SelectedShortlistDecision,
-} from "@/components/lead-intelligence/property-match-display";
-import {
-  buildShortlistEmailDraft,
-  buildShortlistPresentation,
-  buildShortlistPresentationText,
-  type SelectedShortlistMatch,
-} from "@/components/lead-intelligence/shortlist-presentation-drafts";
+import { type MatchReviewDecision } from "@/components/lead-intelligence/property-match-display";
 import {
   defaultPropertyQualityReview,
   type PropertyQualityReviewState,
   type PropertyQualityReviewStatus,
-  type SavedPropertyQualityReviewStatus,
 } from "@/components/lead-intelligence/property-quality-review-controls";
 import {
   LeadIntelligenceRequestCard,
@@ -52,9 +42,9 @@ import { LeadIntelligenceAnalysisResultPanel } from "@/components/lead-intellige
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
-  savedPropertyQualityDecision,
   sourceOptions,
 } from "@/components/lead-intelligence/lead-intelligence-client-config";
+import { useLeadIntelligenceShortlistDerivedState } from "@/components/lead-intelligence/use-lead-intelligence-shortlist-derived-state";
 import type {
   ContactCandidatesResponse,
   LeadAnalysisResponse,
@@ -156,74 +146,20 @@ export function LeadIntelligenceClient({
     () => parsePropertyReferences(propertyReferencesText),
     [propertyReferencesText],
   );
-  const selectedShortlistItems = useMemo(() => {
-    if (!propertyMatchResult) return [];
-    return propertyMatchResult.result.matches
-      .map((match) => {
-        const qualityReview = propertyQualityReviews[match.propertyId] || defaultPropertyQualityReview();
-        if (qualityReview.status === "unreviewed") return null;
-        const reviewDecision = matchReviewDecisions[match.propertyId] || "system";
-        return {
-          propertyId: match.propertyId,
-          decision: savedPropertyQualityDecision(qualityReview.status, reviewDecision),
-          qualityReview: {
-            status: qualityReview.status,
-            note: qualityReview.note.trim() || null,
-            checkedAt: qualityReview.checkedAt || new Date().toISOString(),
-            checkedBy: qualityReview.checkedBy || "Freddy",
-          },
-        };
-      })
-      .filter((item): item is {
-        propertyId: string;
-        decision: SelectedShortlistDecision;
-        qualityReview: {
-          status: SavedPropertyQualityReviewStatus;
-          note: string | null;
-          checkedAt: string;
-          checkedBy: string;
-        };
-      } => Boolean(item));
-  }, [matchReviewDecisions, propertyMatchResult, propertyQualityReviews]);
-  const clientReadyShortlistItems = useMemo(
-    () => selectedShortlistItems.filter((item) => item.qualityReview.status === "client_ready"),
-    [selectedShortlistItems],
-  );
-  const selectedShortlistMatches = useMemo(() => {
-    if (!propertyMatchResult) return [];
-    const selectedById = new Map(clientReadyShortlistItems.map((item) => [item.propertyId, item]));
-    return propertyMatchResult.result.matches
-      .map((match) => {
-        const selected = selectedById.get(match.propertyId);
-        return selected
-          ? {
-              ...match,
-              decision: selected.decision,
-              qualityReview: {
-                status: "client_ready" as const,
-                note: selected.qualityReview.note || "",
-                checkedAt: selected.qualityReview.checkedAt,
-                checkedBy: selected.qualityReview.checkedBy,
-              },
-            }
-          : null;
-      })
-      .filter((match): match is SelectedShortlistMatch =>
-        Boolean(match),
-      );
-  }, [clientReadyShortlistItems, propertyMatchResult]);
-  const shortlistPresentation = useMemo(() => {
-    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
-    return buildShortlistPresentation(edited, selectedShortlistMatches);
-  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
-  const shortlistPresentationText = useMemo(() => {
-    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
-    return buildShortlistPresentationText(edited, selectedShortlistMatches);
-  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
-  const shortlistEmailDraft = useMemo(() => {
-    if (!shortlistSaveResult || !edited || selectedShortlistMatches.length === 0) return null;
-    return buildShortlistEmailDraft(edited, selectedShortlistMatches);
-  }, [edited, selectedShortlistMatches, shortlistSaveResult]);
+  const {
+    selectedShortlistItems,
+    clientReadyShortlistItems,
+    selectedShortlistMatches,
+    shortlistPresentation,
+    shortlistPresentationText,
+    shortlistEmailDraft,
+  } = useLeadIntelligenceShortlistDerivedState({
+    edited,
+    propertyMatchResult,
+    propertyQualityReviews,
+    matchReviewDecisions,
+    shortlistSaveResult,
+  });
 
   const resetDraftCopyState = () => {
     setEmailDraftCopyState("idle");
