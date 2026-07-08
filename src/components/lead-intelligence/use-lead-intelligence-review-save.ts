@@ -11,6 +11,10 @@ import type {
   ReviewSaveResponse,
   SafeErrorResponse,
 } from "@/components/lead-intelligence/lead-intelligence-client-types";
+import {
+  apiResponseError,
+  clientApiError,
+} from "@/components/lead-intelligence/lead-intelligence-client-errors";
 
 interface UseLeadIntelligenceReviewSaveParams {
   brand: string;
@@ -103,21 +107,13 @@ export function useLeadIntelligenceReviewSave({
       });
       const body = (await res.json()) as ReviewSaveResponse | SafeErrorResponse;
       if (!res.ok || !body.ok) {
-        setSaveError((body as SafeErrorResponse).error || {
-          correlationId: res.headers.get("x-correlation-id") || "unknown",
-          code: "INTERNAL_ERROR",
-          message: "Kunne ikke lagre review.",
-        });
+        setSaveError(apiResponseError(res, body, "Kunne ikke lagre review."));
         return;
       }
       setSaveResult(body);
       onReviewSaved();
     } catch {
-      setSaveError({
-        correlationId: "client",
-        code: "INTERNAL_ERROR",
-        message: "Kunne ikke kontakte review-API-et.",
-      });
+      setSaveError(clientApiError("Kunne ikke kontakte review-API-et."));
     } finally {
       setSaveLoading(false);
     }
