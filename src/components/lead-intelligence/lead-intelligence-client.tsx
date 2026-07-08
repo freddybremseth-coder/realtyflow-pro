@@ -31,29 +31,24 @@ import {
   type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
-import { LeadIntelligenceAnalysisOverview } from "@/components/lead-intelligence/lead-intelligence-analysis-overview";
 import {
-  LeadIntelligenceCriteriaReviewPanel,
   type CriterionReviewState,
 } from "@/components/lead-intelligence/lead-intelligence-criteria-review-panel";
 import {
-  LeadIntelligenceContactCandidatesPanel,
   type LeadContactCandidatePreview,
   type LeadContactDecision,
 } from "@/components/lead-intelligence/lead-intelligence-contact-candidates-panel";
-import { LeadIntelligenceReviewSavePanel } from "@/components/lead-intelligence/lead-intelligence-review-save-panel";
 import {
   LeadIntelligenceWorklistHistoryPanel,
   type LeadIntelligenceWorklistItem,
 } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
-import { LeadIntelligenceAnalysisPropertyMatchPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-preview-card";
-import { LeadIntelligenceJsonEditorPanel } from "@/components/lead-intelligence/lead-intelligence-json-editor-panel";
 import { LeadIntelligenceEnvironmentAlerts } from "@/components/lead-intelligence/lead-intelligence-environment-alerts";
 import { LeadIntelligencePageHeader } from "@/components/lead-intelligence/lead-intelligence-page-header";
 import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intelligence/lead-intelligence-analysis-preview-card";
 import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
 import { LeadIntelligenceWorklistCard } from "@/components/lead-intelligence/lead-intelligence-worklist-card";
 import { LeadIntelligenceActiveWorklistProfilePanel } from "@/components/lead-intelligence/lead-intelligence-active-worklist-profile-panel";
+import { LeadIntelligenceAnalysisResultPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-result-panel";
 import {
   leadIntelligenceDraftReturnUrl,
   realEstateBrands,
@@ -1469,132 +1464,106 @@ export function LeadIntelligenceClient({
 
         <LeadIntelligenceAnalysisPreviewCard loading={loading} hasResponse={Boolean(response)}>
           {response && edited && (
-            <div className="space-y-5">
-              <LeadIntelligenceAnalysisOverview
-                  response={response}
-                  edited={edited}
-                  sourceLabel={sourceOptions.find((option) => option.value === source)?.label || "Ikke satt"}
-                  brandLabel={realEstateBrands.find((item) => item.id === brand)?.name || brand}
-                  language={language}
-                  rawText={rawText}
-                  onUpdateEdited={updateEdited}
-                />
-
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  <LeadIntelligenceCriteriaReviewPanel
-                    criteria={reviewCriteria}
-                    reviews={criterionReviews}
-                    reviewedCount={reviewedCount}
-                    allCriteriaReviewed={allCriteriaReviewed}
-                    onReviewChange={updateCriterionReview}
-                  />
-
-                  <LeadIntelligenceContactCandidatesPanel
-                    hasEditableLead={Boolean(edited)}
-                    persistenceEnabled={persistenceEnabled}
-                    connectExistingEnabled={connectExistingEnabled}
-                    candidateLoading={candidateLoading}
-                    crmContextLoading={crmContextLoading}
-                    contactCandidatesLoaded={contactCandidatesLoaded}
-                    contactCandidates={contactCandidates}
-                    contactCandidateError={contactCandidateError}
-                    crmContextError={crmContextError}
-                    crmContextItems={crmContextResult?.result.context ?? null}
-                    contactDecision={contactDecision}
-                    selectedContactId={selectedContactId}
-                    onLoadContactCandidates={loadContactCandidates}
-                    onLoadCrmContext={loadCrmContext}
-                    onSelectExistingContact={(contactId) => {
-                      setContactDecision("connect_existing");
-                      setSelectedContactId(contactId);
-                      setSaveError(null);
-                      setSaveResult(null);
-                    }}
-                    onContactDecisionChange={(decision) => {
-                      setContactDecision(decision);
-                      setSelectedContactId(null);
-                      setSaveError(null);
-                      setSaveResult(null);
-                    }}
-                  />
-                </div>
-
-                <LeadIntelligenceReviewSavePanel
-                  saveLoading={saveLoading}
-                  persistenceEnabled={persistenceEnabled}
-                  hasJsonError={Boolean(jsonEditor.error)}
-                  allCriteriaReviewed={allCriteriaReviewed}
-                  contactDecision={contactDecision}
-                  selectedContactId={selectedContactId}
-                  saveError={saveError}
-                  saveResult={saveResult?.result ?? null}
-                  hasActiveWorklistItem={Boolean(activeWorklistItem)}
-                  onSave={saveReview}
-                />
-
-                {saveResult && (
-                  <LeadIntelligenceAnalysisPropertyMatchPreviewCard
-                    propertyMatchingEnabled={propertyMatchingEnabled}
-                    propertyReferencesText={propertyReferencesText}
-                    parsedPropertyReferences={parsedPropertyReferences}
-                    propertyMatchLoading={propertyMatchLoading}
-                    propertyMatchError={propertyMatchError}
-                    propertyMatchResult={propertyMatchResult}
-                    selectedShortlistCount={selectedShortlistItems.length}
-                    clientReadyShortlistCount={clientReadyShortlistItems.length}
-                    selectedShortlistMatches={selectedShortlistMatches}
-                    shortlistSaveLoading={shortlistSaveLoading}
-                    shortlistSaveResult={shortlistSaveResult}
-                    shortlistSaveError={shortlistSaveError}
-                    shortlistPresentation={shortlistPresentation}
-                    shortlistEmailDraft={shortlistEmailDraft}
-                    presentationCopyState={presentationCopyState}
-                    presentationDraftLoading={presentationDraftLoading}
-                    presentationDraftResult={presentationDraftResult}
-                    presentationDraftReturnUrl={presentationDraftReturnUrl}
-                    presentationDraftError={presentationDraftError}
-                    highlightedMatchId={highlightedMatchId}
-                    propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
-                    matchReviewDecisions={matchReviewDecisions}
-                    propertyQualityReviews={propertyQualityReviews}
-                    editableEmailSubject={editableEmailSubject}
-                    editableEmailBody={editableEmailBody}
-                    emailDraftCopyState={emailDraftCopyState}
-                    emailDraftHtmlCopyState={emailDraftHtmlCopyState}
-                    onPropertyReferencesChange={updatePropertyReferencesText}
-                    onPreviewPropertyMatches={previewPropertyMatches}
-                    onMatchReviewDecisionChange={updateMatchReviewDecision}
-                    onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
-                    onQualityReviewNoteChange={updatePropertyQualityReviewNote}
-                    onSaveShortlistDraft={saveShortlistDraft}
-                    onSavePresentationDraft={savePresentationDraft}
-                    onCopyPresentationDraft={copyPresentationDraft}
-                    onCopyEmailDraftText={copyEmailDraftText}
-                    onCopyEmailDraftHtml={copyEmailDraftHtml}
-                    onEmailSubjectChange={(value) => {
-                      setEditableEmailSubject(value);
-                      resetDraftCopyState();
-                    }}
-                    onEmailBodyChange={(value) => {
-                      setEditableEmailBody(value);
-                      resetDraftCopyState();
-                    }}
-                  />
-                )}
-
-                <LeadIntelligenceJsonEditorPanel
-                  value={editableJson}
-                  error={jsonEditor.error}
-                  copyState={copyState}
-                  onCopy={copyJson}
-                  onChange={(value) => {
-                    setEditableJson(value);
-                    clearContactCandidates();
-                    setSaveResult(null);
-                  }}
-                />
-              </div>
-            )}
+            <LeadIntelligenceAnalysisResultPanel
+              response={response}
+              edited={edited}
+              sourceLabel={sourceOptions.find((option) => option.value === source)?.label || "Ikke satt"}
+              brandLabel={realEstateBrands.find((item) => item.id === brand)?.name || brand}
+              language={language}
+              rawText={rawText}
+              reviewCriteria={reviewCriteria}
+              criterionReviews={criterionReviews}
+              reviewedCount={reviewedCount}
+              allCriteriaReviewed={allCriteriaReviewed}
+              persistenceEnabled={persistenceEnabled}
+              connectExistingEnabled={connectExistingEnabled}
+              candidateLoading={candidateLoading}
+              crmContextLoading={crmContextLoading}
+              contactCandidatesLoaded={contactCandidatesLoaded}
+              contactCandidates={contactCandidates}
+              contactCandidateError={contactCandidateError}
+              crmContextError={crmContextError}
+              crmContextResult={crmContextResult}
+              contactDecision={contactDecision}
+              selectedContactId={selectedContactId}
+              saveLoading={saveLoading}
+              hasJsonError={Boolean(jsonEditor.error)}
+              saveError={saveError}
+              saveResult={saveResult}
+              hasActiveWorklistItem={Boolean(activeWorklistItem)}
+              propertyMatchingEnabled={propertyMatchingEnabled}
+              propertyReferencesText={propertyReferencesText}
+              parsedPropertyReferences={parsedPropertyReferences}
+              propertyMatchLoading={propertyMatchLoading}
+              propertyMatchError={propertyMatchError}
+              propertyMatchResult={propertyMatchResult}
+              selectedShortlistCount={selectedShortlistItems.length}
+              clientReadyShortlistCount={clientReadyShortlistItems.length}
+              selectedShortlistMatches={selectedShortlistMatches}
+              shortlistSaveLoading={shortlistSaveLoading}
+              shortlistSaveResult={shortlistSaveResult}
+              shortlistSaveError={shortlistSaveError}
+              shortlistPresentation={shortlistPresentation}
+              shortlistEmailDraft={shortlistEmailDraft}
+              presentationCopyState={presentationCopyState}
+              presentationDraftLoading={presentationDraftLoading}
+              presentationDraftResult={presentationDraftResult}
+              presentationDraftReturnUrl={presentationDraftReturnUrl}
+              presentationDraftError={presentationDraftError}
+              highlightedMatchId={highlightedMatchId}
+              propertyMatchReturnBaseUrl={propertyMatchReturnBaseUrl}
+              matchReviewDecisions={matchReviewDecisions}
+              propertyQualityReviews={propertyQualityReviews}
+              editableEmailSubject={editableEmailSubject}
+              editableEmailBody={editableEmailBody}
+              emailDraftCopyState={emailDraftCopyState}
+              emailDraftHtmlCopyState={emailDraftHtmlCopyState}
+              editableJson={editableJson}
+              jsonEditorError={jsonEditor.error}
+              jsonCopyState={copyState}
+              onUpdateEdited={updateEdited}
+              onReviewChange={updateCriterionReview}
+              onLoadContactCandidates={loadContactCandidates}
+              onLoadCrmContext={loadCrmContext}
+              onSelectExistingContact={(contactId) => {
+                setContactDecision("connect_existing");
+                setSelectedContactId(contactId);
+                setSaveError(null);
+                setSaveResult(null);
+              }}
+              onContactDecisionChange={(decision) => {
+                setContactDecision(decision);
+                setSelectedContactId(null);
+                setSaveError(null);
+                setSaveResult(null);
+              }}
+              onSave={saveReview}
+              onPropertyReferencesChange={updatePropertyReferencesText}
+              onPreviewPropertyMatches={previewPropertyMatches}
+              onMatchReviewDecisionChange={updateMatchReviewDecision}
+              onQualityReviewStatusChange={updatePropertyQualityReviewStatus}
+              onQualityReviewNoteChange={updatePropertyQualityReviewNote}
+              onSaveShortlistDraft={saveShortlistDraft}
+              onSavePresentationDraft={savePresentationDraft}
+              onCopyPresentationDraft={copyPresentationDraft}
+              onCopyEmailDraftText={copyEmailDraftText}
+              onCopyEmailDraftHtml={copyEmailDraftHtml}
+              onEmailSubjectChange={(value) => {
+                setEditableEmailSubject(value);
+                resetDraftCopyState();
+              }}
+              onEmailBodyChange={(value) => {
+                setEditableEmailBody(value);
+                resetDraftCopyState();
+              }}
+              onCopyJson={copyJson}
+              onEditableJsonChange={(value) => {
+                setEditableJson(value);
+                clearContactCandidates();
+                setSaveResult(null);
+              }}
+            />
+          )}
         </LeadIntelligenceAnalysisPreviewCard>
       </div>
     </div>
