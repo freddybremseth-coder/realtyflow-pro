@@ -6,14 +6,14 @@ import { LeadIntelligenceAnalysisPreviewCard } from "@/components/lead-intellige
 import { LeadIntelligenceAnalysisResultPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-result-panel";
 import { LeadIntelligenceRequestCard } from "@/components/lead-intelligence/lead-intelligence-request-card";
 
-type RequestCardProps = ComponentProps<typeof LeadIntelligenceRequestCard>;
-type AnalysisResultPanelProps = ComponentProps<typeof LeadIntelligenceAnalysisResultPanel>;
+export type LeadIntelligenceAnalysisRequestCardProps = ComponentProps<typeof LeadIntelligenceRequestCard>;
+export type LeadIntelligenceAnalysisResultPanelProps = ComponentProps<typeof LeadIntelligenceAnalysisResultPanel>;
 
 interface LeadIntelligenceAnalysisSectionProps {
-  requestCardProps: RequestCardProps;
+  requestCardProps: LeadIntelligenceAnalysisRequestCardProps;
   loading: boolean;
   hasResponse: boolean;
-  resultPanelProps: AnalysisResultPanelProps | null;
+  resultPanelProps: LeadIntelligenceAnalysisResultPanelProps | null;
 }
 
 export function LeadIntelligenceAnalysisSection({

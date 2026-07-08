@@ -12,8 +12,10 @@ import { LeadIntelligenceWorklistCard } from "@/components/lead-intelligence/lea
 import { LeadIntelligenceWorklistHistoryPanel } from "@/components/lead-intelligence/lead-intelligence-worklist-history-panel";
 import { LeadIntelligenceWorklistResultNotice } from "@/components/lead-intelligence/lead-intelligence-worklist-result-notice";
 
-type ActiveWorklistProfilePanelProps = ComponentProps<typeof LeadIntelligenceActiveWorklistProfilePanel>;
-type WorklistHistoryPanelProps = ComponentProps<typeof LeadIntelligenceWorklistHistoryPanel>;
+export type LeadIntelligenceActiveWorklistProfilePanelProps = ComponentProps<
+  typeof LeadIntelligenceActiveWorklistProfilePanel
+>;
+export type LeadIntelligenceWorklistHistoryPanelProps = ComponentProps<typeof LeadIntelligenceWorklistHistoryPanel>;
 
 interface LeadIntelligenceWorklistSectionProps {
   featureEnabled: boolean;
@@ -23,8 +25,8 @@ interface LeadIntelligenceWorklistSectionProps {
   worklistResult: LeadIntelligenceWorklistResponse | null;
   archivedBuyerProfileId: string | null;
   hasActiveWorklistItem: boolean;
-  activeProfilePanelProps: ActiveWorklistProfilePanelProps | null;
-  historyPanelProps: WorklistHistoryPanelProps | null;
+  activeProfilePanelProps: LeadIntelligenceActiveWorklistProfilePanelProps | null;
+  historyPanelProps: LeadIntelligenceWorklistHistoryPanelProps | null;
   onLoadWorklist: () => void;
 }
 
