@@ -22,7 +22,6 @@ import {
 } from "@/components/lead-intelligence/lead-intelligence-client-config";
 import { useLeadIntelligenceShortlistDerivedState } from "@/components/lead-intelligence/use-lead-intelligence-shortlist-derived-state";
 import { useLeadIntelligencePresentationDrafts } from "@/components/lead-intelligence/use-lead-intelligence-presentation-drafts";
-import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-actions";
 import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intelligence/use-lead-intelligence-property-match-flow";
 import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-lead-intelligence-worklist";
 import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/use-lead-intelligence-contact-flow";
@@ -30,6 +29,7 @@ import { useLeadIntelligenceReviewEditor } from "@/components/lead-intelligence/
 import { useLeadIntelligenceReviewSave } from "@/components/lead-intelligence/use-lead-intelligence-review-save";
 import { useLeadIntelligenceAnalysisFlow } from "@/components/lead-intelligence/use-lead-intelligence-analysis-flow";
 import { useLeadIntelligenceWorklistNavigation } from "@/components/lead-intelligence/use-lead-intelligence-worklist-navigation";
+import { useLeadIntelligenceActiveProfileFlow } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-flow";
 import type { LeadIntelligenceClientProps } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 export function LeadIntelligenceClient({
@@ -273,88 +273,17 @@ export function LeadIntelligenceClient({
     linkSavedProfileContact,
     createContactFromSavedProfile,
     archiveActiveProfile,
-  } = useLeadIntelligenceActiveProfileActions({
+  } = useLeadIntelligenceActiveProfileFlow({
     brand,
     activeWorklistItem,
     persistenceEnabled,
     connectExistingEnabled,
     createContactEnabled,
-    onContactCandidatesLoaded: (result) => {
-      if (!result.result.linkedContact) return;
-      setActiveWorklistItem((current) =>
-        current && current.buyerProfileId === result.result.buyerProfileId
-          ? {
-              ...current,
-              contactLinked: true,
-              linkedContact: result.result.linkedContact,
-            }
-          : current,
-      );
-    },
-    onContactLinked: (result) => {
-      setActiveWorklistItem((current) =>
-        current && current.buyerProfileId === result.result.buyerProfileId
-          ? {
-              ...current,
-              contactLinked: true,
-              linkedContact: result.result.linkedContact,
-            }
-          : current,
-      );
-      setSaveResult((current) =>
-        current
-          ? {
-              ...current,
-              result: {
-                ...current.result,
-                contactCandidates: {
-                  ...current.result.contactCandidates,
-                  selectedContactId: result.result.contactId,
-                  decision: "connect_existing",
-                  linkedContact: true,
-                  duplicate: result.result.duplicate,
-                },
-              },
-            }
-          : current,
-      );
-      void loadWorklist();
-    },
-    onContactCreated: (result) => {
-      setActiveWorklistItem((current) =>
-        current && current.buyerProfileId === result.result.buyerProfileId
-          ? {
-              ...current,
-              contactLinked: true,
-              linkedContact: result.result.linkedContact,
-            }
-          : current,
-      );
-      setSaveResult((current) =>
-        current
-          ? {
-              ...current,
-              result: {
-                ...current.result,
-                contactCandidates: {
-                  ...current.result.contactCandidates,
-                  selectedContactId: result.result.contactId,
-                  decision: "create_new",
-                  linkedContact: true,
-                  duplicate: result.result.duplicate,
-                },
-              },
-            }
-          : current,
-      );
-      void loadWorklist();
-    },
-    onProfileArchived: () => {
-      setSaveResult(null);
-      clearPropertyMatchPreview();
-      clearWorklistSelection();
-      void loadWorklist();
-    },
+    setActiveWorklistItem,
+    setSaveResult,
+    clearPropertyMatchPreview,
+    clearWorklistSelection,
+    loadWorklist,
   });
 
   const clearContactCandidates = () => {
