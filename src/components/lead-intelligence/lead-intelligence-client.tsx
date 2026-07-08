@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   LeadIntelligenceRequestCard,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
@@ -30,6 +30,7 @@ import { useLeadIntelligenceReviewSave } from "@/components/lead-intelligence/us
 import { useLeadIntelligenceAnalysisFlow } from "@/components/lead-intelligence/use-lead-intelligence-analysis-flow";
 import { useLeadIntelligenceWorklistNavigation } from "@/components/lead-intelligence/use-lead-intelligence-worklist-navigation";
 import { useLeadIntelligenceActiveProfileFlow } from "@/components/lead-intelligence/use-lead-intelligence-active-profile-flow";
+import { useLeadIntelligencePropertyMatchHighlight } from "@/components/lead-intelligence/use-lead-intelligence-property-match-highlight";
 import type { LeadIntelligenceClientProps } from "@/components/lead-intelligence/lead-intelligence-client-types";
 
 export function LeadIntelligenceClient({
@@ -40,7 +41,7 @@ export function LeadIntelligenceClient({
   propertyMatchingEnabled,
 }: LeadIntelligenceClientProps) {
   const clearPresentationDraftStateRef = useRef<() => void>(() => {});
-  const [highlightedMatchId, setHighlightedMatchId] = useState<string | null>(null);
+  const clearHighlightedMatchRef = useRef<() => void>(() => {});
   const {
     source,
     brand,
@@ -199,7 +200,7 @@ export function LeadIntelligenceClient({
     propertyMatchingEnabled,
     saveResult,
     onPresentationDraftInvalidated: () => clearPresentationDraftStateRef.current(),
-    onHighlightedMatchCleared: () => setHighlightedMatchId(null),
+    onHighlightedMatchCleared: () => clearHighlightedMatchRef.current(),
   });
   const {
     selectedShortlistItems,
@@ -285,6 +286,11 @@ export function LeadIntelligenceClient({
     clearWorklistSelection,
     loadWorklist,
   });
+  const { highlightedMatchId, clearHighlightedMatch } = useLeadIntelligencePropertyMatchHighlight({
+    activeWorklistItem,
+    propertyMatchResult,
+    presentationDraftResult,
+  });
 
   const clearContactCandidates = () => {
     clearContactCandidatesState();
@@ -315,29 +321,8 @@ export function LeadIntelligenceClient({
   }, [featureEnabled, persistenceEnabled, brand]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const hash = window.location.hash;
-    if (!hash.startsWith("#lead-intelligence-match-")) return;
-
-    const targetId = decodeURIComponent(hash.slice(1));
-    const propertyId = targetId.replace(/^lead-intelligence-match-/, "");
-    let clearHighlightTimer: number | undefined;
-
-    const scrollTimer = window.setTimeout(() => {
-      const target = document.getElementById(targetId);
-      if (!target) return;
-      setHighlightedMatchId(propertyId);
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      clearHighlightTimer = window.setTimeout(() => {
-        setHighlightedMatchId((current) => (current === propertyId ? null : current));
-      }, 3500);
-    }, 150);
-
-    return () => {
-      window.clearTimeout(scrollTimer);
-      if (clearHighlightTimer) window.clearTimeout(clearHighlightTimer);
-    };
-  }, [activeWorklistItem, propertyMatchResult, presentationDraftResult]);
+    clearHighlightedMatchRef.current = clearHighlightedMatch;
+  }, [clearHighlightedMatch]);
 
   const presentationDraftReturnUrl = presentationDraftResult
     ? leadIntelligenceDraftReturnUrl({
