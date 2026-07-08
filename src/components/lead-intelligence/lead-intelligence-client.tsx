@@ -1,22 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type ExtractedLead } from "@/services/lead-intelligence/contracts";
+import { useEffect, useRef, useState } from "react";
 import {
-  TextInput,
-  flattenReviewCriteria,
   generateClientCorrelationId,
-  parseJsonEditor,
-  prettyJson,
 } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import {
   LeadIntelligenceRequestCard,
   type LeadIntelligenceSource,
 } from "@/components/lead-intelligence/lead-intelligence-request-card";
 import { LeadIntelligenceErrorAlert } from "@/components/lead-intelligence/lead-intelligence-error-alert";
-import {
-  type CriterionReviewState,
-} from "@/components/lead-intelligence/lead-intelligence-criteria-review-panel";
 import {
   LeadIntelligenceWorklistHistoryPanel,
   type LeadIntelligenceWorklistItem,
@@ -39,6 +31,7 @@ import { useLeadIntelligenceActiveProfileActions } from "@/components/lead-intel
 import { useLeadIntelligencePropertyMatchFlow } from "@/components/lead-intelligence/use-lead-intelligence-property-match-flow";
 import { useLeadIntelligenceWorklist } from "@/components/lead-intelligence/use-lead-intelligence-worklist";
 import { useLeadIntelligenceContactFlow } from "@/components/lead-intelligence/use-lead-intelligence-contact-flow";
+import { useLeadIntelligenceReviewEditor } from "@/components/lead-intelligence/use-lead-intelligence-review-editor";
 import type {
   LeadAnalysisResponse,
   LeadIntelligenceClientProps,
@@ -62,9 +55,6 @@ export function LeadIntelligenceClient({
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<LeadAnalysisResponse | null>(null);
   const [error, setError] = useState<SafeErrorResponse["error"] | null>(null);
-  const [editableJson, setEditableJson] = useState("");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const [criterionReviews, setCriterionReviews] = useState<Record<string, CriterionReviewState>>({});
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<SafeErrorResponse["error"] | null>(null);
   const [saveResult, setSaveResult] = useState<ReviewSaveResponse | null>(null);
@@ -87,13 +77,33 @@ export function LeadIntelligenceClient({
     persistenceEnabled,
   });
 
-  const jsonEditor = useMemo(() => parseJsonEditor(editableJson), [editableJson]);
-  const edited = jsonEditor.parsed || response?.result || null;
-  const reviewCriteria = useMemo(() => flattenReviewCriteria(edited), [edited]);
-  const reviewedCount = reviewCriteria.filter(
-    (criterion) => criterionReviews[criterion.id]?.approvalStatus && criterionReviews[criterion.id].approvalStatus !== "pending",
-  ).length;
-  const allCriteriaReviewed = reviewCriteria.length > 0 && reviewedCount === reviewCriteria.length;
+  const {
+    editableJson,
+    copyState,
+    criterionReviews,
+    jsonEditor,
+    edited,
+    reviewCriteria,
+    reviewedCount,
+    allCriteriaReviewed,
+    loadAnalysisResult,
+    clearReviewEditor,
+    updateEditableJson,
+    updateEdited,
+    updateCriterionReview,
+    copyJson,
+  } = useLeadIntelligenceReviewEditor({
+    response,
+    onEditedChanged: () => {
+      clearContactCandidates();
+    },
+    onCriterionReviewChanged: () => {
+      setSaveError(null);
+      setSaveResult(null);
+      clearWorklistSelection();
+      clearPropertyMatchPreview();
+    },
+  });
   const {
     candidateLoading,
     contactCandidatesLoaded,
@@ -313,17 +323,9 @@ export function LeadIntelligenceClient({
     clearPropertyMatchPreview();
   };
 
-  const updateEdited = (updater: (current: ExtractedLead) => ExtractedLead) => {
-    if (!edited) return;
-    const next = updater(edited);
-    setEditableJson(prettyJson(next));
-    clearContactCandidates();
-  };
-
   const analyze = async () => {
     setLoading(true);
     setError(null);
-    setCopyState("idle");
 
     try {
       const res = await fetch("/api/lead-intelligence/analyze", {
@@ -346,15 +348,7 @@ export function LeadIntelligenceClient({
         return;
       }
       setResponse(body);
-      setEditableJson(prettyJson(body.result));
-      setCriterionReviews(
-        Object.fromEntries(
-          flattenReviewCriteria(body.result).map((criterion) => [
-            criterion.id,
-            { approvalStatus: "pending", customerConfirmed: false },
-          ]),
-        ),
-      );
+      loadAnalysisResult(body.result);
       clearContactCandidates();
       setSaveError(null);
       setSaveResult(null);
@@ -372,38 +366,12 @@ export function LeadIntelligenceClient({
   const reset = () => {
     setResponse(null);
     setError(null);
-    setEditableJson("");
-    setCopyState("idle");
-    setCriterionReviews({});
+    clearReviewEditor();
     clearContactCandidatesState();
     setSaveError(null);
     setSaveResult(null);
     clearWorklistSelection();
     resetPropertyMatchFlow();
-  };
-
-  const copyJson = async () => {
-    try {
-      await navigator.clipboard.writeText(editableJson);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  };
-
-  const updateCriterionReview = (id: string, patch: Partial<CriterionReviewState>) => {
-    setCriterionReviews((current) => ({
-      ...current,
-      [id]: {
-        approvalStatus: current[id]?.approvalStatus || "pending",
-        customerConfirmed: current[id]?.customerConfirmed || false,
-        ...patch,
-      },
-    }));
-    setSaveError(null);
-    setSaveResult(null);
-    clearWorklistSelection();
-    clearPropertyMatchPreview();
   };
 
   const saveReview = async () => {
@@ -475,9 +443,7 @@ export function LeadIntelligenceClient({
     clearActiveProfileActions();
     setResponse(null);
     setError(null);
-    setEditableJson("");
-    setCriterionReviews({});
-    setCopyState("idle");
+    clearReviewEditor();
     setActiveWorklistItem(item);
     setWorklistHistoryExpanded(false);
     setSaveError(null);
@@ -848,11 +814,7 @@ export function LeadIntelligenceClient({
               onEmailSubjectChange={updateEditableEmailSubject}
               onEmailBodyChange={updateEditableEmailBody}
               onCopyJson={copyJson}
-              onEditableJsonChange={(value) => {
-                setEditableJson(value);
-                clearContactCandidates();
-                setSaveResult(null);
-              }}
+              onEditableJsonChange={updateEditableJson}
             />
           )}
         </LeadIntelligenceAnalysisPreviewCard>
