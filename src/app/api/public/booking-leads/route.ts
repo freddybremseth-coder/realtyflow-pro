@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import { isLikelyBot } from "@/lib/spam";
+import { normalizeBrand } from "@/lib/realty/normalize-brand";
+import { checkSourceKey, raiseLeadCaptureAlarm } from "@/lib/realty/source-key-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,15 +52,6 @@ function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function normalizeBrand(brandId?: string) {
-  const brand = clean(brandId, 60).toLowerCase();
-  if (brand === "zen") return "zeneco";
-  if (brand === "pinoso") return "pinosoecolife";
-  if (brand === "chat") return "chatgenius";
-  if (brand === "freddy") return "freddy";
-  return brand || "booking";
-}
-
 function estimateValue(answers: Record<string, unknown> = {}) {
   const budget = clean(answers.budget, 80);
   const matches = budget.match(/\d[\d.]*/g);
@@ -98,12 +92,17 @@ function notesFrom(payload: BookingPayload) {
 
 export async function POST(request: NextRequest) {
   const expectedKey = process.env.REALTYFLOW_BOOKING_SOURCE_KEY || process.env.REALTYFLOW_PUBLIC_LEAD_KEY;
-  const providedKey = request.headers.get("x-realtyflow-source-key") || "";
-  if (expectedKey && providedKey !== expectedKey) {
-    return json({ error: "Unauthorized" }, { status: 401 });
+  const keyCheck = checkSourceKey(request, expectedKey, "public/booking-leads");
+  if (!keyCheck.ok) {
+    if (keyCheck.failClosed) await raiseLeadCaptureAlarm("public/booking-leads");
+    return json({ error: keyCheck.error }, { status: keyCheck.status });
   }
 
-  const payload = (await request.json().catch(() => ({}))) as BookingPayload;
+  const payload = (await request.json().catch(() => ({}))) as BookingPayload & { website?: string; company?: string; url?: string };
+  if (payload.website || payload.company || payload.url) {
+    return json({ success: true, accepted: false });
+  }
+
   const name = clean(payload.contact?.name, 160);
   const email = clean(payload.contact?.email, 200).toLowerCase();
   const phone = clean(payload.contact?.phone, 80);
@@ -112,9 +111,13 @@ export async function POST(request: NextRequest) {
     return json({ error: "Valid contact.name and contact.email are required" }, { status: 400 });
   }
 
+  if (isLikelyBot(name, email)) {
+    return json({ success: true, accepted: false });
+  }
+
   const supabase = createServerClient();
   const now = new Date().toISOString();
-  const brandId = normalizeBrand(payload.brandId);
+  const brandId = normalizeBrand(payload.brandId, "booking");
   const value = estimateValue(payload.answers);
   const notes = notesFrom(payload);
   const interest = propertyInterest(payload);
@@ -212,6 +215,8 @@ export async function POST(request: NextRequest) {
       is_web_meeting_booking: true,
       priority_reason: "Kunden har booket konkret mote/webmote",
       lead_id: lead?.id || null,
+      lead_insert_failed: Boolean(leadError),
+      lead_insert_error: leadError?.message || null,
       created_from_appointment_app: true,
     },
     created_at: now,

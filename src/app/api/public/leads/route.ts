@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isLikelyBot } from "@/lib/spam";
+import { normalizeBrand } from "@/lib/realty/normalize-brand";
+import { checkSourceKey, raiseLeadCaptureAlarm } from "@/lib/realty/source-key-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,9 +45,10 @@ function interactionSummary(params: {
 
 export async function POST(request: NextRequest) {
   const expectedKey = process.env.ZENECO_API_KEY || process.env.REALTYFLOW_PUBLIC_LEAD_KEY;
-  const providedKey = request.headers.get("x-realtyflow-source-key") || "";
-  if (expectedKey && providedKey !== expectedKey) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const keyCheck = checkSourceKey(request, expectedKey, "public/leads");
+  if (!keyCheck.ok) {
+    if (keyCheck.failClosed) await raiseLeadCaptureAlarm("public/leads");
+    return NextResponse.json({ error: keyCheck.error }, { status: keyCheck.status });
   }
 
   const body = await request.json().catch(() => ({}));
@@ -77,6 +80,7 @@ export async function POST(request: NextRequest) {
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
   const source = cleanText(body.source, 120) || "zenecohomes-public-lead";
+  const brand = normalizeBrand(body.brand, "zeneco");
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
@@ -127,8 +131,8 @@ export async function POST(request: NextRequest) {
       pipeline_status: nextStatus,
       pipeline_value: pipelineValue,
       property_interest: [propertyRef, propertyTitle].filter(Boolean).join(" - ") || incomingPropertyInterest || preferredArea,
-      brand: "zeneco",
-      brand_id: "zeneco",
+      brand,
+      brand_id: brand,
       last_contact: now,
       next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       interactions: [incomingInteraction, ...existingInteractions],
@@ -149,7 +153,7 @@ export async function POST(request: NextRequest) {
     status: "TO_DO",
     priority: pipelineValue >= 500000 || propertyRef ? "HIGH" : "MEDIUM",
     due_date: new Date().toISOString().slice(0, 10),
-    brand_id: "zeneco",
+    brand_id: brand,
     source_type: "website_lead",
     source_id: data.id,
     assigned_agent: "sales",
