@@ -4,9 +4,12 @@ import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { ADMIN_SESSION_REQUIRED_MESSAGE, requireAdminApi } from "@/lib/api-admin";
 
-function requestWithCookie(cookie?: string) {
+function requestWithCookie(cookie?: string, headers: Record<string, string> = {}) {
   return new NextRequest("https://realtyflow.test/api/internal", {
-    headers: cookie ? { cookie } : {},
+    headers: {
+      ...headers,
+      ...(cookie ? { cookie } : {}),
+    },
   });
 }
 
@@ -40,4 +43,20 @@ test("requireAdminApi returns null for a valid admin session", async () => {
   const response = await requireAdminApi(requestWithCookie(`realtyflow_admin=${token}`));
 
   assert.equal(response, null);
+});
+
+test("requireAdminApi trusts the middleware-authenticated Re-Master proxy", async () => {
+  const response = await requireAdminApi(
+    requestWithCookie(undefined, { "x-remaster-proxy-authenticated": "true" }),
+  );
+
+  assert.equal(response, null);
+});
+
+test("requireAdminApi rejects an untrusted Re-Master proxy marker", async () => {
+  const response = await requireAdminApi(
+    requestWithCookie(undefined, { "x-remaster-proxy-authenticated": "false" }),
+  );
+
+  assert.equal(response?.status, 401);
 });

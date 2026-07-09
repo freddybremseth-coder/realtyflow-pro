@@ -45,6 +45,8 @@ const REMASTER_PROXY_PREFIXES = [
   "/api/neural-beat/jobs",
 ];
 
+const REMASTER_PROXY_AUTH_HEADER = "x-remaster-proxy-authenticated";
+
 function isPublicPath(pathname: string) {
   return (
     pathname.startsWith("/_next") ||
@@ -162,8 +164,9 @@ export async function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
-  // Sikkerhet: fjern evt. forfalsket verdi. Settes kun når cookie er verifisert.
+  // Sikkerhet: fjern evt. forfalskede verdier. Settes kun etter verifisering.
   requestHeaders.delete("x-admin-authenticated");
+  requestHeaders.delete(REMASTER_PROXY_AUTH_HEADER);
 
   // Den gamle Neural Beat-siden kunne masseutføre alle AI-anbefalinger, inkludert
   // YouTube-metadata, uten individuell godkjenning. GET-analyse er fortsatt tillatt,
@@ -184,6 +187,8 @@ export async function middleware(request: NextRequest) {
     isRemasterProxyPath(pathname) &&
     request.headers.get("x-remaster-migration-secret") === migrationSecret
   ) {
+    requestHeaders.set(REMASTER_PROXY_AUTH_HEADER, "true");
+    requestHeaders.set("x-admin-authenticated", "true");
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
