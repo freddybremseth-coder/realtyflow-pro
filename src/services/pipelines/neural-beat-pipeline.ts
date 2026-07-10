@@ -920,6 +920,8 @@ export class NeuralBeatPipeline {
             endCard: shortsEndCard,
             accentColor: 'ff3366',
             loopFade: 0.5,
+            titleText: songRecord.title,
+            logoBuffer,
           });
 
           const shortsTitle = buildShortsTitle({
@@ -930,9 +932,10 @@ export class NeuralBeatPipeline {
           });
 
           const shortsDescription = [
-            `${youtubeMetadata.description.split('\n')[0]}`,
+            `🎧 Hele sangen / Full version: ${youtubeUrl}`,
             '',
-            `🎧 Full version: ${youtubeUrl}`,
+            `${songRecord.title} — Re-Master Freddy`,
+            `${youtubeMetadata.description.split('\n')[0]}`,
             `🎵 Drop lands at ${Math.round(shortResult.dropStartSeconds + 3)}s in the full version`,
             '',
             '#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM',
@@ -947,6 +950,17 @@ export class NeuralBeatPipeline {
           }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
 
           console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);
+
+          // Reuse the main video's branded thumbnail on the Short (shows in
+          // channel grid and search; the Shorts feed uses the video itself).
+          if (thumbnailBuffer) {
+            try {
+              await setThumbnail(shortsResult.videoId, thumbnailBuffer, NEURAL_BEAT_BRAND_ID);
+              console.log('[NeuralBeatPipeline] Thumbnail set on Short');
+            } catch (e) {
+              console.warn('[NeuralBeatPipeline] Could not set Short thumbnail (non-fatal):', e);
+            }
+          }
 
           await updateSongFields(songRecord.id, {
             aiMetadata: {

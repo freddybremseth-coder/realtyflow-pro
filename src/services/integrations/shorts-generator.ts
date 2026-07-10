@@ -37,6 +37,10 @@ export interface ShortsOptions {
   accentColor?: string;
   /** Seconds of loop cross-fade. Default 0.5, clamped 0.3-1.0. */
   loopFade?: number;
+  /** Song title shown persistently in the lower third. */
+  titleText?: string;
+  /** Optional logo overlaid top-right for the whole Short. */
+  logoBuffer?: Buffer;
 }
 
 export interface ShortsResult {
@@ -82,9 +86,13 @@ function escapeDrawtext(s: string): string {
 }
 
 async function probeDuration(ffmpegPath: string, videoPath: string): Promise<number> {
+  // Header-only probe: `ffmpeg -i` without an output exits non-zero but
+  // prints the Duration line instantly. Never decode the file here — a full
+  // `-f null` decode of a multi-minute video can burn a minute of the
+  // serverless time budget on its own.
   let stderr = '';
   try {
-    const result = await execFileAsync(ffmpegPath, ['-i', videoPath, '-hide_banner', '-f', 'null', '-']);
+    const result = await execFileAsync(ffmpegPath, ['-hide_banner', '-i', videoPath]);
     stderr = result.stderr || '';
   } catch (err: any) {
     stderr = err.stderr || '';
@@ -97,12 +105,14 @@ async function probeDuration(ffmpegPath: string, videoPath: string): Promise<num
 // ─── Drop detection ─────────────────────────────────────────
 
 /**
- * Find the loudest ~3-second chunk in the audio track. Returns the start
- * time of that chunk in seconds, or null if detection fails.
+ * Find the start of the loudest sustained section (~12 s) in the audio
+ * track — for most tracks that's the chorus/drop. Returns the start time in
+ * seconds, or null if detection fails.
  *
  * Strategy: run `astats=reset=3` which resets stats every 3 s, emit RMS
- * levels as metadata, parse them and pick the argmax. Cheap — single pass,
- * no full decode to disk.
+ * levels as metadata, then pick the 4-window stretch (12 s) with the highest
+ * average loudness. Averaging favors the chorus over a single loud hit
+ * (cymbal crash, FX sweep). Cheap — single audio-only pass.
  */
 async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<number | null> {
   let stderr = '';
@@ -142,13 +152,37 @@ async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<
 
   if (windows.length < 3) return null;
 
-  // Avoid picking the last 10 s — the drop should have room for a 30 s clip.
-  const maxT = Math.max(...windows.map((w) => w.t));
-  const usable = windows.filter((w) => w.t < maxT - 10);
+  // The filter emits one (cumulative) RMS value per audio frame; the value
+  // just before each 3 s reset is the RMS of that whole window. Group frames
+  // into 3 s buckets and keep the final value per bucket.
+  const buckets = new Map<number, { t: number; rms: number }>();
+  for (const w of windows) {
+    const idx = Math.floor(w.t / 3);
+    const existing = buckets.get(idx);
+    if (!existing || w.t > existing.t) buckets.set(idx, { t: idx * 3, rms: w.rms });
+  }
+  const series = Array.from(buckets.values()).sort((a, b) => a.t - b.t);
+  if (series.length < 3) return null;
+
+  // Avoid picking the last 10 s — the chorus should have room for a 30 s clip.
+  const maxT = series[series.length - 1].t;
+  const usable = series.filter((w) => w.t < maxT - 10);
   if (usable.length === 0) return null;
 
-  usable.sort((a, b) => b.rms - a.rms);
-  return usable[0].t;
+  // Loudest sustained stretch: best average over 4 consecutive windows (12 s).
+  // Averaging favors the chorus over a single loud hit, and taking the first
+  // window of the best stretch lands the clip at the chorus START.
+  const span = Math.min(4, usable.length);
+  let bestStart = usable[0].t;
+  let bestAvg = -Infinity;
+  for (let i = 0; i + span <= usable.length; i++) {
+    const avg = usable.slice(i, i + span).reduce((sum, w) => sum + w.rms, 0) / span;
+    if (avg > bestAvg) {
+      bestAvg = avg;
+      bestStart = usable[i].t;
+    }
+  }
+  return bestStart;
 }
 
 // ─── Main ───────────────────────────────────────────────────
@@ -215,10 +249,23 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
 
     if (options.hook) {
       const hook = options.hook.toUpperCase();
-      const fontSize = hook.length > 14 ? 100 : hook.length > 8 ? 140 : 180;
+      const fontSize = hook.length > 14 ? 90 : hook.length > 10 ? 110 : hook.length > 8 ? 140 : 180;
+      // Backing bar aligned with the text (text sits at ih/2-450).
       filters.push(
-        `drawbox=x=0:y=250:w=iw:h=${fontSize + 80}:color=black@0.55:t=fill:enable='between(t,0.2,2.9)'`,
+        `drawbox=x=0:y=ih/2-490:w=iw:h=${fontSize + 80}:color=black@0.55:t=fill:enable='between(t,0.2,2.9)'`,
         `drawtext=${ff}fontsize=${fontSize}:fontcolor=white:borderw=6:bordercolor=0x${accent}@0.95:x=(w-text_w)/2:y=h/2-450:text='${escapeDrawtext(hook)}':enable='between(t,0.3,2.8)'`,
+      );
+    }
+
+    if (options.titleText) {
+      // Persistent song title in the lower third — truncated so it never
+      // runs off the 1080 px frame.
+      const rawTitle = options.titleText.trim();
+      const title = rawTitle.length > 30 ? `${rawTitle.slice(0, 29).trimEnd()}…` : rawTitle;
+      const titleFontSize = title.length > 22 ? 44 : 54;
+      filters.push(
+        `drawtext=${ff}fontsize=${titleFontSize}:fontcolor=white:borderw=4:bordercolor=black@0.85:x=(w-text_w)/2:y=h-380:text='${escapeDrawtext(title)}'`,
+        `drawtext=${ff}fontsize=34:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=(w-text_w)/2:y=h-310:text='RE-MASTER FREDDY'`,
       );
     }
 
@@ -231,11 +278,35 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       );
     }
 
+    // Optional logo overlay (top-right, whole duration) — needs a second
+    // input, so the filter list becomes a filter_complex graph.
+    const hasLogo = options.logoBuffer && options.logoBuffer.length > 0;
+    let logoPath: string | null = null;
+    if (hasLogo) {
+      logoPath = path.join(workDir, 'logo.png');
+      await fs.writeFile(logoPath, options.logoBuffer!);
+    }
+
+    const clipArgs = hasLogo && logoPath
+      ? [
+          '-ss', startTime.toFixed(2),
+          '-i', inputPath,
+          '-i', logoPath,
+          '-t', targetDur.toFixed(2),
+          '-filter_complex',
+          `[0:v]${filters.join(',')}[base];[1:v]scale=170:-1[logo];[base][logo]overlay=W-w-36:110[vout]`,
+          '-map', '[vout]',
+          '-map', '0:a',
+        ]
+      : [
+          '-ss', startTime.toFixed(2),
+          '-i', inputPath,
+          '-t', targetDur.toFixed(2),
+          '-vf', filters.join(','),
+        ];
+
     await runFFmpeg(ffmpegPath, [
-      '-ss', startTime.toFixed(2),
-      '-i', inputPath,
-      '-t', targetDur.toFixed(2),
-      '-vf', filters.join(','),
+      ...clipArgs,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-crf', '23',
@@ -323,13 +394,13 @@ export function buildShortsTitle(opts: {
   mood: string;
   hook?: string;
 }): string {
-  const core = opts.hook?.trim() || opts.title;
+  // Always include the actual song title so viewers can find the full track.
   const formulas = [
-    `POV: ${opts.mood} ${opts.genre} at 3AM 😵‍💫 #Shorts`,
-    `When the ${opts.genre} drop hits... 🔥 #Shorts`,
-    `${core} goes HARD 🎧 #Shorts`,
-    `Don't skip this ${opts.genre} 🎵 #Shorts`,
-    `${core} | ${opts.mood} ${opts.genre} #Shorts`,
+    `${opts.title} 🔥 ${opts.mood} ${opts.genre} #Shorts`,
+    `${opts.title} — when the drop hits 🎧 #Shorts`,
+    `Don't skip: ${opts.title} 🎵 ${opts.genre} #Shorts`,
+    `${opts.title} | Re-Master Freddy #Shorts`,
+    `POV: ${opts.title} at 3AM 😵‍💫 #Shorts`,
   ];
   const pick = formulas[Math.floor(Math.random() * formulas.length)];
   return pick.length > 100 ? pick.slice(0, 97) + '...' : pick;
