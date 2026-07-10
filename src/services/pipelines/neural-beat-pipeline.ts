@@ -590,9 +590,10 @@ export class NeuralBeatPipeline {
         if (logoUrl) console.log('[NeuralBeatPipeline] Using newest logo from image bank (auto)');
       }
       if (!logoUrl) {
-        // Last resort: the official Re-Master Freddy logo served by the frontend.
+        // Last resort: the official Re-Master Freddy logo (transparent PNG)
+        // served by the frontend.
         logoUrl = process.env.REMASTER_LOGO_URL
-          || 'https://remaster.freddybremseth.com/assets/remaster-logo.jpg';
+          || 'https://remaster.freddybremseth.com/assets/remaster-logo.png';
         console.log('[NeuralBeatPipeline] Using default Re-Master Freddy logo (auto fallback)');
       }
       if (logoUrl) {
@@ -624,6 +625,8 @@ export class NeuralBeatPipeline {
           title: songRecord.title,
           subtitle: songRecord.artist,
           logoPath,
+          // Stille bilder uten zoom/panorering — Ken Burns oppleves forstyrrende.
+          kenBurns: false,
           onSegmentProgress: (current, total) => {
             // Update step result with segment progress to keep SSE alive
             steps[currentStepIndex].result = `Encoding segment ${current}/${total}`;
