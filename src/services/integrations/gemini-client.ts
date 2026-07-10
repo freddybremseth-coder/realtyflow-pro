@@ -107,8 +107,8 @@ ${options.artist ? `Artist: ${options.artist}` : ''}
 Create a detailed image prompt (in English) that:
 1. Matches the music's energy and mood
 2. Is visually dramatic and eye-catching for YouTube
-3. Uses neon colors, abstract shapes, or futuristic elements for EDM
-4. Does NOT contain text, logos, or faces
+3. Shows real-life summer scenes: people, DJs in action, beaches, boats, cars, islands, mountains or romantic vacation places — NOT neon abstractions
+4. Does NOT contain text or logos (people are welcome)
 5. Is optimized for 16:9 YouTube thumbnail
 
 Reply ONLY with the image prompt text, no explanation.`;
@@ -118,7 +118,7 @@ Reply ONLY with the image prompt text, no explanation.`;
 
   // Generate the image with Gemini
   const image = await generateImage(imagePrompt.trim(), {
-    style: 'cinematic digital art, vibrant neon colors, high contrast',
+    style: 'photorealistic cinematic photography, warm summer colors, high contrast',
     aspectRatio: '16:9',
   });
 
@@ -129,76 +129,76 @@ Reply ONLY with the image prompt text, no explanation.`;
 // ─── Mood-based visual theme mapping for multi-image generation ────────
 const MOOD_VISUAL_THEMES: Record<string, string[]> = {
   romantic: [
-    'golden sunset over calm ocean with silhouetted couple on beach',
-    'candlelit room with soft bokeh lights and rose petals',
-    'starry night sky reflected in a still mountain lake',
-    'cherry blossom trees along a serene garden path',
-    'warm sunrise through sheer curtains in a modern apartment',
-    'vintage car driving along coastal highway at dusk',
-    'soft rain on city windows with warm interior lights',
-    'tropical island beach with crystal clear turquoise water',
-    'hot air balloons over lavender fields at golden hour',
-    'moonlit rooftop terrace overlooking a sparkling city',
+    'happy couple walking hand in hand along a golden sunset beach with gentle waves',
+    'couple sharing a candlelit dinner on a terrace overlooking the Mediterranean sea',
+    'couple on a sailboat deck at sunset, wind in their hair, calm turquoise water',
+    'romantic evening in Santorini with white houses, blue domes and a couple watching the sunset',
+    'couple in a vintage convertible driving along a coastal highway at dusk',
+    'couple dancing barefoot on a tropical island beach under string lights',
+    'romantic picnic on a mountain viewpoint overlooking a fjord at golden hour',
+    'couple watching hot air balloons rise over lavender fields at sunrise',
+    'lovers on a rooftop terrace in Paris with the Eiffel Tower glowing in the evening',
+    'couple swimming in a crystal clear lagoon surrounded by palm trees',
   ],
   chill: [
-    'misty forest with soft morning light filtering through trees',
-    'minimalist zen garden with raked sand patterns',
-    'calm lake at dawn with mountains reflected in water',
-    'cozy reading nook with warm ambient lighting',
-    'slow-motion waves breaking on an empty sandy beach',
-    'japanese tea ceremony room with bamboo and natural light',
-    'aerial view of winding river through autumn forest',
-    'soft clouds drifting over snow-capped mountain peaks',
-    'underwater view of coral reef with gentle fish movements',
-    'hammock between palm trees overlooking turquoise lagoon',
+    'young woman relaxing in a hammock between palm trees overlooking a turquoise lagoon',
+    'friends lounging on the deck of a white yacht anchored in a calm island bay',
+    'man with sunglasses relaxing on a paddleboard on a glassy mountain lake at dawn',
+    'beach cafe with people sipping cocktails under parasols by crystal clear water',
+    'camper van parked on a cliff with people watching waves break on an empty beach',
+    'woman doing yoga on a wooden pier over calm turquoise water at sunrise',
+    'friends around a small bonfire on a quiet summer beach at dusk',
+    'aerial view of a lone sailboat gliding between green islands in calm water',
+    'infinity pool on a hillside with a person floating and mountains in the distance',
+    'couple reading in beach chairs under a palm tree on a white sand island',
   ],
   energetic: [
-    'neon-lit cyberpunk city skyline at night with rain',
-    'electric laser light show in a massive concert venue',
-    'speed blur of sports car driving through neon tunnel',
-    'dynamic aerial view of a pulsing EDM festival crowd',
-    'abstract neon circuit board with glowing data streams',
-    'futuristic dance floor with holographic projections',
-    'lightning storm over a modern glass skyscraper city',
-    'extreme close-up of turntable with neon reflections',
-    'high-speed motion blur of motorcycle through tokyo streets',
-    'explosive burst of colorful powder and neon particles',
+    'DJ in action behind the decks with hands in the air at a packed beach club at sunset',
+    'sports car speeding along a scenic coastal road with ocean views',
+    'boat party with young people dancing on a yacht deck in the summer sun',
+    'dynamic aerial view of a pulsing festival crowd on a beach at golden hour',
+    'DJ jumping behind turntables with confetti raining over a summer festival crowd',
+    'convertible full of friends driving through winding mountain roads at sunset',
+    'jet ski spraying water in a turquoise bay with islands in the background',
+    'close-up of DJ hands on the mixer with a cheering pool party crowd behind',
+    'group of friends running into the ocean waves at a summer beach party',
+    'speedboat cutting through crystal blue water between tropical islands',
   ],
   dark: [
-    'dramatic thunderstorm with purple lightning over ocean',
-    'abandoned industrial warehouse with moody atmospheric fog',
-    'dark forest path illuminated by a single beam of moonlight',
-    'abstract dark art with deep red and black smoke swirls',
-    'dystopian cityscape with towering dark buildings and neon accents',
-    'underwater deep sea scene with bioluminescent creatures',
-    'smoky underground club with minimal red laser lighting',
-    'volcanic landscape with flowing lava and dark sky',
-    'gothic cathedral interior with dramatic stained glass light',
-    'dark nebula in space with stars and cosmic dust',
+    'lone DJ silhouette behind decks in a smoky club with dramatic backlight',
+    'black muscle car driving on a wet coastal road under a stormy evening sky',
+    'dramatic thunderstorm with lightning over a dark ocean seen from a cliff',
+    'moody night drive through a mountain pass with headlights cutting the fog',
+    'yacht sailing into a dramatic dark sunset with orange light breaking through clouds',
+    'silhouette of a man standing on a rocky peak above a sea of night fog',
+    'city skyline at night reflected in a dark harbor with a lone boat',
+    'volcanic island coastline with waves crashing on black sand at dusk',
+    'crowd silhouettes with raised hands under a single spotlight at a night concert',
+    'midnight beach bonfire with silhouettes dancing under a full moon',
   ],
   happy: [
-    'vibrant tropical sunset with colorful sky and palm trees',
-    'festival crowd with confetti and colorful stage lights',
-    'bright flower field with butterflies and blue sky',
-    'colorful hot air balloons floating over rolling green hills',
-    'beach party scene with tiki torches and string lights',
-    'aerial view of colorful coral reef in crystal water',
-    'vibrant street market with colorful lanterns and decorations',
-    'rainbow over a waterfall in lush tropical jungle',
-    'golden hour skateboard park with warm cinematic light',
-    'fireworks display over city waterfront at night',
+    'group of friends laughing and toasting at a beach bar in the summer sun',
+    'festival crowd with confetti, colorful outfits and hands in the air',
+    'family jumping off a boat into crystal clear turquoise island water',
+    'friends on a road trip in a convertible waving hands under blue summer sky',
+    'beach party with tiki torches, string lights and people dancing at sunset',
+    'kids and adults playing beach volleyball on a white sand beach',
+    'vibrant summer street market with people, colorful lanterns and ice cream',
+    'friends hiking to a waterfall in a lush green mountain valley',
+    'people cheering on a catamaran sailing past a tropical island',
+    'fireworks over a summer marina with people celebrating on boat decks',
   ],
   euphoric: [
-    'massive EDM festival stage with pyrotechnics and lasers',
-    'aurora borealis dancing over snow-covered mountains',
-    'golden sunrise breaking through dramatic cloud formations',
-    'aerial view of endless desert sand dunes at golden hour',
-    'cosmic nebula explosion with vibrant pink and blue colors',
-    'mountain peak above the clouds at sunrise',
-    'speed blur through a tunnel of colorful neon lights',
-    'crystal cave with rainbow light refractions',
-    'panoramic view from space station of earth and stars',
-    'massive ocean wave frozen in time with golden light',
+    'DJ with arms raised on a massive festival main stage with pyrotechnics at sunset',
+    'crowd of thousands with hands up at a beach festival as the sun dips into the ocean',
+    'hiker standing on a mountain peak above the clouds at sunrise with arms spread wide',
+    'aerial view of a yacht anchored by a heart-shaped tropical island in turquoise sea',
+    'woman standing through a car sunroof on a coastal road at golden hour, arms in the air',
+    'paraglider soaring over a stunning island coastline in warm evening light',
+    'friends celebrating on a boat bow like flying, sun flare over open sea',
+    'aurora borealis dancing over snow-capped mountains with tiny hikers watching below',
+    'massive ocean wave with a surfer riding through golden sunset light',
+    'sunrise breaking over an infinity of green islands seen from a mountain summit',
   ],
 };
 
@@ -237,10 +237,12 @@ export async function generateMusicImageSet(
   const moodCategory = getMoodCategory(options.mood || 'energetic', options.energy || 'high');
   const themes = MOOD_VISUAL_THEMES[moodCategory] || MOOD_VISUAL_THEMES.energetic;
 
-  const selectedThemes = Array.from({ length: count }, (_, i) => themes[i % themes.length]);
+  // Shuffle so each video gets a different mix of scenes instead of always the first few
+  const shuffled = [...themes].sort(() => Math.random() - 0.5);
+  const selectedThemes = Array.from({ length: count }, (_, i) => shuffled[i % shuffled.length]);
 
   const enhancedPrompts = selectedThemes.map((theme) =>
-    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Cinematic, atmospheric, no text or faces, 16:9 aspect ratio.`
+    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Photorealistic, cinematic, warm natural light, atmospheric, no text or watermarks, 16:9 aspect ratio.`
   );
 
   console.log(`[ImageGen] Generating ${count} images for mood: ${moodCategory} (Gemini)`);
@@ -267,7 +269,7 @@ export async function generateMusicImageSet(
         try {
           const startMs = Date.now();
           const image = await generateImage(prompt, {
-            style: 'cinematic photography, high contrast, dramatic lighting',
+            style: 'photorealistic travel and lifestyle photography, golden hour light, high contrast',
             aspectRatio: '16:9',
           });
           const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
@@ -281,7 +283,7 @@ export async function generateMusicImageSet(
           await new Promise((resolve) => setTimeout(resolve, 2000));
           try {
             const image = await generateImage(prompt, {
-              style: 'cinematic digital art, vibrant colors',
+              style: 'cinematic lifestyle photography, vibrant summer colors',
               aspectRatio: '16:9',
             });
             console.log(`[ImageGen] Image ${imgNum} succeeded on retry`);
@@ -360,7 +362,7 @@ Respond with ONLY this JSON structure, no markdown:
   "style": "music style (e.g., progressive, minimal, melodic)",
   "mood": "mood (e.g., euphoric, dark, chill, energetic)",
   "energy": "low|medium|high",
-  "visualStyle": "description of visual style that fits the music",
+  "visualStyle": "description of a real-life visual style that fits the music (summer, beach, boats, cars, islands, mountains, people, DJ scenes — avoid neon/abstract)",
   "targetAudience": "target audience for this type of music",
   "imageGenre": "MUST be exactly one of: romantic, sensual, rock, pop, dance, dream, nostalgic, training — pick the best visual category for this song's mood and energy"
 }`;
@@ -380,7 +382,7 @@ Respond with ONLY this JSON structure, no markdown:
     style: 'progressive',
     mood: metadata?.mood || 'energetic',
     energy: 'high',
-    visualStyle: 'Neon cyberpunk with abstract geometric shapes',
+    visualStyle: 'Warm summer lifestyle scenes with people, beaches, boats and golden light',
     targetAudience: 'EDM fans and electronic music lovers',
     imageGenre: 'dance',
   };
@@ -468,7 +470,7 @@ Respond with ONLY this JSON, no markdown:
   "tags": ["tag1", "tag2", "...up to 20 relevant tags including trending search terms"],
   "categoryId": "10",
   "privacyStatus": "public",
-  "imagePrompt": "A vivid image prompt for the video thumbnail (abstract, neon, no text/faces)",
+  "imagePrompt": "A vivid image prompt for the video thumbnail (real-life summer scene: people, DJ, beach, boat, car, island or mountains — photorealistic, no text)",
   "thumbnailVariants": [
     { "hook": "HOOK TEXT A", "subtext": "subtext a", "stamp": "NEW" },
     { "hook": "HOOK TEXT B", "subtext": "subtext b" },
@@ -526,7 +528,7 @@ Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI 
     tags: [options.genre, options.mood, options.style, 'EDM', 'Electronic Music', 'Re-Master Freddy', 'AI Music', 'Chill Beats', 'Study Music', 'Lo-Fi', options.title, `${options.genre} 2026`, `${options.mood} music`, 'focus music', 'relaxing beats'],
     categoryId: '10',
     privacyStatus: 'public',
-    imagePrompt: `Abstract neon visualization for ${options.genre} music, ${options.mood} mood, vibrant colors, no text`,
+    imagePrompt: `Photorealistic summer lifestyle scene for ${options.genre} music, ${options.mood} mood — people enjoying a beach, boat or festival at golden hour, no text`,
     thumbnailVariants: buildFallbackThumbnailVariants(options.genre, options.mood),
   };
 }

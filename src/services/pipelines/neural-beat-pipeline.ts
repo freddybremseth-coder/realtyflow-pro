@@ -437,7 +437,7 @@ export class NeuralBeatPipeline {
 
         // Run AI generation and database fetch in PARALLEL for speed
         const [aiResult, genreImages] = await Promise.all([
-          // 1. Generate 5 unique AI images with Gemini (based on song mood)
+          // 1. Generate 8 unique AI images with Gemini (based on song mood)
           generateMusicImageSet({
             title: songRecord.title,
             artist: songRecord.artist,
@@ -446,13 +446,13 @@ export class NeuralBeatPipeline {
             mood: songAnalysis!.mood,
             energy: songAnalysis!.energy,
             visualStyle: songAnalysis!.visualStyle,
-            count: 5,
+            count: 8,
           }).catch(err => {
             console.warn(`[NeuralBeatPipeline] AI image generation failed (non-fatal): ${err instanceof Error ? err.message : err}`);
             return { images: [] as Array<{ base64: string; mimeType: string; prompt: string }> };
           }),
-          // 2. Fetch 15 genre images from database
-          getGenreImages(imageGenre, 15).catch(err => {
+          // 2. Fetch 10 genre images from database
+          getGenreImages(imageGenre, 10).catch(err => {
             console.warn(`[NeuralBeatPipeline] Genre image fetch failed (non-fatal): ${err instanceof Error ? err.message : err}`);
             return [] as Awaited<ReturnType<typeof getGenreImages>>;
           }),
