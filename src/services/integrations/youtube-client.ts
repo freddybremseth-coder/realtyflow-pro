@@ -301,14 +301,19 @@ export async function uploadVideo(
       attempts.push({ label: 'uten planlagt publisering', localizations: false, audioLang: false, schedule: false });
     }
 
+    // Tracks the privacy status of the attempt that actually succeeded, for
+    // the fallback in the returned result below.
+    let appliedPrivacyStatus: string = metadata.privacyStatus || 'private';
+
     const insertWith = (a: InsertAttempt) => {
       // Scheduling requires PRIVATE — YouTube rejects any other status.
+      appliedPrivacyStatus = a.schedule
+        ? 'private'
+        : willSchedule
+          ? 'public' // schedule stripped — the intent was an eventually-public video
+          : (metadata.privacyStatus || 'private');
       const statusPayload: Record<string, unknown> = {
-        privacyStatus: a.schedule
-          ? 'private'
-          : willSchedule
-            ? 'public' // schedule stripped — the intent was an eventually-public video
-            : (metadata.privacyStatus || 'private'),
+        privacyStatus: appliedPrivacyStatus,
         selfDeclaredMadeForKids: false,
       };
       if (a.schedule) statusPayload.publishAt = metadata.publishAt;
@@ -416,7 +421,7 @@ export async function uploadVideo(
       channelId: verifiedVideo.snippet?.channelId || video.snippet?.channelId || '',
       publishedAt: verifiedVideo.snippet?.publishedAt || video.snippet?.publishedAt || new Date().toISOString(),
       thumbnailUrl: verifiedVideo.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.high?.url || '',
-      privacyStatus: verifiedVideo.status?.privacyStatus || String(statusPayload.privacyStatus || ''),
+      privacyStatus: verifiedVideo.status?.privacyStatus || appliedPrivacyStatus,
       tokenSource: source,
     };
   }, options);
