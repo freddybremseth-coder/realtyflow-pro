@@ -114,13 +114,16 @@ async function probeDuration(ffmpegPath: string, videoPath: string): Promise<num
  * average loudness. Averaging favors the chorus over a single loud hit
  * (cymbal crash, FX sweep). Cheap — single audio-only pass.
  */
-async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<number | null> {
+async function getLoudnessSeries(
+  ffmpegPath: string,
+  mediaPath: string,
+): Promise<Array<{ t: number; rms: number }>> {
   let stderr = '';
   try {
     const result = await execFileAsync(
       ffmpegPath,
       [
-        '-i', videoPath,
+        '-i', mediaPath,
         '-vn',
         '-af', 'astats=metadata=1:reset=3,ametadata=print:key=lavfi.astats.Overall.RMS_level',
         '-f', 'null', '-',
@@ -132,7 +135,7 @@ async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<
     stderr = err.stderr || '';
   }
 
-  if (!stderr) return null;
+  if (!stderr) return [];
 
   // Lines look like:
   //   frame:0    pts:0       pts_time:0
@@ -150,8 +153,6 @@ async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<
     }
   }
 
-  if (windows.length < 3) return null;
-
   // The filter emits one (cumulative) RMS value per audio frame; the value
   // just before each 3 s reset is the RMS of that whole window. Group frames
   // into 3 s buckets and keep the final value per bucket.
@@ -161,28 +162,116 @@ async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<
     const existing = buckets.get(idx);
     if (!existing || w.t > existing.t) buckets.set(idx, { t: idx * 3, rms: w.rms });
   }
-  const series = Array.from(buckets.values()).sort((a, b) => a.t - b.t);
-  if (series.length < 3) return null;
+  return Array.from(buckets.values()).sort((a, b) => a.t - b.t);
+}
 
-  // Avoid picking the last 10 s — the chorus should have room for a 30 s clip.
+/**
+ * Rank sustained ~12 s sections by average loudness. Returns the start times
+ * of the best non-overlapping candidates (chorus, second chorus, big
+ * build-ups...), loudest first.
+ */
+function rankSections(
+  series: Array<{ t: number; rms: number }>,
+  minGapSeconds = 25,
+): number[] {
+  if (series.length < 3) return [];
+
+  // Avoid picking the last 10 s — a section should have room for a 30 s clip.
   const maxT = series[series.length - 1].t;
   const usable = series.filter((w) => w.t < maxT - 10);
-  if (usable.length === 0) return null;
+  if (usable.length === 0) return [];
 
-  // Loudest sustained stretch: best average over 4 consecutive windows (12 s).
-  // Averaging favors the chorus over a single loud hit, and taking the first
-  // window of the best stretch lands the clip at the chorus START.
   const span = Math.min(4, usable.length);
-  let bestStart = usable[0].t;
-  let bestAvg = -Infinity;
+  const candidates: Array<{ t: number; avg: number }> = [];
   for (let i = 0; i + span <= usable.length; i++) {
     const avg = usable.slice(i, i + span).reduce((sum, w) => sum + w.rms, 0) / span;
-    if (avg > bestAvg) {
-      bestAvg = avg;
-      bestStart = usable[i].t;
-    }
+    candidates.push({ t: usable[i].t, avg });
   }
-  return bestStart;
+  candidates.sort((a, b) => b.avg - a.avg);
+
+  const picked: number[] = [];
+  for (const c of candidates) {
+    if (picked.every((p) => Math.abs(p - c.t) >= minGapSeconds)) picked.push(c.t);
+    if (picked.length >= 5) break;
+  }
+  return picked;
+}
+
+async function detectDropSecond(ffmpegPath: string, videoPath: string): Promise<number | null> {
+  const series = await getLoudnessSeries(ffmpegPath, videoPath);
+  const ranked = rankSections(series);
+  return ranked.length > 0 ? ranked[0] : null;
+}
+
+/**
+ * Rank the best sustained sections of an audio/video file, loudest first.
+ * Used by the follow-up Shorts cron to pick a DIFFERENT section than the
+ * original Short. `excludeNear` filters out starts within 25 s of already
+ * used sections.
+ */
+export async function detectTopSections(
+  mediaBuffer: Buffer,
+  excludeNear: number[] = [],
+): Promise<number[]> {
+  const ffmpegPath = await ensureFFmpeg();
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nb-sections-'));
+  const mediaPath = path.join(workDir, 'media.bin');
+  try {
+    await fs.writeFile(mediaPath, mediaBuffer);
+    const series = await getLoudnessSeries(ffmpegPath, mediaPath);
+    return rankSections(series).filter((t) =>
+      excludeNear.every((used) => Math.abs(used - t) >= 25),
+    );
+  } finally {
+    try { await fs.rm(workDir, { recursive: true }); } catch {}
+  }
+}
+
+// ─── Shared overlay filters (hook + title + end card) ───────
+
+function buildOverlayFilters(opts: {
+  ff: string;
+  accent: string;
+  targetDur: number;
+  hook?: string;
+  titleText?: string;
+  endCard?: string;
+}): string[] {
+  const { ff, accent, targetDur } = opts;
+  const filters: string[] = [];
+
+  if (opts.hook) {
+    const hook = opts.hook.toUpperCase();
+    const fontSize = hook.length > 14 ? 90 : hook.length > 10 ? 110 : hook.length > 8 ? 140 : 180;
+    // Backing bar aligned with the text (text sits at ih/2-450).
+    filters.push(
+      `drawbox=x=0:y=ih/2-490:w=iw:h=${fontSize + 80}:color=black@0.55:t=fill:enable='between(t,0.2,2.9)'`,
+      `drawtext=${ff}fontsize=${fontSize}:fontcolor=white:borderw=6:bordercolor=0x${accent}@0.95:x=(w-text_w)/2:y=h/2-450:text='${escapeDrawtext(hook)}':enable='between(t,0.3,2.8)'`,
+    );
+  }
+
+  if (opts.titleText) {
+    // Persistent song title in the lower third — truncated so it never
+    // runs off the 1080 px frame.
+    const rawTitle = opts.titleText.trim();
+    const title = rawTitle.length > 30 ? `${rawTitle.slice(0, 29).trimEnd()}…` : rawTitle;
+    const titleFontSize = title.length > 22 ? 44 : 54;
+    filters.push(
+      `drawtext=${ff}fontsize=${titleFontSize}:fontcolor=white:borderw=4:bordercolor=black@0.85:x=(w-text_w)/2:y=h-380:text='${escapeDrawtext(title)}'`,
+      `drawtext=${ff}fontsize=34:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=(w-text_w)/2:y=h-310:text='RE-MASTER FREDDY'`,
+    );
+  }
+
+  if (opts.endCard) {
+    const ecStart = targetDur - 3;
+    const ecEnd = targetDur - 0.2;
+    filters.push(
+      `drawbox=x=0:y=h-260:w=iw:h=140:color=0x${accent}@0.92:t=fill:enable='between(t,${ecStart.toFixed(2)},${ecEnd.toFixed(2)})'`,
+      `drawtext=${ff}fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-220:text='${escapeDrawtext(opts.endCard.toUpperCase())}':enable='between(t,${(ecStart + 0.1).toFixed(2)},${ecEnd.toFixed(2)})'`,
+    );
+  }
+
+  return filters;
 }
 
 // ─── Main ───────────────────────────────────────────────────
@@ -245,38 +334,15 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
     const filters: string[] = [
       `crop=ih*9/16:ih:(iw-ih*9/16)/2:0`,
       `scale=1080:1920`,
+      ...buildOverlayFilters({
+        ff,
+        accent,
+        targetDur,
+        hook: options.hook,
+        titleText: options.titleText,
+        endCard: options.endCard,
+      }),
     ];
-
-    if (options.hook) {
-      const hook = options.hook.toUpperCase();
-      const fontSize = hook.length > 14 ? 90 : hook.length > 10 ? 110 : hook.length > 8 ? 140 : 180;
-      // Backing bar aligned with the text (text sits at ih/2-450).
-      filters.push(
-        `drawbox=x=0:y=ih/2-490:w=iw:h=${fontSize + 80}:color=black@0.55:t=fill:enable='between(t,0.2,2.9)'`,
-        `drawtext=${ff}fontsize=${fontSize}:fontcolor=white:borderw=6:bordercolor=0x${accent}@0.95:x=(w-text_w)/2:y=h/2-450:text='${escapeDrawtext(hook)}':enable='between(t,0.3,2.8)'`,
-      );
-    }
-
-    if (options.titleText) {
-      // Persistent song title in the lower third — truncated so it never
-      // runs off the 1080 px frame.
-      const rawTitle = options.titleText.trim();
-      const title = rawTitle.length > 30 ? `${rawTitle.slice(0, 29).trimEnd()}…` : rawTitle;
-      const titleFontSize = title.length > 22 ? 44 : 54;
-      filters.push(
-        `drawtext=${ff}fontsize=${titleFontSize}:fontcolor=white:borderw=4:bordercolor=black@0.85:x=(w-text_w)/2:y=h-380:text='${escapeDrawtext(title)}'`,
-        `drawtext=${ff}fontsize=34:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=(w-text_w)/2:y=h-310:text='RE-MASTER FREDDY'`,
-      );
-    }
-
-    if (options.endCard) {
-      const ecStart = targetDur - 3;
-      const ecEnd = targetDur - 0.2;
-      filters.push(
-        `drawbox=x=0:y=h-260:w=iw:h=140:color=0x${accent}@0.92:t=fill:enable='between(t,${ecStart.toFixed(2)},${ecEnd.toFixed(2)})'`,
-        `drawtext=${ff}fontsize=58:fontcolor=white:x=(w-text_w)/2:y=h-220:text='${escapeDrawtext(options.endCard.toUpperCase())}':enable='between(t,${(ecStart + 0.1).toFixed(2)},${ecEnd.toFixed(2)})'`,
-      );
-    }
 
     // Optional logo overlay (top-right, whole duration) — needs a second
     // input, so the filter list becomes a filter_complex graph.
@@ -377,6 +443,133 @@ export async function generateShort(options: ShortsOptions): Promise<ShortsResul
       dropStartSeconds: startTime,
       detectionMethod,
     };
+  } finally {
+    try { await fs.rm(workDir, { recursive: true }); } catch {}
+  }
+}
+
+// ─── Shorts from audio + still images ────────────────────────
+
+export interface AudioShortsOptions {
+  /** Full song audio (MP3/AAC buffer). */
+  audioBuffer: Buffer;
+  /** 2-6 background images (any aspect — cover-cropped to 9:16). */
+  imageBuffers: Buffer[];
+  /** Where in the song the clip starts (seconds). */
+  startTime: number;
+  /** Target duration in seconds. Clamped to 30-60. Default 35. */
+  targetDuration?: number;
+  hook?: string;
+  titleText?: string;
+  endCard?: string;
+  accentColor?: string;
+  logoBuffer?: Buffer;
+}
+
+/**
+ * Render a vertical Short directly from the song audio + still images —
+ * used by the follow-up Shorts cron, where the original rendered video is
+ * no longer available (only YouTube has it). Images are shown as a static
+ * slideshow (no Ken Burns, per channel style) with the same hook/title/logo
+ * branding as pipeline Shorts.
+ */
+export async function generateShortFromAudio(
+  options: AudioShortsOptions,
+): Promise<{ videoBuffer: Buffer; durationSeconds: number }> {
+  if (options.imageBuffers.length === 0) throw new Error('No images provided');
+
+  const ffmpegPath = await ensureFFmpeg();
+  const fontPath = await ensureFont();
+  const ff = fontPath ? `fontfile='${fontPath.replace(/'/g, "\\'")}'\\:` : '';
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nb-audioshort-'));
+  const audioPath = path.join(workDir, 'audio.mp3');
+  const listPath = path.join(workDir, 'list.txt');
+  const outPath = path.join(workDir, 'short.mp4');
+
+  try {
+    await fs.writeFile(audioPath, options.audioBuffer);
+
+    const targetDur = Math.min(60, Math.max(30, options.targetDuration || 35));
+    const accent = options.accentColor || 'ff3366';
+
+    // Clamp start so the clip never runs past the end of the song.
+    const audioDur = await probeDuration(ffmpegPath, audioPath);
+    const startTime = audioDur > 0
+      ? Math.max(0, Math.min(options.startTime, audioDur - targetDur))
+      : Math.max(0, options.startTime);
+
+    // Image slideshow via the concat demuxer — one image per equal segment.
+    const images = options.imageBuffers.slice(0, 6);
+    const segDur = targetDur / images.length;
+    const listLines: string[] = [];
+    for (let i = 0; i < images.length; i++) {
+      const imgPath = path.join(workDir, `img-${i}.png`);
+      await fs.writeFile(imgPath, images[i]);
+      listLines.push(`file '${imgPath}'`, `duration ${segDur.toFixed(3)}`);
+    }
+    // Concat demuxer quirk: the last file must be repeated (without duration)
+    // or the final segment is dropped.
+    listLines.push(`file '${path.join(workDir, `img-${images.length - 1}.png`)}'`);
+    await fs.writeFile(listPath, listLines.join('\n'), 'utf-8');
+
+    const filters = [
+      `scale=1080:1920:force_original_aspect_ratio=increase`,
+      `crop=1080:1920`,
+      `fps=12`,
+      `format=yuv420p`,
+      ...buildOverlayFilters({
+        ff,
+        accent,
+        targetDur,
+        hook: options.hook,
+        titleText: options.titleText,
+        endCard: options.endCard,
+      }),
+    ];
+
+    const hasLogo = options.logoBuffer && options.logoBuffer.length > 0;
+    let logoPath: string | null = null;
+    if (hasLogo) {
+      logoPath = path.join(workDir, 'logo.png');
+      await fs.writeFile(logoPath, options.logoBuffer!);
+    }
+
+    const inputArgs = [
+      '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-ss', startTime.toFixed(2), '-i', audioPath,
+      ...(hasLogo && logoPath ? ['-i', logoPath] : []),
+    ];
+    const filterArgs = hasLogo && logoPath
+      ? [
+          '-filter_complex',
+          `[0:v]${filters.join(',')}[base];[2:v]scale=170:-1[logo];[base][logo]overlay=W-w-36:110[vout]`,
+          '-map', '[vout]',
+          '-map', '1:a',
+        ]
+      : ['-map', '0:v', '-map', '1:a', '-vf', filters.join(',')];
+
+    await runFFmpeg(ffmpegPath, [
+      ...inputArgs,
+      ...filterArgs,
+      '-t', targetDur.toFixed(2),
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-crf', '23',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      '-y',
+      outPath,
+    ]);
+
+    const videoBuffer = await fs.readFile(outPath);
+    const durationSeconds = await probeDuration(ffmpegPath, outPath);
+    console.log(
+      `[ShortsGen] Audio-short built: ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB, ` +
+      `${durationSeconds.toFixed(1)}s, start=${startTime.toFixed(1)}s, ${images.length} images`,
+    );
+    return { videoBuffer, durationSeconds };
   } finally {
     try { await fs.rm(workDir, { recursive: true }); } catch {}
   }
