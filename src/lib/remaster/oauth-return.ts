@@ -1,6 +1,6 @@
 export const REMASTER_OAUTH_RETURN_PATH = "/oauth/remaster-return";
 
-const DEFAULT_REMASTER_ADMIN_URL = "https://remasterfreddy.vercel.app/admin";
+const DEFAULT_REMASTER_ADMIN_URL = "https://remaster.freddybremseth.com/admin";
 const FORWARDED_OAUTH_PARAMS = [
   "oauth_success",
   "oauth_error",

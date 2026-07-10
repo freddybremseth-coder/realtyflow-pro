@@ -26,7 +26,7 @@ test("accepts HTTP admin URLs and rejects unsafe protocols", () => {
   );
   assert.equal(
     resolveRemasterAdminUrl("javascript:alert(1)"),
-    "https://remasterfreddy.vercel.app/admin",
+    "https://remaster.freddybremseth.com/admin",
   );
 });
 
