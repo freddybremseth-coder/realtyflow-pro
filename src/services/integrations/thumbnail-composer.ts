@@ -31,6 +31,8 @@ export interface ThumbnailComposeOptions {
   hook: string;
   /** 1-3 words, smaller, accent colored. Example: "Lo-Fi Beats 2026". */
   subtext?: string;
+  /** Song title drawn below the hook in accent color. Takes precedence over subtext. */
+  titleText?: string;
   /** Brand badge shown top-left. Defaults to "RE-MASTER FREDDY". */
   brand?: string;
   /** Optional PNG logo placed bottom-right. */
@@ -154,9 +156,16 @@ export async function composeThumbnail(
     );
   }
 
+  // Secondary line below the hook: the song title when provided, otherwise
+  // the SEO subtext. Long titles get a smaller font and are truncated so
+  // they stay inside the dark gradient area.
+  const rawSecondary = (options.titleText || options.subtext || '').trim();
+  const secondary = rawSecondary.length > 38 ? `${rawSecondary.slice(0, 37).trimEnd()}…` : rawSecondary;
+  const secondaryFontSize = secondary.length > 26 ? 36 : 44;
+
   const lineSpacing = Math.round(fontSize * 0.1);
   const totalHookHeight = lines.length * fontSize + (lines.length - 1) * lineSpacing;
-  const subHeight = options.subtext ? 60 : 0;
+  const subHeight = secondary ? secondaryFontSize + 18 : 0;
   const blockStartY = Math.round((720 - totalHookHeight - subHeight) / 2);
 
   lines.forEach((line, i) => {
@@ -166,10 +175,10 @@ export async function composeThumbnail(
     );
   });
 
-  if (options.subtext) {
+  if (secondary) {
     const subY = blockStartY + totalHookHeight + 18;
     filters.push(
-      `drawtext=${ff}fontsize=44:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=48:y=${subY}:text='${escapeDrawtext(options.subtext)}'`
+      `drawtext=${ff}fontsize=${secondaryFontSize}:fontcolor=0x${accent}:borderw=3:bordercolor=black@0.85:x=48:y=${subY}:text='${escapeDrawtext(secondary)}'`
     );
   }
 
@@ -229,6 +238,8 @@ export async function composeThumbnailVariants(
   shared: {
     brand?: string;
     logoBuffer?: Buffer;
+    /** Song title burned in below the hook on every variant. */
+    titleText?: string;
   } = {}
 ): Promise<Buffer[]> {
   const count = Math.min(backgrounds.length, variants.length);
@@ -241,6 +252,7 @@ export async function composeThumbnailVariants(
         backgroundBuffer: backgrounds[i],
         hook: variants[i].hook,
         subtext: variants[i].subtext,
+        titleText: shared.titleText,
         accentColor: variants[i].accentColor || pickAccent(i),
         stamp: variants[i].stamp,
         brand: shared.brand,

@@ -1,4 +1,4 @@
-import { updateSongStatus, updateSongFields, getGenreImages, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
+import { updateSongStatus, updateSongFields, getGenreImages, getLatestLogoUrl, saveGeneratedImagesToGenreLibrary } from '@/services/integrations/airtable-client';
 import { analyzeSong, generateYouTubeSEO, generateMusicImageSet } from '@/services/integrations/gemini-client';
 import { renderVideo, cleanupRender, isAvailable as isFFmpegAvailable } from '@/services/integrations/ffmpeg-renderer';
 import { composeThumbnailVariants } from '@/services/integrations/thumbnail-composer';
@@ -579,12 +579,25 @@ export class NeuralBeatPipeline {
       }
 
       // Pre-load logo buffer once — reused for both video watermark and
-      // composed thumbnails so we only download it once.
+      // composed thumbnails so we only download it once. Falls back to the
+      // newest logo in the image bank so branding is automatic even when the
+      // user didn't pick one for this run.
       let logoBuffer: Buffer | undefined;
       let logoPath: string | undefined;
-      if (options?.logoUrl) {
+      let logoUrl = options?.logoUrl;
+      if (!logoUrl) {
+        logoUrl = (await getLatestLogoUrl()) || undefined;
+        if (logoUrl) console.log('[NeuralBeatPipeline] Using newest logo from image bank (auto)');
+      }
+      if (!logoUrl) {
+        // Last resort: the official Re-Master Freddy logo served by the frontend.
+        logoUrl = process.env.REMASTER_LOGO_URL
+          || 'https://remaster.freddybremseth.com/assets/remaster-logo.jpg';
+        console.log('[NeuralBeatPipeline] Using default Re-Master Freddy logo (auto fallback)');
+      }
+      if (logoUrl) {
         try {
-          const logoRes = await fetch(options.logoUrl);
+          const logoRes = await fetch(logoUrl);
           if (logoRes.ok) {
             logoBuffer = Buffer.from(await logoRes.arrayBuffer());
             const logoTempPath = path.join(os.tmpdir(), `nb-logo-${Date.now()}.png`);
@@ -685,7 +698,7 @@ export class NeuralBeatPipeline {
           thumbnailVariantBuffers = await composeThumbnailVariants(
             availableBackgrounds,
             variants,
-            { brand: 'RE-MASTER FREDDY', logoBuffer },
+            { brand: 'RE-MASTER FREDDY', logoBuffer, titleText: songRecord.title },
           );
           if (thumbnailVariantBuffers.length > 0) {
             thumbnailBuffer = thumbnailVariantBuffers[0];

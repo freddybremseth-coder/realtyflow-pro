@@ -334,6 +334,33 @@ export async function getGenreImages(genre: string, count = 20): Promise<GenreIm
   return [];
 }
 
+/**
+ * Fetch the newest logo from the user image bank (kind = 'logo').
+ * Used to brand thumbnails and video watermarks automatically when the
+ * pipeline is started without an explicitly selected logo.
+ */
+export async function getLatestLogoUrl(): Promise<string | null> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('user_image_bank')
+      .select('url')
+      .eq('kind', 'logo')
+      .eq('owner', 'system')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn(`[Supabase] Logo lookup failed: ${error.message}`);
+      return null;
+    }
+    return data?.[0]?.url || null;
+  } catch (err) {
+    console.warn('[Supabase] Logo lookup failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function getAvailableGenres(): Promise<string[]> {
   const supabase = getSupabase();
   const { data, error } = await supabase
