@@ -195,7 +195,11 @@ export async function middleware(request: NextRequest) {
   // CRON_SECRET er satt. Slipp gjennom cron-ruter som bærer riktig token, slik
   // at de faktisk kjører i produksjon (uten dette redirectes de til /login).
   // Hver cron-rute verifiserer CRON_SECRET på nytt internt, så dette er trygt.
-  const isCronPath = pathname.startsWith("/api/cron") || pathname === "/api/neural-beat/cron";
+  const isCronPath =
+    pathname.startsWith("/api/cron") ||
+    pathname === "/api/neural-beat/cron" ||
+    pathname === "/api/neural-beat/thumbnail-ab" ||
+    pathname === "/api/neural-beat/shorts-followup";
   if (isCronPath && hasValidCronCredential(request)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }

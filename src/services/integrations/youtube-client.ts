@@ -269,25 +269,38 @@ export async function uploadVideo(
   const hasLocalizations = metadata.localizations && Object.keys(metadata.localizations).length > 0;
 
   return runWithTokenFallback(brandId, async (youtube, source) => {
-    const res = await youtube.videos.insert({
-      part: hasLocalizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
-      requestBody: {
-        snippet: {
-          title: metadata.title,
-          description: metadata.description,
-          tags: metadata.tags,
-          categoryId: metadata.categoryId || '10', // Music category
-          defaultLanguage: metadata.language || 'en',
-          ...(metadata.defaultAudioLanguage ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
+    const insertWith = (withLocalizations: boolean) =>
+      youtube.videos.insert({
+        part: withLocalizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
+        requestBody: {
+          snippet: {
+            title: metadata.title,
+            description: metadata.description,
+            tags: metadata.tags,
+            categoryId: metadata.categoryId || '10', // Music category
+            defaultLanguage: metadata.language || 'en',
+            ...(metadata.defaultAudioLanguage ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
+          },
+          ...(withLocalizations ? { localizations: metadata.localizations } : {}),
+          status: statusPayload,
         },
-        ...(hasLocalizations ? { localizations: metadata.localizations } : {}),
-        status: statusPayload,
-      },
-      media: {
-        body: Readable.from(videoBuffer),
-        mimeType: 'video/mp4',
-      },
-    });
+        media: {
+          body: Readable.from(videoBuffer),
+          mimeType: 'video/mp4',
+        },
+      });
+
+    let res;
+    try {
+      res = await insertWith(!!hasLocalizations);
+    } catch (err) {
+      // Localizations are nice-to-have — never let them sink the upload.
+      // invalid_grant must propagate so the token fallback/reconnect works.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!hasLocalizations || isInvalidGrantError(err)) throw err;
+      console.warn(`[YouTube] Insert with localizations failed (${msg.slice(0, 200)}) — retrying without`);
+      res = await insertWith(false);
+    }
 
     const video = res.data;
     const videoId = video.id || '';

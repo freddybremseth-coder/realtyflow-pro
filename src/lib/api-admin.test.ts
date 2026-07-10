@@ -41,3 +41,33 @@ test("requireAdminApi returns null for a valid admin session", async () => {
 
   assert.equal(response, null);
 });
+
+function remasterProxyRequest(headers: Record<string, string>) {
+  return new NextRequest("https://realtyflow.test/api/neural-beat/image-bank", { headers });
+}
+
+test("requireAdminApi accepts the Re-Master proxy secret with an admin email", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "proxy-test-secret";
+  const response = await requireAdminApi(remasterProxyRequest({
+    "x-remaster-migration-secret": "proxy-test-secret",
+    "x-remaster-admin": "freddy.bremseth@gmail.com",
+  }));
+
+  assert.equal(response, null);
+});
+
+test("requireAdminApi rejects the Re-Master proxy with wrong secret or non-admin email", async () => {
+  process.env.REALTYFLOW_MIGRATION_SECRET = "proxy-test-secret";
+
+  const wrongSecret = await requireAdminApi(remasterProxyRequest({
+    "x-remaster-migration-secret": "wrong",
+    "x-remaster-admin": "freddy.bremseth@gmail.com",
+  }));
+  assert.equal(wrongSecret?.status, 401);
+
+  const wrongEmail = await requireAdminApi(remasterProxyRequest({
+    "x-remaster-migration-secret": "proxy-test-secret",
+    "x-remaster-admin": "not-admin@example.com",
+  }));
+  assert.equal(wrongEmail?.status, 401);
+});
