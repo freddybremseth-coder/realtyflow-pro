@@ -418,12 +418,20 @@ export async function generateYouTubeSEO(
   thumbnailVariants: ThumbnailHookVariant[];
 }> {
   // Rotate title formulas for variety - don't always use "Artist - Title [Genre]"
+  const titleCase = (value: string) =>
+    String(value || '')
+      .split(/\s+/)
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  const mood = titleCase(options.mood);
+  const genre = titleCase(options.genre);
+
   const titleFormulas = [
-    `"${options.title}" by Re-Master Freddy - make it mood-first: e.g. "Dreamy Chill Vibes | ${options.title} [${options.genre}]"`,
-    `"${options.title}" by Re-Master Freddy - make it use-case first: e.g. "Best ${options.mood} Music for Study & Focus | ${options.title}"`,
-    `"${options.title}" by Re-Master Freddy - make it emotional: e.g. "${options.title} - Feel the ${options.mood} Energy | Re-Master Freddy"`,
-    `"${options.title}" by Re-Master Freddy - make it trending: e.g. "${options.genre} Mix 2026 | ${options.title} (Official Visualizer)"`,
-    `"${options.title}" by Re-Master Freddy - make it playlist-style: e.g. "Late Night ${options.genre} | ${options.title} | Chill Beats to Relax"`,
+    `"${options.title}" by Re-Master Freddy - make it mood-first: e.g. "${mood} ${genre} Vibes | ${options.title}"`,
+    `"${options.title}" by Re-Master Freddy - make it use-case first: e.g. "${genre} for Summer Drives | ${options.title}"`,
+    `"${options.title}" by Re-Master Freddy - make it emotional: e.g. "${options.title} | Pure ${mood} Energy"`,
+    `"${options.title}" by Re-Master Freddy - make it release-style: e.g. "${options.title} | ${genre} (Official Visualizer)"`,
+    `"${options.title}" by Re-Master Freddy - make it playlist-style: e.g. "Late Night ${genre} | ${options.title}"`,
   ];
   const titleFormula = titleFormulas[Math.floor(Math.random() * titleFormulas.length)];
 
@@ -443,6 +451,9 @@ TITLE RULES (CRITICAL for CTR):
 - Use | as separator, NOT just dashes
 - Include "Re-Master Freddy" but it doesn't have to be first
 - Add 1 relevant emoji if it fits naturally
+- Proper Title Case for every word — NEVER insert lowercase adjectives like "energetic EDM"
+- NEVER write grammatically broken phrases like "Feel the energetic" — mood words are adjectives, they need a noun
+- NEVER call a single track a "Mix", "Compilation" or "Playlist" — viewers who expect an hour-long mix leave immediately and that kills the video
 
 DESCRIPTION (1500-2500 chars, SEO-optimized):
 1. Song intro: name, artist, genre, mood, what makes it special (2-3 engaging sentences)
@@ -512,13 +523,13 @@ Re-Master Freddy creates AI-generated electronic music blending cutting-edge AI 
 🏷️ Tags
 #ReMasterFreddy #AIMusic #${options.genre.replace(/\s/g, '')} #EDM #ChillBeats #StudyMusic #ElectronicMusic #LoFi`;
 
-  // Rotate fallback titles too
+  // Rotate fallback titles too — Title Case, no "Mix" claims for single tracks
   const fallbackTitles = [
-    `${options.title} | ${options.mood} ${options.genre} | Re-Master Freddy`,
-    `${options.mood} ${options.genre} Mix | ${options.title} - Re-Master Freddy`,
-    `Re-Master Freddy - ${options.title} | Best ${options.genre} 2026`,
-    `${options.title} (${options.style}) | ${options.genre} Vibes`,
-    `Feel the ${options.mood} | ${options.title} - Re-Master Freddy`,
+    `${options.title} | ${mood} ${genre} | Re-Master Freddy`,
+    `${options.title} | ${genre} (Official Visualizer)`,
+    `Re-Master Freddy - ${options.title} | Best ${genre} 2026`,
+    `${options.title} | ${genre} Vibes`,
+    `${options.title} | Pure ${mood} Energy - Re-Master Freddy`,
   ];
   const fallbackTitle = fallbackTitles[Math.floor(Math.random() * fallbackTitles.length)];
 
