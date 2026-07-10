@@ -266,9 +266,11 @@ export async function uploadVideo(
     statusPayload.publishAt = metadata.publishAt;
   }
 
+  const hasLocalizations = metadata.localizations && Object.keys(metadata.localizations).length > 0;
+
   return runWithTokenFallback(brandId, async (youtube, source) => {
     const res = await youtube.videos.insert({
-      part: ['snippet', 'status'],
+      part: hasLocalizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
       requestBody: {
         snippet: {
           title: metadata.title,
@@ -276,7 +278,9 @@ export async function uploadVideo(
           tags: metadata.tags,
           categoryId: metadata.categoryId || '10', // Music category
           defaultLanguage: metadata.language || 'en',
+          ...(metadata.defaultAudioLanguage ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
         },
+        ...(hasLocalizations ? { localizations: metadata.localizations } : {}),
         status: statusPayload,
       },
       media: {

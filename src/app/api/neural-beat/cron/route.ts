@@ -21,7 +21,10 @@ export const maxDuration = 300;
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  const MAX_SONGS = 3;
+  // Default 1 song/day: a steady cadence outperforms burst-publishing —
+  // each video gets its own algorithm push instead of competing with
+  // same-day siblings. Override with CRON_MAX_SONGS (1-3).
+  const MAX_SONGS = Math.max(1, Math.min(3, parseInt(process.env.CRON_MAX_SONGS || '1', 10) || 1));
   const SAFETY_MARGIN_MS = 30_000;
   const MAX_TIME_MS = (maxDuration * 1000) - SAFETY_MARGIN_MS;
 

@@ -761,6 +761,16 @@ export class NeuralBeatPipeline {
             ? 'private'
             : ((youtubeMetadata!.privacyStatus as 'public' | 'private' | 'unlisted') || 'public'),
           publishAt: publishAtIso || undefined,
+          // Instrumental music — no linguistic content. Helps YouTube classify.
+          defaultAudioLanguage: 'zxx',
+          // Locale signal for ES/NO viewers; the description already leads
+          // with the three-language intro block.
+          localizations: translatedIntro
+            ? {
+                es: { title: youtubeMetadata!.title, description: youtubeMetadata!.description },
+                no: { title: youtubeMetadata!.title, description: youtubeMetadata!.description },
+              }
+            : undefined,
         }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
         youtubeUrl = uploadResult.youtubeUrl;
         youtubeVideoId = uploadResult.videoId;
@@ -950,6 +960,7 @@ export class NeuralBeatPipeline {
             tags: [...youtubeMetadata.tags.slice(0, 17), 'Shorts', 'YouTube Shorts', 'Short'],
             categoryId: youtubeMetadata.categoryId,
             privacyStatus: 'public',
+            defaultAudioLanguage: 'zxx',
           }, NEURAL_BEAT_BRAND_ID, { requireBrandToken: true });
 
           console.log(`[NeuralBeatPipeline] YouTube Short uploaded: ${shortsResult.youtubeUrl}`);

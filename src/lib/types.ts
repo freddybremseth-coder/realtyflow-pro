@@ -80,6 +80,17 @@ export interface YouTubeVideoMetadata {
    * coerces this automatically.
    */
   publishAt?: string;
+  /**
+   * BCP-47 code for the audio language. Use 'zxx' for instrumental music
+   * (no linguistic content) — helps YouTube classify and recommend the video.
+   */
+  defaultAudioLanguage?: string;
+  /**
+   * Localized title/description per language code (e.g. en, es, no). YouTube
+   * shows the matching variant to viewers with that interface language,
+   * which improves international search reach and CTR.
+   */
+  localizations?: Record<string, { title: string; description: string }>;
 }
 
 export interface YouTubeUploadResult {
