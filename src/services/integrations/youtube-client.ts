@@ -255,23 +255,44 @@ export async function uploadVideo(
   brandId?: string,
   options?: { requireBrandToken?: boolean },
 ): Promise<YouTubeUploadResult> {
-  // When publishAt is set we must upload as PRIVATE — YouTube rejects scheduling
-  // on any other privacy status. Sanitize here so callers don't have to remember.
   const willSchedule = !!metadata.publishAt;
-  const statusPayload: Record<string, unknown> = {
-    privacyStatus: willSchedule ? 'private' : (metadata.privacyStatus || 'private'),
-    selfDeclaredMadeForKids: false,
-  };
-  if (willSchedule) {
-    statusPayload.publishAt = metadata.publishAt;
-  }
-
-  const hasLocalizations = metadata.localizations && Object.keys(metadata.localizations).length > 0;
+  const hasLocalizations = !!(metadata.localizations && Object.keys(metadata.localizations).length > 0);
 
   return runWithTokenFallback(brandId, async (youtube, source) => {
-    const insertWith = (withLocalizations: boolean) =>
-      youtube.videos.insert({
-        part: withLocalizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
+    // Nice-to-have metadata must never sink an upload. Try the full payload
+    // first, then strip one optional field per attempt until the insert
+    // succeeds: localizations → defaultAudioLanguage → scheduled publishAt.
+    // invalid_grant always propagates so the token fallback/reconnect works.
+    interface InsertAttempt { label: string; localizations: boolean; audioLang: boolean; schedule: boolean }
+    const attempts: InsertAttempt[] = [
+      { label: 'full', localizations: hasLocalizations, audioLang: !!metadata.defaultAudioLanguage, schedule: willSchedule },
+    ];
+    if (hasLocalizations) {
+      attempts.push({ label: 'uten localizations', localizations: false, audioLang: !!metadata.defaultAudioLanguage, schedule: willSchedule });
+    }
+    if (metadata.defaultAudioLanguage) {
+      attempts.push({ label: 'uten defaultAudioLanguage', localizations: false, audioLang: false, schedule: willSchedule });
+    }
+    if (willSchedule) {
+      // Last resort: publish immediately instead of scheduled — an uploaded
+      // video beats a failed pipeline.
+      attempts.push({ label: 'uten planlagt publisering', localizations: false, audioLang: false, schedule: false });
+    }
+
+    const insertWith = (a: InsertAttempt) => {
+      // Scheduling requires PRIVATE — YouTube rejects any other status.
+      const statusPayload: Record<string, unknown> = {
+        privacyStatus: a.schedule
+          ? 'private'
+          : willSchedule
+            ? 'public' // schedule stripped — the intent was an eventually-public video
+            : (metadata.privacyStatus || 'private'),
+        selfDeclaredMadeForKids: false,
+      };
+      if (a.schedule) statusPayload.publishAt = metadata.publishAt;
+
+      return youtube.videos.insert({
+        part: a.localizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
         requestBody: {
           snippet: {
             title: metadata.title,
@@ -279,9 +300,9 @@ export async function uploadVideo(
             tags: metadata.tags,
             categoryId: metadata.categoryId || '10', // Music category
             defaultLanguage: metadata.language || 'en',
-            ...(metadata.defaultAudioLanguage ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
+            ...(a.audioLang ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
           },
-          ...(withLocalizations ? { localizations: metadata.localizations } : {}),
+          ...(a.localizations ? { localizations: metadata.localizations } : {}),
           status: statusPayload,
         },
         media: {
@@ -289,18 +310,23 @@ export async function uploadVideo(
           mimeType: 'video/mp4',
         },
       });
+    };
 
-    let res;
-    try {
-      res = await insertWith(!!hasLocalizations);
-    } catch (err) {
-      // Localizations are nice-to-have — never let them sink the upload.
-      // invalid_grant must propagate so the token fallback/reconnect works.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!hasLocalizations || isInvalidGrantError(err)) throw err;
-      console.warn(`[YouTube] Insert with localizations failed (${msg.slice(0, 200)}) — retrying without`);
-      res = await insertWith(false);
+    let res: Awaited<ReturnType<typeof insertWith>> | undefined;
+    let lastErr: unknown;
+    for (let i = 0; i < attempts.length; i++) {
+      try {
+        res = await insertWith(attempts[i]);
+        if (i > 0) console.warn(`[YouTube] Upload lyktes på forsøk ${i + 1} (${attempts[i].label})`);
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (isInvalidGrantError(err)) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[YouTube] Insert-forsøk '${attempts[i].label}' feilet: ${msg.slice(0, 300)}`);
+      }
     }
+    if (!res) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 
     const video = res.data;
     const videoId = video.id || '';
