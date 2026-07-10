@@ -740,6 +740,8 @@ export class NeuralBeatPipeline {
           const picked = await pickBestPublishTime({
             mood: songAnalysis?.mood,
             genre: songAnalysis?.genre,
+            // Maks 24t frem: videoen skal ikke ligge som "Planlagt" i dagevis.
+            maxAheadDays: 1,
           });
           publishAtIso = picked.isoDate;
           publishScheduleReason = picked.reason;
