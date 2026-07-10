@@ -258,6 +258,28 @@ export async function uploadVideo(
   const willSchedule = !!metadata.publishAt;
   const hasLocalizations = !!(metadata.localizations && Object.keys(metadata.localizations).length > 0);
 
+  // YouTube rejects angle brackets in titles/descriptions and has hard
+  // length limits (title 100, description 5000, tag 100 / ~500 total).
+  const sanitizeText = (value: string, maxLen: number) =>
+    String(value || '').replace(/[<>]/g, '').slice(0, maxLen).trim();
+  const sanitizeTags = (tags: string[]) => {
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    let total = 0;
+    for (const raw of tags || []) {
+      const tag = String(raw).replace(/[<>#"]/g, '').trim().slice(0, 90);
+      if (!tag || seen.has(tag.toLowerCase())) continue;
+      total += tag.length + (tag.includes(' ') ? 3 : 1);
+      if (total > 450) break;
+      seen.add(tag.toLowerCase());
+      clean.push(tag);
+    }
+    return clean;
+  };
+  const safeTitle = sanitizeText(metadata.title, 100) || 'Re-Master Freddy';
+  const safeDescription = sanitizeText(metadata.description, 4900);
+  const safeTags = sanitizeTags(metadata.tags);
+
   return runWithTokenFallback(brandId, async (youtube, source) => {
     // Nice-to-have metadata must never sink an upload. Try the full payload
     // first, then strip one optional field per attempt until the insert
@@ -295,9 +317,9 @@ export async function uploadVideo(
         part: a.localizations ? ['snippet', 'status', 'localizations'] : ['snippet', 'status'],
         requestBody: {
           snippet: {
-            title: metadata.title,
-            description: metadata.description,
-            tags: metadata.tags,
+            title: safeTitle,
+            description: safeDescription,
+            tags: safeTags,
             categoryId: metadata.categoryId || '10', // Music category
             defaultLanguage: metadata.language || 'en',
             ...(a.audioLang ? { defaultAudioLanguage: metadata.defaultAudioLanguage } : {}),
@@ -313,20 +335,23 @@ export async function uploadVideo(
     };
 
     let res: Awaited<ReturnType<typeof insertWith>> | undefined;
-    let lastErr: unknown;
+    const attemptErrors: string[] = [];
     for (let i = 0; i < attempts.length; i++) {
       try {
         res = await insertWith(attempts[i]);
         if (i > 0) console.warn(`[YouTube] Upload lyktes på forsøk ${i + 1} (${attempts[i].label})`);
         break;
       } catch (err) {
-        lastErr = err;
         if (isInvalidGrantError(err)) throw err;
         const msg = err instanceof Error ? err.message : String(err);
+        attemptErrors.push(`${attempts[i].label}: ${msg.slice(0, 200)}`);
         console.warn(`[YouTube] Insert-forsøk '${attempts[i].label}' feilet: ${msg.slice(0, 300)}`);
       }
     }
-    if (!res) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+    if (!res) {
+      // Version marker [upload-v3] confirms which code produced the error.
+      throw new Error(`[upload-v3] Alle ${attempts.length} opplastingsforsøk feilet — ${attemptErrors.join(' | ')}`);
+    }
 
     const video = res.data;
     const videoId = video.id || '';
