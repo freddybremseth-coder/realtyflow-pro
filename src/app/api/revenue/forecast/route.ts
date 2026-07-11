@@ -6,6 +6,8 @@ import { buildRevenueForecast } from "@/lib/revenue/forecast";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const ALLOWED_BRANDS = new Set(["zeneco", "soleada", "pinosoecolife"]);
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,6 +26,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const brand = String(searchParams.get("brand") || "").trim().toLowerCase();
+  if (brand && brand !== "all" && !ALLOWED_BRANDS.has(brand)) {
+    return NextResponse.json({ error: "Invalid brand filter", forecast: null }, { status: 400 });
+  }
 
   let query = supabase
     .from("contacts")
