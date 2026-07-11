@@ -118,7 +118,7 @@ Reply ONLY with the image prompt text, no explanation.`;
 
   // Generate the image with Gemini
   const image = await generateImage(imagePrompt.trim(), {
-    style: 'photorealistic cinematic photography, warm summer colors, high contrast',
+    style: 'photorealistic cinematic photography, ultra sharp, vivid warm summer colors, bright light, high contrast',
     aspectRatio: '16:9',
   });
 
@@ -242,7 +242,7 @@ export async function generateMusicImageSet(
   const selectedThemes = Array.from({ length: count }, (_, i) => shuffled[i % shuffled.length]);
 
   const enhancedPrompts = selectedThemes.map((theme) =>
-    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Photorealistic, cinematic, warm natural light, atmospheric, no text or watermarks, 16:9 aspect ratio.`
+    `${theme}. ${options.genre ? `Feeling of ${options.genre} music.` : ''} ${options.visualStyle ? `Visual style: ${options.visualStyle}.` : ''} Photorealistic, cinematic, ultra sharp focus, vivid bright colors, warm natural light, crystal clear detail, no text or watermarks, 16:9 aspect ratio.`
   );
 
   console.log(`[ImageGen] Generating ${count} images for mood: ${moodCategory} (Gemini)`);
@@ -269,7 +269,7 @@ export async function generateMusicImageSet(
         try {
           const startMs = Date.now();
           const image = await generateImage(prompt, {
-            style: 'photorealistic travel and lifestyle photography, golden hour light, high contrast',
+            style: 'photorealistic travel and lifestyle photography, ultra sharp focus, vivid saturated colors, bright natural light, 8K UHD detail, high contrast',
             aspectRatio: '16:9',
           });
           const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);

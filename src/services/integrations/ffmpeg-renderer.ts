@@ -78,8 +78,10 @@ function getFFmpegPath(): string {
 
 // ─── Constants ──────────────────────────────────────────────
 
-const OUTPUT_WIDTH = 1280;
-const OUTPUT_HEIGHT = 720;
+// Full HD gir merkbart skarpere bilde på TV-er og store skjermer. 2 fps
+// stillbilder holder kodekostnaden lav selv i 1080p.
+const OUTPUT_WIDTH = 1920;
+const OUTPUT_HEIGHT = 1080;
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -475,7 +477,7 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
           '-i', options.imagePaths[i],
           '-i', options.logoPath,
           '-filter_complex',
-          `[0]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}[bg];[1]scale=120:-1[logo];[bg][logo]overlay=W-w-16:H-h-16`,
+          `[0]scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}[bg];[1]scale=170:-1[logo];[bg][logo]overlay=W-w-24:H-h-24`,
           '-q:v', '2',
           '-y',
           scaledPath,
@@ -483,7 +485,7 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
       } else {
         await runFFmpeg([
           '-i', options.imagePaths[i],
-          '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`,
+          '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`,
           '-q:v', '2',
           '-y',
           scaledPath,
@@ -544,7 +546,7 @@ export async function renderVideo(options: FFmpegRenderOptions): Promise<FFmpegR
           '-vf', 'format=yuv420p',
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
-          '-crf', '30',
+          '-crf', '24',
           '-r', '2',
           '-an',
           '-y',

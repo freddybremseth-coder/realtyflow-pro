@@ -37,6 +37,7 @@ const REMASTER_PROXY_PATHS = [
   "/api/neural-beat/autopilot-run",
   "/api/neural-beat/autopilot-settings",
   "/api/neural-beat/image-bank",
+  "/api/neural-beat/library-cleanup",
   "/api/neural-beat/recommendations-safe",
   "/api/neural-beat/upload",
   "/api/youtube/status",
@@ -200,7 +201,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/cron") ||
     pathname === "/api/neural-beat/cron" ||
     pathname === "/api/neural-beat/thumbnail-ab" ||
-    pathname === "/api/neural-beat/shorts-followup";
+    pathname === "/api/neural-beat/shorts-followup" ||
+    pathname === "/api/neural-beat/weekly-mix";
   if (isCronPath && hasValidCronCredential(request)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
