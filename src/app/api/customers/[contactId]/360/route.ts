@@ -99,7 +99,7 @@ export async function GET(
   if (profileResult.error && !missingTable(profileResult.error.message)) warnings.push(`buyer_profiles: ${profileResult.error.message}`);
   const profileIds = profiles.map((row: any) => row.id);
 
-  const queries: Promise<any>[] = [
+  const queries = [
     profileIds.length
       ? supabase.from("buyer_profile_criteria").select("*").in("buyer_profile_id", profileIds).eq("active", true).order("created_at", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
@@ -127,7 +127,13 @@ export async function GET(
   const drafts = fulfilledData(draftsSettled, "lead_customer_message_drafts", warnings);
   const portalMessages = fulfilledData(portalSettled, "portal_messages", warnings);
   const allWorkItems = fulfilledData(workItemsSettled, "work_items", warnings);
-  const portalUser = portalUserSettled.status === "fulfilled" && !portalUserSettled.value?.error ? portalUserSettled.value?.data || null : null;
+
+  let portalUser = null;
+  if (portalUserSettled.status === "fulfilled") {
+    if (portalUserSettled.value?.error) {
+      if (!missingTable(portalUserSettled.value.error.message || "")) warnings.push(`portal_users: ${portalUserSettled.value.error.message}`);
+    } else portalUser = portalUserSettled.value?.data || null;
+  } else warnings.push(`portal_users: ${portalUserSettled.reason instanceof Error ? portalUserSettled.reason.message : "ukjent feil"}`);
 
   const workItems = allWorkItems.filter((item: any) => {
     const metadataEmail = normalizeEmail(item.metadata?.email);
