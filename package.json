@@ -12,6 +12,7 @@
     "test:lead-intelligence": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/lead-intelligence/contracts.test.ts src/services/lead-intelligence/extraction.test.ts src/app/api/lead-intelligence/analyze/route.test.ts src/app/api/lead-intelligence/review/route.test.ts src/app/api/lead-intelligence/property-matches/preview/route.test.ts src/app/api/lead-intelligence/shortlists/route.test.ts src/app/api/lead-intelligence/presentations/route.test.ts src/app/api/lead-intelligence/worklist/route.test.ts src/app/api/lead-intelligence/crm-context/route.test.ts src/app/api/lead-intelligence/buyer-profiles/profile-actions.route.test.ts src/app/api/lead-intelligence/buyer-profiles/profile-revision.route.test.ts src/services/lead-intelligence/ui-static.test.ts src/services/lead-intelligence/persistence.test.ts src/services/lead-intelligence/review.test.ts src/services/lead-intelligence/crm-context.test.ts src/services/lead-intelligence/property-matching.test.ts src/services/lead-intelligence/property-match-preview.test.ts src/services/lead-intelligence/shortlist.test.ts src/services/lead-intelligence/presentation.test.ts",
     "test:lead-intelligence-persistence": "tsx --test src/services/lead-intelligence/persistence.test.ts",
     "test:contacts-api": "NODE_OPTIONS=--conditions=react-server tsx --test src/app/api/contacts/route.test.ts",
+    "test:revenue-today": "tsx --test src/lib/revenue/today.test.ts src/lib/realty/public-lead-brand.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
     "test:remaster-brand": "tsx --test src/services/integrations/airtable-client.test.ts",
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts"
@@ -61,7 +62,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",
     "@types/react-big-calendar": "^1.8.9",
-    "@types/react-dom": "^18",
+    "@types/react-dom": "^18.3.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.22.4",
