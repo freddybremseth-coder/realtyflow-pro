@@ -24,6 +24,13 @@ const ACTIONS = new Set<QualityAction>([
 ]);
 const BRAND_IDS = new Set<RevenueDataBrand>(REVENUE_DATA_BRANDS);
 const OPTIONAL_TABLE_PATTERN = /schema cache|does not exist|not find the table|relation .* does not exist|could not find/i;
+const AUDIT_ACTIONS: Record<QualityAction, string> = {
+  NORMALIZE_STATUS: "data_quality_status_normalized",
+  APPLY_DETECTED_SOURCE: "data_quality_source_applied",
+  SET_BRAND: "data_quality_brand_set",
+  SCHEDULE_FOLLOWUP: "data_quality_followup_scheduled",
+  MARK_DUPLICATE_REVIEWED: "data_quality_duplicate_reviewed",
+};
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -51,11 +58,18 @@ function missingColumn(message = "") {
   return match?.[1] || match?.[2] || match?.[3] || "";
 }
 
-async function probeTable(supabase: any, id: string, label: string, table: string, required: boolean): Promise<ProductionProbe> {
+async function probeTable(
+  supabase: any,
+  id: string,
+  label: string,
+  table: string,
+  required: boolean,
+  keyColumn = "id",
+): Promise<ProductionProbe> {
   if (!supabase) return { id, label, required, ok: false, detail: "Supabase er ikke konfigurert." };
   const started = Date.now();
   try {
-    const { count, error } = await supabase.from(table).select("id", { count: "exact", head: true });
+    const { count, error } = await supabase.from(table).select(keyColumn, { count: "exact", head: true });
     if (error) {
       const message = errorText(error);
       return {
@@ -93,7 +107,7 @@ async function loadReport() {
   const supabase = getSupabase();
   const probesPromise = Promise.all([
     probeTable(supabase, "contacts", "CRM contacts", "contacts", true),
-    probeTable(supabase, "brand-settings", "Revenue settings", "brand_settings", true),
+    probeTable(supabase, "brand-settings", "Revenue settings", "brand_settings", true, "brand_id"),
     probeTable(supabase, "work-items", "Work items", "work_items", false),
     probeTable(supabase, "buyer-profiles", "Buyer profiles", "buyer_profiles", false),
     probeTable(supabase, "shortlists", "Lead shortlists", "lead_property_shortlists", false),
@@ -124,15 +138,16 @@ async function loadReport() {
 
 function auditInteraction(action: QualityAction, content: string, metadata: Record<string, unknown> = {}) {
   const now = new Date().toISOString();
+  const auditAction = AUDIT_ACTIONS[action];
   return {
     id: `data-quality-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "note",
-    action: action.toLowerCase(),
+    action: auditAction,
     content,
     date: now,
     direction: "internal",
     metadata: {
-      action: action.toLowerCase(),
+      action: auditAction,
       source: "revenue-data-health",
       no_customer_contact: true,
       ...metadata,
@@ -198,7 +213,7 @@ export async function POST(request: NextRequest) {
         contact,
         action,
         {},
-        `Mulig duplikatgruppe er manuelt gjennomgått. Ingen kontakter ble slått sammen eller slettet.`,
+        "Mulig duplikatgruppe er manuelt gjennomgått. Ingen kontakter ble slått sammen eller slettet.",
         { group_key: groupKey, contact_ids: contactIds },
       );
       if (result.error) return NextResponse.json({ error: errorText(result.error), removedColumns: result.removed }, { status: 500 });
