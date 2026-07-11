@@ -119,6 +119,7 @@ export const PLATFORMS = ["instagram", "facebook", "linkedin", "twitter", "tikto
 export const SIDEBAR_NAV = {
   overview: [
     { label: "Revenue Command", href: "/revenue-command", icon: "Gauge" },
+    { label: "Varsler & eskalering", href: "/internal-alerts", icon: "BellRing" },
     { label: "Mål & Ukeplan", href: "/goals", icon: "Flag" },
     { label: "Lead Source ROI", href: "/attribution", icon: "Megaphone" },
     { label: "Månedsrapport", href: "/monthly-close", icon: "FileSpreadsheet" },
