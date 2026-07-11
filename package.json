@@ -14,6 +14,7 @@
     "test:contacts-api": "NODE_OPTIONS=--conditions=react-server tsx --test src/app/api/contacts/route.test.ts",
     "test:revenue-today": "tsx --test src/lib/revenue/today.test.ts src/lib/realty/public-lead-brand.test.ts",
     "test:closing": "tsx --test src/lib/revenue/closing.test.ts",
+    "test:customer-360": "tsx --test src/lib/customer-360.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
     "test:remaster-brand": "tsx --test src/services/integrations/airtable-client.test.ts",
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts"
