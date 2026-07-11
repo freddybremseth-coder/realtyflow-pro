@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   buildRevenuePriority,
   recommendRevenueAction,
-  scoreRevenueContact,
   sortRevenuePriorities,
 } from "./today";
 
@@ -106,5 +105,5 @@ test("sorting prefers critical and higher-scoring opportunities", () => {
   assert.ok(low && critical);
   const sorted = sortRevenuePriorities([low, critical]);
   assert.equal(sorted[0].id, "critical");
-  assert.ok(scoreRevenueContact(critical, NOW) >= scoreRevenueContact(low, NOW));
+  assert.ok(critical.score >= low.score);
 });
