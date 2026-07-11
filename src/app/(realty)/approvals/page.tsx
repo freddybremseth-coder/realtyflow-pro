@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, FileCheck2, FileText, ListChecks, Loader2, Mail, RefreshCw, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,7 +43,7 @@ const BRAND_LABELS: Record<string, string> = {
   pinosoecolife: "Pinoso EcoLife",
 };
 
-const TYPE_ICONS = {
+const TYPE_ICONS: Record<ApprovalType, ElementType> = {
   buyer_profile: UserRoundCheck,
   shortlist: ListChecks,
   presentation: FileText,
@@ -95,6 +95,16 @@ export default function ApprovalCenterPage() {
     { id: "message_draft", label: "E-postutkast" },
   ];
 
+  const summaryCards: Array<{ label: string; value: number; icon: ElementType }> = data ? [
+    { label: "Venter", value: data.summary.pending, icon: FileCheck2 },
+    { label: "Klar", value: data.summary.ready, icon: CheckCircle2 },
+    { label: "Blokkert", value: data.summary.blocked, icon: AlertTriangle },
+    { label: "Profiler", value: data.summary.profiles, icon: UserRoundCheck },
+    { label: "Shortlists", value: data.summary.shortlists, icon: ListChecks },
+    { label: "Presentasjoner", value: data.summary.presentations, icon: FileText },
+    { label: "E-postutkast", value: data.summary.messageDrafts, icon: Mail },
+  ] : [];
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-900/70 p-6 lg:flex-row lg:items-center lg:justify-between">
@@ -119,15 +129,7 @@ export default function ApprovalCenterPage() {
       {data?.warnings?.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100"><strong>Datavarsler:</strong> {data.warnings.join(" · ")}</div> : null}
 
       {data && <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        {[
-          ["Venter", data.summary.pending, FileCheck2],
-          ["Klar", data.summary.ready, CheckCircle2],
-          ["Blokkert", data.summary.blocked, AlertTriangle],
-          ["Profiler", data.summary.profiles, UserRoundCheck],
-          ["Shortlists", data.summary.shortlists, ListChecks],
-          ["Presentasjoner", data.summary.presentations, FileText],
-          ["E-postutkast", data.summary.messageDrafts, Mail],
-        ].map(([label, value, Icon]) => <article key={String(label)} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={19} className="text-emerald-300" /><p className="mt-3 text-[11px] uppercase tracking-wide text-slate-500">{String(label)}</p><strong className="mt-1 block text-2xl text-white">{String(value)}</strong></article>)}
+        {summaryCards.map(({ label, value, icon: Icon }) => <article key={label} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={19} className="text-emerald-300" /><p className="mt-3 text-[11px] uppercase tracking-wide text-slate-500">{label}</p><strong className="mt-1 block text-2xl text-white">{value}</strong></article>)}
       </section>}
 
       <div className="flex flex-wrap gap-2">{filters.map((item) => <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-full border px-3 py-1.5 text-xs ${filter === item.id ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : "border-slate-700 text-slate-400"}`}>{item.label}</button>)}</div>
@@ -151,7 +153,7 @@ export default function ApprovalCenterPage() {
               <div className="w-full shrink-0 lg:w-64">
                 <div className="flex items-center gap-2 text-xs text-slate-500"><Clock3 size={14} />Opprettet {dateLabel(item.createdAt)} · {item.ageDays} dager</div>
                 <div className="mt-4 flex flex-wrap gap-2 lg:flex-col">
-                  <Button asChild size="sm" disabled={!item.ready}><Link href={item.reviewHref}>Åpne kontrollert gjennomgang <ArrowRight size={14} className="ml-1" /></Link></Button>
+                  {item.ready ? <Button asChild size="sm"><Link href={item.reviewHref}>Åpne kontrollert gjennomgang <ArrowRight size={14} className="ml-1" /></Link></Button> : <Button size="sm" disabled>Venter på tidligere godkjenning</Button>}
                   {item.customerHref && <Button asChild size="sm" variant="outline"><Link href={item.customerHref}>Åpne Customer 360</Link></Button>}
                 </div>
               </div>
