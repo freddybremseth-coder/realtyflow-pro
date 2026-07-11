@@ -22,6 +22,8 @@ jobs:
         run: npm ci --silent
       - name: Contacts API auth tests
         run: npm run test:contacts-api
+      - name: Revenue Inbox tests
+        run: npm run test:revenue-today
       - name: Build
         id: next_build
         shell: bash

@@ -124,6 +124,7 @@ export const PLATFORMS = [
 
 export const SIDEBAR_NAV = {
   overview: [
+    { label: "I dag", href: "/today", icon: "Target" },
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
   ],
