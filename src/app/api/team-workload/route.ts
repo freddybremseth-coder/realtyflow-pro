@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
     resourceId,
     ownerEmail: requestedOwnerEmail,
     ownerRole: target?.role || null,
-    ownerName: target ? ("displayName" in target ? target.displayName || target.email : target.email) : null,
+    ownerName: target ? target.displayName || target.email : null,
     previousOwnerEmail: previous?.ownerEmail || null,
     assignedAt: now,
     assignedBy: session.email,
