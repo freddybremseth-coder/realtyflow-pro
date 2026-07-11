@@ -13,7 +13,7 @@ import {
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, KeyRound, LogOut, Menu, X, BookOpen,
   Database, HeartHandshake, Banknote, RefreshCw, Gauge, Flag, Megaphone, ShieldCheck,
-  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet, UserCog, Activity, UsersRound,
+  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet, UserCog, Activity, UsersRound, BellRing,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -22,7 +22,7 @@ const iconMap: Record<string, React.ElementType> = {
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   BookOpen, Database, HeartHandshake, Banknote, KeyRound, RefreshCw, Gauge, Flag, Megaphone, ShieldCheck,
-  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet, UserCog, Activity, UsersRound,
+  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet, UserCog, Activity, UsersRound, BellRing,
 };
 
 const sectionLabels: Record<string, string> = {
@@ -61,7 +61,7 @@ export function Sidebar() {
   const visibleSections = useMemo(() => {
     if (!user) return [] as Array<[string, NavItem[]]>;
     return (Object.entries(SIDEBAR_NAV) as Array<[string, readonly NavItem[]]>)
-      .map(([section, items]) => [section, items.filter((item) => canSeeNavHref(user.role, item.href))] as [string, NavItem[]])
+      .map(([section, items]) => [section, items.filter((item) => item.href === "/internal-alerts" ? user.permissions.includes("revenue.read") : canSeeNavHref(user.role, item.href))] as [string, NavItem[]])
       .filter(([, items]) => items.length > 0);
   }, [user]);
 

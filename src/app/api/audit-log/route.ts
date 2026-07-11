@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { buildAuditTrail, type AuditTrailEvent } from "@/lib/access-control";
+import { buildAuditTrail, type AuditCategory, type AuditTrailEvent } from "@/lib/access-control";
 import { loadAccessSettings } from "@/lib/access-control-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const TEAM_ASSIGNMENTS_KEY = "team-workload:assignments";
+const ALERT_ACKNOWLEDGEMENTS_KEY = "internal-alerts:acknowledgements";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -55,6 +56,48 @@ function teamAuditEvents(value: unknown): AuditTrailEvent[] {
   });
 }
 
+function alertCategory(alertId: string): AuditCategory {
+  if (alertId.startsWith("finance-alert:")) return "FINANCE";
+  if (alertId.startsWith("closing-risk:")) return "CLOSING";
+  if (alertId.startsWith("keyholding-alert:")) return "KEYHOLDING";
+  if (alertId.startsWith("execution-overdue:") || alertId.startsWith("team-")) return "EXECUTION";
+  return "SYSTEM";
+}
+
+function alertAuditEvents(value: unknown): AuditTrailEvent[] {
+  if (!value || typeof value !== "object") return [];
+  const settings = value as Record<string, unknown>;
+  const rows = Array.isArray(settings.events) ? settings.events : [];
+  return rows.flatMap((item): AuditTrailEvent[] => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const id = String(row.id || "").trim();
+    const at = String(row.at || row.created_at || "").trim();
+    const actor = String(row.actorEmail || row.actor_email || "").trim();
+    const alertId = String(row.alertId || row.alert_id || "").trim();
+    const fingerprint = String(row.fingerprint || "").trim();
+    const action = String(row.action || "").toUpperCase();
+    const note = String(row.note || "").trim() || null;
+    if (!id || !at || !actor || !alertId || !fingerprint || !["ACKNOWLEDGED", "REOPENED"].includes(action)) return [];
+    return [{
+      id,
+      at,
+      actor,
+      action: action === "ACKNOWLEDGED" ? "internal_alert_acknowledged" : "internal_alert_reopened",
+      category: alertCategory(alertId),
+      resourceType: "internal-alert",
+      resourceId: alertId,
+      resourceName: "Internt varsel",
+      source: "internal-alerts",
+      field: "acknowledgement",
+      before: action === "ACKNOWLEDGED" ? "ACTIVE" : "ACKNOWLEDGED",
+      after: action === "ACKNOWLEDGED" ? "ACKNOWLEDGED" : "ACTIVE",
+      details: { fingerprint, note, no_customer_contact: true },
+      actorKnown: true,
+    }];
+  });
+}
+
 function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailEvent[], limit: number) {
   const deduped = new Map<string, AuditTrailEvent>();
   [...base.events, ...extra].forEach((event) => deduped.set(event.id, event));
@@ -62,7 +105,10 @@ function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailE
   const sevenDaysAgo = Date.now() - 7 * 86_400_000;
   const unknownActor = all.filter((event) => !event.actorKnown).length;
   const warnings = [...base.warnings];
-  if (extra.length && !warnings.some((warning) => warning.includes("teamtildeling"))) warnings.push(`${extra.length} teamtildelingshendelser er inkludert fra sentral ansvarshistorikk.`);
+  const teamCount = extra.filter((event) => event.source === "team-workload").length;
+  const alertCount = extra.filter((event) => event.source === "internal-alerts").length;
+  if (teamCount && !warnings.some((warning) => warning.includes("teamtildeling"))) warnings.push(`${teamCount} teamtildelingshendelser er inkludert fra sentral ansvarshistorikk.`);
+  if (alertCount && !warnings.some((warning) => warning.includes("varselkvittering"))) warnings.push(`${alertCount} varselkvitteringer er inkludert fra Internal Alerts.`);
   return {
     ...base,
     generatedAt: new Date().toISOString(),
@@ -87,10 +133,11 @@ export async function GET(request: NextRequest) {
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") || 500);
   const limit = Number.isFinite(requestedLimit) ? Math.max(50, Math.min(2000, Math.floor(requestedLimit))) : 500;
-  const [contactsResult, accessResult, teamResult] = await Promise.allSettled([
+  const [contactsResult, accessResult, teamResult, alertResult] = await Promise.allSettled([
     supabase.from("contacts").select("id,name,email,interactions,updated_at").order("updated_at", { ascending: false }).limit(2500),
     loadAccessSettings(),
     supabase.from("brand_settings").select("settings").eq("brand_id", TEAM_ASSIGNMENTS_KEY).maybeSingle(),
+    supabase.from("brand_settings").select("settings").eq("brand_id", ALERT_ACKNOWLEDGEMENTS_KEY).maybeSingle(),
   ]);
 
   if (contactsResult.status === "rejected" || contactsResult.value?.error) {
@@ -111,19 +158,25 @@ export async function GET(request: NextRequest) {
   else if (teamResult.value.error) warnings.push(`Team-audit kunne ikke hentes: ${teamResult.value.error.message}`);
   else teamEvents = teamAuditEvents(teamResult.value.data?.settings);
 
+  let alertEvents: AuditTrailEvent[] = [];
+  if (alertResult.status === "rejected") warnings.push(`Varselaudit kunne ikke hentes: ${alertResult.reason instanceof Error ? alertResult.reason.message : "ukjent feil"}`);
+  else if (alertResult.value.error) warnings.push(`Varselaudit kunne ikke hentes: ${alertResult.value.error.message}`);
+  else alertEvents = alertAuditEvents(alertResult.value.data?.settings);
+
   const baseTrail = buildAuditTrail({
     contacts: contactsResult.value?.data || [],
     accessAudit,
     warnings,
     limit: 2000,
   });
-  const trail = mergeTrail(baseTrail, teamEvents, limit);
+  const trail = mergeTrail(baseTrail, [...teamEvents, ...alertEvents], limit);
   return NextResponse.json({
     trail,
     coverage: {
       contactInteractions: true,
       accessChanges: accessResult.status === "fulfilled" && !accessResult.value.error,
       teamAssignments: teamResult.status === "fulfilled" && !teamResult.value.error,
+      alertAcknowledgements: alertResult.status === "fulfilled" && !alertResult.value.error,
       legacyActorMayBeMissing: true,
       workItemActorCoverage: false,
       calendarActorCoverage: false,
