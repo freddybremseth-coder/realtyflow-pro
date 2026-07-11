@@ -9,6 +9,7 @@ export const revalidate = 0;
 
 const TEAM_ASSIGNMENTS_KEY = "team-workload:assignments";
 const ALERT_ACKNOWLEDGEMENTS_KEY = "internal-alerts:acknowledgements";
+const OPERATING_REVIEW_KEY = "operating-review:journal";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -98,6 +99,80 @@ function alertAuditEvents(value: unknown): AuditTrailEvent[] {
   });
 }
 
+function operatingCategory(source: string): AuditCategory {
+  if (source === "FINANCE") return "FINANCE";
+  if (source === "CLOSING") return "CLOSING";
+  if (source === "KEYHOLDING") return "KEYHOLDING";
+  if (source === "SALES" || source === "GOALS") return "SALES";
+  if (source === "EXECUTION" || source === "TEAM") return "EXECUTION";
+  return "SYSTEM";
+}
+
+function operatingReviewAuditEvents(value: unknown): AuditTrailEvent[] {
+  if (!value || typeof value !== "object") return [];
+  const settings = value as Record<string, unknown>;
+  const rows = (Array.isArray(settings.events) ? settings.events : []).filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  const snapshots = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const reviewId = String(row.reviewId || row.review_id || "").trim();
+    const snapshot = row.snapshot && typeof row.snapshot === "object" ? row.snapshot as Record<string, unknown> : null;
+    if (reviewId && snapshot && !snapshots.has(reviewId)) snapshots.set(reviewId, snapshot);
+  }
+  return rows.flatMap((row): AuditTrailEvent[] => {
+    const id = String(row.id || "").trim();
+    const at = String(row.at || row.created_at || "").trim();
+    const actor = String(row.actorEmail || row.actor_email || "").trim();
+    const type = String(row.type || "").trim().toUpperCase();
+    const reviewId = String(row.reviewId || row.review_id || "").trim();
+    const reviewDate = String(row.reviewDate || row.review_date || "").trim();
+    const decisionId = String(row.decisionId || row.decision_id || "").trim() || null;
+    if (!id || !at || !actor || !reviewId || !reviewDate || ![
+      "REVIEW_CAPTURED", "REVIEW_REFRESHED", "DECISION_UPDATED", "REVIEW_NOTE_ADDED", "REVIEW_COMPLETED", "REVIEW_REOPENED",
+    ].includes(type)) return [];
+    const snapshot = snapshots.get(reviewId) || {};
+    const decisions = Array.isArray(snapshot.decisions) ? snapshot.decisions.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+    const decision = decisionId ? decisions.find((item) => String(item.id || "") === decisionId) : null;
+    const decisionSource = String(decision?.source || "").toUpperCase();
+    const reviewRole = String(snapshot.capturedRole || snapshot.captured_role || row.actorRole || row.actor_role || "").toUpperCase();
+    const previousStatus = String(row.previousStatus || row.previous_status || "").trim() || null;
+    const status = String(row.status || "").trim() || null;
+    const actionMap: Record<string, string> = {
+      REVIEW_CAPTURED: "operating_review_captured",
+      REVIEW_REFRESHED: "operating_review_refreshed",
+      DECISION_UPDATED: "operating_decision_updated",
+      REVIEW_NOTE_ADDED: "operating_review_note_added",
+      REVIEW_COMPLETED: "operating_review_completed",
+      REVIEW_REOPENED: "operating_review_reopened",
+    };
+    return [{
+      id,
+      at,
+      actor,
+      action: actionMap[type],
+      category: operatingCategory(decisionSource),
+      resourceType: decisionId ? "operating-decision" : "operating-review",
+      resourceId: decisionId || reviewId,
+      resourceName: decisionId ? "Operativ beslutning" : "Operativ gjennomgang",
+      source: "operating-review",
+      field: decisionId ? "decision_status" : "review_status",
+      before: previousStatus,
+      after: status || type,
+      details: {
+        review_id: reviewId,
+        review_date: reviewDate,
+        review_role: reviewRole || null,
+        decision_source: decisionSource || null,
+        followup_at: row.followupAt || row.followup_at || null,
+        responsible_email: row.responsibleEmail || row.responsible_email || null,
+        note_present: Boolean(String(row.note || "").trim()),
+        no_customer_contact: true,
+        no_pipeline_change: true,
+      },
+      actorKnown: true,
+    }];
+  });
+}
+
 function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailEvent[], limit: number) {
   const deduped = new Map<string, AuditTrailEvent>();
   [...base.events, ...extra].forEach((event) => deduped.set(event.id, event));
@@ -107,8 +182,10 @@ function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailE
   const warnings = [...base.warnings];
   const teamCount = extra.filter((event) => event.source === "team-workload").length;
   const alertCount = extra.filter((event) => event.source === "internal-alerts").length;
+  const operatingCount = extra.filter((event) => event.source === "operating-review").length;
   if (teamCount && !warnings.some((warning) => warning.includes("teamtildeling"))) warnings.push(`${teamCount} teamtildelingshendelser er inkludert fra sentral ansvarshistorikk.`);
   if (alertCount && !warnings.some((warning) => warning.includes("varselkvittering"))) warnings.push(`${alertCount} varselkvitteringer er inkludert fra Internal Alerts.`);
+  if (operatingCount && !warnings.some((warning) => warning.includes("beslutningsjournal"))) warnings.push(`${operatingCount} hendelser er inkludert fra Operating Review-beslutningsjournalen.`);
   return {
     ...base,
     generatedAt: new Date().toISOString(),
@@ -133,11 +210,12 @@ export async function GET(request: NextRequest) {
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") || 500);
   const limit = Number.isFinite(requestedLimit) ? Math.max(50, Math.min(2000, Math.floor(requestedLimit))) : 500;
-  const [contactsResult, accessResult, teamResult, alertResult] = await Promise.allSettled([
+  const [contactsResult, accessResult, teamResult, alertResult, operatingResult] = await Promise.allSettled([
     supabase.from("contacts").select("id,name,email,interactions,updated_at").order("updated_at", { ascending: false }).limit(2500),
     loadAccessSettings(),
     supabase.from("brand_settings").select("settings").eq("brand_id", TEAM_ASSIGNMENTS_KEY).maybeSingle(),
     supabase.from("brand_settings").select("settings").eq("brand_id", ALERT_ACKNOWLEDGEMENTS_KEY).maybeSingle(),
+    supabase.from("brand_settings").select("settings").eq("brand_id", OPERATING_REVIEW_KEY).maybeSingle(),
   ]);
 
   if (contactsResult.status === "rejected" || contactsResult.value?.error) {
@@ -163,13 +241,18 @@ export async function GET(request: NextRequest) {
   else if (alertResult.value.error) warnings.push(`Varselaudit kunne ikke hentes: ${alertResult.value.error.message}`);
   else alertEvents = alertAuditEvents(alertResult.value.data?.settings);
 
+  let operatingEvents: AuditTrailEvent[] = [];
+  if (operatingResult.status === "rejected") warnings.push(`Beslutningsjournal-audit kunne ikke hentes: ${operatingResult.reason instanceof Error ? operatingResult.reason.message : "ukjent feil"}`);
+  else if (operatingResult.value.error) warnings.push(`Beslutningsjournal-audit kunne ikke hentes: ${operatingResult.value.error.message}`);
+  else operatingEvents = operatingReviewAuditEvents(operatingResult.value.data?.settings);
+
   const baseTrail = buildAuditTrail({
     contacts: contactsResult.value?.data || [],
     accessAudit,
     warnings,
     limit: 2000,
   });
-  const trail = mergeTrail(baseTrail, [...teamEvents, ...alertEvents], limit);
+  const trail = mergeTrail(baseTrail, [...teamEvents, ...alertEvents, ...operatingEvents], limit);
   return NextResponse.json({
     trail,
     coverage: {
@@ -177,6 +260,7 @@ export async function GET(request: NextRequest) {
       accessChanges: accessResult.status === "fulfilled" && !accessResult.value.error,
       teamAssignments: teamResult.status === "fulfilled" && !teamResult.value.error,
       alertAcknowledgements: alertResult.status === "fulfilled" && !alertResult.value.error,
+      operatingReviewJournal: operatingResult.status === "fulfilled" && !operatingResult.value.error,
       legacyActorMayBeMissing: true,
       workItemActorCoverage: false,
       calendarActorCoverage: false,
