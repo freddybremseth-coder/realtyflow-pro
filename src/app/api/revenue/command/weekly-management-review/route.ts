@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { verifyAdminSession } from "@/lib/admin-auth";
-import { parseOperatingReviewSettings, OPERATING_REVIEW_SETTINGS_KEY, type OperatingReviewSettings } from "@/lib/revenue/operating-review";
+import { getRequestAccessContext } from "@/lib/api-admin";
+import { parseOperatingReviewSettings, OPERATING_REVIEW_SETTINGS_KEY } from "@/lib/revenue/operating-review";
 import {
   WEEKLY_ISSUE_STATUSES,
   WEEKLY_MANAGEMENT_SETTINGS_KEY,
@@ -46,9 +46,9 @@ function dateOnly(value: unknown) {
 }
 
 async function sessionFor(request: NextRequest) {
-  const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
-  if (!session?.email || !session.role) return null;
-  return { email: session.email.toLowerCase(), role: session.role };
+  const context = await getRequestAccessContext(request);
+  if (!context || !context.permissions.includes("revenue.read")) return null;
+  return { email: context.email.toLowerCase(), role: context.role };
 }
 
 async function loadOperatingSettings(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
