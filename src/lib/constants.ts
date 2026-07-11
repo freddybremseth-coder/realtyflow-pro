@@ -139,6 +139,7 @@ export const SIDEBAR_NAV = {
   operations: [
     { label: "Kunder", href: "/customers", icon: "Users" },
     { label: "Closing Workspace", href: "/closing", icon: "Target" },
+    { label: "Lost Lead Recovery", href: "/recovery", icon: "Target" },
     { label: "After-sales & Referral", href: "/after-sales", icon: "HeartHandshake" },
     { label: "CRM Pipeline", href: "/pipeline", icon: "Users" },
     { label: "AI Lead Inbox", href: "/lead-intelligence", icon: "Sparkles" },
