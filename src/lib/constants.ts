@@ -135,6 +135,7 @@ export const PLATFORMS = [
 
 export const SIDEBAR_NAV = {
   overview: [
+    { label: "Revenue Command", href: "/revenue-command", icon: "Gauge" },
     { label: "I dag", href: "/today", icon: "Target" },
     { label: "Revenue Forecast", href: "/forecast", icon: "TrendingUp" },
     { label: "Commission & Cash", href: "/commissions", icon: "Banknote" },
