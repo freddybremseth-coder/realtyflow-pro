@@ -64,6 +64,8 @@ jobs:
         run: npm run test:internal-alerts
       - name: Executive Briefing tests
         run: npm run test:executive-briefing
+      - name: Operating Review and Decision Journal tests
+        run: npm run test:operating-review
       - name: Build
         id: next_build
         shell: bash

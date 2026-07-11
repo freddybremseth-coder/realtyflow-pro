@@ -60,7 +60,7 @@ export function Sidebar() {
 
   const visibleSections = useMemo(() => {
     if (!user) return [] as Array<[string, NavItem[]]>;
-    const revenueReadPages = new Set(["/internal-alerts", "/executive-briefing"]);
+    const revenueReadPages = new Set(["/internal-alerts", "/executive-briefing", "/operating-review"]);
     return (Object.entries(SIDEBAR_NAV) as Array<[string, readonly NavItem[]]>)
       .map(([section, items]) => [section, items.filter((item) => revenueReadPages.has(item.href) ? user.permissions.includes("revenue.read") : canSeeNavHref(user.role, item.href))] as [string, NavItem[]])
       .filter(([, items]) => items.length > 0);
