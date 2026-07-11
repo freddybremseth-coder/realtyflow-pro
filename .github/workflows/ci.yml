@@ -36,6 +36,8 @@ jobs:
         run: npm run test:forecast
       - name: Commission Collection tests
         run: npm run test:commissions
+      - name: Lost Lead Recovery tests
+        run: npm run test:recovery
       - name: Build
         id: next_build
         shell: bash
