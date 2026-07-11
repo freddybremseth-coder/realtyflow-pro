@@ -4,11 +4,12 @@ import {
   buildCommissionCase,
   buildCommissionCollection,
   sortCommissionCases,
+  type CommissionContactInput,
 } from "./commissions";
 
 const NOW = new Date("2026-07-11T12:00:00.000Z");
 
-function won(overrides: Record<string, unknown> = {}) {
+function won(overrides: Partial<CommissionContactInput> = {}): CommissionContactInput {
   return {
     id: "contact-1",
     name: "Kunde",
