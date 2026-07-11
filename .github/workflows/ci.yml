@@ -44,6 +44,8 @@ jobs:
         run: npm run test:revenue-command
       - name: Revenue Goals tests
         run: npm run test:revenue-goals
+      - name: Lead Source Attribution tests
+        run: npm run test:attribution
       - name: Build
         id: next_build
         shell: bash
