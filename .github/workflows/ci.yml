@@ -58,6 +58,8 @@ jobs:
         run: npm run test:monthly-close
       - name: Roles Permissions and Audit Log tests
         run: npm run test:access-control
+      - name: Team Ownership and Workload tests
+        run: npm run test:team-workload
       - name: Build
         id: next_build
         shell: bash
