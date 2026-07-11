@@ -207,7 +207,9 @@ export function buildWhatsAppCopy(bodyText: string, presentationJson: unknown, m
 }
 
 function priorityFor(item: Pick<CommunicationItem, "status" | "approvalReady" | "manualSend" | "manualEmailReady" | "manualWhatsAppReady">): CommunicationPriority {
-  if (item.status === "APPROVED" && (item.manualEmailReady || item.manualWhatsAppReady) && (!item.manualSend.emailLoggedAt || !item.manualSend.whatsappLoggedAt)) return "HIGH";
+  const manualActionPending = (item.manualEmailReady && !item.manualSend.emailLoggedAt)
+    || (item.manualWhatsAppReady && !item.manualSend.whatsappLoggedAt);
+  if (item.status === "APPROVED" && manualActionPending) return "HIGH";
   if (item.status === "DRAFT" && item.approvalReady) return "HIGH";
   if (item.status === "DRAFT") return "MEDIUM";
   return "LOW";
@@ -261,17 +263,20 @@ export function buildCommunicationWorkspace(input: CommunicationWorkspaceInput):
       contactLinked: Boolean(contact?.id),
     };
 
-    const approvalBlockers = uniqueTexts([
+    const contentBlockers = uniqueTexts([
       dependencies.contactLinked ? null : "Kjøperprofilen mangler koblet CRM-kontakt.",
       dependencies.sameBrand ? null : "Kontakt eller underlag tilhører et annet brand.",
       dependencies.profileApproved ? null : "Kjøperprofilen må være godkjent.",
       dependencies.shortlistApproved ? null : "Shortlisten må være godkjent.",
       dependencies.presentationApproved ? null : "Presentasjonen må være godkjent.",
-      recipientEmail ? null : "En gyldig e-postadresse mangler.",
       clean(draft.subject) ? null : "Emnefeltet mangler.",
       clean(draft.body_text) ? null : "Meldingsteksten mangler.",
       preview.properties.length > 0 ? null : "Presentasjonen inneholder ingen boliger.",
       propertiesWithoutLinks.length === 0 ? null : `${propertiesWithoutLinks.length} bolig(er) mangler verifisert offentlig lenke.`,
+    ]);
+    const approvalBlockers = uniqueTexts([
+      ...contentBlockers,
+      recipientEmail ? null : "En gyldig e-postadresse mangler.",
     ]);
 
     const preflightWarnings = uniqueTexts([
@@ -290,7 +295,10 @@ export function buildCommunicationWorkspace(input: CommunicationWorkspaceInput):
     const approvalReady = draftStatus === "DRAFT" && approvalBlockers.length === 0;
     const whatsappCopy = buildWhatsAppCopy(clean(draft.body_text), presentation?.presentation_json);
     const manualEmailReady = draftStatus === "APPROVED" && Boolean(recipientEmail) && approvalBlockers.length === 0;
-    const manualWhatsAppReady = draftStatus === "APPROVED" && Boolean(whatsappNumber) && clean(whatsappCopy).length > 0 && dependencies.sameBrand;
+    const manualWhatsAppReady = draftStatus === "APPROVED"
+      && Boolean(whatsappNumber)
+      && clean(whatsappCopy).length > 0
+      && contentBlockers.length === 0;
 
     const base = {
       id: clean(draft.id),
