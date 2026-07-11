@@ -82,6 +82,8 @@ export interface RevenueCommandCenter {
   };
 }
 
+const SERVICE_SOURCE_BRANDS = new Set(["zeneco", "soleada", "keyholding"]);
+
 function money(value: number) {
   return new Intl.NumberFormat("nb-NO", {
     style: "currency",
@@ -100,6 +102,18 @@ function stateFor(critical: boolean, attention: boolean, info = false): CommandS
   if (critical) return "CRITICAL";
   if (attention) return "ATTENTION";
   return info ? "INFO" : "HEALTHY";
+}
+
+function serviceEligible(contact: Record<string, unknown>) {
+  const brand = String(contact.brand_id || contact.brand || "").trim().toLowerCase();
+  if (SERVICE_SOURCE_BRANDS.has(brand)) return true;
+  const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
+  return interactions.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const row = item as Record<string, unknown>;
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {};
+    return String(row.action || metadata.action || "").startsWith("keyholding_");
+  });
 }
 
 function dedupeActions(actions: CommandAction[]) {
@@ -140,7 +154,8 @@ export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new 
   const forecast = buildRevenueForecast(contacts, now);
   const commissions = buildCommissionCollection(contacts, now);
   const recovery = buildRecoveryWorkspace(contacts, now);
-  const services = buildServiceRevenueWorkspace(contacts, now);
+  const serviceContacts = contacts.filter((contact) => serviceEligible(contact as Record<string, unknown>));
+  const services = buildServiceRevenueWorkspace(serviceContacts, now);
   const afterSales = sortAfterSalesCustomers(
     contacts.map((contact) => buildAfterSalesCustomer(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildAfterSalesCustomer>>[],
   );
