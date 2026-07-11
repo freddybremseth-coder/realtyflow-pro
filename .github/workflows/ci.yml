@@ -38,6 +38,8 @@ jobs:
         run: npm run test:commissions
       - name: Lost Lead Recovery tests
         run: npm run test:recovery
+      - name: Keyholding Service Revenue tests
+        run: npm run test:service-revenue
       - name: Build
         id: next_build
         shell: bash
