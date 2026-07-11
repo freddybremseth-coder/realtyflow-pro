@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
   if (results[0].status === "rejected" || results[0].value?.error) {
     const message = results[0].status === "rejected"
       ? results[0].reason instanceof Error ? results[0].reason.message : "Kunne ikke hente kontakter"
-      : results[0].value.error.message;
+      : results[0].value?.error?.message || "Kunne ikke hente kontakter";
     return NextResponse.json({ error: message, scorecard: null }, { status: 500 });
   }
 
