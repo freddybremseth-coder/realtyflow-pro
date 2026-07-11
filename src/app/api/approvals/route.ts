@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
     safety: {
       automaticApproval: false,
       automaticSending: false,
-      approvalLocation: "lead-intelligence",
+      messageApprovalLocation: "communications",
+      upstreamApprovalLocation: "lead-intelligence",
     },
   });
 }

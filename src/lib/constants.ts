@@ -143,6 +143,7 @@ export const SIDEBAR_NAV = {
     { label: "Revenue Forecast", href: "/forecast", icon: "TrendingUp" },
     { label: "Commission & Cash", href: "/commissions", icon: "Banknote" },
     { label: "Approval Center", href: "/approvals", icon: "CheckSquare" },
+    { label: "Kommunikasjon", href: "/communications", icon: "MessageSquareText" },
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
   ],
