@@ -61,17 +61,17 @@ test("task assignment only counts active exact email profiles", () => {
     now,
     workItems: [
       { id: "t1", title: "Prepare closing", status: "TO_DO", priority: "HIGH", due_date: "2026-07-09", assigned_agent: "closing@example.com", brand_id: "soleada" },
-      { id: "t2", title: "Legacy sales task", status: "IN_PROGRESS", assigned_agent: "sales", brand_id: "soleada" },
+      { id: "t2", title: "Generic sales bucket", status: "IN_PROGRESS", assigned_agent: "sales", brand_id: "soleada" },
       { id: "t3", title: "Inactive owner", status: "REVIEW", assigned_agent: "inactive@example.com", brand_id: "soleada" },
       { id: "t4", title: "Done", status: "DONE", assigned_agent: "sales@example.com" },
     ],
   });
   assert.equal(workspace.items.length, 3);
   assert.equal(workspace.items.find((item) => item.resourceId === "t1")?.ownerEmail, "closing@example.com");
-  assert.equal(workspace.items.find((item) => item.resourceId === "t2")?.assignmentSource, "LEGACY");
+  assert.equal(workspace.items.find((item) => item.resourceId === "t2")?.assignmentSource, "UNASSIGNED");
   assert.equal(workspace.items.find((item) => item.resourceId === "t3")?.assignmentSource, "LEGACY");
   assert.equal(workspace.summary.unassignedTasks, 2);
-  assert.match(workspace.warnings.join(" "), /2 eksisterende tildelinger/);
+  assert.match(workspace.warnings.join(" "), /1 eksisterende tildelinger/);
 });
 
 test("workload summary separates contacts tasks and overload", () => {
