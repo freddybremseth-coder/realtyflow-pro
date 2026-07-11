@@ -50,6 +50,8 @@ jobs:
         run: npm run test:revenue-data-health
       - name: Controlled Communications tests
         run: npm run test:communications
+      - name: Calendar and Execution tests
+        run: npm run test:execution
       - name: Build
         id: next_build
         shell: bash

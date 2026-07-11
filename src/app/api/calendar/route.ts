@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
+import { requireAdminApi } from "@/lib/api-admin";
 
 function getOAuth2Client() {
-  const clientId = process.env.YOUTUBE_CLIENT_ID; // reuse existing Google OAuth
+  const clientId = process.env.YOUTUBE_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
-
-
-
-  if (!clientId || !clientSecret || !refreshToken) {
-    return null;
-  }
-
+  if (!clientId || !clientSecret || !refreshToken) return null;
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
   oauth2.setCredentials({ refresh_token: refreshToken });
   return oauth2;
@@ -19,155 +14,174 @@ function getOAuth2Client() {
 
 function getCalendarClient() {
   const auth = getOAuth2Client();
-  if (!auth) return null;
-  return google.calendar({ version: "v3", auth });
+  return auth ? google.calendar({ version: "v3", auth }) : null;
 }
 
-/**
- * GET /api/calendar
- * ?action=list_calendars → list all calendars
- * ?start=ISO&end=ISO → list events in range (across all visible calendars)
- * ?calendarId=xxx&start=ISO&end=ISO → list events for specific calendar
- */
+function text(value: unknown, max: number) {
+  return String(value || "").trim().slice(0, max);
+}
+
+function validDateTime(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : raw;
+}
+
+function validDate(value: unknown) {
+  const raw = String(value || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const date = new Date(`${raw}T12:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : raw;
+}
+
+function nextDate(date: string) {
+  const value = new Date(`${date}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function allDayRange(startValue: unknown, endValue: unknown) {
+  const start = validDate(startValue);
+  if (!start) return null;
+  const requestedEnd = validDate(endValue) || start;
+  return { start, end: requestedEnd > start ? requestedEnd : nextDate(start) };
+}
+
+function eventRange(startValue: unknown, endValue: unknown) {
+  const start = validDateTime(startValue);
+  const end = validDateTime(endValue);
+  if (!start) return null;
+  const startDate = new Date(start);
+  const endDate = end ? new Date(end) : new Date(startDate.getTime() + 30 * 60_000);
+  if (endDate <= startDate || endDate.getTime() - startDate.getTime() > 24 * 60 * 60_000) return null;
+  return { start, end: endDate.toISOString() };
+}
+
+function calendarError(error: unknown, operation: string) {
+  console.error(`[Calendar API] ${operation} error:`, error instanceof Error ? error.message : "unknown");
+  return NextResponse.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
+}
+
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req, { configured: false, calendars: [], events: [] });
+  if (adminError) return adminError;
+
   try {
     const cal = getCalendarClient();
-    if (!cal) {
-      return NextResponse.json({ configured: false, calendars: [], events: [] });
-    }
-
+    if (!cal) return NextResponse.json({ configured: false, calendars: [], events: [] });
     const { searchParams } = new URL(req.url);
-    const action = searchParams.get("action");
-
-    if (action === "list_calendars") {
+    if (searchParams.get("action") === "list_calendars") {
       const res = await cal.calendarList.list();
-      const calendars = (res.data.items || []).map((c) => ({
-        id: c.id,
-        summary: c.summary,
-        description: c.description,
-        backgroundColor: c.backgroundColor,
-        foregroundColor: c.foregroundColor,
-        primary: c.primary || false,
-        accessRole: c.accessRole,
-      }));
-      return NextResponse.json({ configured: true, calendars });
+      return NextResponse.json({
+        configured: true,
+        calendars: (res.data.items || []).map((item) => ({
+          id: item.id,
+          summary: item.summary,
+          description: item.description,
+          backgroundColor: item.backgroundColor,
+          foregroundColor: item.foregroundColor,
+          primary: item.primary || false,
+          accessRole: item.accessRole,
+        })),
+      });
     }
 
-    // List events
-    const start = searchParams.get("start");
-    const end = searchParams.get("end");
-    const calendarId = searchParams.get("calendarId");
-
-    if (!start || !end) {
-      return NextResponse.json({ error: "start and end parameters required" }, { status: 400 });
+    const start = validDateTime(searchParams.get("start"));
+    const end = validDateTime(searchParams.get("end"));
+    const requestedCalendarId = text(searchParams.get("calendarId"), 512);
+    if (!start || !end) return NextResponse.json({ error: "Valid start and end parameters are required" }, { status: 400 });
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (endDate <= startDate || endDate.getTime() - startDate.getTime() > 370 * 86_400_000) {
+      return NextResponse.json({ error: "Calendar range must be positive and no longer than 370 days" }, { status: 400 });
     }
 
     const calendarIds: string[] = [];
-    if (calendarId) {
-      calendarIds.push(calendarId);
-    } else {
-      // Fetch all calendars and query events from each
-      const calList = await cal.calendarList.list();
-      for (const c of calList.data.items || []) {
-        if (c.id && c.accessRole !== "freeBusyReader") {
-          calendarIds.push(c.id);
-        }
+    if (requestedCalendarId) calendarIds.push(requestedCalendarId);
+    else {
+      const list = await cal.calendarList.list();
+      for (const item of list.data.items || []) {
+        if (item.id && item.accessRole !== "freeBusyReader") calendarIds.push(item.id);
       }
     }
 
-    const allEvents: Array<Record<string, unknown>> = [];
-
-    for (const cId of calendarIds) {
+    const events: Array<Record<string, unknown>> = [];
+    for (const calendarId of calendarIds.slice(0, 30)) {
       try {
         const res = await cal.events.list({
-          calendarId: cId,
+          calendarId,
           timeMin: start,
           timeMax: end,
           singleEvents: true,
           orderBy: "startTime",
           maxResults: 250,
         });
-
-        for (const ev of res.data.items || []) {
-          allEvents.push({
-            id: ev.id,
-            calendarId: cId,
-            summary: ev.summary || "(Uten tittel)",
-            description: ev.description || "",
-            location: ev.location || "",
-            start: ev.start?.dateTime || ev.start?.date || "",
-            end: ev.end?.dateTime || ev.end?.date || "",
-            allDay: !ev.start?.dateTime,
-            status: ev.status,
-            htmlLink: ev.htmlLink,
-            colorId: ev.colorId,
-            creator: ev.creator?.email || "",
-            attendees: (ev.attendees || []).map((a) => ({
-              email: a.email,
-              displayName: a.displayName,
-              responseStatus: a.responseStatus,
+        for (const event of res.data.items || []) {
+          events.push({
+            id: event.id,
+            calendarId,
+            summary: event.summary || "(Uten tittel)",
+            description: event.description || "",
+            location: event.location || "",
+            start: event.start?.dateTime || event.start?.date || "",
+            end: event.end?.dateTime || event.end?.date || "",
+            allDay: !event.start?.dateTime,
+            status: event.status,
+            htmlLink: event.htmlLink,
+            colorId: event.colorId,
+            creator: event.creator?.email || "",
+            attendees: (event.attendees || []).map((attendee) => ({
+              email: attendee.email,
+              displayName: attendee.displayName,
+              responseStatus: attendee.responseStatus,
             })),
           });
         }
-      } catch (err) {
-        console.error(`[Calendar] Error fetching from ${cId}:`, err);
+      } catch (error) {
+        console.error(`[Calendar] Could not read calendar ${calendarId}:`, error instanceof Error ? error.message : "unknown");
       }
     }
 
-    // Sort by start time
-    allEvents.sort((a, b) => {
-      const aTime = new Date(a.start as string).getTime();
-      const bTime = new Date(b.start as string).getTime();
-      return aTime - bTime;
-    });
-
-    return NextResponse.json({ configured: true, events: allEvents });
+    events.sort((a, b) => new Date(String(a.start || "")).getTime() - new Date(String(b.start || "")).getTime());
+    return NextResponse.json({ configured: true, events });
   } catch (error) {
-    console.error("[Calendar API] GET error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return calendarError(error, "GET");
   }
 }
 
-/**
- * POST /api/calendar - Create event
- * Body: { calendarId?, summary, description?, location?, start, end, allDay? }
- */
 export async function POST(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const cal = getCalendarClient();
-    if (!cal) {
-      return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
-    }
+    if (!cal) return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
+    const body = await req.json().catch(() => ({}));
+    const calendarId = text(body.calendarId || "primary", 512) || "primary";
+    const summary = text(body.summary, 200);
+    const description = text(body.description, 4000);
+    const location = text(body.location, 500);
+    const allDay = Boolean(body.allDay);
+    if (!summary) return NextResponse.json({ error: "summary is required" }, { status: 400 });
 
-    const body = await req.json();
-    const { calendarId = "primary", summary, description, location, start, end, allDay } = body;
-
-    if (!summary || !start) {
-      return NextResponse.json({ error: "summary and start required" }, { status: 400 });
-    }
-
-    const eventBody: Record<string, unknown> = {
-      summary,
-      description: description || "",
-      location: location || "",
-    };
-
+    const requestBody: Record<string, unknown> = { summary, description, location };
     if (allDay) {
-      eventBody.start = { date: start.split("T")[0] };
-      eventBody.end = { date: (end || start).split("T")[0] };
+      const range = allDayRange(body.start, body.end);
+      if (!range) return NextResponse.json({ error: "Valid all-day start is required" }, { status: 400 });
+      requestBody.start = { date: range.start };
+      requestBody.end = { date: range.end };
     } else {
-      eventBody.start = { dateTime: start, timeZone: "Europe/Madrid" };
-      eventBody.end = { dateTime: end || start, timeZone: "Europe/Madrid" };
+      const range = eventRange(body.start, body.end);
+      if (!range) return NextResponse.json({ error: "Valid start and end are required; duration must be under 24 hours" }, { status: 400 });
+      requestBody.start = { dateTime: range.start, timeZone: "Europe/Madrid" };
+      requestBody.end = { dateTime: range.end, timeZone: "Europe/Madrid" };
     }
 
     const res = await cal.events.insert({
       calendarId,
-      requestBody: eventBody as Parameters<typeof cal.events.insert>[0] extends { requestBody?: infer R } ? R : never,
+      requestBody: requestBody as Parameters<typeof cal.events.insert>[0] extends { requestBody?: infer R } ? R : never,
     });
-
     return NextResponse.json({
       id: res.data.id,
       summary: res.data.summary,
@@ -176,84 +190,70 @@ export async function POST(req: NextRequest) {
       htmlLink: res.data.htmlLink,
     }, { status: 201 });
   } catch (error) {
-    console.error("[Calendar API] POST error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return calendarError(error, "POST");
   }
 }
 
-/**
- * PATCH /api/calendar - Update event
- * Body: { eventId, calendarId?, summary?, description?, location?, start?, end? }
- */
 export async function PATCH(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const cal = getCalendarClient();
-    if (!cal) {
-      return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
-    }
-
-    const body = await req.json();
-    const { eventId, calendarId = "primary", summary, description, location, start, end, allDay } = body;
-
-    if (!eventId) {
-      return NextResponse.json({ error: "eventId required" }, { status: 400 });
-    }
+    if (!cal) return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
+    const body = await req.json().catch(() => ({}));
+    const eventId = text(body.eventId, 512);
+    const calendarId = text(body.calendarId || "primary", 512) || "primary";
+    if (!eventId) return NextResponse.json({ error: "eventId is required" }, { status: 400 });
 
     const patch: Record<string, unknown> = {};
-    if (summary !== undefined) patch.summary = summary;
-    if (description !== undefined) patch.description = description;
-    if (location !== undefined) patch.location = location;
-    if (start) {
-      patch.start = allDay ? { date: start.split("T")[0] } : { dateTime: start, timeZone: "Europe/Madrid" };
+    if (body.summary !== undefined) {
+      const summary = text(body.summary, 200);
+      if (!summary) return NextResponse.json({ error: "summary cannot be empty" }, { status: 400 });
+      patch.summary = summary;
     }
-    if (end) {
-      patch.end = allDay ? { date: end.split("T")[0] } : { dateTime: end, timeZone: "Europe/Madrid" };
+    if (body.description !== undefined) patch.description = text(body.description, 4000);
+    if (body.location !== undefined) patch.location = text(body.location, 500);
+    if (body.start !== undefined || body.end !== undefined) {
+      if (Boolean(body.allDay)) {
+        const range = allDayRange(body.start, body.end);
+        if (!range) return NextResponse.json({ error: "Valid all-day range is required" }, { status: 400 });
+        patch.start = { date: range.start };
+        patch.end = { date: range.end };
+      } else {
+        const range = eventRange(body.start, body.end);
+        if (!range) return NextResponse.json({ error: "Valid start and end are required" }, { status: 400 });
+        patch.start = { dateTime: range.start, timeZone: "Europe/Madrid" };
+        patch.end = { dateTime: range.end, timeZone: "Europe/Madrid" };
+      }
     }
 
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: "No valid updates supplied" }, { status: 400 });
     await cal.events.patch({
       calendarId,
       eventId,
       requestBody: patch as Parameters<typeof cal.events.patch>[0] extends { requestBody?: infer R } ? R : never,
     });
-
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[Calendar API] PATCH error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return calendarError(error, "PATCH");
   }
 }
 
-/**
- * DELETE /api/calendar - Delete event
- * Body: { eventId, calendarId? }
- */
 export async function DELETE(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const cal = getCalendarClient();
-    if (!cal) {
-      return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
-    }
-
-    const body = await req.json();
-    const { eventId, calendarId = "primary" } = body;
-
-    if (!eventId) {
-      return NextResponse.json({ error: "eventId required" }, { status: 400 });
-    }
-
+    if (!cal) return NextResponse.json({ error: "Google Calendar not configured" }, { status: 503 });
+    const body = await req.json().catch(() => ({}));
+    const eventId = text(body.eventId, 512);
+    const calendarId = text(body.calendarId || "primary", 512) || "primary";
+    if (!eventId) return NextResponse.json({ error: "eventId is required" }, { status: 400 });
     await cal.events.delete({ calendarId, eventId });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[Calendar API] DELETE error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      { status: 500 }
-    );
+    return calendarError(error, "DELETE");
   }
 }
