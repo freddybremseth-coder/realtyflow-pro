@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, CircleDollarSign, Loader2, RefreshCw, ShieldAlert, Target, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, CircleDollarSign, Loader2, RefreshCw, ShieldAlert, Target, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Risk = "HIGH" | "MEDIUM" | "LOW";
@@ -112,6 +112,15 @@ export default function ClosingPage() {
     { id: "all", label: "Alle" }, { id: "high", label: "Høy risiko" }, { id: "viewing", label: "Visning" }, { id: "negotiation", label: "Forhandling" }, { id: "blocked", label: "Blokkert" },
   ];
 
+  const summaryCards: Array<{ label: string; value: string | number; icon: LucideIcon }> = data ? [
+    { label: "Aktive avtaler", value: data.summary.activeDeals, icon: Users },
+    { label: "Høy risiko", value: data.summary.highRisk, icon: ShieldAlert },
+    { label: "Visninger", value: data.summary.viewings, icon: CalendarClock },
+    { label: "Forhandlinger", value: data.summary.negotiations, icon: Target },
+    { label: "Blokkert", value: data.summary.blockedDeals, icon: AlertTriangle },
+    { label: "Pipeline", value: money(data.summary.pipelineValue), icon: CircleDollarSign },
+  ] : [];
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-900/70 p-6 lg:flex-row lg:items-center lg:justify-between">
@@ -131,9 +140,10 @@ export default function ClosingPage() {
       {feedback && <div className="flex gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 size={17} />{feedback}</div>}
 
       {data && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {[
-          ["Aktive avtaler", data.summary.activeDeals, Users], ["Høy risiko", data.summary.highRisk, ShieldAlert], ["Visninger", data.summary.viewings, CalendarClock], ["Forhandlinger", data.summary.negotiations, Target], ["Blokkert", data.summary.blockedDeals, AlertTriangle], ["Pipeline", money(data.summary.pipelineValue), CircleDollarSign],
-        ].map(([label, value, Icon]) => <article key={String(label)} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={20} className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">{String(label)}</p><strong className="mt-1 block text-2xl text-white">{String(value)}</strong></article>)}
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+          return <article key={card.label} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={20} className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">{card.label}</p><strong className="mt-1 block text-2xl text-white">{card.value}</strong></article>;
+        })}
       </section>}
 
       <div className="flex flex-wrap gap-2">{filters.map((item) => <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-full border px-3 py-1.5 text-xs ${filter === item.id ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : "border-slate-700 text-slate-400"}`}>{item.label}</button>)}</div>
@@ -152,7 +162,7 @@ export default function ClosingPage() {
               <p className="text-xs uppercase tracking-wide text-slate-500">Closing checklist</p>
               <div className="mt-2 space-y-2">{item.checklist.map((check) => <div key={check.id} className="flex items-center gap-2 text-sm"><CheckCircle2 size={16} className={check.complete ? "text-emerald-400" : check.critical ? "text-red-400" : "text-slate-600"} /><span className={check.complete ? "text-slate-300" : "text-slate-500"}>{check.label}</span></div>)}</div>
               <div className="mt-4 text-xs text-slate-500">Neste oppfølging: {dateLabel(item.nextFollowupAt)} · score {item.score}/100</div>
-              <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => schedule(item.id, 1)} disabled={actionId === item.id}>I morgen</Button><Button size="sm" variant="outline" onClick={() => schedule(item.id, 3)} disabled={actionId === item.id}>+3 dager</Button>{item.stage === "QUALIFIED" && <Button size="sm" variant="outline" onClick={() => updateContact(item.id, { pipeline_status: "VIEWING" }, "Kunden er flyttet til visningsfasen.")}>Til visning</Button>}{item.stage === "VIEWING" && <Button size="sm" variant="outline" onClick={() => updateContact(item.id, { pipeline_status: "NEGOTIATION" }, "Kunden er flyttet til forhandling.")}>Til forhandling</Button>}<Button asChild size="sm" variant="ghost"><Link href={item.href}>Åpne kunde <ArrowRight size={14} className="ml-1" /></Link></Button></div>
+              <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={() => schedule(item.id, 1)} disabled={actionId === item.id}>I morgen</Button><Button size="sm" variant="outline" onClick={() => schedule(item.id, 3)} disabled={actionId === item.id}>+3 dager</Button>{item.stage === "QUALIFIED" && <Button size="sm" variant="outline" disabled={actionId === item.id} onClick={() => updateContact(item.id, { pipeline_status: "VIEWING" }, "Kunden er flyttet til visningsfasen.")}>Til visning</Button>}{item.stage === "VIEWING" && <Button size="sm" variant="outline" disabled={actionId === item.id} onClick={() => updateContact(item.id, { pipeline_status: "NEGOTIATION" }, "Kunden er flyttet til forhandling.")}>Til forhandling</Button>}<Button asChild size="sm" variant="ghost"><Link href={item.href}>Åpne kunde <ArrowRight size={14} className="ml-1" /></Link></Button></div>
             </div>
           </div>
         </article>)}
