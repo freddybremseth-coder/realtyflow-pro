@@ -142,7 +142,7 @@ export function buildApprovalQueue(input: ApprovalQueueInput, now = new Date()):
       type: "message_draft",
       brandId: text(draft.brand || profile?.brand, "zeneco"),
       title: text(draft.subject, "E-postutkast venter på godkjenning"),
-      summary: "Kontroller mottaker, emne og tekst. Approval Center sender aldri meldingen.",
+      summary: "Kontroller mottaker, emne, tekst og boliglenker i Controlled Communications. Ingenting sendes ved godkjenning.",
       createdAt,
       ageDays: ageDays(createdAt, now),
       ready,
@@ -150,7 +150,7 @@ export function buildApprovalQueue(input: ApprovalQueueInput, now = new Date()):
       buyerProfileId: profile?.id ? String(profile.id) : null,
       contactId: person.contactId,
       customerName: person.customerName,
-      reviewHref: `/lead-intelligence?buyerProfileId=${encodeURIComponent(profile?.id || draft.buyer_profile_id)}`,
+      reviewHref: "/communications",
       customerHref: person.contactId ? `/customers/${encodeURIComponent(person.contactId)}` : null,
     });
   }
