@@ -135,6 +135,18 @@ function completedActionSet(interactions?: unknown[] | null) {
   return completed;
 }
 
+function interactionLifecycleAnchor(interactions?: unknown[] | null) {
+  for (const item of interactions || []) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {};
+    const value = String(metadata.lifecycle_anchor || metadata.won_at || row.lifecycle_anchor || "").trim();
+    const date = safeDate(value);
+    if (date) return date;
+  }
+  return null;
+}
+
 function phaseFor(daysSinceWon: number): AfterSalesPhase {
   if (daysSinceWon <= 30) return "ONBOARDING";
   if (daysSinceWon <= 180) return "RELATIONSHIP";
@@ -204,7 +216,9 @@ function opportunityCatalog(brandId: string, daysSinceWon: number, completed: Se
 export function buildAfterSalesCustomer(contact: AfterSalesContactInput, now = new Date()): AfterSalesCustomer | null {
   if (!WON_STATUSES.has(normalizedStatus(contact.pipeline_status))) return null;
 
-  const wonDate = safeDate(contact.won_at || contact.closed_at || contact.sale_date || contact.updated_at || contact.created_at);
+  const wonDate = safeDate(contact.won_at || contact.closed_at || contact.sale_date)
+    || interactionLifecycleAnchor(contact.interactions)
+    || safeDate(contact.updated_at || contact.created_at);
   if (!wonDate) return null;
 
   const brandId = String(contact.brand_id || contact.brand || "zeneco").trim().toLowerCase();
