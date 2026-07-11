@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("contacts")
-    .select("id,name,email,phone,pipeline_status,pipeline_value,sale_price,property_interest,notes,interactions,brand_id,brand,last_contact,next_followup,won_at,closed_at,sale_date,updated_at,created_at")
+    .select("*")
     .in("pipeline_status", WON_STATUSES)
     .order("updated_at", { ascending: false })
     .limit(500);
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 
   const { data: contact, error: contactError } = await supabase
     .from("contacts")
-    .select("id,name,email,phone,pipeline_status,pipeline_value,sale_price,property_interest,notes,interactions,brand_id,brand,last_contact,next_followup,won_at,closed_at,sale_date,updated_at,created_at")
+    .select("*")
     .eq("id", contactId)
     .single();
 
