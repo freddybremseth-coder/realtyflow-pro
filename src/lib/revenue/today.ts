@@ -1,0 +1,222 @@
+export type RevenuePriorityKind = "new" | "overdue" | "hot" | "closing" | "followup";
+export type RevenuePriorityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+export interface RevenueContactInput {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  pipeline_status?: string | null;
+  pipeline_value?: number | null;
+  notes?: string | null;
+  interactions?: unknown[] | null;
+  brand_id?: string | null;
+  brand?: string | null;
+  source?: string | null;
+  property_interest?: string | null;
+  last_contact?: string | null;
+  next_followup?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  buying_signal_score?: number | null;
+  purchase_signal_score?: number | null;
+}
+
+export interface RevenuePriorityItem {
+  id: string;
+  contactName: string;
+  email: string | null;
+  phone: string | null;
+  brandId: string;
+  source: string | null;
+  stage: string;
+  value: number;
+  propertyInterest: string | null;
+  kind: RevenuePriorityKind;
+  priority: RevenuePriorityLevel;
+  score: number;
+  reason: string;
+  recommendedAction: string;
+  lastContactAt: string | null;
+  nextFollowupAt: string | null;
+  createdAt: string | null;
+  isOverdue: boolean;
+  isMissingNextAction: boolean;
+  href: string;
+}
+
+const ACTIVE_STAGES = new Set(["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"]);
+const CLOSING_STAGES = new Set(["VIEWING", "NEGOTIATION"]);
+
+function safeDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function daysBetween(earlier: Date, later: Date) {
+  return Math.max(0, (later.getTime() - earlier.getTime()) / 86_400_000);
+}
+
+function interactionText(interactions: unknown[] | null | undefined) {
+  if (!Array.isArray(interactions)) return "";
+  return interactions
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const value = item as Record<string, unknown>;
+      return String(value.content || value.body || value.message || "");
+    })
+    .join(" ");
+}
+
+function normalizeStage(value?: string | null) {
+  return String(value || "NEW").trim().toUpperCase() || "NEW";
+}
+
+function signalScoreFromText(text: string) {
+  const normalized = text.toLowerCase();
+  let score = 0;
+  if (/reservasjon|reserve|reservation|tilbud|offer|forhandling|negotiation/.test(normalized)) score += 22;
+  if (/visning|viewing|booket|booked|møte|meeting|reise|flight/.test(normalized)) score += 18;
+  if (/klar nå|ready now|innen 3 mnd|within 3 months|finansiering|mortgage|proof of funds/.test(normalized)) score += 16;
+  if (/kjøpssignal|oppdaterte ønsker|min side|favoritt|favourite|shortlist|budsjett til/.test(normalized)) score += 14;
+  if (/stopp|not interested|ikke aktuelt|tapt|lost/.test(normalized)) score -= 25;
+  return Math.max(-25, Math.min(35, score));
+}
+
+export function scoreRevenueContact(contact: RevenueContactInput, now = new Date()) {
+  const stage = normalizeStage(contact.pipeline_status);
+  const stageScore: Record<string, number> = {
+    NEW: 24,
+    CONTACT: 32,
+    QUALIFIED: 50,
+    VIEWING: 68,
+    NEGOTIATION: 82,
+    ON_HOLD: 14,
+  };
+
+  let score = stageScore[stage] ?? 20;
+  const value = Number(contact.pipeline_value || 0);
+  if (value >= 750_000) score += 18;
+  else if (value >= 500_000) score += 14;
+  else if (value >= 250_000) score += 10;
+  else if (value > 0) score += 5;
+
+  const existingSignal = Math.max(
+    Number(contact.buying_signal_score || 0),
+    Number(contact.purchase_signal_score || 0),
+  );
+  if (existingSignal > 0) score += Math.min(15, Math.round(existingSignal / 7));
+
+  const text = `${contact.notes || ""} ${interactionText(contact.interactions)}`;
+  score += signalScoreFromText(text);
+
+  const nextFollowup = safeDate(contact.next_followup);
+  const isOverdue = Boolean(nextFollowup && nextFollowup.getTime() < now.getTime());
+  if (isOverdue) score += CLOSING_STAGES.has(stage) ? 24 : 16;
+  if (!nextFollowup) score += 10;
+
+  const lastContact = safeDate(contact.last_contact || contact.updated_at);
+  if (lastContact) {
+    const staleDays = daysBetween(lastContact, now);
+    if (staleDays >= 14) score += CLOSING_STAGES.has(stage) ? 20 : 12;
+    else if (staleDays >= 7) score += 8;
+    else if (staleDays <= 2) score += 5;
+  }
+
+  if (contact.email && contact.phone) score += 4;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+export function recommendRevenueAction(contact: RevenueContactInput, now = new Date()) {
+  const stage = normalizeStage(contact.pipeline_status);
+  const nextFollowup = safeDate(contact.next_followup);
+  const overdue = Boolean(nextFollowup && nextFollowup.getTime() < now.getTime());
+
+  if (!contact.email && !contact.phone) {
+    return "Finn en gyldig kontaktkanal før leadet går tapt.";
+  }
+
+  const stageActions: Record<string, string> = {
+    NEW: "Svar personlig og avklar budsjett, område, boligtype og tidslinje.",
+    CONTACT: "Få kjøperprofilen komplett og book en kort rådgivningssamtale.",
+    QUALIFIED: "Kjør property matching og send 3–5 kvalitetssikrede alternativer.",
+    VIEWING: "Bekreft visningsplan, beslutningstakere og kundens viktigste innsigelser.",
+    NEGOTIATION: "Avklar siste beslutningshinder og avtal konkret neste steg mot reservasjon.",
+    ON_HOLD: "Bekreft om timing, budsjett eller behov har endret seg før saken parkeres videre.",
+  };
+
+  const action = stageActions[stage] || "Kontakt kunden og avtal neste konkrete steg.";
+  return overdue ? `Oppfølgingen er forsinket. ${action}` : action;
+}
+
+export function buildRevenuePriority(contact: RevenueContactInput, now = new Date()): RevenuePriorityItem | null {
+  const stage = normalizeStage(contact.pipeline_status);
+  if (!ACTIVE_STAGES.has(stage)) return null;
+
+  const score = scoreRevenueContact(contact, now);
+  const nextFollowup = safeDate(contact.next_followup);
+  const createdAt = safeDate(contact.created_at);
+  const lastContact = safeDate(contact.last_contact || contact.updated_at);
+  const isOverdue = Boolean(nextFollowup && nextFollowup.getTime() < now.getTime());
+  const isNew = stage === "NEW" && (!createdAt || daysBetween(createdAt, now) <= 7);
+  const isClosing = CLOSING_STAGES.has(stage);
+
+  let kind: RevenuePriorityKind = "followup";
+  if (isClosing) kind = "closing";
+  else if (isOverdue) kind = "overdue";
+  else if (isNew) kind = "new";
+  else if (score >= 70) kind = "hot";
+
+  let priority: RevenuePriorityLevel = "LOW";
+  if ((isClosing && isOverdue) || score >= 90) priority = "CRITICAL";
+  else if (isOverdue || isClosing || score >= 75) priority = "HIGH";
+  else if (score >= 50) priority = "MEDIUM";
+
+  const reasons: string[] = [];
+  if (isClosing) reasons.push(`aktiv ${stage === "NEGOTIATION" ? "forhandling" : "visningsfase"}`);
+  if (isOverdue) reasons.push("oppfølging er forfalt");
+  if (!nextFollowup) reasons.push("mangler neste oppfølgingsdato");
+  if (Number(contact.pipeline_value || 0) >= 500_000) reasons.push("høy potensiell verdi");
+  if (lastContact && daysBetween(lastContact, now) >= 7) reasons.push("ingen nylig kontakt");
+  if (reasons.length === 0) reasons.push("bør følges opp etter kjøpssignal og pipeline-status");
+
+  return {
+    id: contact.id,
+    contactName: String(contact.name || contact.email || "Ukjent kunde"),
+    email: contact.email || null,
+    phone: contact.phone || null,
+    brandId: String(contact.brand_id || contact.brand || "zeneco"),
+    source: contact.source || null,
+    stage,
+    value: Number(contact.pipeline_value || 0),
+    propertyInterest: contact.property_interest || null,
+    kind,
+    priority,
+    score,
+    reason: reasons.join(" · "),
+    recommendedAction: recommendRevenueAction(contact, now),
+    lastContactAt: lastContact?.toISOString() || null,
+    nextFollowupAt: nextFollowup?.toISOString() || null,
+    createdAt: createdAt?.toISOString() || null,
+    isOverdue,
+    isMissingNextAction: !nextFollowup,
+    href: `/pipeline?contactId=${encodeURIComponent(contact.id)}`,
+  };
+}
+
+export function sortRevenuePriorities(items: RevenuePriorityItem[]) {
+  const priorityWeight: Record<RevenuePriorityLevel, number> = {
+    CRITICAL: 4,
+    HIGH: 3,
+    MEDIUM: 2,
+    LOW: 1,
+  };
+
+  return [...items].sort((a, b) => {
+    const priorityDelta = priorityWeight[b.priority] - priorityWeight[a.priority];
+    if (priorityDelta !== 0) return priorityDelta;
+    if (b.score !== a.score) return b.score - a.score;
+    return b.value - a.value;
+  });
+}
