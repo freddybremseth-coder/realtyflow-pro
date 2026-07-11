@@ -26,6 +26,8 @@ jobs:
         run: npm run test:revenue-today
       - name: Closing Workspace tests
         run: npm run test:closing
+      - name: Customer 360 tests
+        run: npm run test:customer-360
       - name: Build
         id: next_build
         shell: bash
