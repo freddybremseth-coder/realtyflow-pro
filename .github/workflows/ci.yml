@@ -24,6 +24,8 @@ jobs:
         run: npm run test:contacts-api
       - name: Revenue Inbox tests
         run: npm run test:revenue-today
+      - name: Closing Workspace tests
+        run: npm run test:closing
       - name: Build
         id: next_build
         shell: bash
