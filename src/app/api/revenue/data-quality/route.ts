@@ -201,7 +201,8 @@ export async function POST(request: NextRequest) {
   if (!ACTIONS.has(action)) return NextResponse.json({ error: "Unsupported data quality action" }, { status: 400 });
 
   if (action === "MARK_DUPLICATE_REVIEWED") {
-    const contactIds = [...new Set((Array.isArray(body.contactIds) ? body.contactIds : []).map((id: unknown) => clean(id, 120)).filter(Boolean))].sort();
+    const rawContactIds: unknown[] = Array.isArray(body.contactIds) ? body.contactIds : [];
+    const contactIds: string[] = [...new Set<string>(rawContactIds.map((id) => clean(id, 120)).filter(Boolean))].sort();
     if (contactIds.length < 2 || contactIds.length > 10) return NextResponse.json({ error: "Duplicate review requires 2–10 contact IDs" }, { status: 400 });
     const groupKey = contactIds.join("|");
     const results = [];
