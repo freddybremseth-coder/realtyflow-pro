@@ -11,7 +11,7 @@ import {
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, KeyRound, LogOut, Menu, X, BookOpen,
-  Database, HeartHandshake, Banknote, RefreshCw, Gauge,
+  Database, HeartHandshake, Banknote, RefreshCw, Gauge, Flag,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -19,7 +19,7 @@ const iconMap: Record<string, React.ElementType> = {
   Target, Sparkles, Youtube, Music, Image, FileText,
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
-  BookOpen, Database, HeartHandshake, Banknote, KeyRound, RefreshCw, Gauge,
+  BookOpen, Database, HeartHandshake, Banknote, KeyRound, RefreshCw, Gauge, Flag,
 };
 
 const sectionLabels: Record<string, string> = {
@@ -47,7 +47,6 @@ export function Sidebar() {
 
   const navContent = (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-700/50">
         <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center font-bold text-white text-sm">
           RF
@@ -66,7 +65,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {Object.entries(SIDEBAR_NAV).map(([section, items]) => (
           <div key={section}>
@@ -109,7 +107,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="border-t border-slate-700/50 px-4 py-3">
         {!collapsed && (
           <div className="flex items-center gap-2">
@@ -142,7 +139,6 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
         className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 text-slate-300"
@@ -150,7 +146,6 @@ export function Sidebar() {
         {mobileOpen ? <X size={18} /> : <Menu size={18} />}
       </button>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/60 lg:hidden"
@@ -158,7 +153,6 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 left-0 z-40 h-screen bg-slate-900 border-r border-slate-700/50 transition-all duration-300",
