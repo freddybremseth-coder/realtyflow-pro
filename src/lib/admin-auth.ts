@@ -1,3 +1,5 @@
+import { normalizeRole, type AccessRole } from "@/lib/access-control";
+
 const DEFAULT_ADMIN_EMAILS = ["freddy.bremseth@gmail.com"];
 
 export function getAdminEmails() {
@@ -25,13 +27,20 @@ async function hmac(message: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(message).digest("base64url");
 }
 
-export async function createAdminSession(email: string) {
+export async function createAdminSession(email: string, requestedRole?: AccessRole | string | null) {
   const secret = process.env.REALTYFLOW_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error("Missing REALTYFLOW_SESSION_SECRET");
+  const normalizedEmail = email.trim().toLowerCase();
+  const role: AccessRole = isAdminEmail(normalizedEmail)
+    ? "OWNER"
+    : normalizeRole(requestedRole) && normalizeRole(requestedRole) !== "OWNER"
+      ? normalizeRole(requestedRole)!
+      : "VIEWER";
 
   const payload = base64UrlEncode(
     JSON.stringify({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
+      role,
       exp: Date.now() + 1000 * 60 * 60 * 24 * 7,
     }),
   );
@@ -50,10 +59,13 @@ export async function verifyAdminSession(token?: string) {
   if (signature !== expected) return null;
 
   try {
-    const data = JSON.parse(base64UrlDecode(payload)) as { email?: string; exp?: number };
+    const data = JSON.parse(base64UrlDecode(payload)) as { email?: string; role?: string; exp?: number };
     if (!data.email || !data.exp || data.exp < Date.now()) return null;
-    if (!isAdminEmail(data.email)) return null;
-    return data;
+    const email = data.email.trim().toLowerCase();
+    if (isAdminEmail(email)) return { email, role: "OWNER" as AccessRole, exp: data.exp };
+    const role = normalizeRole(data.role);
+    if (!role || role === "OWNER") return null;
+    return { email, role, exp: data.exp };
   } catch {
     return null;
   }
