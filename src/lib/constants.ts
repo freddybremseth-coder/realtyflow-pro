@@ -126,6 +126,7 @@ export const SIDEBAR_NAV = {
   overview: [
     { label: "I dag", href: "/today", icon: "Target" },
     { label: "Revenue Forecast", href: "/forecast", icon: "TrendingUp" },
+    { label: "Commission & Cash", href: "/commissions", icon: "Banknote" },
     { label: "Approval Center", href: "/approvals", icon: "CheckSquare" },
     { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
     { label: "Business Overview", href: "/business-overview", icon: "PieChart" },
