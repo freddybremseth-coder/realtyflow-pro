@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminApi } from "@/lib/api-admin";
 import { getAdminEmails, verifyAdminSession } from "@/lib/admin-auth";
 import { hasPermission, type AccessRole } from "@/lib/access-control";
 import { loadAccessSettings } from "@/lib/access-control-server";
@@ -58,6 +57,10 @@ function normalizeEmail(value: unknown) {
 function safeIso(value: unknown) {
   const parsed = value ? new Date(String(value)) : null;
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function canAcknowledgeRole(role: AccessRole) {
+  return role !== "VIEWER";
 }
 
 function parseAssignmentSettings(value: unknown) {
@@ -182,6 +185,7 @@ function filterCenterForRole(center: ReturnType<typeof buildInternalAlertCenter>
   const active = alerts.filter((alert) => !alert.acknowledged);
   const acknowledged = alerts.filter((alert) => alert.acknowledged);
   const categories = ["TEAM", "CLOSING", "FINANCE", "KEYHOLDING", "EXECUTION"] as const;
+  const generatedAt = new Date(center.generatedAt).getTime();
   return {
     ...center,
     alerts,
@@ -195,15 +199,15 @@ function filterCenterForRole(center: ReturnType<typeof buildInternalAlertCenter>
       high: active.filter((alert) => alert.severity === "HIGH").length,
       immediate: active.filter((alert) => alert.escalation === "IMMEDIATE").length,
       unassigned: active.filter((alert) => alert.ruleId === "UNASSIGNED_PRIORITY_WORK").length,
-      overdue: active.filter((alert) => Boolean(alert.dueAt && new Date(alert.dueAt).getTime() < Date.now())).length,
+      overdue: active.filter((alert) => Boolean(alert.dueAt && new Date(alert.dueAt).getTime() < generatedAt)).length,
       byCategory: Object.fromEntries(categories.map((category) => [category, active.filter((alert) => alert.category === category).length])),
     },
   };
 }
 
 async function buildFreshCenter(request: NextRequest, supabase: any) {
-  const session = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
-  if (!session?.email || !session.role) return { error: "Unauthorized", status: 401, center: null, session: null, settings: null };
+  const tokenSession = await verifyAdminSession(request.cookies.get("realtyflow_admin")?.value);
+  if (!tokenSession?.email || !tokenSession.role) return { error: "Unauthorized", status: 401, center: null, session: null, settings: null };
   const [contactsResult, workResult, accessResult, assignmentRow, alertRow] = await Promise.all([
     supabase.from("contacts").select("*").order("updated_at", { ascending: false }).limit(3000),
     supabase.from("work_items").select("*").in("status", OPEN_TASK_STATUSES).order("due_date", { ascending: true, nullsFirst: false }).limit(2000),
@@ -211,7 +215,16 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
     loadSettingsRow(supabase, ASSIGNMENT_SETTINGS_KEY),
     loadSettingsRow(supabase, ALERT_SETTINGS_KEY),
   ]);
-  if (contactsResult.error) return { error: contactsResult.error.message, status: 500, center: null, session, settings: null };
+  if (contactsResult.error) return { error: contactsResult.error.message, status: 500, center: null, session: tokenSession, settings: null };
+  if (accessResult.error && tokenSession.role !== "OWNER") return { error: `Access profile unavailable: ${accessResult.error}`, status: 503, center: null, session: null, settings: null };
+
+  let effectiveRole = tokenSession.role;
+  if (tokenSession.role !== "OWNER") {
+    const profile = accessResult.settings.profiles.find((item) => item.email === tokenSession.email && item.active);
+    if (!profile) return { error: "Access profile is inactive or missing", status: 401, center: null, session: null, settings: null };
+    effectiveRole = profile.role;
+  }
+  const session = { email: tokenSession.email, role: effectiveRole };
 
   const warnings: string[] = [];
   let workItems: any[] = [];
@@ -219,7 +232,6 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
     if (!optionalTableError(workResult.error.message || "")) warnings.push(`work_items: ${workResult.error.message}`);
     else warnings.push("work_items-tabellen er ikke tilgjengelig; kundevarsler vises fortsatt.");
   } else workItems = workResult.data || [];
-  if (accessResult.error) warnings.push(`access-control: ${accessResult.error}`);
   if (assignmentRow.error) warnings.push(`team assignments: ${assignmentRow.error}`);
   if (alertRow.error) warnings.push(`alert acknowledgements: ${alertRow.error}`);
 
@@ -244,8 +256,6 @@ async function buildFreshCenter(request: NextRequest, supabase: any) {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requireAdminApi(request, { center: null });
-  if (denied) return denied;
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured", center: null }, { status: 500 });
   const result = await buildFreshCenter(request, supabase);
@@ -253,14 +263,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     center: result.center,
     user: { email: result.session.email, role: result.session.role },
-    canAcknowledge: hasPermission(result.session.role, "alerts.write"),
+    canAcknowledge: canAcknowledgeRole(result.session.role),
     acknowledgementHistoryCount: result.settings?.events.length || 0,
   });
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireAdminApi(request);
-  if (denied) return denied;
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   const body = await request.json().catch(() => ({}));
@@ -274,7 +282,7 @@ export async function POST(request: NextRequest) {
 
   const fresh = await buildFreshCenter(request, supabase);
   if (fresh.error || !fresh.center || !fresh.session || !fresh.settings) return NextResponse.json({ error: fresh.error || "Alerts unavailable" }, { status: fresh.status });
-  if (!hasPermission(fresh.session.role, "alerts.write")) return NextResponse.json({ error: "Alerts write permission required" }, { status: 403 });
+  if (!canAcknowledgeRole(fresh.session.role)) return NextResponse.json({ error: "Read-only users cannot acknowledge alerts" }, { status: 403 });
   const alert = fresh.center.alerts.find((item) => item.id === alertId);
   if (!alert) return NextResponse.json({ error: "Current alert not found or not visible for this role" }, { status: 404 });
   if (alert.fingerprint !== requestedFingerprint) return NextResponse.json({ error: "Alert condition changed. Refresh before acknowledging." }, { status: 409 });
