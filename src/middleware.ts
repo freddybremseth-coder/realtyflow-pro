@@ -174,9 +174,15 @@ export async function middleware(request: NextRequest) {
   const session = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (session) {
     if (session.role !== "OWNER") {
+      const internalAlertsApi = pathname === "/api/internal-alerts";
+      const internalAlertsPage = pathname === "/internal-alerts";
       if (pathname.startsWith("/api/")) {
-        const requirement = accessRequirementForApi(pathname, request.method);
-        if (requirement === "OWNER_ONLY" || (requirement !== "AUTHENTICATED" && !hasPermission(session.role, requirement))) return roleDenied(request, session.role, requirement);
+        if (!internalAlertsApi) {
+          const requirement = accessRequirementForApi(pathname, request.method);
+          if (requirement === "OWNER_ONLY" || (requirement !== "AUTHENTICATED" && !hasPermission(session.role, requirement))) return roleDenied(request, session.role, requirement);
+        }
+      } else if (internalAlertsPage) {
+        if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
       } else if (!canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
       }
