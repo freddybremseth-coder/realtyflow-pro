@@ -129,6 +129,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
   if (path === "/api/auth/me") return "AUTHENTICATED";
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
   if (path.startsWith("/api/audit-log")) return "audit.read";
+  if (path.startsWith("/api/team-workload")) return write ? "access.manage" : "revenue.read";
 
   if (path.startsWith("/api/contacts") || path.startsWith("/api/customers")) {
     return write ? "customers.write" : "customers.read";
@@ -165,6 +166,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
 export function permissionForNavHref(href: string): AccessPermission | "OWNER_ONLY" | null {
   if (href === "/access-control") return "OWNER_ONLY";
   if (href === "/audit-log") return "audit.read";
+  if (href === "/team-workload") return "revenue.read";
   if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";
   if (["/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
   if (["/attribution", "/ad-campaigns", "/analytics"].includes(href)) return "marketing.read";

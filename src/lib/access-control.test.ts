@@ -26,6 +26,8 @@ test("known API routes map to explicit permissions and unknown routes stay owner
   assert.equal(accessRequirementForApi("/api/revenue/closing-pack", "POST"), "documents.write");
   assert.equal(accessRequirementForApi("/api/revenue/service-revenue", "PATCH"), "keyholding.write");
   assert.equal(accessRequirementForApi("/api/contacts/abc", "GET"), "customers.read");
+  assert.equal(accessRequirementForApi("/api/team-workload", "GET"), "revenue.read");
+  assert.equal(accessRequirementForApi("/api/team-workload", "POST"), "access.manage");
   assert.equal(accessRequirementForApi("/api/unknown/system", "GET"), "OWNER_ONLY");
   assert.equal(accessRequirementForApi("/api/access-control", "GET"), "OWNER_ONLY");
 });
@@ -36,6 +38,7 @@ test("navigation is reduced by role", () => {
   assert.equal(canSeeNavHref("FINANCE", "/service-revenue"), false);
   assert.equal(canSeeNavHref("KEYHOLDING", "/service-revenue"), true);
   assert.equal(canSeeNavHref("VIEWER", "/audit-log"), true);
+  assert.equal(canSeeNavHref("VIEWER", "/team-workload"), true);
   assert.equal(canSeeNavHref("VIEWER", "/settings"), false);
 });
 
