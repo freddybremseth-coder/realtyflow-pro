@@ -137,6 +137,39 @@ test("approved content enables manual clients but never a provider send", () => 
   assert.equal(result.safety.providerSendAvailable, false);
 });
 
+test("approved content is blocked from both manual channels when dependencies or property links become invalid", () => {
+  const result = workspace({
+    presentation: {
+      status: "draft",
+      presentation_json: {
+        sections: [{ type: "properties", items: [{ propertyId: "property-1", title: "Uten lenke" }] }],
+      },
+    },
+    draft: {
+      status: "approved",
+      approved_at: "2026-07-11T10:00:00.000Z",
+      approved_by: "freddy.bremseth@gmail.com",
+    },
+  });
+  assert.equal(result.items[0].manualEmailReady, false);
+  assert.equal(result.items[0].manualWhatsAppReady, false);
+  assert.equal(result.summary.manualEmailReady, 0);
+  assert.equal(result.summary.manualWhatsAppReady, 0);
+});
+
+test("approved WhatsApp copy may be used without an email address when every content dependency is valid", () => {
+  const result = workspace({
+    contact: { email: "" },
+    draft: {
+      status: "approved",
+      approved_at: "2026-07-11T10:00:00.000Z",
+      approved_by: "freddy.bremseth@gmail.com",
+    },
+  });
+  assert.equal(result.items[0].manualEmailReady, false);
+  assert.equal(result.items[0].manualWhatsAppReady, true);
+});
+
 test("manual send logs are read from the customer timeline without changing draft status", () => {
   const result = workspace({
     contact: {
