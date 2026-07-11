@@ -250,14 +250,14 @@ export default function OperatingReviewPage() {
           <>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                ["Gjennomganger", journal.summary.reviews, History],
-                ["Ikke avklart", journal.summary.undecidedDecisions, ClipboardCheck],
-                ["Aktiv oppfølging", journal.summary.outstandingFollowups, CalendarClock],
-                ["Forfalt oppfølging", journal.summary.overdueFollowups, AlertTriangle],
-              ].map(([label, value, Icon]) => (
-                <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-                  <div className="flex items-center justify-between"><span className="text-sm text-slate-400">{String(label)}</span><Icon size={17} className="text-slate-500"/></div>
-                  <div className="mt-2 text-2xl font-bold">{String(value)}</div>
+                { label: "Gjennomganger", value: journal.summary.reviews, Icon: History },
+                { label: "Ikke avklart", value: journal.summary.undecidedDecisions, Icon: ClipboardCheck },
+                { label: "Aktiv oppfølging", value: journal.summary.outstandingFollowups, Icon: CalendarClock },
+                { label: "Forfalt oppfølging", value: journal.summary.overdueFollowups, Icon: AlertTriangle },
+              ].map(({ label, value, Icon }) => (
+                <div key={label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                  <div className="flex items-center justify-between"><span className="text-sm text-slate-400">{label}</span><Icon size={17} className="text-slate-500"/></div>
+                  <div className="mt-2 text-2xl font-bold">{value}</div>
                 </div>
               ))}
             </section>
