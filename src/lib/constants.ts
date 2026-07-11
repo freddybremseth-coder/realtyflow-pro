@@ -137,6 +137,7 @@ export const SIDEBAR_NAV = {
   overview: [
     { label: "Revenue Command", href: "/revenue-command", icon: "Gauge" },
     { label: "Mål & Ukeplan", href: "/goals", icon: "Flag" },
+    { label: "Lead Source ROI", href: "/attribution", icon: "Megaphone" },
     { label: "I dag", href: "/today", icon: "Target" },
     { label: "Revenue Forecast", href: "/forecast", icon: "TrendingUp" },
     { label: "Commission & Cash", href: "/commissions", icon: "Banknote" },
