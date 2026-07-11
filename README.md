@@ -29,14 +29,30 @@ The operating rule is:
 AI suggests. Freddy reviews. Freddy approves. The system acts only after explicit approval.
 ```
 
+## Daily Revenue Inbox
+
+`/today` is the daily operating surface for real-estate sales. It ranks active customers using deterministic and traceable signals:
+
+- pipeline stage and potential value
+- new inquiries and recent buying signals
+- overdue or missing follow-up dates
+- stale customer contact
+- viewing and negotiation stages that need closing attention
+
+The page combines customer priorities with open real-estate work items. Freddy can open the customer in CRM, continue in Lead Intelligence, schedule the next follow-up, or complete a stored work item. It does not send customer messages automatically.
+
+Public lead intake supports allowlisted brand routing for Zen Eco Homes, Soleada.no, and Pinoso EcoLife through `brand`, `brand_id`, `brandId`, or the `x-realtyflow-brand` header.
+
 ## Key Areas
 
+- `src/app/(realty)/today` - daily Revenue Inbox, next-action visibility, and closing priorities.
 - `src/app/(realty)/lead-intelligence` - AI lead intake, buyer profiles, property matching, shortlists, and draft presentations.
 - `src/app/(realty)/pipeline` - CRM pipeline, lead import, buying signals, commissions, and customer follow-up.
 - `src/app/(realty)/inventory` - Property inventory, RedSP/XML/CSV import, brand visibility, PDFs, and marketing copy.
 - `src/app/(business)/demosites` - DemoSite order/preview/claim workflow.
 - `src/app/(business)/revenue-engine` - Opportunity prioritization and manual outreach workflow.
 - `src/services/lead-intelligence` - Structured contracts, extraction, persistence, matching, shortlist, presentation, and safety gates.
+- `src/lib/revenue/today.ts` - deterministic real-estate opportunity scoring and next-action recommendations.
 - `src/lib/revenue-engine.ts` - Revenue opportunity scoring, worklist logic, and outreach drafts.
 - `supabase/migrations` - Reviewed schema source of truth. Production migrations are not applied automatically.
 
@@ -73,6 +89,7 @@ Set these in `.env.local` for local development and as server-side deployment se
 ```bash
 npm run test:lead-intelligence
 npm run test:contacts-api
+npm run test:revenue-today
 npx tsx --test src/lib/api-admin.test.ts src/lib/api-cron.test.ts src/lib/cron/safe-mode.test.ts src/lib/saas-api-supabase.test.ts src/app/api/cron/cron-routes-auth.test.ts src/app/api/outbound-actions-auth.test.ts src/app/api/maintenance-actions-auth.test.ts src/app/api/saas/service-role-auth-coverage.test.ts src/app/api/saas/internal-routes-auth.test.ts src/app/api/saas/stripe/route.test.ts src/app/api/saas/demosites/route.test.ts src/app/api/saas/demosites/internal-routes-auth.test.ts src/app/api/saas/demosites/public-routes-boundary.test.ts src/app/api/saas/demosites/leads/route.test.ts src/app/api/saas/demosites/profile-import/route.test.ts src/lib/stripe-webhook.test.ts src/lib/revenue-engine.test.ts src/lib/demosites.test.ts src/lib/demosites-preview.test.ts src/lib/demosites-import-review-versions.test.ts src/lib/constants.test.ts
 ```
 
