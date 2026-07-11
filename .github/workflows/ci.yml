@@ -60,6 +60,8 @@ jobs:
         run: npm run test:access-control
       - name: Team Ownership and Workload tests
         run: npm run test:team-workload
+      - name: Internal Alerts and Escalation tests
+        run: npm run test:internal-alerts
       - name: Build
         id: next_build
         shell: bash
