@@ -53,9 +53,9 @@ export async function GET(request: NextRequest) {
 
     const { data: songs, error } = await supabase
       .from('songs')
-      .select('id, title, artist, audio_url, youtube_url, genre, mood, ai_metadata')
+      .select('id, name, artist, file_url, youtube_url, genre, mood, ai_metadata')
       .in('brand', [...REMASTER_SONG_READ_BRANDS])
-      .not('audio_url', 'is', null)
+      .not('file_url', 'is', null)
       .not('youtube_url', 'is', null)
       .limit(400);
 
@@ -92,12 +92,12 @@ export async function GET(request: NextRequest) {
     for (const song of shuffled) {
       if (tracks.length >= MAX_TRACKS || totalSeconds > MAX_MIX_MINUTES * 60) break;
       try {
-        const res = await fetch(song.audio_url);
+        const res = await fetch(song.file_url);
         if (!res.ok) continue;
         const buf = Buffer.from(await res.arrayBuffer());
         // Rough duration estimate from MP3 size (~1 MB/min at 128-160 kbps)
         totalSeconds += Math.max(120, (buf.length / (1024 * 1024)) * 60);
-        tracks.push({ title: song.title, audioBuffer: buf, youtubeUrl: song.youtube_url });
+        tracks.push({ title: song.name, audioBuffer: buf, youtubeUrl: song.youtube_url });
       } catch { /* skip */ }
     }
     if (tracks.length < 3) {
@@ -183,7 +183,7 @@ export async function GET(request: NextRequest) {
     // ── Record the mix so admin history shows it and cleanup skips it ──
     try {
       await supabase.from('songs').insert({
-        title: mixTitle,
+        name: mixTitle,
         artist: 'Re-Master Freddy',
         brand: REMASTER_CANONICAL_SONG_BRAND,
         youtube_url: uploadResult.youtubeUrl,

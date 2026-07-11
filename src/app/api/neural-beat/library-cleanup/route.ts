@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     const { data: songs, error } = await supabase
       .from('songs')
-      .select('id, title, artist, youtube_url, youtube_video_id, genre, mood, style, ai_metadata')
+      .select('id, name, artist, youtube_url, youtube_video_id, genre, mood, style, ai_metadata')
       .in('brand', [...REMASTER_SONG_READ_BRANDS])
       .not('youtube_url', 'is', null)
       .order('created_at', { ascending: true })
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
         const genre = song.genre || 'EDM';
         const mood = song.mood || 'energetic';
         const seo = await generateYouTubeSEO({
-          title: song.title,
+          title: song.name,
           artist: song.artist || 'Re-Master Freddy',
           genre,
           style: song.style || 'progressive',
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
               const buf = await composeThumbnail({
                 backgroundBuffer: Buffer.from(await bgRes.arrayBuffer()),
                 hook,
-                titleText: song.title,
+                titleText: song.name,
                 logoBuffer,
               });
               thumbnailUrl = await uploadThumbnailToStorage(buf, `${song.id}.png`);
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
 
         proposals.push({
           songId: song.id,
-          oldTitle: song.title,
+          oldTitle: song.name,
           newTitle: seo.title,
           hook,
           thumbnailUrl,
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     for (const songId of songIds.slice(0, 25)) {
       const { data: song } = await supabase
         .from('songs')
-        .select('id, title, youtube_url, youtube_video_id, ai_metadata')
+        .select('id, name, youtube_url, youtube_video_id, ai_metadata')
         .eq('id', songId)
         .single();
 

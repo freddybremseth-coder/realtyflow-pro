@@ -61,10 +61,10 @@ export async function GET(request: NextRequest) {
 
     const { data: songs, error } = await supabase
       .from('songs')
-      .select('id, title, artist, audio_url, youtube_url, genre, mood, ai_metadata, updated_at')
+      .select('id, name, artist, file_url, youtube_url, genre, mood, ai_metadata, updated_at')
       .in('brand', [...REMASTER_SONG_READ_BRANDS])
       .not('youtube_url', 'is', null)
-      .not('audio_url', 'is', null)
+      .not('file_url', 'is', null)
       .gte('updated_at', since)
       .order('updated_at', { ascending: false })
       .limit(30);
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     const uploads: FollowupUpload[] = meta.shortsFollowup?.uploads || [];
 
     // ── Pick a section we haven't used yet ──
-    const audioRes = await fetch(candidate.audio_url);
+    const audioRes = await fetch(candidate.file_url);
     if (!audioRes.ok) throw new Error(`Audio fetch HTTP ${audioRes.status}`);
     const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
 
@@ -153,12 +153,12 @@ export async function GET(request: NextRequest) {
       hook,
       endCard: 'FULL VERSION IN DESC 👇',
       accentColor: uploads.length === 0 ? '66e5ff' : 'ffe066',
-      titleText: candidate.title,
+      titleText: candidate.name,
       logoBuffer,
     });
 
     const shortsTitle = buildShortsTitle({
-      title: candidate.title,
+      title: candidate.name,
       genre: candidate.genre || 'EDM',
       mood: candidate.mood || 'energetic',
       hook,
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
     const description = [
       `🎧 Hele sangen / Full version: ${candidate.youtube_url}`,
       '',
-      `${candidate.title} — Re-Master Freddy`,
+      `${candidate.name} — Re-Master Freddy`,
       '',
       '#Shorts #AIMusic #ReMasterFreddy #ChillBeats #StudyMusic #EDM',
     ].join('\n');
@@ -195,11 +195,11 @@ export async function GET(request: NextRequest) {
       .update({ ai_metadata: { ...meta, shortsFollowup: { uploads: newUploads } } })
       .eq('id', candidate.id);
 
-    console.log(`[ShortsFollowup] Uploaded follow-up Short ${newUploads.length}/${MAX_FOLLOWUP_SHORTS} for "${candidate.title}": ${uploadResult.youtubeUrl}`);
+    console.log(`[ShortsFollowup] Uploaded follow-up Short ${newUploads.length}/${MAX_FOLLOWUP_SHORTS} for "${candidate.name}": ${uploadResult.youtubeUrl}`);
     return NextResponse.json({
       success: true,
       songId: candidate.id,
-      title: candidate.title,
+      title: candidate.name,
       shortUrl: uploadResult.youtubeUrl,
       sectionStart,
       followupNumber: newUploads.length,
