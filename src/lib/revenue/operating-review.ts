@@ -419,7 +419,8 @@ function parseSnapshot(value: unknown): OperatingReviewSnapshot | null {
   const decisions = (Array.isArray(row.decisions) ? row.decisions : []).map(parseDecision).filter(Boolean) as OperatingDecisionSnapshot[];
   const agenda = (Array.isArray(row.agenda) ? row.agenda : []).map(parseCalendarEvent).filter(Boolean) as BriefingCalendarEvent[];
   const goals = (Array.isArray(row.goals) ? row.goals : []).map(parseGoal).filter(Boolean) as OperatingGoalSnapshot[];
-  const dataSources = (Array.isArray(row.dataSources || row.data_sources) ? row.dataSources || row.data_sources : [])
+  const rawDataSources = row.dataSources ?? row.data_sources;
+  const dataSources = (Array.isArray(rawDataSources) ? rawDataSources : [])
     .flatMap((value): ExecutiveBriefing["dataSources"] => {
       const source = record(value);
       const sourceId = stringValue(source.id, 100);
