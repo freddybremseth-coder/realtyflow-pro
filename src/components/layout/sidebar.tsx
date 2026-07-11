@@ -12,7 +12,7 @@ import {
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   ChevronLeft, ChevronRight, KeyRound, LogOut, Menu, X, BookOpen,
   Database, HeartHandshake, Banknote, RefreshCw, Gauge, Flag, Megaphone, ShieldCheck,
-  MessageSquareText, CalendarCheck2, FolderLock,
+  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -21,7 +21,7 @@ const iconMap: Record<string, React.ElementType> = {
   Palette, Globe, TrendingUp, Briefcase, PieChart, Rocket,
   Bot, Mail, Zap, Calendar, BarChart3, ScanLine, CheckSquare, Settings,
   BookOpen, Database, HeartHandshake, Banknote, KeyRound, RefreshCw, Gauge, Flag, Megaphone, ShieldCheck,
-  MessageSquareText, CalendarCheck2, FolderLock,
+  MessageSquareText, CalendarCheck2, FolderLock, FileSpreadsheet,
 };
 
 const sectionLabels: Record<string, string> = {
