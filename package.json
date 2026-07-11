@@ -33,6 +33,7 @@
     "test:team-workload": "tsx --test src/lib/revenue/team-workload.test.ts",
     "test:internal-alerts": "tsx --test src/lib/revenue/internal-alerts.test.ts",
     "test:executive-briefing": "tsx --test src/lib/revenue/executive-briefing.test.ts",
+    "test:operating-review": "tsx --test src/lib/revenue/operating-review.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
     "test:remaster-brand": "tsx --test src/services/integrations/airtable-client.test.ts",
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts"
@@ -78,7 +79,7 @@
   "devDependencies": {
     "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
-    "@types/node-cron": "^3.0.11",
+    "@types/node-cron": "^3.4.6",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",
     "@types/react-big-calendar": "^1.8.9",
