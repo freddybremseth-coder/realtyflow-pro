@@ -40,6 +40,8 @@ jobs:
         run: npm run test:recovery
       - name: Keyholding Service Revenue tests
         run: npm run test:service-revenue
+      - name: Revenue Command Center tests
+        run: npm run test:revenue-command
       - name: Build
         id: next_build
         shell: bash
