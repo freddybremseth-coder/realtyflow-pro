@@ -4,7 +4,10 @@ import { resolvePublicLeadBrand } from "./public-lead-brand";
 
 test("accepts allowlisted real-estate brands", () => {
   assert.equal(resolvePublicLeadBrand("soleada", "website"), "soleada");
+  assert.equal(resolvePublicLeadBrand("Soleada.no", "website"), "soleada");
+  assert.equal(resolvePublicLeadBrand("Pinoso EcoLife", "website"), "pinosoecolife");
   assert.equal(resolvePublicLeadBrand("pinoso-eco-life", "website"), "pinosoecolife");
+  assert.equal(resolvePublicLeadBrand("Zen Eco Homes", "website"), "zeneco");
   assert.equal(resolvePublicLeadBrand("zenecohomes", "website"), "zeneco");
 });
 
