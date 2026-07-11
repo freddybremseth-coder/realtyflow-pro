@@ -24,6 +24,17 @@ export const BRANDS: Brand[] = [
     specialties: ["Costa Blanca", "Costa Cálida", "luxury villas"],
   },
   {
+    id: "keyholding",
+    name: "Keyholding Costa Blanca",
+    type: "other",
+    description: "Premium keyholding, documented property inspections and local home services for Norwegian owners on Costa Blanca North",
+    color: "#C66B45",
+    website: "https://keyholding.no",
+    tone: "premium, reassuring, precise, personal",
+    target_audience: "Norwegian owners of holiday homes, apartments and villas from Albir to Calpe",
+    specialties: ["keyholding", "42-point property inspections", "arrival preparation", "contractor coordination", "emergency response", "property care"],
+  },
+  {
     id: "mondeo",
     name: "Mondeo Eiendom AS",
     type: "other",
@@ -139,8 +150,9 @@ export const SIDEBAR_NAV = {
   operations: [
     { label: "Kunder", href: "/customers", icon: "Users" },
     { label: "Closing Workspace", href: "/closing", icon: "Target" },
-    { label: "Lost Lead Recovery", href: "/recovery", icon: "Target" },
     { label: "After-sales & Referral", href: "/after-sales", icon: "HeartHandshake" },
+    { label: "Keyholding Revenue", href: "/service-revenue", icon: "KeyRound" },
+    { label: "Lost Lead Recovery", href: "/recovery", icon: "RefreshCw" },
     { label: "CRM Pipeline", href: "/pipeline", icon: "Users" },
     { label: "AI Lead Inbox", href: "/lead-intelligence", icon: "Sparkles" },
     { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
