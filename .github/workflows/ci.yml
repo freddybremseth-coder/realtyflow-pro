@@ -54,6 +54,8 @@ jobs:
         run: npm run test:execution
       - name: Deal Documents and Closing Pack tests
         run: npm run test:closing-pack
+      - name: Financial Reporting and Monthly Close tests
+        run: npm run test:monthly-close
       - name: Build
         id: next_build
         shell: bash
