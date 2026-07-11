@@ -138,6 +138,7 @@ export const SIDEBAR_NAV = {
   ],
   operations: [
     { label: "Kunder", href: "/customers", icon: "Users" },
+    { label: "Team & arbeidsfordeling", href: "/team-workload", icon: "UsersRound" },
     { label: "Execution & Kalender", href: "/execution", icon: "CalendarCheck2" },
     { label: "Closing Workspace", href: "/closing", icon: "Target" },
     { label: "Deal Documents", href: "/closing-pack", icon: "FolderLock" },
