@@ -38,6 +38,22 @@ function nextFollowupIso(days: number) {
   return date.toISOString();
 }
 
+function validIso(value: unknown) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function withDormantAnchor(contact: any) {
+  const interactions = Array.isArray(contact?.interactions) ? contact.interactions : [];
+  const anchors = interactions
+    .map((item: any) => validIso(item?.metadata?.dormant_since))
+    .filter(Boolean) as string[];
+  if (anchors.length === 0) return contact;
+  anchors.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  return { ...contact, updated_at: anchors[0] };
+}
+
 function eventContent(action: string, reason?: LossReason) {
   if (action === "set_reason" && reason) return `Taps- eller pauseårsak registrert: ${LOSS_REASON_LABELS[reason]}`;
   if (action === "review") return "Saken er manuelt gjennomgått i Lost Lead Recovery";
@@ -88,7 +104,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message, workspace: null }, { status: 500 });
 
-  const workspace = buildRecoveryWorkspace(data || []);
+  const workspace = buildRecoveryWorkspace((data || []).map(withDormantAnchor));
   return NextResponse.json({ workspace });
 }
 
@@ -119,18 +135,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "nextFollowupDays is required for this action" }, { status: 400 });
   }
 
-  const { data: contact, error: contactError } = await supabase
+  const { data: rawContact, error: contactError } = await supabase
     .from("contacts")
     .select("*")
     .eq("id", contactId)
     .single();
 
-  if (contactError || !contact) return NextResponse.json({ error: contactError?.message || "Contact not found" }, { status: 404 });
-  const recovery = buildRecoveryLead(contact);
+  if (contactError || !rawContact) return NextResponse.json({ error: contactError?.message || "Contact not found" }, { status: 404 });
+  const anchoredContact = withDormantAnchor(rawContact);
+  const recovery = buildRecoveryLead(anchoredContact);
   if (!recovery) return NextResponse.json({ error: "Contact is not lost or on hold" }, { status: 409 });
 
   const now = new Date().toISOString();
-  const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
+  const interactions = Array.isArray(rawContact.interactions) ? rawContact.interactions : [];
   const targetStage = action === "reopen_qualified" ? "QUALIFIED" : action === "reopen_contact" ? "CONTACT" : null;
   const updates: Record<string, unknown> = {
     updated_at: now,
@@ -150,6 +167,7 @@ export async function POST(request: NextRequest) {
           target_stage: targetStage,
           customer_contact_sent: false,
           recovery_score_at_action: recovery.recoveryScore,
+          dormant_since: recovery.dormantSince,
         },
       },
       ...interactions,
@@ -172,11 +190,5 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
-  return NextResponse.json({
-    ok: true,
-    contact: updated,
-    action,
-    targetStage,
-    customerContactSent: false,
-  });
+  return NextResponse.json({ ok: true, contact: updated, action, targetStage, customerContactSent: false });
 }
