@@ -32,6 +32,7 @@
     "test:access-control": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/access-control.test.ts src/lib/api-admin.test.ts",
     "test:team-workload": "tsx --test src/lib/revenue/team-workload.test.ts",
     "test:internal-alerts": "tsx --test src/lib/revenue/internal-alerts.test.ts",
+    "test:executive-briefing": "tsx --test src/lib/revenue/executive-briefing.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
     "test:remaster-brand": "tsx --test src/services/integrations/airtable-client.test.ts",
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts"

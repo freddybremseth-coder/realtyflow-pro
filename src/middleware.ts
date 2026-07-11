@@ -173,15 +173,29 @@ export async function middleware(request: NextRequest) {
 
   const session = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (session) {
+    requestHeaders.set("x-admin-authenticated", "true");
+    requestHeaders.set("x-access-role", session.role);
+    requestHeaders.set("x-access-email", session.email);
+
     if (session.role !== "OWNER") {
       const internalAlertsApi = pathname === "/api/internal-alerts";
       const internalAlertsPage = pathname === "/internal-alerts";
+      const executiveBriefingApi = pathname === "/api/revenue/executive-briefing";
+      const executiveBriefingPage = pathname === "/executive-briefing";
+
+      if (executiveBriefingApi) {
+        if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
+        const rewritten = request.nextUrl.clone();
+        rewritten.pathname = "/api/revenue/command/executive-briefing";
+        return NextResponse.rewrite(rewritten, { request: { headers: requestHeaders } });
+      }
+
       if (pathname.startsWith("/api/")) {
         if (!internalAlertsApi) {
           const requirement = accessRequirementForApi(pathname, request.method);
           if (requirement === "OWNER_ONLY" || (requirement !== "AUTHENTICATED" && !hasPermission(session.role, requirement))) return roleDenied(request, session.role, requirement);
         }
-      } else if (internalAlertsPage) {
+      } else if (internalAlertsPage || executiveBriefingPage) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
       } else if (!canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
@@ -190,9 +204,6 @@ export async function middleware(request: NextRequest) {
 
     const inventoryRedirect = inventoryLeadIntelligenceReturnRedirect(request);
     if (inventoryRedirect) return inventoryRedirect;
-    requestHeaders.set("x-admin-authenticated", "true");
-    requestHeaders.set("x-access-role", session.role);
-    requestHeaders.set("x-access-email", session.email);
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

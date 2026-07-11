@@ -62,6 +62,8 @@ jobs:
         run: npm run test:team-workload
       - name: Internal Alerts and Escalation tests
         run: npm run test:internal-alerts
+      - name: Executive Briefing tests
+        run: npm run test:executive-briefing
       - name: Build
         id: next_build
         shell: bash
