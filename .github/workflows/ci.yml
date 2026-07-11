@@ -32,6 +32,8 @@ jobs:
         run: npm run test:approvals
       - name: After-sales tests
         run: npm run test:after-sales
+      - name: Revenue Forecast tests
+        run: npm run test:forecast
       - name: Build
         id: next_build
         shell: bash
