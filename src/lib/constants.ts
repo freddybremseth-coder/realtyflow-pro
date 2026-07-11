@@ -113,25 +113,8 @@ export const BRANDS: Brand[] = [
   },
 ];
 
-export const LEAD_STATUSES = [
-  "NEW",
-  "CONTACT",
-  "QUALIFIED",
-  "VIEWING",
-  "NEGOTIATION",
-  "WON",
-  "ON_HOLD",
-  "LOST",
-] as const;
-
-export const PLATFORMS = [
-  "instagram",
-  "facebook",
-  "linkedin",
-  "twitter",
-  "tiktok",
-  "youtube",
-] as const;
+export const LEAD_STATUSES = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"] as const;
+export const PLATFORMS = ["instagram", "facebook", "linkedin", "twitter", "tiktok", "youtube"] as const;
 
 export const SIDEBAR_NAV = {
   overview: [
@@ -197,6 +180,8 @@ export const SIDEBAR_NAV = {
     { label: "E-post AI", href: "/email", icon: "Mail" },
   ],
   admin: [
+    { label: "Roller & tilgang", href: "/access-control", icon: "UserCog" },
+    { label: "Audit Log", href: "/audit-log", icon: "Activity" },
     { label: "Brands", href: "/brands", icon: "Palette" },
     { label: "Business Hub", href: "/business-hub", icon: "Briefcase" },
     { label: "Mondeo Eiendom", href: "/mondeo", icon: "Building2" },
