@@ -28,6 +28,8 @@ jobs:
         run: npm run test:closing
       - name: Customer 360 tests
         run: npm run test:customer-360
+      - name: Approval Center tests
+        run: npm run test:approvals
       - name: Build
         id: next_build
         shell: bash
