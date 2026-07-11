@@ -52,6 +52,8 @@ jobs:
         run: npm run test:communications
       - name: Calendar and Execution tests
         run: npm run test:execution
+      - name: Deal Documents and Closing Pack tests
+        run: npm run test:closing-pack
       - name: Build
         id: next_build
         shell: bash

@@ -156,6 +156,7 @@ export const SIDEBAR_NAV = {
     { label: "Kunder", href: "/customers", icon: "Users" },
     { label: "Execution & Kalender", href: "/execution", icon: "CalendarCheck2" },
     { label: "Closing Workspace", href: "/closing", icon: "Target" },
+    { label: "Deal Documents", href: "/closing-pack", icon: "FolderLock" },
     { label: "After-sales & Referral", href: "/after-sales", icon: "HeartHandshake" },
     { label: "Keyholding Revenue", href: "/service-revenue", icon: "KeyRound" },
     { label: "Lost Lead Recovery", href: "/recovery", icon: "RefreshCw" },
