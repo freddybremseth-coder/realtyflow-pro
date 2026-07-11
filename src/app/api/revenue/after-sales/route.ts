@@ -20,6 +20,13 @@ const ACTION_LABELS: Record<AfterSalesActionId, string> = {
   annual_review: "Årlig bolig- og behovsgjennomgang markert som utført",
 };
 const ACTION_IDS = new Set<AfterSalesActionId>(Object.keys(ACTION_LABELS) as AfterSalesActionId[]);
+const CUSTOMER_CONTACT_ACTIONS = new Set<AfterSalesActionId>([
+  "welcome_checkin",
+  "care_offer",
+  "review_request",
+  "referral_request",
+  "annual_review",
+]);
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -96,7 +103,8 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (contactError || !contact) return NextResponse.json({ error: contactError?.message || "Contact not found" }, { status: 404 });
-  if (!buildAfterSalesCustomer(contact)) return NextResponse.json({ error: "Contact is not a won customer" }, { status: 409 });
+  const afterSales = buildAfterSalesCustomer(contact);
+  if (!afterSales) return NextResponse.json({ error: "Contact is not a won customer" }, { status: 409 });
 
   const now = new Date().toISOString();
   const interactions = Array.isArray(contact.interactions) ? contact.interactions : [];
@@ -111,11 +119,16 @@ export async function POST(request: NextRequest) {
         content: ACTION_LABELS[action],
         date: now,
         internal: true,
-        metadata: { action, source: "after-sales-workspace", customer_contact_sent: false },
+        metadata: {
+          action,
+          source: "after-sales-workspace",
+          customer_contact_sent: false,
+          lifecycle_anchor: afterSales.wonAt,
+        },
       },
       ...interactions,
     ];
-    updates.last_contact = now;
+    if (CUSTOMER_CONTACT_ACTIONS.has(action)) updates.last_contact = now;
   }
   if (requestedDays !== null) updates.next_followup = nextFollowupIso(requestedDays);
 
