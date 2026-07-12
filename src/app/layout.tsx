@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
 
@@ -47,7 +48,7 @@ export default function RootLayout({
         ) : (
           <>
             <Sidebar />
-            <main className="lg:ml-60 min-h-screen p-6 pt-16 lg:pt-6">
+            <main className="app-shell-main min-h-screen p-6 pt-16 lg:pt-6">
               {children}
             </main>
             <ChatWidget
