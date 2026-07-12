@@ -11,6 +11,7 @@ const TEAM_ASSIGNMENTS_KEY = "team-workload:assignments";
 const ALERT_ACKNOWLEDGEMENTS_KEY = "internal-alerts:acknowledgements";
 const OPERATING_REVIEW_KEY = "operating-review:journal";
 const WEEKLY_MANAGEMENT_REVIEW_KEY = "weekly-management:journal";
+const CONTINUOUS_IMPROVEMENT_KEY = "continuous-improvement:register";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -242,6 +243,73 @@ function weeklyManagementAuditEvents(value: unknown): AuditTrailEvent[] {
   });
 }
 
+function continuousImprovementAuditEvents(value: unknown): AuditTrailEvent[] {
+  if (!value || typeof value !== "object") return [];
+  const settings = value as Record<string, unknown>;
+  const rows = (Array.isArray(settings.events) ? settings.events : []).filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  const snapshots = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const improvementId = String(row.improvementId || row.improvement_id || "").trim();
+    const snapshot = row.snapshot && typeof row.snapshot === "object" ? row.snapshot as Record<string, unknown> : null;
+    if (improvementId && snapshot && !snapshots.has(improvementId)) snapshots.set(improvementId, snapshot);
+  }
+  return rows.flatMap((row): AuditTrailEvent[] => {
+    const id = String(row.id || "").trim();
+    const at = String(row.at || row.created_at || "").trim();
+    const actor = String(row.actorEmail || row.actor_email || "").trim();
+    const type = String(row.type || "").trim().toUpperCase();
+    const improvementId = String(row.improvementId || row.improvement_id || "").trim();
+    if (!id || !at || !actor || !improvementId || ![
+      "IMPROVEMENT_CREATED", "IMPROVEMENT_UPDATED", "IMPROVEMENT_NOTE_ADDED", "IMPROVEMENT_CLOSED", "IMPROVEMENT_REOPENED",
+    ].includes(type)) return [];
+    const snapshot = snapshots.get(improvementId) || {};
+    const source = String(snapshot.source || "").toUpperCase();
+    const role = String(snapshot.role || row.actorRole || row.actor_role || "").toUpperCase();
+    const previousStatus = String(row.previousStatus || row.previous_status || "").trim() || null;
+    const status = String(row.status || "").trim() || null;
+    const actionMap: Record<string, string> = {
+      IMPROVEMENT_CREATED: "continuous_improvement_created",
+      IMPROVEMENT_UPDATED: "continuous_improvement_updated",
+      IMPROVEMENT_NOTE_ADDED: "continuous_improvement_note_added",
+      IMPROVEMENT_CLOSED: "continuous_improvement_closed",
+      IMPROVEMENT_REOPENED: "continuous_improvement_reopened",
+    };
+    return [{
+      id,
+      at,
+      actor,
+      action: actionMap[type],
+      category: operatingCategory(source),
+      resourceType: "continuous-improvement",
+      resourceId: improvementId,
+      resourceName: String(snapshot.subject || "Forbedringstiltak").slice(0, 200),
+      source: "continuous-improvement",
+      field: "improvement_status",
+      before: previousStatus,
+      after: status || type,
+      details: {
+        improvement_role: role || null,
+        candidate_id: snapshot.candidateId || snapshot.candidate_id || null,
+        issue_type: snapshot.issueType || snapshot.issue_type || null,
+        root_cause_category: row.rootCauseCategory || row.root_cause_category || null,
+        action_type: row.actionType || row.action_type || null,
+        due_at: row.dueAt || row.due_at || null,
+        owner_email: row.ownerEmail || row.owner_email || null,
+        root_cause_present: Boolean(String(row.rootCauseStatement || row.root_cause_statement || "").trim()),
+        action_plan_present: Boolean(String(row.actionPlan || row.action_plan || "").trim()),
+        success_metric_present: Boolean(String(row.successMetric || row.success_metric || "").trim()),
+        target_value_present: Boolean(String(row.targetValue || row.target_value || "").trim()),
+        note_present: Boolean(String(row.note || "").trim()),
+        no_customer_contact: true,
+        no_task_creation: true,
+        no_pipeline_change: true,
+        no_assignment_change: true,
+      },
+      actorKnown: true,
+    }];
+  });
+}
+
 function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailEvent[], limit: number) {
   const deduped = new Map<string, AuditTrailEvent>();
   [...base.events, ...extra].forEach((event) => deduped.set(event.id, event));
@@ -253,10 +321,12 @@ function mergeTrail(base: ReturnType<typeof buildAuditTrail>, extra: AuditTrailE
   const alertCount = extra.filter((event) => event.source === "internal-alerts").length;
   const operatingCount = extra.filter((event) => event.source === "operating-review").length;
   const weeklyCount = extra.filter((event) => event.source === "weekly-management-review").length;
+  const improvementCount = extra.filter((event) => event.source === "continuous-improvement").length;
   if (teamCount && !warnings.some((warning) => warning.includes("teamtildeling"))) warnings.push(`${teamCount} teamtildelingshendelser er inkludert fra sentral ansvarshistorikk.`);
   if (alertCount && !warnings.some((warning) => warning.includes("varselkvittering"))) warnings.push(`${alertCount} varselkvitteringer er inkludert fra Internal Alerts.`);
   if (operatingCount && !warnings.some((warning) => warning.includes("beslutningsjournal"))) warnings.push(`${operatingCount} hendelser er inkludert fra Operating Review-beslutningsjournalen.`);
   if (weeklyCount && !warnings.some((warning) => warning.includes("ukentlig ledelsesreview"))) warnings.push(`${weeklyCount} hendelser er inkludert fra ukentlig ledelsesreview.`);
+  if (improvementCount && !warnings.some((warning) => warning.includes("forbedringsregister"))) warnings.push(`${improvementCount} hendelser er inkludert fra forbedringsregisteret.`);
   return {
     ...base,
     generatedAt: new Date().toISOString(),
@@ -281,13 +351,14 @@ export async function GET(request: NextRequest) {
 
   const requestedLimit = Number(new URL(request.url).searchParams.get("limit") || 500);
   const limit = Number.isFinite(requestedLimit) ? Math.max(50, Math.min(2000, Math.floor(requestedLimit))) : 500;
-  const [contactsResult, accessResult, teamResult, alertResult, operatingResult, weeklyResult] = await Promise.allSettled([
+  const [contactsResult, accessResult, teamResult, alertResult, operatingResult, weeklyResult, improvementResult] = await Promise.allSettled([
     supabase.from("contacts").select("id,name,email,interactions,updated_at").order("updated_at", { ascending: false }).limit(2500),
     loadAccessSettings(),
     supabase.from("brand_settings").select("settings").eq("brand_id", TEAM_ASSIGNMENTS_KEY).maybeSingle(),
     supabase.from("brand_settings").select("settings").eq("brand_id", ALERT_ACKNOWLEDGEMENTS_KEY).maybeSingle(),
     supabase.from("brand_settings").select("settings").eq("brand_id", OPERATING_REVIEW_KEY).maybeSingle(),
     supabase.from("brand_settings").select("settings").eq("brand_id", WEEKLY_MANAGEMENT_REVIEW_KEY).maybeSingle(),
+    supabase.from("brand_settings").select("settings").eq("brand_id", CONTINUOUS_IMPROVEMENT_KEY).maybeSingle(),
   ]);
 
   if (contactsResult.status === "rejected" || contactsResult.value?.error) {
@@ -323,13 +394,18 @@ export async function GET(request: NextRequest) {
   else if (weeklyResult.value.error) warnings.push(`Ukentlig ledelsesreview-audit kunne ikke hentes: ${weeklyResult.value.error.message}`);
   else weeklyEvents = weeklyManagementAuditEvents(weeklyResult.value.data?.settings);
 
+  let improvementEvents: AuditTrailEvent[] = [];
+  if (improvementResult.status === "rejected") warnings.push(`Forbedringsregister-audit kunne ikke hentes: ${improvementResult.reason instanceof Error ? improvementResult.reason.message : "ukjent feil"}`);
+  else if (improvementResult.value.error) warnings.push(`Forbedringsregister-audit kunne ikke hentes: ${improvementResult.value.error.message}`);
+  else improvementEvents = continuousImprovementAuditEvents(improvementResult.value.data?.settings);
+
   const baseTrail = buildAuditTrail({
     contacts: contactsResult.value?.data || [],
     accessAudit,
     warnings,
     limit: 2000,
   });
-  const trail = mergeTrail(baseTrail, [...teamEvents, ...alertEvents, ...operatingEvents, ...weeklyEvents], limit);
+  const trail = mergeTrail(baseTrail, [...teamEvents, ...alertEvents, ...operatingEvents, ...weeklyEvents, ...improvementEvents], limit);
   return NextResponse.json({
     trail,
     coverage: {
@@ -339,6 +415,7 @@ export async function GET(request: NextRequest) {
       alertAcknowledgements: alertResult.status === "fulfilled" && !alertResult.value.error,
       operatingReviewJournal: operatingResult.status === "fulfilled" && !operatingResult.value.error,
       weeklyManagementReview: weeklyResult.status === "fulfilled" && !weeklyResult.value.error,
+      continuousImprovementRegister: improvementResult.status === "fulfilled" && !improvementResult.value.error,
       legacyActorMayBeMissing: true,
       workItemActorCoverage: false,
       calendarActorCoverage: false,

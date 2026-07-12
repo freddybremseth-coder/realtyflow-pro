@@ -184,6 +184,7 @@ export async function middleware(request: NextRequest) {
       const executiveBriefingPage = pathname === "/executive-briefing";
       const operatingReviewPage = pathname === "/operating-review";
       const weeklyManagementReviewPage = pathname === "/weekly-management-review";
+      const continuousImprovementPage = pathname === "/continuous-improvement";
 
       if (executiveBriefingApi) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
@@ -197,7 +198,7 @@ export async function middleware(request: NextRequest) {
           const requirement = accessRequirementForApi(pathname, request.method);
           if (requirement === "OWNER_ONLY" || (requirement !== "AUTHENTICATED" && !hasPermission(session.role, requirement))) return roleDenied(request, session.role, requirement);
         }
-      } else if (internalAlertsPage || executiveBriefingPage || operatingReviewPage || weeklyManagementReviewPage) {
+      } else if (internalAlertsPage || executiveBriefingPage || operatingReviewPage || weeklyManagementReviewPage || continuousImprovementPage) {
         if (!hasPermission(session.role, "revenue.read")) return roleDenied(request, session.role, "revenue.read");
       } else if (!canSeeNavHref(session.role, pathname)) {
         return roleDenied(request, session.role, "page-access");
