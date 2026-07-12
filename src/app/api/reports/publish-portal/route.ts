@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+} from "@/lib/revenue/events";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const { data: report, error: reportError } = await supabase
     .from("market_reports")
-    .select("id,title")
+    .select("id,title,summary,template_id,brand")
     .eq("id", reportId)
     .single();
 
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
     const { data: contacts } = await supabase
       .from("contacts")
-      .select("id,email,interactions")
+      .select("id,email,brand_id,interactions")
       .in("email", recipients);
 
     await Promise.all(
@@ -78,6 +82,77 @@ export async function POST(request: NextRequest) {
           .eq("id", contact.id);
       }),
     );
+
+    const eventResults = await Promise.all(
+      (contacts || []).map((contact) => insertRevenueEvent(supabase, {
+        eventType: "note",
+        title: "Rapport publisert på Min side",
+        description: `Publisert for ${contact.email}: ${report.title}`,
+        contactId: contact.id,
+        brandId: contact.brand_id || null,
+        sourceSystem: "portal",
+        sourceType: "market_report_published",
+        sourceId: report.id,
+        actorType: "system",
+        confidenceScore: 78,
+        occurredAt: now,
+        dedupeKey: buildRevenueEventDedupeKey([
+          "portal",
+          "market_report_published",
+          report.id,
+          contact.id,
+        ]),
+        metadata: {
+          report_id: report.id,
+          report_title: report.title,
+          report_summary: report.summary || null,
+          template_id: report.template_id || null,
+          recipient_email: contact.email,
+          publish_mode: mode,
+        },
+        createdBy: "api/reports/publish-portal",
+      })),
+    );
+
+    const failedEvent = eventResults.find((result) => !result.ok && !result.tableNotReady);
+    if (failedEvent) {
+      console.warn("[reports/publish-portal] selected revenue event insert failed", failedEvent.error);
+    }
+  } else {
+    const now = new Date().toISOString();
+    const eventResult = await insertRevenueEvent(supabase, {
+      eventType: "note",
+      title: "Rapport publisert til alle portalbrukere",
+      description: report.title,
+      contactId: null,
+      brandId: null,
+      sourceSystem: "portal",
+      sourceType: "market_report_published",
+      sourceId: report.id,
+      actorType: "system",
+      confidenceScore: 70,
+      occurredAt: now,
+      dedupeKey: buildRevenueEventDedupeKey([
+        "portal",
+        "market_report_published",
+        report.id,
+        "all",
+      ]),
+      metadata: {
+        report_id: report.id,
+        report_title: report.title,
+        report_summary: report.summary || null,
+        template_id: report.template_id || null,
+        report_brand: report.brand || null,
+        publish_mode: mode,
+        recipients: "portal_all",
+      },
+      createdBy: "api/reports/publish-portal",
+    });
+
+    if (!eventResult.ok && !eventResult.tableNotReady) {
+      console.warn("[reports/publish-portal] aggregate revenue event insert failed", eventResult.error);
+    }
   }
 
   return NextResponse.json({
