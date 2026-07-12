@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildRevenuePriority,
+  recommendActionFromRevenueMemory,
   recommendRevenueAction,
   sortRevenuePriorities,
 } from "./today";
@@ -75,6 +76,56 @@ test("missing contact channels becomes the first recommended action", () => {
   );
 
   assert.match(action, /kontaktkanal/i);
+});
+
+test("recent inbound email becomes the recommended next action", () => {
+  const action = recommendRevenueAction(
+    {
+      id: "lead-3",
+      email: "buyer@example.com",
+      pipeline_status: "CONTACT",
+    },
+    NOW,
+    {
+      revenueEvents: [{
+        event_type: "email_received",
+        title: "E-post mottatt: Vi kan ta en prat",
+        occurred_at: "2026-07-10T12:00:00.000Z",
+        metadata: { body_preview: "Passer i morgen?" },
+      }],
+    },
+  );
+
+  assert.match(action, /Kunden har svart nylig/i);
+  assert.match(action, /svar personlig/i);
+});
+
+test("booked meeting memory prepares the advisor for the call", () => {
+  const action = recommendActionFromRevenueMemory(
+    [{
+      event_type: "meeting_booked",
+      title: "Ny booking",
+      occurred_at: "2026-07-05T12:00:00.000Z",
+    }],
+    NOW,
+  );
+
+  assert.match(action || "", /Møte er booket/i);
+  assert.match(action || "", /3–5 relevante boliger/i);
+});
+
+test("sent follow-up without a reply recommends a personal check-in", () => {
+  const action = recommendActionFromRevenueMemory(
+    [{
+      event_type: "message_sent",
+      title: "E-post sendt: Her er forslag",
+      occurred_at: "2026-07-06T12:00:00.000Z",
+      description: "Sendt til buyer@example.com",
+    }],
+    NOW,
+  );
+
+  assert.match(action || "", /uten registrert svar/i);
 });
 
 test("sorting prefers critical and higher-scoring opportunities", () => {
