@@ -35,6 +35,11 @@ export interface RevenueRecommendationContext {
   revenueEvents?: RevenueMemoryEventInput[] | null;
 }
 
+export interface RevenueMemoryScore {
+  score: number;
+  reasons: string[];
+}
+
 export interface RevenuePriorityItem {
   id: string;
   contactName: string;
@@ -151,6 +156,61 @@ export function recommendActionFromRevenueMemory(
   return null;
 }
 
+export function scoreRevenueMemorySignals(
+  events: RevenueMemoryEventInput[] | null | undefined,
+  now = new Date(),
+): RevenueMemoryScore {
+  const reasons: string[] = [];
+  let score = 0;
+  const sorted = [...(events || [])]
+    .map((event) => ({ event, at: eventTime(event) }))
+    .filter((item): item is { event: RevenueMemoryEventInput; at: Date } => Boolean(item.at))
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  const recentInbound = sorted.find((item) => item.event.event_type === "email_received" && daysBetween(item.at, now) <= 3);
+  if (recentInbound) {
+    score += 22;
+    reasons.push("kunden svarte nylig");
+  }
+
+  const bookedMeeting = sorted.find((item) => item.event.event_type === "meeting_booked" && daysBetween(item.at, now) <= 14);
+  if (bookedMeeting) {
+    score += 18;
+    reasons.push("møte er booket");
+  }
+
+  const sentWithoutReply = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    if (!["message_sent", "nurture_step_sent"].includes(String(item.event.event_type || ""))) return false;
+    if (ageDays < 3 || ageDays > 14) return false;
+    const text = eventText(item.event);
+    return !/stopp|ikke aktuelt|not interested|unsubscribe/.test(text);
+  });
+  if (sentWithoutReply && !recentInbound) {
+    score += 9;
+    reasons.push("oppfølging sendt uten registrert svar");
+  }
+
+  const hotText = sorted
+    .filter((item) => daysBetween(item.at, now) <= 14)
+    .map((item) => eventText(item.event))
+    .join(" ");
+  if (/reservasjon|reserve|reservation|tilbud|offer|klar|ready|finansiering|mortgage|reise|flight/.test(hotText)) {
+    score += 10;
+    reasons.push("sterkt kjøpssignal i kundeminne");
+  }
+
+  if (/stopp|ikke aktuelt|not interested|unsubscribe/.test(hotText)) {
+    score -= 25;
+    reasons.push("negativt signal i kundeminne");
+  }
+
+  return {
+    score: Math.max(-25, Math.min(40, score)),
+    reasons,
+  };
+}
+
 export function scoreRevenueContact(contact: RevenueContactInput, now = new Date()) {
   const stage = normalizeStage(contact.pipeline_status);
   const stageScore: Record<string, number> = {
@@ -232,7 +292,8 @@ export function buildRevenuePriority(
   const stage = normalizeStage(contact.pipeline_status);
   if (!ACTIVE_STAGES.has(stage)) return null;
 
-  const score = scoreRevenueContact(contact, now);
+  const memoryScore = scoreRevenueMemorySignals(context.revenueEvents, now);
+  const score = Math.max(0, Math.min(100, scoreRevenueContact(contact, now) + memoryScore.score));
   const nextFollowup = safeDate(contact.next_followup);
   const createdAt = safeDate(contact.created_at);
   const lastContact = safeDate(contact.last_contact || contact.updated_at);
@@ -257,6 +318,7 @@ export function buildRevenuePriority(
   if (!nextFollowup) reasons.push("mangler neste oppfølgingsdato");
   if (Number(contact.pipeline_value || 0) >= 500_000) reasons.push("høy potensiell verdi");
   if (lastContact && daysBetween(lastContact, now) >= 7) reasons.push("ingen nylig kontakt");
+  reasons.push(...memoryScore.reasons);
   if (reasons.length === 0) reasons.push("bør følges opp etter kjøpssignal og pipeline-status");
 
   return {

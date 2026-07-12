@@ -4,6 +4,7 @@ import {
   buildRevenuePriority,
   recommendActionFromRevenueMemory,
   recommendRevenueAction,
+  scoreRevenueMemorySignals,
   sortRevenuePriorities,
 } from "./today";
 
@@ -120,8 +121,45 @@ test("priority cards can use revenue memory for recommended action", () => {
 
   assert.ok(item);
   assert.match(item.recommendedAction, /Kunden har svart nylig/i);
+  assert.ok(item.score >= 50);
+  assert.match(item.reason, /kunden svarte nylig/i);
 });
 
+test("revenue memory score promotes fresh buying signals and explains why", () => {
+  const memory = scoreRevenueMemorySignals(
+    [
+      {
+        event_type: "email_received",
+        occurred_at: "2026-07-10T12:00:00.000Z",
+        metadata: { body_preview: "Vi er klar for visning og kan reise neste uke." },
+      },
+      {
+        event_type: "meeting_booked",
+        occurred_at: "2026-07-09T12:00:00.000Z",
+      },
+    ],
+    NOW,
+  );
+
+  assert.ok(memory.score >= 30);
+  assert.ok(memory.reasons.includes("kunden svarte nylig"));
+  assert.ok(memory.reasons.includes("møte er booket"));
+  assert.ok(memory.reasons.includes("sterkt kjøpssignal i kundeminne"));
+});
+
+test("negative revenue memory reduces the signal score", () => {
+  const memory = scoreRevenueMemorySignals(
+    [{
+      event_type: "email_received",
+      occurred_at: "2026-07-10T12:00:00.000Z",
+      metadata: { body_preview: "Stopp, dette er ikke aktuelt lenger." },
+    }],
+    NOW,
+  );
+
+  assert.ok(memory.score < 0);
+  assert.ok(memory.reasons.includes("negativt signal i kundeminne"));
+});
 
 test("booked meeting memory prepares the advisor for the call", () => {
   const action = recommendActionFromRevenueMemory(
