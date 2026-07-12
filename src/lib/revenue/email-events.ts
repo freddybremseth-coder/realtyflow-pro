@@ -83,3 +83,64 @@ export function buildMessageSentRevenueEventInput({
     createdBy: "api/email/send",
   };
 }
+
+export function buildEmailReceivedRevenueEventInput({
+  brandId,
+  fromAddress,
+  fromName,
+  toAddresses,
+  subject,
+  bodyPreview,
+  receivedAt,
+  messageId,
+  threadId,
+  storedEmailMessageId,
+  contactId,
+}: {
+  brandId: string;
+  fromAddress?: string | null;
+  fromName?: string | null;
+  toAddresses: string[];
+  subject: string;
+  bodyPreview: string;
+  receivedAt: string;
+  messageId?: string | null;
+  threadId?: string | null;
+  storedEmailMessageId?: string | null;
+  contactId?: string | null;
+}): RevenueEventInput {
+  const normalizedFrom = normalizeEmailAddresses([fromAddress])[0] || clean(fromAddress);
+  const sourceId = cleanMessageId(messageId) || clean(storedEmailMessageId) || null;
+
+  return {
+    eventType: "email_received",
+    title: subject ? `E-post mottatt: ${subject}` : "E-post mottatt",
+    description: normalizedFrom ? `Fra ${fromName ? `${fromName} <${normalizedFrom}>` : normalizedFrom}` : null,
+    contactId: contactId || null,
+    brandId,
+    sourceSystem: "email_inbox",
+    sourceType: "inbound_email",
+    sourceId,
+    actorType: "customer",
+    confidenceScore: contactId ? 88 : 66,
+    occurredAt: receivedAt,
+    dedupeKey: buildRevenueEventDedupeKey([
+      "email_inbox",
+      brandId,
+      sourceId,
+      normalizedFrom,
+      subject,
+    ]),
+    metadata: {
+      from_address: normalizedFrom,
+      from_name: fromName || null,
+      to_addresses: normalizeEmailAddresses(toAddresses),
+      subject,
+      body_preview: bodyPreview,
+      smtp_message_id: messageId || null,
+      thread_id: threadId || null,
+      stored_email_message_id: storedEmailMessageId || null,
+    },
+    createdBy: "api/email/inbox",
+  };
+}

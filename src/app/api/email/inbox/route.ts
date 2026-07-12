@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import { insertRevenueEvent } from "@/lib/revenue/events";
+import {
+  buildEmailReceivedRevenueEventInput,
+  normalizeEmailAddresses,
+} from "@/lib/revenue/email-events";
 import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
 import { decryptPassword } from "@/services/email/crypto";
 
@@ -155,7 +160,7 @@ export async function POST(req: NextRequest) {
         // Insert new emails
         let insertedCount = 0;
         for (const email of newEmails) {
-          const { error: insertError } = await supabase
+          const { data: insertedMessage, error: insertError } = await supabase
             .from("email_messages")
             .insert({
               brand_id,
@@ -170,11 +175,47 @@ export async function POST(req: NextRequest) {
               body_text: email.bodyText || null,
               body_html: email.bodyHtml || null,
               received_at: email.date.toISOString(),
-            });
+            })
+            .select("id")
+            .single();
 
           if (!insertError) {
             insertedCount++;
             existingIds.add(email.messageId); // prevent cross-account duplicates
+
+            const normalizedFrom = normalizeEmailAddresses([email.from.address])[0];
+            const { data: contact, error: contactError } = normalizedFrom
+              ? await supabase
+                  .from("contacts")
+                  .select("id, email, brand_id")
+                  .eq("brand_id", brand_id)
+                  .ilike("email", normalizedFrom)
+                  .order("updated_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle()
+              : { data: null, error: null };
+
+            if (contactError) {
+              console.warn("[Email Inbox] contact lookup for revenue event failed", contactError.message);
+            }
+
+            const eventResult = await insertRevenueEvent(supabase, buildEmailReceivedRevenueEventInput({
+              brandId: brand_id,
+              fromAddress: email.from.address,
+              fromName: email.from.name || null,
+              toAddresses: email.to.map((t) => t.address),
+              subject: email.subject,
+              bodyPreview: (email.bodyText || "").slice(0, 280),
+              receivedAt: email.date.toISOString(),
+              messageId: email.messageId,
+              threadId: email.threadId || email.messageId,
+              storedEmailMessageId: insertedMessage?.id || null,
+              contactId: contact?.id || null,
+            }));
+
+            if (!eventResult.ok && !eventResult.tableNotReady) {
+              console.warn("[Email Inbox] revenue event insert failed", eventResult.error);
+            }
           }
         }
 
