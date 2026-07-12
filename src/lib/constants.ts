@@ -121,6 +121,7 @@ export const SIDEBAR_NAV = {
     { label: "Executive Briefing", href: "/executive-briefing", icon: "ClipboardCheck" },
     { label: "Beslutningsjournal", href: "/operating-review", icon: "BookOpen" },
     { label: "Ukentlig ledelsesreview", href: "/weekly-management-review", icon: "BarChart3" },
+    { label: "Kontinuerlig forbedring", href: "/continuous-improvement", icon: "Wrench" },
     { label: "Revenue Command", href: "/revenue-command", icon: "Gauge" },
     { label: "Varsler & eskalering", href: "/internal-alerts", icon: "BellRing" },
     { label: "Mål & Ukeplan", href: "/goals", icon: "Flag" },
