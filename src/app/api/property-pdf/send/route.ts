@@ -23,6 +23,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { insertRevenueEvent } from "@/lib/revenue/events";
+import {
+  buildMessageSentRevenueEventInput,
+  normalizeEmailAddresses,
+} from "@/lib/revenue/email-events";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   sendEmail,
@@ -226,8 +231,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sentAt = new Date().toISOString();
+
     // Log outbound for the inbox view
-    await supabase.from("email_messages").insert({
+    const { data: sentMessage, error: sentMessageError } = await supabase.from("email_messages").insert({
       brand_id: brandId,
       message_id: result.messageId || null,
       thread_id: result.messageId || null,
@@ -239,8 +246,53 @@ export async function POST(req: NextRequest) {
       body_text: fallbackMessage,
       body_html: bodyHtml,
       is_read: true,
-      received_at: new Date().toISOString(),
-    });
+      received_at: sentAt,
+    }).select("id").single();
+
+    if (sentMessageError) {
+      console.warn("[property-pdf/send] outbound message log failed", sentMessageError.message);
+    }
+
+    const normalizedRecipients = normalizeEmailAddresses(toAddresses);
+    const { data: contact, error: contactError } = normalizedRecipients.length
+      ? await supabase
+          .from("contacts")
+          .select("id, email, brand_id")
+          .eq("brand_id", brandId)
+          .in("email", normalizedRecipients)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (contactError) {
+      console.warn("[property-pdf/send] contact lookup for revenue event failed", contactError.message);
+    }
+
+    const eventResult = await insertRevenueEvent(supabase, buildMessageSentRevenueEventInput({
+      brandId,
+      toAddresses,
+      subject,
+      bodyPreview: fallbackMessage.slice(0, 280),
+      sentAt,
+      messageId: result.messageId || null,
+      sentEmailMessageId: sentMessage?.id || null,
+      contactId: contact?.id || null,
+      sourceSystem: "property_pdf",
+      sourceType: "single_property_pdf",
+      createdBy: "api/property-pdf/send",
+      extraMetadata: {
+        property_id: property.id || propertyId,
+        property_ref: property.ref || null,
+        property_title: propertyTitle,
+        filename,
+        attachment_type: "single_property_pdf",
+      },
+    }));
+
+    if (!eventResult.ok && !eventResult.tableNotReady) {
+      console.warn("[property-pdf/send] revenue event insert failed", eventResult.error);
+    }
 
     return NextResponse.json({
       success: true,
