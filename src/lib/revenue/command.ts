@@ -5,7 +5,11 @@ import { buildCommissionCollection } from "@/lib/revenue/commissions";
 import { buildRevenueForecast } from "@/lib/revenue/forecast";
 import { buildRecoveryWorkspace } from "@/lib/revenue/recovery";
 import { buildServiceRevenueWorkspace } from "@/lib/revenue/service-revenue";
-import { buildRevenuePriority, sortRevenuePriorities } from "@/lib/revenue/today";
+import {
+  buildRevenuePriority,
+  sortRevenuePriorities,
+  type RevenueMemoryEventInput,
+} from "@/lib/revenue/today";
 
 export type CommandPriority = "CRITICAL" | "HIGH" | "MEDIUM";
 export type CommandState = "CRITICAL" | "ATTENTION" | "HEALTHY" | "INFO";
@@ -20,6 +24,7 @@ export type CommandSource =
 
 export interface RevenueCommandInput {
   contacts: any[];
+  revenueEventsByContactId?: Record<string, RevenueMemoryEventInput[]>;
   profiles?: any[];
   shortlists?: any[];
   presentations?: any[];
@@ -145,8 +150,11 @@ function approvalActions(items: ApprovalItem[]): CommandAction[] {
 
 export function buildRevenueCommandCenter(input: RevenueCommandInput, now = new Date()): RevenueCommandCenter {
   const contacts = input.contacts || [];
+  const eventsByContactId = input.revenueEventsByContactId || {};
   const today = sortRevenuePriorities(
-    contacts.map((contact) => buildRevenuePriority(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildRevenuePriority>>[],
+    contacts
+      .map((contact) => buildRevenuePriority(contact, now, { revenueEvents: eventsByContactId[String(contact.id || "")] || [] }))
+      .filter(Boolean) as NonNullable<ReturnType<typeof buildRevenuePriority>>[],
   );
   const closing = sortClosingOpportunities(
     contacts.map((contact) => buildClosingOpportunity(contact, now)).filter(Boolean) as NonNullable<ReturnType<typeof buildClosingOpportunity>>[],

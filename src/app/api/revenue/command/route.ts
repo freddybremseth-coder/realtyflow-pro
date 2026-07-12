@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildRevenueCommandCenter } from "@/lib/revenue/command";
+import type { RevenueMemoryEventInput } from "@/lib/revenue/today";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +16,10 @@ function getSupabase() {
 
 function optionalTableError(message = "") {
   return /schema cache|does not exist|not find the table|relation .* does not exist/i.test(message);
+}
+
+function missingRevenueEventsTable(message = "") {
+  return /revenue_events|schema cache|does not exist|relation/i.test(message);
 }
 
 function optionalRows(result: PromiseSettledResult<any>, table: string, warnings: string[]) {
@@ -58,9 +63,34 @@ export async function GET(request: NextRequest) {
   const shortlists = optionalRows(results[2], "lead_property_shortlists", warnings);
   const presentations = optionalRows(results[3], "lead_customer_presentations", warnings);
   const messageDrafts = optionalRows(results[4], "lead_customer_message_drafts", warnings);
+  const revenueEventsByContactId: Record<string, RevenueMemoryEventInput[]> = {};
+
+  const contactIds = contacts.map((contact: any) => String(contact.id || "")).filter(Boolean);
+  if (contactIds.length) {
+    const revenueEventsResult = await supabase
+      .from("revenue_events")
+      .select("id,event_type,title,description,contact_id,actor_type,occurred_at,metadata,created_at")
+      .in("contact_id", contactIds)
+      .order("occurred_at", { ascending: false })
+      .limit(2000);
+
+    if (revenueEventsResult.error) {
+      if (!missingRevenueEventsTable(revenueEventsResult.error.message || "")) {
+        warnings.push(`revenue_events: ${revenueEventsResult.error.message}`);
+      }
+    } else {
+      for (const event of revenueEventsResult.data || []) {
+        const contactId = String(event.contact_id || "");
+        if (!contactId) continue;
+        revenueEventsByContactId[contactId] ||= [];
+        revenueEventsByContactId[contactId].push(event);
+      }
+    }
+  }
 
   const command = buildRevenueCommandCenter({
     contacts,
+    revenueEventsByContactId,
     profiles,
     shortlists,
     presentations,
