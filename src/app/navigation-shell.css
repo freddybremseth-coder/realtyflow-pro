@@ -10,4 +10,17 @@
   html[data-realtyflow-sidebar="collapsed"] .app-shell-main {
     margin-left: 4rem;
   }
+
+  html[data-realtyflow-sidebar="collapsed"] aside > div > div:first-child {
+    justify-content: center;
+  }
+
+  html[data-realtyflow-sidebar="collapsed"] aside > div > div:first-child > div:first-child {
+    display: none;
+  }
+
+  html[data-realtyflow-sidebar="collapsed"] aside > div > div:first-child > button {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
