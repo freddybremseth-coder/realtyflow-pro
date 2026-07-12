@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+} from "@/lib/revenue/events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -217,6 +221,41 @@ export async function POST(request: NextRequest) {
     created_at: now,
     updated_at: now,
   }).then(() => null);
+
+  const eventResult = await insertRevenueEvent(supabase, {
+    eventType: "meeting_booked",
+    title: `Ny booking: ${name}`,
+    description: `${clean(payload.serviceTitle, 180)}${payload.date && payload.time ? ` · ${payload.date} ${payload.time}` : ""}`,
+    contactId: contact.id,
+    brandId,
+    sourceSystem: "booking_leads",
+    sourceType: "appointment_app",
+    sourceId: payload.id || lead?.id || contact.id,
+    actorType: "customer",
+    confidenceScore: 95,
+    revenueImpactEur: value || null,
+    occurredAt: payload.createdAt || now,
+    dedupeKey: payload.id ? buildRevenueEventDedupeKey(["booking_leads", brandId, payload.id]) : null,
+    metadata: {
+      email,
+      phone,
+      service_id: payload.serviceId,
+      service_title: payload.serviceTitle,
+      date: payload.date,
+      time: payload.time,
+      duration: payload.duration,
+      price: payload.price,
+      paid: Boolean(payload.paid),
+      is_business_lead: isBusinessLead,
+      lead_id: lead?.id || null,
+      answers: payload.answers || {},
+    },
+    createdBy: "api/public/booking-leads",
+  });
+
+  if (!eventResult.ok && !eventResult.tableNotReady) {
+    console.warn("[booking-leads] revenue event insert failed", eventResult.error);
+  }
 
   return json({ success: true, contact, lead: lead || null });
 }

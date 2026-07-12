@@ -3,9 +3,49 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildRevenueEventDedupeKey,
+  insertRevenueEvent,
   normalizeRevenueEvent,
   summarizeRevenueEvents,
 } from "@/lib/revenue/events";
+
+function supabaseInsertStub(args: {
+  insertResult: { data?: unknown; error?: any };
+  existingResult?: { data?: unknown; error?: any };
+}) {
+  const calls: Array<{ method: string; value?: unknown }> = [];
+  const builder = {
+    insert(value: unknown) {
+      calls.push({ method: "insert", value });
+      return builder;
+    },
+    select(value: unknown) {
+      calls.push({ method: "select", value });
+      return builder;
+    },
+    single() {
+      calls.push({ method: "single" });
+      return Promise.resolve(args.insertResult);
+    },
+    eq(_column: string, value: unknown) {
+      calls.push({ method: "eq", value });
+      return builder;
+    },
+    maybeSingle() {
+      calls.push({ method: "maybeSingle" });
+      return Promise.resolve(args.existingResult || { data: null, error: null });
+    },
+  };
+
+  return {
+    calls,
+    client: {
+      from(table: string) {
+        calls.push({ method: "from", value: table });
+        return builder;
+      },
+    },
+  };
+}
 
 test("normalizeRevenueEvent creates a safe database payload", () => {
   const payload = normalizeRevenueEvent({
@@ -74,4 +114,54 @@ test("revenue events migration includes RLS, idempotency and non-anon grants", (
   assert.match(migration, /FOR ALL TO authenticated/i);
   assert.match(migration, /GRANT SELECT, INSERT, UPDATE ON revenue_events TO authenticated, service_role/i);
   assert.doesNotMatch(migration, /GRANT .*revenue_events TO anon/i);
+});
+
+test("insertRevenueEvent inserts normalized payloads", async () => {
+  const mock = supabaseInsertStub({
+    insertResult: { data: { id: "event-1" }, error: null },
+  });
+
+  const result = await insertRevenueEvent(mock.client, {
+    eventType: "lead_created",
+    contactId: "11111111-1111-1111-1111-111111111111",
+    dedupeKey: "lead-1",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.duplicate, false);
+  assert.deepEqual(result.event, { id: "event-1" });
+  assert.equal(mock.calls[0].value, "revenue_events");
+  assert.equal((mock.calls.find((call) => call.method === "insert")?.value as any).event_type, "lead_created");
+});
+
+test("insertRevenueEvent returns existing row on duplicate dedupe key", async () => {
+  const mock = supabaseInsertStub({
+    insertResult: { data: null, error: { code: "23505", message: "duplicate key" } },
+    existingResult: { data: { id: "existing-event" }, error: null },
+  });
+
+  const result = await insertRevenueEvent(mock.client, {
+    eventType: "meeting_booked",
+    dedupeKey: "booking:123",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.duplicate, true);
+  assert.deepEqual(result.event, { id: "existing-event" });
+});
+
+test("insertRevenueEvent reports tableNotReady without throwing", async () => {
+  const mock = supabaseInsertStub({
+    insertResult: {
+      data: null,
+      error: { message: "relation revenue_events does not exist" },
+    },
+  });
+
+  const result = await insertRevenueEvent(mock.client, {
+    eventType: "lead_created",
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.tableNotReady, true);
 });

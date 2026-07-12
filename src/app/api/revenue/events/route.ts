@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import {
   isRevenueEventType,
+  insertRevenueEvent,
   normalizeRevenueEvent,
   summarizeRevenueEvents,
   type RevenueEventInput,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Partial<RevenueEventInput>;
 
   try {
-    const payload = normalizeRevenueEvent({
+    const input = {
       eventType: body.eventType as RevenueEventInput["eventType"],
       title: body.title,
       description: body.description,
@@ -98,32 +99,20 @@ export async function POST(request: NextRequest) {
       dedupeKey: body.dedupeKey,
       metadata: body.metadata,
       createdBy: body.createdBy,
-    });
+    } satisfies RevenueEventInput;
 
-    const { data, error } = await supabase
-      .from("revenue_events")
-      .insert(payload)
-      .select("*")
-      .single();
+    // Validate early so bad client payloads still return 400.
+    normalizeRevenueEvent(input);
+    const result = await insertRevenueEvent(supabase, input);
 
-    if (error) {
-      if (error.code === "23505" && payload.dedupe_key) {
-        const existing = await supabase
-          .from("revenue_events")
-          .select("*")
-          .eq("dedupe_key", payload.dedupe_key)
-          .maybeSingle();
-        if (!existing.error && existing.data) {
-          return NextResponse.json({ event: existing.data, duplicate: true });
-        }
+    if (!result.ok) {
+      if (result.tableNotReady || tableMissing(result.error)) {
+        return NextResponse.json({ error: result.error, tableNotReady: true }, { status: 503 });
       }
-      if (tableMissing(error.message)) {
-        return NextResponse.json({ error: error.message, tableNotReady: true }, { status: 503 });
-      }
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: result.error || "Could not create revenue event" }, { status: 500 });
     }
 
-    return NextResponse.json({ event: data, duplicate: false }, { status: 201 });
+    return NextResponse.json({ event: result.event, duplicate: Boolean(result.duplicate) }, { status: result.duplicate ? 200 : 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not create revenue event" },
