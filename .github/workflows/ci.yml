@@ -70,6 +70,8 @@ jobs:
         run: npm run test:weekly-management-review
       - name: Continuous Improvement Register tests
         run: npm run test:continuous-improvement
+      - name: Navigation Information Architecture tests
+        run: npm run test:navigation
       - name: Build
         id: next_build
         shell: bash
