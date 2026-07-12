@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+} from "@/lib/revenue/events";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -102,6 +106,42 @@ export async function POST(request: NextRequest) {
 
   const { data: contact, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const eventResult = await insertRevenueEvent(supabase, {
+    eventType: existing?.id ? "contact_updated" : "profile_created",
+    title: "Kunden oppdaterte boligønsker på Min side",
+    description: summary.slice(0, 500),
+    contactId: contact.id,
+    brandId: contact.brand_id || "zeneco",
+    sourceSystem: "portal",
+    sourceType: "preferences_updated",
+    sourceId: signal.id,
+    actorType: "customer",
+    confidenceScore: 94,
+    occurredAt: now,
+    dedupeKey: buildRevenueEventDedupeKey([
+      "portal",
+      "preferences_updated",
+      contact.id,
+      signal.id,
+    ]),
+    metadata: {
+      email,
+      preferences,
+      summary,
+      signal_id: signal.id,
+      previous_pipeline_status: existing?.pipeline_status || null,
+      pipeline_status: pipelineStatus,
+      next_followup: followupAt,
+      property_interest: payload.property_interest,
+      pipeline_value: payload.pipeline_value,
+    },
+    createdBy: "api/portal/preferences",
+  });
+
+  if (!eventResult.ok && !eventResult.tableNotReady) {
+    console.warn("[portal/preferences] revenue event insert failed", eventResult.error);
+  }
 
   await supabase
     .from("portal_users")
