@@ -23,10 +23,15 @@ test("owner navigation is split into focused work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
-    ["workspace", "sales", "deals", "management", "properties", "marketing", "platform", "admin"],
+    ["workspace", "customers", "revenue", "properties", "growth", "system"],
   );
   assert.equal(sections.find((section) => section.id === "workspace")?.items.length, 6);
-  assert.equal(sections.find((section) => section.id === "management")?.items.some((item) => item.href === "/continuous-improvement"), true);
+  assert.deepEqual(
+    sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
+    ["/today", "/customers", "/execution", "/internal-alerts", "/approvals", "/communications"],
+  );
+  assert.equal(sections.find((section) => section.id === "revenue")?.items.some((item) => item.href === "/continuous-improvement"), true);
+  assert.equal(sections.find((section) => section.id === "growth")?.items.some((item) => item.href === "/demosites"), true);
 });
 
 test("role navigation excludes inaccessible owner and finance tools", () => {
@@ -41,8 +46,8 @@ test("role navigation excludes inaccessible owner and finance tools", () => {
 test("active section follows nested routes", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.equal(activeNavigationSection("/customers/abc-123", sections), "workspace");
-  assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "deals");
-  assert.equal(activeNavigationSection("/continuous-improvement", sections), "management");
+  assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
+  assert.equal(activeNavigationSection("/continuous-improvement", sections), "revenue");
 });
 
 test("menu search filters labels and routes without changing access", () => {
@@ -52,7 +57,7 @@ test("menu search filters labels and routes without changing access", () => {
 
   const closing = filterNavigationSections(sections, "commission");
   assert.equal(closing.length, 1);
-  assert.equal(closing[0]?.id, "deals");
+  assert.equal(closing[0]?.id, "revenue");
   assert.deepEqual(closing[0]?.items.map((item) => item.href), ["/commissions"]);
 });
 

@@ -4,13 +4,11 @@ import { canSeeNavHref, type AccessRole } from "@/lib/access-control";
 export type NavigationItem = { label: string; href: string; icon: string };
 export type NavigationSectionId =
   | "workspace"
-  | "sales"
-  | "deals"
-  | "management"
+  | "customers"
+  | "revenue"
   | "properties"
-  | "marketing"
-  | "platform"
-  | "admin";
+  | "growth"
+  | "system";
 
 export interface NavigationSection {
   id: NavigationSectionId;
@@ -37,50 +35,43 @@ const GROUPS: Array<{
 }> = [
   {
     id: "workspace",
-    label: "Arbeidsdag",
+    label: "Dagens arbeid",
     icon: "PanelsTopLeft",
     hrefs: [
-      "/executive-briefing",
       "/today",
       "/customers",
       "/execution",
       "/internal-alerts",
-      "/revenue-command",
+      "/approvals",
+      "/communications",
     ],
   },
   {
-    id: "sales",
+    id: "customers",
     label: "Salg & kunder",
     icon: "Users",
     hrefs: [
       "/pipeline",
       "/lead-intelligence",
-      "/approvals",
-      "/communications",
       "/recovery",
       "/after-sales",
+      "/booking-admin",
+      "/calendar",
     ],
   },
   {
-    id: "deals",
-    label: "Closing & inntekt",
+    id: "revenue",
+    label: "Revenue OS",
     icon: "Handshake",
     hrefs: [
+      "/revenue-command",
       "/closing",
       "/closing-pack",
       "/commissions",
       "/forecast",
       "/service-revenue",
       "/team-workload",
-      "/calendar",
-      "/booking-admin",
-    ],
-  },
-  {
-    id: "management",
-    label: "Ledelse & analyse",
-    icon: "BarChart3",
-    hrefs: [
+      "/executive-briefing",
       "/goals",
       "/monthly-close",
       "/attribution",
@@ -94,7 +85,7 @@ const GROUPS: Array<{
   },
   {
     id: "properties",
-    label: "Eiendom",
+    label: "Eiendom & dokumenter",
     icon: "Building2",
     hrefs: [
       "/inventory",
@@ -106,8 +97,8 @@ const GROUPS: Array<{
     ],
   },
   {
-    id: "marketing",
-    label: "Marked & vekst",
+    id: "growth",
+    label: "Vekst, innhold & plattform",
     icon: "Megaphone",
     hrefs: [
       "/content-studio",
@@ -122,13 +113,6 @@ const GROUPS: Array<{
       "/growth-hub",
       "/reports",
       "/analytics",
-    ],
-  },
-  {
-    id: "platform",
-    label: "Plattform & automasjon",
-    icon: "Boxes",
-    hrefs: [
       "/saas",
       "/demosites",
       "/revenue-engine",
@@ -139,7 +123,7 @@ const GROUPS: Array<{
     ],
   },
   {
-    id: "admin",
+    id: "system",
     label: "System & admin",
     icon: "Settings",
     hrefs: [
@@ -156,12 +140,12 @@ const GROUPS: Array<{
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
   OWNER: [
-    "/executive-briefing",
     "/today",
     "/customers",
     "/execution",
+    "/revenue-command",
     "/internal-alerts",
-    "/monthly-close",
+    "/approvals",
   ],
   SALES: [
     "/today",
@@ -172,19 +156,19 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
     "/recovery",
   ],
   CLOSING: [
+    "/today",
     "/closing",
     "/closing-pack",
     "/execution",
     "/customers",
-    "/internal-alerts",
-    "/commissions",
+    "/approvals",
   ],
   FINANCE: [
+    "/revenue-command",
     "/monthly-close",
     "/commissions",
+    "/forecast",
     "/goals",
-    "/closing",
-    "/audit-log",
     "/internal-alerts",
   ],
   MARKETING: [
@@ -196,20 +180,20 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
     "/executive-briefing",
   ],
   KEYHOLDING: [
+    "/today",
     "/service-revenue",
     "/execution",
     "/customers",
     "/communications",
     "/internal-alerts",
-    "/today",
   ],
   VIEWER: [
-    "/executive-briefing",
     "/revenue-command",
+    "/today",
     "/customers",
+    "/executive-briefing",
     "/monthly-close",
     "/forecast",
-    "/weekly-management-review",
   ],
 };
 
