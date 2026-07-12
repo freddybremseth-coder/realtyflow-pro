@@ -22,6 +22,7 @@
     "test:recovery": "tsx --test src/lib/revenue/recovery.test.ts",
     "test:service-revenue": "tsx --test src/lib/revenue/service-revenue.test.ts",
     "test:revenue-command": "tsx --test src/lib/revenue/command.test.ts",
+    "test:revenue-events": "tsx --test src/lib/revenue/events.test.ts",
     "test:revenue-goals": "tsx --test src/lib/revenue/goals.test.ts",
     "test:attribution": "tsx --test src/lib/revenue/attribution.test.ts",
     "test:revenue-data-health": "tsx --test src/lib/revenue/data-quality.test.ts",
