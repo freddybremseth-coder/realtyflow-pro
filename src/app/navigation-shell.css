@@ -1,0 +1,13 @@
+.app-shell-main {
+  transition: margin-left 300ms ease;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-main {
+    margin-left: 16rem;
+  }
+
+  html[data-realtyflow-sidebar="collapsed"] .app-shell-main {
+    margin-left: 4rem;
+  }
+}
