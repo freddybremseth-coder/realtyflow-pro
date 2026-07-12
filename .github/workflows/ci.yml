@@ -66,6 +66,8 @@ jobs:
         run: npm run test:executive-briefing
       - name: Operating Review and Decision Journal tests
         run: npm run test:operating-review
+      - name: Weekly Management Review tests
+        run: npm run test:weekly-management-review
       - name: Build
         id: next_build
         shell: bash
