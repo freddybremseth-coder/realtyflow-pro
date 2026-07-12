@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import { insertRevenueEvent } from "@/lib/revenue/events";
+import {
+  buildMessageSentRevenueEventInput,
+  normalizeEmailAddresses,
+} from "@/lib/revenue/email-events";
 import { decryptPassword } from "@/services/email/crypto";
 import { sendEmail, type SmtpConfig, type OutgoingEmail } from "@/services/email/smtp-sender";
 
@@ -113,13 +118,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sentAt = new Date().toISOString();
+
     // Update draft status if sending from a draft
     if (draftId) {
       await supabase
         .from("email_drafts")
         .update({
           status: "sent",
-          sent_at: new Date().toISOString(),
+          sent_at: sentAt,
         })
         .eq("id", draftId);
     }
@@ -128,12 +135,12 @@ export async function POST(req: NextRequest) {
     if (emailMessageId) {
       await supabase
         .from("email_messages")
-        .update({ replied_at: new Date().toISOString() })
+        .update({ replied_at: sentAt })
         .eq("id", emailMessageId);
     }
 
     // Save the sent email as an outbound message
-    await supabase.from("email_messages").insert({
+    const { data: sentMessage, error: sentMessageError } = await supabase.from("email_messages").insert({
       brand_id: brandId,
       message_id: result.messageId || null,
       thread_id: inReplyTo || result.messageId || null,
@@ -145,8 +152,45 @@ export async function POST(req: NextRequest) {
       body_text: bodyText,
       body_html: bodyHtml || null,
       is_read: true,
-      received_at: new Date().toISOString(),
-    });
+      received_at: sentAt,
+    }).select("id").single();
+
+    if (sentMessageError) {
+      console.warn("[Email Send] outbound message log failed", sentMessageError.message);
+    }
+
+    const normalizedRecipients = normalizeEmailAddresses(toAddresses);
+    const { data: contact, error: contactError } = normalizedRecipients.length
+      ? await supabase
+          .from("contacts")
+          .select("id, email, brand_id")
+          .eq("brand_id", brandId)
+          .in("email", normalizedRecipients)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (contactError) {
+      console.warn("[Email Send] contact lookup for revenue event failed", contactError.message);
+    }
+
+    const eventResult = await insertRevenueEvent(supabase, buildMessageSentRevenueEventInput({
+      brandId,
+      toAddresses,
+      subject,
+      bodyPreview: bodyText.slice(0, 280),
+      sentAt,
+      messageId: result.messageId || null,
+      draftId: draftId || null,
+      sentEmailMessageId: sentMessage?.id || null,
+      originalEmailMessageId: emailMessageId || null,
+      contactId: contact?.id || null,
+    }));
+
+    if (!eventResult.ok && !eventResult.tableNotReady) {
+      console.warn("[Email Send] revenue event insert failed", eventResult.error);
+    }
 
     return NextResponse.json({
       success: true,
