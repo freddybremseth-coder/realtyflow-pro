@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
 
