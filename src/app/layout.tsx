@@ -47,7 +47,7 @@ export default function RootLayout({
         ) : (
           <>
             <Sidebar />
-            <main className="lg:ml-60 min-h-screen p-6 pt-16 lg:pt-6">
+            <main className="app-shell-main min-h-screen p-6 pt-16 lg:pt-6">
               {children}
             </main>
             <ChatWidget
