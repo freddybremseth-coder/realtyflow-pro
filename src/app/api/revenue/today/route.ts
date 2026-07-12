@@ -5,6 +5,7 @@ import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import {
   buildRevenuePriority,
   sortRevenuePriorities,
+  type RevenueMemoryEventInput,
   type RevenuePriorityItem,
 } from "@/lib/revenue/today";
 
@@ -72,6 +73,10 @@ function priorityWeight(value: string) {
   return 1;
 }
 
+function missingRevenueEventsTable(message = "") {
+  return /revenue_events|schema cache|does not exist|relation/i.test(message);
+}
+
 export async function GET(request: NextRequest) {
   const fallback = emptyPayload();
   const adminError = await requireAdminApi(request, fallback);
@@ -108,9 +113,36 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date();
+  const contacts = contactsResult.data || [];
+  const contactIds = contacts.map((contact) => String(contact.id || "")).filter(Boolean);
+  const eventsByContact = new Map<string, RevenueMemoryEventInput[]>();
+
+  if (contactIds.length) {
+    const eventsResult = await supabase
+      .from("revenue_events")
+      .select("id,event_type,title,description,contact_id,actor_type,occurred_at,metadata,created_at")
+      .in("contact_id", contactIds)
+      .order("occurred_at", { ascending: false })
+      .limit(1000);
+
+    if (eventsResult.error) {
+      if (!missingRevenueEventsTable(eventsResult.error.message)) {
+        warnings.push(`Revenue memory: ${eventsResult.error.message}`);
+      }
+    } else {
+      for (const event of eventsResult.data || []) {
+        const contactId = String(event.contact_id || "");
+        if (!contactId) continue;
+        const bucket = eventsByContact.get(contactId) || [];
+        bucket.push(event);
+        eventsByContact.set(contactId, bucket);
+      }
+    }
+  }
+
   const priorities = sortRevenuePriorities(
-    (contactsResult.data || [])
-      .map((contact) => buildRevenuePriority(contact, now))
+    contacts
+      .map((contact) => buildRevenuePriority(contact, now, { revenueEvents: eventsByContact.get(String(contact.id || "")) || [] }))
       .filter((item): item is RevenuePriorityItem => Boolean(item)),
   );
 

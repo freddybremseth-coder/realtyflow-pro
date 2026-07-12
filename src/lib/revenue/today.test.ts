@@ -100,6 +100,29 @@ test("recent inbound email becomes the recommended next action", () => {
   assert.match(action, /svar personlig/i);
 });
 
+test("priority cards can use revenue memory for recommended action", () => {
+  const item = buildRevenuePriority(
+    {
+      id: "lead-memory",
+      email: "buyer@example.com",
+      pipeline_status: "CONTACT",
+      next_followup: "2026-07-15T09:00:00.000Z",
+    },
+    NOW,
+    {
+      revenueEvents: [{
+        event_type: "email_received",
+        occurred_at: "2026-07-10T12:00:00.000Z",
+        metadata: { body_preview: "Vi er fortsatt interessert." },
+      }],
+    },
+  );
+
+  assert.ok(item);
+  assert.match(item.recommendedAction, /Kunden har svart nylig/i);
+});
+
+
 test("booked meeting memory prepares the advisor for the call", () => {
   const action = recommendActionFromRevenueMemory(
     [{
