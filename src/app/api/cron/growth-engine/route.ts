@@ -46,18 +46,9 @@ export async function GET(request: NextRequest) {
     // 2. Run a growth cycle for ALL brands
     const actions = await engine.runCycle();
 
-    // 3. Save actions to Supabase
-    if (actions.length > 0) {
-      const { error: insertError } = await supabase
-        .from('growth_actions')
-        .insert(actions);
-
-      if (insertError) {
-        console.error('[GrowthCron] Failed to save actions:', insertError);
-      }
-    }
-
-    // 4. Pick top 3 actions by priority and mark as 'ready'
+    // 3. Pick top 3 actions by priority and mark as 'ready'.
+    // runCycle() owns persistence when constructed with Supabase, so this route
+    // must not insert the same generated actions again.
     const topActions = [...actions]
       .sort((a, b) => b.priority - a.priority)
       .slice(0, 3);
@@ -71,7 +62,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 5. Run analyzeAndLearn() to update strategy
+    // 4. Run analyzeAndLearn() to update strategy
     const analysis = await engine.analyzeAndLearn();
 
     // Save analysis results as a strategy snapshot
@@ -95,7 +86,7 @@ export async function GET(request: NextRequest) {
 
     const duration = Date.now() - startTime;
 
-    // 6. Return summary
+    // 5. Return summary
     return NextResponse.json({
       success: true,
       summary: {

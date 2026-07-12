@@ -57,6 +57,14 @@ export interface LeadMagnet {
   status: 'draft' | 'active' | 'paused';
 }
 
+export interface RunGrowthCycleOptions {
+  /**
+   * Persist generated actions through the engine-owned Supabase client.
+   * Defaults to true when the engine was constructed with Supabase.
+   */
+  persist?: boolean;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ActionType =
@@ -130,7 +138,10 @@ Svar ALLTID i gyldig JSON-format.`;
 
   // ─── Main Cycle ───────────────────────────────────────────────────────────
 
-  async runCycle(brands?: string[]): Promise<GrowthAction[]> {
+  async runCycle(
+    brands?: string[],
+    options: RunGrowthCycleOptions = {}
+  ): Promise<GrowthAction[]> {
     const targetBrands = brands
       ? BRANDS.filter((b) => brands.includes(b.id))
       : BRANDS;
@@ -150,8 +161,10 @@ Svar ALLTID i gyldig JSON-format.`;
     // 3. Execute/prepare actions
     const preparedActions = await this.prepareActions(actions);
 
-    // 4. Save to Supabase
-    if (this.supabase) {
+    // 4. Save to Supabase. Keep persistence owned by the engine so API routes
+    // and cron jobs do not accidentally insert the same generated actions twice.
+    const shouldPersist = options.persist ?? true;
+    if (this.supabase && shouldPersist) {
       await this.saveActions(preparedActions);
     }
 
@@ -1027,7 +1040,7 @@ Gi meg JSON:
     }
 
     const performance = await this.analyzeBrandPerformance(brand);
-    const actions = await this.runCycle([brand]);
+    const actions = await this.runCycle([brand], { persist: false });
 
     return {
       brand,

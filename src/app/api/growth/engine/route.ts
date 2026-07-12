@@ -204,17 +204,8 @@ export async function POST(request: NextRequest) {
           targetBrands = targetBrands.slice(0, 2);
         }
         const actions = await engine.runCycle(targetBrands);
-
-        // Save to Supabase if available
-        if (supabase && actions.length > 0) {
-          const { error } = await supabase
-            .from('growth_actions')
-            .insert(actions);
-
-          if (error) {
-            console.error('[GrowthEngine API] Save error:', error);
-          }
-        }
+        // runCycle() owns persistence when the engine has a Supabase client.
+        // Do not insert actions here, or manual runs will duplicate records.
 
         return NextResponse.json({
           success: true,
