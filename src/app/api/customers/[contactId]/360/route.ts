@@ -5,6 +5,7 @@ import {
   buildContactInteractionEvents,
   buildCustomerProfileCompleteness,
   buildCustomerTimeline,
+  buildRevenueTimelineEvents,
   type CustomerTimelineEvent,
 } from "@/lib/customer-360";
 import { recommendRevenueAction } from "@/lib/revenue/today";
@@ -117,9 +118,15 @@ export async function GET(
       : supabase.from("portal_messages").select("*").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(100),
     supabase.from("portal_users").select("*").eq("contact_id", contactId).maybeSingle(),
     supabase.from("work_items").select("*").order("created_at", { ascending: false }).limit(250),
+    supabase
+      .from("revenue_events")
+      .select("id,event_type,title,description,contact_id,brand_id,source_system,source_type,source_id,actor_type,confidence_score,revenue_impact_eur,occurred_at,metadata,created_at")
+      .eq("contact_id", contactId)
+      .order("occurred_at", { ascending: false })
+      .limit(150),
   ];
 
-  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled] = await Promise.allSettled(queries);
+  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled, revenueEventsSettled] = await Promise.allSettled(queries);
 
   const criteria = fulfilledData(criteriaSettled, "buyer_profile_criteria", warnings);
   const shortlists = fulfilledData(shortlistsSettled, "lead_property_shortlists", warnings);
@@ -127,6 +134,7 @@ export async function GET(
   const drafts = fulfilledData(draftsSettled, "lead_customer_message_drafts", warnings);
   const portalMessages = fulfilledData(portalSettled, "portal_messages", warnings);
   const allWorkItems = fulfilledData(workItemsSettled, "work_items", warnings);
+  const revenueEvents = fulfilledData(revenueEventsSettled, "revenue_events", warnings);
 
   let portalUser = null;
   if (portalUserSettled.status === "fulfilled") {
@@ -172,6 +180,7 @@ export async function GET(
     presentations.map((row: any) => event("presentation", row, `Presentasjon ${row.status}`, row.title)).filter(Boolean) as CustomerTimelineEvent[],
     drafts.map((row: any) => event("draft", row, `Meldingsutkast ${row.status}`, row.subject)).filter(Boolean) as CustomerTimelineEvent[],
     workItems.map((row: any) => event("task", row, `Oppgave: ${row.title}`, row.next_action || row.description)).filter(Boolean) as CustomerTimelineEvent[],
+    buildRevenueTimelineEvents(revenueEvents),
   ]).slice(0, 150);
 
   return NextResponse.json({
@@ -189,6 +198,7 @@ export async function GET(
     portalUser,
     portalMessages,
     workItems,
+    revenueEvents,
     timeline,
     warnings,
   });

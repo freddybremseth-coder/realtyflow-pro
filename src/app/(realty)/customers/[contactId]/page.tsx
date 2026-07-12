@@ -44,6 +44,7 @@ interface Customer360Payload {
   portalUser: Record<string, any> | null;
   portalMessages: Array<Record<string, any>>;
   workItems: Array<Record<string, any>>;
+  revenueEvents: Array<Record<string, any>>;
   timeline: Array<{
     id: string;
     kind: string;
@@ -126,6 +127,7 @@ function timelineIcon(kind: string) {
   if (kind === "shortlist") return ListChecks;
   if (kind === "presentation" || kind === "draft") return FileText;
   if (kind === "task") return ClipboardCheck;
+  if (kind === "revenue") return CircleDollarSign;
   return Clock3;
 }
 
@@ -275,7 +277,7 @@ export default function Customer360Page({ params }: { params: { contactId: strin
       <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-5">
         <div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold text-white">Shortlists og presentasjoner</h2><p className="text-sm text-slate-500">Kun interne og godkjente Lead Intelligence-data.</p></div><ListChecks className="text-emerald-300" /></div>
         {data.shortlists.length === 0 ? <p className="mt-4 text-sm text-slate-500">Ingen shortlist er lagret for kunden.</p> : <div className="mt-4 grid gap-4 lg:grid-cols-2">{data.shortlists.map((shortlist) => <article key={shortlist.id} className="rounded-lg border border-slate-700 bg-slate-950/40 p-4"><div className="flex items-center justify-between"><strong className="text-white">{shortlist.title || "Boligshortlist"}</strong><span className="text-xs text-slate-500">{shortlist.status}</span></div><div className="mt-3 space-y-2">{shortlist.items.slice(0, 6).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate text-slate-300">{item.rank}. {item.property_title || item.property_reference || "Bolig"}</span><span className="shrink-0 text-slate-500">{item.property_price ? money(item.property_price) : `${item.score || 0}/100`}</span></div>)}</div></article>)}</div>}
-        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500"><span>{data.presentations.length} presentasjoner</span><span>·</span><span>{data.messageDrafts.length} meldingsutkast</span><span>·</span><span>{data.portalMessages.length} portal-meldinger</span></div>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500"><span>{data.presentations.length} presentasjoner</span><span>·</span><span>{data.messageDrafts.length} meldingsutkast</span><span>·</span><span>{data.portalMessages.length} portal-meldinger</span><span>·</span><span>{data.revenueEvents.length} AI-/revenue-minner</span></div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
