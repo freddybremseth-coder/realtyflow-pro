@@ -32,7 +32,10 @@ export async function POST(req: NextRequest) {
     off_limits = null,
     total_creatives = 50,
     aspect_ratios = ["1:1", "9:16"],
+    image_provider = "replicate",
   } = body || {};
+
+  const safeProvider = image_provider === "openart" ? "openart" : "replicate";
 
   const safeTotal = Math.min(Math.max(Number(total_creatives) || 50, 5), 200);
 
@@ -62,6 +65,7 @@ export async function POST(req: NextRequest) {
       total_creatives: safeTotal,
       estimated_cost_usd: safeTotal * 0.04,
       aspect_ratios,
+      image_provider: safeProvider,
     })
     .select()
     .single();

@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { uploadThumbnail } from "@/services/storage/media";
+import {
+  OpenArtError,
+  downloadOpenArtAsset,
+  openArtGenerateImage,
+  waitForOpenArtCreation,
+} from "@/services/integrations/openart-client";
 
-// ─── Image Generation API using Gemini 2.5 Flash Image ──────────────
+// ─── Image Generation API ────────────────────────────────────────────
 // POST /api/image-generate
-// Body: { prompt, style?, aspectRatio?, brand? }
+// Body: { prompt, style?, aspectRatio?, brand?, provider? }
+//   provider: "gemini" (default) | "openart" (opt-in, uses OpenArt credits)
 // Returns: { imageUrl: string (base64 data URL), revisedPrompt: string }
+
+export const maxDuration = 300;
 
 const STYLE_PROMPTS: Record<string, string> = {
   photo: "Photorealistic, high-quality DSLR photography, natural lighting, sharp details, 8k",
@@ -80,14 +89,6 @@ async function persistGeneratedImage(imageBase64: string, mimeType: string, bran
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY ikke konfigurert" },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
     const {
       prompt,
@@ -98,12 +99,23 @@ export async function POST(req: NextRequest) {
       instructions = "",
       persist = false,
       bankKind = "image",
+      provider = "gemini",
+      openartModel = "",
+      openartResolution = "1K",
     } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json(
         { error: "Mangler prompt" },
         { status: 400 }
+      );
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (provider !== "openart" && !apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY ikke konfigurert" },
+        { status: 500 }
       );
     }
 
@@ -117,6 +129,63 @@ export async function POST(req: NextRequest) {
       ? "Do not invent new label text. Keep existing readable product label details as close as possible."
       : "No text, letters, words, or watermarks in the image.";
     const enhancedPrompt = `${variantInstruction}. ${styleHint}. ${ratioHint}. ${brandHint} ${noTextInstruction}`.trim();
+
+    // ─── OpenArt path (opt-in — uses credits from the connected account) ──
+    if (provider === "openart") {
+      try {
+        const historyId = await openArtGenerateImage({
+          prompt: enhancedPrompt,
+          aspectRatio,
+          resolution: openartResolution === "2K" || openartResolution === "4K" ? openartResolution : "1K",
+          model: openartModel || undefined,
+          sourceImageUrls: sourceImageUrl ? [sourceImageUrl] : [],
+        });
+
+        const creation = await waitForOpenArtCreation(historyId, { budgetMs: 240_000 });
+
+        if (creation.status === "FAILED" || creation.status === "CANCELLED") {
+          return NextResponse.json(
+            { error: `OpenArt-generering feilet: ${creation.failedReason || creation.status}` },
+            { status: 422 }
+          );
+        }
+        if (creation.status !== "COMPLETED" || creation.urls.length === 0) {
+          return NextResponse.json(
+            { error: "OpenArt-genereringen ble ikke ferdig i tide. Prøv igjen.", historyId },
+            { status: 504 }
+          );
+        }
+
+        const openartUrl = creation.urls[0];
+        let persistedUrl: string | null = null;
+        if (persist) {
+          const asset = await downloadOpenArtAsset(openartUrl);
+          persistedUrl = await persistGeneratedImage(
+            asset.buffer.toString("base64"),
+            asset.mimeType,
+            brand || "system",
+            sourceImageUrl ? "variant" : bankKind,
+            sourceImageUrl
+          );
+        }
+
+        return NextResponse.json({
+          imageUrl: persistedUrl || openartUrl,
+          persisted: Boolean(persistedUrl),
+          revisedPrompt: enhancedPrompt,
+          provider: "openart",
+          historyId,
+        });
+      } catch (err) {
+        if (err instanceof OpenArtError && err.connectRequired) {
+          return NextResponse.json(
+            { error: err.message, connectRequired: true },
+            { status: 409 }
+          );
+        }
+        throw err;
+      }
+    }
 
     const promptParts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [
       { text: `Generate a high-quality image: ${enhancedPrompt}` },
