@@ -72,6 +72,18 @@ export interface RevenueEventPayload {
   created_by: string | null;
 }
 
+export interface RevenueEventInsertResult {
+  ok: boolean;
+  event?: Record<string, unknown> | null;
+  duplicate?: boolean;
+  tableNotReady?: boolean;
+  error?: string;
+}
+
+export interface RevenueEventsSupabaseLike {
+  from(table: string): any;
+}
+
 export const REVENUE_EVENT_LABELS: Record<RevenueEventType, string> = {
   lead_created: "Lead opprettet",
   contact_created: "Kontakt opprettet",
@@ -157,6 +169,49 @@ export function normalizeRevenueEvent(input: RevenueEventInput): RevenueEventPay
       : {},
     created_by: clean(input.createdBy),
   };
+}
+
+export function isRevenueEventsTableMissing(message?: string | null) {
+  return /revenue_events|schema cache|does not exist|relation/i.test(String(message || ""));
+}
+
+export async function insertRevenueEvent(
+  supabase: RevenueEventsSupabaseLike,
+  input: RevenueEventInput,
+): Promise<RevenueEventInsertResult> {
+  const payload = normalizeRevenueEvent(input);
+
+  try {
+    const { data, error } = await supabase
+      .from("revenue_events")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    if (!error) return { ok: true, event: data || null, duplicate: false };
+
+    if (error.code === "23505" && payload.dedupe_key) {
+      const existing = await supabase
+        .from("revenue_events")
+        .select("*")
+        .eq("dedupe_key", payload.dedupe_key)
+        .maybeSingle();
+      if (!existing.error && existing.data) {
+        return { ok: true, event: existing.data, duplicate: true };
+      }
+    }
+
+    return {
+      ok: false,
+      error: error.message || "Could not insert revenue event",
+      tableNotReady: isRevenueEventsTableMissing(error.message),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not insert revenue event",
+    };
+  }
 }
 
 export function buildRevenueEventDedupeKey(parts: Array<string | null | undefined>) {

@@ -5,6 +5,10 @@ import {
   PUBLIC_REAL_ESTATE_BRAND_LABELS,
   resolvePublicLeadBrand,
 } from "@/lib/realty/public-lead-brand";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+} from "@/lib/revenue/events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -90,6 +94,7 @@ export async function POST(request: NextRequest) {
   const timeline = cleanText(body.timeline, 120);
   const requestType = cleanText(body.request_type || body.requestType, 120);
   const message = cleanText(body.message, 3000);
+  const submissionId = cleanText(body.submission_id || body.submissionId || body.id, 160);
   const rawNotes = cleanText(body.notes, 5000);
   const incomingPropertyInterest = cleanText(body.property_interest || body.propertyInterest, 400);
   const incomingPipelineValue = Number(body.pipeline_value || body.pipelineValue || 0) || 0;
@@ -192,6 +197,40 @@ export async function POST(request: NextRequest) {
     created_at: now,
     updated_at: now,
   }).then(() => null);
+
+  const eventResult = await insertRevenueEvent(supabase, {
+    eventType: existing?.id ? "contact_updated" : "lead_created",
+    title: existing?.id ? `Ny public aktivitet: ${name}` : `Ny public lead: ${name}`,
+    description: interactionSummary({ source, brandLabel, requestType, preferredArea, budget, timeline, propertyRef, propertyTitle, message }),
+    contactId: data.id,
+    brandId,
+    sourceSystem: "public_leads",
+    sourceType: "website_form",
+    sourceId: submissionId || propertyRef || pageUrl || null,
+    actorType: "customer",
+    confidenceScore: pipelineValue >= 500000 || propertyRef ? 86 : 68,
+    revenueImpactEur: pipelineValue || null,
+    occurredAt: now,
+    dedupeKey: submissionId ? buildRevenueEventDedupeKey(["public_leads", brandId, submissionId]) : null,
+    metadata: {
+      email,
+      source,
+      page_url: pageUrl,
+      property_ref: propertyRef,
+      property_title: propertyTitle,
+      preferred_area: preferredArea,
+      budget,
+      timeline,
+      request_type: requestType,
+      canonical_contact_brand_id: canonicalBrandId,
+      is_existing_contact: Boolean(existing?.id),
+    },
+    createdBy: "api/public/leads",
+  });
+
+  if (!eventResult.ok && !eventResult.tableNotReady) {
+    console.warn("[public-leads] revenue event insert failed", eventResult.error);
+  }
 
   return NextResponse.json({ success: true, contact: data, brandId });
 }
