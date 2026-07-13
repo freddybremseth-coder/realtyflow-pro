@@ -1,8 +1,12 @@
 "use client";
 
-import { UserCheck } from "lucide-react";
+import { Loader2, Trash2, UserCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type {
+  SafeErrorResponse,
+  SavedProfilesDeleteResponse,
+} from "@/components/lead-intelligence/lead-intelligence-client-types";
 import { formatDateTime } from "@/components/lead-intelligence/lead-intelligence-client-helpers";
 import { formatCurrency, shortPropertyId } from "@/components/lead-intelligence/property-match-display";
 import type {
@@ -50,22 +54,40 @@ interface LeadIntelligenceWorklistHistoryPanelProps {
   items: LeadIntelligenceWorklistItem[];
   activeBuyerProfileId: string | null;
   expanded: boolean;
+  selectedBuyerProfileIds: string[];
+  deleteLoading: boolean;
+  deleteError: SafeErrorResponse["error"] | null;
+  deleteResult: SavedProfilesDeleteResponse | null;
   sourceOptions: LeadIntelligenceSourceOption[];
   onToggleExpanded: () => void;
   onScrollToActiveProfile: () => void;
   onContinueFromItem: (item: LeadIntelligenceWorklistItem) => void;
+  onToggleItemSelection: (buyerProfileId: string) => void;
+  onSelectAllVisible: () => void;
+  onClearSelection: () => void;
+  onDeleteSelected: () => void;
 }
 
 export function LeadIntelligenceWorklistHistoryPanel({
   items,
   activeBuyerProfileId,
   expanded,
+  selectedBuyerProfileIds,
+  deleteLoading,
+  deleteError,
+  deleteResult,
   sourceOptions,
   onToggleExpanded,
   onScrollToActiveProfile,
   onContinueFromItem,
+  onToggleItemSelection,
+  onSelectAllVisible,
+  onClearSelection,
+  onDeleteSelected,
 }: LeadIntelligenceWorklistHistoryPanelProps) {
   const hasActiveWorklistItem = Boolean(activeBuyerProfileId);
+  const selectedCount = selectedBuyerProfileIds.length;
+  const allVisibleSelected = items.length > 0 && selectedCount === items.length;
 
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
@@ -79,6 +101,33 @@ export function LeadIntelligenceWorklistHistoryPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {expanded && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={allVisibleSelected ? onClearSelection : onSelectAllVisible}
+                disabled={deleteLoading || items.length === 0}
+              >
+                {allVisibleSelected ? "Nullstill valg" : "Velg alle synlige"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={onDeleteSelected}
+                disabled={deleteLoading || selectedCount === 0}
+              >
+                {deleteLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Slett valgte{selectedCount > 0 ? ` (${selectedCount})` : ""}
+              </Button>
+            </>
+          )}
           {hasActiveWorklistItem && (
             <Button type="button" variant="outline" size="sm" onClick={onScrollToActiveProfile}>
               Gå til aktiv profil
@@ -89,6 +138,23 @@ export function LeadIntelligenceWorklistHistoryPanel({
           </Button>
         </div>
       </div>
+
+      {deleteError && (
+        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-100">
+          <p className="font-semibold">Kunne ikke slette valgte profiler.</p>
+          <p className="mt-1 text-red-100/80">{deleteError.message}</p>
+        </div>
+      )}
+
+      {deleteResult && deleteResult.result.deletedCount > 0 && (
+        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+          Slettet {deleteResult.result.deletedCount} buyer profile
+          {deleteResult.result.deletedCount === 1 ? "" : "r"} permanent.
+          {deleteResult.result.missingCount > 0
+            ? ` ${deleteResult.result.missingCount} var allerede borte eller tilhørte et annet brand.`
+            : ""}
+        </div>
+      )}
 
       {!expanded && (
         <p className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">
@@ -101,24 +167,42 @@ export function LeadIntelligenceWorklistHistoryPanel({
           {items.map((item) => {
             const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
             const isActive = activeBuyerProfileId === item.buyerProfileId;
+            const isSelected = selectedBuyerProfileIds.includes(item.buyerProfileId);
 
             return (
               <div
                 key={item.buyerProfileId}
                 className={`rounded-lg border bg-slate-950 p-4 ${
-                  isActive ? "border-primary-400/70 ring-1 ring-primary-400/30" : "border-slate-700/60"
+                  isActive
+                    ? "border-primary-400/70 ring-1 ring-primary-400/30"
+                    : isSelected
+                      ? "border-red-400/60 ring-1 ring-red-400/20"
+                      : "border-slate-700/60"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">
-                      Buyer profile {shortPropertyId(item.buyerProfileId)}
-                    </p>
-                    <h2 className="mt-1 text-sm font-semibold text-slate-100">
-                      {item.summary || "Uten sammendrag"}
-                    </h2>
+                  <div className="flex min-w-0 gap-3">
+                    <label className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-red-500 focus:ring-red-400"
+                        checked={isSelected}
+                        disabled={deleteLoading}
+                        aria-label={`Velg buyer profile ${shortPropertyId(item.buyerProfileId)} for sletting`}
+                        onChange={() => onToggleItemSelection(item.buyerProfileId)}
+                      />
+                    </label>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Buyer profile {shortPropertyId(item.buyerProfileId)}
+                      </p>
+                      <h2 className="mt-1 text-sm font-semibold text-slate-100">
+                        {item.summary || "Uten sammendrag"}
+                      </h2>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {isSelected && <Badge variant="destructive">Valgt for sletting</Badge>}
                     {isActive && <Badge variant="default">Aktiv</Badge>}
                     <Badge variant="outline">{item.profileStatus}</Badge>
                     {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}

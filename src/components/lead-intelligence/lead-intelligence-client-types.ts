@@ -285,3 +285,25 @@ export interface SavedProfileArchiveResponse {
     presentationCreated: false;
   };
 }
+
+export interface SavedProfilesDeleteResponse {
+  ok: true;
+  correlationId: string;
+  result: {
+    brand: string;
+    deletedBuyerProfileIds: string[];
+    missingBuyerProfileIds: string[];
+    deletedCount: number;
+    missingCount: number;
+  };
+  sideEffects: {
+    buyerProfilesDeleted: number;
+    cascadedLeadIntelligenceDrafts: true;
+    contactsCreated: false;
+    contactsUpdated: false;
+    leadsCreated: false;
+    emailSent: false;
+    propertyMatchingStarted: false;
+    presentationCreated: false;
+  };
+}

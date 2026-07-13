@@ -12,6 +12,7 @@ import { POST as archivePost } from "./[buyerProfileId]/archive/route";
 import { POST as contactCandidatesPost } from "./[buyerProfileId]/contact-candidates/route";
 import { POST as contactCreatePost } from "./[buyerProfileId]/contact-create/route";
 import { POST as contactLinkPost } from "./[buyerProfileId]/contact-link/route";
+import { POST as deleteProfilesPost } from "./delete/route";
 
 const VALID_CORRELATION_ID = "rf_profile_0123456789abcdef012345";
 const buyerProfileId = "22222222-2222-4222-8222-222222222222";
@@ -65,6 +66,20 @@ test("saved profile actions reject unauthenticated requests before feature flags
   assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
 });
 
+test("saved profile bulk delete rejects unauthenticated requests before feature flags", async () => {
+  const response = await deleteProfilesPost(
+    request("/api/lead-intelligence/buyer-profiles/delete", {
+      brand: "soleada",
+      buyerProfileIds: [buyerProfileId],
+    }) as any,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, "AUTH_REQUIRED");
+  assert.equal(body.error.correlationId, VALID_CORRELATION_ID);
+});
+
 test("saved profile actions report feature-disabled only for authenticated admin", async () => {
   const response = await archivePost(
     request(
@@ -91,6 +106,27 @@ test("saved profile candidate lookup rejects unknown brand before database acces
       { cookie: await adminCookie() },
     ) as any,
     { params },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "INVALID_REQUEST");
+  assert.equal(JSON.stringify(body).includes("postgres://"), false);
+});
+
+test("saved profile bulk delete rejects unknown brand before database access", async () => {
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_ENABLED = "true";
+  process.env.REALTYFLOW_LEAD_INTELLIGENCE_PERSISTENCE_ENABLED = "true";
+
+  const response = await deleteProfilesPost(
+    request(
+      "/api/lead-intelligence/buyer-profiles/delete",
+      {
+        brand: "neuralbeat",
+        buyerProfileIds: [buyerProfileId],
+      },
+      { cookie: await adminCookie() },
+    ) as any,
   );
   const body = await response.json();
 
