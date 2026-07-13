@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import {
   buildContactInteractionEvents,
+  buildCustomerNextAction,
   buildCustomerProfileCompleteness,
   buildCustomerTimeline,
   buildRevenueTimelineEvents,
@@ -171,6 +172,7 @@ export async function GET(
   const activeProfile = profiles.find((row: any) => row.status === "approved") || profiles[0] || null;
   const activeCriteria = activeProfile ? criteria.filter((row: any) => row.buyer_profile_id === activeProfile.id) : [];
   const completeness = buildCustomerProfileCompleteness(contact, activeCriteria);
+  const recommendedAction = recommendRevenueAction(contact, new Date(), { revenueEvents });
 
   const timeline = buildCustomerTimeline([
     buildContactInteractionEvents(contact.interactions),
@@ -187,7 +189,8 @@ export async function GET(
     generatedAt: new Date().toISOString(),
     contact,
     brandId: String(contact.brand_id || contact.brand || activeProfile?.brand || "zeneco"),
-    recommendedAction: recommendRevenueAction(contact, new Date(), { revenueEvents }),
+    recommendedAction,
+    nextAction: buildCustomerNextAction(contact, recommendedAction, completeness, workItems),
     completeness,
     buyerProfiles: profiles,
     activeBuyerProfile: activeProfile,

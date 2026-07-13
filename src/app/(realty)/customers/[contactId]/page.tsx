@@ -29,6 +29,16 @@ interface Customer360Payload {
   contact: Record<string, any>;
   brandId: string;
   recommendedAction: string;
+  nextAction?: {
+    title: string;
+    description: string;
+    reason: string;
+    priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+    primaryLabel: string;
+    primaryHref: string;
+    secondaryLabel?: string;
+    secondaryHref?: string;
+  };
   completeness: {
     score: number;
     completed: number;
@@ -131,6 +141,19 @@ function timelineIcon(kind: string) {
   return Clock3;
 }
 
+function nextActionPriorityClasses(priority?: string) {
+  switch (priority) {
+    case "CRITICAL":
+      return "border-red-400/40 bg-red-500/15 text-red-100";
+    case "HIGH":
+      return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+    case "MEDIUM":
+      return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+    default:
+      return "border-slate-700 bg-slate-800 text-slate-300";
+  }
+}
+
 export default function Customer360Page({ params }: { params: { contactId: string } }) {
   const [data, setData] = useState<Customer360Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -202,6 +225,14 @@ export default function Customer360Page({ params }: { params: { contactId: strin
   if (!data) return null;
   const contact = data.contact;
   const stage = String(contact.pipeline_status || "NEW").toUpperCase();
+  const nextAction = data.nextAction || {
+    title: "Anbefalt neste handling",
+    description: data.recommendedAction,
+    reason: "basert på pipeline-status og kundehistorikk",
+    priority: "MEDIUM" as const,
+    primaryLabel: "Planlegg oppfølging",
+    primaryHref: `/customers/${encodeURIComponent(contact.id)}`,
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -236,12 +267,21 @@ export default function Customer360Page({ params }: { params: { contactId: strin
 
       <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-emerald-300"><Target size={18} />Anbefalt neste handling</div>
-          <p className="mt-3 text-lg text-white">{data.recommendedAction}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-emerald-300"><Target size={18} />Neste handling</div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${nextActionPriorityClasses(nextAction.priority)}`}>{nextAction.priority}</span>
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-white">{nextAction.title}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-100">{nextAction.description}</p>
+          <p className="mt-2 text-xs text-slate-500">Hvorfor: {nextAction.reason}</p>
           <p className="mt-2 text-sm text-slate-400">Nåværende oppfølging: {dateLabel(contact.next_followup)}</p>
           <div className="mt-4 flex flex-wrap gap-2">
+            {nextAction.primaryHref !== `/customers/${encodeURIComponent(contact.id)}` && (
+              <Button asChild size="sm" variant="outline"><Link href={nextAction.primaryHref}>{nextAction.primaryLabel}</Link></Button>
+            )}
             <Button size="sm" onClick={() => schedule(1)} disabled={actionLoading}><CalendarClock size={15} className="mr-2" />I morgen</Button>
             <Button size="sm" variant="outline" onClick={() => schedule(3)} disabled={actionLoading}>+3 dager</Button>
+            {nextAction.secondaryHref && <Button asChild size="sm" variant="outline"><Link href={nextAction.secondaryHref}>{nextAction.secondaryLabel || "Åpne"}</Link></Button>}
             {(stage === "QUALIFIED" || stage === "VIEWING" || stage === "NEGOTIATION") && <Button asChild size="sm" variant="outline"><Link href="/closing">Åpne Closing Workspace</Link></Button>}
           </div>
         </article>

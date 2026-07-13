@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildContactInteractionEvents,
+  buildCustomerNextAction,
   buildCustomerProfileCompleteness,
   buildCustomerTimeline,
   buildRevenueTimelineEvents,
@@ -38,6 +39,59 @@ test("rejected and inactive criteria do not count as complete", () => {
   assert.ok(result.score < 50);
   assert.ok(result.missing.includes("Budsjett"));
   assert.ok(result.missing.includes("Boligtype"));
+});
+
+test("customer next action blocks follow-up when contact channel is missing", () => {
+  const completeness = buildCustomerProfileCompleteness({ next_followup: "2026-07-15T09:00:00.000Z" });
+  const action = buildCustomerNextAction(
+    { id: "contact-1", next_followup: "2026-07-15T09:00:00.000Z" },
+    "Kontakt kunden.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.priority, "CRITICAL");
+  assert.equal(action.primaryHref, "/pipeline?contactId=contact-1");
+  assert.match(action.description, /mangler både e-post og telefon/i);
+});
+
+test("customer next action prioritizes overdue follow-up after contact is reachable", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    pipeline_value: 450000,
+    property_interest: "Altea",
+    next_followup: "2026-07-10T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    { id: "contact-2", email: "buyer@example.com", next_followup: "2026-07-10T09:00:00.000Z" },
+    "Ring kunden og avklar neste steg.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.title, "Følg opp kunden nå");
+  assert.equal(action.reason, "oppfølging er forfalt");
+  assert.match(action.description, /Ring kunden/i);
+});
+
+test("customer next action sends incomplete profiles to Lead Intelligence", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    next_followup: "2026-07-15T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    { id: "contact-3", email: "buyer@example.com", next_followup: "2026-07-15T09:00:00.000Z" },
+    "Kontakt kunden.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.priority, "HIGH");
+  assert.equal(action.primaryHref, "/lead-intelligence");
+  assert.match(action.description, /Mangler:/);
 });
 
 test("contact interactions become normalized timeline events", () => {
