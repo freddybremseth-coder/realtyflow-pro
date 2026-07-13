@@ -29,6 +29,7 @@
     "test:execution": "tsx --test src/lib/revenue/execution.test.ts",
     "test:growth-engine": "tsx --test src/services/growth/growth-engine.test.ts",
     "test:closing-pack": "tsx --test src/lib/revenue/closing-pack.test.ts",
+    "test:automation-registry": "tsx --test src/lib/automation/registry.test.ts",
     "test:monthly-close": "tsx --test src/lib/revenue/monthly-close.test.ts",
     "test:access-control": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/access-control.test.ts src/lib/api-admin.test.ts",
     "test:team-workload": "tsx --test src/lib/revenue/team-workload.test.ts",

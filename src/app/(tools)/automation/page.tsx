@@ -38,6 +38,36 @@ interface AutomationLog {
   created_at: string;
 }
 
+interface AutomationRegistryItem {
+  path: string;
+  schedule: string;
+  scheduleLabel: string;
+  name: string;
+  category: string;
+  owner: string;
+  mode: "live" | "draft-first" | "manual-review" | "dry-run-default";
+  kpi: string;
+  purpose: string;
+  expectedOutput: string;
+  safety: string;
+  lastRunAt?: string | null;
+  lastStatus: "success" | "error" | "running" | "cancelled" | "unknown";
+  lastError?: string | null;
+  health: "healthy" | "attention" | "stale" | "unknown";
+}
+
+interface AutomationRegistrySummary {
+  total: number;
+  live: number;
+  draftFirst: number;
+  manualReview: number;
+  dryRunDefault: number;
+  healthy: number;
+  attention: number;
+  stale: number;
+  unknown: number;
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "Aldri";
   return new Date(value).toLocaleString("nb-NO", {
@@ -58,10 +88,33 @@ function actionSummary(rule: AutomationRule) {
   return String(first.type || "Handling");
 }
 
+function healthLabel(health: AutomationRegistryItem["health"]) {
+  if (health === "healthy") return "OK";
+  if (health === "attention") return "Feil";
+  if (health === "stale") return "Gammel";
+  return "Ukjent";
+}
+
+function healthVariant(health: AutomationRegistryItem["health"]) {
+  if (health === "healthy") return "success" as const;
+  if (health === "attention") return "destructive" as const;
+  return "secondary" as const;
+}
+
+function modeLabel(mode: AutomationRegistryItem["mode"]) {
+  if (mode === "live") return "Live";
+  if (mode === "draft-first") return "Draft først";
+  if (mode === "manual-review") return "Review";
+  return "Dry-run";
+}
+
 export default function AutomationPage() {
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [logs, setLogs] = useState<AutomationLog[]>([]);
+  const [registry, setRegistry] = useState<AutomationRegistryItem[]>([]);
+  const [registrySummary, setRegistrySummary] = useState<AutomationRegistrySummary | null>(null);
+  const [registryWarnings, setRegistryWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [synthetic, setSynthetic] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -70,12 +123,19 @@ export default function AutomationPage() {
   async function loadAutomations() {
     setLoading(true);
     try {
-      const res = await fetch("/api/automation/rules", { cache: "no-store" });
-      const data = await res.json();
+      const [rulesRes, registryRes] = await Promise.all([
+        fetch("/api/automation/rules", { cache: "no-store" }),
+        fetch("/api/automation/registry", { cache: "no-store" }),
+      ]);
+      const data = await rulesRes.json();
+      const registryData = await registryRes.json();
       setRules(data.rules || []);
       setRuns(data.runs || []);
       setLogs(data.logs || []);
       setSynthetic(Boolean(data.synthetic));
+      setRegistry(registryData.items || []);
+      setRegistrySummary(registryData.summary || null);
+      setRegistryWarnings(registryData.warnings || []);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Kunne ikke hente automasjoner.");
     } finally {
@@ -137,7 +197,7 @@ export default function AutomationPage() {
             Automasjon
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Ekte jobb-motor for Victoria: publisering, engagement, vekstanalyse og Publishing Hub.
+            Kontrolltårn for planlagte jobber, regler, safety mode og kjøringslogg.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -177,6 +237,67 @@ export default function AutomationPage() {
           </Card>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock size={18} />
+            Automation Registry
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {[
+              { label: "Planlagte crons", value: registrySummary?.total || registry.length },
+              { label: "Live", value: registrySummary?.live || 0 },
+              { label: "Draft/review", value: (registrySummary?.draftFirst || 0) + (registrySummary?.manualReview || 0) },
+              { label: "Dry-run", value: registrySummary?.dryRunDefault || 0 },
+              { label: "Trenger sjekk", value: (registrySummary?.attention || 0) + (registrySummary?.stale || 0), danger: true },
+            ].map((item) => (
+              <div key={item.label} className="rounded-lg bg-slate-800/50 p-3">
+                <p className={`text-xl font-bold ${item.danger && item.value > 0 ? "text-red-300" : "text-white"}`}>{item.value}</p>
+                <p className="text-xs text-slate-500">{item.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {registryWarnings.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+              {registryWarnings.join(" · ")}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {registry.map((item) => (
+              <div key={item.path} className="rounded-lg bg-slate-800/50 p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-slate-100">{item.name}</p>
+                  <Badge variant={healthVariant(item.health)} className="text-[10px]">
+                    {healthLabel(item.health)}
+                  </Badge>
+                  <Badge variant={item.mode === "live" ? "default" : "outline"} className="text-[10px]">
+                    {modeLabel(item.mode)}
+                  </Badge>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {item.category}
+                  </Badge>
+                </div>
+                <p className="mb-3 text-xs text-slate-400">{item.purpose}</p>
+                <div className="grid gap-2 text-xs text-slate-500 md:grid-cols-2">
+                  <span>Plan: {item.scheduleLabel}</span>
+                  <span>Sist: {formatDate(item.lastRunAt)}</span>
+                  <span>Eier: {item.owner}</span>
+                  <span>KPI: {item.kpi}</span>
+                  <span className="md:col-span-2">Output: {item.expectedOutput}</span>
+                  <span className="md:col-span-2">Safety: {item.safety}</span>
+                  <span className="font-mono text-[11px] text-slate-600 md:col-span-2">{item.path}</span>
+                  {item.lastError && <span className="text-red-300 md:col-span-2">Siste feil: {item.lastError}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
