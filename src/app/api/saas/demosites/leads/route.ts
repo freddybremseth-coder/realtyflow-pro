@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { DemoSiteLeadStatus, DemoSiteOutreachStatus } from "@/lib/demosites-leads";
+import {
+  buildRecommendedDemoSiteLeadPlay,
+  type DemoSiteLeadStatus,
+  type DemoSiteOutreachStatus,
+} from "@/lib/demosites-leads";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 
@@ -80,11 +84,12 @@ function buildSummary(leads: Array<{ lead_status?: string | null; outreach_statu
 }
 
 export async function GET(request: NextRequest) {
-  const unauthorized = await requireAdminApi(request, { leads: [], events: [], summary: buildSummary([]) });
+  const emptyBody = { leads: [], events: [], summary: buildSummary([]), recommendedPlay: null };
+  const unauthorized = await requireAdminApi(request, emptyBody);
   if (unauthorized) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured", leads: [], events: [], summary: buildSummary([]) }, { status: 503 });
+  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured", ...emptyBody }, { status: 503 });
 
   try {
     const [leadsResult, eventsResult] = await Promise.allSettled([
@@ -103,9 +108,14 @@ export async function GET(request: NextRequest) {
     const leads = leadsResult.status === "fulfilled" && !leadsResult.value.error ? leadsResult.value.data || [] : [];
     const events = eventsResult.status === "fulfilled" && !eventsResult.value.error ? eventsResult.value.data || [] : [];
 
-    return NextResponse.json({ leads, events, summary: buildSummary(leads) });
+    return NextResponse.json({
+      leads,
+      events,
+      summary: buildSummary(leads),
+      recommendedPlay: buildRecommendedDemoSiteLeadPlay(leads),
+    });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load DemoSites leads", leads: [], events: [], summary: buildSummary([]) }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load DemoSites leads", ...emptyBody }, { status: 500 });
   }
 }
 
