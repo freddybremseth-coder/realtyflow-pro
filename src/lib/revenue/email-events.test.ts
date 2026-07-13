@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildEmailReceivedRevenueEventInput,
   buildMessageSentRevenueEventInput,
   normalizeEmailAddresses,
 } from "@/lib/revenue/email-events";
@@ -62,4 +63,42 @@ test("buildMessageSentRevenueEventInput supports direct sends without a matched 
   assert.equal(event.sourceType, "direct_email");
   assert.equal(event.contactId, null);
   assert.equal(event.confidenceScore, 62);
+});
+
+test("buildEmailReceivedRevenueEventInput creates a customer inbound email event", () => {
+  const event = buildEmailReceivedRevenueEventInput({
+    brandId: "zeneco",
+    fromAddress: " Buyer@Example.com ",
+    fromName: "Anna Buyer",
+    toAddresses: ["freddy@zenecohomes.com"],
+    subject: "Vi vil gjerne booke en prat",
+    bodyPreview: "Hei, vi har sett på områdene.",
+    receivedAt: "2026-07-12T15:00:00.000Z",
+    messageId: "<incoming-123@example.com>",
+    threadId: "thread-123",
+    storedEmailMessageId: "email-message-123",
+    contactId: "contact-123",
+  });
+
+  assert.equal(event.eventType, "email_received");
+  assert.equal(event.title, "E-post mottatt: Vi vil gjerne booke en prat");
+  assert.equal(event.description, "Fra Anna Buyer <buyer@example.com>");
+  assert.equal(event.contactId, "contact-123");
+  assert.equal(event.brandId, "zeneco");
+  assert.equal(event.sourceSystem, "email_inbox");
+  assert.equal(event.sourceType, "inbound_email");
+  assert.equal(event.sourceId, "incoming-123@example.com");
+  assert.equal(event.actorType, "customer");
+  assert.equal(event.confidenceScore, 88);
+  assert.equal(event.dedupeKey, "email_inbox:zeneco:incoming-123-example-com:buyer-example-com:vi-vil-gjerne-booke-en-prat");
+  assert.deepEqual(event.metadata, {
+    from_address: "buyer@example.com",
+    from_name: "Anna Buyer",
+    to_addresses: ["freddy@zenecohomes.com"],
+    subject: "Vi vil gjerne booke en prat",
+    body_preview: "Hei, vi har sett på områdene.",
+    smtp_message_id: "<incoming-123@example.com>",
+    thread_id: "thread-123",
+    stored_email_message_id: "email-message-123",
+  });
 });
