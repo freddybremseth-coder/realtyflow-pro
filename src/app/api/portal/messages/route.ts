@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+} from "@/lib/revenue/events";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -81,6 +85,40 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const eventResult = await insertRevenueEvent(supabase, {
+    eventType: "note",
+    title: "Kundemelding på Min side",
+    description: text
+      ? text.slice(0, 180)
+      : attachmentName || "Kunden sendte et vedlegg via Min side",
+    contactId: contact?.id || null,
+    brandId: "zeneco",
+    sourceSystem: "portal",
+    sourceType: "customer_message",
+    sourceId: data.id,
+    actorType: "customer",
+    confidenceScore: contact?.id ? 92 : 70,
+    occurredAt: data.created_at || new Date().toISOString(),
+    dedupeKey: buildRevenueEventDedupeKey([
+      "portal",
+      "customer_message",
+      data.id,
+    ]),
+    metadata: {
+      email,
+      body_preview: text.slice(0, 280),
+      attachment_url: attachmentUrl || null,
+      attachment_name: attachmentName || null,
+      portal_message_id: data.id,
+      work_item_requested: Boolean(contact?.id),
+    },
+    createdBy: "api/portal/messages",
+  });
+
+  if (!eventResult.ok && !eventResult.tableNotReady) {
+    console.warn("[portal/messages] revenue event insert failed", eventResult.error);
+  }
 
   if (contact?.id) {
     await supabase.from("work_items").insert({
