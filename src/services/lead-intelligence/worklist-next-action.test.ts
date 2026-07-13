@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildLeadWorklistNextAction,
+  compareLeadWorklistNextActionPriority,
+  leadWorklistNextActionPriorityRank,
   type LeadWorklistNextActionInput,
 } from "./worklist-next-action";
 
@@ -71,4 +73,18 @@ test("lead worklist next action lowers priority after approved message draft", (
 
   assert.equal(action.priority, "LOW");
   assert.match(action.label, /oppfølging/i);
+});
+
+test("lead worklist next action ranks urgent profiles before low-touch follow-up", () => {
+  assert.equal(leadWorklistNextActionPriorityRank("CRITICAL") > leadWorklistNextActionPriorityRank("HIGH"), true);
+  assert.equal(leadWorklistNextActionPriorityRank("HIGH") > leadWorklistNextActionPriorityRank("MEDIUM"), true);
+  assert.equal(leadWorklistNextActionPriorityRank("MEDIUM") > leadWorklistNextActionPriorityRank("LOW"), true);
+
+  const sorted = [
+    { priority: "LOW" as const, label: "Planlegg oppfølging", reason: "lav risiko" },
+    { priority: "CRITICAL" as const, label: "Koble kontakt", reason: "mangler CRM-kobling" },
+    { priority: "HIGH" as const, label: "Lag shortlist", reason: "mangler shortlist" },
+  ].sort(compareLeadWorklistNextActionPriority);
+
+  assert.deepEqual(sorted.map((item) => item.priority), ["CRITICAL", "HIGH", "LOW"]);
 });

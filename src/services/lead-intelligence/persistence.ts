@@ -18,6 +18,7 @@ import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 import { buildLeadCustomerPresentationPreview } from "./presentation-preview";
 import {
   buildLeadWorklistNextAction,
+  compareLeadWorklistNextActionPriority,
   type LeadWorklistNextAction,
 } from "./worklist-next-action";
 
@@ -1226,6 +1227,14 @@ export class LeadIntelligencePersistenceRepository {
             }
           : null,
       };
+    }).sort((a, b) => {
+      const prioritySort = compareLeadWorklistNextActionPriority(a.nextAction, b.nextAction);
+      if (prioritySort !== 0) return prioritySort;
+
+      const updatedSort = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      if (updatedSort !== 0) return updatedSort;
+
+      return b.buyerProfileId.localeCompare(a.buyerProfileId);
     });
   }
 
