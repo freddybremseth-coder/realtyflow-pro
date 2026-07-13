@@ -16,6 +16,10 @@ import {
 import { isLeadIntelligencePersistenceEnabled } from "./feature-flags";
 import { LeadIntelligenceRealEstateBrandSchema } from "./brand-allowlist";
 import { buildLeadCustomerPresentationPreview } from "./presentation-preview";
+import {
+  buildLeadWorklistNextAction,
+  type LeadWorklistNextAction,
+} from "./worklist-next-action";
 
 export type LeadIntelligencePersistenceErrorCode =
   | "LEAD_INTELLIGENCE_PERSISTENCE_DISABLED"
@@ -229,6 +233,7 @@ export interface LeadIntelligenceWorklistItem {
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;
+  nextAction: LeadWorklistNextAction;
   linkedContact: {
     contactId: string;
     name: string | null;
@@ -1154,47 +1159,74 @@ export class LeadIntelligencePersistenceRepository {
       [data.brand, data.limit, data.contactId || null],
     );
 
-    return rows.map((row): LeadIntelligenceWorklistItem => ({
-      buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
-      intakeId: UUIDSchema.parse(row.intake_id),
-      analysisRunId: row.analysis_run_id ? UUIDSchema.parse(row.analysis_run_id) : null,
-      source: row.source ? LeadIntakeSourcePersistenceSchema.parse(row.source) : null,
-      intakeStatus: row.intake_status ? LeadIntakeStatusSchema.parse(row.intake_status) : null,
-      profileStatus: BuyerProfilePersistenceStatusSchema.parse(row.profile_status),
-      purchaseReadiness: row.purchase_readiness ? PurchaseReadinessLevelSchema.parse(row.purchase_readiness) : null,
-      summary: row.summary,
-      budgetAmount: row.budget_amount === null ? null : Number(row.budget_amount),
-      budgetCurrency: row.budget_currency,
-      locationFlexible: Boolean(row.location_flexible),
-      contactLinked: Boolean(row.contact_linked),
-      criterionCount: Number(row.criterion_count || 0),
-      shortlistCount: Number(row.shortlist_count || 0),
-      latestShortlistId: row.latest_shortlist_id ? UUIDSchema.parse(row.latest_shortlist_id) : null,
-      latestShortlistStatus: row.latest_shortlist_status
+    return rows.map((row): LeadIntelligenceWorklistItem => {
+      const analysisRunId = row.analysis_run_id ? UUIDSchema.parse(row.analysis_run_id) : null;
+      const contactLinked = Boolean(row.contact_linked);
+      const criterionCount = Number(row.criterion_count || 0);
+      const shortlistCount = Number(row.shortlist_count || 0);
+      const latestShortlistStatus = row.latest_shortlist_status
         ? LeadPropertyShortlistStatusSchema.parse(row.latest_shortlist_status)
-        : null,
-      latestShortlistItemCount: Number(row.latest_shortlist_item_count || 0),
-      presentationCount: Number(row.presentation_count || 0),
-      latestPresentationId: row.latest_presentation_id ? UUIDSchema.parse(row.latest_presentation_id) : null,
-      latestPresentationStatus: row.latest_presentation_status
+        : null;
+      const latestShortlistItemCount = Number(row.latest_shortlist_item_count || 0);
+      const latestPresentationId = row.latest_presentation_id ? UUIDSchema.parse(row.latest_presentation_id) : null;
+      const latestPresentationStatus = row.latest_presentation_status
         ? LeadCustomerPresentationStatusSchema.parse(row.latest_presentation_status)
-        : null,
-      latestMessageDraftId: row.latest_message_draft_id ? UUIDSchema.parse(row.latest_message_draft_id) : null,
-      latestMessageDraftStatus: row.latest_message_draft_status
+        : null;
+      const latestMessageDraftId = row.latest_message_draft_id ? UUIDSchema.parse(row.latest_message_draft_id) : null;
+      const latestMessageDraftStatus = row.latest_message_draft_status
         ? LeadCustomerMessageDraftStatusSchema.parse(row.latest_message_draft_status)
-        : null,
-      createdAt: normalizeDateString(row.created_at),
-      updatedAt: normalizeDateString(row.updated_at),
-      approvedAt: row.approved_at ? normalizeDateString(row.approved_at) : null,
-      linkedContact: row.linked_contact_id
-        ? {
-            contactId: UUIDSchema.parse(row.linked_contact_id),
-            name: row.linked_contact_name || null,
-            maskedPhone: maskPhone(row.linked_contact_phone),
-            maskedEmail: maskEmail(row.linked_contact_email),
-          }
-        : null,
-    }));
+        : null;
+      const purchaseReadiness = row.purchase_readiness ? PurchaseReadinessLevelSchema.parse(row.purchase_readiness) : null;
+
+      return {
+        buyerProfileId: UUIDSchema.parse(row.buyer_profile_id),
+        intakeId: UUIDSchema.parse(row.intake_id),
+        analysisRunId,
+        source: row.source ? LeadIntakeSourcePersistenceSchema.parse(row.source) : null,
+        intakeStatus: row.intake_status ? LeadIntakeStatusSchema.parse(row.intake_status) : null,
+        profileStatus: BuyerProfilePersistenceStatusSchema.parse(row.profile_status),
+        purchaseReadiness,
+        summary: row.summary,
+        budgetAmount: row.budget_amount === null ? null : Number(row.budget_amount),
+        budgetCurrency: row.budget_currency,
+        locationFlexible: Boolean(row.location_flexible),
+        contactLinked,
+        criterionCount,
+        shortlistCount,
+        latestShortlistId: row.latest_shortlist_id ? UUIDSchema.parse(row.latest_shortlist_id) : null,
+        latestShortlistStatus,
+        latestShortlistItemCount,
+        presentationCount: Number(row.presentation_count || 0),
+        latestPresentationId,
+        latestPresentationStatus,
+        latestMessageDraftId,
+        latestMessageDraftStatus,
+        createdAt: normalizeDateString(row.created_at),
+        updatedAt: normalizeDateString(row.updated_at),
+        approvedAt: row.approved_at ? normalizeDateString(row.approved_at) : null,
+        nextAction: buildLeadWorklistNextAction({
+          analysisRunId,
+          contactLinked,
+          criterionCount,
+          shortlistCount,
+          latestShortlistStatus,
+          latestShortlistItemCount,
+          latestPresentationId,
+          latestPresentationStatus,
+          latestMessageDraftId,
+          latestMessageDraftStatus,
+          purchaseReadiness,
+        }),
+        linkedContact: row.linked_contact_id
+          ? {
+              contactId: UUIDSchema.parse(row.linked_contact_id),
+              name: row.linked_contact_name || null,
+              maskedPhone: maskPhone(row.linked_contact_phone),
+              maskedEmail: maskEmail(row.linked_contact_email),
+            }
+          : null,
+      };
+    });
   }
 
   async createIntake(input: CreateLeadIntakeInput) {
