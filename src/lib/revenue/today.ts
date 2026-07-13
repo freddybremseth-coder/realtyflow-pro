@@ -26,6 +26,8 @@ export interface RevenueMemoryEventInput {
   event_type?: string | null;
   title?: string | null;
   description?: string | null;
+  source_system?: string | null;
+  source_type?: string | null;
   occurred_at?: string | null;
   created_at?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -111,10 +113,23 @@ function eventText(event: RevenueMemoryEventInput) {
   return [
     event.title,
     event.description,
+    event.source_system,
+    event.source_type,
     metadata.subject,
     metadata.body_preview,
     metadata.source,
+    metadata.summary,
+    metadata.property_interest,
+    metadata.report_title,
   ].map((value) => String(value || "")).join(" ").toLowerCase();
+}
+
+function eventSourceType(event: RevenueMemoryEventInput) {
+  return String(event.source_type || "").trim().toLowerCase();
+}
+
+function eventSourceSystem(event: RevenueMemoryEventInput) {
+  return String(event.source_system || "").trim().toLowerCase();
 }
 
 export function recommendActionFromRevenueMemory(
@@ -134,12 +149,39 @@ export function recommendActionFromRevenueMemory(
     return "Kunden har svart nylig. Les siste e-post og svar personlig med ett konkret neste steg.";
   }
 
+  const recentPortalMessage = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return eventSourceType(item.event) === "customer_message" && ageDays <= 3;
+  });
+  if (recentPortalMessage) {
+    return "Kunden har skrevet på Min side. Les meldingen, svar personlig og gjør neste steg helt konkret.";
+  }
+
+  const recentPreferenceUpdate = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return eventSourceType(item.event) === "preferences_updated" && ageDays <= 7;
+  });
+  if (recentPreferenceUpdate) {
+    return "Kunden oppdaterte boligønsker på Min side. Match 3–5 boliger mot nytt budsjett/område og foreslå en kort rådgivningssamtale.";
+  }
+
   const recentBooking = sorted.find((item) => {
     const ageDays = daysBetween(item.at, now);
     return item.event.event_type === "meeting_booked" && ageDays <= 14;
   });
   if (recentBooking) {
     return "Møte er booket. Forbered kundens behov, budsjett og 3–5 relevante boliger før samtalen.";
+  }
+
+  const propertyPdfSent = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return item.event.event_type === "message_sent"
+      && eventSourceSystem(item.event) === "property_pdf"
+      && ageDays >= 1
+      && ageDays <= 10;
+  });
+  if (propertyPdfSent) {
+    return "Kunden fikk konkret prospekt tilsendt. Følg opp med én tydelig anbefaling og spør om visning eller shortlist.";
   }
 
   const sentFollowup = sorted.find((item) => {
@@ -177,6 +219,28 @@ export function scoreRevenueMemorySignals(
   if (bookedMeeting) {
     score += 18;
     reasons.push("møte er booket");
+  }
+
+  const recentPortalMessage = sorted.find((item) => eventSourceType(item.event) === "customer_message" && daysBetween(item.at, now) <= 3);
+  if (recentPortalMessage) {
+    score += 34;
+    reasons.push("kundemelding på Min side");
+  }
+
+  const recentPreferenceUpdate = sorted.find((item) => eventSourceType(item.event) === "preferences_updated" && daysBetween(item.at, now) <= 7);
+  if (recentPreferenceUpdate) {
+    score += 30;
+    reasons.push("kunden oppdaterte boligønsker på Min side");
+  }
+
+  const propertyPdfSent = sorted.find((item) => (
+    item.event.event_type === "message_sent"
+    && eventSourceSystem(item.event) === "property_pdf"
+    && daysBetween(item.at, now) <= 14
+  ));
+  if (propertyPdfSent) {
+    score += 12;
+    reasons.push("konkret prospekt sendt");
   }
 
   const sentWithoutReply = sorted.find((item) => {
