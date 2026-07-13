@@ -33,6 +33,7 @@ test("prioritizes overdue negotiation as critical", () => {
   assert.equal(item.priority, "CRITICAL");
   assert.equal(item.isOverdue, true);
   assert.match(item.recommendedAction, /forsinket/i);
+  assert.equal(item.href, "/customers/deal-1");
   assert.ok(item.score >= 90);
 });
 
@@ -323,6 +324,7 @@ test("recommended revenue play chooses the most urgent customer action", () => {
   assert.equal(play.source, "customer_priority");
   assert.equal(play.title, "Følg opp Critical Buyer");
   assert.equal(play.priority, "CRITICAL");
+  assert.equal(play.href, "/customers/deal-critical");
   assert.match(play.primaryAction, /forsinket/i);
 });
 
