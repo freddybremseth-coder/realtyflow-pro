@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import {
   buildRevenueOpportunities,
   buildRevenueDailyWorklist,
+  buildRevenueRecommendedFocus,
   buildRevenueSummary,
   getDefaultRevenueCampaign,
   getRevenueStageLabel,
@@ -42,6 +43,7 @@ import {
   type RevenueEngineOpportunity,
   type RevenueEngineOrder,
   type RevenueEngineStage,
+  type RevenueRecommendedFocus,
   type RevenueWorklistItem,
 } from "@/lib/revenue-engine";
 
@@ -211,6 +213,7 @@ export default function RevenueEnginePage() {
   );
   const summary = useMemo(() => buildRevenueSummary(opportunities), [opportunities]);
   const worklist = useMemo(() => buildRevenueDailyWorklist(opportunities, 5), [opportunities]);
+  const recommendedFocus = useMemo(() => buildRevenueRecommendedFocus(opportunities), [opportunities]);
   const selectedOpportunity = opportunities.find((item) => item.id === selectedId) || opportunities[0] || null;
   const suggestedFollowUpDate = useMemo(
     () => selectedOpportunity ? getRevenueSuggestedFollowUpDate(selectedOpportunity.stage) : "",
@@ -362,6 +365,14 @@ export default function RevenueEnginePage() {
           </Card>
         )}
 
+        {recommendedFocus && (
+          <RecommendedFocusPanel
+            focus={recommendedFocus}
+            selected={selectedOpportunity?.id === recommendedFocus.id}
+            onSelect={setSelectedId}
+          />
+        )}
+
         <CampaignPanel campaign={campaign} onChange={setCampaign} />
         <DailyWorklistPanel items={worklist} selectedId={selectedOpportunity?.id || null} onSelect={setSelectedId} />
 
@@ -436,6 +447,60 @@ export default function RevenueEnginePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function RecommendedFocusPanel({
+  focus,
+  selected,
+  onSelect,
+}: {
+  focus: RevenueRecommendedFocus;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <Card className="border-emerald-400/30 bg-emerald-400/10 text-white">
+      <CardContent className="p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-100">
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Neste handling nå
+              </span>
+              <Badge className={STAGE_STYLES[focus.stage]} variant="outline">{getRevenueStageLabel(focus.stage)}</Badge>
+              <Badge className={worklistUrgencyStyle(focus.urgency)} variant="outline">{focus.urgencyLabel}</Badge>
+              <Badge className="border-slate-700 bg-slate-950 text-slate-300" variant="outline">{focus.channelLabel}</Badge>
+              <span className="text-xs font-semibold text-emerald-200">Score {focus.priorityScore}/100</span>
+            </div>
+            <h2 className="text-xl font-black text-white">{focus.companyName}</h2>
+            <p className="mt-2 text-base font-semibold leading-6 text-emerald-50">{focus.title}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-200">{focus.action}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-400">Hvorfor: {focus.reason}</p>
+            {focus.checklist.length > 0 && (
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+                {focus.checklist.map((item) => (
+                  <div key={item} className="rounded-lg border border-emerald-300/10 bg-slate-950/40 p-3 text-xs leading-5 text-slate-200">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2 lg:items-end">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">{focus.timing}</p>
+            <Button
+              onClick={() => onSelect(focus.id)}
+              className="bg-emerald-300 text-slate-950 hover:bg-emerald-200"
+              disabled={selected}
+            >
+              {selected ? "Åpen nå" : "Åpne anbefalt play"}
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

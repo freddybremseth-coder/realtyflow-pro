@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   buildRevenueDailyWorklist,
   buildRevenueOpportunities,
+  buildRevenueRecommendedFocus,
   buildRevenueSummary,
   getDefaultRevenueCampaign,
   getRevenueStageLabel,
@@ -160,7 +161,7 @@ test("Revenue Engine uses lead workflow metadata for follow-up focus", () => {
 
   const opportunities = buildRevenueOpportunities([], [], leads);
   const followUp = opportunities.find((item) => item.id === "lead-1");
-  const worklist = buildRevenueDailyWorklist(opportunities);
+  const worklist = buildRevenueDailyWorklist(opportunities, 5, new Date("2026-07-03T12:00:00.000Z"));
 
   assert.equal(followUp?.stage, "follow_up");
   assert.equal(followUp?.followUpAt, "2026-07-05");
@@ -267,6 +268,136 @@ test("Revenue Engine daily worklist prioritizes due manual follow-ups", () => {
   assert.equal(worklist[0]?.urgencyLabel, "Forfalt");
   assert.equal(worklist[1]?.urgency, "today");
   assert.equal(worklist[1]?.urgencyLabel, "I dag");
+});
+
+test("Revenue Engine recommended focus chooses one due manual sales action", () => {
+  const baseOpportunity: RevenueEngineOpportunity = {
+    id: "base",
+    companyName: "Base AS",
+    websiteUrl: "https://base.no",
+    industry: "Lokale bedrifter",
+    templateSlug: "local-service",
+    stage: "demo_ready",
+    priorityScore: 95,
+    confidenceScore: 80,
+    previewUrl: "",
+    claimUrl: "",
+    source: "lead",
+    reasons: [],
+    risks: [],
+    nextAction: "Godkjenn outreach.",
+    nextPlay: {
+      title: "Godkjenn outreach.",
+      channel: "email",
+      channelLabel: "E-post",
+      primaryCopyLabel: "E-post 1",
+      timing: "I dag",
+      rationale: "Test opportunity.",
+      checklist: ["Sjekk demo", "Kopier outreach", "Sett oppfølging"],
+    },
+    sessionBrief: {
+      hook: "",
+      problems: [],
+      improvements: [],
+      agenda: [],
+      closeQuestion: "",
+    },
+    outreach: {
+      emailSubject: "",
+      emailOne: "",
+      emailTwo: "",
+      emailThree: "",
+      emailFour: "",
+      dm: "",
+      callOpener: "",
+    },
+  };
+  const focus = buildRevenueRecommendedFocus(
+    [
+      {
+        ...baseOpportunity,
+        id: "high-priority-demo",
+        companyName: "High Priority Demo AS",
+        stage: "demo_ready",
+        priorityScore: 100,
+      },
+      {
+        ...baseOpportunity,
+        id: "overdue-follow-up",
+        leadId: "lead-overdue",
+        companyName: "Overdue Followup AS",
+        stage: "follow_up",
+        priorityScore: 55,
+        followUpAt: "2026-07-01",
+        nextAction: "Ring og avklar om de vil se demoen.",
+        nextPlay: {
+          ...baseOpportunity.nextPlay,
+          title: "Ring daglig leder.",
+          channel: "phone",
+          channelLabel: "Telefon",
+          primaryCopyLabel: "Telefon",
+        },
+      },
+    ],
+    new Date("2026-07-03T12:00:00.000Z"),
+  );
+
+  assert.ok(focus);
+  assert.equal(focus.id, "overdue-follow-up");
+  assert.equal(focus.leadId, "lead-overdue");
+  assert.equal(focus.urgency, "overdue");
+  assert.equal(focus.channelLabel, "Telefon");
+  assert.match(focus.reason, /Forfalt/);
+  assert.match(focus.action, /Ring/);
+  assert.deepEqual(focus.checklist, ["Sjekk demo", "Kopier outreach", "Sett oppfølging"]);
+});
+
+test("Revenue Engine recommended focus ignores inactive opportunities", () => {
+  const focus = buildRevenueRecommendedFocus([
+    {
+      id: "won",
+      companyName: "Vunnet AS",
+      websiteUrl: "https://vunnet.no",
+      industry: "Lokale bedrifter",
+      templateSlug: "local-service",
+      stage: "won",
+      priorityScore: 100,
+      confidenceScore: 90,
+      previewUrl: "",
+      claimUrl: "",
+      source: "lead",
+      reasons: [],
+      risks: [],
+      nextAction: "Ferdig.",
+      nextPlay: {
+        title: "Ferdig.",
+        channel: "hold",
+        channelLabel: "Hold",
+        primaryCopyLabel: "Ingen outreach",
+        timing: "Ingen handling",
+        rationale: "",
+        checklist: [],
+      },
+      sessionBrief: {
+        hook: "",
+        problems: [],
+        improvements: [],
+        agenda: [],
+        closeQuestion: "",
+      },
+      outreach: {
+        emailSubject: "",
+        emailOne: "",
+        emailTwo: "",
+        emailThree: "",
+        emailFour: "",
+        dm: "",
+        callOpener: "",
+      },
+    },
+  ]);
+
+  assert.equal(focus, null);
 });
 
 test("Revenue Engine suggests follow-up dates by stage using business days", () => {

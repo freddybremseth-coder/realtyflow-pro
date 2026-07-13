@@ -107,6 +107,23 @@ export type RevenueWorklistItem = {
   timing: string;
 };
 
+export type RevenueRecommendedFocus = {
+  id: string;
+  leadId?: string | null;
+  orderId?: string | null;
+  companyName: string;
+  stage: RevenueEngineStage;
+  priorityScore: number;
+  title: string;
+  action: string;
+  reason: string;
+  urgency: RevenueWorklistUrgency;
+  urgencyLabel: string;
+  channelLabel: string;
+  timing: string;
+  checklist: string[];
+};
+
 export type RevenueWorklistUrgency = "overdue" | "today" | "scheduled" | "none";
 export type RevenueRecommendedChannel = "quality_check" | "email" | "phone" | "dm" | "session" | "ops" | "hold";
 export type RevenuePrimaryCopyLabel =
@@ -882,6 +899,42 @@ export function buildRevenueDailyWorklist(
       return b.priorityScore - a.priorityScore;
     })
     .slice(0, limit);
+}
+
+export function buildRevenueRecommendedFocus(
+  opportunities: RevenueEngineOpportunity[],
+  today = new Date(),
+): RevenueRecommendedFocus | null {
+  const [topItem] = buildRevenueDailyWorklist(opportunities, 1, today);
+  if (!topItem) return null;
+
+  const opportunity = opportunities.find((item) => item.id === topItem.id);
+  if (!opportunity) return null;
+
+  const reasonParts = [
+    topItem.urgency !== "none" ? topItem.urgencyLabel : null,
+    getRevenueStageLabel(opportunity.stage),
+    `${opportunity.priorityScore}/100 prioritet`,
+    opportunity.followUpAt ? `oppfølging ${opportunity.followUpAt}` : null,
+    opportunity.nextPlay.channelLabel,
+  ];
+
+  return {
+    id: opportunity.id,
+    leadId: opportunity.leadId,
+    orderId: opportunity.orderId,
+    companyName: opportunity.companyName,
+    stage: opportunity.stage,
+    priorityScore: opportunity.priorityScore,
+    title: opportunity.nextPlay.title,
+    action: opportunity.nextAction,
+    reason: reasonParts.filter(Boolean).join(" · "),
+    urgency: topItem.urgency,
+    urgencyLabel: topItem.urgencyLabel,
+    channelLabel: opportunity.nextPlay.channelLabel,
+    timing: opportunity.nextPlay.timing,
+    checklist: opportunity.nextPlay.checklist.slice(0, 3),
+  };
 }
 
 export function buildRevenueSummary(opportunities: RevenueEngineOpportunity[]) {
