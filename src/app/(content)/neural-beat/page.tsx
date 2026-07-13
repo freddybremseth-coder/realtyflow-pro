@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { OpenArtToggle } from '@/components/ui/openart-toggle';
 import {
   Music, Loader2, Play, CheckCircle, XCircle, Clock, Zap, Youtube, Radio, Disc3,
   Waves, PlayCircle, AlertCircle, Trash2, Upload, BarChart3, Eye, ThumbsUp, MessageSquare,
@@ -216,6 +217,10 @@ export default function NeuralBeatPage() {
   const [imageBankLoading, setImageBankLoading] = useState(false);
   const [showImageBank, setShowImageBank] = useState(false);
   const [imageBankKind, setImageBankKind] = useState<'image' | 'logo' | 'thumbnail'>('image');
+  const [openArtEnabled, setOpenArtEnabled] = useState(false);
+  const [openArtPrompt, setOpenArtPrompt] = useState('');
+  const [openArtGenerating, setOpenArtGenerating] = useState(false);
+  const [openArtError, setOpenArtError] = useState('');
 
   // YouTube stats state
   const [ytChannel, setYtChannel] = useState<YouTubeChannel | null>(null);
@@ -603,6 +608,33 @@ export default function NeuralBeatPage() {
     } catch {
       window.alert('Kunne ikke lagre i bildebank');
       return false;
+    }
+  };
+
+  const generateOpenArtImage = async () => {
+    if (!openArtPrompt.trim() || openArtGenerating) return;
+    setOpenArtGenerating(true);
+    setOpenArtError('');
+    try {
+      const res = await fetch('/api/image-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: openArtPrompt,
+          aspectRatio: '16:9',
+          persist: true,
+          bankKind: imageBankKind,
+          provider: 'openart',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'OpenArt-generering feilet');
+      setOpenArtPrompt('');
+      await loadImageBank(imageBankKind);
+    } catch (err) {
+      setOpenArtError(err instanceof Error ? err.message : 'OpenArt-generering feilet');
+    } finally {
+      setOpenArtGenerating(false);
     }
   };
 
@@ -1347,6 +1379,35 @@ export default function NeuralBeatPage() {
                       ))}
                     </div>
                   )}
+
+                  {/* Generate slideshow/thumbnail images with OpenArt (opt-in, uses credits) */}
+                  <div className="pt-2 border-t border-slate-700 space-y-2">
+                    <OpenArtToggle enabled={openArtEnabled} onChange={setOpenArtEnabled} returnTo="/neural-beat" />
+                    {openArtEnabled && (
+                      <>
+                        <textarea
+                          value={openArtPrompt}
+                          onChange={(e) => setOpenArtPrompt(e.target.value)}
+                          rows={2}
+                          placeholder="Beskriv bildet, f.eks. 'neon-lit synthwave studio, retro 80s vibe, glowing waveforms'"
+                          className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-100 resize-none focus:border-pink-500 focus:outline-none"
+                        />
+                        {openArtError && <p className="text-xs text-red-400">{openArtError}</p>}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={openArtGenerating || !openArtPrompt.trim()}
+                          onClick={generateOpenArtImage}
+                          className="gap-1.5"
+                        >
+                          {openArtGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          {openArtGenerating
+                            ? 'Genererer med OpenArt...'
+                            : `Generer ${imageBankKind === 'logo' ? 'logo' : imageBankKind === 'thumbnail' ? 'thumbnail' : 'bilde'} med OpenArt`}
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

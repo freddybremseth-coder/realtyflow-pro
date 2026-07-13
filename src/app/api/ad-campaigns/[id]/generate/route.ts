@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { submitPrediction, pollPrediction, extractOutputUrl } from "@/services/ads/replicate-client";
+import { getOpenArtCreation, openArtGenerateImage } from "@/services/integrations/openart-client";
 import { uploadThumbnail } from "@/services/storage/media";
 
 export const maxDuration = 60;
@@ -69,28 +70,40 @@ export async function POST(
   const ids = claimed.map((c) => c.id);
   await supabase.from("ad_creatives").update({ status: "generating" }).in("id", ids);
 
-  // Need the campaign image once
+  // Need the campaign image + provider once
   const { data: campaign } = await supabase
     .from("ad_campaigns")
-    .select("product_image_url")
+    .select("product_image_url, image_provider")
     .eq("id", params.id)
     .single();
   if (!campaign?.product_image_url) {
     return NextResponse.json({ error: "Campaign image URL missing" }, { status: 500 });
   }
 
+  // Opt-in per campaign: OpenArt (credits from connected account) instead of
+  // Replicate. Both are submit-then-poll, so the tracking loop is shared —
+  // `replicate_prediction_id` stores the OpenArt historyId in that case.
+  const useOpenArt = campaign.image_provider === "openart";
+
   // ─── 3. Submit ALL in parallel (no wait) ──────────────────────────
   const submissions = await Promise.allSettled(
     claimed.map((row) =>
-      submitPrediction(
-        {
-          prompt: row.prompt,
-          input_image: campaign.product_image_url,
-          aspect_ratio: row.aspect_ratio,
-          output_format: "png",
-        },
-        0  // no wait — return prediction ID immediately
-      ).then((pred) => ({ row, pred }))
+      useOpenArt
+        ? openArtGenerateImage({
+            prompt: row.prompt,
+            aspectRatio: row.aspect_ratio,
+            sourceImageUrls: [campaign.product_image_url],
+            imageCount: 1,
+          }).then((historyId) => ({ row, id: historyId }))
+        : submitPrediction(
+            {
+              prompt: row.prompt,
+              input_image: campaign.product_image_url,
+              aspect_ratio: row.aspect_ratio,
+              output_format: "png",
+            },
+            0  // no wait — return prediction ID immediately
+          ).then((pred) => ({ row, id: pred.id }))
     )
   );
 
@@ -103,7 +116,7 @@ export async function POST(
     outputUrl?: string;
   }> = submissions.map((s, i) => {
     if (s.status === "fulfilled") {
-      return { row: s.value.row, predictionId: s.value.pred.id, finished: false };
+      return { row: s.value.row, predictionId: s.value.id, finished: false };
     }
     return {
       row: claimed[i],
@@ -116,19 +129,36 @@ export async function POST(
   while (timeLeft(t0) > 8_000 && tracking.some((t) => !t.finished)) {
     await sleep(3_000);
     const pending = tracking.filter((t) => !t.finished && t.predictionId);
-    const polls = await Promise.allSettled(
-      pending.map((p) => pollPrediction(p.predictionId!).then((pred) => ({ p, pred })))
-    );
-    for (const r of polls) {
-      if (r.status !== "fulfilled") continue;
-      const { p, pred } = r.value;
-      if (pred.status === "succeeded") {
-        p.finished = true;
-        p.outputUrl = extractOutputUrl(pred) ?? undefined;
-        if (!p.outputUrl) p.error = "No output URL";
-      } else if (pred.status === "failed" || pred.status === "canceled") {
-        p.finished = true;
-        p.error = pred.error || `Replicate status=${pred.status}`;
+    if (useOpenArt) {
+      const polls = await Promise.allSettled(
+        pending.map((p) => getOpenArtCreation(p.predictionId!).then((creation) => ({ p, creation })))
+      );
+      for (const r of polls) {
+        if (r.status !== "fulfilled") continue;
+        const { p, creation } = r.value;
+        if (creation.status === "COMPLETED" && creation.urls.length > 0) {
+          p.finished = true;
+          p.outputUrl = creation.urls[0];
+        } else if (creation.status === "FAILED" || creation.status === "CANCELLED") {
+          p.finished = true;
+          p.error = creation.failedReason || `OpenArt status=${creation.status}`;
+        }
+      }
+    } else {
+      const polls = await Promise.allSettled(
+        pending.map((p) => pollPrediction(p.predictionId!).then((pred) => ({ p, pred })))
+      );
+      for (const r of polls) {
+        if (r.status !== "fulfilled") continue;
+        const { p, pred } = r.value;
+        if (pred.status === "succeeded") {
+          p.finished = true;
+          p.outputUrl = extractOutputUrl(pred) ?? undefined;
+          if (!p.outputUrl) p.error = "No output URL";
+        } else if (pred.status === "failed" || pred.status === "canceled") {
+          p.finished = true;
+          p.error = pred.error || `Replicate status=${pred.status}`;
+        }
       }
     }
   }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { OpenArtToggle } from "@/components/ui/openart-toggle";
 import {
   Target, Calendar, BarChart3, Sparkles, Youtube,
   Camera, Globe, Link, Send, Plus, Image, Video, FileText,
@@ -343,6 +344,7 @@ export default function ContentHubPage() {
   const [manualImageName, setManualImageName] = useState("");
   const [manualMediaUploading, setManualMediaUploading] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
+  const [useOpenArt, setUseOpenArt] = useState(false);
   const [manualPublishStatus, setManualPublishStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishProgress, setPublishProgress] = useState<PublishProgress[]>([]);
@@ -1621,6 +1623,7 @@ export default function ContentHubPage() {
           brand: brand?.name || selectedBrand,
           persist: true,
           bankKind: "image",
+          provider: useOpenArt ? "openart" : "gemini",
         }),
       });
       const data = await res.json().catch(() => ({ error: "Bildegenerering feilet." }));
@@ -1638,7 +1641,7 @@ export default function ContentHubPage() {
     } finally {
       setImageGenerating(false);
     }
-  }, [description, imageStyle, selectedBrand, selectedContentType, title]);
+  }, [description, imageStyle, selectedBrand, selectedContentType, title, useOpenArt]);
 
   const handlePublish = useCallback(async (mode: "publish" | "schedule" = "publish") => {
     if (selectedPlatforms.length === 0) {
@@ -3092,6 +3095,7 @@ export default function ContentHubPage() {
                       <ChevronDown size={14} className="absolute right-3 top-3 text-slate-400 pointer-events-none" />
                     </div>
                   </div>
+                  <OpenArtToggle enabled={useOpenArt} onChange={setUseOpenArt} returnTo="/content-hub" />
                   <Button
                     variant="outline"
                     className="w-full"

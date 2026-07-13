@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { OpenArtToggle } from "@/components/ui/openart-toggle";
 import { downloadImageFile, safeImageFilename } from "@/lib/client/image-files";
 import {
   Image as ImageIcon, Wand2, Download, Loader2, Copy, Trash2,
@@ -62,6 +63,7 @@ export default function ImageStudioPage() {
   const [variantLoading, setVariantLoading] = useState(false);
   const [variantError, setVariantError] = useState("");
   const [downloadingImage, setDownloadingImage] = useState<string | null>(null);
+  const [useOpenArt, setUseOpenArt] = useState(false);
 
   const sendToContentHub = async (img: GeneratedImage) => {
     setSendingToHub(img.id);
@@ -102,7 +104,10 @@ export default function ImageStudioPage() {
       const res = await fetch("/api/image-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, style, aspectRatio, brand, persist: true, bankKind: "image" }),
+        body: JSON.stringify({
+          prompt, style, aspectRatio, brand, persist: true, bankKind: "image",
+          provider: useOpenArt ? "openart" : "gemini",
+        }),
       });
 
       const data = await res.json();
@@ -167,6 +172,7 @@ export default function ImageStudioPage() {
           brand,
           persist: true,
           bankKind: "variant",
+          provider: useOpenArt ? "openart" : "gemini",
         }),
       });
 
@@ -321,6 +327,11 @@ export default function ImageStudioPage() {
                 {variantError && (
                   <p className="text-xs text-red-400">{variantError}</p>
                 )}
+                {useOpenArt && (
+                  <p className="text-[10px] text-fuchsia-300/80">
+                    OpenArt er aktivert — varianten genereres med OpenArt (bruker kreditter).
+                  </p>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -408,6 +419,8 @@ export default function ImageStudioPage() {
             </div>
           </div>
 
+          <OpenArtToggle enabled={useOpenArt} onChange={setUseOpenArt} returnTo="/image-studio" />
+
           {error && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
               <AlertCircle size={16} className="text-red-400 shrink-0" />
@@ -430,7 +443,9 @@ export default function ImageStudioPage() {
 
           {loading && (
             <p className="text-xs text-slate-500">
-              Bildegenerering kan ta 10-30 sekunder...
+              {useOpenArt
+                ? "OpenArt-generering kan ta opptil et par minutter..."
+                : "Bildegenerering kan ta 10-30 sekunder..."}
             </p>
           )}
         </CardContent>

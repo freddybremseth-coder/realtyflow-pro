@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { OpenArtToggle } from "@/components/ui/openart-toggle";
 import { Loader2, Sparkles, ArrowRight, Wand2, RefreshCw } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
 
@@ -79,6 +80,7 @@ export default function NewAdCampaignPage() {
   const [aspectRatios, setAspectRatios] = useState<string[]>(["1:1", "9:16"]);
   const [bankImages, setBankImages] = useState<BankImage[]>([]);
   const [bankLoading, setBankLoading] = useState(false);
+  const [useOpenArt, setUseOpenArt] = useState(false);
 
   const selectedBrand = BRANDS.find((b) => b.id === brandId);
   const estimatedCost = (targetTotal * 0.04).toFixed(2);
@@ -136,6 +138,7 @@ export default function NewAdCampaignPage() {
           offer: offer || null,
           total_creatives: targetTotal,
           aspect_ratios: aspectRatios,
+          image_provider: useOpenArt ? "openart" : "replicate",
         }),
       });
       const data = await res.json();
@@ -396,6 +399,16 @@ export default function NewAdCampaignPage() {
             </div>
             <p className="text-xs text-gray-500 mt-2">
               Du kan velge ett eller begge — minst ett må være valgt.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-2 block">Bildemotor</label>
+            <OpenArtToggle enabled={useOpenArt} onChange={setUseOpenArt} returnTo="/ad-campaigns/new" />
+            <p className="text-xs text-gray-500 mt-2">
+              {useOpenArt
+                ? `OpenArt genererer alle ${targetTotal} annonsebildene (ca. 20 kreditter per bilde med standardmodellen).`
+                : "Standard: Replicate genererer annonsebildene."}
             </p>
           </div>
         </CardContent>

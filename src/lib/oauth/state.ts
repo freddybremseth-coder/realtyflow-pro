@@ -31,7 +31,8 @@ export type OAuthPlatform =
   | "linkedin"
   | "tiktok"
   | "pinterest"
-  | "twitter";
+  | "twitter"
+  | "openart";
 
 export interface CreateStateInput {
   brandId: string;
