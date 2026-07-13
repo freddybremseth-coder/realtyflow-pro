@@ -40,6 +40,31 @@ export interface BuyerCriterionInput {
   active?: boolean | null;
 }
 
+export interface CustomerNextActionContactInput extends Customer360ContactInput {
+  id?: string | null;
+  pipeline_status?: string | null;
+}
+
+export interface CustomerNextActionWorkItemInput {
+  id?: string | null;
+  title?: string | null;
+  description?: string | null;
+  next_action?: string | null;
+  priority?: string | null;
+  status?: string | null;
+}
+
+export interface CustomerNextAction {
+  title: string;
+  description: string;
+  reason: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  primaryLabel: string;
+  primaryHref: string;
+  secondaryLabel?: string;
+  secondaryHref?: string;
+}
+
 export function buildCustomerProfileCompleteness(
   contact: Customer360ContactInput,
   criteria: BuyerCriterionInput[] = [],
@@ -67,6 +92,96 @@ export function buildCustomerProfileCompleteness(
     total: checks.length,
     checks,
     missing: checks.filter((item) => !item.complete).map((item) => item.label),
+  };
+}
+
+function priorityLabel(value: unknown): CustomerNextAction["priority"] {
+  const normalized = String(value || "").toUpperCase();
+  return normalized === "CRITICAL" || normalized === "HIGH" || normalized === "MEDIUM" || normalized === "LOW"
+    ? normalized
+    : "MEDIUM";
+}
+
+function isOverdue(value: unknown, now = new Date()) {
+  const date = new Date(String(value || ""));
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < now.getTime();
+}
+
+export function buildCustomerNextAction(
+  contact: CustomerNextActionContactInput,
+  recommendedAction: string,
+  completeness: ReturnType<typeof buildCustomerProfileCompleteness>,
+  workItems: CustomerNextActionWorkItemInput[] = [],
+  now = new Date(),
+): CustomerNextAction {
+  const contactId = String(contact.id || "").trim();
+  const openWorkItem = workItems
+    .filter((item) => String(item.status || "TO_DO").toUpperCase() !== "DONE")
+    .sort((a, b) => {
+      const weights: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+      return (weights[String(b.priority || "LOW").toUpperCase()] || 1) - (weights[String(a.priority || "LOW").toUpperCase()] || 1);
+    })[0] || null;
+
+  if (!contact.email && !contact.phone) {
+    return {
+      title: "Finn kontaktkanal før neste steg",
+      description: "Kunden mangler både e-post og telefon. Registrer minst én trygg kanal før videre oppfølging.",
+      reason: "mangler kontaktkanal",
+      priority: "CRITICAL",
+      primaryLabel: "Oppdater i CRM",
+      primaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+    };
+  }
+
+  if (openWorkItem && priorityLabel(openWorkItem.priority) === "CRITICAL") {
+    return {
+      title: openWorkItem.title || "Kritisk kundeoppgave",
+      description: openWorkItem.next_action || openWorkItem.description || "Åpne oppgaven og fullfør neste manuelle steg.",
+      reason: "kritisk åpen kundeoppgave",
+      priority: "CRITICAL",
+      primaryLabel: "Se oppgave",
+      primaryHref: "/marketing-tasks",
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+    };
+  }
+
+  if (isOverdue(contact.next_followup, now)) {
+    return {
+      title: "Følg opp kunden nå",
+      description: recommendedAction,
+      reason: "oppfølging er forfalt",
+      priority: "CRITICAL",
+      primaryLabel: "Planlegg ny oppfølging",
+      primaryHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+    };
+  }
+
+  if (completeness.score < 80) {
+    return {
+      title: "Gjør kundeprofilen komplett",
+      description: `Mangler: ${completeness.missing.slice(0, 3).join(", ") || "flere kjøpskriterier"}. Oppdater profilen før du lager shortlist eller kundepresentasjon.`,
+      reason: `profil ${completeness.score}% komplett`,
+      priority: "HIGH",
+      primaryLabel: "Oppdater profil",
+      primaryHref: "/lead-intelligence",
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+    };
+  }
+
+  return {
+    title: "Neste beste kundehandling",
+    description: recommendedAction,
+    reason: "basert på pipeline-status, kjøpssignaler og kundeminne",
+    priority: "MEDIUM",
+    primaryLabel: "Planlegg oppfølging",
+    primaryHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
+    secondaryLabel: "Åpne CRM",
+    secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
   };
 }
 
