@@ -2,6 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 import { isLikelyBot } from "@/lib/spam";
 import {
+  buildRevenueEventDedupeKey,
+  insertRevenueEvent,
+  type RevenueEventInput,
+} from "@/lib/revenue/events";
+import {
   resolveSequence,
   renderTemplate,
   type NurtureSequence,
@@ -46,6 +51,14 @@ export interface NurtureRunResult {
   flaggedSpam: number;
 }
 
+interface NurtureRevenueContact {
+  id: string;
+  email?: string | null;
+  source?: string | null;
+  pipeline_status?: string | null;
+  property_interest?: string | null;
+}
+
 function daysSince(iso: string | null | undefined): number {
   if (!iso) return 0;
   const t = new Date(iso).getTime();
@@ -65,6 +78,56 @@ function nextDueStep(
     return null; // stegene er sekvensielle – stopp ved første ikke-forfalte
   }
   return null;
+}
+
+export function buildNurtureRevenueEventInput({
+  contact,
+  sequence,
+  step,
+  brandId,
+  subject,
+  bodyPreview,
+  sentAt,
+  previousPipelineStatus,
+}: {
+  contact: NurtureRevenueContact;
+  sequence: NurtureSequence;
+  step: NurtureStep;
+  brandId: string;
+  subject: string;
+  bodyPreview: string;
+  sentAt: string;
+  previousPipelineStatus?: string | null;
+}): RevenueEventInput {
+  return {
+    eventType: "nurture_step_sent",
+    title: `Nurture sendt: ${subject}`,
+    description: `${sequence.brandName} · ${sequence.id} · ${step.id}`,
+    contactId: contact.id,
+    brandId,
+    sourceSystem: "lead_nurture",
+    sourceType: sequence.mode,
+    sourceId: `${sequence.id}:${step.id}`,
+    actorType: "automation",
+    confidenceScore: sequence.mode === "reactivation" ? 78 : 72,
+    occurredAt: sentAt,
+    dedupeKey: buildRevenueEventDedupeKey(["lead_nurture", contact.id, sequence.id, step.id]),
+    metadata: {
+      email: contact.email || null,
+      source: contact.source || null,
+      property_interest: contact.property_interest || null,
+      sequence_id: sequence.id,
+      step_id: step.id,
+      sequence_mode: sequence.mode,
+      channel: step.channel,
+      subject,
+      body_preview: bodyPreview,
+      dry_run: false,
+      send_brand_id: sequence.sendBrandId || brandId,
+      previous_pipeline_status: previousPipelineStatus || null,
+    },
+    createdBy: "services/growth/nurture-engine",
+  };
 }
 
 export async function runNurtureCycle(
@@ -257,6 +320,24 @@ export async function runNurtureCycle(
           updated_at: now,
         })
         .eq("id", contact.id);
+
+      const eventResult = await insertRevenueEvent(
+        supabase,
+        buildNurtureRevenueEventInput({
+          contact,
+          sequence,
+          step,
+          brandId: cBrand,
+          subject,
+          bodyPreview: bodyText.slice(0, 280),
+          sentAt: now,
+          previousPipelineStatus: status,
+        })
+      );
+
+      if (!eventResult.ok && !eventResult.tableNotReady) {
+        console.warn("[nurture-engine] revenue event insert failed", eventResult.error);
+      }
     } else {
       planned.status = "failed";
       planned.error = send.error;
