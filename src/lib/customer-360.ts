@@ -1,4 +1,6 @@
-export type CustomerTimelineKind = "interaction" | "portal" | "profile" | "shortlist" | "presentation" | "draft" | "task";
+import { REVENUE_EVENT_LABELS, type RevenueEventType } from "@/lib/revenue/events";
+
+export type CustomerTimelineKind = "interaction" | "portal" | "profile" | "shortlist" | "presentation" | "draft" | "task" | "revenue";
 
 export interface CustomerTimelineEvent {
   id: string;
@@ -7,6 +9,19 @@ export interface CustomerTimelineEvent {
   detail?: string | null;
   occurredAt: string;
   direction?: "in" | "out" | "internal";
+}
+
+export interface CustomerRevenueEventInput {
+  id?: string | null;
+  event_type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  source_system?: string | null;
+  source_type?: string | null;
+  actor_type?: string | null;
+  occurred_at?: string | null;
+  created_at?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface Customer360ContactInput {
@@ -79,6 +94,44 @@ export function buildContactInteractionEvents(interactions: unknown): CustomerTi
       detail: String(item.content || item.body || item.message || "").trim() || null,
       occurredAt,
       direction: item.direction === "in" ? "in" as const : item.direction === "out" ? "out" as const : "internal" as const,
+    }];
+  });
+}
+
+function revenueEventDirection(eventType: string, actorType: string): CustomerTimelineEvent["direction"] {
+  if (eventType === "email_received" || eventType === "lead_created" || eventType === "contact_created" || eventType === "meeting_booked") return "in";
+  if (eventType === "message_sent" || eventType === "nurture_step_sent") return "out";
+  if (actorType === "customer") return "in";
+  return "internal";
+}
+
+function revenueEventDetail(row: CustomerRevenueEventInput) {
+  const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  return String(
+    row.description
+      || metadata.body_preview
+      || metadata.subject
+      || metadata.source
+      || row.source_system
+      || ""
+  ).trim() || null;
+}
+
+export function buildRevenueTimelineEvents(events: CustomerRevenueEventInput[]): CustomerTimelineEvent[] {
+  return (events || []).flatMap((row) => {
+    const occurredAt = validDate(row.occurred_at || row.created_at);
+    if (!occurredAt) return [];
+    const eventType = String(row.event_type || "note");
+    const actorType = String(row.actor_type || "system");
+    const fallbackTitle = REVENUE_EVENT_LABELS[eventType as RevenueEventType] || "Revenue-hendelse";
+
+    return [{
+      id: String(row.id || `revenue-${eventType}-${occurredAt}`),
+      kind: "revenue" as const,
+      title: String(row.title || fallbackTitle),
+      detail: revenueEventDetail(row),
+      occurredAt,
+      direction: revenueEventDirection(eventType, actorType),
     }];
   });
 }

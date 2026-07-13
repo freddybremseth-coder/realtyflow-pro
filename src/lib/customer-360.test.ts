@@ -4,6 +4,7 @@ import {
   buildContactInteractionEvents,
   buildCustomerProfileCompleteness,
   buildCustomerTimeline,
+  buildRevenueTimelineEvents,
 } from "./customer-360";
 
 test("customer profile completeness combines CRM and approved criteria", () => {
@@ -62,4 +63,40 @@ test("timeline sorting is newest first and deduplicates ids per kind", () => {
   assert.equal(result.length, 2);
   assert.equal(result[0].kind, "portal");
   assert.equal(result[1].title, "Updated task");
+});
+
+test("revenue events become customer timeline memory with direction", () => {
+  const events = buildRevenueTimelineEvents([
+    {
+      id: "inbound-1",
+      event_type: "email_received",
+      title: "E-post mottatt: Book møte",
+      actor_type: "customer",
+      occurred_at: "2026-07-12T12:00:00.000Z",
+      metadata: { body_preview: "Kan vi ta en prat?" },
+    },
+    {
+      id: "sent-1",
+      event_type: "message_sent",
+      title: "E-post sendt: Her er forslag",
+      actor_type: "human",
+      occurred_at: "2026-07-12T11:00:00.000Z",
+      description: "Sendt til buyer@example.com",
+    },
+    {
+      id: "fallback-1",
+      event_type: "nurture_step_sent",
+      actor_type: "automation",
+      occurred_at: "2026-07-12T10:00:00.000Z",
+    },
+  ]);
+
+  assert.equal(events.length, 3);
+  assert.equal(events[0].kind, "revenue");
+  assert.equal(events[0].direction, "in");
+  assert.equal(events[0].detail, "Kan vi ta en prat?");
+  assert.equal(events[1].direction, "out");
+  assert.equal(events[1].detail, "Sendt til buyer@example.com");
+  assert.equal(events[2].title, "Nurture-steg sendt");
+  assert.equal(events[2].direction, "out");
 });
