@@ -187,7 +187,7 @@ export async function GET(
     generatedAt: new Date().toISOString(),
     contact,
     brandId: String(contact.brand_id || contact.brand || activeProfile?.brand || "zeneco"),
-    recommendedAction: recommendRevenueAction(contact),
+    recommendedAction: recommendRevenueAction(contact, new Date(), { revenueEvents }),
     completeness,
     buyerProfiles: profiles,
     activeBuyerProfile: activeProfile,

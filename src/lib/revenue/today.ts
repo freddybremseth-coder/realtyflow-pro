@@ -22,6 +22,19 @@ export interface RevenueContactInput {
   purchase_signal_score?: number | null;
 }
 
+export interface RevenueMemoryEventInput {
+  event_type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  occurred_at?: string | null;
+  created_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface RevenueRecommendationContext {
+  revenueEvents?: RevenueMemoryEventInput[] | null;
+}
+
 export interface RevenuePriorityItem {
   id: string;
   contactName: string;
@@ -84,6 +97,60 @@ function signalScoreFromText(text: string) {
   return Math.max(-25, Math.min(35, score));
 }
 
+function eventTime(event: RevenueMemoryEventInput) {
+  return safeDate(event.occurred_at || event.created_at);
+}
+
+function eventText(event: RevenueMemoryEventInput) {
+  const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  return [
+    event.title,
+    event.description,
+    metadata.subject,
+    metadata.body_preview,
+    metadata.source,
+  ].map((value) => String(value || "")).join(" ").toLowerCase();
+}
+
+export function recommendActionFromRevenueMemory(
+  events: RevenueMemoryEventInput[] | null | undefined,
+  now = new Date(),
+) {
+  const sorted = [...(events || [])]
+    .map((event) => ({ event, at: eventTime(event) }))
+    .filter((item): item is { event: RevenueMemoryEventInput; at: Date } => Boolean(item.at))
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  const recentInbound = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return item.event.event_type === "email_received" && ageDays <= 3;
+  });
+  if (recentInbound) {
+    return "Kunden har svart nylig. Les siste e-post og svar personlig med ett konkret neste steg.";
+  }
+
+  const recentBooking = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return item.event.event_type === "meeting_booked" && ageDays <= 14;
+  });
+  if (recentBooking) {
+    return "Møte er booket. Forbered kundens behov, budsjett og 3–5 relevante boliger før samtalen.";
+  }
+
+  const sentFollowup = sorted.find((item) => {
+    const ageDays = daysBetween(item.at, now);
+    return ["message_sent", "nurture_step_sent"].includes(String(item.event.event_type || "")) && ageDays >= 3 && ageDays <= 14;
+  });
+  if (sentFollowup) {
+    const text = eventText(sentFollowup.event);
+    if (!/stopp|ikke aktuelt|not interested|unsubscribe/.test(text)) {
+      return "Det er sendt oppfølging uten registrert svar. Send en kort, personlig check-in eller ring kunden.";
+    }
+  }
+
+  return null;
+}
+
 export function scoreRevenueContact(contact: RevenueContactInput, now = new Date()) {
   const stage = normalizeStage(contact.pipeline_status);
   const stageScore: Record<string, number> = {
@@ -128,7 +195,11 @@ export function scoreRevenueContact(contact: RevenueContactInput, now = new Date
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-export function recommendRevenueAction(contact: RevenueContactInput, now = new Date()) {
+export function recommendRevenueAction(
+  contact: RevenueContactInput,
+  now = new Date(),
+  context: RevenueRecommendationContext = {},
+) {
   const stage = normalizeStage(contact.pipeline_status);
   const nextFollowup = safeDate(contact.next_followup);
   const overdue = Boolean(nextFollowup && nextFollowup.getTime() < now.getTime());
@@ -136,6 +207,9 @@ export function recommendRevenueAction(contact: RevenueContactInput, now = new D
   if (!contact.email && !contact.phone) {
     return "Finn en gyldig kontaktkanal før leadet går tapt.";
   }
+
+  const memoryAction = recommendActionFromRevenueMemory(context.revenueEvents, now);
+  if (memoryAction) return overdue ? `Oppfølgingen er forsinket. ${memoryAction}` : memoryAction;
 
   const stageActions: Record<string, string> = {
     NEW: "Svar personlig og avklar budsjett, område, boligtype og tidslinje.",
