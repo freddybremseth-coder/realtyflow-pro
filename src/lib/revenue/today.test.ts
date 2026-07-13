@@ -175,6 +175,81 @@ test("booked meeting memory prepares the advisor for the call", () => {
   assert.match(action || "", /3–5 relevante boliger/i);
 });
 
+test("portal preference updates recommend matching homes against the new profile", () => {
+  const action = recommendActionFromRevenueMemory(
+    [{
+      event_type: "contact_updated",
+      source_system: "portal",
+      source_type: "preferences_updated",
+      title: "Kunden oppdaterte boligønsker på Min side",
+      description: "Budsjett til: 550000\nOmråde/sted: Altea\nTidslinje: Innen 3 mnd",
+      occurred_at: "2026-07-10T12:00:00.000Z",
+      metadata: { property_interest: "Altea / Villa" },
+    }],
+    NOW,
+  );
+
+  assert.match(action || "", /oppdaterte boligønsker/i);
+  assert.match(action || "", /Match 3–5 boliger/i);
+});
+
+test("fresh portal messages become high-confidence revenue memory signals", () => {
+  const item = buildRevenuePriority(
+    {
+      id: "portal-message",
+      name: "Portal Buyer",
+      email: "portal@example.com",
+      pipeline_status: "CONTACT",
+      pipeline_value: 400_000,
+      next_followup: "2026-07-15T09:00:00.000Z",
+    },
+    NOW,
+    {
+      revenueEvents: [{
+        event_type: "note",
+        source_system: "portal",
+        source_type: "customer_message",
+        title: "Kundemelding på Min side",
+        description: "Kan vi se disse boligene neste uke?",
+        occurred_at: "2026-07-10T12:00:00.000Z",
+      }],
+    },
+  );
+
+  assert.ok(item);
+  assert.equal(item.priority, "HIGH");
+  assert.match(item.recommendedAction, /skrevet på Min side/i);
+  assert.match(item.reason, /kundemelding på Min side/i);
+});
+
+test("property PDF sends create a concrete prospect follow-up signal", () => {
+  const memory = scoreRevenueMemorySignals(
+    [{
+      event_type: "message_sent",
+      source_system: "property_pdf",
+      source_type: "single_property_pdf",
+      title: "E-post sendt: Eiendomsprospekt",
+      occurred_at: "2026-07-09T12:00:00.000Z",
+      metadata: { property_title: "Villa Altea", filename: "villa-prospekt.pdf" },
+    }],
+    NOW,
+  );
+  const action = recommendActionFromRevenueMemory(
+    [{
+      event_type: "message_sent",
+      source_system: "property_pdf",
+      source_type: "single_property_pdf",
+      title: "E-post sendt: Eiendomsprospekt",
+      occurred_at: "2026-07-09T12:00:00.000Z",
+    }],
+    NOW,
+  );
+
+  assert.ok(memory.score >= 12);
+  assert.ok(memory.reasons.includes("konkret prospekt sendt"));
+  assert.match(action || "", /konkret prospekt/i);
+});
+
 test("sent follow-up without a reply recommends a personal check-in", () => {
   const action = recommendActionFromRevenueMemory(
     [{
