@@ -468,6 +468,13 @@ export const BuyerProfileActionInputSchema = z
   })
   .strict();
 
+export const DeleteBuyerProfilesInputSchema = z
+  .object({
+    brand: BrandSchema,
+    buyerProfileIds: z.array(UUIDSchema).min(1).max(50),
+  })
+  .strict();
+
 export const CreateBuyerProfileContactInputSchema = BuyerProfileActionInputSchema.extend({
   contactId: UUIDSchema,
   contact: ExtractedLeadContactSchema,
@@ -661,6 +668,7 @@ export type CreateBuyerProfileInput = z.infer<typeof CreateBuyerProfileInputSche
 export type LeadContactCandidateInput = z.infer<typeof LeadContactCandidateInputSchema>;
 export type LinkBuyerProfileContactInput = z.infer<typeof LinkBuyerProfileContactInputSchema>;
 export type BuyerProfileActionInput = z.infer<typeof BuyerProfileActionInputSchema>;
+export type DeleteBuyerProfilesInput = z.infer<typeof DeleteBuyerProfilesInputSchema>;
 export type CreateBuyerProfileContactInput = z.infer<typeof CreateBuyerProfileContactInputSchema>;
 export type CreateLeadPropertyShortlistInput = z.infer<typeof CreateLeadPropertyShortlistInputSchema>;
 export type CreateLeadCustomerPresentationDraftInput = z.infer<typeof CreateLeadCustomerPresentationDraftInputSchema>;
@@ -1778,6 +1786,58 @@ export class LeadIntelligencePersistenceRepository {
       id: UUIDSchema.parse(row.id),
       status: BuyerProfilePersistenceStatusSchema.parse(row.status),
       duplicate: Boolean(row.duplicate),
+    };
+  }
+
+  async deleteBuyerProfiles(input: DeleteBuyerProfilesInput) {
+    this.assertCanWrite();
+    const data = DeleteBuyerProfilesInputSchema.parse(input);
+    const buyerProfileIds = Array.from(new Set(data.buyerProfileIds));
+
+    const { rows } = await this.db.query<{
+      deleted_ids: string[] | null;
+      missing_ids: string[] | null;
+    }>(
+      `
+        with requested as (
+          select distinct unnest($2::uuid[]) as id
+        ),
+        deleted_profiles as (
+          delete from public.buyer_profiles profile
+          using requested
+          where profile.id = requested.id
+            and profile.brand = $1
+          returning profile.id::text as id
+        )
+        select
+          coalesce(array_agg(deleted_profiles.id order by deleted_profiles.id), '{}') as deleted_ids,
+          coalesce(
+            (
+              select array_agg(requested.id::text order by requested.id::text)
+              from requested
+              where not exists (
+                select 1
+                from deleted_profiles
+                where deleted_profiles.id = requested.id::text
+              )
+            ),
+            '{}'
+          ) as missing_ids
+        from deleted_profiles
+      `,
+      [data.brand, buyerProfileIds],
+    );
+
+    const row = rows[0] || { deleted_ids: [], missing_ids: buyerProfileIds };
+    const deletedIds = (row.deleted_ids || []).map((id) => UUIDSchema.parse(id));
+    const missingIds = (row.missing_ids || []).map((id) => UUIDSchema.parse(id));
+
+    return {
+      brand: data.brand,
+      deletedBuyerProfileIds: deletedIds,
+      missingBuyerProfileIds: missingIds,
+      deletedCount: deletedIds.length,
+      missingCount: missingIds.length,
     };
   }
 
