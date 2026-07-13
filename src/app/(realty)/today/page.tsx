@@ -58,6 +58,16 @@ interface RevenueWorkItem {
   href: string;
 }
 
+interface RevenueRecommendedPlay {
+  source: "customer_priority" | "work_item";
+  title: string;
+  primaryAction: string;
+  reason: string;
+  href: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  score: number;
+}
+
 interface RevenueInboxData {
   generatedAt: string;
   summary: {
@@ -72,6 +82,7 @@ interface RevenueInboxData {
   };
   priorities: RevenuePriority[];
   workItems: RevenueWorkItem[];
+  recommendedPlay: RevenueRecommendedPlay | null;
   warnings: string[];
 }
 
@@ -280,6 +291,35 @@ export default function RevenueTodayPage() {
           );
         })}
       </section>
+
+      {data?.recommendedPlay && (
+        <section className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-slate-900/80 to-slate-950 p-5 shadow-lg shadow-emerald-950/20">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-200">
+                  <Sparkles size={13} className="mr-1" /> AI anbefaler nå
+                </span>
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityClasses(data.recommendedPlay.priority)}`}>
+                  {data.recommendedPlay.priority}
+                </span>
+                {data.recommendedPlay.score > 0 && (
+                  <span className="text-xs font-semibold text-emerald-300">Score {data.recommendedPlay.score}/100</span>
+                )}
+              </div>
+              <h2 className="text-xl font-semibold text-white">{data.recommendedPlay.title}</h2>
+              <p className="mt-2 text-sm text-slate-100">{data.recommendedPlay.primaryAction}</p>
+              <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.recommendedPlay.reason}</p>
+            </div>
+            <Button asChild>
+              <Link href={data.recommendedPlay.href}>
+                Gå til anbefalt arbeid
+                <ArrowRight size={15} className="ml-2" />
+              </Link>
+            </Button>
+          </div>
+        </section>
+      )}
 
       <section className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

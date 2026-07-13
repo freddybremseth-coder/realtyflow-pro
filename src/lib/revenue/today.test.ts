@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildRecommendedRevenuePlay,
   buildRevenuePriority,
   recommendActionFromRevenueMemory,
   recommendRevenueAction,
@@ -293,4 +294,65 @@ test("sorting prefers critical and higher-scoring opportunities", () => {
   const sorted = sortRevenuePriorities([low, critical]);
   assert.equal(sorted[0].id, "critical");
   assert.ok(critical.score >= low.score);
+});
+
+test("recommended revenue play chooses the most urgent customer action", () => {
+  const critical = buildRevenuePriority(
+    {
+      id: "deal-critical",
+      name: "Critical Buyer",
+      email: "critical@example.com",
+      pipeline_status: "NEGOTIATION",
+      pipeline_value: 800_000,
+      next_followup: "2026-07-09T09:00:00.000Z",
+      brand_id: "soleada",
+    },
+    NOW,
+  );
+
+  assert.ok(critical);
+  const play = buildRecommendedRevenuePlay([critical], [{
+    id: "task-1",
+    title: "Sjekk portalpreferanser",
+    priority: "HIGH",
+    aiScore: 80,
+    href: "/today",
+  }]);
+
+  assert.ok(play);
+  assert.equal(play.source, "customer_priority");
+  assert.equal(play.title, "Følg opp Critical Buyer");
+  assert.equal(play.priority, "CRITICAL");
+  assert.match(play.primaryAction, /forsinket/i);
+});
+
+test("recommended revenue play can choose a stronger open sales task", () => {
+  const medium = buildRevenuePriority(
+    {
+      id: "lead-medium",
+      name: "Medium Buyer",
+      email: "medium@example.com",
+      pipeline_status: "CONTACT",
+      pipeline_value: 150_000,
+      next_followup: "2026-07-14T09:00:00.000Z",
+      brand_id: "zeneco",
+    },
+    NOW,
+  );
+
+  assert.ok(medium);
+  const play = buildRecommendedRevenuePlay([medium], [{
+    id: "task-2",
+    title: "Match nye portalønsker",
+    priority: "HIGH",
+    nextAction: "Finn 3 aktuelle boliger og lag shortlist.",
+    aiScore: 88,
+    href: "/lead-intelligence",
+  }]);
+
+  assert.ok(play);
+  assert.equal(play.source, "work_item");
+  assert.equal(play.title, "Match nye portalønsker");
+  assert.match(play.primaryAction, /shortlist/i);
+  assert.equal(play.href, "/lead-intelligence");
 });
