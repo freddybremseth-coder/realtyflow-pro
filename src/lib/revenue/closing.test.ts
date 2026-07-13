@@ -17,6 +17,7 @@ test("flags overdue negotiation with missing legal steps as high risk", () => {
   }, NOW);
   assert.ok(deal);
   assert.equal(deal.risk, "HIGH");
+  assert.equal(deal.href, "/customers/1");
   assert.match(deal.nextAction, /i dag/i);
   assert.ok(deal.blockers.some((item) => /advokat/i.test(item)));
 });

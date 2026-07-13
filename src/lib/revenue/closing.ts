@@ -121,7 +121,7 @@ export function buildClosingOpportunity(contact: ClosingContact, now = new Date(
     blockers,
     checklist,
     nextAction,
-    href: `/pipeline?contactId=${encodeURIComponent(contact.id)}`,
+    href: `/customers/${encodeURIComponent(contact.id)}`,
   };
 }
 
