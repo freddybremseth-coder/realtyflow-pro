@@ -137,8 +137,14 @@ export async function POST(
   await Promise.all(
     tracking.map(async (t) => {
       if (t.error) {
+        // Rate limiting (HTTP 429 / throttling) is transient: Replicate
+        // throttles hard when the account has little/no credit. Release the
+        // row back to `pending` so the next batch call retries it instead of
+        // burying it as permanently failed — but keep the error text so the
+        // UI can tell the user to top up credit.
+        const isRateLimit = /\b429\b|rate.?limit|throttl/i.test(t.error);
         await supabase.from("ad_creatives").update({
-          status: "failed",
+          status: isRateLimit ? "pending" : "failed",
           error: t.error,
           replicate_prediction_id: t.predictionId ?? null,
         }).eq("id", t.row.id);
@@ -185,7 +191,10 @@ export async function POST(
     })
   );
 
-  return await summarize(supabase, params.id);
+  const rateLimited = tracking.some(
+    (t) => t.error && /\b429\b|rate.?limit|throttl/i.test(t.error)
+  );
+  return await summarize(supabase, params.id, rateLimited);
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────
@@ -194,7 +203,11 @@ function timeLeft(start: number): number {
 }
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
-async function summarize(supabase: ReturnType<typeof createServerClient>, campaignId: string) {
+async function summarize(
+  supabase: ReturnType<typeof createServerClient>,
+  campaignId: string,
+  rateLimited = false,
+) {
   const { data: rows } = await supabase
     .from("ad_creatives")
     .select("status")
@@ -219,5 +232,6 @@ async function summarize(supabase: ReturnType<typeof createServerClient>, campai
     generating_total: counts.generating,
     failed_total: counts.failed,
     status,
+    rate_limited: rateLimited,
   });
 }

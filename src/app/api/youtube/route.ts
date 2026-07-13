@@ -25,16 +25,42 @@ export async function GET(req: NextRequest) {
 
     const brandId = req.nextUrl.searchParams.get("brandId") || undefined;
 
-    const [channel, videos] = await Promise.all([
-      getChannelInfo(brandId),
-      listVideos(20, brandId),
-    ]);
+    // With an explicit brandId we require that brand's own token. Falling
+    // back to the _system/env token here is exactly what mixed up channels
+    // between brands: the page would silently show another brand's channel.
+    const requireBrandToken = Boolean(brandId);
 
-    return NextResponse.json({
-      configured: true,
-      channel,
-      videos,
-    });
+    try {
+      const [channel, videos] = await Promise.all([
+        getChannelInfo(brandId, { requireBrandToken }),
+        listVideos(20, brandId, { requireBrandToken }),
+      ]);
+
+      return NextResponse.json({
+        configured: true,
+        connected: true,
+        brandId: brandId || null,
+        channel,
+        videos,
+      });
+    } catch (error) {
+      // Brand has no (working) YouTube connection — that's a state, not a
+      // server error. Give the UI what it needs to render a connect card.
+      if (brandId) {
+        const message = error instanceof Error ? error.message : "Ukjent feil";
+        console.warn(`[YouTube API] Brand "${brandId}" not connected:`, message);
+        return NextResponse.json({
+          configured: true,
+          connected: false,
+          brandId,
+          channel: null,
+          videos: [],
+          message,
+          reconnectUrl: `/api/oauth/google?brand_id=${encodeURIComponent(brandId)}&service=youtube&return_to=${encodeURIComponent("/youtube-studio")}`,
+        });
+      }
+      throw error;
+    }
   } catch (error) {
     console.error("[YouTube API] GET error:", error);
     return NextResponse.json(

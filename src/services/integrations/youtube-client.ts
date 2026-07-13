@@ -76,12 +76,19 @@ async function collectTokenCandidates(brandId?: string): Promise<TokenCandidate[
       if (brandId) {
         try {
           const { getChannelsByBrand, getDecryptedTokens } = await import('@/lib/oauth/channels');
-          const channels = await getChannelsByBrand(brandId, 'youtube');
-          for (const ch of channels) {
-            const tokens = await getDecryptedTokens(ch.id);
-            const refresh = tokens?.refreshToken;
-            if (refresh && !candidates.some((c) => c.token === refresh)) {
-              candidates.push({ source: `oauth_tokens:${ch.display_name}`, token: refresh });
+          // Aliased brands (neuralbeat ↔ remasterfreddy) share one channel;
+          // the legacy brand_settings path below already tries aliases, so
+          // the oauth_tokens path must too or the alias brand looks
+          // disconnected even though its channel exists.
+          const channelBrandIds = [brandId, ...(BRAND_TOKEN_ALIASES[brandId] || [])];
+          for (const channelBrandId of channelBrandIds) {
+            const channels = await getChannelsByBrand(channelBrandId, 'youtube');
+            for (const ch of channels) {
+              const tokens = await getDecryptedTokens(ch.id);
+              const refresh = tokens?.refreshToken;
+              if (refresh && !candidates.some((c) => c.token === refresh)) {
+                candidates.push({ source: `oauth_tokens:${ch.display_name}`, token: refresh });
+              }
             }
           }
         } catch (err) {
@@ -480,7 +487,10 @@ export async function setThumbnail(
 /**
  * Get channel information for the authenticated user.
  */
-export async function getChannelInfo(brandId?: string): Promise<{
+export async function getChannelInfo(
+  brandId?: string,
+  options?: { requireBrandToken?: boolean },
+): Promise<{
   id: string;
   title: string;
   subscriberCount: number;
@@ -506,13 +516,17 @@ export async function getChannelInfo(brandId?: string): Promise<{
       viewCount: Number(channel.statistics?.viewCount || 0),
       thumbnailUrl: channel.snippet?.thumbnails?.high?.url || '',
     };
-  });
+  }, options);
 }
 
 /**
  * List recent videos from the authenticated channel.
  */
-export async function listVideos(maxResults = 20, brandId?: string): Promise<Array<{
+export async function listVideos(
+  maxResults = 20,
+  brandId?: string,
+  options?: { requireBrandToken?: boolean },
+): Promise<Array<{
   id: string;
   title: string;
   description: string;
@@ -561,7 +575,7 @@ export async function listVideos(maxResults = 20, brandId?: string): Promise<Arr
       likeCount: Number(video.statistics?.likeCount || 0),
       commentCount: Number(video.statistics?.commentCount || 0),
     }));
-  });
+  }, options);
 }
 
 /**
