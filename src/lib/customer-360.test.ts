@@ -100,3 +100,45 @@ test("revenue events become customer timeline memory with direction", () => {
   assert.equal(events[2].title, "Nurture-steg sendt");
   assert.equal(events[2].direction, "out");
 });
+
+test("revenue timeline explains portal preference and property PDF memory", () => {
+  const events = buildRevenueTimelineEvents([
+    {
+      id: "prefs-1",
+      event_type: "contact_updated",
+      title: "Kunden oppdaterte boligønsker på Min side",
+      source_type: "preferences_updated",
+      actor_type: "customer",
+      occurred_at: "2026-07-12T12:00:00.000Z",
+      metadata: { summary: "Budsjett til: 550000\nOmråde/sted: Altea" },
+    },
+    {
+      id: "pdf-1",
+      event_type: "message_sent",
+      title: "E-post sendt: Eiendomsprospekt",
+      source_type: "single_property_pdf",
+      actor_type: "human",
+      occurred_at: "2026-07-12T11:00:00.000Z",
+      metadata: {
+        property_title: "Villa Altea",
+        primary_recipient: "buyer@example.com",
+        filename: "villa-altea-prospekt.pdf",
+      },
+    },
+    {
+      id: "report-1",
+      event_type: "note",
+      title: "Rapport publisert på Min side",
+      source_type: "market_report_published",
+      actor_type: "system",
+      occurred_at: "2026-07-12T10:00:00.000Z",
+      metadata: { report_title: "Markedspuls Costa Blanca" },
+    },
+  ]);
+
+  assert.equal(events[0].detail, "Budsjett til: 550000\nOmråde/sted: Altea");
+  assert.equal(events[0].direction, "in");
+  assert.equal(events[1].detail, "Prospekt: Villa Altea · til buyer@example.com · villa-altea-prospekt.pdf");
+  assert.equal(events[1].direction, "out");
+  assert.equal(events[2].detail, "Markedspuls Costa Blanca");
+});

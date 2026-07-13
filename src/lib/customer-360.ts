@@ -107,9 +107,40 @@ function revenueEventDirection(eventType: string, actorType: string): CustomerTi
 
 function revenueEventDetail(row: CustomerRevenueEventInput) {
   const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const sourceType = String(row.source_type || "").trim().toLowerCase();
+
+  if (sourceType === "preferences_updated") {
+    return String(metadata.summary || row.description || "").trim() || null;
+  }
+
+  if (sourceType === "customer_message") {
+    return String(metadata.body_preview || row.description || "").trim() || null;
+  }
+
+  if (sourceType === "single_property_pdf" || sourceType === "multi_property_pdf") {
+    const titles = Array.isArray(metadata.property_titles)
+      ? metadata.property_titles.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const propertyLabel = String(metadata.property_title || titles.join(", ") || "").trim();
+    const recipient = String(metadata.primary_recipient || "").trim();
+    const filename = String(metadata.filename || "").trim();
+    return [
+      propertyLabel ? `Prospekt: ${propertyLabel}` : "Prospekt sendt",
+      recipient ? `til ${recipient}` : null,
+      filename || null,
+    ].filter(Boolean).join(" · ") || row.description || null;
+  }
+
+  if (sourceType === "market_report_published") {
+    return String(metadata.report_title || row.description || "").trim() || null;
+  }
+
   return String(
     row.description
       || metadata.body_preview
+      || metadata.summary
+      || metadata.property_title
+      || metadata.report_title
       || metadata.subject
       || metadata.source
       || row.source_system
