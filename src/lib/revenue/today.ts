@@ -224,7 +224,11 @@ export function recommendRevenueAction(
   return overdue ? `Oppfølgingen er forsinket. ${action}` : action;
 }
 
-export function buildRevenuePriority(contact: RevenueContactInput, now = new Date()): RevenuePriorityItem | null {
+export function buildRevenuePriority(
+  contact: RevenueContactInput,
+  now = new Date(),
+  context: RevenueRecommendationContext = {},
+): RevenuePriorityItem | null {
   const stage = normalizeStage(contact.pipeline_status);
   if (!ACTIVE_STAGES.has(stage)) return null;
 
@@ -269,7 +273,7 @@ export function buildRevenuePriority(contact: RevenueContactInput, now = new Dat
     priority,
     score,
     reason: reasons.join(" · "),
-    recommendedAction: recommendRevenueAction(contact, now),
+    recommendedAction: recommendRevenueAction(contact, now, context),
     lastContactAt: lastContact?.toISOString() || null,
     nextFollowupAt: nextFollowup?.toISOString() || null,
     createdAt: createdAt?.toISOString() || null,
