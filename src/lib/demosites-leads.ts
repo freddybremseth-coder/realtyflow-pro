@@ -42,6 +42,34 @@ export type DemoSiteLeadAuditInput = {
   hasSocialProof?: boolean | null;
 };
 
+export type DemoSiteLeadRecommendationInput = {
+  id: string;
+  company_name?: string | null;
+  website_url?: string | null;
+  domain?: string | null;
+  city?: string | null;
+  industry?: string | null;
+  lead_status?: DemoSiteLeadStatus | string | null;
+  outreach_status?: DemoSiteOutreachStatus | string | null;
+  demo_preview_url?: string | null;
+  demo_claim_url?: string | null;
+  last_scanned_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type DemoSiteRecommendedLeadPlay = {
+  leadId: string;
+  companyName: string;
+  title: string;
+  primaryAction: string;
+  reason: string;
+  href: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  score: number;
+};
+
 export const DEMO_SITE_AUDIT_ISSUES: Record<string, DemoSiteAuditIssue> = {
   not_mobile_friendly: {
     key: "not_mobile_friendly",
@@ -121,4 +149,134 @@ export function scoreDemoSiteLead(issues: DemoSiteAuditIssue[]) {
 export function shouldQualifyLead(score: number, issues: DemoSiteAuditIssue[]) {
   const hasHighIssue = issues.some((issue) => issue.severity === "high");
   return score <= 78 || hasHighIssue;
+}
+
+function metadataNumber(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function activeLeadStatus(value: unknown) {
+  return String(value || "new").trim().toLowerCase();
+}
+
+function activeOutreachStatus(value: unknown) {
+  return String(value || "not_prepared").trim().toLowerCase();
+}
+
+function hasDemoLink(lead: DemoSiteLeadRecommendationInput) {
+  return Boolean(String(lead.demo_preview_url || lead.demo_claim_url || "").trim());
+}
+
+function isClosedDemoSiteLead(lead: DemoSiteLeadRecommendationInput) {
+  return ["converted", "not_fit", "opted_out", "archived"].includes(activeLeadStatus(lead.lead_status))
+    || ["declined", "opted_out"].includes(activeOutreachStatus(lead.outreach_status));
+}
+
+function scoreDemoSiteRecommendedLead(lead: DemoSiteLeadRecommendationInput) {
+  const status = activeLeadStatus(lead.lead_status);
+  const outreach = activeOutreachStatus(lead.outreach_status);
+  const metadata = lead.metadata && typeof lead.metadata === "object" ? lead.metadata : {};
+  const auditScore = metadataNumber(metadata, "last_audit_score");
+  let score = 20;
+
+  if (status === "responded") score += 55;
+  else if (status === "contacted" || outreach === "sent" || outreach === "replied") score += 45;
+  else if (status === "outreach_ready" || outreach === "approved") score += 42;
+  else if (status === "demo_created") score += 34;
+  else if (status === "qualified") score += 30;
+  else if (status === "scanned") score += 24;
+  else if (status === "queued") score += 18;
+
+  if (hasDemoLink(lead)) score += 14;
+  if (lead.website_url || lead.domain) score += 8;
+  if (lead.industry) score += 4;
+  if (auditScore !== null && auditScore <= 78) score += 12;
+  if (metadataNumber(metadata, "issue_count")) score += 6;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function priorityFromDemoSiteScore(score: number): DemoSiteRecommendedLeadPlay["priority"] {
+  if (score >= 85) return "CRITICAL";
+  if (score >= 70) return "HIGH";
+  if (score >= 45) return "MEDIUM";
+  return "LOW";
+}
+
+function actionForDemoSiteLead(lead: DemoSiteLeadRecommendationInput) {
+  const status = activeLeadStatus(lead.lead_status);
+  const outreach = activeOutreachStatus(lead.outreach_status);
+  const metadata = lead.metadata && typeof lead.metadata === "object" ? lead.metadata : {};
+  const auditScore = metadataNumber(metadata, "last_audit_score");
+  const issueCount = metadataNumber(metadata, "issue_count");
+
+  if (status === "responded" || outreach === "replied") {
+    return "Svar mens interessen er varm og book en konkret 10-minutters demo-session.";
+  }
+  if (status === "contacted" || outreach === "sent") {
+    return "Følg opp manuelt: ring eller send kort check-in med én grunn til å se demoen.";
+  }
+  if (status === "outreach_ready" || outreach === "approved") {
+    return "Send eller ring manuelt med godkjent outreach og foreslå en kort demo-session.";
+  }
+  if (status === "demo_created" && hasDemoLink(lead)) {
+    return "Kvalitetssjekk demoen, gjør claim-lenken klar og lag personlig outreach.";
+  }
+  if (status === "qualified" || (auditScore !== null && auditScore <= 78)) {
+    return "Lag privat DemoSite-preview som viser forbedringene kunden faktisk mangler.";
+  }
+  if (status === "scanned") {
+    return "Vurder audit-funnene, kvalifiser leadet og bestem om demo skal lages.";
+  }
+  if (status === "queued" && (lead.website_url || lead.domain)) {
+    return "Kjør URL-audit og hent bransje, kontaktpunkter, svakheter og demo-vinkel.";
+  }
+  return "Finn nettside/kontaktinfo og legg leadet klart for scanning.";
+}
+
+function reasonForDemoSiteLead(lead: DemoSiteLeadRecommendationInput, score: number) {
+  const status = activeLeadStatus(lead.lead_status);
+  const outreach = activeOutreachStatus(lead.outreach_status);
+  const metadata = lead.metadata && typeof lead.metadata === "object" ? lead.metadata : {};
+  const auditScore = metadataNumber(metadata, "last_audit_score");
+  const issueCount = metadataNumber(metadata, "issue_count");
+  const reasons = [
+    `status: ${status}`,
+    outreach !== "not_prepared" ? `outreach: ${outreach}` : null,
+    hasDemoLink(lead) ? "demo/claim-lenke finnes" : null,
+    auditScore !== null ? `audit-score ${auditScore}/100` : null,
+    issueCount ? `${issueCount} audit-funn` : null,
+    lead.website_url || lead.domain ? "nettside finnes" : null,
+    `prioritet ${score}/100`,
+  ];
+  return reasons.filter(Boolean).join(" · ");
+}
+
+export function buildRecommendedDemoSiteLeadPlay(
+  leads: DemoSiteLeadRecommendationInput[],
+): DemoSiteRecommendedLeadPlay | null {
+  const candidates = leads
+    .filter((lead) => lead.id && !isClosedDemoSiteLead(lead))
+    .map((lead) => {
+      const score = scoreDemoSiteRecommendedLead(lead);
+      return { lead, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const best = candidates[0];
+  if (!best) return null;
+
+  const companyName = String(best.lead.company_name || best.lead.domain || "Ukjent DemoSites-lead");
+  return {
+    leadId: best.lead.id,
+    companyName,
+    title: `Neste DemoSites-play: ${companyName}`,
+    primaryAction: actionForDemoSiteLead(best.lead),
+    reason: reasonForDemoSiteLead(best.lead, best.score),
+    href: `/revenue-engine?lead=${encodeURIComponent(best.lead.id)}`,
+    priority: priorityFromDemoSiteScore(best.score),
+    score: best.score,
+  };
 }

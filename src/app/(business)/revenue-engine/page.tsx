@@ -197,6 +197,8 @@ export default function RevenueEnginePage() {
   const { orders, imports, leads, warnings, loading, error, loadData } = useRevenueData();
   const [campaign, setCampaign] = useState<RevenueCampaignSettings>(() => getDefaultRevenueCampaign());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [requestedLeadId, setRequestedLeadId] = useState<string | null>(null);
+  const [requestedOpportunityId, setRequestedOpportunityId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [workflowLoadingId, setWorkflowLoadingId] = useState<string | null>(null);
   const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
@@ -216,8 +218,25 @@ export default function RevenueEnginePage() {
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setRequestedLeadId(params.get("lead"));
+    setRequestedOpportunityId(params.get("opportunity"));
+  }, []);
+
+  useEffect(() => {
+    const requestedOpportunity = requestedLeadId
+      ? opportunities.find((item) => item.leadId === requestedLeadId || item.id === requestedLeadId)
+      : requestedOpportunityId
+        ? opportunities.find((item) => item.id === requestedOpportunityId)
+        : null;
+
+    if (requestedOpportunity && selectedId !== requestedOpportunity.id) {
+      setSelectedId(requestedOpportunity.id);
+      return;
+    }
+
     if (!selectedId && opportunities[0]) setSelectedId(opportunities[0].id);
-  }, [opportunities, selectedId]);
+  }, [opportunities, requestedLeadId, requestedOpportunityId, selectedId]);
 
   useEffect(() => {
     setFollowUpDate(selectedOpportunity?.followUpAt || suggestedFollowUpDate);
