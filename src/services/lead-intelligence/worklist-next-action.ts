@@ -20,6 +20,13 @@ export interface LeadWorklistNextAction {
   reason: string;
 }
 
+const PRIORITY_RANK: Record<LeadWorklistNextActionPriority, number> = {
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
 function normalized(value: string | null | undefined) {
   return String(value || "").trim().toLowerCase();
 }
@@ -114,4 +121,15 @@ export function buildLeadWorklistNextAction(input: LeadWorklistNextActionInput):
     label: "Hold varm og følg signaler",
     reason: "profilen har ingen åpen blokkering i Lead Intelligence-flyten",
   };
+}
+
+export function leadWorklistNextActionPriorityRank(priority: LeadWorklistNextActionPriority) {
+  return PRIORITY_RANK[priority] || 0;
+}
+
+export function compareLeadWorklistNextActionPriority(
+  a: LeadWorklistNextAction,
+  b: LeadWorklistNextAction,
+) {
+  return leadWorklistNextActionPriorityRank(b.priority) - leadWorklistNextActionPriorityRank(a.priority);
 }

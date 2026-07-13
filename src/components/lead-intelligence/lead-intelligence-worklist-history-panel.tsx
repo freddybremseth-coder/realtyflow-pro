@@ -100,6 +100,15 @@ export function LeadIntelligenceWorklistHistoryPanel({
   const hasActiveWorklistItem = Boolean(activeBuyerProfileId);
   const selectedCount = selectedBuyerProfileIds.length;
   const allVisibleSelected = items.length > 0 && selectedCount === items.length;
+  const focusCounts = items.reduce(
+    (counts, item) => {
+      counts[item.nextAction.priority] += 1;
+      return counts;
+    },
+    { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
+  );
+  const mostImportantAction = items[0]?.nextAction || null;
+  const urgentCount = focusCounts.CRITICAL + focusCounts.HIGH;
 
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
@@ -175,8 +184,36 @@ export function LeadIntelligenceWorklistHistoryPanel({
       )}
 
       {expanded && (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {items.map((item) => {
+        <>
+          <div className="mt-4 rounded-lg border border-slate-700/70 bg-slate-900/70 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Fokus i dag</p>
+                <p className="mt-1 text-sm font-semibold text-slate-100">
+                  {urgentCount > 0
+                    ? `${urgentCount} lead${urgentCount === 1 ? "" : "s"} trenger handling nå`
+                    : "Ingen kritiske lead-blokkeringer i denne visningen"}
+                </p>
+                {mostImportantAction && (
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Øverst ligger automatisk: {mostImportantAction.label.toLocaleLowerCase("nb-NO")} —{" "}
+                    {mostImportantAction.reason}.
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                {(["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((priority) => (
+                  <div key={priority} className={`rounded-lg border px-3 py-2 ${nextActionPriorityClasses(priority)}`}>
+                    <div className="text-base font-semibold">{focusCounts[priority]}</div>
+                    <div className="mt-0.5 opacity-80">{priority}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {items.map((item) => {
             const budget = formatCurrency(item.budgetAmount, item.budgetCurrency || "EUR");
             const isActive = activeBuyerProfileId === item.buyerProfileId;
             const isSelected = selectedBuyerProfileIds.includes(item.buyerProfileId);
@@ -297,8 +334,9 @@ export function LeadIntelligenceWorklistHistoryPanel({
                 </div>
               </div>
             );
-          })}
-        </div>
+            })}
+          </div>
+        </>
       )}
     </div>
   );
