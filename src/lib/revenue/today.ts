@@ -65,6 +65,31 @@ export interface RevenuePriorityItem {
   href: string;
 }
 
+export interface RevenueWorkItemInput {
+  id: string;
+  title: string;
+  description?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  dueAt?: string | null;
+  brandId?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  nextAction?: string | null;
+  aiScore?: number | null;
+  href: string;
+}
+
+export interface RevenueRecommendedPlay {
+  source: "customer_priority" | "work_item";
+  title: string;
+  primaryAction: string;
+  reason: string;
+  href: string;
+  priority: RevenuePriorityLevel;
+  score: number;
+}
+
 const ACTIVE_STAGES = new Set(["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"]);
 const CLOSING_STAGES = new Set(["VIEWING", "NEGOTIATION"]);
 
@@ -423,4 +448,60 @@ export function sortRevenuePriorities(items: RevenuePriorityItem[]) {
     if (b.score !== a.score) return b.score - a.score;
     return b.value - a.value;
   });
+}
+
+export function buildRecommendedRevenuePlay(
+  priorities: RevenuePriorityItem[],
+  workItems: RevenueWorkItemInput[] = [],
+): RevenueRecommendedPlay | null {
+  const topPriority = sortRevenuePriorities(priorities)[0] || null;
+  const topWorkItem = [...workItems]
+    .filter((item) => String(item.status || "TO_DO").toUpperCase() !== "DONE")
+    .sort((a, b) => {
+      const priorityWeight: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+      const priorityDelta =
+        (priorityWeight[String(b.priority || "LOW").toUpperCase()] || 1) -
+        (priorityWeight[String(a.priority || "LOW").toUpperCase()] || 1);
+      if (priorityDelta !== 0) return priorityDelta;
+      return Number(b.aiScore || 0) - Number(a.aiScore || 0);
+    })[0] || null;
+
+  const shouldPreferCustomer =
+    topPriority &&
+    (
+      !topWorkItem ||
+      topPriority.priority === "CRITICAL" ||
+      topPriority.score >= Math.max(65, Number(topWorkItem.aiScore || 0))
+    );
+
+  if (shouldPreferCustomer) {
+    return {
+      source: "customer_priority",
+      title: `Følg opp ${topPriority.contactName}`,
+      primaryAction: topPriority.recommendedAction,
+      reason: topPriority.reason,
+      href: topPriority.href,
+      priority: topPriority.priority,
+      score: topPriority.score,
+    };
+  }
+
+  if (topWorkItem) {
+    const priority = String(topWorkItem.priority || "MEDIUM").toUpperCase() as RevenuePriorityLevel;
+    return {
+      source: "work_item",
+      title: topWorkItem.title,
+      primaryAction: topWorkItem.nextAction || topWorkItem.description || "Åpne oppgaven og fullfør neste konkrete salgssteg.",
+      reason: [
+        topWorkItem.brandId ? `brand: ${topWorkItem.brandId}` : null,
+        topWorkItem.sourceType ? `kilde: ${topWorkItem.sourceType}` : null,
+        topWorkItem.dueAt ? `forfall: ${topWorkItem.dueAt}` : null,
+      ].filter(Boolean).join(" · ") || "høyest prioritert åpen salgsoppgave",
+      href: topWorkItem.href,
+      priority: ["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(priority) ? priority : "MEDIUM",
+      score: Number(topWorkItem.aiScore || 0),
+    };
+  }
+
+  return null;
 }

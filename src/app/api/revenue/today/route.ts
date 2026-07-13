@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import {
+  buildRecommendedRevenuePlay,
   buildRevenuePriority,
   sortRevenuePriorities,
   type RevenueMemoryEventInput,
@@ -38,6 +39,7 @@ function emptyPayload() {
     },
     priorities: [] as RevenuePriorityItem[],
     workItems: [] as Array<Record<string, unknown>>,
+    recommendedPlay: null as ReturnType<typeof buildRecommendedRevenuePlay>,
     warnings: [] as string[],
   };
 }
@@ -176,6 +178,7 @@ export async function GET(request: NextRequest) {
     summary,
     priorities: priorities.slice(0, 100),
     workItems,
+    recommendedPlay: buildRecommendedRevenuePlay(priorities, workItems),
     warnings,
   });
 }
