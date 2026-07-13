@@ -111,6 +111,38 @@ test("keeps active Keyholding revenue separate from potential revenue", () => {
   assert.notEqual(command.summary.potentialAnnualRecurringRevenue, command.summary.annualRecurringRevenue);
 });
 
+test("uses revenue memory to promote Today actions in command center", () => {
+  const command = buildRevenueCommandCenter({
+    contacts: [
+      {
+        id: "memory-1",
+        name: "Memory Buyer",
+        email: "memory@example.com",
+        pipeline_status: "CONTACT",
+        pipeline_value: 350_000,
+        brand_id: "zeneco",
+        created_at: "2026-07-01T10:00:00.000Z",
+        updated_at: "2026-07-01T10:00:00.000Z",
+        next_followup: "2026-07-20T09:00:00.000Z",
+      },
+    ],
+    revenueEventsByContactId: {
+      "memory-1": [
+        {
+          event_type: "email_received",
+          occurred_at: "2026-07-10T12:00:00.000Z",
+          metadata: { body_preview: "Vi er klar for visning og kan reise neste uke." },
+        },
+      ],
+    },
+  }, now);
+
+  const action = command.topActions.find((item) => item.contactId === "memory-1");
+  assert.equal(action?.source, "today");
+  assert.match(action?.description || "", /Kunden har svart nylig/i);
+  assert.ok((action?.score || 0) >= 80);
+});
+
 test("preserves optional table warnings", () => {
   const command = buildRevenueCommandCenter({ contacts: [], warnings: ["buyer_profiles unavailable"] }, now);
   assert.deepEqual(command.warnings, ["buyer_profiles unavailable"]);
