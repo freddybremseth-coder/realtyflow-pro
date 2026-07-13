@@ -65,6 +65,29 @@ test("buildMessageSentRevenueEventInput supports direct sends without a matched 
   assert.equal(event.confidenceScore, 62);
 });
 
+test("buildMessageSentRevenueEventInput supports specialized source metadata", () => {
+  const event = buildMessageSentRevenueEventInput({
+    brandId: "zeneco",
+    toAddresses: ["buyer@example.com"],
+    subject: "Prospekt",
+    bodyPreview: "Vedlagt prospekt.",
+    sentAt: "2026-07-12T14:45:00.000Z",
+    sourceSystem: "property_pdf",
+    sourceType: "single_property_pdf",
+    createdBy: "api/property-pdf/send",
+    extraMetadata: {
+      property_id: "property-1",
+      filename: "Z-1-prospekt.pdf",
+    },
+  });
+
+  assert.equal(event.sourceSystem, "property_pdf");
+  assert.equal(event.sourceType, "single_property_pdf");
+  assert.equal(event.createdBy, "api/property-pdf/send");
+  assert.equal((event.metadata as Record<string, unknown>).property_id, "property-1");
+  assert.equal((event.metadata as Record<string, unknown>).filename, "Z-1-prospekt.pdf");
+});
+
 test("buildEmailReceivedRevenueEventInput creates a customer inbound email event", () => {
   const event = buildEmailReceivedRevenueEventInput({
     brandId: "zeneco",

@@ -35,6 +35,10 @@ export function buildMessageSentRevenueEventInput({
   originalEmailMessageId,
   contactId,
   actorType = "human",
+  sourceSystem = "email_send",
+  sourceType,
+  createdBy = "api/email/send",
+  extraMetadata = {},
 }: {
   brandId: string;
   toAddresses: string[];
@@ -47,6 +51,10 @@ export function buildMessageSentRevenueEventInput({
   originalEmailMessageId?: string | null;
   contactId?: string | null;
   actorType?: "human" | "ai" | "automation" | "system";
+  sourceSystem?: string;
+  sourceType?: string;
+  createdBy?: string;
+  extraMetadata?: Record<string, unknown>;
 }): RevenueEventInput {
   const primaryRecipient = normalizeEmailAddresses(toAddresses)[0] || clean(toAddresses[0]);
   const sourceId = cleanMessageId(messageId) || clean(draftId) || clean(sentEmailMessageId) || null;
@@ -57,14 +65,14 @@ export function buildMessageSentRevenueEventInput({
     description: primaryRecipient ? `Sendt til ${primaryRecipient}` : null,
     contactId: contactId || null,
     brandId,
-    sourceSystem: "email_send",
-    sourceType: draftId ? "draft_reply" : "direct_email",
+    sourceSystem,
+    sourceType: sourceType || (draftId ? "draft_reply" : "direct_email"),
     sourceId,
     actorType,
     confidenceScore: contactId ? 86 : 62,
     occurredAt: sentAt,
     dedupeKey: buildRevenueEventDedupeKey([
-      "email_send",
+      sourceSystem,
       brandId,
       sourceId,
       primaryRecipient,
@@ -79,8 +87,9 @@ export function buildMessageSentRevenueEventInput({
       sent_email_message_id: sentEmailMessageId || null,
       original_email_message_id: originalEmailMessageId || null,
       primary_recipient: primaryRecipient,
+      ...extraMetadata,
     },
-    createdBy: "api/email/send",
+    createdBy,
   };
 }
 
