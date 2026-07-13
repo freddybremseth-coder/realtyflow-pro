@@ -47,6 +47,11 @@ export interface LeadIntelligenceWorklistItem {
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;
+  nextAction: {
+    priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+    label: string;
+    reason: string;
+  };
   linkedContact: LinkedContactPreview | null;
 }
 
@@ -66,6 +71,13 @@ interface LeadIntelligenceWorklistHistoryPanelProps {
   onSelectAllVisible: () => void;
   onClearSelection: () => void;
   onDeleteSelected: () => void;
+}
+
+function nextActionPriorityClasses(priority: LeadIntelligenceWorklistItem["nextAction"]["priority"]) {
+  if (priority === "CRITICAL") return "border-red-400/50 bg-red-500/10 text-red-100";
+  if (priority === "HIGH") return "border-amber-400/50 bg-amber-500/10 text-amber-100";
+  if (priority === "MEDIUM") return "border-sky-400/50 bg-sky-500/10 text-sky-100";
+  return "border-emerald-400/50 bg-emerald-500/10 text-emerald-100";
 }
 
 export function LeadIntelligenceWorklistHistoryPanel({
@@ -204,9 +216,22 @@ export function LeadIntelligenceWorklistHistoryPanel({
                   <div className="flex flex-wrap gap-2">
                     {isSelected && <Badge variant="destructive">Valgt for sletting</Badge>}
                     {isActive && <Badge variant="default">Aktiv</Badge>}
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${nextActionPriorityClasses(
+                        item.nextAction.priority,
+                      )}`}
+                    >
+                      {item.nextAction.priority}
+                    </span>
                     <Badge variant="outline">{item.profileStatus}</Badge>
                     {item.purchaseReadiness && <Badge variant="secondary">{item.purchaseReadiness}</Badge>}
                   </div>
+                </div>
+
+                <div className={`mt-4 rounded-lg border p-3 ${nextActionPriorityClasses(item.nextAction.priority)}`}>
+                  <p className="text-xs uppercase tracking-wide opacity-80">Neste beste handling</p>
+                  <p className="mt-1 text-sm font-semibold">{item.nextAction.label}</p>
+                  <p className="mt-1 text-xs leading-5 opacity-85">{item.nextAction.reason}</p>
                 </div>
 
                 <dl className="mt-4 grid gap-3 text-xs text-slate-400 md:grid-cols-3">
