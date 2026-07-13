@@ -84,6 +84,18 @@ export default function AdCampaignDetailPage() {
         const data = await res.json();
         await load();
 
+        // Replicate throttles hard when the account has little/no credit.
+        // The rows are kept as pending, so generation resumes when the user
+        // has topped up and clicks generate again.
+        if (data.rate_limited) {
+          setError(
+            "Replicate rate limit: kontoen har for lav kreditt/rate limit. " +
+            "Øk kreditt på replicate.com → Account → Billing, og trykk 'Generer' igjen — " +
+            "de gjenværende annonsene ligger klare i køen."
+          );
+          break;
+        }
+
         // Detect stalls: if completed_total isn't increasing across rounds, stop
         if (data.completed_total === lastCompleted) {
           stalledRounds++;

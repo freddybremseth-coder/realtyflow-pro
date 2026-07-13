@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Youtube, Upload, Eye, Heart, MessageCircle, TrendingUp, Play, Clock,
   Plus, X, Users, BarChart3, MousePointerClick, Loader2, RefreshCw, AlertCircle,
+  Link2, CheckCircle2, KeyRound,
 } from "lucide-react";
 
 interface Video {
@@ -36,15 +37,39 @@ interface ChannelStats {
   videoCount: string;
 }
 
-const brandOptions: { id: string; name: string }[] = [
+// `oauthBrandId` is what we pass to /api/oauth/google — Re-Master Freddy's
+// channel has historically been connected under "remasterfreddy", so we keep
+// reconnecting under that id (neuralbeat resolves to it via token aliases).
+const brandOptions: { id: string; name: string; oauthBrandId?: string }[] = [
   { id: "zeneco", name: "Zen Eco Homes" },
   { id: "soleada", name: "Soleada.no" },
   { id: "chatgenius", name: "ChatGenius.pro" },
   { id: "donaanna", name: "Dona Anna" },
   { id: "freddyb", name: "Freddy Bremseth" },
   { id: "pinosoecolife", name: "Pinoso Ecolife" },
-  { id: "neuralbeat", name: "Re-Master Freddy" },
+  { id: "neuralbeat", name: "Re-Master Freddy", oauthBrandId: "remasterfreddy" },
 ];
+
+// Channel rows may be stored under an alias id — map them to the option id.
+const CHANNEL_BRAND_ALIASES: Record<string, string> = {
+  remasterfreddy: "neuralbeat",
+  zenecohomes: "zeneco",
+  pinoso: "pinosoecolife",
+};
+
+function connectUrlFor(brand: { id: string; oauthBrandId?: string }): string {
+  const brandId = brand.oauthBrandId || brand.id;
+  return `/api/oauth/google?brand_id=${encodeURIComponent(brandId)}&service=youtube&return_to=${encodeURIComponent("/youtube-studio")}`;
+}
+
+interface ConnectedChannel {
+  id: string;
+  brand_id: string;
+  display_name: string;
+  external_id: string;
+  has_token: boolean;
+  token_rotated_at: string | null;
+}
 
 const statusConfig = {
   published: { label: "Publisert", variant: "success" as const },
@@ -66,9 +91,14 @@ function parseDuration(iso: string): string {
 export default function YouTubeStudioPage() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [channelStats, setChannelStats] = useState<ChannelStats | null>(null);
+  const [channelTitle, setChannelTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBrandId, setSelectedBrandId] = useState("neuralbeat");
+  const [notConnected, setNotConnected] = useState<{ message: string; reconnectUrl: string } | null>(null);
+  const [connectedChannels, setConnectedChannels] = useState<ConnectedChannel[]>([]);
+  const [showConnections, setShowConnections] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
   const [showUpload, setShowUpload] = useState(false);
   const [expandedVideo, setExpandedVideo] = useState<string | null>(null);
@@ -87,8 +117,9 @@ export default function YouTubeStudioPage() {
   const fetchYouTubeData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNotConnected(null);
     try {
-      const res = await fetch("/api/youtube");
+      const res = await fetch(`/api/youtube?brandId=${encodeURIComponent(selectedBrandId)}`);
       if (!res.ok) throw new Error("Kunne ikke hente YouTube-data");
       const data = await res.json();
 
@@ -99,6 +130,25 @@ export default function YouTubeStudioPage() {
       }
 
       setConfigured(true);
+
+      if (data.connected === false) {
+        // This brand has no working YouTube connection — show the connect
+        // card instead of a generic error.
+        const fallback = connectUrlFor(
+          brandOptions.find((b) => b.id === selectedBrandId) || { id: selectedBrandId },
+        );
+        setNotConnected({
+          message: data.message || "Ingen YouTube-tilkobling for dette brandet.",
+          reconnectUrl: data.reconnectUrl || fallback,
+        });
+        setVideos([]);
+        setChannelStats(null);
+        setChannelTitle("");
+        setLoading(false);
+        return;
+      }
+
+      setChannelTitle(data.channel?.title || "");
       if (data.channel) {
         setChannelStats({
           subscriberCount: String(data.channel.subscriberCount || 0),
@@ -134,11 +184,33 @@ export default function YouTubeStudioPage() {
       setError(err instanceof Error ? err.message : "Ukjent feil");
     }
     setLoading(false);
-  }, []);
+  }, [selectedBrandId]);
 
   useEffect(() => {
     fetchYouTubeData();
   }, [fetchYouTubeData]);
+
+  // Connected-channels overview for the "Kanaler & tilkobling" panel.
+  const loadConnections = useCallback(async () => {
+    try {
+      const res = await fetch("/api/oauth/channels?platform=youtube");
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.channels)) {
+        setConnectedChannels(data.channels as ConnectedChannel[]);
+      }
+    } catch {
+      // Non-fatal — panel just shows brands as not connected.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConnections();
+  }, [loadConnections]);
+
+  const channelsForBrand = (brandId: string): ConnectedChannel[] =>
+    connectedChannels.filter(
+      (c) => (CHANNEL_BRAND_ALIASES[c.brand_id] || c.brand_id) === brandId,
+    );
 
   const publishedVideos = videos.filter((v) => v.status === "published");
   const totalViews = channelStats ? parseInt(channelStats.viewCount, 10) : publishedVideos.reduce((s, v) => s + v.views, 0);
@@ -155,7 +227,7 @@ export default function YouTubeStudioPage() {
       : videos.filter((v) => v.status === "draft");
 
   const resetUploadForm = () => {
-    setNewVideo({ title: "", description: "", tags: "", brandId: "zeneco", visibility: "public" });
+    setNewVideo({ title: "", description: "", tags: "", brandId: selectedBrandId, visibility: "public" });
     setVideoFile(null);
     setUploadError(null);
     setUploadResult(null);
@@ -235,16 +307,147 @@ export default function YouTubeStudioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowConnections((v) => !v)}>
+            <Link2 size={14} className="mr-1.5" />
+            Kanaler &amp; tilkobling
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchYouTubeData} disabled={loading}>
             <RefreshCw size={14} className={`mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Oppdater
           </Button>
-          <Button onClick={() => setShowUpload(true)}>
+          <Button onClick={() => {
+            setNewVideo((p) => ({ ...p, brandId: selectedBrandId }));
+            setShowUpload(true);
+          }}>
             <Upload size={16} className="mr-2" />
             Last opp video
           </Button>
         </div>
       </div>
+
+      {/* Brand selector — data below is scoped to ONE brand's channel */}
+      <div className="flex flex-wrap gap-2">
+        {brandOptions.map((b) => {
+          const isConnected = channelsForBrand(b.id).some((c) => c.has_token);
+          return (
+            <button
+              key={b.id}
+              onClick={() => setSelectedBrandId(b.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                selectedBrandId === b.id
+                  ? "bg-red-500/20 text-red-200 border-red-500/40"
+                  : "bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-500"
+              }`}
+            >
+              {b.name}
+              {isConnected ? (
+                <CheckCircle2 size={12} className="text-emerald-400" />
+              ) : (
+                <AlertCircle size={12} className="text-slate-600" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {channelTitle && !loading && !notConnected && (
+        <p className="text-xs text-slate-500 -mt-3">
+          Viser kanal: <span className="text-slate-300 font-medium">{channelTitle}</span>
+        </p>
+      )}
+
+      {/* Connections panel: setup + reauth per brand */}
+      {showConnections && (
+        <Card>
+          <CardContent className="p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <KeyRound size={15} className="text-amber-400" />
+                YouTube-tilkobling per brand
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Hvert brand har sin egen YouTube-kanal og sitt eget innloggingstoken. Systemet blander
+                aldri kanaler så lenge hvert brand er koblet til separat her.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {brandOptions.map((b) => {
+                const chans = channelsForBrand(b.id);
+                const connected = chans.filter((c) => c.has_token);
+                return (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg border border-slate-700 bg-slate-800/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-200">{b.name}</p>
+                      {connected.length > 0 ? (
+                        <p className="text-xs text-emerald-400 truncate">
+                          Tilkoblet: {connected.map((c) => c.display_name).join(", ")}
+                          {connected[0]?.token_rotated_at && (
+                            <span className="text-slate-500">
+                              {" "}· token fornyet {new Date(connected[0].token_rotated_at).toLocaleDateString("nb-NO")}
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-500">Ikke tilkoblet</p>
+                      )}
+                    </div>
+                    <a
+                      href={connectUrlFor(b)}
+                      className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        connected.length > 0
+                          ? "bg-slate-700 text-slate-200 hover:bg-slate-600"
+                          : "bg-red-600 text-white hover:bg-red-500"
+                      }`}
+                    >
+                      <RefreshCw size={12} />
+                      {connected.length > 0 ? "Re-autentiser" : "Koble til YouTube"}
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-800/60 border border-slate-700">
+              <p className="text-xs font-medium text-slate-300 mb-1.5">Slik setter du opp YouTube for et brand:</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Klikk «Koble til YouTube» på brandet over.</li>
+                <li>Logg inn med Google-kontoen som <span className="text-slate-200">eier akkurat den kanalen</span> — bruk kontovelgeren hvis du har flere.</li>
+                <li>Har kontoen flere kanaler, får du en kanalvelger etterpå — velg kanalen som hører til brandet.</li>
+                <li>Tokenet lagres kun for dette brandet. Gjenta for hvert brand med egen kanal.</li>
+              </ol>
+              <p className="text-xs text-slate-500 mt-2">
+                Slutter en kanal å virke (utløpt/tilbakekalt token), klikk «Re-autentiser» — det påvirker ikke de andre brandene.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Selected brand has no working connection */}
+      {!loading && notConnected && (
+        <Card className="border-amber-500/30">
+          <CardContent className="p-8 text-center">
+            <Youtube size={40} className="mx-auto text-red-400 mb-3" />
+            <h2 className="text-base font-semibold text-white mb-1">
+              {brandOptions.find((b) => b.id === selectedBrandId)?.name} er ikke koblet til YouTube
+            </h2>
+            <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">{notConnected.message}</p>
+            <a
+              href={notConnected.reconnectUrl}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-500 transition-colors"
+            >
+              <Link2 size={14} />
+              Koble til / re-autentiser kanalen
+            </a>
+            <p className="text-[11px] text-slate-500 mt-3">
+              Logg inn med Google-kontoen som eier kanalen for dette brandet. Se «Kanaler &amp; tilkobling» øverst for full oppskrift.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="border-red-500/30">
@@ -409,7 +612,7 @@ export default function YouTubeStudioPage() {
       )}
 
       {/* Channel Overview Stats */}
-      {loading ? (
+      {!notConnected && (loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
@@ -463,10 +666,10 @@ export default function YouTubeStudioPage() {
             </Card>
           ))}
         </div>
-      )}
+      ))}
 
       {/* Tabs */}
-      {loading ? (
+      {!notConnected && (loading ? (
         <Card>
           <CardContent className="p-12 flex flex-col items-center justify-center">
             <Loader2 size={32} className="text-red-400 animate-spin mb-3" />
@@ -633,7 +836,7 @@ export default function YouTubeStudioPage() {
             </TabsContent>
           ))}
         </Tabs>
-      )}
+      ))}
     </div>
   );
 }
