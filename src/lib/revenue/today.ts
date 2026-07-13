@@ -430,7 +430,7 @@ export function buildRevenuePriority(
     createdAt: createdAt?.toISOString() || null,
     isOverdue,
     isMissingNextAction: !nextFollowup,
-    href: `/pipeline?contactId=${encodeURIComponent(contact.id)}`,
+    href: `/customers/${encodeURIComponent(contact.id)}`,
   };
 }
 
