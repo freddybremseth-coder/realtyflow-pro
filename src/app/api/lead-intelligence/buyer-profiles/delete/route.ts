@@ -3,13 +3,15 @@ import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
 import { DeleteBuyerProfilesInputSchema } from "@/services/lead-intelligence/persistence";
 import {
   assertLeadIntelligenceActionRateLimit,
-  createLeadIntelligenceRepository,
   getLeadIntelligenceRouteContext,
   leadIntelligenceHeaders,
   leadIntelligenceJsonError,
   readJsonBody,
-  withLeadIntelligenceTransaction,
 } from "@/services/lead-intelligence/server-runtime";
+import {
+  createSupabaseBuyerProfileDeleteStore,
+  deleteBuyerProfilesThroughStore,
+} from "@/services/lead-intelligence/delete-buyer-profiles";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,8 +35,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction(parsed.data.brand, (client) =>
-      createLeadIntelligenceRepository(client, context).deleteBuyerProfiles(parsed.data),
+    // Hard deletion is an explicit admin action. The normal Lead Intelligence
+    // runtime role intentionally has no DELETE privilege, so this one bounded
+    // operation uses the server-only Supabase service role. Brand and UUIDs are
+    // validated above, and database foreign-key cascades remove only dependent
+    // Lead Intelligence drafts. CRM contacts are never deleted here.
+    const result = await deleteBuyerProfilesThroughStore(
+      createSupabaseBuyerProfileDeleteStore(),
+      parsed.data,
     );
 
     return NextResponse.json(
@@ -47,6 +55,7 @@ export async function POST(request: NextRequest) {
           cascadedLeadIntelligenceDrafts: true,
           contactsCreated: false,
           contactsUpdated: false,
+          contactsDeleted: false,
           leadsCreated: false,
           emailSent: false,
           propertyMatchingStarted: false,
