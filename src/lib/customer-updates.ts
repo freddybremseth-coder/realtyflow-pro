@@ -37,6 +37,27 @@ export const CUSTOMER_PIPELINE_STATUSES = [
   "ON_HOLD",
 ] as const;
 
+export type CustomerPipelineStatus = (typeof CUSTOMER_PIPELINE_STATUSES)[number];
+
+export function normalizeCustomerPipelineStatus(value: unknown): CustomerPipelineStatus {
+  const normalized = String(value || "NEW")
+    .trim()
+    .toUpperCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/Æ/g, "AE")
+    .replace(/Ø/g, "O")
+    .replace(/Å/g, "A")
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (["WON", "CUSTOMER", "VIP", "VUNNET", "SOLGT", "SOLD", "CLOSED", "CLOSED_WON", "COMPLETED", "KUNDE"].includes(normalized)) return "WON";
+  if (["LOST", "TAPT", "CLOSED_LOST"].includes(normalized)) return "LOST";
+  return CUSTOMER_PIPELINE_STATUSES.includes(normalized as CustomerPipelineStatus)
+    ? normalized as CustomerPipelineStatus
+    : "NEW";
+}
+
 const nullableText = (max: number) => z.preprocess(
   (value) => {
     const text = String(value ?? "").trim();
@@ -69,7 +90,7 @@ export const CustomerDetailsInputSchema = z.object({
     preferredLocation: nullableText(500),
     propertyInterest: nullableText(1500),
     pipelineValue: nullableNumber,
-    pipelineStatus: z.enum(CUSTOMER_PIPELINE_STATUSES),
+    pipelineStatus: z.preprocess(normalizeCustomerPipelineStatus, z.enum(CUSTOMER_PIPELINE_STATUSES)),
   }).strict(),
 }).strict();
 
