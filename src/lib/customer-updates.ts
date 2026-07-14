@@ -154,20 +154,29 @@ export function buildCustomerTimelineInteraction(params: {
     closing: "closing",
     other: "customer_update",
   };
+  const outcomeLabel = params.update.outcome ? CUSTOMER_UPDATE_OUTCOME_LABELS[params.update.outcome] : null;
+  const content = [
+    params.update.title ? `Overskrift: ${params.update.title}` : null,
+    params.update.details,
+    params.update.propertyReference ? `Bolig / referanse: ${params.update.propertyReference}` : null,
+    outcomeLabel ? `Resultat: ${outcomeLabel}` : null,
+    params.update.nextAction ? `Neste handling: ${params.update.nextAction}` : null,
+    params.update.nextFollowup ? `Neste oppfølging: ${params.update.nextFollowup}` : null,
+  ].filter(Boolean).join("\n");
 
   return {
     id: params.id || crypto.randomUUID(),
     type: typeMap[params.update.updateType],
     date: params.update.occurredAt,
     direction: params.update.direction,
-    content: params.update.details,
+    content,
     metadata: {
       source: "customer-360",
       update_type: params.update.updateType,
       title: params.update.title,
       property_reference: params.update.propertyReference,
       outcome: params.update.outcome,
-      outcome_label: params.update.outcome ? CUSTOMER_UPDATE_OUTCOME_LABELS[params.update.outcome] : null,
+      outcome_label: outcomeLabel,
       next_action: params.update.nextAction,
       next_followup: params.update.nextFollowup,
       actor_email: params.actorEmail.toLowerCase(),
