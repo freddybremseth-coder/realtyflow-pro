@@ -546,6 +546,17 @@ export type DemoOrderForEnrichment = {
   extracted_profile?: Record<string, unknown> | null;
 };
 
+export type DemoSiteEnrichmentOptions = {
+  generateImages?: boolean;
+  /**
+   * Throw away the current gallery (bad photos from the old site) and build
+   * a fresh one from AI-generated images only. Used by "Lag nye bilder".
+   */
+  regenerateImages?: boolean;
+  /** Skip snapshot + AI copy — only touch images. */
+  imagesOnly?: boolean;
+};
+
 /**
  * Enrich one demo order in place. Every step is optional and fail-safe; the
  * function always returns a result and never throws on content problems.
@@ -553,7 +564,7 @@ export type DemoOrderForEnrichment = {
 export async function enrichDemoSiteOrder(
   supabase: SupabaseLike,
   order: DemoOrderForEnrichment,
-  options: { generateImages?: boolean } = {},
+  options: DemoSiteEnrichmentOptions = {},
 ): Promise<DemoSiteEnrichmentResult> {
   const errors: string[] = [];
   const fields: Record<string, unknown> = { ...(order.editable_fields || {}) };
@@ -562,31 +573,36 @@ export async function enrichDemoSiteOrder(
   const brandColor = textOf(fields.brand_color) || textOf(order.brand_color) || defaults.brand_color;
 
   // 1. Snapshot of the existing site (also feeds copy + gallery).
-  const snapshot = await fetchWebsiteSnapshot(order.website_url).catch(() => null);
+  const snapshot = options.imagesOnly ? null : await fetchWebsiteSnapshot(order.website_url).catch(() => null);
 
   // 2. Before-screenshot for the before/after slider.
   const beforeScreenshotUrl = buildBeforeScreenshotUrl(order.website_url);
-  if (beforeScreenshotUrl) fields.before_screenshot_url = beforeScreenshotUrl;
+  if (beforeScreenshotUrl && !fields.before_screenshot_url) fields.before_screenshot_url = beforeScreenshotUrl;
 
   // 3. Real images from the old site into the gallery — but only photos
   // that pass the quality gate. A bad old site must not produce a bad demo;
-  // rejected images are replaced by AI-generated ones below.
-  const currentGallery = listOf(fields.gallery_images);
-  const candidates = (snapshot?.imageCandidates || []).filter((url) => !currentGallery.includes(url));
+  // rejected images are replaced by AI-generated ones below. With
+  // `regenerateImages` the existing gallery is discarded entirely.
+  const currentGallery = options.regenerateImages ? [] : listOf(fields.gallery_images);
+  const candidates = options.regenerateImages
+    ? []
+    : (snapshot?.imageCandidates || []).filter((url) => !currentGallery.includes(url));
   const crawledImages = candidates.length ? await selectQualityImages(candidates) : [];
   let gallery = [...currentGallery, ...crawledImages].slice(0, 6);
 
   // 4. AI copy from snapshot + form input.
   let copyApplied = false;
   const services = listOf(fields.services);
-  const copy = await generateDemoCopy({
-    companyName: order.company_name,
-    industry: order.industry,
-    templateSlug,
-    services,
-    notes: order.notes,
-    snapshot,
-  });
+  const copy = options.imagesOnly
+    ? null
+    : await generateDemoCopy({
+        companyName: order.company_name,
+        industry: order.industry,
+        templateSlug,
+        services,
+        notes: order.notes,
+        snapshot,
+      });
 
   if (copy) {
     if (copy.hero_title && isDefaultText(fields.hero_title, defaults.hero_title)) fields.hero_title = copy.hero_title;
@@ -600,7 +616,7 @@ export async function enrichDemoSiteOrder(
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
     }
     copyApplied = true;
-  } else {
+  } else if (!options.imagesOnly) {
     errors.push("ai_copy_failed");
   }
 

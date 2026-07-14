@@ -512,6 +512,7 @@ export default function DemoSitesPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [enrichingOrderId, setEnrichingOrderId] = useState<string | null>(null);
+  const [regeneratingOrderId, setRegeneratingOrderId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
 
   const loadImportHistory = useCallback(async () => {
@@ -594,6 +595,31 @@ export default function DemoSitesPage() {
       setError(err instanceof Error ? err.message : "Berikelse feilet.");
     } finally {
       setEnrichingOrderId(null);
+    }
+  }
+
+  // "Lag nye bilder": throw away the current gallery (bad photos from the
+  // customer's old site) and rebuild it with fresh AI-generated images.
+  async function regenerateOrderImages(order: DemoSiteOrder) {
+    if (!window.confirm(`Erstatte alle bildene i demoen til ${order.company_name} med nye AI-genererte bilder?`)) return;
+    setRegeneratingOrderId(order.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/saas/demosites/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id, regenerate_images: true, images_only: true }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Bildegenerering feilet.");
+      if (data.result && !data.result.generatedImages) {
+        setError("Ingen nye bilder ble generert — sjekk at GEMINI_API_KEY er satt.");
+      }
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bildegenerering feilet.");
+    } finally {
+      setRegeneratingOrderId(null);
     }
   }
 
@@ -720,7 +746,21 @@ export default function DemoSitesPage() {
   }
 
   async function discardImport(importItem: WebsiteImportHistoryItem) {
-    await patchImportHistory(importItem.id, { status: "discarded" });
+    const label = importItem.company_name || importItem.website_url || "denne analysen";
+    if (!window.confirm(`Slette analysen for ${label}? Dette kan ikke angres.`)) return;
+
+    try {
+      const response = await fetch(`/api/saas/demosites/imports?id=${encodeURIComponent(String(importItem.id || ""))}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kunne ikke slette analysen.");
+      await loadImportHistory();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Kunne ikke slette analysen.");
+      return;
+    }
+
     if (importResult?.import_id === importItem.id) {
       setImportResult(null);
       setOriginalImportResult(null);
@@ -1143,9 +1183,13 @@ export default function DemoSitesPage() {
                         <Button size="sm" className="bg-amber-500 text-slate-950 hover:bg-amber-400">Presenter for kunde</Button>
                       </a>
                     )}
-                    <Button size="sm" variant="outline" className="border-fuchsia-500/50 text-fuchsia-200" disabled={enrichingOrderId === order.id} onClick={() => enrichOrder(order)}>
+                    <Button size="sm" variant="outline" className="border-fuchsia-500/50 text-fuchsia-200" disabled={enrichingOrderId === order.id || regeneratingOrderId === order.id} onClick={() => enrichOrder(order)}>
                       {enrichingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
                       Berik med AI
+                    </Button>
+                    <Button size="sm" variant="outline" className="border-sky-500/50 text-sky-200" disabled={regeneratingOrderId === order.id || enrichingOrderId === order.id} onClick={() => regenerateOrderImages(order)}>
+                      {regeneratingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="mr-1 h-3.5 w-3.5" />}
+                      Lag nye bilder
                     </Button>
                     {order.claim_url && <a href={order.claim_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-slate-600">Åpne claim</Button></a>}
                     {order.production_url && <a href={order.production_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-emerald-500/50 text-emerald-100">Åpne live</Button></a>}
@@ -2055,7 +2099,7 @@ function ImportHistoryList({
                         </Button>
                       </a>
                     )}
-                    <Button type="button" size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={() => onDiscardImport(item)}>
+                    <Button type="button" size="sm" variant="outline" className="border-red-500/50 text-red-200 hover:bg-red-500/10" onClick={() => onDiscardImport(item)}>
                       Forkast
                     </Button>
                   </div>

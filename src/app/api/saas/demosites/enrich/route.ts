@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
   try {
     const result = await enrichDemoSiteOrder(supabase, order, {
       generateImages: body.generate_images !== false,
+      regenerateImages: body.regenerate_images === true,
+      imagesOnly: body.images_only === true,
     });
     return NextResponse.json({ ok: true, result });
   } catch (err) {
