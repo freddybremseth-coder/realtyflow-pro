@@ -249,9 +249,25 @@ function getTemplateSlug(input: DemoSitesPreviewInput, fields: Record<string, un
   ).toLowerCase();
 }
 
+/**
+ * Imported company names sometimes arrive as the old site's <title>
+ * ("Flyttehjelp, varetransport og bortkjøring - få frakttilbud"). A name
+ * that long reads terribly in headings like "Tjenester fra …", so slogan
+ * halves after "-"/"|"/"–" are stripped when the name looks like a title.
+ */
+function cleanCompanyName(value: string) {
+  let name = value.trim();
+  if (name.length > 34) {
+    const separatorMatch = name.match(/^(.{3,60}?)\s+[-–—|·]\s+.+$/);
+    if (separatorMatch) name = separatorMatch[1].trim();
+  }
+  if (name.length > 60) name = `${name.slice(0, 57).trim()}…`;
+  return name;
+}
+
 function getCompanyName(input: DemoSitesPreviewInput, profile: Record<string, unknown>, fallbackMode: DemoSitesPreviewFallbackMode) {
   const value = previewText(input.companyName) || previewText(profile.company_name);
-  if (value) return value;
+  if (value) return cleanCompanyName(value);
   return fallbackMode === "placeholders" ? PLACEHOLDERS.companyName : "Bedriften";
 }
 
@@ -358,11 +374,30 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     "Aksentfarge",
     missingColors,
   );
-  const services = stringList(
+  // Mirror of the enrichment-side service sanitizer: stored lists from old
+  // crawls can contain review titles, dates and route descriptions that must
+  // never render as service cards.
+  const looksLikeService = (value: string) => {
+    if (value.length < 3 || value.length > 60) return false;
+    if (/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(value)) return false;
+    if (/\bfra\b.*\btil\b/i.test(value) && /\d/.test(value)) return false;
+    if (/\d{4}\s+[A-ZÆØÅ]/.test(value)) return false;
+    if (/^[A-ZÆØÅ][a-zæøå]+ og [A-ZÆØÅ][a-zæøå]+\b/.test(value)) return false;
+    if ((value.match(/[.!?]/g) || []).length > 0) return false;
+    if (value.split(/\s+/).length > 6) return false;
+    return true;
+  };
+  const rawServices = stringList(
     [fields.services, profile.services],
     fallbackMode === "placeholders" ? [] : defaults.services,
     9,
   );
+  const cleanedServices = rawServices.filter(looksLikeService);
+  const services = cleanedServices.length >= 2
+    ? cleanedServices
+    : fallbackMode === "placeholders"
+      ? rawServices
+      : uniqueStringItems([...cleanedServices, ...defaults.services], 9);
   const products = stringList(
     [fields.products, profile.products],
     fallbackMode === "placeholders" ? [] : defaults.products,

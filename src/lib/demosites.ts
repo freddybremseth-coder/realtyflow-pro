@@ -40,7 +40,7 @@ export const DEMO_SITE_PACKAGES: DemoSitePackage[] = [
     tagline: "Ny, pen nettside som fungerer på mobil – uten avansert AI.",
     setupFeeNok: 4_900,
     monthlyFeeNok: 490,
-    maxPages: "Opptil 4 undersider",
+    maxPages: "Komplett one-pager med alle seksjoner",
     features: [
       "Ferdig oppsett av demo-mal",
       "Logo, farger, tekst og bilder byttes for kunden",
@@ -57,7 +57,7 @@ export const DEMO_SITE_PACKAGES: DemoSitePackage[] = [
     tagline: "Beste selger: nettside + ChatGenius AI-resepsjonist.",
     setupFeeNok: 7_900,
     monthlyFeeNok: 990,
-    maxPages: "Opptil 7 undersider",
+    maxPages: "Utvidet one-pager med tjenester, priser og FAQ",
     recommended: true,
     features: [
       "Alt i Basis-pakken",
@@ -76,9 +76,9 @@ export const DEMO_SITE_PACKAGES: DemoSitePackage[] = [
     tagline: "For bedrifter med mange henvendelser og behov for mer automasjon.",
     setupFeeNok: 14_900,
     monthlyFeeNok: 1_990,
-    maxPages: "Ubegrenset antall sider",
+    maxPages: "Skreddersydd one-pager, klargjort for utvidelse",
     features: [
-      "Komplett nettside med utvidet struktur",
+      "Komplett one-pager med utvidet innhold og struktur",
       "Avansert ChatGenius-bot med dypere kunnskap",
       "Klargjort for booking, produktinfo, prislister og avtaler",
       "Prioritert support med raske endringer",

@@ -140,6 +140,9 @@ export function DemoSitePreviewRenderer({
     });
   const fonts = getDemoFontPair(design.style);
   const heroImage = images[0] || "";
+  // AI copy occasionally writes the same sentence for subtitle and intro —
+  // never show the same paragraph twice.
+  const heroIntroText = content.intro_text.trim() === content.hero_subtitle.trim() ? "" : content.intro_text;
   const layout: DemoSiteDesign["layout"] = heroImage ? design.layout : "split";
   const revealAttr = mode === "public" ? { "data-demo-reveal": "" } : {};
   // Public CTAs lead to the contact section (form + phone + e-mail) instead
@@ -231,7 +234,7 @@ export function DemoSitePreviewRenderer({
           heroImage={heroImage}
           heroTitle={content.hero_title}
           heroSubtitle={content.hero_subtitle}
-          introText={content.intro_text}
+          introText={heroIntroText}
           mode={mode}
           websiteUrl={preview.websiteUrl}
         />
@@ -245,7 +248,7 @@ export function DemoSitePreviewRenderer({
           images={images}
           heroTitle={content.hero_title}
           heroSubtitle={content.hero_subtitle}
-          introText={content.intro_text}
+          introText={heroIntroText}
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
           websiteUrl={preview.websiteUrl}
@@ -260,7 +263,7 @@ export function DemoSitePreviewRenderer({
           </div>
           <h1 className={`${heroTitleClass} ${heroTextClass}`}>{content.hero_title}</h1>
           <p className={`mt-5 max-w-2xl text-xl leading-8 ${heroMutedClass}`}>{content.hero_subtitle}</p>
-          <p className={`mt-5 max-w-2xl text-base leading-8 md:text-lg ${heroSoftClass}`}>{content.intro_text}</p>
+          {heroIntroText && <p className={`mt-5 max-w-2xl text-base leading-8 md:text-lg ${heroSoftClass}`}>{heroIntroText}</p>}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-black shadow-xl shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold"} style={useNeonGlass ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" } : { backgroundColor: colors.primary, color: colors.primaryText }}>
               {content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" />
@@ -290,6 +293,7 @@ export function DemoSitePreviewRenderer({
           images={images}
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
+          services={services}
           neonGlass={useNeonGlass}
           useDarkHero={useDarkHero}
           visual={visual}
@@ -321,7 +325,12 @@ export function DemoSitePreviewRenderer({
       {(layout === "fullbleed" ? images.slice(1) : images).length > 0 && (
         <section id="bilder" {...revealAttr} className={useNeonGlass ? "border-b border-white/10 bg-[#020617] py-12 text-white" : "bg-white py-12"}>
           <div className={`${maxWidthClass} px-4`}>
-            <SectionIntro eyebrow={copy.galleryEyebrow} title={copy.galleryTitle} text={preview.isImported ? copy.galleryText : "Bilder og faglige detaljer gir siden mer troverdighet før kunden tar kontakt."} inverted={useNeonGlass} />
+            <SectionIntro
+              eyebrow={mode === "public" ? "Bilder" : copy.galleryEyebrow}
+              title={mode === "public" ? `Se noe av det vi gjør hos ${companyName}` : copy.galleryTitle}
+              text={mode === "public" ? "" : preview.isImported ? copy.galleryText : "Bilder og faglige detaljer gir siden mer troverdighet før kunden tar kontakt."}
+              inverted={useNeonGlass}
+            />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {(layout === "fullbleed" ? images.slice(1) : images).slice(0, 3).map((image, index) => (
                 <PreviewImage key={`${image}-${index}`} image={image} alt={`${companyName} bilde ${index + 1}`} className={useNeonGlass ? "h-80 w-full rounded-lg border border-white/10 bg-slate-900 object-cover shadow-xl shadow-cyan-950/20" : "h-80 w-full rounded-lg bg-slate-100 object-cover"} color={colors.primary} />
@@ -333,10 +342,15 @@ export function DemoSitePreviewRenderer({
 
       <section id="tjenester" {...revealAttr} className={visualSection.services}>
         <div className={`${maxWidthClass} px-4`}>
-          <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} inverted={visualSection.invertedServices} />
+          <SectionIntro
+            eyebrow={copy.servicesEyebrow}
+            title={copy.servicesTitle}
+            text={mode === "public" ? "" : fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."}
+            inverted={visualSection.invertedServices}
+          />
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
             {(services.length ? services : [DEMO_SITES_PREVIEW_PLACEHOLDERS.service]).map((service, index) => (
-              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} dark={visualSection.darkCards} variant={visual.variant} />
+              <FeatureCard key={`${service}-${index}`} title={service} color={colors.primary} description={mode === "public" ? "Fortell oss kort hva du trenger, så får du pris og tidspunkt raskt." : getServiceCardDescription(service, preview.templateSlug, copy)} placeholder={!services.length} dark={visualSection.darkCards} variant={visual.variant} />
             ))}
           </div>
         </div>
@@ -346,7 +360,7 @@ export function DemoSitePreviewRenderer({
         <>
           <section id="fordeler" {...revealAttr} className={useNeonGlass ? "border-b border-white/10 py-16 text-white" : "py-16 text-white"} style={{ backgroundColor: useNeonGlass ? "#030712" : colors.secondary }}>
             <div className={`${maxWidthClass} px-4`}>
-              <SectionIntro eyebrow={copy.trustEyebrow} title={copy.trustTitle} text={copy.trustText} inverted />
+              <SectionIntro eyebrow={copy.trustEyebrow} title={copy.trustTitle} text={mode === "public" ? "" : copy.trustText} inverted />
               <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-4">
                 {(content.trust_points.length ? content.trust_points.slice(0, 4) : copy.proofItems).map((point, index) => (
                   <div key={`${point}-${index}`} className={content.trust_points.length ? "rounded-lg border border-white/15 bg-white/10 p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-white/15 bg-white/5 p-5 text-white/80"}>
@@ -360,7 +374,7 @@ export function DemoSitePreviewRenderer({
 
           <section id="tilbud" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
-            <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={copy.offerText} inverted={useNeonGlass} />
+            <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={mode === "public" ? "" : copy.offerText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
               <ListCard title={copy.productsTitle} items={content.products} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.product} color={colors.primary} dark={useNeonGlass} />
               <ListCard title={copy.pricesTitle} items={content.prices} emptyText={DEMO_SITES_PREVIEW_PLACEHOLDERS.price} color={colors.primary} dark={useNeonGlass} />
@@ -370,7 +384,7 @@ export function DemoSitePreviewRenderer({
 
           <section id="faq" {...revealAttr} className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
-            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={copy.faqText} inverted={useNeonGlass} />
+            <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
               {(content.faq.length ? content.faq.slice(0, 6) : [{ question: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqQuestion, answer: DEMO_SITES_PREVIEW_PLACEHOLDERS.faqAnswer }]).map((item, index) => (
                 <div key={`${item.question}-${index}`} className={useNeonGlass ? content.faq.length ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 shadow-lg shadow-cyan-950/10 backdrop-blur" : "rounded-lg border border-dashed border-white/20 bg-white/[0.04] p-5" : content.faq.length ? "rounded-lg border border-slate-200 bg-white p-5" : "rounded-lg border border-dashed border-slate-300 bg-slate-100 p-5"}>
@@ -389,7 +403,7 @@ export function DemoSitePreviewRenderer({
                   <MessageCircle className="mr-2 h-3.5 w-3.5" /> Kontakt
                 </div>
                 <h2 className="mt-5 text-3xl font-black leading-tight md:text-5xl">{copy.contactTitle}</h2>
-                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || copy.contactText}</p>
+                <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">{content.contact_text || (mode === "public" ? "Send oss en melding eller ring — vi svarer raskt." : copy.contactText)}</p>
                 <div className="mt-6 grid gap-2 text-sm text-slate-300">
                   <ContactLine icon={<Phone className="h-4 w-4" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} />
                   <ContactLine icon={<Mail className="h-4 w-4" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} />
@@ -510,7 +524,7 @@ function FullbleedHero({
           {heroTitle}
         </h1>
         <p className="mt-5 max-w-2xl text-lg leading-8 text-white/90 md:text-xl">{heroSubtitle}</p>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-white/70 md:text-base">{introText}</p>
+        {introText && <p className="mt-3 max-w-2xl text-sm leading-7 text-white/70 md:text-base">{introText}</p>}
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <a href={contactHref} className="inline-flex items-center justify-center rounded-lg px-7 py-4 text-sm font-bold shadow-2xl" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
             {callToAction} <ArrowRight className="ml-2 h-4 w-4" />
@@ -555,7 +569,7 @@ function EditorialHero({
         <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
             <p className="max-w-2xl text-xl leading-9 text-slate-700">{heroSubtitle}</p>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-slate-500">{introText}</p>
+            {introText && <p className="mt-4 max-w-2xl text-base leading-8 text-slate-500">{introText}</p>}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href={contactHref} className="inline-flex items-center justify-center rounded-lg px-7 py-4 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
                 {callToAction} <ArrowRight className="ml-2 h-4 w-4" />
@@ -641,6 +655,7 @@ function HeroMediaPanel({
   mode,
   neonGlass,
   primaryService,
+  services = [],
   useDarkHero,
   visual,
 }: {
@@ -651,10 +666,14 @@ function HeroMediaPanel({
   mode: DemoSitesPreviewMode;
   neonGlass: boolean;
   primaryService: string;
+  services?: string[];
   useDarkHero: boolean;
   visual: DemoSitesPreviewIndustryVisual;
 }) {
   const mainImage = images[0];
+  // Real services beat generic industry chips — a demo must always sell,
+  // never explain what it "should" communicate.
+  const panelChips = (services.length ? services : visual.signalItems).slice(0, 3);
   const heroImageClass = mode === "public" ? "h-full min-h-[460px] w-full rounded-lg object-cover" : "h-full min-h-[300px] w-full rounded-lg object-cover";
 
   if (neonGlass) {
@@ -694,10 +713,9 @@ function HeroMediaPanel({
               <ShieldCheck className="h-5 w-5" />
             </span>
             <div>
-              <div className="text-sm font-black text-slate-950">{visual.heroPanelTitle}</div>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{visual.heroPanelText}</p>
+              <div className="text-sm font-black text-slate-950">{primaryService}</div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {visual.signalItems.map((item) => (
+                {panelChips.map((item) => (
                   <span key={item} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
                     {item}
                   </span>
@@ -721,12 +739,9 @@ function HeroMediaPanel({
           {visual.label}
         </div>
         <h3 className={useDarkHero ? "mt-5 max-w-lg text-3xl font-black leading-tight text-white" : "mt-5 max-w-lg text-3xl font-black leading-tight text-slate-950"}>{primaryService}</h3>
-        {mode === "internal" && (
-          <p className={useDarkHero ? "mt-4 max-w-lg text-base leading-7 text-slate-300" : "mt-4 max-w-lg text-base leading-7 text-slate-600"}>{visual.heroPanelText}</p>
-        )}
       </div>
       <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-        {visual.signalItems.map((item) => (
+        {panelChips.map((item) => (
           <div key={item} className={useDarkHero ? "rounded-lg border border-white/10 bg-white/10 p-4 text-sm font-bold text-white" : "rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-800"}>
             <VisualVariantIcon variant={visual.variant} className="mb-3 h-5 w-5" style={{ color: colors.primary }} />
             {item}
@@ -793,7 +808,7 @@ function NeonTechnologyPanel({
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-cyan-200">Pipeline</p>
-              <h3 className="mt-2 text-3xl font-black leading-tight text-white">{visual.heroPanelTitle}</h3>
+              <h3 className="mt-2 text-3xl font-black leading-tight text-white">{mode === "internal" ? visual.heroPanelTitle : "Fra idé til levert løsning"}</h3>
             </div>
             <div className="rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-right">
               <div className="text-xs text-slate-400">Status</div>
@@ -900,7 +915,7 @@ function SectionIntro({ eyebrow, title, text, inverted = false }: { eyebrow: str
     <div className="max-w-3xl">
       <div className={inverted ? "text-sm font-bold text-white/70" : "text-sm font-bold text-slate-500"}>{eyebrow}</div>
       <h2 className={inverted ? "mt-3 text-3xl font-black leading-tight text-white md:text-4xl" : "mt-3 text-3xl font-black leading-tight text-slate-950 md:text-4xl"}>{title}</h2>
-      <p className={inverted ? "mt-4 text-base leading-7 text-white/75" : "mt-4 text-base leading-7 text-slate-600"}>{text}</p>
+      {text ? <p className={inverted ? "mt-4 text-base leading-7 text-white/75" : "mt-4 text-base leading-7 text-slate-600"}>{text}</p> : null}
     </div>
   );
 }
