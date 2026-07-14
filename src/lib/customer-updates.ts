@@ -206,7 +206,7 @@ export function buildCustomerTimelineInteraction(params: {
   };
 }
 
-export function appendCustomerInteraction(existing: unknown, interaction: ReturnType<typeof buildCustomerTimelineInteraction>, limit = 500) {
+export function appendCustomerInteraction<T extends Record<string, unknown>>(existing: unknown, interaction: T, limit = 500) {
   const rows = Array.isArray(existing) ? existing.filter((item) => item && typeof item === "object") : [];
   return [...rows, interaction].slice(-Math.max(1, limit));
 }
