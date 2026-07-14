@@ -156,3 +156,34 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(formatApiError(error, "Could not update DemoSites import history"), { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/saas/demosites/imports?id=<import_id>
+ *
+ * Hard-deletes a saved website analysis. "Forkast" in the CRM uses this —
+ * a soft `discarded` status just left the rows visible in several filters,
+ * which read as "the button does nothing".
+ */
+export async function DELETE(request: NextRequest) {
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
+
+  const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
+
+  const id = String(request.nextUrl.searchParams.get("id") || "").trim();
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  try {
+    const { error } = await supabase.from("demo_site_imports").delete().eq("id", id);
+    if (error) {
+      if (isMissingImportHistory(error)) return NextResponse.json({ ok: true, warning: IMPORT_HISTORY_INACTIVE_WARNING });
+      logApiError("DemoSites import history DELETE failed", error, { import_id: id });
+      return NextResponse.json(formatApiError(error, "Could not delete DemoSites import history"), { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    logApiError("DemoSites import history DELETE failed", error);
+    return NextResponse.json(formatApiError(error, "Could not delete DemoSites import history"), { status: 500 });
+  }
+}
