@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { deleteBuyerProfilesThroughStore, type BuyerProfileDeleteStore } from "./delete-buyer-profiles";
 
@@ -84,4 +85,16 @@ test("partial database deletion is surfaced as missing rather than claimed delet
 
   assert.deepEqual(result.deletedBuyerProfileIds, [IDS.one]);
   assert.deepEqual(result.missingBuyerProfileIds, [IDS.two]);
+});
+
+test("delete route no longer uses the restricted Lead Intelligence runtime transaction", () => {
+  const route = readFileSync(
+    new URL("../../app/api/lead-intelligence/buyer-profiles/delete/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /createSupabaseBuyerProfileDeleteStore/);
+  assert.match(route, /deleteBuyerProfilesThroughStore/);
+  assert.doesNotMatch(route, /withLeadIntelligenceTransaction/);
+  assert.match(route, /contactsDeleted:\s*false/);
 });
