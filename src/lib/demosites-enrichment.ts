@@ -296,6 +296,44 @@ function cleanJsonText(text: string) {
   return text.replace(/```json/gi, "").replace(/```/g, "").trim();
 }
 
+/**
+ * Models sometimes wrap the JSON in prose or the response gets cut short.
+ * Try a strict parse first, then the outermost {...} block, then a repair
+ * that closes truncated strings/brackets — a demo with 90 % of the copy
+ * beats one with template text.
+ */
+function parseModelJson<T>(raw: string): T | null {
+  const text = cleanJsonText(raw);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Continue with extraction.
+  }
+
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  const candidate = text.slice(start, text.lastIndexOf("}") + 1 || undefined);
+  try {
+    return JSON.parse(candidate) as T;
+  } catch {
+    // Continue with truncation repair.
+  }
+
+  let repaired = text.slice(start);
+  // Drop a trailing partial value, then close open strings/arrays/objects.
+  repaired = repaired.replace(/,\s*"[^"]*$/, "").replace(/,\s*$/, "");
+  const quotes = (repaired.match(/(?<!\\)"/g) || []).length;
+  if (quotes % 2 === 1) repaired += '"';
+  const openBraces = (repaired.match(/{/g) || []).length - (repaired.match(/}/g) || []).length;
+  const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/]/g) || []).length;
+  repaired += "]".repeat(Math.max(0, openBrackets)) + "}".repeat(Math.max(0, openBraces));
+  try {
+    return JSON.parse(repaired) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function generateDemoCopy(input: {
   companyName: string;
   industry?: string | null;
@@ -338,12 +376,18 @@ Returner KUN gyldig JSON:
 
   try {
     const text = await askClaude(prompt, {
-      maxTokens: 1200,
+      // Norwegian copy for a full one-pager (hero + services + trust + FAQ)
+      // regularly exceeds 1200 tokens — a low cap truncated the JSON and
+      // silently dropped ALL AI copy in production.
+      maxTokens: 2400,
       temperature: 0.7,
       responseMimeType: "application/json",
     });
-    const parsed = JSON.parse(cleanJsonText(text)) as DemoSiteGeneratedCopy;
-    if (!parsed || typeof parsed !== "object") return null;
+    const parsed = parseModelJson<DemoSiteGeneratedCopy>(text);
+    if (!parsed || typeof parsed !== "object") {
+      console.warn("[DemoSites Enrichment] AI copy unparseable, first 200 chars:", text.slice(0, 200));
+      return null;
+    }
     return parsed;
   } catch (err) {
     console.warn("[DemoSites Enrichment] AI copy failed:", err instanceof Error ? err.message : err);
