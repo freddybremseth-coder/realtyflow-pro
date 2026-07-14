@@ -45,6 +45,7 @@ import {
 import { resolveDemoSiteDesign, type DemoSiteDesign } from "@/lib/demosites-design";
 import { getDemoFontPair } from "@/components/demosites/demo-fonts";
 import { DemoReveal } from "@/components/demosites/demo-reveal";
+import { DemoLeadForm } from "@/components/demosites/demo-lead-form";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -63,6 +64,8 @@ export type DemoSitePreviewRendererProps = DemoSitesPreviewInput & {
   className?: string;
   /** Layout/style override — falls back to saved fields + industry defaults. */
   design?: DemoSiteDesign;
+  /** Claim token: enables the working contact form on public previews. */
+  inquiryToken?: string;
 };
 
 type PreviewBusinessCopy = {
@@ -113,6 +116,7 @@ export function DemoSitePreviewRenderer({
   packageName,
   className = "",
   design: designProp,
+  inquiryToken,
   ...input
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
@@ -138,6 +142,11 @@ export function DemoSitePreviewRenderer({
   const heroImage = images[0] || "";
   const layout: DemoSiteDesign["layout"] = heroImage ? design.layout : "split";
   const revealAttr = mode === "public" ? { "data-demo-reveal": "" } : {};
+  // Public CTAs lead to the contact section (form + phone + e-mail) instead
+  // of launching the phone app directly — callers still get a "Ring oss"
+  // button and the phone number in the top strip.
+  const ctaHref = mode === "public" ? "#kontakt" : preview.contactHref;
+  const showLeadForm = mode === "public" && Boolean(inquiryToken);
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
     "--brand-soft": withPreviewAlpha(colors.primary, "18"),
@@ -206,7 +215,7 @@ export function DemoSitePreviewRenderer({
               <a href="#kontakt" className={useNeonGlass ? "hover:text-cyan-200" : "hover:text-slate-950"}>Kontakt</a>
             </nav>
           )}
-          <a href={preview.contactHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black shadow-lg shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"} style={headerCtaStyle}>
+          <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black shadow-lg shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold"} style={headerCtaStyle}>
             {content.call_to_action}
           </a>
         </div>
@@ -217,7 +226,7 @@ export function DemoSitePreviewRenderer({
           badge={mode === "internal" ? "Intern preview" : copy.heroBadge}
           callToAction={content.call_to_action}
           companyName={companyName}
-          contactHref={preview.contactHref}
+          contactHref={ctaHref}
           colors={colors}
           heroImage={heroImage}
           heroTitle={content.hero_title}
@@ -231,7 +240,7 @@ export function DemoSitePreviewRenderer({
           badge={mode === "internal" ? "Intern preview" : copy.heroBadge}
           callToAction={content.call_to_action}
           companyName={companyName}
-          contactHref={preview.contactHref}
+          contactHref={ctaHref}
           colors={colors}
           images={images}
           heroTitle={content.hero_title}
@@ -253,7 +262,7 @@ export function DemoSitePreviewRenderer({
           <p className={`mt-5 max-w-2xl text-xl leading-8 ${heroMutedClass}`}>{content.hero_subtitle}</p>
           <p className={`mt-5 max-w-2xl text-base leading-8 md:text-lg ${heroSoftClass}`}>{content.intro_text}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a href={preview.contactHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-black shadow-xl shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold"} style={useNeonGlass ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" } : { backgroundColor: colors.primary, color: colors.primaryText }}>
+            <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-black shadow-xl shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold"} style={useNeonGlass ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" } : { backgroundColor: colors.primary, color: colors.primaryText }}>
               {content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" />
             </a>
             {preview.websiteUrl && (
@@ -289,7 +298,9 @@ export function DemoSitePreviewRenderer({
       </section>
       )}
 
-      {fullPreview && (
+      {/* Coaching strips (what the site SHOULD communicate) are internal
+          guidance for editors — never shown to the end customer. */}
+      {fullPreview && mode === "internal" && (
         <ProcessStrip
           colors={colors}
           copy={copy}
@@ -298,7 +309,7 @@ export function DemoSitePreviewRenderer({
         />
       )}
 
-      {fullPreview && (
+      {fullPreview && mode === "internal" && (
         <IndustrySignalStrip
           colors={colors}
           maxWidthClass={maxWidthClass}
@@ -389,17 +400,32 @@ export function DemoSitePreviewRenderer({
                   <p className="mt-4 text-xs text-slate-500">Kilder brukt i analysen: {preview.sourcePages.length} offentlig side{preview.sourcePages.length === 1 ? "" : "r"}.</p>
                 )}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                  <a href={preview.contactHref} className="inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
-                    <Mail className="mr-2 h-4 w-4" /> {content.call_to_action}
-                  </a>
+                  {!showLeadForm && (
+                    <a href={preview.contactHref} className="inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
+                      <Mail className="mr-2 h-4 w-4" /> {content.call_to_action}
+                    </a>
+                  )}
                   {contact.phone && (
-                    <a href={`tel:${contact.phone}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
-                      <Phone className="mr-2 h-4 w-4" /> Ring oss
+                    <a href={`tel:${contact.phone}`} className={showLeadForm ? "inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-bold" : "inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10"} style={showLeadForm ? { backgroundColor: colors.primary, color: colors.primaryText } : undefined}>
+                      <Phone className="mr-2 h-4 w-4" /> Ring oss{showLeadForm ? ` ${contact.phone}` : ""}
+                    </a>
+                  )}
+                  {showLeadForm && contact.email && (
+                    <a href={`mailto:${contact.email}`} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-5 py-3 text-sm font-bold text-white hover:bg-white/10">
+                      <Mail className="mr-2 h-4 w-4" /> Send e-post
                     </a>
                   )}
                 </div>
               </div>
 
+              {showLeadForm ? (
+                <DemoLeadForm
+                  token={inquiryToken || ""}
+                  companyName={companyName}
+                  accentColor={colors.primary}
+                  accentTextColor={colors.primaryText}
+                />
+              ) : (
               <div className={useNeonGlass ? "rounded-lg border border-cyan-300/20 bg-white/[0.08] p-5 text-white shadow-2xl shadow-cyan-950/30 backdrop-blur" : "rounded-lg border border-white/10 bg-white p-5 text-slate-950"}>
                 <div className={useNeonGlass ? "flex items-center justify-between border-b border-white/10 pb-4" : "flex items-center justify-between border-b border-slate-200 pb-4"}>
                   <div className="flex items-center gap-3">
@@ -422,6 +448,7 @@ export function DemoSitePreviewRenderer({
                   <ImageIcon className="h-4 w-4" /> Skriv et spørsmål om {companyName}
                 </div>
               </div>
+              )}
             </div>
           </section>
 
@@ -644,6 +671,20 @@ function HeroMediaPanel({
   }
 
   if (mainImage) {
+    // Public mode: the customer's photo speaks for itself — only a small
+    // service chip, never editor guidance text.
+    if (mode === "public") {
+      return (
+        <div className={useDarkHero ? "relative overflow-hidden rounded-lg bg-slate-900 shadow-2xl ring-1 ring-white/10" : "relative overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200"}>
+          <PreviewImage image={mainImage} alt={`${companyName} hovedbilde`} className={heroImageClass} color={colors.secondary} />
+          <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-900 shadow-lg backdrop-blur">
+            <ShieldCheck className="h-3.5 w-3.5" style={{ color: colors.primary }} />
+            {primaryService}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className={useDarkHero ? "relative overflow-hidden rounded-lg bg-slate-900 shadow-2xl ring-1 ring-white/10" : "relative overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200"}>
         <PreviewImage image={mainImage} alt={`${companyName} hovedbilde`} className={heroImageClass} color={colors.secondary} />
@@ -663,7 +704,7 @@ function HeroMediaPanel({
                 ))}
               </div>
               <div className="mt-3 text-xs font-semibold text-slate-500">
-                {mode === "internal" ? `${images.length} bilde${images.length === 1 ? "" : "r"} i preview` : `Preview utløper ${formatPreviewDate(expiresAt)}`}
+                {`${images.length} bilde${images.length === 1 ? "" : "r"} i preview`}
               </div>
             </div>
           </div>
@@ -680,7 +721,9 @@ function HeroMediaPanel({
           {visual.label}
         </div>
         <h3 className={useDarkHero ? "mt-5 max-w-lg text-3xl font-black leading-tight text-white" : "mt-5 max-w-lg text-3xl font-black leading-tight text-slate-950"}>{primaryService}</h3>
-        <p className={useDarkHero ? "mt-4 max-w-lg text-base leading-7 text-slate-300" : "mt-4 max-w-lg text-base leading-7 text-slate-600"}>{visual.heroPanelText}</p>
+        {mode === "internal" && (
+          <p className={useDarkHero ? "mt-4 max-w-lg text-base leading-7 text-slate-300" : "mt-4 max-w-lg text-base leading-7 text-slate-600"}>{visual.heroPanelText}</p>
+        )}
       </div>
       <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
         {visual.signalItems.map((item) => (
@@ -774,7 +817,7 @@ function NeonTechnologyPanel({
           </div>
 
           <div className="mt-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4 text-sm leading-6 text-cyan-50">
-            {visual.heroPanelText} For {companyName} betyr det kort vei fra ide til testbar pilot, med data og sikkerhet med fra start.
+            {mode === "internal" ? `${visual.heroPanelText} ` : ""}For {companyName} betyr det kort vei fra ide til testbar pilot, med data og sikkerhet med fra start.
           </div>
         </div>
 

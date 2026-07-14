@@ -103,13 +103,15 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
     styleOverride: typeof resolvedSearch.style === "string" ? resolvedSearch.style : null,
   });
 
-  // Social proof for the countdown bar: leads captured by THIS demo.
+  // Social proof for the countdown bar: real inquiries captured by THIS
+  // demo via the contact form (stored as demo_inquiry events).
   let leadCount = 0;
   if (supabase && orderId) {
     const { count } = await supabase
-      .from("demo_site_leads")
+      .from("demo_site_order_events")
       .select("id", { count: "exact", head: true })
-      .eq("order_id", orderId);
+      .eq("order_id", orderId)
+      .eq("event_type", "demo_inquiry");
     leadCount = count || 0;
   }
 
@@ -138,6 +140,7 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
         packageName={pkg.shortName}
         fallbackMode="defaults"
         design={design}
+        inquiryToken={token}
       />
       {!isPresentation && <DemoDesignSwitcher basePath={`/demosites/preview/${token}`} design={design} />}
     </>
