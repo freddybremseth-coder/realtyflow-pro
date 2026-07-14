@@ -34,8 +34,16 @@ const PUBLIC_PATHS = [
   "/oauth/remaster-return",
   "/demosites/preview",
   "/demosites/claim",
+  // Presentation mode for physical sales meetings: sellers and customers
+  // (QR scan) are not RealtyFlow users. Token-gated by the route itself.
+  "/demosites/present",
   "/api/saas/demosites/request",
   "/api/saas/demosites/claim",
+  // chatgenius.pro seller portal — authenticates with its own Bearer token.
+  "/api/saas/demosites/portal/login",
+  "/api/saas/demosites/portal/orders",
+  // Working contact form on public demo previews.
+  "/api/public/demo-inquiry",
 ];
 
 const REMASTER_PROXY_PATHS = [
