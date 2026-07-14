@@ -28,6 +28,8 @@ jobs:
         run: npm run test:closing
       - name: Customer 360 tests
         run: npm run test:customer-360
+      - name: Customer CRM updates and Lead Inbox deletion tests
+        run: npm run test:customer-crm
       - name: Approval Center tests
         run: npm run test:approvals
       - name: After-sales tests
