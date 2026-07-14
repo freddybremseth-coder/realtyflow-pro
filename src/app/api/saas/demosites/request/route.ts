@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEMO_SITE_PACKAGES, analyzeDemoSiteProfile, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
 import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
+import { enrichDemoSiteOrder } from "@/lib/demosites-enrichment";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// Enrichment (site snapshot + AI copy + AI images) runs inline so the demo
+// is "wow-ready" the moment the customer opens the preview link. The public
+// form shows a build animation while this runs.
+export const maxDuration = 300;
 
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 const DEFAULT_EXPIRY_DAYS = 7;
@@ -199,6 +204,25 @@ export async function POST(request: NextRequest) {
       metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id, template_slug: selectedTemplateSlug, has_logo: Boolean(logoAsset), gallery_images: galleryImages.length },
     });
 
+    // Enrich with real content (old-site snapshot, AI copy, AI images when
+    // the gallery is thin). Fail-safe: a demo with template defaults is still
+    // returned if enrichment has problems.
+    let enrichment = null;
+    try {
+      enrichment = await enrichDemoSiteOrder(supabase, {
+        id: data.id,
+        company_name: companyName,
+        industry: profile.industry,
+        website_url: profile.websiteUrl,
+        template_slug: selectedTemplateSlug,
+        brand_color: brandColor,
+        notes,
+        editable_fields: editableFields,
+      });
+    } catch (err) {
+      console.warn("[DemoSites] Enrichment failed (demo still created):", err instanceof Error ? err.message : err);
+    }
+
     return NextResponse.json({
       order: data,
       claimUrl,
@@ -206,6 +230,7 @@ export async function POST(request: NextRequest) {
       expiresAt,
       expiresInDays: DEFAULT_EXPIRY_DAYS,
       packages: DEMO_SITE_PACKAGES,
+      enrichment,
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create demo request";

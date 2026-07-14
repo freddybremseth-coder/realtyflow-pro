@@ -4,7 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Trash2, Wallet, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Sparkles, Trash2, Wallet, XCircle } from "lucide-react";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
@@ -511,6 +511,7 @@ export default function DemoSitesPage() {
   const [deleteTarget, setDeleteTarget] = useState<DemoSiteOrder | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [enrichingOrderId, setEnrichingOrderId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
 
   const loadImportHistory = useCallback(async () => {
@@ -575,6 +576,25 @@ export default function DemoSitesPage() {
     const data = await response.json();
     if (!response.ok) setError(data.error || "Oppdatering feilet.");
     await loadData();
+  }
+
+  async function enrichOrder(order: DemoSiteOrder) {
+    setEnrichingOrderId(order.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/saas/demosites/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Berikelse feilet.");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Berikelse feilet.");
+    } finally {
+      setEnrichingOrderId(null);
+    }
   }
 
   function openDeleteOrder(order: DemoSiteOrder) {
@@ -1118,6 +1138,15 @@ export default function DemoSitesPage() {
                   <div className="mt-3 flex flex-wrap gap-1.5">{editableFieldList(order).slice(0, 8).map((field) => <Badge key={field} variant="outline" className="border-slate-600 text-[10px] text-slate-300">{field}</Badge>)}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {previewUrl && <a href={previewUrl} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-cyan-500/50 text-cyan-100">Åpne preview</Button></a>}
+                    {previewUrl?.includes("/demosites/preview/") && (
+                      <a href={previewUrl.replace("/demosites/preview/", "/demosites/present/")} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" className="bg-amber-500 text-slate-950 hover:bg-amber-400">Presenter for kunde</Button>
+                      </a>
+                    )}
+                    <Button size="sm" variant="outline" className="border-fuchsia-500/50 text-fuchsia-200" disabled={enrichingOrderId === order.id} onClick={() => enrichOrder(order)}>
+                      {enrichingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
+                      Berik med AI
+                    </Button>
                     {order.claim_url && <a href={order.claim_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-slate-600">Åpne claim</Button></a>}
                     {order.production_url && <a href={order.production_url} target="_blank" rel="noopener noreferrer"><Button size="sm" variant="outline" className="border-emerald-500/50 text-emerald-100">Åpne live</Button></a>}
                     <a href={`/demosites/setup/${order.id}`}><Button size="sm" variant="outline" className="border-slate-600">Oppsett</Button></a>

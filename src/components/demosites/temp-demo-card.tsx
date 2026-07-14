@@ -166,7 +166,7 @@ export function TempDemoCard({ onCreated }: { onCreated: () => Promise<void> }) 
             <Button type="submit" disabled={saving || Boolean(uploadingField)} className="h-full min-h-10 bg-emerald-600 hover:bg-emerald-500">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}Lag demo</Button>
           </div>
         </form>
-        {createdDemo && <div className="grid grid-cols-1 gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 md:grid-cols-3"><Info label="Kundelenke" value={createdDemo.actionUrl || "Ikke klar"} href={createdDemo.actionUrl} /><Info label="Preview" value={createdDemo.previewUrl || "Ikke klar"} href={createdDemo.previewUrl} /><Info label="Utløper" value={formatDate(createdDemo.expiresAt)} /></div>}
+        {createdDemo && <div className="grid grid-cols-1 gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 md:grid-cols-4"><Info label="Kundelenke" value={createdDemo.actionUrl || "Ikke klar"} href={createdDemo.actionUrl} /><Info label="Preview" value={createdDemo.previewUrl || "Ikke klar"} href={createdDemo.previewUrl} /><Info label="Presentasjon (kundemøte)" value={createdDemo.previewUrl ? "Åpne presentasjonsmodus" : "Ikke klar"} href={createdDemo.previewUrl?.replace("/preview/", "/present/")} /><Info label="Utløper" value={formatDate(createdDemo.expiresAt)} /></div>}
       </CardContent>
     </Card>
   );

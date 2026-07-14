@@ -42,12 +42,17 @@ import {
   type DemoSitesPreviewIndustryVariant,
   type DemoSitesPreviewIndustryVisual,
 } from "@/lib/demosites-preview-visuals";
+import { resolveDemoSiteDesign, type DemoSiteDesign } from "@/lib/demosites-design";
+import { getDemoFontPair } from "@/components/demosites/demo-fonts";
+import { DemoReveal } from "@/components/demosites/demo-reveal";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
   "--brand-soft": string;
   "--secondary": string;
   "--accent": string;
+  "--demo-font-heading": string;
+  "--demo-font-body": string;
 };
 
 export type DemoSitePreviewRendererProps = DemoSitesPreviewInput & {
@@ -56,6 +61,8 @@ export type DemoSitePreviewRendererProps = DemoSitesPreviewInput & {
   showFull?: boolean;
   packageName?: string;
   className?: string;
+  /** Layout/style override — falls back to saved fields + industry defaults. */
+  design?: DemoSiteDesign;
 };
 
 type PreviewBusinessCopy = {
@@ -105,6 +112,7 @@ export function DemoSitePreviewRenderer({
   showFull = false,
   packageName,
   className = "",
+  design: designProp,
   ...input
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
@@ -120,11 +128,24 @@ export function DemoSitePreviewRenderer({
   const useDarkHero = useNeonGlass || prefersDarkBusinessHero(preview.templateSlug);
   const visualSection = getPreviewVisualSectionClasses(visual.variant, useNeonGlass);
   const heroBackground = useDarkHero ? getHeroBackground(colors) : "#ffffff";
+  const design =
+    designProp ||
+    resolveDemoSiteDesign({
+      templateSlug: preview.templateSlug,
+      editableFields: input.editableFields,
+    });
+  const fonts = getDemoFontPair(design.style);
+  const heroImage = images[0] || "";
+  const layout: DemoSiteDesign["layout"] = heroImage ? design.layout : "split";
+  const revealAttr = mode === "public" ? { "data-demo-reveal": "" } : {};
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
     "--brand-soft": withPreviewAlpha(colors.primary, "18"),
     "--secondary": colors.secondary,
     "--accent": colors.accent,
+    "--demo-font-heading": fonts.heading,
+    "--demo-font-body": fonts.body,
+    fontFamily: fonts.body,
   };
   const rootClass =
     mode === "public"
@@ -154,7 +175,12 @@ export function DemoSitePreviewRenderer({
   const Root = mode === "public" ? "main" : "div";
 
   return (
-    <Root className={rootClass} style={rootStyle}>
+    <Root className={`demo-design-root ${fonts.classNames} ${rootClass}`} style={rootStyle}>
+      <style>{`
+        .demo-design-root { font-family: var(--demo-font-body); }
+        .demo-design-root h1, .demo-design-root h2, .demo-design-root h3 { font-family: var(--demo-font-heading); }
+      `}</style>
+      {mode === "public" && <DemoReveal />}
       {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} />}
 
       <header className={headerClass}>
@@ -186,6 +212,36 @@ export function DemoSitePreviewRenderer({
         </div>
       </header>
 
+      {layout === "fullbleed" ? (
+        <FullbleedHero
+          badge={mode === "internal" ? "Intern preview" : copy.heroBadge}
+          callToAction={content.call_to_action}
+          companyName={companyName}
+          contactHref={preview.contactHref}
+          colors={colors}
+          heroImage={heroImage}
+          heroTitle={content.hero_title}
+          heroSubtitle={content.hero_subtitle}
+          introText={content.intro_text}
+          mode={mode}
+          websiteUrl={preview.websiteUrl}
+        />
+      ) : layout === "editorial" ? (
+        <EditorialHero
+          badge={mode === "internal" ? "Intern preview" : copy.heroBadge}
+          callToAction={content.call_to_action}
+          companyName={companyName}
+          contactHref={preview.contactHref}
+          colors={colors}
+          images={images}
+          heroTitle={content.hero_title}
+          heroSubtitle={content.hero_subtitle}
+          introText={content.intro_text}
+          mode={mode}
+          primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
+          websiteUrl={preview.websiteUrl}
+        />
+      ) : (
       <section id="top" className={useNeonGlass ? "relative overflow-hidden border-b border-cyan-300/20" : useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
         {useNeonGlass && <NeonGridBackground colors={colors} />}
         <div className={`${maxWidthClass} grid grid-cols-1 gap-10 ${heroPaddingClass} lg:grid-cols-[1.02fr_0.98fr]`}>
@@ -231,6 +287,7 @@ export function DemoSitePreviewRenderer({
         />
         </div>
       </section>
+      )}
 
       {fullPreview && (
         <ProcessStrip
@@ -250,12 +307,12 @@ export function DemoSitePreviewRenderer({
         />
       )}
 
-      {images.length > 0 && (
-        <section id="bilder" className={useNeonGlass ? "border-b border-white/10 bg-[#020617] py-12 text-white" : "bg-white py-12"}>
+      {(layout === "fullbleed" ? images.slice(1) : images).length > 0 && (
+        <section id="bilder" {...revealAttr} className={useNeonGlass ? "border-b border-white/10 bg-[#020617] py-12 text-white" : "bg-white py-12"}>
           <div className={`${maxWidthClass} px-4`}>
             <SectionIntro eyebrow={copy.galleryEyebrow} title={copy.galleryTitle} text={preview.isImported ? copy.galleryText : "Bilder og faglige detaljer gir siden mer troverdighet før kunden tar kontakt."} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-              {images.slice(0, 3).map((image, index) => (
+              {(layout === "fullbleed" ? images.slice(1) : images).slice(0, 3).map((image, index) => (
                 <PreviewImage key={`${image}-${index}`} image={image} alt={`${companyName} bilde ${index + 1}`} className={useNeonGlass ? "h-80 w-full rounded-lg border border-white/10 bg-slate-900 object-cover shadow-xl shadow-cyan-950/20" : "h-80 w-full rounded-lg bg-slate-100 object-cover"} color={colors.primary} />
               ))}
             </div>
@@ -263,7 +320,7 @@ export function DemoSitePreviewRenderer({
         </section>
       )}
 
-      <section id="tjenester" className={visualSection.services}>
+      <section id="tjenester" {...revealAttr} className={visualSection.services}>
         <div className={`${maxWidthClass} px-4`}>
           <SectionIntro eyebrow={copy.servicesEyebrow} title={copy.servicesTitle} text={fullPreview ? copy.servicesText : "Kompakt preview viser de viktigste valgene først."} inverted={visualSection.invertedServices} />
           <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -276,7 +333,7 @@ export function DemoSitePreviewRenderer({
 
       {fullPreview && (
         <>
-          <section id="fordeler" className={useNeonGlass ? "border-b border-white/10 py-16 text-white" : "py-16 text-white"} style={{ backgroundColor: useNeonGlass ? "#030712" : colors.secondary }}>
+          <section id="fordeler" {...revealAttr} className={useNeonGlass ? "border-b border-white/10 py-16 text-white" : "py-16 text-white"} style={{ backgroundColor: useNeonGlass ? "#030712" : colors.secondary }}>
             <div className={`${maxWidthClass} px-4`}>
               <SectionIntro eyebrow={copy.trustEyebrow} title={copy.trustTitle} text={copy.trustText} inverted />
               <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -290,7 +347,7 @@ export function DemoSitePreviewRenderer({
             </div>
           </section>
 
-          <section id="tilbud" className={useNeonGlass ? "bg-[#020617] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
+          <section id="tilbud" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
             <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={copy.offerText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -300,7 +357,7 @@ export function DemoSitePreviewRenderer({
             </div>
           </section>
 
-          <section id="faq" className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
+          <section id="faq" {...revealAttr} className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
             <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={copy.faqText} inverted={useNeonGlass} />
             <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -314,7 +371,7 @@ export function DemoSitePreviewRenderer({
             </div>
           </section>
 
-          <section id="kontakt" className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-slate-950 py-16 text-white"}>
+          <section id="kontakt" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-slate-950 py-16 text-white"}>
             <div className={`${maxWidthClass} grid grid-cols-1 gap-8 px-4 lg:grid-cols-[0.95fr_1.05fr]`}>
               <div>
                 <div className="inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold" style={{ backgroundColor: withPreviewAlpha(colors.primary, "28"), color: colors.accent }}>
@@ -382,6 +439,132 @@ export function DemoSitePreviewRenderer({
         </footer>
       )}
     </Root>
+  );
+}
+
+type HeroLayoutProps = {
+  badge: string;
+  callToAction: string;
+  companyName: string;
+  contactHref: string;
+  colors: DemoSitesPreviewColors;
+  heroTitle: string;
+  heroSubtitle: string;
+  introText: string;
+  mode: DemoSitesPreviewMode;
+  websiteUrl: string;
+};
+
+/** Image-first hero: the customer's own photo full-bleed with overlaid copy. */
+function FullbleedHero({
+  badge,
+  callToAction,
+  companyName,
+  contactHref,
+  colors,
+  heroImage,
+  heroTitle,
+  heroSubtitle,
+  introText,
+  mode,
+  websiteUrl,
+}: HeroLayoutProps & { heroImage: string }) {
+  const minHeight = mode === "public" ? "min-h-[78vh]" : "min-h-[420px]";
+  return (
+    <section id="top" className={`relative flex ${minHeight} items-end overflow-hidden border-b border-slate-200`}>
+      <img src={heroImage} alt={`${companyName} hovedbilde`} className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15" />
+      <div className="absolute inset-x-0 bottom-0 h-1.5" style={{ background: `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
+      <div className={`relative z-10 w-full ${mode === "public" ? "mx-auto max-w-7xl px-4 pb-16 pt-40" : "px-5 pb-8 pt-24"}`}>
+        <div className="mb-5 inline-flex w-fit items-center rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white backdrop-blur">
+          <Sparkles className="mr-2 h-3.5 w-3.5" style={{ color: colors.accent }} /> {badge}
+        </div>
+        <h1 className={mode === "public" ? "max-w-4xl text-4xl font-black leading-[1.02] text-white drop-shadow-lg md:text-6xl xl:text-7xl" : "max-w-3xl text-3xl font-black leading-tight text-white md:text-4xl"}>
+          {heroTitle}
+        </h1>
+        <p className="mt-5 max-w-2xl text-lg leading-8 text-white/90 md:text-xl">{heroSubtitle}</p>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-white/70 md:text-base">{introText}</p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <a href={contactHref} className="inline-flex items-center justify-center rounded-lg px-7 py-4 text-sm font-bold shadow-2xl" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
+            {callToAction} <ArrowRight className="ml-2 h-4 w-4" />
+          </a>
+          {websiteUrl && (
+            <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-white/10 px-7 py-4 text-sm font-bold text-white backdrop-blur hover:bg-white/20">
+              Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+            </a>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Magazine hero: oversized typography, thin rules, image strip below. */
+function EditorialHero({
+  badge,
+  callToAction,
+  companyName,
+  contactHref,
+  colors,
+  images,
+  heroTitle,
+  heroSubtitle,
+  introText,
+  mode,
+  primaryService,
+  websiteUrl,
+}: HeroLayoutProps & { images: string[]; primaryService: string }) {
+  const heroImages = images.slice(0, 3);
+  return (
+    <section id="top" className="border-b border-slate-200 bg-white">
+      <div className={`${mode === "public" ? "mx-auto max-w-7xl px-4 py-14 lg:py-20" : "p-5"}`}>
+        <div className="flex items-center justify-between border-b pb-4" style={{ borderColor: withPreviewAlpha(colors.primary, "33") }}>
+          <span className="text-xs font-semibold uppercase tracking-[0.35em]" style={{ color: colors.primary }}>{badge}</span>
+          <span className="hidden text-xs font-medium uppercase tracking-[0.25em] text-slate-400 sm:block">{companyName}</span>
+        </div>
+        <h1 className={mode === "public" ? "mt-10 max-w-5xl text-5xl font-medium leading-[1.04] tracking-tight text-slate-950 md:text-7xl xl:text-8xl" : "mt-6 max-w-3xl text-3xl font-medium leading-tight text-slate-950 md:text-5xl"}>
+          {heroTitle}
+        </h1>
+        <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+          <div>
+            <p className="max-w-2xl text-xl leading-9 text-slate-700">{heroSubtitle}</p>
+            <p className="mt-4 max-w-2xl text-base leading-8 text-slate-500">{introText}</p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a href={contactHref} className="inline-flex items-center justify-center rounded-lg px-7 py-4 text-sm font-bold" style={{ backgroundColor: colors.primary, color: colors.primaryText }}>
+                {callToAction} <ArrowRight className="ml-2 h-4 w-4" />
+              </a>
+              {websiteUrl && (
+                <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-7 py-4 text-sm font-bold text-slate-700 hover:border-slate-500">
+                  Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col justify-end gap-3 border-l pl-8 text-sm text-slate-500" style={{ borderColor: withPreviewAlpha(colors.primary, "26") }}>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Spesialitet</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{primaryService}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: colors.accent }}>Neste steg</p>
+              <p className="mt-1 text-slate-700">{callToAction}</p>
+            </div>
+          </div>
+        </div>
+        {heroImages.length > 0 && (
+          <div className={`mt-12 grid gap-4 ${heroImages.length === 1 ? "grid-cols-1" : heroImages.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+            {heroImages.map((image, index) => (
+              <img
+                key={`${image}-${index}`}
+                src={image}
+                alt={`${companyName} bilde ${index + 1}`}
+                className={`w-full rounded-lg object-cover ${index === 0 ? "h-72 md:h-96" : "h-72 md:h-96"}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
