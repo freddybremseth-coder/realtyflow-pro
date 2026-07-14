@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DEMO_SITE_PACKAGES, analyzeDemoSiteProfile, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
 import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
 import { enrichDemoSiteOrder } from "@/lib/demosites-enrichment";
+import { portalCorsHeaders, portalPreflight } from "@/lib/demosites-portal";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,9 @@ export const revalidate = 0;
 export const maxDuration = 300;
 
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
-const DEFAULT_EXPIRY_DAYS = 7;
+// The trial window communicated on chatgenius.pro: the demo is live for
+// 4 days, then the customer must order to keep it.
+const DEFAULT_EXPIRY_DAYS = 4;
 
 type RequestBody = Record<string, unknown>;
 type SupabaseClientLike = DemoSitesSupabaseClientLike;
@@ -81,7 +84,20 @@ export async function GET() {
   });
 }
 
+/** CORS preflight — the order form on chatgenius.pro posts cross-origin. */
+export async function OPTIONS(request: NextRequest) {
+  return portalPreflight(request);
+}
+
 export async function POST(request: NextRequest) {
+  const response = await handleCreateDemoRequest(request);
+  for (const [key, value] of Object.entries(portalCorsHeaders(request))) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
+async function handleCreateDemoRequest(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as RequestBody;
     const companyName = text(body, "company_name", "companyName");
