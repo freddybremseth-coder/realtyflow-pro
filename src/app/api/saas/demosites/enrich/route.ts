@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
 import { enrichDemoSiteOrder } from "@/lib/demosites-enrichment";
 
@@ -16,10 +16,11 @@ export const maxDuration = 300;
  * visit, and to refresh demos created before enrichment existed.
  */
 export async function POST(request: NextRequest) {
-  const session = await verifyAdminSession(request.cookies.get("admin_session")?.value);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Same auth as the rest of the DemoSites admin APIs (realtyflow_admin
+  // session cookie / access roles) — the first version read a non-existent
+  // cookie name and rejected every request with 401.
+  const unauthorized = await requireAdminApi(request);
+  if (unauthorized) return unauthorized;
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const orderId = String(body.order_id || body.orderId || "").trim();

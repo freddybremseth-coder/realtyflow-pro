@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Sparkles, Trash2, Wallet, XCircle } from "lucide-react";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
+import { PortalUsersCard } from "@/components/demosites/portal-users-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
 import { buildVersionedImportReviewEditableFields, getImportReviewVersions, IMPORT_REVIEW_VERSIONS_KEY, type ImportReviewVersion } from "@/lib/demosites-import-review-versions";
 import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
@@ -591,6 +592,14 @@ export default function DemoSitesPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Berikelse feilet.");
       await loadData();
+      const r = data.result || {};
+      window.alert(
+        `Demo beriket for ${order.company_name}:\n` +
+        `AI-tekst: ${r.copyApplied ? "oppdatert" : "uendret"}\n` +
+        `Bilder fra gammel side: ${r.crawledImages ?? 0}\n` +
+        `Nye AI-bilder: ${r.generatedImages ?? 0}\n\n` +
+        `Åpne preview for å se resultatet.`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Berikelse feilet.");
     } finally {
@@ -614,6 +623,8 @@ export default function DemoSitesPage() {
       if (!response.ok) throw new Error(data.error || "Bildegenerering feilet.");
       if (data.result && !data.result.generatedImages) {
         setError("Ingen nye bilder ble generert — sjekk at GEMINI_API_KEY er satt.");
+      } else {
+        window.alert(`${data.result?.generatedImages ?? 0} nye AI-bilder er generert for ${order.company_name}. Åpne preview for å se dem.`);
       }
       await loadData();
     } catch (err) {
@@ -1119,6 +1130,8 @@ export default function DemoSitesPage() {
       </div>
 
       <TempDemoCard onCreated={loadData} />
+
+      <PortalUsersCard />
 
       <LeadPipelineCard />
 
