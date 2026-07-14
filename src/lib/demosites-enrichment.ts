@@ -57,6 +57,17 @@ const SNAPSHOT_TIMEOUT_MS = 10_000;
 const MAX_HTML_BYTES = 900_000;
 const MIN_GALLERY_IMAGES = 3;
 
+// Quality gate for crawled photos: small/low-res images from old sites make
+// the demo look WORSE than AI-generated ones, so we only keep photos that
+// pass these thresholds — the rest are dropped and AI fills the gallery.
+const IMAGE_MIN_BYTES = 20_000;
+const IMAGE_MAX_BYTES = 8_000_000;
+const IMAGE_MIN_WIDTH = 600;
+const IMAGE_MIN_HEIGHT = 350;
+const IMAGE_MAX_ASPECT = 3.6;
+const IMAGE_PROBE_TIMEOUT_MS = 8_000;
+const MAX_CRAWLED_IMAGES = 4;
+
 // ─── 0. Before-screenshot (no fetch needed — thum.io renders on demand) ─────
 
 export function buildBeforeScreenshotUrl(websiteUrl?: string | null): string | null {
@@ -177,6 +188,95 @@ export async function fetchWebsiteSnapshot(websiteUrl?: string | null): Promise<
   } catch {
     return null;
   }
+}
+
+// ─── 1b. Image quality gate ─────────────────────────────────────────────────
+
+function parsePngDimensions(buf: Buffer): { width: number; height: number } | null {
+  if (buf.length < 24) return null;
+  if (buf.readUInt32BE(0) !== 0x89504e47) return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+function parseJpegDimensions(buf: Buffer): { width: number; height: number } | null {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 9 < buf.length) {
+    if (buf[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = buf[offset + 1];
+    // SOF0–SOF15 (excluding DHT/DAC/RST): frame headers carry dimensions.
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { height: buf.readUInt16BE(offset + 5), width: buf.readUInt16BE(offset + 7) };
+    }
+    const length = buf.readUInt16BE(offset + 2);
+    if (length < 2) return null;
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function parseWebpDimensions(buf: Buffer): { width: number; height: number } | null {
+  if (buf.length < 30 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP") return null;
+  const format = buf.toString("ascii", 12, 16);
+  if (format === "VP8X") {
+    return {
+      width: 1 + ((buf[26] << 16) | (buf[25] << 8) | buf[24]),
+      height: 1 + ((buf[29] << 16) | (buf[28] << 8) | buf[27]),
+    };
+  }
+  if (format === "VP8 ") {
+    return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+  }
+  if (format === "VP8L") {
+    const bits = buf.readUInt32LE(21);
+    return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+  }
+  return null;
+}
+
+function parseImageDimensions(buf: Buffer): { width: number; height: number } | null {
+  return parsePngDimensions(buf) || parseJpegDimensions(buf) || parseWebpDimensions(buf);
+}
+
+/**
+ * Download a crawled image candidate and verify it is a real, reasonably
+ * large photo. Returns false on any doubt — a rejected image simply means
+ * an AI-generated one takes its place, which beats a blurry thumbnail.
+ */
+export async function probeImageQuality(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(IMAGE_PROBE_TIMEOUT_MS),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ChatGeniusDemoSites/1.0)" },
+    });
+    if (!res.ok) return false;
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    if (!/image\/(jpe?g|png|webp)/.test(contentType)) return false;
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < IMAGE_MIN_BYTES || buf.length > IMAGE_MAX_BYTES) return false;
+
+    const dims = parseImageDimensions(buf);
+    if (!dims || !dims.width || !dims.height) return false;
+    if (dims.width < IMAGE_MIN_WIDTH || dims.height < IMAGE_MIN_HEIGHT) return false;
+
+    const aspect = dims.width / dims.height;
+    if (aspect > IMAGE_MAX_ASPECT || aspect < 1 / IMAGE_MAX_ASPECT) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Filter crawled candidates through the quality gate (parallel, capped). */
+export async function selectQualityImages(candidates: string[], max = MAX_CRAWLED_IMAGES): Promise<string[]> {
+  const toProbe = candidates.slice(0, 8);
+  const results = await Promise.all(toProbe.map(async (url) => ((await probeImageQuality(url)) ? url : null)));
+  return results.filter((url): url is string => Boolean(url)).slice(0, max);
 }
 
 // ─── 2. AI copy ─────────────────────────────────────────────────────────────
@@ -468,9 +568,12 @@ export async function enrichDemoSiteOrder(
   const beforeScreenshotUrl = buildBeforeScreenshotUrl(order.website_url);
   if (beforeScreenshotUrl) fields.before_screenshot_url = beforeScreenshotUrl;
 
-  // 3. Real images from the old site into the gallery.
+  // 3. Real images from the old site into the gallery — but only photos
+  // that pass the quality gate. A bad old site must not produce a bad demo;
+  // rejected images are replaced by AI-generated ones below.
   const currentGallery = listOf(fields.gallery_images);
-  const crawledImages = (snapshot?.imageCandidates || []).filter((url) => !currentGallery.includes(url));
+  const candidates = (snapshot?.imageCandidates || []).filter((url) => !currentGallery.includes(url));
+  const crawledImages = candidates.length ? await selectQualityImages(candidates) : [];
   let gallery = [...currentGallery, ...crawledImages].slice(0, 6);
 
   // 4. AI copy from snapshot + form input.
