@@ -321,12 +321,15 @@ TJENESTER OPPGITT AV KUNDEN: ${input.services.join(", ") || "(ingen oppgitt)"}
 NOTATER: ${input.notes || "(ingen)"}
 ${snapshotContext}
 
-Skriv på norsk. Vær konkret (bruk bedriftsnavnet og reelle tjenester/steder der du kan), unngå buzzord og superlativ-spam. Returner KUN gyldig JSON:
+Skriv på norsk. Vær konkret (bruk bedriftsnavnet og reelle tjenester/steder der du kan), unngå buzzord og superlativ-spam.
+VIKTIG: All tekst skal snakke DIREKTE til kunden og selge — aldri beskrive hva teksten skal oppnå eller hva leseren "må forstå".
+hero_subtitle og intro_text skal si FORSKJELLIGE ting — aldri samme setning to ganger.
+Returner KUN gyldig JSON:
 {
   "hero_title": "kraftfull tittel, maks 60 tegn",
   "hero_subtitle": "undertittel som lover konkret verdi, maks 120 tegn",
-  "intro_text": "2-3 setninger om bedriften, varm og troverdig",
-  "services": ["4-7 konkrete tjenester"],
+  "intro_text": "2-3 setninger om bedriften, varm og troverdig — annet innhold enn hero_subtitle",
+  "services": ["4-7 korte tjenestenavn på 2-4 ord, f.eks. 'Flyttehjelp', 'Varetransport', 'Bortkjøring'"],
   "trust_points": ["3-5 korte trygghetspunkter, f.eks. erfaring, garanti, responstid"],
   "faq": [{"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}],
   "call_to_action": "kort handlingsdrivende CTA, maks 40 tegn",
@@ -527,6 +530,29 @@ function isDefaultText(current: unknown, defaultValue: string) {
   return !value || value === defaultValue.trim();
 }
 
+/**
+ * Crawled headings are noisy: review titles ("Karianne og Richard -
+ * 10/12/2020"), route descriptions ("Varetransport - Fra 2265 Namnå til
+ * 1474 Nordbyhagen") and whole sentences are NOT services. Keep only short,
+ * service-looking entries; when too little survives, the AI rewrites the
+ * list from scratch.
+ */
+export function sanitizeServiceList(values: string[]): string[] {
+  return values
+    .map((value) => value.trim())
+    .filter((value) => {
+      if (!value || value.length < 3 || value.length > 60) return false;
+      if (/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(value)) return false; // dates
+      if (/\bfra\b.*\btil\b/i.test(value) && /\d/.test(value)) return false; // routes
+      if (/\d{4}\s+[A-ZÆØÅ]/.test(value)) return false; // postal codes
+      if (/\bog\b/i.test(value) && /^[A-ZÆØÅ][a-zæøå]+ og [A-ZÆØÅ][a-zæøå]+\b/.test(value)) return false; // "Kari og Ola" reviews
+      if ((value.match(/[.!?]/g) || []).length > 0) return false; // sentences
+      if (value.split(/\s+/).length > 6) return false;
+      return true;
+    })
+    .slice(0, 7);
+}
+
 function isDefaultList(current: unknown, defaultValues: string[]) {
   const values = listOf(current);
   if (!values.length) return true;
@@ -590,9 +616,15 @@ export async function enrichDemoSiteOrder(
   const crawledImages = candidates.length ? await selectQualityImages(candidates) : [];
   let gallery = [...currentGallery, ...crawledImages].slice(0, 6);
 
-  // 4. AI copy from snapshot + form input.
+  // 4. AI copy from snapshot + form input. Services are sanitized first —
+  // junk crawl-headings must never survive as service cards.
   let copyApplied = false;
-  const services = listOf(fields.services);
+  const rawServices = listOf(fields.services);
+  const services = sanitizeServiceList(rawServices);
+  if (services.length !== rawServices.length) {
+    fields.services = services;
+  }
+  const servicesLookJunky = services.length < 2;
   const copy = options.imagesOnly
     ? null
     : await generateDemoCopy({
@@ -610,7 +642,9 @@ export async function enrichDemoSiteOrder(
     if (copy.intro_text && isDefaultText(fields.intro_text, defaults.intro_text)) fields.intro_text = copy.intro_text;
     if (copy.call_to_action && isDefaultText(fields.call_to_action, defaults.call_to_action)) fields.call_to_action = copy.call_to_action;
     if (copy.contact_text && isDefaultText(fields.contact_text, defaults.contact_text)) fields.contact_text = copy.contact_text;
-    if (copy.services?.length && isDefaultList(fields.services, defaults.services)) fields.services = copy.services;
+    if (copy.services?.length && (servicesLookJunky || isDefaultList(fields.services, defaults.services))) {
+      fields.services = sanitizeServiceList(copy.services);
+    }
     if (copy.trust_points?.length && isDefaultList(fields.trust_points, defaults.trust_points)) fields.trust_points = copy.trust_points;
     if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length)) {
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
