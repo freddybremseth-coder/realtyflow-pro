@@ -13,6 +13,9 @@ import {
 
 interface CustomerUpdatePanelProps {
   contactId: string;
+  defaultExpanded?: boolean;
+  defaultTab?: "details" | "update";
+  onSaved?: () => void;
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -39,9 +42,14 @@ function isoFromLocal(value: string) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [tab, setTab] = useState<"details" | "update">("update");
+export function CustomerUpdatePanel({
+  contactId,
+  defaultExpanded = false,
+  defaultTab = "update",
+  onSaved,
+}: CustomerUpdatePanelProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [tab, setTab] = useState<"details" | "update">(defaultTab);
   const [contact, setContact] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -71,6 +79,14 @@ export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
     nextFollowup: "",
     direction: "internal",
   });
+
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+    setTab(defaultTab);
+    setContact(null);
+    setMessage("");
+    setError("");
+  }, [contactId, defaultExpanded, defaultTab]);
 
   async function loadContact() {
     setLoading(true);
@@ -132,6 +148,7 @@ export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
       });
       setMessage(result.changedFields?.length ? `Kundedetaljene for ${customerLabel} er oppdatert.` : "Ingen felter var endret.");
       await loadContact();
+      onSaved?.();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre kundedetaljene.");
     } finally {
@@ -174,6 +191,7 @@ export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
         direction: "internal",
       });
       await loadContact();
+      onSaved?.();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Kunne ikke lagre kundeoppdateringen.");
     } finally {
@@ -182,7 +200,7 @@ export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
   }
 
   return (
-    <section className="mx-auto mb-4 max-w-7xl rounded-xl border border-cyan-500/25 bg-slate-900/75 shadow-lg shadow-slate-950/20">
+    <section className="w-full rounded-xl border border-cyan-500/25 bg-slate-900/75 shadow-lg shadow-slate-950/20">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -214,7 +232,7 @@ export function CustomerUpdatePanel({ contactId }: CustomerUpdatePanelProps) {
           </div>
 
           {error && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
-          {message && <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{message} Bruk «Oppdater» på Customer 360 for å laste inn den nye tidslinjen.</div>}
+          {message && <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{message}</div>}
 
           {loading && !contact ? (
             <div className="flex items-center py-8 text-sm text-slate-400"><Loader2 size={17} className="mr-2 animate-spin" />Laster kunde …</div>

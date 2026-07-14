@@ -142,7 +142,7 @@ export const SIDEBAR_NAV = {
     { label: "Revenue Engine", href: "/revenue-engine", icon: "Target" },
   ],
   operations: [
-    { label: "Kunder", href: "/customers", icon: "Users" },
+    { label: "CRM & kunder", href: "/customers", icon: "Users" },
     { label: "Team & arbeidsfordeling", href: "/team-workload", icon: "UsersRound" },
     { label: "Execution & Kalender", href: "/execution", icon: "CalendarCheck2" },
     { label: "Closing Workspace", href: "/closing", icon: "Target" },
@@ -150,7 +150,6 @@ export const SIDEBAR_NAV = {
     { label: "After-sales & Referral", href: "/after-sales", icon: "HeartHandshake" },
     { label: "Keyholding Revenue", href: "/service-revenue", icon: "KeyRound" },
     { label: "Lost Lead Recovery", href: "/recovery", icon: "RefreshCw" },
-    { label: "CRM Pipeline", href: "/pipeline", icon: "Users" },
     { label: "AI Lead Inbox", href: "/lead-intelligence", icon: "Sparkles" },
     { label: "Oppgave-HUB", href: "/marketing-tasks", icon: "CheckSquare" },
     { label: "Booking Admin", href: "/booking-admin", icon: "Calendar" },

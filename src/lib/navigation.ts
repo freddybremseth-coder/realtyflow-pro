@@ -51,7 +51,6 @@ const GROUPS: Array<{
     label: "Salg & kunder",
     icon: "Users",
     hrefs: [
-      "/pipeline",
       "/lead-intelligence",
       "/recovery",
       "/after-sales",
@@ -151,7 +150,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
     "/today",
     "/customers",
     "/execution",
-    "/pipeline",
+    "/lead-intelligence",
     "/communications",
     "/recovery",
   ],
