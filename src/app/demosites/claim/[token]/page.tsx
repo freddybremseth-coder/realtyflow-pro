@@ -137,9 +137,20 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
             </div>
             {order.preview_url && (
               <a href={order.preview_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">
-                Se preview <ExternalLink className="ml-2 h-4 w-4" />
+                Se prøvesiden <ExternalLink className="ml-2 h-4 w-4" />
               </a>
             )}
+            <a href="https://appointment.chatgenius.pro/booking.html?brand=chat" target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">
+              Book 30 min gratis analysesamtale
+            </a>
+            <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-500/5 p-4 text-xs text-emerald-100/90">
+              <p className="font-semibold text-emerald-50">Inkludert som DemoSites-kunde:</p>
+              <ul className="mt-2 space-y-1.5">
+                <li>✓ 30 min gratis samtale — vi analyserer bedriften og foreslår tilpasninger</li>
+                <li>✓ <span className="font-semibold">60 % rabatt</span> på utviklertimer: 596 kr/t (ordinært 1 490 kr/t)</li>
+                <li>✓ SEO & Google-optimalisering kan legges til for 490 kr/mnd</li>
+              </ul>
+            </div>
             <Link href="/demosites" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">
               Les om DemoSites
             </Link>

@@ -42,6 +42,7 @@ export type DemoSiteWebsiteSnapshot = {
   imageCandidates: string[];
   emails: string[];
   phones: string[];
+  pagesCrawled: number;
 };
 
 export type DemoSiteEnrichmentResult = {
@@ -56,6 +57,9 @@ export type DemoSiteEnrichmentResult = {
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 const MAX_HTML_BYTES = 900_000;
 const MIN_GALLERY_IMAGES = 3;
+// Beyond the homepage, crawl the most information-dense internal pages
+// (about/services/prices/contact) so the AI understands the business.
+const MAX_EXTRA_PAGES = 4;
 
 // Quality gate for crawled photos: small/low-res images from old sites make
 // the demo look WORSE than AI-generated ones, so we only keep photos that
@@ -143,8 +147,95 @@ export async function fetchWebsiteSnapshot(websiteUrl?: string | null): Promise<
   }
   if (!safeUrl) return null;
 
+  const homePage = await fetchAndParsePage(safeUrl);
+  if (!homePage) return null;
+
+  // ─── Multi-page crawl ───────────────────────────────────────────────
+  // The homepage alone rarely explains the business. Follow the most
+  // information-dense internal links (about, services, prices, contact,
+  // menu, treatments) so the AI writes from what the company ACTUALLY
+  // does — this is what makes the demo feel like their own site.
+  const homeHost = new URL(safeUrl).hostname;
+  const prioritized = prioritizeInternalLinks(homePage.links, safeUrl, homeHost).slice(0, MAX_EXTRA_PAGES);
+  const extraPages = (await Promise.all(prioritized.map((url) => fetchAndParsePage(url)))).filter(
+    (page): page is ParsedPage => Boolean(page),
+  );
+
+  const pages = [homePage, ...extraPages];
+  const merge = (values: string[][], limit: number) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const list of values) {
+      for (const item of list) {
+        const key = item.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+        if (out.length >= limit) return out;
+      }
+    }
+    return out;
+  };
+
+  return {
+    url: safeUrl,
+    title: homePage.title,
+    description: homePage.description || extraPages.find((p) => p.description)?.description || "",
+    headings: merge(pages.map((p) => p.headings), 24),
+    snippets: merge(pages.map((p) => p.snippets), 18),
+    imageCandidates: merge(pages.map((p) => p.imageCandidates), 12),
+    emails: merge(pages.map((p) => p.emails), 5),
+    phones: merge(pages.map((p) => p.phones), 5),
+    pagesCrawled: pages.length,
+  };
+}
+
+type ParsedPage = {
+  url: string;
+  title: string;
+  description: string;
+  headings: string[];
+  snippets: string[];
+  imageCandidates: string[];
+  emails: string[];
+  phones: string[];
+  links: string[];
+};
+
+const LINK_PRIORITY_PATTERN =
+  /om[- ]?oss|about|tjenester|services|priser|prices|prisliste|kontakt|contact|behandling|meny|menu|produkter|products|referanser|galleri/i;
+
+function prioritizeInternalLinks(links: string[], baseUrl: string, host: string): string[] {
+  const seen = new Set<string>([baseUrl.replace(/\/$/, "")]);
+  const priority: string[] = [];
+  const rest: string[] = [];
+
+  for (const link of links) {
+    const absolute = absolutizeUrl(link, baseUrl);
+    if (!absolute) continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(absolute);
+    } catch {
+      continue;
+    }
+    if (parsed.hostname !== host) continue;
+    if (/\.(pdf|jpe?g|png|webp|zip|mp4|xml)$/i.test(parsed.pathname)) continue;
+    parsed.hash = "";
+    parsed.search = "";
+    const clean = parsed.toString().replace(/\/$/, "");
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    if (LINK_PRIORITY_PATTERN.test(parsed.pathname)) priority.push(clean);
+    else if (parsed.pathname.split("/").filter(Boolean).length === 1) rest.push(clean);
+  }
+
+  return [...priority, ...rest];
+}
+
+async function fetchAndParsePage(pageUrl: string): Promise<ParsedPage | null> {
   try {
-    const res = await fetch(safeUrl, {
+    const res = await fetch(pageUrl, {
       signal: AbortSignal.timeout(SNAPSHOT_TIMEOUT_MS),
       headers: { "User-Agent": "Mozilla/5.0 (compatible; ChatGeniusDemoSites/1.0)" },
       redirect: "follow",
@@ -169,12 +260,12 @@ export async function fetchWebsiteSnapshot(websiteUrl?: string | null): Promise<
     const imageCandidates: string[] = [];
     const ogImage = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1];
     if (ogImage) {
-      const absolute = absolutizeUrl(ogImage, safeUrl);
+      const absolute = absolutizeUrl(ogImage, pageUrl);
       if (absolute && isUsablePhotoUrl(absolute)) imageCandidates.push(absolute);
     }
     const imgSrcs = extractAll(html, /<img[^>]+src=["']([^"']+)["']/i, 1, 60);
     for (const src of imgSrcs) {
-      const absolute = absolutizeUrl(src, safeUrl);
+      const absolute = absolutizeUrl(src, pageUrl);
       if (absolute && isUsablePhotoUrl(absolute) && !imageCandidates.includes(absolute)) {
         imageCandidates.push(absolute);
       }
@@ -183,8 +274,9 @@ export async function fetchWebsiteSnapshot(websiteUrl?: string | null): Promise<
 
     const emails = [...new Set(extractAll(html, /mailto:([^"'?\s>]+)/i, 1, 5))];
     const phones = [...new Set(extractAll(html, /tel:([+0-9() -]{6,20})/i, 1, 5))];
+    const links = extractAll(html, /<a[^>]+href=["']([^"'#]+)["']/i, 1, 80);
 
-    return { url: safeUrl, title, description, headings, snippets, imageCandidates, emails, phones };
+    return { url: pageUrl, title, description, headings, snippets, imageCandidates, emails, phones, links };
   } catch {
     return null;
   }
@@ -344,11 +436,12 @@ export async function generateDemoCopy(input: {
 }): Promise<DemoSiteGeneratedCopy | null> {
   const snapshotContext = input.snapshot
     ? `
-FRA BEDRIFTENS EKSISTERENDE NETTSIDE (bruk dette aktivt — nevn faktiske tjenester og stedsnavn):
+FRA BEDRIFTENS EKSISTERENDE NETTSIDE — ${input.snapshot.pagesCrawled} sider analysert (bruk dette aktivt: nevn faktiske tjenester, priser og stedsnavn):
 Tittel: ${input.snapshot.title}
 Beskrivelse: ${input.snapshot.description}
-Overskrifter: ${input.snapshot.headings.slice(0, 10).join(" | ")}
-Tekstutdrag: ${input.snapshot.snippets.slice(0, 6).join("\n")}`
+Overskrifter: ${input.snapshot.headings.slice(0, 18).join(" | ")}
+Tekstutdrag:
+${input.snapshot.snippets.slice(0, 12).join("\n")}`
     : "";
 
   const prompt = `Du skriver innhold til en ny, moderne nettside for en norsk lokal bedrift. Innholdet skal føles skreddersydd, konkret og selgende — ikke som en mal.
@@ -718,6 +811,7 @@ export async function enrichDemoSiteOrder(
     at: new Date().toISOString(),
     copy_applied: copyApplied,
     snapshot_used: Boolean(snapshot),
+    pages_crawled: snapshot?.pagesCrawled || 0,
     crawled_images: crawledImages.length,
     generated_images: generatedImages.length,
     errors,

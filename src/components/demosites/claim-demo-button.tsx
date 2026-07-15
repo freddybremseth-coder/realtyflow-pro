@@ -18,6 +18,7 @@ type ClaimDemoButtonProps = {
 export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimDemoButtonProps) {
   const [loading, setLoading] = useState(false);
   const [claimed, setClaimed] = useState(Boolean(alreadyClaimed));
+  const [seoAddon, setSeoAddon] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function claimWithoutPayment() {
@@ -39,7 +40,7 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
       const response = await fetch("/api/saas/demosites/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, seo_addon: seoAddon }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke starte betalingen.");
@@ -76,6 +77,21 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
 
   return (
     <div className="space-y-3">
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
+        <input
+          type="checkbox"
+          checked={seoAddon}
+          onChange={(e) => setSeoAddon(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-emerald-400"
+        />
+        <span>
+          <span className="font-semibold text-emerald-50">SEO & Google-optimalisering</span>{" "}
+          <span className="text-emerald-100/80">+490 kr/mnd</span>
+          <span className="mt-0.5 block text-xs text-emerald-100/70">
+            Løpende søkeordsarbeid, Google Business-profil og synlighet i lokale søk.
+          </span>
+        </span>
+      </label>
       <button
         type="button"
         onClick={startCheckout}

@@ -162,8 +162,36 @@ function roleDenied(request: NextRequest, role: AccessRole, requirement: string)
   return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
 }
 
+// Customer-site subdomains (<slug>.chatgenius.pro) rewrite to /sites/<slug>.
+// Reserved labels keep their normal behaviour (realtyflow = this app's own
+// host, www = the static marketing site on another project, etc.).
+const CUSTOMER_SITE_ROOT = process.env.DEMOSITES_ROOT_DOMAIN || "chatgenius.pro";
+const RESERVED_SITE_SUBDOMAINS = new Set([
+  "www", "api", "mail", "smtp", "imap", "pop", "ftp", "webmail",
+  "realtyflow", "appointment", "sider", "app", "admin", "portal",
+  "demo", "demosites", "status", "cdn", "static", "ns1", "ns2",
+]);
+
+function customerSiteRewrite(request: NextRequest): NextResponse | null {
+  const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+  if (!host.endsWith(`.${CUSTOMER_SITE_ROOT}`)) return null;
+  const label = host.slice(0, -(CUSTOMER_SITE_ROOT.length + 1));
+  if (!label || label.includes(".") || RESERVED_SITE_SUBDOMAINS.has(label)) return null;
+
+  const { pathname } = request.nextUrl;
+  // The one-pager lives at "/"; APIs (contact form) and assets pass through.
+  if (pathname === "/") {
+    return NextResponse.rewrite(new URL(`/sites/${label}`, request.url));
+  }
+  return null;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  const siteRewrite = customerSiteRewrite(request);
+  if (siteRewrite) return siteRewrite;
+
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", pathname);
   requestHeaders.delete("x-admin-authenticated");

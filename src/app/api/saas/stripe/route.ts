@@ -199,6 +199,9 @@ export async function POST(request: NextRequest) {
               subscription_id: data.subscription || null,
               paid_at: paidAt,
             };
+            if (data.metadata?.seo_addon === 'true') {
+              fields.addons = { ...(fields.addons || {}), seo: true };
+            }
 
             await supabase.from('demo_site_orders').update({
               billing_status: 'paid',
