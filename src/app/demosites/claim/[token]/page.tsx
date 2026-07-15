@@ -94,9 +94,9 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
               <div className="mb-4 inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">
                 <ShieldCheck className="mr-2 h-3.5 w-3.5" /> ChatGenius DemoSites
               </div>
-              <h1 className="text-3xl font-bold tracking-tight md:text-5xl">Din demo for {order.company_name}</h1>
+              <h1 className="text-3xl font-bold tracking-tight md:text-5xl">Gjør prøvesiden til den offisielle nettsiden for {order.company_name}</h1>
               <p className="mt-4 max-w-2xl text-base text-slate-300">
-                Dette er en midlertidig demoside-request. Den viser informasjonen som er registrert før vi lager full nettside og publisering.
+                Betal oppstart + første måned nå, så publiserer vi siden med hosting, SSL og drift — prøvesiden du allerede har sett blir din.
               </p>
             </div>
             <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-300">
@@ -120,20 +120,20 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
             <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
               <h3 className="flex items-center gap-2 font-semibold"><Globe className="h-4 w-4 text-blue-300" /> Neste steg</h3>
               <div className="mt-4 space-y-3 text-sm text-slate-300">
-                <Step text="Vi registrerer at kunden ønsker å beholde demoen." />
-                <Step text="Freddy/ChatGenius tar neste steg med faktura, endringer og godkjenning." />
-                <Step text="Full nettside og automatisk publisering kobles på i senere steg." />
+                <Step text="Betal trygt med kort via Stripe — oppstart + første måned i én betaling." />
+                <Step text="Vi klargjør og publiserer siden med hosting, SSL og eventuelle justeringer du ønsker." />
+                <Step text="Månedlig drift fornyes automatisk. Ingen bindingstid utover inneværende måned." />
               </div>
             </div>
           </section>
 
           <aside className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-6">
-            <h2 className="text-xl font-semibold">Vil du beholde demoen?</h2>
+            <h2 className="text-xl font-semibold">Vil du beholde siden?</h2>
             <p className="mt-3 text-sm text-emerald-50/80">
-              Når du claimer demoen, registreres den som godkjent i DemoSites CRM. Betaling og publisering håndteres etterpå.
+              {getPackageLabel(order.package_id)}. Du betaler nå og siden blir din — vi publiserer og drifter den for deg.
             </p>
             <div className="mt-5">
-              <ClaimDemoButton token={token} alreadyClaimed={Boolean(order.claimed_at)} expired={expired} />
+              <ClaimDemoButton token={token} alreadyClaimed={Boolean(order.claimed_at)} expired={expired} paid={order.billing_status === "paid"} />
             </div>
             {order.preview_url && (
               <a href={order.preview_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">
@@ -144,7 +144,7 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
               Les om DemoSites
             </Link>
             <p className="mt-4 text-xs text-emerald-100/70">
-              Betaling og automatisk publisering kobles på i senere steg.
+              Spørsmål før du bestiller? Send oss en e-post på post@chatgenius.pro, så svarer vi raskt.
             </p>
           </aside>
         </div>
