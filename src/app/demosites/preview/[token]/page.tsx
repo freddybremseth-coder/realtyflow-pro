@@ -71,6 +71,8 @@ export async function generateMetadata({ params }: PreviewPageProps): Promise<Me
   return {
     title,
     description,
+    // Trial previews must never compete with the published /sites page.
+    robots: { index: false, follow: false },
     openGraph: {
       title,
       description,

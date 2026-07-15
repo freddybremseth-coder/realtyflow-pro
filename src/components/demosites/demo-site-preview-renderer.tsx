@@ -66,6 +66,8 @@ export type DemoSitePreviewRendererProps = DemoSitesPreviewInput & {
   design?: DemoSiteDesign;
   /** Claim token: enables the working contact form on public previews. */
   inquiryToken?: string;
+  /** Published paid site: no trial UI, delivered-by footer, no old-site links. */
+  isLiveSite?: boolean;
 };
 
 type PreviewBusinessCopy = {
@@ -117,6 +119,7 @@ export function DemoSitePreviewRenderer({
   className = "",
   design: designProp,
   inquiryToken,
+  isLiveSite = false,
   ...input
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
@@ -150,6 +153,8 @@ export function DemoSitePreviewRenderer({
   // button and the phone number in the top strip.
   const ctaHref = mode === "public" ? "#kontakt" : preview.contactHref;
   const showLeadForm = mode === "public" && Boolean(inquiryToken);
+  // A live site never links back to the old site it replaced.
+  const oldSiteUrl = isLiveSite ? "" : preview.websiteUrl;
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
     "--brand-soft": withPreviewAlpha(colors.primary, "18"),
@@ -236,7 +241,7 @@ export function DemoSitePreviewRenderer({
           heroSubtitle={content.hero_subtitle}
           introText={heroIntroText}
           mode={mode}
-          websiteUrl={preview.websiteUrl}
+          websiteUrl={oldSiteUrl}
         />
       ) : layout === "editorial" ? (
         <EditorialHero
@@ -251,7 +256,7 @@ export function DemoSitePreviewRenderer({
           introText={heroIntroText}
           mode={mode}
           primaryService={services[0] || content.products[0] || copy.heroPrimaryService}
-          websiteUrl={preview.websiteUrl}
+          websiteUrl={oldSiteUrl}
         />
       ) : (
       <section id="top" className={useNeonGlass ? "relative overflow-hidden border-b border-cyan-300/20" : useDarkHero ? "border-b border-slate-800" : "border-b border-slate-200 bg-white"} style={{ backgroundColor: heroBackground }}>
@@ -268,8 +273,8 @@ export function DemoSitePreviewRenderer({
             <a href={ctaHref} className={useNeonGlass ? "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-black shadow-xl shadow-cyan-500/20" : "inline-flex items-center justify-center rounded-lg px-6 py-4 text-sm font-bold"} style={useNeonGlass ? { background: `linear-gradient(135deg, ${colors.primary}, ${colors.accent})`, color: "#020617" } : { backgroundColor: colors.primary, color: colors.primaryText }}>
               {content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" />
             </a>
-            {preview.websiteUrl && (
-              <a href={preview.websiteUrl} target="_blank" rel="noopener noreferrer" className={useDarkHero ? "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-6 py-4 text-sm font-bold text-white hover:bg-white/15" : "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-700 hover:border-slate-400"}>
+            {oldSiteUrl && (
+              <a href={oldSiteUrl} target="_blank" rel="noopener noreferrer" className={useDarkHero ? "inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/10 px-6 py-4 text-sm font-bold text-white hover:bg-white/15" : "inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-6 py-4 text-sm font-bold text-slate-700 hover:border-slate-400"}>
                 Eksisterende nettside <ExternalLink className="ml-2 h-4 w-4" />
               </a>
             )}
@@ -279,7 +284,7 @@ export function DemoSitePreviewRenderer({
             <HeroMetric label={copy.metricOfferLabel} value={content.products[0] || content.prices[0] || copy.heroPrimaryService} dark={useDarkHero} />
             <HeroMetric label={copy.metricContactLabel} value={contact.phone || contact.email ? "Direkte" : "Klar"} dark={useDarkHero} />
           </div>
-          {mode === "public" && preview.isImported && (
+          {mode === "public" && !isLiveSite && preview.isImported && (
             <p className={`mt-4 max-w-2xl text-xs font-medium ${useDarkHero ? "text-slate-500" : "text-slate-500"}`}>
               Demo basert på offentlig informasjon fra nettsiden.
             </p>
@@ -410,7 +415,7 @@ export function DemoSitePreviewRenderer({
                   <ContactLine icon={<MapPin className="h-4 w-4" />} label="Adresse" value={contact.address} />
                   {contact.website && <ContactLine icon={<ExternalLink className="h-4 w-4" />} label="Nettside" value={contact.website} href={contact.website} />}
                 </div>
-                {mode === "public" && preview.isImported && preview.sourcePages.length > 0 && (
+                {mode === "public" && !isLiveSite && preview.isImported && preview.sourcePages.length > 0 && (
                   <p className="mt-4 text-xs text-slate-500">Kilder brukt i analysen: {preview.sourcePages.length} offentlig side{preview.sourcePages.length === 1 ? "" : "r"}.</p>
                 )}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -476,7 +481,16 @@ export function DemoSitePreviewRenderer({
 
       {mode === "public" && (
         <footer className={useNeonGlass ? "border-t border-white/10 bg-[#020617] px-4 py-8 text-center text-xs text-slate-500" : "bg-white px-4 py-8 text-center text-xs text-slate-500"}>
-          Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"}.
+          {isLiveSite ? (
+            <>
+              © {new Date().getFullYear()} {companyName} · Nettside levert av{" "}
+              <a href="https://www.chatgenius.pro/demosites/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">
+                ChatGenius.pro
+              </a>
+            </>
+          ) : (
+            <>Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"}.</>
+          )}
         </footer>
       )}
     </Root>
@@ -800,7 +814,7 @@ function NeonTechnologyPanel({
             {visual.label}
           </div>
           <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-200">
-            {mode === "internal" ? "Ikke publisert" : `Aktiv til ${formatPreviewDate(expiresAt)}`}
+            {mode === "internal" ? "Ikke publisert" : expiresAt ? `Aktiv til ${formatPreviewDate(expiresAt)}` : "Live"}
           </div>
         </div>
 
