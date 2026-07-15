@@ -181,6 +181,45 @@ export async function POST(request: NextRequest) {
 
       // ─── Checkout completed (one-time or first subscription) ──
       case 'checkout.session.completed': {
+        // Book PDF purchase on freddybremseth.com: create the download
+        // grant and send the customer their permanent link.
+        if (data.metadata?.book_scope) {
+          const scope = data.metadata.book_scope === 'all' ? 'all' : 'single';
+          const { randomBytes } = await import('node:crypto');
+          const email = data.customer_details?.email || null;
+          const { data: grant, error: grantError } = await supabase
+            .from('book_download_grants')
+            .insert({
+              token: randomBytes(24).toString('hex'),
+              email,
+              scope,
+              book_id: scope === 'single' ? data.metadata.book_id || null : null,
+              stripe_session_id: data.id,
+            })
+            .select('token')
+            .single();
+
+          if (!grantError && grant && email) {
+            const base = process.env.BOOKS_SITE_BASE_URL || 'https://www.freddybremseth.com';
+            const link = `${base}/nedlasting.html?token=${grant.token}`;
+            const { sendBrandEmail } = await import('@/services/email/send-brand-email');
+            await sendBrandEmail(supabase, {
+              brandId: process.env.BOOKS_EMAIL_BRAND_ID || 'chatgenius',
+              to: [email],
+              subject: scope === 'all' ? 'Dine bøker er klare — ubegrenset nedlasting' : 'Boken din er klar for nedlasting',
+              bodyText: `Takk for kjøpet!
+
+Last ned ${scope === 'all' ? 'alle bøkene' : 'boken'} her (lenken er personlig og varer evig):
+${link}
+
+God lesing!
+Freddy Bremseth`,
+            }).catch(() => ({ success: false }));
+          }
+          console.log(`[Stripe Webhook] Book grant created for session ${data.id} (${scope})`);
+          break;
+        }
+
         // DemoSites purchase: mark the order paid + claimed automatically.
         const demositeOrderId = data.metadata?.demosite_order_id;
         if (demositeOrderId) {

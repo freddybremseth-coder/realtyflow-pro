@@ -37,6 +37,7 @@ function sanitizeBook(body: Record<string, unknown>) {
     title: String(body.title || "").trim(),
     subtitle: String(body.subtitle || ""),
     asin: String(body.asin || "").trim() || null,
+    pdf_path: String(body.pdf_path || "").trim() || null,
     format: String(body.format || "kindle"),
     marketplace: String(body.marketplace || "amazon.com"),
     amazon_url: String(body.amazon_url || ""),

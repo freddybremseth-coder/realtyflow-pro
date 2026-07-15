@@ -52,6 +52,8 @@ const PUBLIC_PATHS = [
   "/api/public/demo-chat",
   // Public app-subscription API for chatgenius.pro (Astro, Family, …).
   "/api/saas/subscribe",
+  // Direct PDF book sales on freddybremseth.com (grant-token gated).
+  "/api/public/books",
 ];
 
 const REMASTER_PROXY_PATHS = [
