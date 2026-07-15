@@ -23,15 +23,21 @@ test("owner navigation is split into focused work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
-    ["workspace", "customers", "revenue", "properties", "growth", "system"],
+    ["workspace", "customers", "revenue", "reports", "properties", "content", "marketing", "business", "system"],
   );
-  assert.equal(sections.find((section) => section.id === "workspace")?.items.length, 6);
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
-    ["/today", "/customers", "/execution", "/internal-alerts", "/approvals", "/communications"],
+    ["/", "/today", "/internal-alerts", "/approvals", "/communications"],
   );
-  assert.equal(sections.find((section) => section.id === "revenue")?.items.some((item) => item.href === "/continuous-improvement"), true);
-  assert.equal(sections.find((section) => section.id === "growth")?.items.some((item) => item.href === "/demosites"), true);
+  // Daily money tools stay in "Økonomi"; rarely-used routines live in
+  // their own "Rapporter & rutiner" group so they never drown the daily.
+  assert.equal(sections.find((section) => section.id === "revenue")?.items.some((item) => item.href === "/closing"), true);
+  assert.equal(sections.find((section) => section.id === "reports")?.items.some((item) => item.href === "/continuous-improvement"), true);
+  assert.equal(sections.find((section) => section.id === "business")?.items.some((item) => item.href === "/demosites"), true);
+  assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/reach"), true);
+  for (const section of sections) {
+    assert.ok(section.items.length <= 10, `${section.id} has ${section.items.length} items`);
+  }
 });
 
 test("role navigation excludes inaccessible owner and finance tools", () => {
@@ -45,9 +51,9 @@ test("role navigation excludes inaccessible owner and finance tools", () => {
 
 test("active section follows nested routes", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
-  assert.equal(activeNavigationSection("/customers/abc-123", sections), "workspace");
+  assert.equal(activeNavigationSection("/customers/abc-123", sections), "customers");
   assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
-  assert.equal(activeNavigationSection("/continuous-improvement", sections), "revenue");
+  assert.equal(activeNavigationSection("/continuous-improvement", sections), "reports");
 });
 
 test("menu search filters labels and routes without changing access", () => {

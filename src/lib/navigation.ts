@@ -6,8 +6,11 @@ export type NavigationSectionId =
   | "workspace"
   | "customers"
   | "revenue"
+  | "reports"
   | "properties"
-  | "growth"
+  | "content"
+  | "marketing"
+  | "business"
   | "system";
 
 export interface NavigationSection {
@@ -27,6 +30,9 @@ const REVENUE_READ_PAGES = new Set([
   "/continuous-improvement",
 ]);
 
+// Grouped by JOB, not by module: every group answers "what am I trying to
+// do right now?", holds at most ~8 visible choices, and rarely-used
+// reports live in their own group instead of drowning the daily tools.
 const GROUPS: Array<{
   id: NavigationSectionId;
   label: string;
@@ -35,12 +41,11 @@ const GROUPS: Array<{
 }> = [
   {
     id: "workspace",
-    label: "Dagens arbeid",
+    label: "Hjem",
     icon: "PanelsTopLeft",
     hrefs: [
+      "/",
       "/today",
-      "/customers",
-      "/execution",
       "/internal-alerts",
       "/approvals",
       "/communications",
@@ -48,10 +53,12 @@ const GROUPS: Array<{
   },
   {
     id: "customers",
-    label: "Salg & kunder",
+    label: "Kunder & salg",
     icon: "Users",
     hrefs: [
+      "/customers",
       "/lead-intelligence",
+      "/execution",
       "/recovery",
       "/after-sales",
       "/booking-admin",
@@ -60,7 +67,7 @@ const GROUPS: Array<{
   },
   {
     id: "revenue",
-    label: "Revenue OS",
+    label: "Økonomi",
     icon: "Handshake",
     hrefs: [
       "/revenue-command",
@@ -68,23 +75,29 @@ const GROUPS: Array<{
       "/closing-pack",
       "/commissions",
       "/forecast",
-      "/service-revenue",
-      "/team-workload",
-      "/executive-briefing",
-      "/goals",
       "/monthly-close",
-      "/attribution",
+      "/goals",
+    ],
+  },
+  {
+    id: "reports",
+    label: "Rapporter & rutiner",
+    icon: "ClipboardList",
+    hrefs: [
+      "/executive-briefing",
+      "/business-overview",
       "/operating-review",
       "/weekly-management-review",
       "/continuous-improvement",
+      "/attribution",
+      "/service-revenue",
+      "/team-workload",
       "/revenue-data-health",
-      "/",
-      "/business-overview",
     ],
   },
   {
     id: "properties",
-    label: "Eiendom & dokumenter",
+    label: "Eiendom",
     icon: "Building2",
     hrefs: [
       "/inventory",
@@ -96,42 +109,56 @@ const GROUPS: Array<{
     ],
   },
   {
-    id: "growth",
-    label: "Vekst, innhold & plattform",
-    icon: "Megaphone",
+    id: "content",
+    label: "Innhold & medier",
+    icon: "Clapperboard",
     hrefs: [
       "/content-studio",
-      "/website-cms",
       "/content-hub",
       "/image-studio",
-      "/ad-campaigns",
-      "/marketing-tasks",
+      "/website-cms",
       "/youtube-studio",
       "/neural-beat",
       "/publishing",
+    ],
+  },
+  {
+    id: "marketing",
+    label: "Markedsføring",
+    icon: "Megaphone",
+    hrefs: [
+      "/ad-campaigns",
       "/growth-hub",
-      "/reports",
-      "/analytics",
-      "/saas",
-      "/demosites",
-      "/revenue-engine",
-      "/automation",
-      "/automation/nurture",
-      "/agents",
-      "/email",
       "/reach",
+      "/marketing-tasks",
+      "/analytics",
+      "/reports",
+    ],
+  },
+  {
+    id: "business",
+    label: "Forretningsområder",
+    icon: "Briefcase",
+    hrefs: [
+      "/demosites",
+      "/saas",
+      "/revenue-engine",
+      "/mondeo",
     ],
   },
   {
     id: "system",
-    label: "System & admin",
+    label: "Automatisering & admin",
     icon: "Settings",
     hrefs: [
+      "/automation",
+      "/automation/nurture",
+      "/agents",
+      "/email",
       "/access-control",
       "/audit-log",
       "/brands",
       "/business-hub",
-      "/mondeo",
       "/data-health",
       "/settings",
     ],
