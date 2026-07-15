@@ -42,6 +42,33 @@ export function LeadPipelineCard() {
   const [recommendedPlay, setRecommendedPlay] = useState<RecommendedPlay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+
+  async function runBulkDemos() {
+    setBulkRunning(true);
+    setBulkStatus(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/saas/demosites/leads/bulk-demos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Bulk-generering feilet.");
+      const failed = (data.results || []).filter((r: { ok: boolean }) => !r.ok).length;
+      setBulkStatus(
+        `${data.created} prøveside${data.created === 1 ? "" : "r"} laget${failed ? `, ${failed} feilet` : ""}. ` +
+        (data.remaining > 0 ? `${data.remaining} leads gjenstår — kjør igjen for neste batch.` : "Alle kvalifiserte leads har nå prøveside.")
+      );
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bulk-generering feilet.");
+    } finally {
+      setBulkRunning(false);
+    }
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -97,6 +124,13 @@ export function LeadPipelineCard() {
                 </div>
               </div>
             )}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button size="sm" onClick={runBulkDemos} disabled={bulkRunning} className="bg-cyan-600 hover:bg-cyan-500">
+                {bulkRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                {bulkRunning ? "Lager prøvesider…" : `Lag prøvesider for kvalifiserte (${summary.qualified})`}
+              </Button>
+              {bulkStatus && <span className="text-xs text-emerald-300">{bulkStatus}</span>}
+            </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
               <Metric label="Firma" value={summary.total} />
               <Metric label="Klar scan" value={summary.queued} />

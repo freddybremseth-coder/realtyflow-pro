@@ -117,6 +117,20 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
     leadCount = count || 0;
   }
 
+  // Heat signal for the seller portal: every open is logged (best effort).
+  if (supabase && orderId) {
+    try {
+      await supabase.from("demo_site_order_events").insert({
+        order_id: orderId,
+        event_type: "demo_viewed",
+        title: "Prøvesiden ble åpnet",
+        metadata: { via: "preview" },
+      });
+    } catch {
+      // View logging must never break the page.
+    }
+  }
+
   const showConversionBar = order.status !== "claimed" && Boolean(order.claim_url);
   const isPresentation = resolvedSearch.present === "1";
 
@@ -143,6 +157,7 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
         fallbackMode="defaults"
         design={design}
         inquiryToken={token}
+        packageId={order.package_id}
       />
       {!isPresentation && <DemoDesignSwitcher basePath={`/demosites/preview/${token}`} design={design} />}
     </>

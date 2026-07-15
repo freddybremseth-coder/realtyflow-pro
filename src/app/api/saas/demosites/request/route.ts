@@ -228,6 +228,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
       enrichment = await enrichDemoSiteOrder(supabase, {
         id: data.id,
         company_name: companyName,
+        package_id: selectedPackage.id,
         industry: profile.industry,
         website_url: profile.websiteUrl,
         template_slug: selectedTemplateSlug,

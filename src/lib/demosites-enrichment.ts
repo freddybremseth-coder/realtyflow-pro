@@ -382,6 +382,8 @@ export type DemoSiteGeneratedCopy = {
   faq?: DemoSiteFaqItem[];
   call_to_action?: string;
   contact_text?: string;
+  /** Premium: real team members found on the website — never invented. */
+  employees?: Array<{ name?: string; title?: string; email?: string; phone?: string }>;
 };
 
 function cleanJsonText(text: string) {
@@ -433,6 +435,8 @@ export async function generateDemoCopy(input: {
   services: string[];
   notes?: string | null;
   snapshot?: DemoSiteWebsiteSnapshot | null;
+  /** Premium demos also extract the team from the crawled pages. */
+  extractEmployees?: boolean;
 }): Promise<DemoSiteGeneratedCopy | null> {
   const snapshotContext = input.snapshot
     ? `
@@ -449,7 +453,7 @@ ${input.snapshot.snippets.slice(0, 12).join("\n")}`
 BEDRIFT: ${input.companyName}
 BRANSJE: ${input.industry || input.templateSlug}
 TJENESTER OPPGITT AV KUNDEN: ${input.services.join(", ") || "(ingen oppgitt)"}
-NOTATER: ${input.notes || "(ingen)"}
+KUNDENS EGEN BESKRIVELSE (viktigst — fokus, produkter og priser kunden vil fronte): ${input.notes || "(ingen)"}
 ${snapshotContext}
 
 Skriv på norsk. Vær konkret (bruk bedriftsnavnet og reelle tjenester/steder der du kan), unngå buzzord og superlativ-spam.
@@ -464,7 +468,8 @@ Returner KUN gyldig JSON:
   "trust_points": ["3-5 korte trygghetspunkter, f.eks. erfaring, garanti, responstid"],
   "faq": [{"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}, {"question": "…", "answer": "…"}],
   "call_to_action": "kort handlingsdrivende CTA, maks 40 tegn",
-  "contact_text": "1-2 setninger som senker terskelen for å ta kontakt"
+  "contact_text": "1-2 setninger som senker terskelen for å ta kontakt"${input.extractEmployees ? `,
+  "employees": [{"name": "…", "title": "…", "email": "…", "phone": "…"}] — KUN ekte personer funnet i nettside-innholdet over (navn + stilling). Finner du ingen, returner tom liste. ALDRI finn opp personer.` : ""}
 }`;
 
   try {
@@ -700,6 +705,7 @@ function isDefaultList(current: unknown, defaultValues: string[]) {
 export type DemoOrderForEnrichment = {
   id: string;
   company_name: string;
+  package_id?: string | null;
   industry?: string | null;
   website_url?: string | null;
   template_slug?: string | null;
@@ -762,6 +768,7 @@ export async function enrichDemoSiteOrder(
     fields.services = services;
   }
   const servicesLookJunky = services.length < 2;
+  const isPremium = String(order.package_id || "") === "premium";
   const copy = options.imagesOnly
     ? null
     : await generateDemoCopy({
@@ -771,6 +778,7 @@ export async function enrichDemoSiteOrder(
         services,
         notes: order.notes,
         snapshot,
+        extractEmployees: isPremium,
       });
 
   if (copy) {
@@ -785,6 +793,18 @@ export async function enrichDemoSiteOrder(
     if (copy.trust_points?.length && isDefaultList(fields.trust_points, defaults.trust_points)) fields.trust_points = copy.trust_points;
     if (Array.isArray(copy.faq) && copy.faq.length >= 2 && (!Array.isArray(fields.faq) || !(fields.faq as unknown[]).length)) {
       fields.faq = copy.faq.filter((item) => item && item.question).slice(0, 6);
+    }
+    if (isPremium && Array.isArray(copy.employees) && (!Array.isArray(fields.employees) || !(fields.employees as unknown[]).length)) {
+      const team = copy.employees
+        .filter((person) => person && String(person.name || "").trim())
+        .map((person) => ({
+          name: String(person.name || "").trim(),
+          title: String(person.title || "").trim() || "Medarbeider",
+          email: String(person.email || "").trim() || undefined,
+          phone: String(person.phone || "").trim() || undefined,
+        }))
+        .slice(0, 8);
+      if (team.length) fields.employees = team;
     }
     copyApplied = true;
   } else if (!options.imagesOnly) {
