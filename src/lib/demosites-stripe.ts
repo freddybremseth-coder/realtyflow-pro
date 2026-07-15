@@ -17,8 +17,8 @@ export function isStripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
-/** Optional monthly add-on: ongoing SEO & Google Search optimisation. */
-export const SEO_ADDON_MONTHLY_NOK = 490;
+/** Optional ONE-TIME add-on: SEO & Google Search optimisation setup. */
+export const SEO_ADDON_ONETIME_NOK = 490;
 
 export type DemoSiteCheckoutInput = {
   orderId: string;
@@ -67,13 +67,13 @@ export async function createDemoSiteCheckoutSession(
 
   let lineIndex = 1;
 
-  // Optional SEO & Google Search optimisation subscription.
+  // Optional SEO & Google Search optimisation — ONE-TIME fee (easier
+  // upsell than a subscription line).
   if (input.seoAddon) {
     params.set(`line_items[${lineIndex}][quantity]`, "1");
     params.set(`line_items[${lineIndex}][price_data][currency]`, "nok");
-    params.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(SEO_ADDON_MONTHLY_NOK * 100));
-    params.set(`line_items[${lineIndex}][price_data][recurring][interval]`, "month");
-    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `SEO & Google-optimalisering (${input.companyName})`);
+    params.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(SEO_ADDON_ONETIME_NOK * 100));
+    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `SEO & Google-optimalisering, engangs (${input.companyName})`);
     lineIndex += 1;
   }
 

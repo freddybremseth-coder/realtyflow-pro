@@ -148,7 +148,7 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
               <ul className="mt-2 space-y-1.5">
                 <li>✓ 30 min gratis samtale — vi analyserer bedriften og foreslår tilpasninger</li>
                 <li>✓ <span className="font-semibold">60 % rabatt</span> på utviklertimer: 596 kr/t (ordinært 1 490 kr/t)</li>
-                <li>✓ SEO & Google-optimalisering kan legges til for 490 kr/mnd</li>
+                <li>✓ SEO & Google-optimalisering kan legges til for 490 kr (engangsbeløp)</li>
               </ul>
             </div>
             <Link href="/demosites" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300/30 px-4 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/10">

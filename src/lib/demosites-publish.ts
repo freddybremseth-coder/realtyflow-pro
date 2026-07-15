@@ -150,7 +150,7 @@ Del lenken med kunder, legg den i Google-profilen deres og bruk den i signaturen
 Som DemoSites-kunde har dere også:
 - 30 min gratis samtale der vi analyserer bedriften og foreslår tilpasninger: https://appointment.chatgenius.pro/booking.html?brand=chat
 - 60 % rabatt på utviklertimer — 596 kr/t (ordinært 1 490 kr/t)
-- SEO & Google-optimalisering som tillegg for 490 kr/mnd
+- SEO & Google-optimalisering som tillegg for 490 kr (engangsbeløp)
 
 Vil du endre tekst, bilder eller innhold? Svar på denne e-posten, så fikser vi det.
 
