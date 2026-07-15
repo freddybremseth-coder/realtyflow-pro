@@ -183,6 +183,7 @@ export const SIDEBAR_NAV = {
     { label: "Lead Nurture", href: "/automation/nurture", icon: "Sparkles" },
     { label: "Kommandosenter", href: "/agents", icon: "Bot" },
     { label: "E-post AI", href: "/email", icon: "Mail" },
+    { label: "Reach Nyhetsbrev", href: "/reach", icon: "Send" },
   ],
   admin: [
     { label: "Roller & tilgang", href: "/access-control", icon: "UserCog" },
