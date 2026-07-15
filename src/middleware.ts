@@ -48,6 +48,8 @@ const PUBLIC_PATHS = [
   "/api/saas/demosites/portal/orders",
   // Working contact form on public demo previews.
   "/api/public/demo-inquiry",
+  // The live AI receptionist on demo/live sites (token-gated in route).
+  "/api/public/demo-chat",
 ];
 
 const REMASTER_PROXY_PATHS = [
