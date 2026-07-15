@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pkg = getDemoSitePackage(order.package_id);
+    const seoAddon = body.seo_addon === true;
     const session = await createDemoSiteCheckoutSession({
       orderId: order.id,
       claimToken: order.claim_token,
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       packageName: pkg.shortName,
       setupFeeNok: Number(order.setup_fee_nok) || pkg.setupFeeNok,
       monthlyFeeNok: Number(order.monthly_fee_nok) || pkg.monthlyFeeNok,
+      seoAddon,
       baseUrl: BASE_URL,
     });
 
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
       event_type: "demo_checkout_started",
       title: "Kunde startet betaling",
       description: `Stripe Checkout åpnet for ${order.company_name} (${pkg.shortName}).`,
-      metadata: { session_id: session.id, package_id: order.package_id },
+      metadata: { session_id: session.id, package_id: order.package_id, seo_addon: seoAddon },
     });
 
     return NextResponse.json({ url: session.url });

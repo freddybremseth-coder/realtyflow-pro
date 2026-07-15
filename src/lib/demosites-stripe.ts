@@ -17,6 +17,9 @@ export function isStripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
+/** Optional monthly add-on: ongoing SEO & Google Search optimisation. */
+export const SEO_ADDON_MONTHLY_NOK = 490;
+
 export type DemoSiteCheckoutInput = {
   orderId: string;
   claimToken: string;
@@ -25,6 +28,8 @@ export type DemoSiteCheckoutInput = {
   packageName: string;
   setupFeeNok: number;
   monthlyFeeNok: number;
+  /** Adds the SEO & Google-optimisation subscription line. */
+  seoAddon?: boolean;
   baseUrl: string;
 };
 
@@ -60,18 +65,31 @@ export async function createDemoSiteCheckoutSession(
   params.set("line_items[0][price_data][recurring][interval]", "month");
   params.set("line_items[0][price_data][product_data][name]", `${input.packageName} – månedlig drift (${input.companyName})`);
 
+  let lineIndex = 1;
+
+  // Optional SEO & Google Search optimisation subscription.
+  if (input.seoAddon) {
+    params.set(`line_items[${lineIndex}][quantity]`, "1");
+    params.set(`line_items[${lineIndex}][price_data][currency]`, "nok");
+    params.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(SEO_ADDON_MONTHLY_NOK * 100));
+    params.set(`line_items[${lineIndex}][price_data][recurring][interval]`, "month");
+    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `SEO & Google-optimalisering (${input.companyName})`);
+    lineIndex += 1;
+  }
+
   // One-time setup fee (allowed alongside recurring items in subscription mode).
   if (input.setupFeeNok > 0) {
-    params.set("line_items[1][quantity]", "1");
-    params.set("line_items[1][price_data][currency]", "nok");
-    params.set("line_items[1][price_data][unit_amount]", String(Math.round(input.setupFeeNok * 100)));
-    params.set("line_items[1][price_data][product_data][name]", `${input.packageName} – oppstart (${input.companyName})`);
+    params.set(`line_items[${lineIndex}][quantity]`, "1");
+    params.set(`line_items[${lineIndex}][price_data][currency]`, "nok");
+    params.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(Math.round(input.setupFeeNok * 100)));
+    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `${input.packageName} – oppstart (${input.companyName})`);
   }
 
   // Metadata on both the session and the subscription so every later
   // webhook event can be traced back to the demo order.
   params.set("metadata[demosite_order_id]", input.orderId);
   params.set("metadata[claim_token]", input.claimToken);
+  params.set("metadata[seo_addon]", input.seoAddon ? "true" : "false");
   params.set("subscription_data[metadata][demosite_order_id]", input.orderId);
   params.set("subscription_data[metadata][company_name]", input.companyName);
 

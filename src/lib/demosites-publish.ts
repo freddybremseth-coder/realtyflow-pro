@@ -13,6 +13,12 @@
  */
 
 import { slugifyCompanyName } from "@/lib/demosites";
+import {
+  buildSubdomainUrl,
+  isReservedSubdomain,
+  isSubdomainProvisioningConfigured,
+  provisionCustomerSubdomain,
+} from "@/lib/demosites-domains";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
 
 type SupabaseLike = { from: (table: string) => any };
@@ -76,8 +82,22 @@ export async function publishDemoSiteOrder(
   }
 
   const siteSlug = order.site_slug || (await ensureSiteSlug(supabase, order.id, order.company_name));
-  const productionUrl = buildLiveSiteUrl(siteSlug);
   const firstPublish = !order.site_slug || order.status !== "deployed";
+
+  // Preferred address: <slug>.chatgenius.pro (auto-provisioned via Vercel +
+  // Hostinger DNS). Falls back to the /sites path when tokens are missing
+  // or provisioning fails — publishing must never block on DNS.
+  let productionUrl = buildLiveSiteUrl(siteSlug);
+  let subdomainNote = "";
+  if (isSubdomainProvisioningConfigured() && !isReservedSubdomain(siteSlug)) {
+    const provisioned = await provisionCustomerSubdomain(siteSlug);
+    if (provisioned.ok && provisioned.url) {
+      productionUrl = provisioned.url;
+    } else {
+      subdomainNote = ` (subdomene feilet: ${provisioned.error} — bruker /sites-adressen)`;
+      console.warn("[DemoSites Publish] Subdomain provisioning failed:", provisioned.error);
+    }
+  }
 
   const { error: updateError } = await supabase
     .from("demo_site_orders")
@@ -104,7 +124,7 @@ export async function publishDemoSiteOrder(
       order_id: order.id,
       event_type: "demo_published",
       title: firstPublish ? "Nettsiden er publisert" : "Nettsiden er republisert",
-      description: `${order.company_name} er live på ${productionUrl}`,
+      description: `${order.company_name} er live på ${productionUrl}${subdomainNote}`,
       metadata: { site_slug: siteSlug, production_url: productionUrl, forced: Boolean(options.force) },
     });
   } catch {
@@ -126,6 +146,11 @@ Gratulerer — den nye nettsiden deres er publisert og live:
 ${productionUrl}
 
 Del lenken med kunder, legg den i Google-profilen deres og bruk den i signaturen. Vi drifter siden for dere med hosting, SSL og månedlige justeringer.
+
+Som DemoSites-kunde har dere også:
+- 30 min gratis samtale der vi analyserer bedriften og foreslår tilpasninger: https://appointment.chatgenius.pro/booking.html?brand=chat
+- 60 % rabatt på utviklertimer — 596 kr/t (ordinært 1 490 kr/t)
+- SEO & Google-optimalisering som tillegg for 490 kr/mnd
 
 Vil du endre tekst, bilder eller innhold? Svar på denne e-posten, så fikser vi det.
 
