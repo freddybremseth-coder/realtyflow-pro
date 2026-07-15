@@ -119,6 +119,7 @@ const GROUPS: Array<{
       "/automation/nurture",
       "/agents",
       "/email",
+      "/reach",
     ],
   },
   {

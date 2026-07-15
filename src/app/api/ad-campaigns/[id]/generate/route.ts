@@ -39,9 +39,11 @@ export async function POST(
 
   // ─── 1. Rescue stuck rows ──────────────────────────────────────────
   const stuckThreshold = new Date(Date.now() - STUCK_AFTER_MS).toISOString();
+  // Keep the prediction id when rescuing — the resume path polls it
+  // instead of paying for a brand-new generation.
   await supabase
     .from("ad_creatives")
-    .update({ status: "pending", replicate_prediction_id: null })
+    .update({ status: "pending" })
     .eq("campaign_id", params.id)
     .eq("status", "generating")
     .lt("updated_at", stuckThreshold);
@@ -85,9 +87,17 @@ export async function POST(
   // `replicate_prediction_id` stores the OpenArt historyId in that case.
   const useOpenArt = campaign.image_provider === "openart";
 
-  // ─── 3. Submit ALL in parallel (no wait) ──────────────────────────
+  // ─── 3. Submit / resume ────────────────────────────────────────────
+  // Rows released back to `pending` at the end of a previous batch keep
+  // their prediction id. RESUME those instead of submitting again — a
+  // resubmit restarts the generation from scratch, and any creative that
+  // takes longer than one 50s budget would restart forever ("behandler"
+  // uten fremdrift) while paying for a new prediction every round.
+  const resumable = claimed.filter((row) => row.replicate_prediction_id);
+  const fresh = claimed.filter((row) => !row.replicate_prediction_id);
+
   const submissions = await Promise.allSettled(
-    claimed.map((row) =>
+    fresh.map((row) =>
       useOpenArt
         ? openArtGenerateImage({
             prompt: row.prompt,
@@ -114,16 +124,23 @@ export async function POST(
     finished: boolean;
     error?: string;
     outputUrl?: string;
-  }> = submissions.map((s, i) => {
-    if (s.status === "fulfilled") {
-      return { row: s.value.row, predictionId: s.value.id, finished: false };
-    }
-    return {
-      row: claimed[i],
-      finished: true,
-      error: s.reason instanceof Error ? s.reason.message : String(s.reason),
-    };
-  });
+  }> = [
+    ...resumable.map((row) => ({
+      row,
+      predictionId: String(row.replicate_prediction_id),
+      finished: false,
+    })),
+    ...submissions.map((s, i) => {
+      if (s.status === "fulfilled") {
+        return { row: s.value.row, predictionId: s.value.id, finished: false };
+      }
+      return {
+        row: fresh[i],
+        finished: true,
+        error: s.reason instanceof Error ? s.reason.message : String(s.reason),
+      };
+    }),
+  ];
 
   // ─── 4. Poll loop ──────────────────────────────────────────────────
   while (timeLeft(t0) > 8_000 && tracking.some((t) => !t.finished)) {

@@ -86,9 +86,9 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
         />
         <span>
           <span className="font-semibold text-emerald-50">SEO & Google-optimalisering</span>{" "}
-          <span className="text-emerald-100/80">+490 kr/mnd</span>
+          <span className="text-emerald-100/80">+490 kr (engangsbeløp)</span>
           <span className="mt-0.5 block text-xs text-emerald-100/70">
-            Løpende søkeordsarbeid, Google Business-profil og synlighet i lokale søk.
+            Søkeordsoptimalisering, Google Business-profil og synlighet i lokale søk — satt opp én gang, virker videre.
           </span>
         </span>
       </label>

@@ -96,11 +96,13 @@ export default function AdCampaignDetailPage() {
           break;
         }
 
-        // Detect stalls: if completed_total isn't increasing across rounds, stop
+        // Detect stalls. Long generations legitimately span several 50s
+        // batches now that predictions are resumed instead of restarted,
+        // so allow more quiet rounds before giving up.
         if (data.completed_total === lastCompleted) {
           stalledRounds++;
-          if (stalledRounds >= 3) {
-            setError("Generation ser ut til å henge — prøv 'Retry failed' for å gjenoppta.");
+          if (stalledRounds >= 6) {
+            setError("Genereringen tar uvanlig lang tid. Trykk 'Generer' igjen for å fortsette der den slapp — påbegynte annonser gjenopptas.");
             break;
           }
         } else {
