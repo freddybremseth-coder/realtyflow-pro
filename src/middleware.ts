@@ -50,6 +50,8 @@ const PUBLIC_PATHS = [
   "/api/public/demo-inquiry",
   // The live AI receptionist on demo/live sites (token-gated in route).
   "/api/public/demo-chat",
+  // Public app-subscription API for chatgenius.pro (Astro, Family, …).
+  "/api/saas/subscribe",
 ];
 
 const REMASTER_PROXY_PATHS = [
