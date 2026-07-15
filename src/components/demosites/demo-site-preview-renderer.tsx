@@ -46,6 +46,7 @@ import { resolveDemoSiteDesign, type DemoSiteDesign } from "@/lib/demosites-desi
 import { getDemoFontPair } from "@/components/demosites/demo-fonts";
 import { DemoReveal } from "@/components/demosites/demo-reveal";
 import { DemoLeadForm } from "@/components/demosites/demo-lead-form";
+import { DemoChatWidget } from "@/components/demosites/demo-chat-widget";
 
 type ThemeStyle = CSSProperties & {
   "--brand": string;
@@ -68,6 +69,8 @@ export type DemoSitePreviewRendererProps = DemoSitesPreviewInput & {
   inquiryToken?: string;
   /** Published paid site: no trial UI, delivered-by footer, no old-site links. */
   isLiveSite?: boolean;
+  /** Package tier gates sections: basis < standard < premium. */
+  packageId?: string;
 };
 
 type PreviewBusinessCopy = {
@@ -120,6 +123,7 @@ export function DemoSitePreviewRenderer({
   design: designProp,
   inquiryToken,
   isLiveSite = false,
+  packageId = "standard",
   ...input
 }: DemoSitePreviewRendererProps) {
   const preview = getDemoSitesPreviewModel(input);
@@ -155,6 +159,12 @@ export function DemoSitePreviewRenderer({
   const showLeadForm = mode === "public" && Boolean(inquiryToken);
   // A live site never links back to the old site it replaced.
   const oldSiteUrl = isLiveSite ? "" : preview.websiteUrl;
+  // Better subscription = visibly better site: basis is a lean one-pager,
+  // standard adds offers/FAQ (+ AI receptionist), premium adds the team.
+  const packageTier = packageId === "premium" ? 3 : packageId === "basis" ? 1 : 2;
+  const showOfferSection = packageTier >= 2 && (mode === "internal" || preview.hasCustomProducts || preview.hasCustomPrices);
+  const showFaqSection = packageTier >= 2;
+  const showTeamSection = packageTier >= 3 && preview.employees.length > 0;
   const rootStyle: ThemeStyle = {
     "--brand": colors.primary,
     "--brand-soft": withPreviewAlpha(colors.primary, "18"),
@@ -198,6 +208,14 @@ export function DemoSitePreviewRenderer({
         .demo-design-root h1, .demo-design-root h2, .demo-design-root h3 { font-family: var(--demo-font-heading); }
       `}</style>
       {mode === "public" && <DemoReveal />}
+      {mode === "public" && packageTier >= 2 && inquiryToken && (
+        <DemoChatWidget
+          token={inquiryToken}
+          companyName={companyName}
+          accentColor={colors.primary}
+          accentTextColor={colors.primaryText}
+        />
+      )}
       {mode === "public" && <BusinessTopStrip contact={contact} copy={copy} colors={colors} neonGlass={useNeonGlass} />}
 
       <header className={headerClass}>
@@ -279,15 +297,14 @@ export function DemoSitePreviewRenderer({
               </a>
             )}
           </div>
-          <div className="mt-7 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
-            <HeroMetric label={copy.metricServiceLabel} value={String(content.services.length || "3+")} dark={useDarkHero} />
-            <HeroMetric label={copy.metricOfferLabel} value={content.products[0] || content.prices[0] || copy.heroPrimaryService} dark={useDarkHero} />
-            <HeroMetric label={copy.metricContactLabel} value={contact.phone || contact.email ? "Direkte" : "Klar"} dark={useDarkHero} />
-          </div>
-          {mode === "public" && !isLiveSite && preview.isImported && (
-            <p className={`mt-4 max-w-2xl text-xs font-medium ${useDarkHero ? "text-slate-500" : "text-slate-500"}`}>
-              Demo basert på offentlig informasjon fra nettsiden.
-            </p>
+          {/* Editor metrics ("3 tjenester", template offer filler) are
+              internal aids — a customer-facing site never counts itself. */}
+          {mode === "internal" && (
+            <div className="mt-7 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+              <HeroMetric label={copy.metricServiceLabel} value={String(content.services.length || "3+")} dark={useDarkHero} />
+              <HeroMetric label={copy.metricOfferLabel} value={content.products[0] || content.prices[0] || copy.heroPrimaryService} dark={useDarkHero} />
+              <HeroMetric label={copy.metricContactLabel} value={contact.phone || contact.email ? "Direkte" : "Klar"} dark={useDarkHero} />
+            </div>
           )}
         </div>
 
@@ -377,6 +394,7 @@ export function DemoSitePreviewRenderer({
             </div>
           </section>
 
+          {showOfferSection && (
           <section id="tilbud" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
             <SectionIntro eyebrow={copy.offerEyebrow} title={copy.offerTitle} text={mode === "public" ? "" : copy.offerText} inverted={useNeonGlass} />
@@ -386,7 +404,9 @@ export function DemoSitePreviewRenderer({
             </div>
             </div>
           </section>
+          )}
 
+          {showFaqSection && (
           <section id="faq" {...revealAttr} className={useNeonGlass ? "border-y border-white/10 bg-[#06111f] py-16 text-white" : `${maxWidthClass} px-4 py-16`}>
             <div className={useNeonGlass ? `${maxWidthClass} px-4` : ""}>
             <SectionIntro eyebrow="FAQ" title="Svar på vanlige spørsmål" text={mode === "public" ? "" : copy.faqText} inverted={useNeonGlass} />
@@ -400,6 +420,34 @@ export function DemoSitePreviewRenderer({
             </div>
             </div>
           </section>
+          )}
+
+          {showTeamSection && (
+            <section id="ansatte" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-white py-16"}>
+              <div className={`${maxWidthClass} px-4`}>
+                <SectionIntro eyebrow="Menneskene" title={`Møt oss i ${companyName}`} text="" inverted={useNeonGlass} />
+                <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {preview.employees.map((person) => (
+                    <div key={`${person.name}-${person.title}`} className={useNeonGlass ? "rounded-lg border border-white/10 bg-white/[0.07] p-5 text-center" : "rounded-lg border border-slate-200 bg-slate-50 p-5 text-center"}>
+                      {person.photo ? (
+                        <img src={person.photo} alt={person.name} className="mx-auto h-20 w-20 rounded-full object-cover" />
+                      ) : (
+                        <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full text-2xl font-black" style={{ backgroundColor: withPreviewAlpha(colors.primary, "22"), color: colors.primary }}>
+                          {person.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}
+                        </span>
+                      )}
+                      <h3 className={useNeonGlass ? "mt-4 font-bold text-white" : "mt-4 font-bold text-slate-950"}>{person.name}</h3>
+                      <p className={useNeonGlass ? "text-sm text-slate-400" : "text-sm text-slate-500"}>{person.title}</p>
+                      <div className="mt-3 space-y-1 text-xs">
+                        {person.phone && <a href={`tel:${person.phone}`} className="block font-semibold" style={{ color: colors.primary }}>{person.phone}</a>}
+                        {person.email && <a href={`mailto:${person.email}`} className="block font-semibold" style={{ color: colors.primary }}>{person.email}</a>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
 
           <section id="kontakt" {...revealAttr} className={useNeonGlass ? "bg-[#020617] py-16 text-white" : "bg-slate-950 py-16 text-white"}>
             <div className={`${maxWidthClass} grid grid-cols-1 gap-8 px-4 lg:grid-cols-[0.95fr_1.05fr]`}>

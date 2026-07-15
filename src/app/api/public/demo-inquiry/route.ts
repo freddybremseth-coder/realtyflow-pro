@@ -91,6 +91,20 @@ ChatGenius DemoSites`,
       });
     }
 
+    // Alert the sales team too — a visitor inquiry means the lead is HOT.
+    const salesEmail = process.env.DEMOSITES_SALES_EMAIL || "post@chatgenius.pro";
+    await sendBrandEmail(supabase as never, {
+      brandId: EMAIL_BRAND_ID,
+      to: [salesEmail],
+      subject: `🔥 Varm lead: henvendelse på prøvesiden til ${order.company_name}`,
+      bodyText: `Prøvesiden til ${order.company_name} fikk nettopp en henvendelse fra ${name}${phone ? ` (${phone})` : ""}${email ? ` <${email}>` : ""}.
+
+${message ? `Melding:
+${message}
+
+` : ""}Dette er et godt tidspunkt å ringe kunden på — demoen deres skaper allerede verdi.`,
+    }).catch(() => ({ success: false as const }));
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[Demo Inquiry] Error:", error);

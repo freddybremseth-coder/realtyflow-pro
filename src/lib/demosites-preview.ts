@@ -43,6 +43,14 @@ export type DemoSitesPreviewContent = DemoSiteTemplateDefaults & {
   logo_url: string;
 };
 
+export type DemoSitesPreviewEmployee = {
+  name: string;
+  title: string;
+  email?: string;
+  phone?: string;
+  photo?: string;
+};
+
 export type DemoSitesPreviewModel = {
   companyName: string;
   templateSlug: string;
@@ -56,6 +64,11 @@ export type DemoSitesPreviewModel = {
   contact: DemoSitesPreviewContact;
   contactHref: string;
   chatPrice: string;
+  /** True when products/prices came from the customer, not template filler. */
+  hasCustomProducts: boolean;
+  hasCustomPrices: boolean;
+  /** Premium: team members (from crawl/AI or edited in the CRM). */
+  employees: DemoSitesPreviewEmployee[];
 };
 
 export type DemoSitesPreviewInput = {
@@ -398,17 +411,38 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     : fallbackMode === "placeholders"
       ? rawServices
       : uniqueStringItems([...cleanedServices, ...defaults.services], 9);
-  const products = stringList(
-    [fields.products, profile.products],
-    fallbackMode === "placeholders" ? [] : defaults.products,
-    8,
-    services,
-  );
-  const prices = stringList(
-    [fields.prices, profile.prices],
-    fallbackMode === "placeholders" ? [] : defaults.prices,
-    8,
-  );
+  // Track whether products/prices are REAL customer data — public demos
+  // hide the offer section entirely when it would only show template filler
+  // ("Tilbud på Nettside med tydelig tjenesteoversikt…").
+  const customProducts = stringList([fields.products, profile.products], [], 8, services);
+  const customPrices = stringList([fields.prices, profile.prices], [], 8);
+  const products = customProducts.length
+    ? customProducts
+    : fallbackMode === "placeholders"
+      ? []
+      : uniqueStringItems(defaults.products, 8, services);
+  const prices = customPrices.length
+    ? customPrices
+    : fallbackMode === "placeholders"
+      ? []
+      : uniqueStringItems(defaults.prices, 8);
+
+  const employees: DemoSitesPreviewEmployee[] = [];
+  if (Array.isArray(fields.employees)) {
+    for (const item of fields.employees) {
+      if (!isPreviewRecord(item)) continue;
+      const name = previewText(item.name);
+      if (!name) continue;
+      employees.push({
+        name,
+        title: previewText(item.title) || previewText(item.role) || "Medarbeider",
+        email: previewText(item.email) || undefined,
+        phone: previewText(item.phone) || undefined,
+        photo: previewImageUrl(item.photo) || undefined,
+      });
+      if (employees.length >= 8) break;
+    }
+  }
   const logoUrl = previewImageUrl(fields.logo_url) || previewImageUrl(input.logoUrl) || previewImageUrl(profile.logo_url);
   const galleryImages = imageList(
     [fields.gallery_images, profile.image_urls],
@@ -467,6 +501,9 @@ export function getDemoSitesPreviewModel(input: DemoSitesPreviewInput): DemoSite
     contact,
     contactHref: getPrimaryContactHref(contact),
     chatPrice: prices[0] || products[0] || services[0] || "Send inn detaljer, så følger vi opp med et mer presist forslag.",
+    hasCustomProducts: customProducts.length > 0,
+    hasCustomPrices: customPrices.length > 0,
+    employees,
   };
 }
 

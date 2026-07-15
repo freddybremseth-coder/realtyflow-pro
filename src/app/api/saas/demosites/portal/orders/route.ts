@@ -28,13 +28,42 @@ export async function GET(request: NextRequest) {
 
   if (error) return portalJson(request, { error: "Kunne ikke hente prøvesider." }, 500);
 
+  // Heat signals: views + inquiries per order so sellers call at the right
+  // moment ("åpnet 7 ganger, sist for 2 timer siden").
+  const orderIds = ((data || []) as Array<Record<string, unknown>>).map((o) => String(o.id));
+  const heat = new Map<string, { views: number; lastViewedAt: string | null; inquiries: number }>();
+  if (orderIds.length) {
+    const { data: events } = await supabase
+      .from("demo_site_order_events")
+      .select("order_id, event_type, created_at")
+      .in("order_id", orderIds)
+      .in("event_type", ["demo_viewed", "demo_inquiry"])
+      .order("created_at", { ascending: false })
+      .limit(4000);
+    for (const event of (events || []) as Array<Record<string, unknown>>) {
+      const id = String(event.order_id);
+      const entry = heat.get(id) || { views: 0, lastViewedAt: null, inquiries: 0 };
+      if (event.event_type === "demo_viewed") {
+        entry.views += 1;
+        if (!entry.lastViewedAt) entry.lastViewedAt = String(event.created_at);
+      } else {
+        entry.inquiries += 1;
+      }
+      heat.set(id, entry);
+    }
+  }
+
   const orders = ((data || []) as Array<Record<string, unknown>>).map((order) => {
     const previewUrl = String(order.preview_url || "");
+    const signals = heat.get(String(order.id)) || { views: 0, lastViewedAt: null, inquiries: 0 };
     return {
       ...order,
       present_url: previewUrl.includes("/demosites/preview/")
         ? previewUrl.replace("/demosites/preview/", "/demosites/present/")
         : null,
+      views: signals.views,
+      last_viewed_at: signals.lastViewedAt,
+      inquiries: signals.inquiries,
     };
   });
 

@@ -20,6 +20,7 @@ type SitePageProps = {
 
 type LiveOrder = {
   id: string;
+  package_id?: string | null;
   status: string;
   billing_status: string;
   company_name: string;
@@ -49,7 +50,7 @@ async function loadLiveOrder(slug: string): Promise<LiveOrder | null> {
 
   const { data } = await supabase
     .from("demo_site_orders")
-    .select("id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, template_slug, logo_url, brand_color, claim_token, extracted_profile, editable_fields, notes")
+    .select("id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, template_slug, logo_url, brand_color, claim_token, package_id, extracted_profile, editable_fields, notes")
     .eq("site_slug", slug)
     .eq("status", "deployed")
     .maybeSingle();
@@ -163,6 +164,7 @@ export default async function LiveSitePage({ params }: SitePageProps) {
         design={design}
         inquiryToken={order.claim_token || undefined}
         isLiveSite
+        packageId={order.package_id || undefined}
       />
     </>
   );
