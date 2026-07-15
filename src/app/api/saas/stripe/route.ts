@@ -181,6 +181,51 @@ export async function POST(request: NextRequest) {
 
       // ─── Checkout completed (one-time or first subscription) ──
       case 'checkout.session.completed': {
+        // DemoSites purchase: mark the order paid + claimed automatically.
+        const demositeOrderId = data.metadata?.demosite_order_id;
+        if (demositeOrderId) {
+          const paidAt = new Date().toISOString();
+          const { data: order } = await supabase
+            .from('demo_site_orders')
+            .select('id, status, editable_fields, company_name')
+            .eq('id', demositeOrderId)
+            .maybeSingle();
+
+          if (order) {
+            const fields = { ...(order.editable_fields || {}) };
+            fields.stripe = {
+              checkout_session_id: data.id,
+              customer_id: data.customer || null,
+              subscription_id: data.subscription || null,
+              paid_at: paidAt,
+            };
+
+            await supabase.from('demo_site_orders').update({
+              billing_status: 'paid',
+              status: order.status === 'deployed' ? 'deployed' : 'approved',
+              claimed_at: paidAt,
+              editable_fields: fields,
+            }).eq('id', demositeOrderId);
+
+            await supabase.from('demo_site_order_events').insert({
+              order_id: demositeOrderId,
+              event_type: 'demo_paid',
+              title: 'Betaling mottatt via Stripe',
+              description: `${order.company_name} har betalt oppstart + abonnement. Siden kan publiseres.`,
+              metadata: {
+                checkout_session_id: data.id,
+                customer_id: data.customer || null,
+                subscription_id: data.subscription || null,
+                amount_total: data.amount_total || null,
+                currency: data.currency || null,
+              },
+            });
+
+            console.log(`[Stripe Webhook] DemoSites order ${demositeOrderId} marked paid`);
+          }
+          break;
+        }
+
         const appSlug = data.metadata?.app_slug;
         if (!appSlug) break;
 

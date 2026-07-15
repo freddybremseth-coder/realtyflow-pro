@@ -39,6 +39,8 @@ const PUBLIC_PATHS = [
   "/demosites/present",
   "/api/saas/demosites/request",
   "/api/saas/demosites/claim",
+  // Stripe Checkout for claiming — public, claim-token-gated in the route.
+  "/api/saas/demosites/checkout",
   // chatgenius.pro seller portal — authenticates with its own Bearer token.
   "/api/saas/demosites/portal/login",
   "/api/saas/demosites/portal/orders",
