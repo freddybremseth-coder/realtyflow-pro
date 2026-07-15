@@ -514,6 +514,7 @@ export default function DemoSitesPage() {
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [enrichingOrderId, setEnrichingOrderId] = useState<string | null>(null);
   const [regeneratingOrderId, setRegeneratingOrderId] = useState<string | null>(null);
+  const [publishingOrderId, setPublishingOrderId] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
 
   const loadImportHistory = useCallback(async () => {
@@ -631,6 +632,31 @@ export default function DemoSitesPage() {
       setError(err instanceof Error ? err.message : "Bildegenerering feilet.");
     } finally {
       setRegeneratingOrderId(null);
+    }
+  }
+
+  // Publish/republish the live site. Stripe-paid orders publish
+  // automatically via webhook; this covers manually invoiced customers
+  // (force) and republishing after content edits.
+  async function publishOrder(order: DemoSiteOrder) {
+    const force = order.billing_status !== "paid";
+    if (force && !window.confirm(`${order.company_name} er ikke registrert som betalt. Publisere likevel (manuelt fakturert)?`)) return;
+    setPublishingOrderId(order.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/saas/demosites/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: order.id, force }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Publisering feilet.");
+      await loadData();
+      window.alert(`Siden er live: ${data.productionUrl}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publisering feilet.");
+    } finally {
+      setPublishingOrderId(null);
     }
   }
 
@@ -1209,7 +1235,10 @@ export default function DemoSitesPage() {
                     <a href={`/demosites/setup/${order.id}`}><Button size="sm" variant="outline" className="border-slate-600">Oppsett</Button></a>
                     <Button size="sm" variant="outline" className="border-purple-500/40 text-purple-200" onClick={() => updateOrder(order, { status: "preview_ready" })}>Sett preview klar</Button>
                     <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-200" onClick={() => updateOrder(order, { status: "approved" })}><CheckCircle className="mr-1 h-3.5 w-3.5" />Godkjent</Button>
-                    <Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => updateOrder(order, { status: "deployed" })}><Rocket className="mr-1 h-3.5 w-3.5" />Sett live-status</Button>
+                    <Button size="sm" className="bg-green-600 hover:bg-green-500" disabled={publishingOrderId === order.id} onClick={() => publishOrder(order)}>
+                      {publishingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Rocket className="mr-1 h-3.5 w-3.5" />}
+                      Publiser side
+                    </Button>
                     <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500" onClick={() => updateOrder(order, { billing_status: "paid" })}><CreditCard className="mr-1 h-3.5 w-3.5" />Betalt</Button>
                     <Button size="sm" variant="outline" className="border-red-500/50 text-red-200 hover:bg-red-500/10" disabled={deletingOrderId === order.id} onClick={() => openDeleteOrder(order)}>
                       {deletingOrderId === order.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1 h-3.5 w-3.5" />}

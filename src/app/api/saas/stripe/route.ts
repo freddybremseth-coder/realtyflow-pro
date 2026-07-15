@@ -222,6 +222,15 @@ export async function POST(request: NextRequest) {
             });
 
             console.log(`[Stripe Webhook] DemoSites order ${demositeOrderId} marked paid`);
+
+            // Delivery: publish the live site the second the payment lands.
+            try {
+              const { publishDemoSiteOrder } = await import('@/lib/demosites-publish');
+              const publishResult = await publishDemoSiteOrder(supabase, demositeOrderId);
+              console.log('[Stripe Webhook] DemoSites auto-publish:', JSON.stringify(publishResult));
+            } catch (publishError) {
+              console.error('[Stripe Webhook] DemoSites auto-publish failed:', publishError);
+            }
           }
           break;
         }
