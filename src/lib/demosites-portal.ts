@@ -19,6 +19,9 @@ export const PORTAL_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const PORTAL_ALLOWED_ORIGINS = new Set([
   "https://www.chatgenius.pro",
   "https://chatgenius.pro",
+  // Book PDF sales on the personal site use the same public APIs.
+  "https://www.freddybremseth.com",
+  "https://freddybremseth.com",
 ]);
 
 function getPortalSecret(): string {
