@@ -43,6 +43,9 @@ export async function createDemoSiteCheckoutSession(
   const params = new URLSearchParams();
 
   params.set("mode", "subscription");
+  // Explicit card payments: the account's automatic payment-method config
+  // had nothing enabled for NOK + recurring, which rejects the session.
+  params.append("payment_method_types[]", "card");
   params.set("customer_email", input.customerEmail);
   params.set("client_reference_id", input.orderId);
   params.set("allow_promotion_codes", "true");
