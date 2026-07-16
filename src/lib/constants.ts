@@ -174,6 +174,7 @@ export const SIDEBAR_NAV = {
   ],
   growth: [
     { label: "Publishing Hub", href: "/publishing", icon: "BookOpen" },
+    { label: "Forfatterstudio", href: "/publishing/forfatterstudio", icon: "Feather" },
     { label: "Growth Hub", href: "/growth-hub", icon: "Rocket" },
     { label: "Market Intelligence", href: "/reports", icon: "TrendingUp" },
     { label: "Analytics", href: "/analytics", icon: "BarChart3" },
