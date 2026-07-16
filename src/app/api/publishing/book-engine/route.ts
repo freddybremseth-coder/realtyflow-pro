@@ -3,9 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
 import { uploadThumbnail } from "@/services/storage/media";
+import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt, type BookBible } from "@/lib/author-craft";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// To-pass-skriving med sonnet tar tid — gi ruten rom for et helt kapittel.
+export const maxDuration = 300;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -142,13 +145,14 @@ ${JSON.stringify({ ...promptInput, seoPlan }, null, 2)}
 JSON schema:
 {
   "book_promise": "string",
-  "toc": [{"chapter": 1, "title": "string", "goal": "string", "target_words": 1200}],
+  "toc": [{"chapter": 1, "title": "string", "goal": "string", "target_words": 1800}],
   "writing_plan": [{"week": 1, "focus": "string", "deliverable": "string"}],
-  "sample_chapters": [{"chapter_title": "string", "draft": "string"}]
+  "sample_chapters": []
 }
 
 Krav:
-- Lag kun ${chapterCount} sample_chapters i første generering (resten kommer via Fortsett skriv).
+- IKKE skriv sample_chapters — kapitlene skrives i et eget kvalitetssteg etterpå. Returner alltid sample_chapters som tom liste []. (Parameter: ${chapterCount})
+- Sett realistiske target_words per kapittel (1200–3000) ut fra bokens totale mål.
 - Hvis genre er memoir/biografi:
   - IKKE finn opp nye fakta, personer, hendelser, datoer, steder eller dialog.
   - IKKE legg til detaljer som ikke finnes i kildetekst eller brukerens instruks.
@@ -353,100 +357,160 @@ async function generateImageFromPrompt(
   return persistGeneratedImage(supabase, imagePart.inlineData.data, imagePart.inlineData.mimeType || "image/png", brand, kind);
 }
 
-async function generateChapterDraftBatch(project: Record<string, any>, count = 2) {
+// ─── Forfatter 2.0: to-pass kapittelskriving ─────────────────────────────────
+// Hvert kapittel skrives i tre steg med sonnet: (1) fullt utkast med
+// sjangerregler, bok-bibel og forfatterstemme, (2) redaktørkritikk mot
+// sjangerens rubrikk, (3) revisjon som retter kritikken. Til slutt
+// oppsummeres kapittelet (haiku) og bok-bibelen oppdateres, slik at neste
+// kapittel kjenner det som allerede er skrevet.
+
+function projectContextForWriting(project: Record<string, any>) {
+  return {
+    title: project.title,
+    subtitle: project.subtitle,
+    audience: project.audience,
+    language: project.language,
+    niche: project.niche,
+    positioning: project.positioning,
+    book_promise: project.outline_plan?.book_promise || "",
+  };
+}
+
+async function writeChapterTwoPass(
+  project: Record<string, any>,
+  tocRow: Record<string, any>,
+  bible: BookBible,
+  previousTail: string,
+) {
+  const craft = resolveCraft(project.genre);
+  const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
+  const targetWords = Math.min(Math.max(Number(tocRow.target_words || 1800), 900), 4000);
+  const sourceMaterial = String(project.metadata_plan?.source_material || "").slice(0, 8000);
+
+  const draftPrompt = `
+Du er en prisbelønt forfatter som skriver et helt kapittel i en bok. Returner KUN gyldig JSON.
+
+Bok:
+${JSON.stringify(projectContextForWriting(project), null, 2)}
+
+Kapittelet du skal skrive nå:
+${JSON.stringify({ title: tocRow.title, goal: tocRow.goal || "", target_words: targetWords }, null, 2)}
+
+BOK-BIBEL (det som allerede er skrevet — bygg videre, ikke gjenta):
+${bibleForPrompt(bible)}
+${previousTail ? `\nSlutten av forrige kapittel (fortsett flyten herfra):\n---\n${previousTail}\n---` : ""}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+${sourceMaterial ? `\nKILDEMATERIALE (hold deg til dette for fakta):\n---\n${sourceMaterial}\n---` : ""}
+
+Skriv HELE kapittelet på ${project.language === "no" ? "norsk" : project.language || "en"}, ca. ${targetWords} ord, i markdown.
+
+JSON schema:
+{ "draft": "string (hele kapittelet)" }
+`;
+  const draftRaw = await askClaude(draftPrompt, { model: "sonnet", maxTokens: 8000, temperature: 0.6 });
+  let draft = sanitizeDraftText(safeJsonParse<{ draft?: string }>(draftRaw, {}).draft || draftRaw);
+  if (!draft) throw new Error(`Fikk ikke skrevet kapittelet «${tocRow.title}».`);
+
+  const critiquePrompt = `
+Du er en nådeløs, konstruktiv forlagsredaktør. Returner KUN gyldig JSON.
+
+Vurder kapittelutkastet mot rubrikken. Vær konkret — pek på setninger og avsnitt.
+
+RUBRIKK (${craft.label}):
+${craft.critique_rubric}
+
+BOK-BIBEL (sjekk konsistens):
+${bibleForPrompt(bible, 2500)}
+
+Kapittel «${tocRow.title}»:
+---
+${draft.slice(0, 22000)}
+---
+
+JSON schema:
+{ "score": 7, "must_fix": ["string (konkrete, viktigste først, maks 6)"], "keep": ["string (det som fungerer, maks 3)"] }
+`;
+  const critiqueRaw = await askClaude(critiquePrompt, { model: "sonnet", maxTokens: 1200, temperature: 0.3 });
+  const critique = safeJsonParse<{ score?: number; must_fix?: string[]; keep?: string[] }>(critiqueRaw, {});
+  const mustFix = asArray<string>(critique.must_fix).map(String).filter(Boolean);
+  const initialScore = Math.max(1, Math.min(10, Number(critique.score || 6)));
+
+  if (mustFix.length > 0) {
+    const revisePrompt = `
+Du er forfatteren og har fått redaktørens kritikk. Returner KUN gyldig JSON.
+
+Revider kapittelet: rett ALT under «must_fix», behold det som fungerer, behold lengden (ca. ${targetWords} ord) og markdown-strukturen. Ikke innfør nye fakta.
+
+Redaktørens krav:
+${JSON.stringify(mustFix, null, 2)}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+
+Kapittel «${tocRow.title}» (nåværende versjon):
+---
+${draft.slice(0, 22000)}
+---
+
+JSON schema:
+{ "draft": "string (hele kapittelet, revidert)" }
+`;
+    const revisedRaw = await askClaude(revisePrompt, { model: "sonnet", maxTokens: 8000, temperature: 0.5 });
+    const revised = sanitizeDraftText(safeJsonParse<{ draft?: string }>(revisedRaw, {}).draft || "");
+    if (revised) draft = revised;
+  }
+
+  // Kort sammendrag til bok-bibelen, så neste kapittel vet hva dette dekket.
+  const summaryRaw = await askClaude(
+    `Returner KUN gyldig JSON. Oppsummer kapittelet i 2-3 setninger (hva det dekker og hvordan det slutter), og list eventuelle løfter til leseren om senere kapitler.\n\nKapittel «${tocRow.title}»:\n---\n${draft.slice(0, 12000)}\n---\n\nJSON schema:\n{ "summary": "string", "promises": ["string"] }`,
+    { model: "haiku", maxTokens: 400, temperature: 0.2 },
+  );
+  const summaryParsed = safeJsonParse<{ summary?: string; promises?: string[] }>(summaryRaw, {});
+
+  return {
+    chapter_title: String(tocRow.title || "Kapittel"),
+    draft,
+    quality: {
+      score: initialScore,
+      revised: mustFix.length > 0,
+      notes: mustFix.slice(0, 4),
+      at: new Date().toISOString(),
+    },
+    summary: String(summaryParsed.summary || "").trim(),
+    promises: asArray<string>(summaryParsed.promises).map(String).filter(Boolean).slice(0, 4),
+  };
+}
+
+async function generateChapterDraftBatch(project: Record<string, any>, count = 1) {
   const toc = asArray<Record<string, any>>(project.outline_plan?.toc);
   const existingDrafts = asArray<Record<string, any>>(project.chapter_drafts);
   const draftedTitles = new Set(existingDrafts.map((d) => normalizeTitleKey(d.chapter_title)));
   const missing = toc.filter((row) => !draftedTitles.has(normalizeTitleKey(row.title))).slice(0, count);
-  if (missing.length === 0) return { added: [], done: true };
+  if (missing.length === 0) return { added: [], done: true, bible: bibleFromMetadata(project.metadata_plan) };
 
-  const prompt = `
-Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
+  const bible = bibleFromMetadata(project.metadata_plan);
+  const lastDraft = existingDrafts[existingDrafts.length - 1];
+  let previousTail = String(lastDraft?.draft || "").slice(-1200);
 
-Skriv kapittelutkast for disse kapitlene:
-${JSON.stringify(missing, null, 2)}
-
-Prosjekt:
-${JSON.stringify(
-    {
-      title: project.title,
-      subtitle: project.subtitle,
-      audience: project.audience,
-      language: project.language,
-      niche: project.niche,
-      metadata_plan: project.metadata_plan || {},
-    },
-    null,
-    2,
-  )}
-
-JSON schema:
-{
-  "chapters": [{ "chapter_title": "string", "draft": "string" }]
-}
-`;
-  const raw = await askClaude(prompt, { model: "haiku", maxTokens: 1400, temperature: 0.6 });
-  const parsed = safeJsonParse<{ chapters?: Array<{ chapter_title: string; draft: string }>; sample_chapters?: Array<{ chapter_title: string; draft: string }> }>(
-    raw,
-    { chapters: [], sample_chapters: [] },
-  );
-  const candidates = [
-    ...asArray(parsed.chapters),
-    ...asArray(parsed.sample_chapters),
-  ];
-  const added = candidates
-    .map((c) => ({
-      chapter_title: String(c?.chapter_title || "").trim(),
-      draft: sanitizeDraftText(c?.draft),
-    }))
-    .filter((c) => c.chapter_title && c.draft);
-
-  // Fallback #1: if batch parsing fails/returns nothing, force-generate at least one chapter.
-  if (added.length === 0 && missing.length > 0) {
-    const target = missing[0];
-    const strictPrompt = `
-Du er en profesjonell sakprosaforfatter. Returner KUN gyldig JSON.
-
-Skriv ett kapittelutkast for dette kapittelet:
-${JSON.stringify(target, null, 2)}
-
-Prosjekt:
-${JSON.stringify(
-      {
-        title: project.title,
-        subtitle: project.subtitle,
-        audience: project.audience,
-        language: project.language,
-        niche: project.niche,
-      },
-      null,
-      2,
-    )}
-
-JSON schema:
-{
-  "chapter_title": "string",
-  "draft": "string"
-}
-`;
-    const fallbackRaw = await askClaude(strictPrompt, { model: "haiku", maxTokens: 1000, temperature: 0.55 });
-    const one = safeJsonParse<{ chapter_title?: string; draft?: string }>(fallbackRaw, {});
-    const oneDraft = sanitizeDraftText(one.draft);
-    if (one.chapter_title && oneDraft) {
-      return { added: [{ chapter_title: one.chapter_title, draft: oneDraft }], done: missing.length <= 1 };
-    }
-
-    // Fallback #2: if model still fails JSON, salvage plain text output
-    // so the workflow never gets stuck at "0 new chapters".
-    const plainText = sanitizeDraftText(fallbackRaw);
-    if (plainText) {
-      return {
-        added: [{ chapter_title: String(target.title || "Kapittel"), draft: plainText }],
-        done: missing.length <= 1,
-      };
+  const added: Array<Record<string, any>> = [];
+  for (const tocRow of missing) {
+    try {
+      const result = await writeChapterTwoPass(project, tocRow, bible, previousTail);
+      added.push({ chapter_title: result.chapter_title, draft: result.draft, quality: result.quality });
+      if (result.summary) bible.chapter_summaries.push({ chapter_title: result.chapter_title, summary: result.summary });
+      for (const promise of result.promises) {
+        if (!bible.promises.includes(promise)) bible.promises.push(promise);
+      }
+      previousTail = result.draft.slice(-1200);
+    } catch (error) {
+      console.error(`[Book Engine] Kapittel «${tocRow.title}» feilet:`, error);
+      break; // det som er skrevet så langt lagres; neste kall fortsetter
     }
   }
-  return { added, done: missing.length <= added.length };
+
+  return { added, done: missing.length <= added.length && toc.length <= existingDrafts.length + added.length, bible };
 }
 
 async function generateOutlineIfMissing(project: Record<string, any>) {
@@ -638,9 +702,11 @@ export async function POST(request: NextRequest) {
       const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
       const existingDrafts = asArray<Record<string, any>>(current.chapter_drafts);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
+      let bookBible = bibleFromMetadata(current.metadata_plan);
       if (chapterDrafts.length === 0) {
-        const batch = await generateChapterDraftBatch(projectWithOutline, 2);
+        const batch = await generateChapterDraftBatch(projectWithOutline, 1);
         chapterDrafts = batch.added;
+        bookBible = batch.bible;
       }
       const mergedDrafts = mergeChapterDrafts(existingDrafts, chapterDrafts);
       const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
@@ -653,7 +719,9 @@ export async function POST(request: NextRequest) {
         .update({
           status: finalStatus,
           metadata_plan: {
+            ...(current.metadata_plan || {}),
             ...seoPlan,
+            book_bible: bookBible,
             revision_report: revisionReport,
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
             ...(hasToc && hasDrafts
@@ -793,9 +861,11 @@ export async function POST(request: NextRequest) {
       const projectWithOutline = await generateOutlineIfMissing(fallbackProject);
       const existingDrafts = asArray<Record<string, any>>(current.chapter_drafts);
       let chapterDrafts = asArray(authorPlan.sample_chapters);
+      let bookBible = bibleFromMetadata(current.metadata_plan);
       if (chapterDrafts.length === 0) {
-        const batch = await generateChapterDraftBatch(projectWithOutline, 2);
+        const batch = await generateChapterDraftBatch(projectWithOutline, 1);
         chapterDrafts = batch.added;
+        bookBible = batch.bible;
       }
       const mergedDrafts = mergeChapterDrafts(existingDrafts, chapterDrafts);
       const finalOutlinePlan = projectWithOutline.outline_plan || fallbackProject.outline_plan || {};
@@ -811,6 +881,7 @@ export async function POST(request: NextRequest) {
           chapter_drafts: mergedDrafts,
           metadata_plan: {
             ...(current.metadata_plan || {}),
+            book_bible: bookBible,
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
             revision_report: revisionReport,
             ...(hasToc && hasDrafts
@@ -844,7 +915,8 @@ export async function POST(request: NextRequest) {
   if (mode === "continue") {
     const id = String(body.id || "").trim();
     if (!id) return NextResponse.json({ error: "id is required for continue mode" }, { status: 400 });
-    const chapterCount = Math.min(Math.max(Number(body.chapter_count || 2), 1), 4);
+    // To-pass-skriving er grundig og treg — maks 2 kapitler per kall.
+    const chapterCount = Math.min(Math.max(Number(body.chapter_count || 1), 1), 2);
     const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
 
@@ -877,6 +949,7 @@ export async function POST(request: NextRequest) {
       .update({
         outline_plan: outlinePlan,
         chapter_drafts: mergedDrafts,
+        metadata_plan: { ...((project as any).metadata_plan || {}), book_bible: batch.bible },
         status: batch.done && hasAnyDrafts ? "ready_for_export" : "drafting",
         updated_at: new Date().toISOString(),
       })

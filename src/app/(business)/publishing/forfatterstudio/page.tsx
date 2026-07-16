@@ -58,6 +58,7 @@ type Chapter = {
   image_url?: string | null;
   formatted?: boolean;
   last_edit?: { action?: string; instruction?: string; summary?: string; at?: string };
+  quality?: { score?: number; notes?: string[]; revised?: boolean; at?: string };
 };
 
 type FullProject = {
@@ -131,6 +132,8 @@ export default function ForfatterstudioPage() {
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [voiceText, setVoiceText] = useState("");
+  const [showVoice, setShowVoice] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -159,6 +162,7 @@ export default function ForfatterstudioPage() {
 
   const applyProject = useCallback((next: FullProject, keepChapterTitle?: string) => {
     setProject(next);
+    setVoiceText(String(next.metadata_plan?.voice_sample || ""));
     const list = next.chapter_drafts || [];
     let idx = 0;
     if (keepChapterTitle) {
@@ -278,6 +282,44 @@ export default function ForfatterstudioPage() {
       setStatus("Analysen er klar.");
     }
   }, [project, chapter, studioPost]);
+
+  const saveVoice = useCallback(async () => {
+    if (!project) return;
+    const data = await studioPost(
+      { mode: "save_voice", project_id: project.id, voice_sample: voiceText },
+      "voice",
+      chapter?.chapter_title,
+    );
+    if (data) setStatus("Stemmeprøven er lagret — all skriving og redigering bruker den nå.");
+  }, [project, voiceText, chapter, studioPost]);
+
+  const runScoreAll = useCallback(async () => {
+    if (!project) return;
+    setBusyAction("score");
+    setStatus("Vurderer kapitler mot sjangerens kvalitetsrubrikk…");
+    try {
+      let remaining = 1;
+      let total = 0;
+      while (remaining > 0) {
+        const res = await fetch("/api/publishing/author-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "score_chapters", project_id: project.id }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Kvalitetsvurderingen feilet.");
+        total += Number(data.scored || 0);
+        remaining = Number(data.remaining || 0);
+        if (data.project) applyProject(data.project as FullProject, chapter?.chapter_title);
+        setStatus(`Vurdert ${total} kapitler… ${remaining} igjen.`);
+      }
+      setStatus(total > 0 ? `Ferdig: ${total} kapitler vurdert. Laveste score først er lurest å forbedre.` : "Alle kapitler er allerede vurdert.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kvalitetsvurderingen feilet.");
+    } finally {
+      setBusyAction(null);
+    }
+  }, [project, chapter, applyProject]);
 
   const runFormatAll = useCallback(async () => {
     if (!project) return;
@@ -506,6 +548,14 @@ export default function ForfatterstudioPage() {
               {busyAction === "format" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
               Formater hele boken
             </Button>
+            <Button variant="outline" size="sm" onClick={runScoreAll} disabled={busy}>
+              {busyAction === "score" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+              Vurder kvalitet
+            </Button>
+            <Button variant={showVoice ? "secondary" : "outline"} size="sm" onClick={() => setShowVoice((v) => !v)}>
+              <Feather className="mr-2 h-4 w-4" />
+              Min stemme
+            </Button>
             {project.parent_project_id && project.status === "translating" ? (
               <Button variant="outline" size="sm" onClick={() => continueTranslation(project.id)} disabled={busy}>
                 {busyAction === "translate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
@@ -543,6 +593,32 @@ export default function ForfatterstudioPage() {
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {showVoice ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><Feather className="h-4 w-4" /> Min stemme</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Lim inn 1–2 sider av din egen beste tekst. AI-en etterligner rytmen, tonen og temperamentet — ikke innholdet — i all skriving, utviding og forbedring på dette prosjektet.
+              </p>
+              <textarea
+                className="min-h-[160px] w-full rounded-md border bg-background p-3 text-sm leading-relaxed"
+                placeholder="Lim inn tekst du selv har skrevet og er stolt av…"
+                value={voiceText}
+                onChange={(e) => setVoiceText(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={saveVoice} disabled={busy}>
+                  {busyAction === "voice" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+                  Lagre stemmen
+                </Button>
+                <span className="text-xs text-muted-foreground">{voiceText.trim() ? `${voiceText.trim().split(/\s+/).length} ord` : "Ingen stemmeprøve lagret ennå."}</span>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {review && showAnalysis ? (
           <Card>
@@ -602,6 +678,7 @@ export default function ForfatterstudioPage() {
                   <span className="block truncate font-medium">{i + 1}. {c.chapter_title}</span>
                   <span className={`text-xs ${i === chapterIndex ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                     {wordsOf(c.draft).toLocaleString("nb-NO")} ord
+                    {c.quality?.score ? ` · ★ ${c.quality.score}/10` : ""}
                     {c.image_url ? " · 🖼" : ""}
                     {c.formatted ? " · ✓ formatert" : ""}
                   </span>
@@ -644,6 +721,16 @@ export default function ForfatterstudioPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {chapter.quality?.score ? (
+                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                      <span className="font-semibold">Redaktørens score: {chapter.quality.score}/10</span>
+                      {(chapter.quality.notes || []).length > 0 ? (
+                        <ul className="mt-1 list-disc pl-4 text-muted-foreground">
+                          {(chapter.quality.notes || []).map((note, i) => <li key={i}>{note}</li>)}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {chapter.last_edit?.summary ? (
                     <p className="text-xs text-muted-foreground">Siste AI-endring: {chapter.last_edit.summary}</p>
                   ) : null}
