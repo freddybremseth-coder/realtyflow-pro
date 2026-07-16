@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
+import { resolveCraft, voiceForPrompt } from "@/lib/author-craft";
 
 // ─── AI Forfatterstudio ──────────────────────────────────────────────────────
 // Ett sted for hele forfatterskapet: utgitte bøker (publishing_books) og
@@ -139,15 +140,20 @@ async function runChapterEdit(
   instruction: string,
 ) {
   const task = EDIT_ACTIONS[action] || EDIT_ACTIONS.improve;
+  const craft = resolveCraft(project.genre);
+  const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
   const prompt = `
 Du er en prisbelønt forfatter og manusredaktør. Returner KUN gyldig JSON.
 
 Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
 Språk: ${project.language || "no"} (svar på samme språk som kapittelet er skrevet i)
-Sjanger: ${project.genre || "sakprosa"}
+Sjanger: ${craft.label}
 
 Oppgave: ${task}
 ${instruction ? `Forfatterens instruks: ${instruction}` : ""}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
 
 Viktige regler:
 - ALDRI finn opp fakta, personer, hendelser, datoer eller sitater.
@@ -175,14 +181,18 @@ async function runAnalysis(project: Record<string, any>, chapters: Chapter[]) {
     .join("\n\n")
     .slice(0, 26000);
 
+  const craft = resolveCraft(project.genre);
   const prompt = `
 Du er en erfaren forlagsredaktør og bestselgerforfatter. Returner KUN gyldig JSON.
 
 Analyser dette bokmanuset grundig som om forfatteren har hyret deg som personlig
 ekspert. Vær konkret og handlingsorientert — ikke generisk.
 
+Sjangerens kvalitetsrubrikk (${craft.label}) — bruk denne aktivt:
+${craft.critique_rubric}
+
 Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
-Språk: ${project.language || "no"} · Sjanger: ${project.genre || "sakprosa"} · Kapitler: ${chapters.length}
+Språk: ${project.language || "no"} · Sjanger: ${craft.label} · Kapitler: ${chapters.length}
 
 Manus (utdrag per kapittel):
 ${manuscriptSample}
@@ -422,6 +432,7 @@ export async function POST(request: NextRequest) {
         draft: result.draft,
         last_edit: { action, instruction, summary: result.changeSummary, at: new Date().toISOString() },
         formatted: false,
+        quality: undefined, // scoren gjelder ikke lenger etter omskriving
       };
       const updated = await saveChapters(supabase, projectId, chapters);
       return NextResponse.json({
@@ -451,9 +462,55 @@ export async function POST(request: NextRequest) {
       if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
       const draft = String(body.draft || "");
       if (!draft.trim()) return NextResponse.json({ error: "Kapittelet kan ikke være tomt." }, { status: 400 });
-      chapters[index] = { ...chapter, draft };
+      chapters[index] = { ...chapter, draft, quality: undefined };
       const updated = await saveChapters(supabase, projectId, chapters);
       return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // Lagre forfatterens stemmeprøve — brukes i all skriving og redigering.
+    if (mode === "save_voice") {
+      const voiceSample = String(body.voice_sample || "").slice(0, 12000);
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        metadata_plan: { ...(project.metadata_plan || {}), voice_sample: voiceSample },
+      });
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // Kvalitetsscore: vurder kapitler mot sjangerens rubrikk — batch på 3.
+    if (mode === "score_chapters") {
+      const craft = resolveCraft(project.genre);
+      const pending = chapters
+        .map((c, index) => ({ c, index }))
+        .filter(({ c }) => !c.quality?.score && String(c.draft || "").trim());
+      const batch = pending.slice(0, 3);
+      if (batch.length === 0) {
+        return NextResponse.json({ success: true, mode, scored: 0, remaining: 0, project });
+      }
+      let scored = 0;
+      for (const { c, index } of batch) {
+        const raw = await askClaude(
+          `Du er en streng forlagsredaktør. Returner KUN gyldig JSON.\n\nVurder kapittelet mot rubrikken. Score 1-10 der 8+ er utgivelsesklart.\n\nRUBRIKK (${craft.label}):\n${craft.critique_rubric}\n\nKapittel «${c.chapter_title}»:\n---\n${String(c.draft || "").slice(0, 20000)}\n---\n\nJSON schema:\n{ "score": 7, "notes": ["string (det viktigste å forbedre, maks 3)"] }`,
+          { model: "sonnet", maxTokens: 700, temperature: 0.3 },
+        );
+        const parsed = safeJsonParse<{ score?: number; notes?: string[] }>(raw, {});
+        chapters[index] = {
+          ...c,
+          quality: {
+            score: Math.max(1, Math.min(10, Number(parsed.score || 5))),
+            notes: asArray<string>(parsed.notes).map(String).slice(0, 3),
+            at: new Date().toISOString(),
+          },
+        };
+        scored += 1;
+      }
+      const updated = await saveChapters(supabase, projectId, chapters);
+      return NextResponse.json({
+        success: true,
+        mode,
+        scored,
+        remaining: Math.max(0, pending.length - scored),
+        project: updated,
+      });
     }
 
     // Koble et generert bilde (fra /api/image-generate) til et kapittel.

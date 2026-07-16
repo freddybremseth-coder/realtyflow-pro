@@ -597,7 +597,9 @@ export default function PublishingHubPage() {
       const res = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "continue", id: projectId, chapter_count: 2 }),
+        // Forfatter 2.0: hvert kapittel skrives i full lengde med
+        // utkast → redaktørkritikk → revisjon, så ett kapittel per klikk.
+        body: JSON.stringify({ mode: "continue", id: projectId, chapter_count: 1 }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -607,7 +609,7 @@ export default function PublishingHubPage() {
       if (data.warning) {
         setHubStatus(String(data.warning));
       } else {
-        setHubStatus(`La til ${Number(data.added || 0)} nye kapittelutkast.`);
+        setHubStatus(`La til ${Number(data.added || 0)} nytt kapittel (skrevet, kritisert og revidert).`);
       }
       await loadBookEngineProjects();
     } catch (err) {
