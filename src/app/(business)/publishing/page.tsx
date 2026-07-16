@@ -276,6 +276,9 @@ export default function PublishingHubPage() {
   const [savingProjectSeriesId, setSavingProjectSeriesId] = useState<string | null>(null);
   const [projectSeriesDrafts, setProjectSeriesDrafts] = useState<Record<string, string>>({});
   const [bookEngineProjects, setBookEngineProjects] = useState<BookEngineProject[]>([]);
+  const [hubTasks, setHubTasks] = useState<Array<{ id: string; title: string; description?: string | null; priority?: string | null; status?: string | null; next_action?: string | null; source_type?: string | null; ai_score?: number | null }>>([]);
+  const [hubTasksLoading, setHubTasksLoading] = useState(false);
+  const [completingHubTaskId, setCompletingHubTaskId] = useState<string | null>(null);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketSnapshots, setMarketSnapshots] = useState<MarketSnapshot[]>([]);
   const [workshopLoading, setWorkshopLoading] = useState(false);
@@ -844,7 +847,48 @@ export default function PublishingHubPage() {
     loadImpact();
     loadBookEngineProjects();
     loadMarketWatch();
+    loadHubTasks();
   }, []);
+
+  // Forfatter-hub: bokoppgavene fra Oppgave-HUB-en vises rett i Publishing
+  // Hub, så forfatterarbeidet har én inngang.
+  async function loadHubTasks() {
+    setHubTasksLoading(true);
+    try {
+      const res = await fetch("/api/work-items?limit=150", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      const items = Array.isArray(data.work_items) ? data.work_items : [];
+      const mine = items.filter(
+        (item: any) =>
+          (item.brand_id === "freddypublishing" || ["kdp", "publishing"].includes(String(item.source_type || ""))) &&
+          !["DONE", "CANCELLED"].includes(String(item.status || "")),
+      );
+      setHubTasks(mine.slice(0, 8));
+    } catch (err) {
+      console.error("Could not load hub tasks:", err);
+    } finally {
+      setHubTasksLoading(false);
+    }
+  }
+
+  async function completeHubTask(id: string) {
+    setCompletingHubTaskId(id);
+    try {
+      const res = await fetch("/api/work-items", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: "DONE" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setHubStatus(data.error || "Kunne ikke fullføre oppgaven.");
+        return;
+      }
+      setHubTasks((prev) => prev.filter((task) => task.id !== id));
+    } finally {
+      setCompletingHubTaskId(null);
+    }
+  }
 
   useEffect(() => {
     setProjectSeriesDrafts((prev) => {
@@ -1170,6 +1214,91 @@ export default function PublishingHubPage() {
           {hubStatus}
         </div>
       )}
+
+      <Card className="border-rose-500/20 bg-rose-500/5">
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Feather size={18} className="text-rose-300" />
+                Forfatter-hub
+              </CardTitle>
+              <p className="mt-1 text-sm text-slate-400">
+                Alt forfatterarbeidet fra én inngang: manus, oppgaver, boksalg og Amazon.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href="/publishing/forfatterstudio">Forfatterstudio</a>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <a href="/marketing-tasks">Oppgave-HUB</a>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <a href="https://www.freddybremseth.com/nedlasting.html" target="_blank" rel="noopener noreferrer">
+                  Boksalg (PDF) <ExternalLink className="ml-1" size={12} />
+                </a>
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Mine bokoppgaver</p>
+            <Button variant="ghost" size="sm" onClick={loadHubTasks} disabled={hubTasksLoading}>
+              {hubTasksLoading ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+            </Button>
+          </div>
+          {hubTasks.length === 0 && !hubTasksLoading ? (
+            <p className="text-sm text-slate-500">
+              Ingen åpne bokoppgaver. Bruk «Opprett KDP-oppgaver» eller send anbefalinger hit — de dukker opp her.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {hubTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/50 bg-slate-900/60 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white">
+                      {task.title}
+                      <Badge
+                        variant="outline"
+                        className={`ml-2 align-middle text-[10px] ${
+                          task.priority === "CRITICAL"
+                            ? "border-red-400/50 text-red-300"
+                            : task.priority === "HIGH"
+                              ? "border-amber-400/50 text-amber-300"
+                              : "border-slate-500/50 text-slate-400"
+                        }`}
+                      >
+                        {task.priority || "MEDIUM"}
+                      </Badge>
+                    </p>
+                    {task.next_action || task.description ? (
+                      <p className="mt-0.5 truncate text-xs text-slate-400">{task.next_action || task.description}</p>
+                    ) : null}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => completeHubTask(task.id)}
+                    disabled={completingHubTaskId === task.id}
+                  >
+                    {completingHubTaskId === task.id ? (
+                      <Loader2 className="animate-spin" size={14} />
+                    ) : (
+                      <CheckCircle2 className="mr-1" size={14} />
+                    )}
+                    Fullført
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-amber-500/20 bg-amber-500/5">
         <CardHeader>
