@@ -132,7 +132,11 @@ export function DomainWorkItems({
           <p className="text-sm text-muted-foreground">Ingen åpne oppgaver for dette området. 🎉</p>
         ) : (
           <div className="space-y-2">
-            {tasks.map((task) => (
+            {tasks.map((task) => {
+              // Syntetiske forslag (crm-…, brand-channel-…) ligger ikke i
+              // work_items-tabellen og kan ikke markeres som fullført.
+              const isSynthetic = !/^[0-9a-f-]{36}$/i.test(task.id);
+              return (
               <div
                 key={task.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 p-3"
@@ -159,21 +163,26 @@ export function DomainWorkItems({
                     </p>
                   ) : null}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => complete(task.id)}
-                  disabled={completingId === task.id}
-                >
-                  {completingId === task.id ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="mr-1 h-4 w-4" />
-                  )}
-                  Fullført
-                </Button>
+                {isSynthetic ? (
+                  <span className="text-xs text-muted-foreground">AI-forslag</span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => complete(task.id)}
+                    disabled={completingId === task.id}
+                  >
+                    {completingId === task.id ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-1 h-4 w-4" />
+                    )}
+                    Fullført
+                  </Button>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
