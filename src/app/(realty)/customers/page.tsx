@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CrmCustomerCard } from "@/components/crm/crm-customer-card";
+import { DomainWorkItems } from "@/components/hub/domain-work-items";
 
 interface Contact {
   id: string;
@@ -208,6 +209,18 @@ export default function CustomersPage() {
       </header>
 
       {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} />{error}</div>}
+
+      <DomainWorkItems
+        title="Salg & CRM-hub"
+        description="Åpne salgs- og kundeoppgaver fra Oppgave-HUB-en — fullfør dem her."
+        icon={<Users className="h-4 w-4" />}
+        sources={["crm", "website_lead", "chatbot"]}
+        links={[
+          { label: "Lead Intelligence", href: "/lead-intelligence" },
+          { label: "Oppgave-HUB", href: "/marketing-tasks" },
+          { label: "E-post AI", href: "/email" },
+        ]}
+      />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-blue-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Nye leads</p><strong className="mt-1 block text-2xl text-white">{counts.leads}</strong></article>
