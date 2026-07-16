@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { askClaude } from "@/services/ai/claude-client";
+import { askClaude, askClaudeWithWebSearch } from "@/services/ai/claude-client";
 import { uploadThumbnail } from "@/services/storage/media";
 import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt, type BookBible } from "@/lib/author-craft";
 
@@ -376,6 +376,26 @@ function projectContextForWriting(project: Record<string, any>) {
   };
 }
 
+/**
+ * Research-grunnlag for faktabaserte sjangre: web-søk etter ferske fakta,
+ * tall og eksempler for kapittelet FØR det skrives. Valgfritt steg —
+ * feiler søket (eller mangler nøkkel), skrives kapittelet uten research.
+ */
+async function researchChapter(project: Record<string, any>, tocRow: Record<string, any>, craftId: string) {
+  if (!["guide", "self_development"].includes(craftId)) return "";
+  if (project.metadata_plan?.research === "off") return "";
+  const brief = await askClaudeWithWebSearch(
+    `Du researcher for et bokkapittel. Søk etter ferske, verifiserbare fakta og svar med et kompakt research-notat.
+
+Bok: "${project.title}" (${project.niche || ""}, målgruppe: ${project.audience || ""})
+Kapittel: "${tocRow.title}" — mål: ${tocRow.goal || ""}
+
+Finn 4-8 punkter som gjør kapittelet konkret og troverdig: tall, funn, konkrete eksempler, vanlige misforståelser. For hvert punkt: én setning + kilde (navn/år eller URL). Ta bare med det du faktisk fant dekning for — ingen gjetning. Avslutt med 1-2 «bruk forsiktig»-advarsler hvis noe er omstridt.`,
+    { maxTokens: 1800, maxSearches: 4, model: "sonnet" },
+  );
+  return brief.slice(0, 5000);
+}
+
 async function writeChapterTwoPass(
   project: Record<string, any>,
   tocRow: Record<string, any>,
@@ -386,6 +406,7 @@ async function writeChapterTwoPass(
   const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
   const targetWords = Math.min(Math.max(Number(tocRow.target_words || 1800), 900), 4000);
   const sourceMaterial = String(project.metadata_plan?.source_material || "").slice(0, 8000);
+  const research = await researchChapter(project, tocRow, craft.id);
 
   const draftPrompt = `
 Du er en prisbelønt forfatter som skriver et helt kapittel i en bok. Returner KUN gyldig JSON.
@@ -403,6 +424,7 @@ ${voice}
 HÅNDVERKSREGLER (${craft.label}):
 ${craft.writing_rules}
 ${sourceMaterial ? `\nKILDEMATERIALE (hold deg til dette for fakta):\n---\n${sourceMaterial}\n---` : ""}
+${research ? `\nRESEARCH-NOTAT (verifiserte punkter med kilder — vev inn det som styrker kapittelet, ikke ramse opp; ta med kildehenvisning der du bruker tall/funn):\n---\n${research}\n---` : ""}
 
 Skriv HELE kapittelet på ${project.language === "no" ? "norsk" : project.language || "en"}, ca. ${targetWords} ord, i markdown.
 
@@ -472,6 +494,7 @@ JSON schema:
   return {
     chapter_title: String(tocRow.title || "Kapittel"),
     draft,
+    research: research ? research.slice(0, 3000) : undefined,
     quality: {
       score: initialScore,
       revised: mustFix.length > 0,
@@ -498,7 +521,7 @@ async function generateChapterDraftBatch(project: Record<string, any>, count = 1
   for (const tocRow of missing) {
     try {
       const result = await writeChapterTwoPass(project, tocRow, bible, previousTail);
-      added.push({ chapter_title: result.chapter_title, draft: result.draft, quality: result.quality });
+      added.push({ chapter_title: result.chapter_title, draft: result.draft, quality: result.quality, research: result.research });
       if (result.summary) bible.chapter_summaries.push({ chapter_title: result.chapter_title, summary: result.summary });
       for (const promise of result.promises) {
         if (!bible.promises.includes(promise)) bible.promises.push(promise);
