@@ -4,13 +4,23 @@ import mammoth from "mammoth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 120;
 
 function extOf(name: string) {
   const lower = String(name || "").toLowerCase();
   if (lower.endsWith(".docx")) return "docx";
+  if (lower.endsWith(".pdf")) return "pdf";
   if (lower.endsWith(".md")) return "md";
   if (lower.endsWith(".txt")) return "txt";
   return "";
+}
+
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(pdf, { mergePages: false });
+  // Én side per element; blank linje mellom sidene bevarer avsnittsfølelsen.
+  return (Array.isArray(text) ? text : [String(text || "")]).join("\n\n");
 }
 
 export async function POST(request: NextRequest) {
@@ -24,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const ext = extOf(file.name);
   if (!ext) {
-    return NextResponse.json({ error: "Støttede filer: .txt, .md, .docx" }, { status: 400 });
+    return NextResponse.json({ error: "Støttede filer: .pdf, .docx, .txt, .md" }, { status: 400 });
   }
 
   try {
@@ -33,12 +43,25 @@ export async function POST(request: NextRequest) {
       const buffer = Buffer.from(await file.arrayBuffer());
       const parsed = await mammoth.extractRawText({ buffer });
       text = String(parsed.value || "");
+    } else if (ext === "pdf") {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      text = await extractPdfText(buffer);
     } else {
       text = await file.text();
     }
 
     text = text.replace(/\u0000/g, "").trim();
-    if (!text) return NextResponse.json({ error: "Filen inneholder ingen lesbar tekst." }, { status: 400 });
+    if (!text) {
+      return NextResponse.json(
+        {
+          error:
+            ext === "pdf"
+              ? "Fant ingen lesbar tekst i PDF-en. Er den skannet (kun bilder)? Prøv en tekst-PDF, .docx eller lim inn teksten."
+              : "Filen inneholder ingen lesbar tekst.",
+        },
+        { status: 400 },
+      );
+    }
 
     return NextResponse.json({
       success: true,

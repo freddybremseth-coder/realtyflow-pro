@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, ExternalLink, FileText, Loader2, Newspaper, Plus, RefreshCw, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, Feather, FileText, Loader2, Newspaper, Plus, RefreshCw, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1142,6 +1142,12 @@ export default function PublishingHubPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <a href="/publishing/forfatterstudio">
+              <Feather className="mr-2" size={16} />
+              Forfatterstudio
+            </a>
+          </Button>
           <Button variant="outline" onClick={loadRecommendations} disabled={recommendationsLoading}>
             {recommendationsLoading ? <Loader2 className="mr-2 animate-spin" size={16} /> : <Sparkles className="mr-2" size={16} />}
             Analyser Amazon/KDP

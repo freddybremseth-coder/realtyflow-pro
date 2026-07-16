@@ -379,6 +379,15 @@ export async function POST(request: NextRequest) {
 
     const projectId = String(body.project_id || "").trim();
     if (!projectId) return NextResponse.json({ error: "project_id mangler." }, { status: 400 });
+
+    // Slett en kladd/et manusprosjekt. Utgitte bøker (publishing_books) røres
+    // aldri — kun manuskript-beholderen forsvinner.
+    if (mode === "delete_project") {
+      const { error } = await supabase.from("publishing_book_projects").delete().eq("id", projectId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode, deleted: projectId });
+    }
+
     const project = await loadProject(supabase, projectId);
     const chapters = asArray<Chapter>(project.chapter_drafts);
 

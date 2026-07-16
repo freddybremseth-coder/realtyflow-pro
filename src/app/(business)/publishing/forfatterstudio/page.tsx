@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Trash2,
   Undo2,
   Upload,
   Wand2,
@@ -128,6 +129,8 @@ export default function ForfatterstudioPage() {
   const [importFileName, setImportFileName] = useState("");
   const [importLanguage, setImportLanguage] = useState("en");
   const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -389,16 +392,21 @@ export default function ForfatterstudioPage() {
 
   const handleImportFile = useCallback(async (file: File) => {
     setImportBusy(true);
+    setImportError(null);
+    setImportFileName(`Leser ${file.name}…`);
     try {
       const form = new FormData();
       form.append("file", file);
       const res = await fetch("/api/publishing/book-engine/upload-source", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok || !data.content) throw new Error(data.error || "Kunne ikke lese filen.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.content) throw new Error(data.error || `Kunne ikke lese filen (${res.status}).`);
       setImportText(String(data.content));
-      setImportFileName(`${data.file_name} (${Math.round(Number(data.char_count || 0) / 1000)}k tegn)`);
+      setImportFileName(
+        `${data.file_name} — ${Math.round(Number(data.char_count || 0) / 1000)}k tegn lest${data.truncated ? " (kuttet ved 120k)" : ""} ✓`,
+      );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Kunne ikke lese filen.");
+      setImportFileName("");
+      setImportError(error instanceof Error ? error.message : "Kunne ikke lese filen.");
     } finally {
       setImportBusy(false);
     }
@@ -424,15 +432,41 @@ export default function ForfatterstudioPage() {
       setImportBookId(null);
       setImportText("");
       setImportFileName("");
+      setImportError(null);
       setStatus(`Boken er hentet inn med ${data.chapters} kapitler.`);
       await loadLibrary();
       applyProject(data.project as FullProject);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Importen feilet.");
+      setImportError(error instanceof Error ? error.message : "Importen feilet.");
     } finally {
       setImportBusy(false);
     }
   }, [importBookId, importText, importLanguage, loadLibrary, applyProject]);
+
+  const deleteProject = useCallback(
+    async (id: string, title: string) => {
+      if (!window.confirm(`Slette kladden «${title}»? Dette kan ikke angres. Utgitte bøker påvirkes ikke.`)) return;
+      setDeletingId(id);
+      setStatus(null);
+      try {
+        const res = await fetch("/api/publishing/author-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "delete_project", project_id: id }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Slettingen feilet.");
+        setStatus(`«${title}» er slettet.`);
+        if (project?.id === id) setProject(null);
+        await loadLibrary();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Slettingen feilet.");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [project, loadLibrary],
+  );
 
   const busy = Boolean(busyAction) || importBusy;
   const projectByBook = useMemo(() => {
@@ -495,6 +529,16 @@ export default function ForfatterstudioPage() {
                 </Button>
               </div>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              disabled={busy || deletingId === project.id}
+              onClick={() => deleteProject(project.id, project.title)}
+            >
+              {deletingId === project.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Slett kladden
+            </Button>
           </div>
         </div>
 
@@ -705,7 +749,22 @@ export default function ForfatterstudioPage() {
               <CardContent className="pt-5 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold leading-tight">{p.title}</p>
-                  <Badge variant="outline">{STATUS_LABELS[String(p.status)] || p.status}</Badge>
+                  <div className="flex items-center gap-1">
+                    <Badge variant="outline">{STATUS_LABELS[String(p.status)] || p.status}</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      title="Slett kladden"
+                      disabled={deletingId === p.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteProject(p.id, p.title);
+                      }}
+                    >
+                      {deletingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 {p.subtitle ? <p className="text-xs text-muted-foreground">{p.subtitle}</p> : null}
                 <p className="text-xs text-muted-foreground">
@@ -751,7 +810,7 @@ export default function ForfatterstudioPage() {
                   {importBookId === b.id ? (
                     <div className="mt-2 space-y-2 rounded-md border p-3">
                       <p className="text-xs text-muted-foreground">
-                        Lim inn manuskriptet, eller last opp .docx/.txt/.md. Kapitler gjenkjennes automatisk.
+                        Lim inn manuskriptet, eller last opp .pdf/.docx/.txt/.md. Kapitler gjenkjennes automatisk.
                       </p>
                       <textarea
                         className="min-h-[140px] w-full rounded-md border bg-background p-2 text-sm"
@@ -764,7 +823,7 @@ export default function ForfatterstudioPage() {
                           <Upload className="h-4 w-4" /> Last opp fil
                           <input
                             type="file"
-                            accept=".docx,.txt,.md"
+                            accept=".pdf,.docx,.txt,.md"
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
@@ -787,8 +846,13 @@ export default function ForfatterstudioPage() {
                           {importBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
                           Hent inn
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setImportBookId(null)}>Avbryt</Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setImportBookId(null); setImportError(null); }}>Avbryt</Button>
                       </div>
+                      {importError ? (
+                        <p className="text-xs text-destructive rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
+                          {importError}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </CardContent>
