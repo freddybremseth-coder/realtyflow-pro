@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BRANDS } from "@/lib/constants";
+import { DomainWorkItems } from "@/components/hub/domain-work-items";
 import {
   Rocket, Target, Zap, Brain, TrendingUp, BarChart3, Sparkles,
   Plus, Play, Check, X, Crown, Split, Lightbulb, ChevronRight,
@@ -604,6 +605,18 @@ export default function GrowthHubPage() {
           )}
         </Button>
       </div>
+
+      <DomainWorkItems
+        title="Markedsføring-hub"
+        description="Åpne markedsføringsoppgaver fra Oppgave-HUB-en — fullfør dem her."
+        sources={["content", "brand", "market_intelligence", "automation"]}
+        links={[
+          { label: "Ad Campaigns", href: "/ad-campaigns" },
+          { label: "Reach Nyhetsbrev", href: "/reach" },
+          { label: "Oppgave-HUB", href: "/marketing-tasks" },
+          { label: "Analytics", href: "/analytics" },
+        ]}
+      />
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

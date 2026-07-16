@@ -17,6 +17,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+import { DomainWorkItems } from "@/components/hub/domain-work-items";
 
 interface Property {
   id: string;
@@ -1066,6 +1067,18 @@ REGLER:
           </Button>
         </div>
       </div>
+
+      <DomainWorkItems
+        title="Eiendom-hub"
+        description="Åpne eiendomsoppgaver fra Oppgave-HUB-en — fullfør dem her."
+        sources={["property"]}
+        links={[
+          { label: "Scanner", href: "/scanner" },
+          { label: "Tomtebase", href: "/tomtebase" },
+          { label: "Verdivurdering", href: "/valuation" },
+          { label: "Dokumenthub", href: "/document-hub" },
+        ]}
+      />
 
       {leadIntelligenceReturnPath && (
         <Card className="border-cyan-500/30 bg-cyan-500/10">
