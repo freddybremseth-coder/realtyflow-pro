@@ -72,8 +72,17 @@ type FullProject = {
   parent_project_id?: string | null;
   source_book_id?: string | null;
   chapter_drafts?: Chapter[];
+  outline_plan?: { toc?: Array<{ title?: string }> } & Record<string, any>;
   metadata_plan?: Record<string, any>;
 };
+
+const GENRES: Array<{ id: string; label: string }> = [
+  { id: "guide", label: "Sakprosa / guide" },
+  { id: "self_development", label: "Selvutvikling" },
+  { id: "memoir", label: "Memoar / biografi" },
+  { id: "children", label: "Barnebok" },
+  { id: "fiction", label: "Skjønnlitteratur" },
+];
 
 const LANGUAGES: Array<{ code: string; label: string }> = [
   { code: "en", label: "Engelsk" },
@@ -136,6 +145,10 @@ export default function ForfatterstudioPage() {
   const [voiceText, setVoiceText] = useState("");
   const [showVoice, setShowVoice] = useState(false);
   const [showConsistency, setShowConsistency] = useState(false);
+  const [showNewBook, setShowNewBook] = useState(false);
+  const [newBook, setNewBook] = useState({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
+  const [creatingBook, setCreatingBook] = useState<string | null>(null);
+  const [writingNext, setWritingNext] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -323,6 +336,76 @@ export default function ForfatterstudioPage() {
       setBusyAction(null);
     }
   }, [project, chapter, applyProject]);
+
+  const createBook = useCallback(async () => {
+    if (!newBook.title.trim()) return;
+    setCreatingBook("Oppretter bokprosjektet…");
+    setStatus(null);
+    try {
+      const createRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newBook.title.trim(),
+          genre: newBook.genre,
+          language: newBook.language,
+          audience: newBook.audience.trim() || undefined,
+          positioning: newBook.brief.trim() || undefined,
+          niche: "",
+          target_pages: newBook.pages,
+          target_words: Math.max(12000, Math.round(newBook.pages * 190)),
+        }),
+      });
+      const created = await createRes.json();
+      if (!createRes.ok || !created.project?.id) throw new Error(created.error || "Kunne ikke opprette boken.");
+      const projectId = String(created.project.id);
+
+      setCreatingBook("AI-en lager metadata og kapitteloversikt, og skriver første kapittel med research + redaktørkritikk. Dette tar 2–4 minutter — bli på siden…");
+      const genRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "retry_generation", id: projectId }),
+      });
+      const gen = await genRes.json().catch(() => ({}));
+      if (!genRes.ok) setStatus(gen.error || "Genereringen fikk problemer — åpne boken og prøv «Skriv neste kapittel».");
+      else if (gen.warning) setStatus(String(gen.warning));
+      else setStatus("Boken er i gang: kapitteloversikt + første kapittel er klart.");
+
+      setShowNewBook(false);
+      setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
+      await loadLibrary();
+      await openProject(projectId);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke opprette boken.");
+    } finally {
+      setCreatingBook(null);
+    }
+  }, [newBook, loadLibrary, openProject]);
+
+  const writeNextChapter = useCallback(async () => {
+    if (!project) return;
+    setWritingNext(true);
+    setStatus("Skriver neste kapittel: research → utkast → redaktørkritikk → revisjon. Tar 1–3 minutter…");
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "continue", id: project.id, chapter_count: 1 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Kunne ikke skrive kapittelet.");
+      if (data.project) applyProject(data.project as FullProject);
+      setStatus(
+        Number(data.added || 0) > 0
+          ? "Nytt kapittel skrevet, kritisert og revidert. ★-score ligger på kapittelet."
+          : String(data.warning || "Ingen nye kapitler — kapitteloversikten kan være ferdig skrevet."),
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke skrive kapittelet.");
+    } finally {
+      setWritingNext(false);
+    }
+  }, [project, applyProject]);
 
   const runConsistency = useCallback(async () => {
     if (!project) return;
@@ -527,7 +610,9 @@ export default function ForfatterstudioPage() {
     [project, loadLibrary],
   );
 
-  const busy = Boolean(busyAction) || importBusy;
+  const busy = Boolean(busyAction) || importBusy || writingNext || Boolean(creatingBook);
+  const tocCount = project?.outline_plan?.toc?.length || 0;
+  const chaptersRemaining = Math.max(0, tocCount - chapters.length);
   const projectByBook = useMemo(() => {
     const map = new Map<string, LibraryProject>();
     for (const p of projects) {
@@ -557,6 +642,12 @@ export default function ForfatterstudioPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {chaptersRemaining > 0 && !project.parent_project_id ? (
+              <Button size="sm" onClick={writeNextChapter} disabled={busy}>
+                {writingNext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Feather className="mr-2 h-4 w-4" />}
+                Skriv neste kapittel ({chaptersRemaining} igjen)
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={runAnalyze} disabled={busy}>
               {busyAction === "analyze" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Analyser boken
@@ -880,13 +971,93 @@ export default function ForfatterstudioPage() {
             Alle bøkene dine — ferdige og kladd. AI-en er din personlige ekspertforfatter, redaktør og grafiske designer.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadLibrary} disabled={libraryLoading}>
-          {libraryLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          Oppdater
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setShowNewBook((v) => !v)} disabled={Boolean(creatingBook)}>
+            <Feather className="mr-2 h-4 w-4" />
+            Ny bok
+          </Button>
+          <Button variant="outline" size="sm" onClick={loadLibrary} disabled={libraryLoading}>
+            {libraryLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Oppdater
+          </Button>
+        </div>
       </div>
 
       {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+      {creatingBook ? (
+        <p className="text-sm rounded-md border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> {creatingBook}
+        </p>
+      ) : null}
+
+      {showNewBook ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Feather className="h-4 w-4" /> Ny bok</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Tittel / arbeidstittel *</span>
+                <Input value={newBook.title} onChange={(e) => setNewBook((b) => ({ ...b, title: e.target.value }))} placeholder="F.eks. «Olivenolje for nybegynnere»" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Målgruppe</span>
+                <Input value={newBook.audience} onChange={(e) => setNewBook((b) => ({ ...b, audience: e.target.value }))} placeholder="F.eks. helsebevisste lesere 40+" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Sjanger</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={newBook.genre}
+                  onChange={(e) => setNewBook((b) => ({ ...b, genre: e.target.value }))}
+                >
+                  {GENRES.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Språk</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                    value={newBook.language}
+                    onChange={(e) => setNewBook((b) => ({ ...b, language: e.target.value }))}
+                  >
+                    {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Sider (ca.)</span>
+                  <Input
+                    type="number"
+                    min={30}
+                    max={400}
+                    value={newBook.pages}
+                    onChange={(e) => setNewBook((b) => ({ ...b, pages: Math.max(30, Math.min(400, Number(e.target.value) || 150)) }))}
+                  />
+                </label>
+              </div>
+            </div>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Hva skal boken handle om? Hva skal leseren sitte igjen med?</span>
+              <textarea
+                className="min-h-[110px] w-full rounded-md border bg-background p-3 text-sm"
+                placeholder="Jo mer konkret du er om vinkling, innhold og hva som gjør boken annerledes, desto bedre blir kapitteloversikten og teksten."
+                value={newBook.brief}
+                onChange={(e) => setNewBook((b) => ({ ...b, brief: e.target.value }))}
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={createBook} disabled={!newBook.title.trim() || Boolean(creatingBook)}>
+                {creatingBook ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
+                Opprett og skriv første kapittel
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowNewBook(false)} disabled={Boolean(creatingBook)}>Avbryt</Button>
+              <span className="text-xs text-muted-foreground">AI-en lager kapitteloversikt og skriver første kapittel (2–4 min).</span>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       {projectLoading ? <p className="text-sm text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Åpner manus…</p> : null}
 
       <section className="space-y-3">
