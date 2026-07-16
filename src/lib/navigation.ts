@@ -120,6 +120,7 @@ const GROUPS: Array<{
       "/youtube-studio",
       "/neural-beat",
       "/publishing",
+      "/publishing/forfatterstudio",
     ],
   },
   {
