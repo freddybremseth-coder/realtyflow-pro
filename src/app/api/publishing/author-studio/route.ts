@@ -467,6 +467,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project: updated });
     }
 
+    // Konsistenspass: «les hele boken» og finn gjentakelser, brutte løfter,
+    // terminologisprik, tonebrudd og selvmotsigelser på tvers av kapitler.
+    if (mode === "consistency_check") {
+      if (chapters.length < 2) {
+        return NextResponse.json({ error: "Konsistenspasset trenger minst to kapitler." }, { status: 400 });
+      }
+      const craft = resolveCraft(project.genre);
+      // Komprimert helbok: åpning + slutt av hvert kapittel, budsjett ~40k tegn.
+      const perChapter = Math.max(600, Math.floor(40000 / chapters.length / 2));
+      const compressed = chapters
+        .map((c, i) => {
+          const text = String(c.draft || "");
+          const head = text.slice(0, perChapter);
+          const tail = text.length > perChapter * 2 ? text.slice(-perChapter) : "";
+          return `### Kapittel ${i + 1}: ${c.chapter_title}\n[ÅPNING]\n${head}${tail ? `\n[SLUTT]\n${tail}` : ""}`;
+        })
+        .join("\n\n");
+      const bible = (project.metadata_plan || {}).book_bible;
+
+      const raw = await askClaude(
+        `Du er hovedredaktør og leser hele bokmanuset i sammenheng. Returner KUN gyldig JSON.
+
+Finn problemer som bare synes på tvers av kapitler — ikke setningsnivå (det tas i kapittelredigering):
+1. GJENTAKELSER: samme poeng, eksempel eller formulering brukt i flere kapitler
+2. BRUTTE LØFTER: «som vi skal se senere»-løfter som aldri innfris
+3. TERMINOLOGI: samme begrep omtalt med ulike ord, eller ulikt definert
+4. TONEBRUDD: kapitler som skiller seg markant i stemme eller stil
+5. SELVMOTSIGELSER: påstander/fakta/råd som strider mot hverandre
+6. STRUKTUR: kapitler i feil rekkefølge, hull i progresjonen
+
+Sjanger: ${craft.label} · Bok: "${project.title}" · ${chapters.length} kapitler
+${bible ? `\nBok-bibel (løfter og terminologi):\n${JSON.stringify(bible).slice(0, 3000)}` : ""}
+
+Manus (åpning + slutt per kapittel):
+${compressed}
+
+JSON schema:
+{
+  "overall": "string (2-3 setninger: henger boken sammen som ett verk?)",
+  "issues": [{"type":"gjentakelse|brutt_løfte|terminologi|tonebrudd|selvmotsigelse|struktur","chapters":["kapitteltitler"],"issue":"string (konkret)","fix":"string (konkret grep)"}],
+  "reading_order_ok": true
+}`,
+        { model: "sonnet", maxTokens: 3000, temperature: 0.3 },
+      );
+      const report = safeJsonParse(raw, {
+        overall: "Kunne ikke fullføre konsistenspasset. Prøv igjen.",
+        issues: [] as Array<Record<string, string>>,
+        reading_order_ok: true,
+      });
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        metadata_plan: {
+          ...(project.metadata_plan || {}),
+          consistency_report: { ...report, checked_at: new Date().toISOString() },
+        },
+      });
+      return NextResponse.json({ success: true, mode, report, project: updated });
+    }
+
     // Lagre forfatterens stemmeprøve — brukes i all skriving og redigering.
     if (mode === "save_voice") {
       const voiceSample = String(body.voice_sample || "").slice(0, 12000);

@@ -207,6 +207,44 @@ export async function askClaude(
   throw new Error('Alle AI-tjenester utilgjengelige. Sjekk API-nøkler og kreditter for Anthropic, Gemini eller OpenAI.');
 }
 
+// ─── askClaudeWithWebSearch ─────────────────────────────────────────
+
+/**
+ * Send a prompt to Claude with the server-side web_search tool enabled,
+ * so the model can research live sources before answering. Returns the
+ * final text (all text blocks joined). Returns "" on any failure —
+ * callers should treat research as optional and degrade gracefully.
+ */
+export async function askClaudeWithWebSearch(
+  prompt: string,
+  options?: { maxTokens?: number; maxSearches?: number; model?: 'haiku' | 'sonnet' }
+): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) return '';
+  try {
+    const claude = getClient();
+    const response = await claude.messages.create({
+      model: options?.model === 'haiku' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514',
+      max_tokens: options?.maxTokens ?? 2500,
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: options?.maxSearches ?? 4,
+        } as any,
+      ],
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n')
+      .trim();
+  } catch (err) {
+    console.warn('[AI] web_search research failed (skipping):', err instanceof Error ? err.message : err);
+    return '';
+  }
+}
+
 // ─── askClaudeWithImage (with fallback) ────────────────────────────
 
 /**

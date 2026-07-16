@@ -59,6 +59,7 @@ type Chapter = {
   formatted?: boolean;
   last_edit?: { action?: string; instruction?: string; summary?: string; at?: string };
   quality?: { score?: number; notes?: string[]; revised?: boolean; at?: string };
+  research?: string;
 };
 
 type FullProject = {
@@ -134,10 +135,12 @@ export default function ForfatterstudioPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [voiceText, setVoiceText] = useState("");
   const [showVoice, setShowVoice] = useState(false);
+  const [showConsistency, setShowConsistency] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
   const review = project?.metadata_plan?.author_review as Record<string, any> | undefined;
+  const consistency = project?.metadata_plan?.consistency_report as Record<string, any> | undefined;
 
   const loadLibrary = useCallback(async () => {
     setLibraryLoading(true);
@@ -320,6 +323,20 @@ export default function ForfatterstudioPage() {
       setBusyAction(null);
     }
   }, [project, chapter, applyProject]);
+
+  const runConsistency = useCallback(async () => {
+    if (!project) return;
+    setStatus("Leser hele boken i sammenheng — dette tar gjerne et halvt minutt…");
+    const data = await studioPost(
+      { mode: "consistency_check", project_id: project.id },
+      "consistency",
+      chapter?.chapter_title,
+    );
+    if (data) {
+      setShowConsistency(true);
+      setStatus("Konsistenspasset er ferdig.");
+    }
+  }, [project, chapter, studioPost]);
 
   const runFormatAll = useCallback(async () => {
     if (!project) return;
@@ -552,6 +569,10 @@ export default function ForfatterstudioPage() {
               {busyAction === "score" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Vurder kvalitet
             </Button>
+            <Button variant="outline" size="sm" onClick={runConsistency} disabled={busy || chapters.length < 2}>
+              {busyAction === "consistency" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookOpen className="mr-2 h-4 w-4" />}
+              Konsistenspass
+            </Button>
             <Button variant={showVoice ? "secondary" : "outline"} size="sm" onClick={() => setShowVoice((v) => !v)}>
               <Feather className="mr-2 h-4 w-4" />
               Min stemme
@@ -618,6 +639,45 @@ export default function ForfatterstudioPage() {
               </div>
             </CardContent>
           </Card>
+        ) : null}
+
+        {consistency && showConsistency ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">
+                Konsistenspass — hele boken i sammenheng
+                {consistency.checked_at ? (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {new Date(String(consistency.checked_at)).toLocaleString("nb-NO")}
+                  </span>
+                ) : null}
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowConsistency(false)}>Skjul</Button>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p>{consistency.overall}</p>
+              {(consistency.issues || []).length === 0 ? (
+                <p className="text-muted-foreground">Ingen kryssende problemer funnet — boken henger sammen. 🎉</p>
+              ) : (
+                <div className="space-y-2">
+                  {(consistency.issues || []).map((issue: any, i: number) => (
+                    <div key={i} className="rounded-md border bg-muted/30 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {String(issue.type || "").replace(/_/g, " ")}
+                        {Array.isArray(issue.chapters) && issue.chapters.length > 0 ? ` · ${issue.chapters.join(" ↔ ")}` : ""}
+                      </p>
+                      <p className="mt-1">{issue.issue}</p>
+                      {issue.fix ? <p className="mt-1 text-xs text-muted-foreground"><span className="font-semibold">Grep:</span> {issue.fix}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : consistency && !showConsistency ? (
+          <Button variant="ghost" size="sm" onClick={() => setShowConsistency(true)}>
+            Vis siste konsistenspass ({(consistency.issues || []).length} funn)
+          </Button>
         ) : null}
 
         {review && showAnalysis ? (
@@ -733,6 +793,12 @@ export default function ForfatterstudioPage() {
                   ) : null}
                   {chapter.last_edit?.summary ? (
                     <p className="text-xs text-muted-foreground">Siste AI-endring: {chapter.last_edit.summary}</p>
+                  ) : null}
+                  {chapter.research ? (
+                    <details className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                      <summary className="cursor-pointer font-semibold">Research-notat (kildene bak kapittelet)</summary>
+                      <pre className="mt-2 whitespace-pre-wrap font-sans text-muted-foreground">{chapter.research}</pre>
+                    </details>
                   ) : null}
                   <textarea
                     className="min-h-[420px] w-full rounded-md border bg-background p-3 font-mono text-sm leading-relaxed"
