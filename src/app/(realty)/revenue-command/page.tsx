@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Banknote, CheckSquare, CircleDollarSign, Gauge, HeartHandshake, KeyRound, Loader2, RefreshCw, RotateCcw, ShieldCheck, Target, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DomainWorkItems } from "@/components/hub/domain-work-items";
 
 type Priority = "CRITICAL" | "HIGH" | "MEDIUM";
 type State = "CRITICAL" | "ATTENTION" | "HEALTHY" | "INFO";
@@ -75,6 +76,19 @@ export default function RevenueCommandPage() {
     <div className="flex gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-slate-300"><ShieldCheck size={20} className="shrink-0 text-emerald-300" /><div><strong className="text-white">Read-only:</strong> Siden prioriterer og forklarer, men sender, godkjenner eller endrer ingenting.</div></div>
     {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} />{error}</div>}
     {data?.warnings?.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100"><strong>Datavarsler:</strong> {data.warnings.join(" · ")}</div> : null}
+
+    <DomainWorkItems
+      title="Økonomi-hub"
+      description="Åpne økonomioppgaver fra Oppgave-HUB-en — fullfør dem her."
+      icon={<Banknote className="h-4 w-4" />}
+      sources={["saas"]}
+      links={[
+        { label: "Closing", href: "/closing" },
+        { label: "Commission & Cash", href: "/commissions" },
+        { label: "Recovery", href: "/recovery" },
+        { label: "Oppgave-HUB", href: "/marketing-tasks" },
+      ]}
+    />
 
     {loading && !data ? <div className="flex min-h-52 items-center justify-center rounded-xl border border-slate-700 bg-slate-900/50 text-slate-400"><Loader2 size={20} className="mr-2 animate-spin" />Samler Revenue OS …</div> : data ? <>
       <section className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-6"><p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Anbefalt hovedfokus</p><h2 className="mt-2 text-2xl font-semibold text-white">{data.headline}</h2><p className="mt-2 text-xs text-slate-500">Oppdatert {new Date(data.generatedAt).toLocaleString("nb-NO")}</p></section>
