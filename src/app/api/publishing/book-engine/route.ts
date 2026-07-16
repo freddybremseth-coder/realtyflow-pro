@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { askClaude, askClaudeWithWebSearch } from "@/services/ai/claude-client";
+import { askClaude } from "@/services/ai/claude-client";
+import { researchWeb } from "@/services/ai/research";
 import { uploadThumbnail } from "@/services/storage/media";
 import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt, type BookBible } from "@/lib/author-craft";
 
@@ -384,14 +385,14 @@ function projectContextForWriting(project: Record<string, any>) {
 async function researchChapter(project: Record<string, any>, tocRow: Record<string, any>, craftId: string) {
   if (!["guide", "self_development"].includes(craftId)) return "";
   if (project.metadata_plan?.research === "off") return "";
-  const brief = await askClaudeWithWebSearch(
+  const { text: brief } = await researchWeb(
     `Du researcher for et bokkapittel. Søk etter ferske, verifiserbare fakta og svar med et kompakt research-notat.
 
 Bok: "${project.title}" (${project.niche || ""}, målgruppe: ${project.audience || ""})
 Kapittel: "${tocRow.title}" — mål: ${tocRow.goal || ""}
 
 Finn 4-8 punkter som gjør kapittelet konkret og troverdig: tall, funn, konkrete eksempler, vanlige misforståelser. For hvert punkt: én setning + kilde (navn/år eller URL). Ta bare med det du faktisk fant dekning for — ingen gjetning. Avslutt med 1-2 «bruk forsiktig»-advarsler hvis noe er omstridt.`,
-    { maxTokens: 1800, maxSearches: 4, model: "sonnet" },
+    { maxTokens: 1800, maxSearches: 4 },
   );
   return brief.slice(0, 5000);
 }
