@@ -161,6 +161,13 @@ export default function ForfatterstudioPage() {
   const [showRewrite, setShowRewrite] = useState(false);
   const [rewriteInstruction, setRewriteInstruction] = useState("");
   const [rewriting, setRewriting] = useState(false);
+  const [showImportManus, setShowImportManus] = useState(false);
+  const [importManus, setImportManus] = useState({ title: "", genre: "guide", language: "no", content: "", fileName: "" });
+  const [importManusBusy, setImportManusBusy] = useState(false);
+  const [showCover, setShowCover] = useState(false);
+  const [coverPrompt, setCoverPrompt] = useState("");
+  const [coverUseOpenArt, setCoverUseOpenArt] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -483,6 +490,95 @@ export default function ForfatterstudioPage() {
       setCreatingBook(null);
     }
   }, [newBook, newBookSource, loadLibrary, openProject]);
+
+  const handleManusFile = useCallback(async (file: File) => {
+    setImportManusBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/publishing/book-engine/upload-source", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.content) throw new Error(data.error || "Kunne ikke lese filen.");
+      setImportManus((m) => ({
+        ...m,
+        content: String(data.content),
+        fileName: `${data.file_name} (${Math.round(Number(data.char_count || 0) / 1000)}k tegn)`,
+        title: m.title || String(data.file_name || "").replace(/\.(pdf|docx|txt|md)$/i, "").replace(/[-_]+/g, " ").trim(),
+      }));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke lese filen.");
+    } finally {
+      setImportManusBusy(false);
+    }
+  }, []);
+
+  const runImportManus = useCallback(async () => {
+    if (!importManus.title.trim() || !importManus.content.trim()) return;
+    setImportManusBusy(true);
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "import_manuscript",
+          title: importManus.title.trim(),
+          genre: importManus.genre,
+          language: importManus.language,
+          manuscript: importManus.content,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.project) throw new Error(data.error || "Importen feilet.");
+      setShowImportManus(false);
+      setImportManus({ title: "", genre: "guide", language: "no", content: "", fileName: "" });
+      setStatus(`Manuset er importert med ${data.chapters} kapitler — klart for forbedring, omskriving eller oversettelse.`);
+      await loadLibrary();
+      applyProject(data.project as FullProject);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Importen feilet.");
+    } finally {
+      setImportManusBusy(false);
+    }
+  }, [importManus, loadLibrary, applyProject]);
+
+  const generateCover = useCallback(async () => {
+    if (!project) return;
+    setCoverBusy(true);
+    setStatus("Lager bokomslag…");
+    try {
+      const prompt =
+        coverPrompt.trim() ||
+        String(project.metadata_plan?.cover_brief || "") ||
+        `Premium bokomslag-konsept for «${project.title}»${project.subtitle ? ` — ${project.subtitle}` : ""}. Stemningsfullt, elegant, uten tekst.`;
+      const res = await fetch("/api/image-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          style: "luxury",
+          aspectRatio: "4:5",
+          brand: "freddypublishing",
+          persist: true,
+          provider: coverUseOpenArt ? "openart" : "gemini",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.imageUrl) throw new Error(data.error || "Omslagsgenereringen feilet.");
+      const saved = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "set_cover", project_id: project.id, cover_url: data.imageUrl }),
+      });
+      const savedData = await saved.json();
+      if (!saved.ok) throw new Error(savedData.error || "Kunne ikke lagre omslaget.");
+      if (savedData.project) applyProject(savedData.project as FullProject, chapter?.chapter_title);
+      setStatus("Omslaget er lagret på boken.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Omslagsgenereringen feilet.");
+    } finally {
+      setCoverBusy(false);
+    }
+  }, [project, coverPrompt, coverUseOpenArt, chapter, applyProject]);
 
   const continueRewrite = useCallback(
     async (editionId: string) => {
@@ -833,6 +929,16 @@ export default function ForfatterstudioPage() {
               <Feather className="mr-2 h-4 w-4" />
               Min stemme
             </Button>
+            <Button variant={showCover ? "secondary" : "outline"} size="sm" onClick={() => setShowCover((v) => !v)}>
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Omslag
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <a href={`/api/publishing/book-engine/export-file?id=${encodeURIComponent(project.id)}&format=docx`}>Last ned DOCX</a>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <a href={`/api/publishing/book-engine/export-file?id=${encodeURIComponent(project.id)}&format=epub`}>EPUB</a>
+            </Button>
             {project.parent_project_id && project.status === "translating" ? (
               <Button variant="outline" size="sm" onClick={() => continueTranslation(project.id)} disabled={busy}>
                 {busyAction === "translate" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Languages className="mr-2 h-4 w-4" />}
@@ -870,6 +976,36 @@ export default function ForfatterstudioPage() {
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {showCover ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Bokomslag</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {project.metadata_plan?.cover_image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={String(project.metadata_plan.cover_image_url)} alt="Bokomslag" className="max-h-72 rounded-md border" />
+              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  className="flex-1 min-w-[260px]"
+                  placeholder={String(project.metadata_plan?.cover_brief || "Beskriv omslaget — eller la stå tomt for automatisk konsept")}
+                  value={coverPrompt}
+                  onChange={(e) => setCoverPrompt(e.target.value)}
+                />
+                <label className="flex items-center gap-1 text-sm">
+                  <input type="checkbox" checked={coverUseOpenArt} onChange={(e) => setCoverUseOpenArt(e.target.checked)} />
+                  Bruk OpenArt
+                </label>
+                <Button size="sm" onClick={generateCover} disabled={coverBusy}>
+                  {coverBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-1 h-4 w-4" />}
+                  {project.metadata_plan?.cover_image_url ? "Lag nytt omslag" : "Lag omslag"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {showRewrite ? (
           <Card>
@@ -1171,6 +1307,10 @@ export default function ForfatterstudioPage() {
             <Sparkles className="mr-2 h-4 w-4" />
             Intervju: finn vinkelen
           </Button>
+          <Button variant={showImportManus ? "secondary" : "outline"} size="sm" onClick={() => setShowImportManus((v) => !v)} disabled={Boolean(creatingBook)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Importer manus
+          </Button>
           <Button variant="outline" size="sm" onClick={loadLibrary} disabled={libraryLoading}>
             {libraryLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Oppdater
@@ -1183,6 +1323,66 @@ export default function ForfatterstudioPage() {
         <p className="text-sm rounded-md border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> {creatingBook}
         </p>
+      ) : null}
+
+      {showImportManus ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Upload className="h-4 w-4" /> Importer manus — bok som ikke ligger i systemet</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Last opp en bok eller et manus (.pdf/.docx/.txt/.md) som ikke finnes i Publishing Hub fra før. Kapitler gjenkjennes automatisk, og manuset blir et prosjekt du kan forbedre, skrive om, oversette og eksportere.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted">
+                <Upload className="h-4 w-4" /> {importManusBusy && !importManus.content ? "Leser fil…" : "Velg fil"}
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleManusFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {importManus.fileName ? <span className="text-xs text-muted-foreground">{importManus.fileName} ✓</span> : null}
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="text-sm md:col-span-1">
+                <span className="mb-1 block font-medium">Tittel *</span>
+                <Input value={importManus.title} onChange={(e) => setImportManus((m) => ({ ...m, title: e.target.value }))} placeholder="Bokens tittel" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Sjanger</span>
+                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={importManus.genre} onChange={(e) => setImportManus((m) => ({ ...m, genre: e.target.value }))}>
+                  {GENRES.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Språk (som manuset er skrevet på)</span>
+                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={importManus.language} onChange={(e) => setImportManus((m) => ({ ...m, language: e.target.value }))}>
+                  {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <textarea
+              className="min-h-[120px] w-full rounded-md border bg-background p-3 text-sm"
+              placeholder="…eller lim inn manuskriptet her"
+              value={importManus.content}
+              onChange={(e) => setImportManus((m) => ({ ...m, content: e.target.value }))}
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={runImportManus} disabled={importManusBusy || !importManus.title.trim() || !importManus.content.trim()}>
+                {importManusBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Upload className="mr-1 h-4 w-4" />}
+                Importer til studioet
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowImportManus(false)} disabled={importManusBusy}>Avbryt</Button>
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {showInterview ? (
