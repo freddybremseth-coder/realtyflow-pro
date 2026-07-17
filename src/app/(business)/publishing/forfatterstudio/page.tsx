@@ -104,6 +104,7 @@ const STATUS_LABELS: Record<string, string> = {
   generated: "Generert",
   ready_for_export: "Klar",
   translating: "Oversettes",
+  rewriting: "Skrives om",
   generation_failed: "Feilet",
 };
 
@@ -149,6 +150,17 @@ export default function ForfatterstudioPage() {
   const [newBook, setNewBook] = useState({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
   const [creatingBook, setCreatingBook] = useState<string | null>(null);
   const [writingNext, setWritingNext] = useState(false);
+  const [newBookSource, setNewBookSource] = useState<{ name: string; content: string } | null>(null);
+  const [sourceUploading, setSourceUploading] = useState(false);
+  const [showInterview, setShowInterview] = useState(false);
+  const [interviewTheme, setInterviewTheme] = useState("");
+  const [interviewLoading, setInterviewLoading] = useState(false);
+  const [interviewData, setInterviewData] = useState<{ directions: Array<{ id: string; title: string; audience?: string; promise?: string; notes?: string }>; questions: string[] } | null>(null);
+  const [interviewDirection, setInterviewDirection] = useState("");
+  const [interviewAnswers, setInterviewAnswers] = useState<Record<number, string>>({});
+  const [showRewrite, setShowRewrite] = useState(false);
+  const [rewriteInstruction, setRewriteInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -337,6 +349,92 @@ export default function ForfatterstudioPage() {
     }
   }, [project, chapter, applyProject]);
 
+  const handleNewBookFile = useCallback(async (file: File) => {
+    setSourceUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/publishing/book-engine/upload-source", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.content) throw new Error(data.error || "Kunne ikke lese filen.");
+      setNewBookSource({ name: `${data.file_name} (${Math.round(Number(data.char_count || 0) / 1000)}k tegn)`, content: String(data.content) });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke lese filen.");
+    } finally {
+      setSourceUploading(false);
+    }
+  }, []);
+
+  const runInterview = useCallback(async () => {
+    if (!interviewTheme.trim()) return;
+    setInterviewLoading(true);
+    setInterviewData(null);
+    try {
+      const res = await fetch("/api/publishing/book-engine/workshop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "discover", theme: interviewTheme.trim(), genre: newBook.genre }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Intervjuet feilet.");
+      setInterviewData({
+        directions: Array.isArray(data.directions) ? data.directions : [],
+        questions: Array.isArray(data.questions) ? data.questions.map(String).slice(0, 8) : [],
+      });
+      setInterviewDirection("");
+      setInterviewAnswers({});
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Intervjuet feilet.");
+    } finally {
+      setInterviewLoading(false);
+    }
+  }, [interviewTheme, newBook.genre]);
+
+  const finishInterview = useCallback(async () => {
+    if (!interviewData) return;
+    setInterviewLoading(true);
+    try {
+      const direction = interviewData.directions.find((d) => d.id === interviewDirection);
+      const answers = interviewData.questions
+        .map((question, i) => ({ question, answer: (interviewAnswers[i] || "").trim() }))
+        .filter((row) => row.answer);
+      const res = await fetch("/api/publishing/book-engine/workshop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "plan",
+          theme: interviewTheme.trim(),
+          selected_direction: direction ? `${direction.title} — ${direction.promise || ""}` : "",
+          genre: newBook.genre,
+          question_answers: answers,
+          language: newBook.language,
+          length_pages: newBook.pages,
+        }),
+      });
+      const plan = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(plan.error || "Bokplanen feilet.");
+      const chapterList = Array.isArray(plan.chapter_overview)
+        ? plan.chapter_overview.map((c: any) => `${c.chapter}. ${c.title}${c.goal ? ` — ${c.goal}` : ""}`).join("\n")
+        : "";
+      setNewBook((b) => ({
+        ...b,
+        title: String(plan.title || b.title),
+        audience: String(plan.audience || b.audience),
+        pages: Number(plan.target_pages || b.pages),
+        brief: [String(plan.positioning || ""), chapterList ? `Foreslått kapitteloversikt:\n${chapterList}` : ""]
+          .filter(Boolean)
+          .join("\n\n"),
+      }));
+      setShowInterview(false);
+      setShowNewBook(true);
+      setStatus("Bokplanen fra intervjuet er fylt inn i Ny bok-skjemaet — juster og trykk «Opprett».");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Bokplanen feilet.");
+    } finally {
+      setInterviewLoading(false);
+    }
+  }, [interviewData, interviewDirection, interviewAnswers, interviewTheme, newBook.genre, newBook.language, newBook.pages]);
+
   const createBook = useCallback(async () => {
     if (!newBook.title.trim()) return;
     setCreatingBook("Oppretter bokprosjektet…");
@@ -354,6 +452,9 @@ export default function ForfatterstudioPage() {
           niche: "",
           target_pages: newBook.pages,
           target_words: Math.max(12000, Math.round(newBook.pages * 190)),
+          source_mode: newBookSource ? "improve_source" : "from_brief",
+          source_material: newBookSource?.content || undefined,
+          source_instructions: newBookSource ? newBook.brief.trim() || undefined : undefined,
         }),
       });
       const created = await createRes.json();
@@ -373,6 +474,7 @@ export default function ForfatterstudioPage() {
 
       setShowNewBook(false);
       setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
+      setNewBookSource(null);
       await loadLibrary();
       await openProject(projectId);
     } catch (error) {
@@ -380,7 +482,57 @@ export default function ForfatterstudioPage() {
     } finally {
       setCreatingBook(null);
     }
-  }, [newBook, loadLibrary, openProject]);
+  }, [newBook, newBookSource, loadLibrary, openProject]);
+
+  const continueRewrite = useCallback(
+    async (editionId: string) => {
+      setRewriting(true);
+      try {
+        let remaining = 1;
+        while (remaining > 0) {
+          const res = await fetch("/api/publishing/author-studio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "rewrite_continue", project_id: editionId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "Omskrivingen feilet.");
+          remaining = Number(data.remaining || 0);
+          if (data.project) applyProject(data.project as FullProject);
+          setStatus(remaining > 0 ? `Skriver om… ${remaining} kapitler igjen.` : "Omskrivingen er ferdig! Kjør gjerne «Vurder kvalitet» og «Konsistenspass» etterpå.");
+        }
+        loadLibrary();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Omskrivingen feilet — trykk «Fortsett omskriving» for å ta neste kapittel.");
+      } finally {
+        setRewriting(false);
+      }
+    },
+    [applyProject, loadLibrary],
+  );
+
+  const startRewrite = useCallback(async () => {
+    if (!project || !rewriteInstruction.trim()) return;
+    setRewriting(true);
+    setStatus("Planlegger den nye utgaven ut fra instruksen din…");
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "rewrite_book", project_id: project.id, instruction: rewriteInstruction.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.edition?.id) throw new Error(data.error || "Kunne ikke starte omskrivingen.");
+      setShowRewrite(false);
+      setRewriteInstruction("");
+      setStatus(String(data.message || "Revidert utgave planlagt — skriver kapitlene…"));
+      await openProject(String(data.edition.id));
+      await continueRewrite(String(data.edition.id));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke starte omskrivingen.");
+      setRewriting(false);
+    }
+  }, [project, rewriteInstruction, openProject, continueRewrite]);
 
   const writeNextChapter = useCallback(async () => {
     if (!project) return;
@@ -610,9 +762,10 @@ export default function ForfatterstudioPage() {
     [project, loadLibrary],
   );
 
-  const busy = Boolean(busyAction) || importBusy || writingNext || Boolean(creatingBook);
+  const busy = Boolean(busyAction) || importBusy || writingNext || Boolean(creatingBook) || rewriting;
   const tocCount = project?.outline_plan?.toc?.length || 0;
   const chaptersRemaining = Math.max(0, tocCount - chapters.length);
+  const isRewriteProject = Boolean(project?.metadata_plan?.rewrite_of);
   const projectByBook = useMemo(() => {
     const map = new Map<string, LibraryProject>();
     for (const p of projects) {
@@ -642,10 +795,22 @@ export default function ForfatterstudioPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {chaptersRemaining > 0 && !project.parent_project_id ? (
+            {chaptersRemaining > 0 && !project.parent_project_id && !isRewriteProject ? (
               <Button size="sm" onClick={writeNextChapter} disabled={busy}>
                 {writingNext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Feather className="mr-2 h-4 w-4" />}
                 Skriv neste kapittel ({chaptersRemaining} igjen)
+              </Button>
+            ) : null}
+            {isRewriteProject && chaptersRemaining > 0 ? (
+              <Button size="sm" onClick={() => continueRewrite(project.id)} disabled={busy}>
+                {rewriting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                Fortsett omskriving ({chaptersRemaining} igjen)
+              </Button>
+            ) : null}
+            {chapters.length > 0 && !isRewriteProject ? (
+              <Button variant={showRewrite ? "secondary" : "outline"} size="sm" onClick={() => setShowRewrite((v) => !v)} disabled={busy}>
+                <Wand2 className="mr-2 h-4 w-4" />
+                Skriv på nytt
               </Button>
             ) : null}
             <Button variant="outline" size="sm" onClick={runAnalyze} disabled={busy}>
@@ -705,6 +870,32 @@ export default function ForfatterstudioPage() {
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {showRewrite ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><Wand2 className="h-4 w-4" /> Skriv på nytt — forbedret og endret utgave</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Lager en NY utgave av hele boken etter instruksen din — originalen røres ikke. AI-en planlegger revidert kapitteloversikt, gjenbruker substansen fra kapitlene som skal beholdes, og skriver nye kapitler der instruksen ber om det.
+              </p>
+              <textarea
+                className="min-h-[110px] w-full rounded-md border bg-background p-3 text-sm"
+                placeholder={'F.eks.: «Behold alle områdene som er omtalt, men utvid guiden med disse 5: Altea, Jávea, Moraira, Calpe og Benissa. Oppdater prisnivåene til 2026 og gjør tonen mer personlig.»'}
+                value={rewriteInstruction}
+                onChange={(e) => setRewriteInstruction(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={startRewrite} disabled={busy || !rewriteInstruction.trim()}>
+                  {rewriting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1 h-4 w-4" />}
+                  Start omskrivingen
+                </Button>
+                <span className="text-xs text-muted-foreground">Skriver kapittel for kapittel — regn med ca. 1 min per kapittel.</span>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {showVoice ? (
           <Card>
@@ -976,6 +1167,10 @@ export default function ForfatterstudioPage() {
             <Feather className="mr-2 h-4 w-4" />
             Ny bok
           </Button>
+          <Button variant={showInterview ? "secondary" : "outline"} size="sm" onClick={() => setShowInterview((v) => !v)} disabled={Boolean(creatingBook)}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Intervju: finn vinkelen
+          </Button>
           <Button variant="outline" size="sm" onClick={loadLibrary} disabled={libraryLoading}>
             {libraryLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Oppdater
@@ -988,6 +1183,71 @@ export default function ForfatterstudioPage() {
         <p className="text-sm rounded-md border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> {creatingBook}
         </p>
+      ) : null}
+
+      {showInterview ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4" /> Intervju — vi finner vinkelen sammen</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Fortell løst hva du har lyst å skrive om, så foreslår AI-en retninger med kommersielt potensial og stiller oppfølgingsspørsmål. Svarene blir til en ferdig bokplan i Ny bok-skjemaet.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="flex-1 min-w-[260px]"
+                placeholder="F.eks. «en guide til å flytte til Costa Blanca» eller «barnebok om oliventreet Olivia»"
+                value={interviewTheme}
+                onChange={(e) => setInterviewTheme(e.target.value)}
+              />
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={newBook.genre}
+                onChange={(e) => setNewBook((b) => ({ ...b, genre: e.target.value }))}
+              >
+                {GENRES.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+              </select>
+              <Button size="sm" onClick={runInterview} disabled={interviewLoading || !interviewTheme.trim()}>
+                {interviewLoading && !interviewData ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                Start intervjuet
+              </Button>
+            </div>
+
+            {interviewData ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-sm font-semibold">1. Velg retning</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {interviewData.directions.map((d) => (
+                      <label key={d.id} className={`cursor-pointer rounded-md border p-3 text-sm ${interviewDirection === d.id ? "border-primary bg-primary/10" : "hover:bg-muted/40"}`}>
+                        <input type="radio" className="sr-only" name="direction" checked={interviewDirection === d.id} onChange={() => setInterviewDirection(d.id)} />
+                        <span className="font-medium">{d.title}</span>
+                        {d.promise ? <span className="mt-0.5 block text-xs text-muted-foreground">{d.promise}</span> : null}
+                        {d.audience ? <span className="mt-0.5 block text-xs text-muted-foreground">Målgruppe: {d.audience}</span> : null}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-sm font-semibold">2. Svar på det du vil (alt er valgfritt)</p>
+                  <div className="space-y-2">
+                    {interviewData.questions.map((q, i) => (
+                      <label key={i} className="block text-sm">
+                        <span className="mb-1 block text-xs text-muted-foreground">{q}</span>
+                        <Input value={interviewAnswers[i] || ""} onChange={(e) => setInterviewAnswers((a) => ({ ...a, [i]: e.target.value }))} placeholder="Svar kort — eller hopp over" />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <Button size="sm" onClick={finishInterview} disabled={interviewLoading || !interviewDirection}>
+                  {interviewLoading ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
+                  Lag bokplan av intervjuet
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
       {showNewBook ? (
@@ -1047,6 +1307,27 @@ export default function ForfatterstudioPage() {
                 onChange={(e) => setNewBook((b) => ({ ...b, brief: e.target.value }))}
               />
             </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted">
+                <Upload className="h-4 w-4" /> {sourceUploading ? "Leser fil…" : "Last opp grunnlag (.pdf/.docx/.txt/.md)"}
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleNewBookFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {newBookSource ? (
+                <span className="text-xs text-muted-foreground">
+                  {newBookSource.name} ✓ — brukes som kildemateriale for et forbedret manus
+                  <button className="ml-2 underline" onClick={() => setNewBookSource(null)}>fjern</button>
+                </span>
+              ) : null}
+            </div>
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={createBook} disabled={!newBook.title.trim() || Boolean(creatingBook)}>
                 {creatingBook ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
