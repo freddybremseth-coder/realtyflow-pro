@@ -692,6 +692,13 @@ export default function ForfatterstudioPage() {
     }
   }, [project, applyProject]);
 
+  const runSplitChapters = useCallback(async () => {
+    if (!project) return;
+    setStatus("AI-en leser manuset og finner kapittelgrensene — tar rundt et halvt minutt…");
+    const data = await studioPost({ mode: "split_chapters", project_id: project.id }, "split");
+    if (data) setStatus(`Manuset er delt i ${data.chapters} kapitler — nå kan du forbedre, endre og illustrere kapittel for kapittel.`);
+  }, [project, studioPost]);
+
   const runConsistency = useCallback(async () => {
     if (!project) return;
     setStatus("Leser hele boken i sammenheng — dette tar gjerne et halvt minutt…");
@@ -944,6 +951,12 @@ export default function ForfatterstudioPage() {
               <Button variant={showRewrite ? "secondary" : "outline"} size="sm" onClick={() => setShowRewrite((v) => !v)} disabled={busy}>
                 <Wand2 className="mr-2 h-4 w-4" />
                 Skriv på nytt
+              </Button>
+            ) : null}
+            {chapters.length > 0 && chapters.length <= 3 && chapters.some((c) => wordsOf(c.draft) > 3500) ? (
+              <Button size="sm" onClick={runSplitChapters} disabled={busy}>
+                {busyAction === "split" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookOpen className="mr-2 h-4 w-4" />}
+                Del opp i kapitler
               </Button>
             ) : null}
             <Button variant="outline" size="sm" onClick={runAnalyze} disabled={busy}>
