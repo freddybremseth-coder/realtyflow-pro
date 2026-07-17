@@ -154,13 +154,14 @@ JSON schema:
 Krav:
 - IKKE skriv sample_chapters — kapitlene skrives i et eget kvalitetssteg etterpå. Returner alltid sample_chapters som tom liste []. (Parameter: ${chapterCount})
 - Sett realistiske target_words per kapittel (1200–3000) ut fra bokens totale mål.
+- Returner KOMPAKT JSON (ingen unødvendige linjeskift) og hold goal-feltene korte, så hele svaret får plass.
 - Hvis genre er memoir/biografi:
   - IKKE finn opp nye fakta, personer, hendelser, datoer, steder eller dialog.
   - IKKE legg til detaljer som ikke finnes i kildetekst eller brukerens instruks.
   - Forbedre kun språk, struktur, flyt og lesbarhet.
   - Hvis noe er uklart, skriv [MÅ VERIFISERES] i stedet for å gjette.
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.5 });
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 4500, temperature: 0.5 });
   return safeJsonParse(raw, {
     book_promise: "Clear practical value for the target reader.",
     toc: [],
@@ -568,7 +569,7 @@ JSON schema:
   "writing_plan": [{"week":1,"focus":"string","deliverable":"string"}]
 }
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 2200, temperature: 0.4 });
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 4500, temperature: 0.4 });
   const parsed = safeJsonParse<{ book_promise?: string; toc?: Array<Record<string, any>>; writing_plan?: Array<Record<string, any>> }>(
     raw,
     { book_promise: "", toc: [], writing_plan: [] },

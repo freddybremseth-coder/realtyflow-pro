@@ -468,28 +468,65 @@ export default function ForfatterstudioPage() {
       if (!createRes.ok || !created.project?.id) throw new Error(created.error || "Kunne ikke opprette boken.");
       const projectId = String(created.project.id);
 
-      setCreatingBook("AI-en lager metadata og kapitteloversikt, og skriver første kapittel med research + redaktørkritikk. Dette tar 2–4 minutter — bli på siden…");
+      setCreatingBook("Steg 1/2: AI-en lager tittelarbeid og metadata…");
+      const seoRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_seo", id: projectId }),
+      });
+      if (!seoRes.ok) {
+        const seoErr = await seoRes.json().catch(() => ({}));
+        console.warn("SEO-steget feilet (fortsetter):", seoErr.error);
+      }
+
+      setCreatingBook("Steg 2/2: Kapitteloversikt lages og første kapittel skrives (research → utkast → redaktørkritikk → revisjon). Tar 2–4 minutter — bli på siden…");
       const genRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "retry_generation", id: projectId }),
+        body: JSON.stringify({ mode: "generate_author", id: projectId }),
       });
       const gen = await genRes.json().catch(() => ({}));
-      if (!genRes.ok) setStatus(gen.error || "Genereringen fikk problemer — åpne boken og prøv «Skriv neste kapittel».");
-      else if (gen.warning) setStatus(String(gen.warning));
-      else setStatus("Boken er i gang: kapitteloversikt + første kapittel er klart.");
+      const finalMessage = !genRes.ok
+        ? gen.error || "Genereringen fikk problemer — bruk «Lag kapitteloversikt»-knappen i boken for å prøve igjen."
+        : gen.warning
+          ? String(gen.warning)
+          : "Boken er i gang: kapitteloversikt + første kapittel er klart.";
 
       setShowNewBook(false);
       setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
       setNewBookSource(null);
       await loadLibrary();
       await openProject(projectId);
+      setStatus(finalMessage);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Kunne ikke opprette boken.");
     } finally {
       setCreatingBook(null);
     }
   }, [newBook, newBookSource, loadLibrary, openProject]);
+
+  // Redningsknapp: lager kapitteloversikt + første kapittel for et prosjekt
+  // som mangler dem — f.eks. hvis genereringen ble avbrutt ved opprettelse.
+  const generateOutlineNow = useCallback(async () => {
+    if (!project) return;
+    setWritingNext(true);
+    setStatus("Lager kapitteloversikt og skriver første kapittel — tar 2–4 minutter, bli på siden…");
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_author", id: project.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Genereringen feilet — prøv igjen.");
+      if (data.project) applyProject(data.project as FullProject);
+      setStatus(data.warning ? String(data.warning) : "Kapitteloversikten er klar — fortsett med «Skriv neste kapittel».");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Genereringen feilet — prøv igjen.");
+    } finally {
+      setWritingNext(false);
+    }
+  }, [project, applyProject]);
 
   const handleManusFile = useCallback(async (file: File) => {
     setImportManusBusy(true);
@@ -1163,9 +1200,20 @@ export default function ForfatterstudioPage() {
                 </button>
               ))}
               {chapters.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Ingen kapitler ennå. {project.parent_project_id ? "Kjør «Fortsett oversettelse»." : "Bruk Bokmotoren i Publishing Hub for å generere, eller hent inn manus."}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Ingen kapitler ennå. {project.parent_project_id ? "Kjør «Fortsett oversettelse» øverst." : tocCount > 0 ? "Trykk «Skriv neste kapittel» øverst for å komme i gang." : "Trykk knappen under, så lager AI-en kapitteloversikten og skriver første kapittel."}
+                  </p>
+                  {project.metadata_plan?.generation_warning ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">{String(project.metadata_plan.generation_warning)}</p>
+                  ) : null}
+                  {!project.parent_project_id && !isRewriteProject && tocCount === 0 ? (
+                    <Button size="sm" onClick={generateOutlineNow} disabled={busy}>
+                      {writingNext ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
+                      Lag kapitteloversikt + skriv første kapittel
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
             </CardContent>
           </Card>
