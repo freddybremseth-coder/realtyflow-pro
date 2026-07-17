@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { askClaude } from "@/services/ai/claude-client";
-import { resolveCraft, voiceForPrompt } from "@/lib/author-craft";
+import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt } from "@/lib/author-craft";
 
 // ─── AI Forfatterstudio ──────────────────────────────────────────────────────
 // Ett sted for hele forfatterskapet: utgitte bøker (publishing_books) og
@@ -465,6 +465,186 @@ export async function POST(request: NextRequest) {
       chapters[index] = { ...chapter, draft, quality: undefined };
       const updated = await saveChapters(supabase, projectId, chapters);
       return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // «Skriv på nytt»: lag en forbedret/endret utgave av hele boken etter
+    // forfatterens instruks. Oppretter et NYTT prosjekt med revidert
+    // kapitteloversikt der hvert kapittel peker på kildekapittelet det
+    // bygger på (eller er markert som nytt). Selve omskrivingen kjøres
+    // kapittel for kapittel via rewrite_continue.
+    if (mode === "rewrite_book") {
+      const instruction = String(body.instruction || "").trim();
+      if (!instruction) return NextResponse.json({ error: "Skriv en instruks for omskrivingen." }, { status: 400 });
+      if (chapters.length === 0) {
+        return NextResponse.json({ error: "Prosjektet har ingen kapitler å skrive om." }, { status: 400 });
+      }
+
+      const craft = resolveCraft(project.genre);
+      const chapterOverview = chapters.map((c, i) => ({
+        index: i + 1,
+        title: c.chapter_title,
+        excerpt: String(c.draft || "").slice(0, 400),
+        words: wordCount(c.draft),
+      }));
+
+      const planRaw = await askClaude(
+        `Du er en bokstrateg som planlegger en revidert utgave. Returner KUN gyldig JSON.
+
+Eksisterende bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""} (${craft.label}, ${project.language || "no"})
+Kapitler i dag:
+${JSON.stringify(chapterOverview, null, 2)}
+
+FORFATTERENS INSTRUKS for den nye utgaven:
+${instruction}
+
+Lag kapitteloversikten for den reviderte utgaven:
+- Behold alt instruksen sier skal beholdes; legg til/endre det den ber om.
+- Hvert kapittel som bygger på et eksisterende, skal ha source_chapter satt til den EKSAKTE gamle tittelen. Helt nye kapitler har source_chapter: null.
+- Sett realistiske target_words (bruk gamle ordtall som utgangspunkt, 1200-3000 for nye).
+
+JSON schema:
+{
+  "title": "string (behold med mindre instruksen ber om nytt)",
+  "subtitle": "string",
+  "toc": [{"chapter":1,"title":"string","goal":"string","target_words":1800,"source_chapter":"string|null"}]
+}`,
+        { model: "sonnet", maxTokens: 3000, temperature: 0.35 },
+      );
+      const plan = safeJsonParse<{ title?: string; subtitle?: string; toc?: Array<Record<string, any>> }>(planRaw, {});
+      const toc = asArray<Record<string, any>>(plan.toc);
+      if (toc.length === 0) return NextResponse.json({ error: "Klarte ikke å planlegge den nye utgaven. Prøv igjen." }, { status: 500 });
+
+      const { data: edition, error } = await supabase
+        .from("publishing_book_projects")
+        .insert({
+          brand_id: "freddypublishing",
+          title: String(plan.title || project.title),
+          subtitle: String(plan.subtitle || project.subtitle || ""),
+          language: project.language || "no",
+          niche: project.niche || null,
+          genre: project.genre || null,
+          series_name: project.series_name || null,
+          audience: project.audience || null,
+          positioning: project.positioning || null,
+          status: "rewriting",
+          parent_project_id: project.id,
+          source_book_id: project.source_book_id || null,
+          metadata_plan: {
+            rewrite_of: project.id,
+            rewrite_instruction: instruction,
+            rewrite_total: toc.length,
+            voice_sample: project.metadata_plan?.voice_sample || "",
+            source_material: project.metadata_plan?.source_material || "",
+          },
+          outline_plan: { book_promise: "", toc, writing_plan: [] },
+          chapter_drafts: [],
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({
+        success: true,
+        mode,
+        edition,
+        message: `Revidert utgave planlagt med ${toc.length} kapitler. Kjør «Fortsett omskriving» til alt er skrevet.`,
+      });
+    }
+
+    // Skriv neste kapittel i en omskriving — ett kapittel per kall.
+    if (mode === "rewrite_continue") {
+      const sourceId = String(project.metadata_plan?.rewrite_of || "");
+      const instruction = String(project.metadata_plan?.rewrite_instruction || "");
+      if (!sourceId) return NextResponse.json({ error: "Dette prosjektet er ikke en omskriving." }, { status: 400 });
+      const sourceProject = await loadProject(supabase, sourceId).catch(() => null);
+      const sourceChapters = sourceProject ? asArray<Chapter>(sourceProject.chapter_drafts) : [];
+
+      const toc = asArray<Record<string, any>>((project as any).outline_plan?.toc);
+      const done = chapters.length;
+      if (done >= toc.length) {
+        const updated = await saveChapters(supabase, projectId, chapters, { status: "ready_for_export" });
+        return NextResponse.json({ success: true, mode, written: 0, remaining: 0, project: updated });
+      }
+
+      const tocRow = toc[done];
+      const craft = resolveCraft(project.genre);
+      const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
+      const bible = bibleFromMetadata(project.metadata_plan);
+      const targetWords = Math.min(Math.max(Number(tocRow.target_words || 1800), 800), 4000);
+      const sourceKey = normalizeTitleKey(tocRow.source_chapter);
+      const sourceChapter = sourceKey
+        ? sourceChapters.find((c) => normalizeTitleKey(c.chapter_title) === sourceKey)
+        : null;
+
+      const prompt = sourceChapter
+        ? `Du er en prisbelønt forfatter som skriver en revidert utgave av et kapittel. Returner KUN gyldig JSON.
+
+FORFATTERENS INSTRUKS for hele den nye utgaven (følg den nøyaktig der den treffer dette kapittelet):
+${instruction}
+
+Nytt kapittel: "${tocRow.title}" — mål: ${tocRow.goal || ""} (ca. ${targetWords} ord)
+
+BOK-BIBEL for den nye utgaven (ikke gjenta det som alt er skrevet):
+${bibleForPrompt(bible)}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+
+KILDEKAPITTEL (behold fakta, navn og substans — forbedre språk, struktur og alt instruksen krever; ALDRI finn opp nye fakta):
+---
+${String(sourceChapter.draft || "").slice(0, 22000)}
+---
+
+JSON schema:
+{ "draft": "string (hele det nye kapittelet, markdown)" }`
+        : `Du er en prisbelønt forfatter som skriver et HELT NYTT kapittel i en revidert bokutgave. Returner KUN gyldig JSON.
+
+FORFATTERENS INSTRUKS for utgaven:
+${instruction}
+
+Bok: "${project.title}" (${craft.label}, ${project.language || "no"})
+Nytt kapittel: "${tocRow.title}" — mål: ${tocRow.goal || ""} (ca. ${targetWords} ord)
+
+BOK-BIBEL (skriv i samme stil og struktur som resten — se sammendragene):
+${bibleForPrompt(bible)}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+${project.metadata_plan?.source_material ? `\nKILDEMATERIALE:\n---\n${String(project.metadata_plan.source_material).slice(0, 6000)}\n---` : ""}
+
+Ikke finn opp fakta du ikke har dekning for — er noe usikkert, formuler forsiktig.
+
+JSON schema:
+{ "draft": "string (hele kapittelet, markdown)" }`;
+
+      const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 8000, temperature: 0.5 });
+      const draft = String(safeJsonParse<{ draft?: string }>(raw, {}).draft || "").trim();
+      if (!draft) return NextResponse.json({ error: `Kapittelet «${tocRow.title}» feilet — prøv igjen.` }, { status: 500 });
+
+      const summaryRaw = await askClaude(
+        `Returner KUN gyldig JSON. Oppsummer kapittelet i 2 setninger.\n\n«${tocRow.title}»:\n---\n${draft.slice(0, 10000)}\n---\n\nJSON schema: { "summary": "string" }`,
+        { model: "haiku", maxTokens: 300, temperature: 0.2 },
+      );
+      const summary = String(safeJsonParse<{ summary?: string }>(summaryRaw, {}).summary || "").trim();
+      if (summary) bible.chapter_summaries.push({ chapter_title: String(tocRow.title), summary });
+
+      const merged = [...chapters, {
+        chapter_title: String(tocRow.title),
+        draft,
+        rewritten_from: sourceChapter ? sourceChapter.chapter_title : null,
+      }];
+      const allDone = merged.length >= toc.length;
+      const updated = await saveChapters(supabase, projectId, merged, {
+        status: allDone ? "ready_for_export" : "rewriting",
+        metadata_plan: { ...(project.metadata_plan || {}), book_bible: bible, rewrite_done: merged.length },
+      });
+      return NextResponse.json({
+        success: true,
+        mode,
+        written: 1,
+        remaining: Math.max(0, toc.length - merged.length),
+        project: updated,
+      });
     }
 
     // Konsistenspass: «les hele boken» og finn gjentakelser, brutte løfter,
