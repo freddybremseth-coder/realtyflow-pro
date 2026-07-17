@@ -387,6 +387,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project, chapters: chapters.length });
     }
 
+    // Manuell import: manus (PDF/Word/tekst) som IKKE hører til en bok i
+    // katalogen — blir et frittstående manusprosjekt i studioet.
+    if (mode === "import_manuscript") {
+      const title = String(body.title || "").trim();
+      const manuscript = String(body.manuscript || "").trim();
+      if (!title) return NextResponse.json({ error: "Tittel mangler." }, { status: 400 });
+      if (!manuscript) return NextResponse.json({ error: "Lim inn eller last opp manuskriptet." }, { status: 400 });
+
+      const chapters = splitManuscript(manuscript);
+      const { data: project, error } = await supabase
+        .from("publishing_book_projects")
+        .insert({
+          brand_id: "freddypublishing",
+          title,
+          subtitle: String(body.subtitle || "").trim(),
+          language: String(body.language || "no"),
+          genre: String(body.genre || "guide"),
+          status: "ready_for_export",
+          metadata_plan: { imported_manuscript: true, imported_at: new Date().toISOString() },
+          outline_plan: {
+            book_promise: "",
+            toc: chapters.map((c, i) => ({ chapter: i + 1, title: c.chapter_title, goal: "", target_words: wordCount(c.draft) })),
+            writing_plan: [],
+          },
+          chapter_drafts: chapters,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode, project, chapters: chapters.length });
+    }
+
     const projectId = String(body.project_id || "").trim();
     if (!projectId) return NextResponse.json({ error: "project_id mangler." }, { status: 400 });
 
@@ -703,6 +736,15 @@ JSON schema:
         },
       });
       return NextResponse.json({ success: true, mode, report, project: updated });
+    }
+
+    // Sett bokomslag (generert via /api/image-generate — også med OpenArt).
+    if (mode === "set_cover") {
+      const coverUrl = String(body.cover_url || "").trim();
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        metadata_plan: { ...(project.metadata_plan || {}), cover_image_url: coverUrl || null },
+      });
+      return NextResponse.json({ success: true, mode, project: updated });
     }
 
     // Lagre forfatterens stemmeprøve — brukes i all skriving og redigering.
