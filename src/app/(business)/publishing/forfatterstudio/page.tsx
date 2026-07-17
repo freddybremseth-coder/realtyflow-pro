@@ -168,6 +168,9 @@ export default function ForfatterstudioPage() {
   const [coverPrompt, setCoverPrompt] = useState("");
   const [coverUseOpenArt, setCoverUseOpenArt] = useState(false);
   const [coverBusy, setCoverBusy] = useState(false);
+  const [showAddChapter, setShowAddChapter] = useState(false);
+  const [addChapter, setAddChapter] = useState({ title: "", text: "", position: "start", polish: true });
+  const [addingChapter, setAddingChapter] = useState(false);
 
   const chapters = useMemo(() => project?.chapter_drafts || [], [project]);
   const chapter = chapters[chapterIndex] || null;
@@ -692,6 +695,36 @@ export default function ForfatterstudioPage() {
     }
   }, [project, applyProject]);
 
+  const runAddChapter = useCallback(async () => {
+    if (!project || !addChapter.title.trim() || !addChapter.text.trim()) return;
+    setAddingChapter(true);
+    setStatus(addChapter.polish ? "AI-en polerer teksten i din stemme og legger inn kapittelet…" : "Legger inn kapittelet…");
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "add_chapter",
+          project_id: project.id,
+          chapter_title: addChapter.title.trim(),
+          draft: addChapter.text,
+          position: addChapter.position,
+          polish: addChapter.polish,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Kunne ikke legge til kapittelet.");
+      if (data.project) applyProject(data.project as FullProject, String(data.chapter_title || addChapter.title));
+      setShowAddChapter(false);
+      setAddChapter({ title: "", text: "", position: "start", polish: true });
+      setStatus(`Kapittelet «${data.chapter_title}» er lagt inn ${addChapter.position === "start" ? "først" : "sist"} i boken.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke legge til kapittelet.");
+    } finally {
+      setAddingChapter(false);
+    }
+  }, [project, addChapter, applyProject]);
+
   const runSplitChapters = useCallback(async () => {
     if (!project) return;
     setStatus("AI-en leser manuset og finner kapittelgrensene — tar rundt et halvt minutt…");
@@ -1193,8 +1226,59 @@ export default function ForfatterstudioPage() {
 
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
           <Card className="h-fit">
-            <CardHeader><CardTitle className="text-base">Kapitler</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">Kapitler</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setShowAddChapter((v) => !v)}
+                disabled={busy || addingChapter}
+              >
+                + Nytt kapittel
+              </Button>
+            </CardHeader>
             <CardContent className="space-y-1">
+              {showAddChapter ? (
+                <div className="mb-2 space-y-2 rounded-md border p-3">
+                  <Input
+                    placeholder="Kapitteltittel — f.eks. «Om forfatteren»"
+                    value={addChapter.title}
+                    onChange={(e) => setAddChapter((a) => ({ ...a, title: e.target.value }))}
+                  />
+                  <textarea
+                    className="min-h-[120px] w-full rounded-md border bg-background p-2 text-sm"
+                    placeholder="Lim inn teksten til kapittelet her…"
+                    value={addChapter.text}
+                    onChange={(e) => setAddChapter((a) => ({ ...a, text: e.target.value }))}
+                  />
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <select
+                      className="h-8 rounded-md border bg-background px-2"
+                      value={addChapter.position}
+                      onChange={(e) => setAddChapter((a) => ({ ...a, position: e.target.value }))}
+                    >
+                      <option value="start">Først i boken</option>
+                      <option value="end">Sist i boken</option>
+                    </select>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={addChapter.polish}
+                        onChange={(e) => setAddChapter((a) => ({ ...a, polish: e.target.checked }))}
+                      />
+                      Poler språket med AI (beholder alt innhold)
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={runAddChapter} disabled={addingChapter || !addChapter.title.trim() || !addChapter.text.trim()}>
+                      {addingChapter ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
+                      Legg til kapittel
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowAddChapter(false)} disabled={addingChapter}>Avbryt</Button>
+                  </div>
+                </div>
+              ) : null}
               {chapters.map((c, i) => (
                 <button
                   key={`${c.chapter_title}-${i}`}
