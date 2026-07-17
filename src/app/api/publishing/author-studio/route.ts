@@ -93,6 +93,73 @@ function splitManuscript(raw: string): Chapter[] {
   return [{ chapter_title: "Manuskript", draft: text }];
 }
 
+/**
+ * AI-basert kapitteldeling for manus uten gjenkjennbare overskrifter
+ * (typisk PDF-uttrekk der formateringen er borte). Modellen peker ut
+ * kapittelgrensene ved å KOPIERE de første tegnene i hvert kapittel
+ * eksakt; vi splitter så teksten på disse markørene. Feiler markørene,
+ * deles manuset mekanisk i ~2200-ords deler så det aldri blir stående
+ * som ett gigantisk kapittel.
+ */
+async function aiSplitChapters(text: string): Promise<Chapter[]> {
+  const sample = text.slice(0, 90000);
+  try {
+    const raw = await askClaude(
+      `Du er en manusredaktør som skal finne kapittelgrensene i et manus der formateringen har gått tapt. Returner KUN gyldig JSON.
+
+For hvert kapittel/naturlige hovedavsnitt:
+- "title": kort, beskrivende kapitteltittel
+- "start_marker": de FØRSTE 30-60 tegnene av kapittelets første setning, KOPIERT HELT EKSAKT fra teksten under (samme tegnsetting og stor/liten bokstav — ingen omskriving)
+
+Finn 5-25 kapitler avhengig av manusets lengde og struktur.
+
+Manus:
+---
+${sample}
+---
+
+JSON schema:
+{ "chapters": [{ "title": "string", "start_marker": "string" }] }`,
+      { model: "sonnet", maxTokens: 2500, temperature: 0.2 },
+    );
+    const parsed = safeJsonParse<{ chapters?: Array<{ title?: string; start_marker?: string }> }>(raw, {});
+    const markers = asArray(parsed.chapters)
+      .map((c) => ({ title: String(c?.title || "").trim(), marker: String(c?.start_marker || "").trim() }))
+      .filter((c) => c.title && c.marker.length >= 10);
+
+    const found: Array<{ title: string; index: number }> = [];
+    let cursor = 0;
+    for (const m of markers) {
+      const idx = text.indexOf(m.marker, cursor);
+      if (idx >= 0) {
+        found.push({ title: m.title, index: idx });
+        cursor = idx + m.marker.length;
+      }
+    }
+    if (found.length >= 2) {
+      const chapters: Chapter[] = [];
+      if (found[0].index > 400) chapters.push({ chapter_title: "Innledning", draft: text.slice(0, found[0].index).trim() });
+      for (let i = 0; i < found.length; i += 1) {
+        const end = i + 1 < found.length ? found[i + 1].index : text.length;
+        const body = text.slice(found[i].index, end).trim();
+        if (body) chapters.push({ chapter_title: found[i].title, draft: body });
+      }
+      if (chapters.length >= 2) return chapters;
+    }
+  } catch (error) {
+    console.warn("[Author Studio] AI-kapitteldeling feilet, bruker mekanisk deling:", error);
+  }
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 3500) return [{ chapter_title: "Manuskript", draft: text }];
+  const perPart = 2200;
+  const parts: Chapter[] = [];
+  for (let i = 0; i < words.length; i += perPart) {
+    parts.push({ chapter_title: `Del ${parts.length + 1}`, draft: words.slice(i, i + perPart).join(" ") });
+  }
+  return parts;
+}
+
 async function loadProject(supabase: NonNullable<ReturnType<typeof getSupabase>>, id: string) {
   const { data, error } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
   if (error) throw new Error(error.message);
@@ -359,7 +426,11 @@ export async function POST(request: NextRequest) {
         .single();
       if (bookError) return NextResponse.json({ error: bookError.message }, { status: 404 });
 
-      const chapters = splitManuscript(manuscript);
+      let chapters = splitManuscript(manuscript);
+      // PDF-uttrekk mister ofte overskriftene — la AI-en finne kapittelgrensene.
+      if (chapters.length === 1 && manuscript.length > 6000) {
+        chapters = await aiSplitChapters(manuscript);
+      }
       const { data: project, error } = await supabase
         .from("publishing_book_projects")
         .insert({
@@ -395,7 +466,11 @@ export async function POST(request: NextRequest) {
       if (!title) return NextResponse.json({ error: "Tittel mangler." }, { status: 400 });
       if (!manuscript) return NextResponse.json({ error: "Lim inn eller last opp manuskriptet." }, { status: 400 });
 
-      const chapters = splitManuscript(manuscript);
+      let chapters = splitManuscript(manuscript);
+      // PDF-uttrekk mister ofte overskriftene — la AI-en finne kapittelgrensene.
+      if (chapters.length === 1 && manuscript.length > 6000) {
+        chapters = await aiSplitChapters(manuscript);
+      }
       const { data: project, error } = await supabase
         .from("publishing_book_projects")
         .insert({
@@ -457,6 +532,12 @@ export async function POST(request: NextRequest) {
       const instruction = String(body.instruction || "").trim();
       if (action === "custom" && !instruction) {
         return NextResponse.json({ error: "Skriv hva AI-en skal gjøre med kapittelet." }, { status: 400 });
+      }
+      if (String(chapter.draft || "").length > 30000) {
+        return NextResponse.json(
+          { error: "Kapittelet er for langt til trygg AI-redigering (hele endringen ville ikke fått plass). Bruk «Del opp i kapitler» først, og rediger deretter kapittel for kapittel." },
+          { status: 400 },
+        );
       }
       const result = await runChapterEdit(project, chapter, action, instruction);
       chapters[index] = {
@@ -736,6 +817,24 @@ JSON schema:
         },
       });
       return NextResponse.json({ success: true, mode, report, project: updated });
+    }
+
+    // Del et manus som ligger i ett (eller få, store) kapitler opp i ekte
+    // kapitler med AI — for PDF-er der overskriftene gikk tapt i uttrekket.
+    if (mode === "split_chapters") {
+      const fullText = chapters.map((c) => String(c.draft || "")).join("\n\n").trim();
+      if (!fullText) return NextResponse.json({ error: "Prosjektet har ingen tekst å dele opp." }, { status: 400 });
+      const split = await aiSplitChapters(fullText);
+      if (split.length < 2) {
+        return NextResponse.json({ error: "Fant ingen tydelige kapittelgrenser — manuset er kanskje for kort." }, { status: 400 });
+      }
+      const updated = await saveChapters(supabase, projectId, split, {
+        outline_plan: {
+          ...((project as any).outline_plan || {}),
+          toc: split.map((c, i) => ({ chapter: i + 1, title: c.chapter_title, goal: "", target_words: wordCount(c.draft) })),
+        },
+      });
+      return NextResponse.json({ success: true, mode, chapters: split.length, project: updated });
     }
 
     // Sett bokomslag (generert via /api/image-generate — også med OpenArt).
