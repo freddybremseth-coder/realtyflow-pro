@@ -819,6 +819,57 @@ JSON schema:
       return NextResponse.json({ success: true, mode, report, project: updated });
     }
 
+    // Legg til et nytt kapittel manuelt — f.eks. «Om forfatteren» først i
+    // boken. Teksten kan limes inn som den er, eller poleres av AI-en i
+    // forfatterens stemme før den lagres.
+    if (mode === "add_chapter") {
+      const chapterTitle = String(body.chapter_title || "").trim();
+      let draft = String(body.draft || "").trim();
+      const position = String(body.position || "end");
+      const polish = Boolean(body.polish);
+      if (!chapterTitle) return NextResponse.json({ error: "Kapittelet trenger en tittel." }, { status: 400 });
+      if (!draft) return NextResponse.json({ error: "Lim inn teksten til kapittelet." }, { status: 400 });
+      if (findChapter(chapters, chapterTitle).chapter) {
+        return NextResponse.json({ error: "Det finnes allerede et kapittel med denne tittelen." }, { status: 400 });
+      }
+
+      if (polish && draft.length <= 30000) {
+        const craft = resolveCraft(project.genre);
+        const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
+        const raw = await askClaude(
+          `Du er en prisbelønt forfatter og redaktør. Returner KUN gyldig JSON.
+
+Poler teksten under til et ferdig bokkapittel med tittelen «${chapterTitle}» i boken "${project.title}" (${project.language || "no"}).
+Behold ALT innhold og alle fakta — forbedre kun språk, flyt, avsnitt og struktur (markdown). Ikke legg til noe nytt.
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+
+Tekst:
+---
+${draft.slice(0, 24000)}
+---
+
+JSON schema:
+{ "draft": "string (hele kapittelet, polert)" }`,
+          { model: "sonnet", maxTokens: 8000, temperature: 0.4 },
+        );
+        const polished = String(safeJsonParse<{ draft?: string }>(raw, {}).draft || "").trim();
+        if (polished) draft = polished;
+      }
+
+      const newChapter: Chapter = { chapter_title: chapterTitle, draft };
+      const nextChapters =
+        position === "start" ? [newChapter, ...chapters] : [...chapters, newChapter];
+      const updated = await saveChapters(supabase, projectId, nextChapters, {
+        outline_plan: {
+          ...((project as any).outline_plan || {}),
+          toc: nextChapters.map((c, i) => ({ chapter: i + 1, title: c.chapter_title, goal: "", target_words: wordCount(c.draft) })),
+        },
+      });
+      return NextResponse.json({ success: true, mode, chapter_title: chapterTitle, project: updated });
+    }
+
     // Del et manus som ligger i ett (eller få, store) kapitler opp i ekte
     // kapitler med AI — for PDF-er der overskriftene gikk tapt i uttrekket.
     if (mode === "split_chapters") {
