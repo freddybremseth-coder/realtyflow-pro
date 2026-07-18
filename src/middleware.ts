@@ -52,6 +52,9 @@ const PUBLIC_PATHS = [
   "/api/public/demo-chat",
   // Public app-subscription API for chatgenius.pro (Astro, Family, …).
   "/api/saas/subscribe",
+  // Stripe cannot hold a RealtyFlow browser session. The route verifies the
+  // raw request with STRIPE_WEBHOOK_SECRET before any database access.
+  "/api/saas/stripe",
   // Direct PDF book sales on freddybremseth.com (grant-token gated).
   "/api/public/books",
   // Olivia OS and Donaanna.com authenticate with separate Bearer secrets in
