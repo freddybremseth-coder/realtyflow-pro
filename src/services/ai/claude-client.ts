@@ -133,8 +133,15 @@ export async function askClaude(
     validateResponse?: (text: string) => boolean;
     fallbackOnInvalidResponse?: boolean;
     model?: 'haiku' | 'sonnet';
+    // Krev Anthropic (ingen stille fallback til Gemini/OpenAI). For
+    // bokskriving gir de svakere modellene dårlig/kort prosa som ikke følger
+    // formatet — bedre å feile tydelig så brukeren ser at Anthropic er nede.
+    anthropicOnly?: boolean;
   }
 ): Promise<string> {
+  if (options?.anthropicOnly && !process.env.ANTHROPIC_API_KEY) {
+    throw new Error('Anthropic AI er ikke konfigurert (mangler API-nøkkel).');
+  }
   const acceptGeneratedText = (provider: string, text: string, hasNextProvider: boolean) => {
     if (!options?.validateResponse || options.validateResponse(text)) return text;
     if (options.fallbackOnInvalidResponse && hasNextProvider) {
@@ -169,6 +176,15 @@ export async function askClaude(
       if (accepted !== null) return accepted;
     } catch (err: any) {
       const msg = err?.message || err?.error?.message || String(err);
+      // anthropicOnly: ikke degrader stille til svakere modell — feil tydelig.
+      if (options?.anthropicOnly) {
+        const isCredits = msg.includes('credit balance') || msg.includes('billing') || msg.includes('rate_limit') || err?.status === 429;
+        throw new Error(
+          isCredits
+            ? 'Anthropic AI er midlertidig utilgjengelig (kreditt eller rate limit). Vent litt og prøv igjen, eller sjekk Anthropic-kontoen.'
+            : `Anthropic AI-feil: ${msg}`,
+        );
+      }
       const isCredits = msg.includes('credit balance') || msg.includes('billing') || msg.includes('rate_limit');
       const isOverloaded = msg.includes('overloaded') || err?.status === 529;
       if (isCredits || isOverloaded || err?.status === 400 || err?.status === 429) {
@@ -178,6 +194,9 @@ export async function askClaude(
         // For unexpected errors, still try fallback
       }
     }
+  }
+  if (options?.anthropicOnly) {
+    throw new Error('Anthropic AI ga ikke et gyldig svar. Prøv igjen om litt.');
   }
 
   // Fallback 1: Gemini

@@ -259,14 +259,23 @@ const EDIT_ACTIONS: Record<string, string> = {
  */
 function extractPlainDraft(raw: string): { draft: string; summary: string } {
   let text = String(raw || "").trim();
-  const summaryMatch = text.match(/^SAMMENDRAG:\s*(.+)\n+-{3,}\n+([\s\S]*)$/);
-  if (summaryMatch) return { summary: summaryMatch[1].trim(), draft: summaryMatch[2].trim() };
-  if ((text.startsWith("{") && text.endsWith("}"))) {
+  // Fjern omsluttende kodeblokker.
+  text = text.replace(/^```(?:markdown|md|json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  // Gammelt JSON-format.
+  if (text.startsWith("{") && text.endsWith("}")) {
     const parsed = safeJsonParse<{ draft?: string; change_summary?: string }>(text, {});
     if (parsed.draft) return { draft: String(parsed.draft).trim(), summary: String(parsed.change_summary || "").trim() };
   }
-  text = text.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-  return { draft: text, summary: "" };
+  // Skrell av en ledende «SAMMENDRAG:»-linje (og evt. «---»-skille) — men
+  // ALT det som er igjen er kapittelet. Slik kan aldri en lone summary-linje
+  // bli hele kapittelet (det var 150-tegns-buggen).
+  let summary = "";
+  if (/^SAMMENDRAG:/i.test(text)) {
+    const nl = text.indexOf("\n");
+    summary = (nl >= 0 ? text.slice(0, nl) : text).replace(/^SAMMENDRAG:\s*/i, "").trim();
+    text = (nl >= 0 ? text.slice(nl + 1) : "").trim().replace(/^-{3,}\s*\n?/, "").trim();
+  }
+  return { draft: text, summary };
 }
 
 async function runChapterEdit(
@@ -326,7 +335,9 @@ Deretter HELE det ferdige kapittelet i ren markdown.
 `;
 
   const attempt = async (extraDemand: string) => {
-    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: isExpand ? 0.55 : 0.4 });
+    // anthropicOnly: bokprosa MÅ komme fra Claude — faller vi tilbake til en
+    // svakere modell, følger den ikke formatet og leverer kort/ødelagt tekst.
+    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: isExpand ? 0.55 : 0.4, anthropicOnly: true });
     return extractPlainDraft(raw);
   };
 
@@ -346,15 +357,15 @@ Deretter HELE det ferdige kapittelet i ren markdown.
       summary = retry.summary || summary;
     }
   }
-  // Blokker BARE på tomt/søppelsvar. Ellers lagrer vi alltid resultatet
-  // (forrige versjon bevares, så «Angre AI» henter originalen) — og
-  // varsler tydelig hvis kapittelet ble kortere enn ventet, med ordtelling.
-  // Slik havner brukeren aldri i en blindvei, og krymping er alltid synlig
-  // og angrbar (i motsetning til den stille akkumuleringen som var problemet).
-  if (!draft || wordCount(draft) < 30) {
-    throw new Error("AI-en returnerte ikke et gyldig kapittel. Ingenting er endret — prøv igjen.");
+  const newWords = wordCount(draft || "");
+  // TOTALTAP: tomt/søppel eller under halvparten av originalen = en feil hos
+  // AI-en, ikke en legitim redigering. IKKE lagre — behold originalen og si
+  // tydelig ifra. (Dette er 150-tegns-ødeleggelsen.)
+  if (!draft || newWords < 30 || (originalWords > 80 && newWords < originalWords * 0.5)) {
+    throw new Error(
+      `AI-en mistet mesteparten av teksten (${newWords} av ${originalWords} ord) — sannsynligvis en midlertidig feil. Originalen er trygg og UENDRET. Prøv igjen om litt.`,
+    );
   }
-  const newWords = wordCount(draft);
   const expected = isExpand ? Math.max(originalWords, 1) : Math.round(originalWords * 0.85);
   const shrunk = newWords < expected;
   const warning = shrunk
@@ -811,15 +822,32 @@ Gi 3-5 forslag, det viktigste først. Returner også 1-2 setninger om hva som al
 
 JSON schema:
 { "already_strong": "string", "suggestions": [{ "type": "string", "where": "string", "need": "string", "instruction_template": "string" }] }`,
-        { model: "sonnet", maxTokens: 2500, temperature: 0.5 },
+        { model: "sonnet", maxTokens: 2500, temperature: 0.5, anthropicOnly: true },
       );
       const advice = safeJsonParse<{ already_strong?: string; suggestions?: Array<Record<string, string>> }>(raw, {
         already_strong: "",
         suggestions: [],
       });
+      let suggestions = asArray<Record<string, string>>(advice.suggestions).filter((s) => s && (s.need || s.instruction_template));
+      // Tomt svar (feilklasse: modellen ga ikke gyldig JSON) → ett retry.
+      if (suggestions.length === 0) {
+        const retryRaw = await askClaude(
+          `Returner KUN gyldig, kompakt JSON. List 3-5 konkrete ting forfatteren selv kan tilføre for å løfte kapittelet «${chapter.chapter_title}» til 10/10 (personlige historier, tall, ekte eksempler, en mening med kant).\n\nKapittel:\n---\n${String(chapter.draft || "").slice(0, 16000)}\n---\n\nJSON: { "already_strong": "string", "suggestions": [{ "type": "string", "where": "string", "need": "string", "instruction_template": "string" }] }`,
+          { model: "sonnet", maxTokens: 2000, temperature: 0.4, anthropicOnly: true },
+        );
+        const retry = safeJsonParse<{ already_strong?: string; suggestions?: Array<Record<string, string>> }>(retryRaw, { suggestions: [] });
+        suggestions = asArray<Record<string, string>>(retry.suggestions).filter((s) => s && (s.need || s.instruction_template));
+        if (!advice.already_strong && retry.already_strong) advice.already_strong = retry.already_strong;
+      }
+      if (suggestions.length === 0) {
+        return NextResponse.json(
+          { error: "Redaktøren fikk ikke laget konkrete forslag denne gangen — prøv igjen om litt." },
+          { status: 502 },
+        );
+      }
       const toTen = {
         already_strong: String(advice.already_strong || ""),
-        suggestions: asArray<Record<string, string>>(advice.suggestions).slice(0, 5),
+        suggestions: suggestions.slice(0, 5),
         at: new Date().toISOString(),
       };
       chapters[index] = { ...chapter, to_ten: toTen };
