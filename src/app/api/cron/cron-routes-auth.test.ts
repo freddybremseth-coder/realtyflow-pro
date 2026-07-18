@@ -12,6 +12,7 @@ import { GET as GETPublishingMarketWatch } from "./publishing-market-watch/route
 import { GET as GETPropertyMarketing } from "./property-marketing/route";
 import { GET as GETPropertyScanner } from "./property-scanner/route";
 import { GET as GETSaasScanner } from "./saas-scanner/route";
+import { GET as GETSaasEntitlements } from "./saas-entitlements/route";
 import { GET as GETStorageArchive } from "./storage-archive/route";
 import { GET as GETTrendingTags } from "./trending-tags/route";
 import { GET as GETWeeklyReport } from "./weekly-report/route";
@@ -34,6 +35,7 @@ const cronRoutes = [
   { path: "/api/cron/property-marketing", handler: GETPropertyMarketing },
   { path: "/api/cron/property-scanner", handler: GETPropertyScanner },
   { path: "/api/cron/saas-scanner", handler: GETSaasScanner },
+  { path: "/api/cron/saas-entitlements", handler: GETSaasEntitlements },
   { path: "/api/cron/storage-archive", handler: GETStorageArchive },
   { path: "/api/cron/trending-tags", handler: GETTrendingTags },
   { path: "/api/cron/weekly-report", handler: GETWeeklyReport },

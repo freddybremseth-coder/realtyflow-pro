@@ -13,8 +13,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.c
  *
  * Public, claim-token-gated. Creates a Stripe Checkout Session (setup fee +
  * monthly subscription) for the order and returns its URL. When Stripe is
- * not configured the caller falls back to the old claim-without-payment
- * flow, so the button never dead-ends.
+ * not configured the endpoint fails closed. A customer must never receive a
+ * paid product merely because the payment provider is unavailable.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -40,8 +40,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isStripeConfigured()) {
-      // Old behaviour still works — the button claims without payment.
-      return NextResponse.json({ fallback: true });
+      return NextResponse.json(
+        { error: "Betaling er midlertidig utilgjengelig. Kontakt oss, så hjelper vi deg." },
+        { status: 503 },
+      );
     }
 
     const pkg = getDemoSitePackage(order.package_id);
@@ -58,13 +60,14 @@ export async function POST(request: NextRequest) {
       baseUrl: BASE_URL,
     });
 
-    await supabase.from("demo_site_order_events").insert({
+    const { error: eventError } = await supabase.from("demo_site_order_events").insert({
       order_id: order.id,
       event_type: "demo_checkout_started",
       title: "Kunde startet betaling",
       description: `Stripe Checkout åpnet for ${order.company_name} (${pkg.shortName}).`,
       metadata: { session_id: session.id, package_id: order.package_id, seo_addon: seoAddon },
     });
+    if (eventError) throw new Error(`Kunne ikke loggføre checkout: ${eventError.message}`);
 
     return NextResponse.json({ url: session.url });
   } catch (error) {

@@ -128,6 +128,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
 
   if (path === "/api/auth/me") return "AUTHENTICATED";
   if (path.startsWith("/api/access-control")) return "OWNER_ONLY";
+  if (path.startsWith("/api/platform")) return "OWNER_ONLY";
   if (path.startsWith("/api/audit-log")) return "audit.read";
   if (path.startsWith("/api/team-workload")) return write ? "access.manage" : "revenue.read";
 
@@ -166,7 +167,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
 }
 
 export function permissionForNavHref(href: string): AccessPermission | "OWNER_ONLY" | null {
-  if (href === "/access-control") return "OWNER_ONLY";
+  if (href === "/access-control" || href === "/platform") return "OWNER_ONLY";
   if (href === "/audit-log") return "audit.read";
   if (href === "/team-workload") return "revenue.read";
   if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";

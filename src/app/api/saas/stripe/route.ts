@@ -2,6 +2,55 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSaasSupabase } from '@/lib/saas-api-supabase';
 import { verifyStripeWebhookSignature } from '@/lib/stripe-webhook';
 
+type StripeObject = Record<string, any>;
+
+type StripeEvent = {
+  id: string;
+  type: string;
+  account?: string;
+  livemode?: boolean;
+  api_version?: string;
+  data: { object: StripeObject };
+};
+
+type SupabaseResult<T = unknown> = {
+  data: T | null;
+  error: { message?: string } | null;
+};
+
+function requireDbResult<T>(result: SupabaseResult<T>, operation: string): T | null {
+  if (result.error) {
+    throw new Error(`${operation}: ${result.error.message || 'database operation failed'}`);
+  }
+  return result.data;
+}
+
+function parseStripeEvent(body: string): StripeEvent | null {
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  if (!candidate || typeof candidate !== 'object') return null;
+  const event = candidate as Partial<StripeEvent>;
+  if (
+    typeof event.id !== 'string' || !event.id ||
+    typeof event.type !== 'string' || !event.type ||
+    !event.data || typeof event.data.object !== 'object' || event.data.object === null
+  ) {
+    return null;
+  }
+  return event as StripeEvent;
+}
+
+function legacySubscriptionStatus(status: unknown) {
+  if (status === 'active' || status === 'trialing' || status === 'past_due') return status;
+  if (status === 'canceled' || status === 'cancelled') return 'cancelled';
+  return 'past_due';
+}
+
 function getSupabase() {
   return getSaasSupabase();
 }
@@ -17,6 +66,8 @@ function getSupabase() {
  *           invoice.paid, invoice.payment_failed
  */
 export async function POST(request: NextRequest) {
+  let eventId: string | null = null;
+  let supabase: ReturnType<typeof getSupabase> = null;
   try {
     const body = await request.text();
     const sig = request.headers.get('stripe-signature');
@@ -29,21 +80,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Stripe webhook signature' }, { status });
     }
 
-    let event: any;
-    try {
-      event = JSON.parse(body);
-    } catch {
+    const event = parseStripeEvent(body);
+    if (!event) {
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
+    eventId = event.id;
 
-    const supabase = getSupabase();
+    supabase = getSupabase();
     if (!supabase) {
       console.warn('[Stripe Webhook] Supabase not configured');
-      return NextResponse.json({ received: true, warning: 'Supabase not configured' });
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 });
+    }
+
+    const claim = requireDbResult<boolean>(await supabase.rpc('saas_claim_stripe_event', {
+      p_event_id: event.id,
+      p_event_type: event.type,
+      p_stripe_account_id: event.account || null,
+      p_livemode: event.livemode === true,
+      p_api_version: event.api_version || null,
+      p_payload: event,
+    }), 'Claim Stripe event');
+
+    if (!claim) {
+      return NextResponse.json({ received: true, duplicate: true });
     }
 
     const type = event.type;
-    const data = event.data?.object;
+    const data = event.data.object;
 
     console.log(`[Stripe Webhook] ${type}`, data?.id);
 
@@ -51,23 +114,28 @@ export async function POST(request: NextRequest) {
       // ─── New subscription created ────────────────────────────
       case 'customer.subscription.created': {
         const appSlug = data.metadata?.app_slug;
-        if (!appSlug) break;
+        if (!appSlug) {
+          await syncStripeBillingState(supabase, event, data);
+          break;
+        }
 
         // Find app by slug
-        const { data: app } = await supabase
+        const app = requireDbResult<{ id: string }>(await supabase
           .from('saas_apps')
           .select('id')
           .eq('slug', appSlug)
-          .single();
+          .maybeSingle(), 'Find SaaS app for subscription');
 
         if (app) {
-          // Create subscription record
-          await supabase.from('saas_subscriptions').insert({
+          // Upsert by Stripe's stable subscription id. This makes retries safe
+          // even when a previous webhook attempt stopped halfway through.
+          requireDbResult(await supabase.from('saas_subscriptions').upsert({
             app_id: app.id,
+            tenant_id: data.metadata?.tenant_id || null,
             customer_email: data.customer_email || data.metadata?.customer_email || '',
             customer_name: data.metadata?.customer_name,
             plan: data.metadata?.plan || 'basic',
-            status: data.status === 'active' ? 'active' : 'trialing',
+            status: legacySubscriptionStatus(data.status),
             amount: (data.items?.data?.[0]?.price?.unit_amount || 0) / 100,
             currency: data.currency?.toUpperCase() || 'USD',
             billing_cycle: data.items?.data?.[0]?.price?.recurring?.interval === 'year' ? 'yearly' : 'monthly',
@@ -76,7 +144,9 @@ export async function POST(request: NextRequest) {
             next_billing_at: data.current_period_end
               ? new Date(data.current_period_end * 1000).toISOString()
               : null,
-          });
+          }, { onConflict: 'stripe_subscription_id' }), 'Upsert SaaS subscription');
+
+          await syncStripeBillingState(supabase, event, data);
 
           // Update app metrics
           await recalculateAppMetrics(supabase, app.id);
@@ -86,96 +156,28 @@ export async function POST(request: NextRequest) {
 
       // ─── Subscription updated (upgrade/downgrade/cancel) ─────
       case 'customer.subscription.updated': {
-        const subId = data.id;
-        const { data: existingSub } = await supabase
-          .from('saas_subscriptions')
-          .select('id, app_id')
-          .eq('stripe_subscription_id', subId)
-          .single();
-
-        if (existingSub) {
-          const newStatus = data.cancel_at_period_end ? 'cancelled' :
-            data.status === 'active' ? 'active' :
-            data.status === 'past_due' ? 'past_due' : 'active';
-
-          await supabase.from('saas_subscriptions').update({
-            status: newStatus,
-            amount: (data.items?.data?.[0]?.price?.unit_amount || 0) / 100,
-            cancelled_at: data.canceled_at
-              ? new Date(data.canceled_at * 1000).toISOString()
-              : null,
-            next_billing_at: data.current_period_end
-              ? new Date(data.current_period_end * 1000).toISOString()
-              : null,
-          }).eq('id', existingSub.id);
-
-          await recalculateAppMetrics(supabase, existingSub.app_id);
-        }
+        const synced = await syncStripeBillingState(supabase, event, data);
+        if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
         break;
       }
 
       // ─── Subscription deleted ────────────────────────────────
       case 'customer.subscription.deleted': {
-        const subId = data.id;
-        const { data: existingSub } = await supabase
-          .from('saas_subscriptions')
-          .select('id, app_id')
-          .eq('stripe_subscription_id', subId)
-          .single();
-
-        if (existingSub) {
-          await supabase.from('saas_subscriptions').update({
-            status: 'cancelled',
-            cancelled_at: new Date().toISOString(),
-          }).eq('id', existingSub.id);
-
-          await recalculateAppMetrics(supabase, existingSub.app_id);
-        }
+        const synced = await syncStripeBillingState(supabase, event, data);
+        if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
         break;
       }
 
-      // ─── Invoice paid (revenue tracking) ─────────────────────
+      // ─── Invoice paid / failed (ledger + access lifecycle) ───
       case 'invoice.paid': {
-        const subId = data.subscription;
-        if (!subId) break;
+        const synced = await syncStripeBillingState(supabase, event, data);
+        if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
+        break;
+      }
 
-        const { data: existingSub } = await supabase
-          .from('saas_subscriptions')
-          .select('app_id')
-          .eq('stripe_subscription_id', subId)
-          .single();
-
-        if (existingSub) {
-          const amount = (data.amount_paid || 0) / 100;
-
-          // Add to total revenue
-          try {
-            await supabase.rpc('increment_app_revenue', {
-              p_app_id: existingSub.app_id,
-              p_amount: amount,
-            });
-          } catch {
-            // Fallback: manual update if RPC doesn't exist
-            const { data: app } = await supabase
-              .from('saas_apps')
-              .select('total_revenue')
-              .eq('id', existingSub.app_id)
-              .single();
-            if (app) {
-              await supabase.from('saas_apps').update({
-                total_revenue: (app.total_revenue || 0) + amount,
-              }).eq('id', existingSub.app_id);
-            }
-          }
-
-          // Add to daily analytics
-          const today = new Date().toISOString().split('T')[0];
-          await supabase.from('saas_analytics').upsert({
-            app_id: existingSub.app_id,
-            date: today,
-            revenue: amount,
-          }, { onConflict: 'app_id,date' });
-        }
+      case 'invoice.payment_failed': {
+        const synced = await syncStripeBillingState(supabase, event, data);
+        if (synced.legacyAppId) await recalculateAppMetrics(supabase, synced.legacyAppId);
         break;
       }
 
@@ -199,7 +201,9 @@ export async function POST(request: NextRequest) {
             .select('token')
             .single();
 
-          if (!grantError && grant && email) {
+          if (grantError) throw new Error(`Create book download grant: ${grantError.message}`);
+
+          if (grant && email) {
             const base = process.env.BOOKS_SITE_BASE_URL || 'https://www.freddybremseth.com';
             const link = `${base}/nedlasting.html?token=${grant.token}`;
             const { sendBrandEmail } = await import('@/services/email/send-brand-email');
@@ -224,11 +228,11 @@ Freddy Bremseth`,
         const demositeOrderId = data.metadata?.demosite_order_id;
         if (demositeOrderId) {
           const paidAt = new Date().toISOString();
-          const { data: order } = await supabase
+          const order = requireDbResult<any>(await supabase
             .from('demo_site_orders')
             .select('id, status, editable_fields, company_name')
             .eq('id', demositeOrderId)
-            .maybeSingle();
+            .maybeSingle(), 'Find DemoSites order');
 
           if (order) {
             const fields = { ...(order.editable_fields || {}) };
@@ -242,15 +246,16 @@ Freddy Bremseth`,
               fields.addons = { ...(fields.addons || {}), seo: true };
             }
 
-            await supabase.from('demo_site_orders').update({
+            requireDbResult(await supabase.from('demo_site_orders').update({
               billing_status: 'paid',
               status: order.status === 'deployed' ? 'deployed' : 'approved',
               claimed_at: paidAt,
               editable_fields: fields,
-            }).eq('id', demositeOrderId);
+            }).eq('id', demositeOrderId), 'Mark DemoSites order paid');
 
-            await supabase.from('demo_site_order_events').insert({
+            requireDbResult(await supabase.from('demo_site_order_events').upsert({
               order_id: demositeOrderId,
+              stripe_event_id: event.id,
               event_type: 'demo_paid',
               title: 'Betaling mottatt via Stripe',
               description: `${order.company_name} har betalt oppstart + abonnement. Siden kan publiseres.`,
@@ -261,7 +266,7 @@ Freddy Bremseth`,
                 amount_total: data.amount_total || null,
                 currency: data.currency || null,
               },
-            });
+            }, { onConflict: 'stripe_event_id' }), 'Record DemoSites payment event');
 
             console.log(`[Stripe Webhook] DemoSites order ${demositeOrderId} marked paid`);
 
@@ -280,32 +285,32 @@ Freddy Bremseth`,
         const appSlug = data.metadata?.app_slug;
         if (!appSlug) break;
 
-        const { data: app } = await supabase
+        const app = requireDbResult<any>(await supabase
           .from('saas_apps')
           .select('id, total_users')
           .eq('slug', appSlug)
-          .single();
+          .maybeSingle(), 'Find SaaS app for checkout');
 
         if (app) {
           // Increment total users
-          await supabase.from('saas_apps').update({
+          requireDbResult(await supabase.from('saas_apps').update({
             total_users: (app.total_users || 0) + 1,
-          }).eq('id', app.id);
+          }).eq('id', app.id), 'Increment SaaS users');
 
           // Track signup in analytics
           const today = new Date().toISOString().split('T')[0];
-          const { data: existing } = await supabase
+          const existing = requireDbResult<any>(await supabase
             .from('saas_analytics')
             .select('signups')
             .eq('app_id', app.id)
             .eq('date', today)
-            .single();
+            .maybeSingle(), 'Read SaaS signup metrics');
 
-          await supabase.from('saas_analytics').upsert({
+          requireDbResult(await supabase.from('saas_analytics').upsert({
             app_id: app.id,
             date: today,
             signups: (existing?.signups || 0) + 1,
-          }, { onConflict: 'app_id,date' });
+          }, { onConflict: 'app_id,date' }), 'Update SaaS signup metrics');
         }
         break;
       }
@@ -314,14 +319,48 @@ Freddy Bremseth`,
         console.log(`[Stripe Webhook] Unhandled event: ${type}`);
     }
 
+    requireDbResult(await supabase.rpc('saas_complete_stripe_event', {
+      p_event_id: event.id,
+      p_tenant_id: null,
+    }), 'Complete Stripe event');
+
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error('[Stripe Webhook] Error:', error);
+    if (eventId && supabase) {
+      const failed = await supabase.rpc('saas_fail_stripe_event', {
+        p_event_id: eventId,
+        p_error_message: error instanceof Error ? error.message : 'Webhook error',
+      });
+      if (failed.error) {
+        console.error('[Stripe Webhook] Could not mark event failed:', failed.error.message);
+      }
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Webhook error' },
       { status: 500 }
     );
   }
+}
+
+type StripeBillingSync = {
+  tenantId?: string | null;
+  legacyAppId?: string | null;
+};
+
+async function syncStripeBillingState(
+  supabase: any,
+  event: StripeEvent,
+  object: StripeObject,
+): Promise<StripeBillingSync> {
+  const result = requireDbResult<StripeBillingSync>(await supabase.rpc('saas_sync_stripe_billing_state', {
+    p_event_id: event.id,
+    p_event_type: event.type,
+    p_object: object,
+    p_grace_days: 7,
+  }), 'Synchronize Stripe billing state');
+
+  return result || {};
 }
 
 /**
