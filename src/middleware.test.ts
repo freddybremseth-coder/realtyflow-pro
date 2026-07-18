@@ -50,3 +50,11 @@ test("middleware passes Doña Anna integrations to route-level Bearer authentica
   assert.equal(response.headers.get("x-middleware-next"), "1");
   assert.equal(response.headers.get("location"), null);
 });
+
+test("middleware passes Stripe webhooks to route-level signature verification", async () => {
+  const response = await middleware(request("/api/saas/stripe"));
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-middleware-next"), "1");
+  assert.equal(response.headers.get("location"), null);
+});
