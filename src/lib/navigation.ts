@@ -74,6 +74,7 @@ const GROUPS: Array<{
       "/closing",
       "/closing-pack",
       "/commissions",
+      "/billing",
       "/forecast",
       "/monthly-close",
       "/goals",
@@ -145,6 +146,7 @@ const GROUPS: Array<{
       "/saas",
       "/revenue-engine",
       "/mondeo",
+      "/dona-anna",
     ],
   },
   {
@@ -192,6 +194,8 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
     "/approvals",
   ],
   FINANCE: [
+    "/billing",
+    "/dona-anna",
     "/revenue-command",
     "/monthly-close",
     "/commissions",

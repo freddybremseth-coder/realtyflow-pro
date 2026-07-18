@@ -54,6 +54,9 @@ const PUBLIC_PATHS = [
   "/api/saas/subscribe",
   // Direct PDF book sales on freddybremseth.com (grant-token gated).
   "/api/public/books",
+  // Olivia OS and Donaanna.com authenticate with separate Bearer secrets in
+  // the route itself; no RealtyFlow browser session is involved.
+  "/api/dona-anna/integrations",
 ];
 
 const REMASTER_PROXY_PATHS = [

@@ -48,7 +48,7 @@ export const MONDEO_CONTRACT = {
   propertyAddress: "Raveien 152E, 3242 Sandefjord",
   municipality: "Sandefjord kommune 3907",
   cadastral: "Gnr. 159 / Bnr. 64",
-  seller: "Extrade Holding AS / Anna Bremseth og Freddy Bremseth",
+  seller: "Extrade Holding AS",
   buyer: "Nordic Group Invest AS / Odin Jacobsen",
   effectiveDate: "2026-06-01",
   firstPaymentDate: "2026-06-01",

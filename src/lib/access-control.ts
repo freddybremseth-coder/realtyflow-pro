@@ -135,6 +135,8 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     return write ? "customers.write" : "customers.read";
   }
   if (path.startsWith("/api/calendar")) return write ? "execution.write" : "execution.read";
+  if (path.startsWith("/api/billing")) return write ? "finance.write" : "finance.read";
+  if (path.startsWith("/api/dona-anna")) return write ? "finance.write" : "finance.read";
 
   if (path.startsWith("/api/revenue/commissions") || path.startsWith("/api/revenue/monthly-close") || path.startsWith("/api/revenue/goals")) {
     return write ? "finance.write" : "finance.read";
@@ -168,7 +170,7 @@ export function permissionForNavHref(href: string): AccessPermission | "OWNER_ON
   if (href === "/audit-log") return "audit.read";
   if (href === "/team-workload") return "revenue.read";
   if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";
-  if (["/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
+  if (["/billing", "/dona-anna", "/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
   if (["/attribution", "/ad-campaigns", "/analytics"].includes(href)) return "marketing.read";
   if (href === "/service-revenue") return "keyholding.read";
   if (["/closing", "/closing-pack"].includes(href)) return "closing.read";

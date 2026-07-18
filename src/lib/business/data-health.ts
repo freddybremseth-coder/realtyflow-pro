@@ -97,12 +97,6 @@ const OLIVIA_TABLES = [
   { table: "harvest_records", label: "Harvest records", required: true },
   { table: "farm_expenses", label: "Farm expenses", required: true },
   { table: "subsidy_income", label: "Subsidy income", required: true },
-  { table: "batches", label: "Batch tracking", required: true },
-  { table: "commerce_products", label: "B2B products", required: true },
-  { table: "commerce_customers", label: "B2B customers", required: true },
-  { table: "commerce_orders", label: "B2B orders", required: true },
-  { table: "commerce_order_items", label: "B2B order lines", required: true },
-  { table: "commerce_invoices", label: "B2B invoices", required: true },
 ] as const;
 
 const FAMILY_TABLES = [
@@ -395,74 +389,83 @@ function moneyStatusRows(rows: Record<string, unknown>[], paidStatuses: string[]
   return rows.filter((row) => !paid.has(String(first(row, ["status", "payment_status"]) || "").toLowerCase()));
 }
 
-async function buildB2BSummary(client: SupabaseClientLike | null, schemas: string[], schemaHealth?: SchemaHealth): Promise<BusinessModuleHealth> {
-  const orderHealth = okTable(schemaHealth, "commerce_orders");
-  const invoiceHealth = okTable(schemaHealth, "commerce_invoices");
-  const customerHealth = okTable(schemaHealth, "commerce_customers");
-  const productHealth = okTable(schemaHealth, "commerce_products");
-  const [orders, invoices, customers, products] = await Promise.all([
-    readRowsIfPresent(client, schemas, "commerce_orders", orderHealth),
-    readRowsIfPresent(client, schemas, "commerce_invoices", invoiceHealth),
-    readRowsIfPresent(client, schemas, "commerce_customers", customerHealth),
-    readRowsIfPresent(client, schemas, "commerce_products", productHealth),
-  ]);
-  const warnings = [orders, invoices, customers, products]
-    .filter((read) => read.error && isMissingError(read.error))
-    .map((read) => read.error as string);
+async function readCanonicalCommerce(client: SupabaseClientLike | null) {
+  if (!client) return { snapshot: null as Record<string, any> | null, error: "Supabase URL/key mangler" };
+  try {
+    const result = await withTimeout(
+      client.rpc("donaanna_snapshot", { p_workspace_slug: "dona-anna" }),
+      "public.donaanna_snapshot",
+    ) as { data: Record<string, any> | null; error: unknown };
+    if (result.error) return { snapshot: null, error: errorText(result.error) };
+    return { snapshot: result.data, error: null };
+  } catch (error) {
+    return { snapshot: null, error: errorText(error) };
+  }
+}
 
-  const openOrders = moneyStatusRows(orders.rows, ["delivered", "completed", "cancelled", "canceled"]);
-  const unpaidInvoices = moneyStatusRows(invoices.rows, ["paid", "cancelled", "canceled", "void"]);
-  const sourceSchema = orders.schema || invoices.schema || customers.schema || products.schema || orderHealth?.schema || invoiceHealth?.schema || customerHealth?.schema || productHealth?.schema || null;
-  const orderCount = orderHealth?.count ?? orders.rows.length;
-  const invoiceCount = invoiceHealth?.count ?? invoices.rows.length;
-  const customerCount = customerHealth?.count ?? customers.rows.length;
-  const productCount = productHealth?.count ?? products.rows.length;
-
+async function buildB2BSummary(client: SupabaseClientLike | null): Promise<BusinessModuleHealth> {
+  const canonical = await readCanonicalCommerce(client);
+  if (!canonical.snapshot) {
+    return {
+      status: canonical.error && isMissingError(canonical.error) ? "missing" : "error",
+      sourceSchema: null,
+      metrics: { orders: 0, openOrders: 0, orderValue: 0, invoices: 0, unpaidInvoices: 0, unpaidInvoiceValue: 0, customers: 0, products: 0 },
+      latestDate: null,
+      warnings: [canonical.error || "Doña Anna commerce-kjernen svarte ikke"],
+    };
+  }
+  const orders = Array.isArray(canonical.snapshot.orders) ? canonical.snapshot.orders as Record<string, unknown>[] : [];
+  const customers = Array.isArray(canonical.snapshot.parties) ? canonical.snapshot.parties as Record<string, unknown>[] : [];
+  const products = Array.isArray(canonical.snapshot.products) ? canonical.snapshot.products as Record<string, unknown>[] : [];
+  const openOrders = moneyStatusRows(orders, ["fulfilled", "cancelled", "returned"]);
+  const invoiced = orders.filter((order) => Boolean(order.billing_document_id));
+  const unpaidInvoices = invoiced.filter((order) => String(order.payment_status || "") !== "paid");
   return {
-    status: sourceSchema ? (warnings.length > 0 ? "warning" : "ok") : "missing",
-    sourceSchema,
+    status: "ok",
+    sourceSchema: "commerce (server RPC)",
     metrics: {
-      orders: orderCount,
+      orders: orders.length,
       openOrders: openOrders.length,
-      orderValue: sumRows(orders.rows, ["total_amount", "grand_total", "subtotal", "amount"]),
-      invoices: invoiceCount,
+      orderValue: sumRows(orders, ["total"]),
+      invoices: invoiced.length,
       unpaidInvoices: unpaidInvoices.length,
-      unpaidInvoiceValue: sumRows(unpaidInvoices, ["total_amount", "amount", "invoice_total"]),
-      customers: customerCount,
-      products: productCount,
+      unpaidInvoiceValue: sumRows(unpaidInvoices, ["total"]),
+      customers: customers.length,
+      products: products.length,
     },
-    latestDate: latestDate([...orders.rows, ...invoices.rows], ["updated_at", "ordered_at", "created_at", "paid_date", "due_date"]),
-    warnings,
+    latestDate: latestDate(orders, ["updated_at", "ordered_at", "created_at"]),
+    warnings: [],
   };
 }
 
-async function buildOliviaBatchSummary(client: SupabaseClientLike | null, schemas: string[], schemaHealth?: SchemaHealth): Promise<BusinessModuleHealth> {
-  const batchHealth = okTable(schemaHealth, "batches");
+async function buildOliviaBatchSummary(client: SupabaseClientLike | null, canonicalClient: SupabaseClientLike | null, schemas: string[], schemaHealth?: SchemaHealth): Promise<BusinessModuleHealth> {
   const harvestHealth = okTable(schemaHealth, "harvest_records");
   const expenseHealth = okTable(schemaHealth, "farm_expenses");
   const subsidyHealth = okTable(schemaHealth, "subsidy_income");
   const parcelHealth = okTable(schemaHealth, "parcels");
-  const [batches, harvests, expenses, subsidies, parcels] = await Promise.all([
-    readRowsIfPresent(client, schemas, "batches", batchHealth),
+  const [canonical, harvests, expenses, subsidies, parcels] = await Promise.all([
+    readCanonicalCommerce(canonicalClient),
     readRowsIfPresent(client, schemas, "harvest_records", harvestHealth),
     readRowsIfPresent(client, schemas, "farm_expenses", expenseHealth),
     readRowsIfPresent(client, schemas, "subsidy_income", subsidyHealth),
     readRowsIfPresent(client, schemas, "parcels", parcelHealth),
   ]);
-  const warnings = [batches, harvests, expenses, subsidies, parcels]
+  const warnings = [harvests, expenses, subsidies, parcels]
     .filter((read) => read.error && isMissingError(read.error))
     .map((read) => read.error as string);
-  const activeBatches = batches.rows.filter((row) => String(first(row, ["status"]) || "").toUpperCase() === "ACTIVE");
+  if (canonical.error) warnings.push(canonical.error);
+  const batches = Array.isArray(canonical.snapshot?.lots) ? canonical.snapshot?.lots as Record<string, unknown>[] : [];
+  const activeBatches = batches.filter((row) => !["depleted", "recalled"].includes(String(first(row, ["status"]) || "").toLowerCase()));
   const harvestRevenueTotal = harvests.rows.reduce((sum, row) => sum + harvestRevenue(row), 0);
   const expensesTotal = sumRows(expenses.rows, ["amount", "cost", "total_amount"]);
   const subsidiesTotal = sumRows(subsidies.rows, ["amount", "total_amount"]);
-  const sourceSchema = batches.schema || harvests.schema || expenses.schema || subsidies.schema || parcels.schema || batchHealth?.schema || harvestHealth?.schema || parcelHealth?.schema || null;
-  const batchCount = batchHealth?.count ?? batches.rows.length;
+  const sourceSchema = canonical.snapshot ? "commerce + olivia" : harvests.schema || expenses.schema || subsidies.schema || parcels.schema || harvestHealth?.schema || parcelHealth?.schema || null;
+  const batchCount = batches.length;
   const harvestCount = harvestHealth?.count ?? harvests.rows.length;
   const parcelCount = parcelHealth?.count ?? parcels.rows.length;
 
   return {
-    status: sourceSchema ? (batchCount > 0 || harvestCount > 0 ? (warnings.length > 0 ? "warning" : "ok") : "warning") : "missing",
+    status: sourceSchema ? (warnings.length > 0 ? "warning" : "ok") : "missing",
     sourceSchema,
     metrics: {
       batches: batchCount,
@@ -476,7 +479,7 @@ async function buildOliviaBatchSummary(client: SupabaseClientLike | null, schema
       parcels: parcelCount,
       trees: sumRows(parcels.rows, ["tree_count", "trees", "olive_trees"]),
     },
-    latestDate: latestDate([...batches.rows, ...harvests.rows], ["updated_at", "harvest_date", "created_at", "date"]),
+    latestDate: latestDate([...batches, ...harvests.rows], ["updated_at", "harvest_date", "created_at", "date"]),
     warnings,
   };
 }
@@ -582,11 +585,7 @@ function buildRecommendations(report: Omit<DataHealthReport, "recommendations">)
   }
 
   if (report.modules.b2b.status !== "ok") {
-    recommendations.push("Flytt eller opprett commerce_products, commerce_customers, commerce_orders, commerce_order_items og commerce_invoices i olivia schema.");
-  }
-
-  if (!report.modules.oliviaBatch.metrics.batches) {
-    recommendations.push("Flytt batches/recipes/tasks fra Doña Anna inn i olivia schema, eller kjør produksjonsmigrasjonen på RealtyFlow Supabase.");
+    recommendations.push("Kjør eller kontroller Doña Anna commerce-migreringen og server-RPC-en donaanna_snapshot i RealtyFlow Supabase.");
   }
 
   if (report.modules.familyResults.status !== "ok") {
@@ -609,7 +608,7 @@ export async function getDataHealth(): Promise<DataHealthReport> {
   const mainClient = createSupabase(main);
   const oliviaClient = createSupabase(olivia);
   const familyClient = createSupabase(family);
-  const oliviaSchemas = Array.from(new Set([oliviaSchema, "olivia", "public"].filter(Boolean)));
+  const oliviaSchemas = Array.from(new Set([oliviaSchema, "olivia"].filter(Boolean)));
 
   const [publicSchema, oliviaSchemaHealth, familySchemaHealth] = await Promise.all([
     probeSchema("public", "RealtyFlow public", main, "public", PUBLIC_TABLES),
@@ -618,8 +617,8 @@ export async function getDataHealth(): Promise<DataHealthReport> {
   ]);
 
   const [b2b, oliviaBatch, familyResults] = await Promise.all([
-    buildB2BSummary(oliviaClient, oliviaSchemas, oliviaSchemaHealth),
-    buildOliviaBatchSummary(oliviaClient, oliviaSchemas, oliviaSchemaHealth),
+    buildB2BSummary(mainClient),
+    buildOliviaBatchSummary(oliviaClient, mainClient, oliviaSchemas, oliviaSchemaHealth),
     buildFamilySummary(familyClient, mainClient, familySchema, familySchemaHealth),
   ]);
 
