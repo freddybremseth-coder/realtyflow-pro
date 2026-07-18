@@ -655,6 +655,18 @@ export async function POST(request: NextRequest) {
       // fra kvalitetsvurderingen — og scorer kapittelet på nytt etterpå.
       const liftNotes = asArray<string>(chapter.quality?.notes).map(String).filter(Boolean);
       const liftTarget = Math.min(10, Math.max(8, Number(body.target || 8)));
+      // Et tynt/kort kapittel scorer lavt NETTOPP fordi det mangler dybde —
+      // da må løftet bygge det ut, ikke bare pusse på den korte teksten.
+      // Sikt mot kapitteloversiktens mål, ellers en sunn standardlengde.
+      const chapterWords = wordCount(String(chapter.draft || ""));
+      const tocMatch = asArray<Record<string, any>>((project as any).outline_plan?.toc).find(
+        (t) => normalizeTitleKey(t.title) === normalizeTitleKey(chapter.chapter_title),
+      );
+      const healthyTarget = Math.max(1200, Number(tocMatch?.target_words || 0) || 1500);
+      const isThin = chapterWords < healthyTarget * 0.8;
+      const lengthDirective = isThin
+        ? `\nDETTE KAPITTELET ER FOR KORT (${chapterWords} ord) — det er hovedgrunnen til lav score. Bygg det ut til ca. ${healthyTarget} ord: utdyp hvert poeng, legg til konkrete eksempler, situasjoner og forklaringer som hører naturlig til temaet. IKKE finn opp fakta, men utvikle det som allerede står og gi leseren mer verdi. Overfladisk pynt på den korte teksten er IKKE godt nok.`
+        : `\nBehold alt faktainnhold og omtrent samme lengde.`;
       const effectiveInstruction =
         action === "lift"
           ? `${
@@ -663,10 +675,13 @@ export async function POST(request: NextRequest) {
                 : "Løft kapittelet til publiseringsnivå (mål: 8+/10)."
             } Rett SPESIFIKT disse punktene fra redaktøren:\n${
               liftNotes.length ? liftNotes.map((n, i) => `${i + 1}. ${n}`).join("\n") : "- Stram språket, konkretiser abstraksjoner, styrk åpning og avslutning."
-            }\nBehold alt faktainnhold og omtrent samme lengde.`
+            }${lengthDirective}`
           : instruction;
 
-      const result = await runChapterEdit(project, chapter, action === "lift" ? "custom" : action, effectiveInstruction);
+      // For tynne kapitler skal løftet oppføre seg som «utvid» (vokse), ikke
+      // som en lengdebevarende redigering.
+      const editAction = action === "lift" ? (isThin ? "expand" : "custom") : action;
+      const result = await runChapterEdit(project, chapter, editAction, effectiveInstruction);
 
       let newQuality: Record<string, any> | undefined;
       if (action === "lift") {
