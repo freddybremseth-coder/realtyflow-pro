@@ -33,6 +33,10 @@
       "schedule": "0 22 * * 1"
     },
     {
+      "path": "/api/cron/saas-entitlements",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/cron/property-scanner",
       "schedule": "0 18 * * 0"
     },

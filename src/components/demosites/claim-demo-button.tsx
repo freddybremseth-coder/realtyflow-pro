@@ -12,25 +12,14 @@ type ClaimDemoButtonProps = {
 
 /**
  * The money moment: opens Stripe Checkout (setup fee + monthly subscription
- * in one payment). If Stripe isn't configured the API says so and we fall
- * back to the old claim-without-payment flow — the button never dead-ends.
+ * in one payment). The flow fails closed when payment is unavailable, so a
+ * temporary provider/configuration problem can never grant unpaid access.
  */
 export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimDemoButtonProps) {
   const [loading, setLoading] = useState(false);
-  const [claimed, setClaimed] = useState(Boolean(alreadyClaimed));
+  const [claimed] = useState(Boolean(alreadyClaimed));
   const [seoAddon, setSeoAddon] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function claimWithoutPayment() {
-    const response = await fetch("/api/saas/demosites/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Kunne ikke reservere siden.");
-    setClaimed(true);
-  }
 
   async function startCheckout() {
     setLoading(true);
@@ -49,8 +38,7 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
         window.location.href = data.url;
         return;
       }
-      // Stripe not configured — keep the old reserve flow working.
-      await claimWithoutPayment();
+      throw new Error("Betalingsleverandøren returnerte ingen checkout-lenke.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke starte betalingen.");
     } finally {

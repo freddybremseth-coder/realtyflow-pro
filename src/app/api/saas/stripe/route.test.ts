@@ -19,6 +19,12 @@ function stripeRequest(payload: string, signature?: string) {
   });
 }
 
+function signedStripeRequest(event: Record<string, unknown>) {
+  const payload = JSON.stringify(event);
+  const timestamp = Math.floor(Date.now() / 1000);
+  return stripeRequest(payload, `t=${timestamp},v1=${sign(payload, timestamp)}`);
+}
+
 test.beforeEach(() => {
   process.env.STRIPE_WEBHOOK_SECRET = SECRET;
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -62,4 +68,95 @@ test("Stripe webhook rejects invalid JSON after signature verification but befor
   assert.equal(response.status, 400);
   assert.equal(body.error, "Invalid JSON");
   assert.equal(called, false);
+});
+
+test("Stripe webhook fails closed when the service-role database is unavailable", async () => {
+  setSaasSupabaseFactoryForTests(() => null);
+
+  const response = await POST(signedStripeRequest({
+    id: "evt_no_database",
+    type: "invoice.paid",
+    data: { object: { id: "in_no_database" } },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.error, "Supabase not configured");
+});
+
+test("Stripe webhook acknowledges an already claimed event without processing it twice", async () => {
+  const calls: string[] = [];
+  setSaasSupabaseFactoryForTests(() => ({
+    rpc(name: string) {
+      calls.push(name);
+      return Promise.resolve({ data: false, error: null });
+    },
+  }));
+
+  const response = await POST(signedStripeRequest({
+    id: "evt_duplicate",
+    type: "invoice.paid",
+    data: { object: { id: "in_duplicate" } },
+  }) as any);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { received: true, duplicate: true });
+  assert.deepEqual(calls, ["saas_claim_stripe_event"]);
+});
+
+test("Stripe payment failure enters the billing lifecycle and completes the event", async () => {
+  const calls: Array<{ name: string; payload?: Record<string, unknown> }> = [];
+  setSaasSupabaseFactoryForTests(() => ({
+    rpc(name: string, payload?: Record<string, unknown>) {
+      calls.push({ name, payload });
+      if (name === "saas_claim_stripe_event") return Promise.resolve({ data: true, error: null });
+      if (name === "saas_sync_stripe_billing_state") {
+        return Promise.resolve({ data: { tenantId: "tenant-1", legacyAppId: null }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    },
+  }));
+
+  const response = await POST(signedStripeRequest({
+    id: "evt_payment_failed",
+    type: "invoice.payment_failed",
+    livemode: true,
+    data: { object: { id: "in_failed", subscription: "sub_failed", amount_due: 12500, currency: "eur" } },
+  }) as any);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.map((call) => call.name), [
+    "saas_claim_stripe_event",
+    "saas_sync_stripe_billing_state",
+    "saas_complete_stripe_event",
+  ]);
+  assert.equal(calls[1].payload?.p_event_type, "invoice.payment_failed");
+});
+
+test("Stripe webhook marks a claimed event failed so Stripe can retry", async () => {
+  const calls: string[] = [];
+  setSaasSupabaseFactoryForTests(() => ({
+    rpc(name: string) {
+      calls.push(name);
+      if (name === "saas_claim_stripe_event") return Promise.resolve({ data: true, error: null });
+      if (name === "saas_sync_stripe_billing_state") {
+        return Promise.resolve({ data: null, error: { message: "ledger unavailable" } });
+      }
+      return Promise.resolve({ data: null, error: null });
+    },
+  }));
+
+  const response = await POST(signedStripeRequest({
+    id: "evt_retry",
+    type: "invoice.paid",
+    data: { object: { id: "in_retry", subscription: "sub_retry" } },
+  }) as any);
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(calls, [
+    "saas_claim_stripe_event",
+    "saas_sync_stripe_billing_state",
+    "saas_fail_stripe_event",
+  ]);
 });
