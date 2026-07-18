@@ -113,6 +113,17 @@ export const paymentInputSchema = z.object({
   notes: optionalText(2000),
 });
 
+export const refundInputSchema = z.object({
+  amount: decimal,
+  refundDate: z.string().date(),
+  currency: currencyCode,
+  method: z.enum(["bank_transfer", "card", "cash", "other"]),
+  reference: optionalText(240),
+  notes: optionalText(2000),
+  creditNoteId: z.string().uuid().optional().nullable().or(z.literal("")),
+  externalRefundId: optionalText(240),
+});
+
 export function validationMessage(error: z.ZodError) {
   return error.issues.map((issue) => `${issue.path.join(".") || "data"}: ${issue.message}`).join(" · ");
 }

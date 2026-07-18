@@ -8,6 +8,22 @@ const hardeningMigration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/20260718131104_billing_dona_anna_security_hardening.sql"),
   "utf8",
 ).toLowerCase();
+const settlementMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718174545_billing_credit_settlement_refunds.sql"),
+  "utf8",
+).toLowerCase();
+const issueQualificationMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718175938_billing_issue_function_qualification.sql"),
+  "utf8",
+).toLowerCase();
+const issuePgcryptoMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718180122_billing_issue_pgcrypto_search_path.sql"),
+  "utf8",
+).toLowerCase();
+const settlementGrantMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718180249_billing_settlement_append_only_grants.sql"),
+  "utf8",
+).toLowerCase();
 
 test("billing migration assigns invoice numbers inside the issuance transaction", () => {
   const issueFunction = migration.slice(migration.indexOf("function public.billing_issue_document"), migration.indexOf("function public.billing_record_payment"));
@@ -16,6 +32,12 @@ test("billing migration assigns invoice numbers inside the issuance transaction"
   assert.match(issueFunction, /insert into public\.billing_document_snapshots/);
   assert.match(issueFunction, /digest\(/);
   assert.match(issueFunction, /insert into public\.billing_audit_events/);
+});
+
+test("billing issuance qualifies document_id against its OUT parameter", () => {
+  assert.match(issueQualificationMigration, /where billing_document_lines\.document_id = p_document_id/);
+  assert.doesNotMatch(issueQualificationMigration, /from public\.billing_document_lines where document_id = p_document_id/);
+  assert.match(issuePgcryptoMigration, /set search_path = public, extensions/);
 });
 
 test("billing migration makes issued content immutable and keeps a VeriFactu chain", () => {
@@ -40,4 +62,49 @@ test("browser billing access is read-only and RLS auth calls are init-plan safe"
   assert.match(hardeningMigration, /for select to authenticated/);
   assert.match(hardeningMigration, /\(\(select auth\.jwt\(\)\) ->> 'email'\)/);
   assert.doesNotMatch(hardeningMigration, /create policy billing_admins_update_organizations/);
+});
+
+test("credit notes and refunds have explicit immutable allocations", () => {
+  assert.match(settlementMigration, /create table public\.billing_credit_allocations/);
+  assert.match(settlementMigration, /credit_note_id uuid not null unique/);
+  assert.match(settlementMigration, /original_invoice_id uuid not null/);
+  assert.match(settlementMigration, /create table public\.billing_refunds/);
+  assert.match(settlementMigration, /create table public\.billing_refund_allocations/);
+  assert.match(settlementMigration, /billing settlement events are append-only/);
+  assert.match(settlementMigration, /before update or delete on public\.billing_refunds/);
+  assert.match(settlementMigration, /function public\.billing_validate_refund_allocation/);
+  assert.match(settlementMigration, /refund allocation exceeds the refundable invoice amount/);
+});
+
+test("invoice settlement uses payments, credits, and refunds as its authority", () => {
+  const settlementFunction = settlementMigration.slice(
+    settlementMigration.indexOf("function public.billing_recalculate_invoice_settlement"),
+    settlementMigration.indexOf("function public.billing_protect_document"),
+  );
+  assert.match(settlementFunction, /document_row\.total - gross_paid - credited \+ refunded/);
+  assert.match(settlementFunction, /gross_paid \+ credited - refunded - document_row\.total/);
+  assert.match(settlementFunction, /then 'partially_credited'/);
+  assert.match(settlementFunction, /then 'fully_credited'/);
+  assert.match(settlementMigration, /external refund id is already used for another refund/);
+});
+
+test("settlement tables are tenant-readable but server-write-only", () => {
+  for (const table of ["billing_credit_allocations", "billing_refunds", "billing_refund_allocations"]) {
+    assert.match(settlementMigration, new RegExp(`alter table public\\.${table} enable row level security`));
+  }
+  assert.match(settlementMigration, /for select to authenticated/);
+  assert.match(settlementMigration, /grant select, insert on[\s\S]*to service_role/);
+  assert.match(settlementGrantMigration, /revoke all on[\s\S]*from service_role/);
+  assert.match(settlementGrantMigration, /grant select, insert on[\s\S]*to service_role/);
+  assert.doesNotMatch(settlementGrantMigration, /grant (all|update|delete|truncate)/);
+});
+
+test("billing actions expose refunds through the guarded database function", () => {
+  const actionsRoute = readFileSync(
+    resolve(process.cwd(), "src/app/api/billing/documents/[id]/actions/route.ts"),
+    "utf8",
+  );
+  assert.match(actionsRoute, /action: z\.literal\("refund"\)/);
+  assert.match(actionsRoute, /rpc\("billing_record_refund"/);
+  assert.match(actionsRoute, /const deliveryStatus = \["partially_paid", "paid", "partially_credited", "fully_credited", "credited"\]/);
 });
