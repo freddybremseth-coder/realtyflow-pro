@@ -428,13 +428,11 @@ ${craft.writing_rules}
 ${sourceMaterial ? `\nKILDEMATERIALE (hold deg til dette for fakta):\n---\n${sourceMaterial}\n---` : ""}
 ${research ? `\nRESEARCH-NOTAT (verifiserte punkter med kilder — vev inn det som styrker kapittelet, ikke ramse opp; ta med kildehenvisning der du bruker tall/funn):\n---\n${research}\n---` : ""}
 
-Skriv HELE kapittelet på ${project.language === "no" ? "norsk" : project.language || "en"}, ca. ${targetWords} ord, i markdown.
-
-JSON schema:
-{ "draft": "string (hele kapittelet)" }
+Skriv HELE kapittelet på ${project.language === "no" ? "norsk" : project.language || "en"}, ca. ${targetWords} ord.
+Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.
 `;
   const draftRaw = await askClaude(draftPrompt, { model: "sonnet", maxTokens: 8000, temperature: 0.6 });
-  let draft = sanitizeDraftText(safeJsonParse<{ draft?: string }>(draftRaw, {}).draft || draftRaw);
+  let draft = sanitizeDraftText(draftRaw);
   if (!draft) throw new Error(`Fikk ikke skrevet kapittelet «${tocRow.title}».`);
 
   const critiquePrompt = `
@@ -478,12 +476,11 @@ Kapittel «${tocRow.title}» (nåværende versjon):
 ${draft.slice(0, 22000)}
 ---
 
-JSON schema:
-{ "draft": "string (hele kapittelet, revidert)" }
+Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.
 `;
     const revisedRaw = await askClaude(revisePrompt, { model: "sonnet", maxTokens: 8000, temperature: 0.5 });
-    const revised = sanitizeDraftText(safeJsonParse<{ draft?: string }>(revisedRaw, {}).draft || "");
-    if (revised) draft = revised;
+    const revised = sanitizeDraftText(revisedRaw);
+    if (revised && revised.length >= 400) draft = revised;
   }
 
   // Kort sammendrag til bok-bibelen, så neste kapittel vet hva dette dekket.

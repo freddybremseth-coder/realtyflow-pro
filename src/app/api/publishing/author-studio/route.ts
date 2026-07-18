@@ -200,6 +200,24 @@ const EDIT_ACTIONS: Record<string, string> = {
   custom: "Følg instruksen fra forfatteren nøyaktig.",
 };
 
+/**
+ * Kapitteltekst returneres som REN MARKDOWN, ikke JSON: lange kapitler
+ * pakket i JSON sprenger svarrammen (escaping + ett stort strengfelt), og
+ * da ble hele kapittelet forkastet. Denne parseren tåler alle varianter:
+ * rent markdown-svar, kodeblokk-innpakning og gamle JSON-svar.
+ */
+function extractPlainDraft(raw: string): { draft: string; summary: string } {
+  let text = String(raw || "").trim();
+  const summaryMatch = text.match(/^SAMMENDRAG:\s*(.+)\n+-{3,}\n+([\s\S]*)$/);
+  if (summaryMatch) return { summary: summaryMatch[1].trim(), draft: summaryMatch[2].trim() };
+  if ((text.startsWith("{") && text.endsWith("}"))) {
+    const parsed = safeJsonParse<{ draft?: string; change_summary?: string }>(text, {});
+    if (parsed.draft) return { draft: String(parsed.draft).trim(), summary: String(parsed.change_summary || "").trim() };
+  }
+  text = text.replace(/^```(?:markdown|md)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  return { draft: text, summary: "" };
+}
+
 async function runChapterEdit(
   project: Record<string, any>,
   chapter: Chapter,
@@ -210,7 +228,7 @@ async function runChapterEdit(
   const craft = resolveCraft(project.genre);
   const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
   const prompt = `
-Du er en prisbelønt forfatter og manusredaktør. Returner KUN gyldig JSON.
+Du er en prisbelønt forfatter og manusredaktør.
 
 Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
 Språk: ${project.language || "no"} (svar på samme språk som kapittelet er skrevet i)
@@ -232,14 +250,15 @@ Kapittel: "${chapter.chapter_title}"
 ${String(chapter.draft || "").slice(0, 24000)}
 ---
 
-JSON schema:
-{ "draft": "string (hele kapittelet, ferdig redigert)", "change_summary": "string (1-2 setninger om hva som ble gjort)" }
+FORMAT PÅ SVARET (viktig — ingen JSON, ingen kodeblokker):
+Første linje: SAMMENDRAG: én setning om hva du gjorde.
+Deretter en linje med kun: ---
+Deretter HELE det ferdige kapittelet i ren markdown.
 `;
   const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 8000, temperature: 0.4 });
-  const parsed = safeJsonParse<{ draft?: string; change_summary?: string }>(raw, {});
-  const draft = String(parsed.draft || "").trim();
-  if (!draft) throw new Error("AI-en returnerte ikke et gyldig kapittel. Prøv igjen.");
-  return { draft, changeSummary: String(parsed.change_summary || "").trim() };
+  const { draft, summary } = extractPlainDraft(raw);
+  if (!draft || draft.length < 200) throw new Error("AI-en returnerte ikke et gyldig kapittel. Prøv igjen.");
+  return { draft, changeSummary: summary };
 }
 
 async function runAnalysis(project: Record<string, any>, chapters: Chapter[]) {
@@ -291,7 +310,7 @@ VIKTIG: Returner KOMPAKT JSON. Maks 10 chapter_notes — velg kapitlene som tren
 
 async function translateChapter(chapter: Chapter, targetLanguage: string, bookTitle: string) {
   const prompt = `
-Du er en profesjonell litterær oversetter. Returner KUN gyldig JSON.
+Du er en profesjonell litterær oversetter.
 
 Oversett kapittelet under til ${targetLanguage}. Behold tone, stemme, struktur og
 markdown. Oversett idiomatisk — ikke ord for ord. ALDRI legg til eller fjern innhold.
@@ -302,22 +321,23 @@ Kapittel: "${chapter.chapter_title}"
 ${String(chapter.draft || "").slice(0, 22000)}
 ---
 
-JSON schema:
-{ "chapter_title": "string (oversatt tittel)", "draft": "string (hele kapittelet oversatt)" }
+FORMAT PÅ SVARET (viktig — ingen JSON, ingen kodeblokker):
+Første linje: SAMMENDRAG: den oversatte kapitteltittelen.
+Deretter en linje med kun: ---
+Deretter HELE kapittelet oversatt, i ren markdown.
 `;
   const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 8000, temperature: 0.3 });
-  const parsed = safeJsonParse<{ chapter_title?: string; draft?: string }>(raw, {});
-  const draft = String(parsed.draft || "").trim();
-  if (!draft) throw new Error(`Oversettelsen av "${chapter.chapter_title}" feilet.`);
+  const { draft, summary } = extractPlainDraft(raw);
+  if (!draft || draft.length < 100) throw new Error(`Oversettelsen av "${chapter.chapter_title}" feilet.`);
   return {
-    chapter_title: String(parsed.chapter_title || chapter.chapter_title).trim(),
+    chapter_title: (summary || chapter.chapter_title).trim(),
     draft,
   };
 }
 
 async function formatChapter(chapter: Chapter, language: string) {
   const prompt = `
-Du er en bokdesigner og typograf. Returner KUN gyldig JSON.
+Du er en bokdesigner og typograf.
 
 Formater kapittelet til ren, profesjonell markdown: tydelige mellomtitler (##/###)
 der det er naturlig, avsnitt på 2-5 setninger, punktlister der innholdet er
@@ -328,13 +348,11 @@ Kapittel: "${chapter.chapter_title}"
 ${String(chapter.draft || "").slice(0, 22000)}
 ---
 
-JSON schema:
-{ "draft": "string (hele kapittelet, formatert)" }
+Returner KUN hele det formaterte kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.
 `;
   const raw = await askClaude(prompt, { model: "haiku", maxTokens: 8000, temperature: 0.2 });
-  const parsed = safeJsonParse<{ draft?: string }>(raw, {});
-  const draft = String(parsed.draft || "").trim();
-  if (!draft) throw new Error(`Formateringen av "${chapter.chapter_title}" feilet.`);
+  const { draft } = extractPlainDraft(raw);
+  if (!draft || draft.length < 100) throw new Error(`Formateringen av "${chapter.chapter_title}" feilet.`);
   return draft;
 }
 
@@ -545,9 +563,14 @@ export async function POST(request: NextRequest) {
       // «Løft»: målrettet omskriving som retter redaktørens konkrete notater
       // fra kvalitetsvurderingen — og scorer kapittelet på nytt etterpå.
       const liftNotes = asArray<string>(chapter.quality?.notes).map(String).filter(Boolean);
+      const liftTarget = Math.min(10, Math.max(8, Number(body.target || 8)));
       const effectiveInstruction =
         action === "lift"
-          ? `Løft kapittelet til publiseringsnivå (mål: 8+/10). Rett SPESIFIKT disse punktene fra redaktøren:\n${
+          ? `${
+              liftTarget >= 10
+                ? "Løft kapittelet til et feilfritt 10/10 — teksten skal tåle en streng forlagsredaktør uten én anmerkning: presist språk i hver setning, sterk åpning og avslutning, perfekt rytme, null fyll."
+                : "Løft kapittelet til publiseringsnivå (mål: 8+/10)."
+            } Rett SPESIFIKT disse punktene fra redaktøren:\n${
               liftNotes.length ? liftNotes.map((n, i) => `${i + 1}. ${n}`).join("\n") : "- Stram språket, konkretiser abstraksjoner, styrk åpning og avslutning."
             }\nBehold alt faktainnhold og omtrent samme lengde.`
           : instruction;
@@ -739,8 +762,7 @@ KILDEKAPITTEL (behold fakta, navn og substans — forbedre språk, struktur og a
 ${String(sourceChapter.draft || "").slice(0, 22000)}
 ---
 
-JSON schema:
-{ "draft": "string (hele det nye kapittelet, markdown)" }`
+Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.`
         : `Du er en prisbelønt forfatter som skriver et HELT NYTT kapittel i en revidert bokutgave. Returner KUN gyldig JSON.
 
 FORFATTERENS INSTRUKS for utgaven:
@@ -758,12 +780,11 @@ ${project.metadata_plan?.source_material ? `\nKILDEMATERIALE:\n---\n${String(pro
 
 Ikke finn opp fakta du ikke har dekning for — er noe usikkert, formuler forsiktig.
 
-JSON schema:
-{ "draft": "string (hele kapittelet, markdown)" }`;
+Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.`;
 
       const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 8000, temperature: 0.5 });
-      const draft = String(safeJsonParse<{ draft?: string }>(raw, {}).draft || "").trim();
-      if (!draft) return NextResponse.json({ error: `Kapittelet «${tocRow.title}» feilet — prøv igjen.` }, { status: 500 });
+      const draft = extractPlainDraft(raw).draft;
+      if (!draft || draft.length < 200) return NextResponse.json({ error: `Kapittelet «${tocRow.title}» feilet — prøv igjen.` }, { status: 500 });
 
       const summaryRaw = await askClaude(
         `Returner KUN gyldig JSON. Oppsummer kapittelet i 2 setninger.\n\n«${tocRow.title}»:\n---\n${draft.slice(0, 10000)}\n---\n\nJSON schema: { "summary": "string" }`,
@@ -880,12 +901,11 @@ Tekst:
 ${draft.slice(0, 24000)}
 ---
 
-JSON schema:
-{ "draft": "string (hele kapittelet, polert)" }`,
+Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.`,
           { model: "sonnet", maxTokens: 8000, temperature: 0.4 },
         );
-        const polished = String(safeJsonParse<{ draft?: string }>(raw, {}).draft || "").trim();
-        if (polished) draft = polished;
+        const polished = extractPlainDraft(raw).draft;
+        if (polished && polished.length >= 100) draft = polished;
       }
 
       const newChapter: Chapter = { chapter_title: chapterTitle, draft };
