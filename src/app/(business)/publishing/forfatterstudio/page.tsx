@@ -309,7 +309,9 @@ export default function ForfatterstudioPage() {
       );
       if (data) {
         const scorePart = data.new_score ? ` Ny score: ★ ${data.new_score}/10.` : "";
-        setStatus((data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.") + scorePart);
+        const updatedChapter = (data.project?.chapter_drafts || []).find((c: Chapter) => c.chapter_title === chapter.chapter_title);
+        const wordPart = updatedChapter ? ` (${wordsOf(updatedChapter.draft).toLocaleString("nb-NO")} ord)` : "";
+        setStatus((data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.") + scorePart + wordPart);
         if (action === "custom") setCustomInstruction("");
       }
       return data;
@@ -357,6 +359,13 @@ export default function ForfatterstudioPage() {
       chapter.chapter_title,
     );
     if (data) setStatus("Gikk tilbake til forrige versjon.");
+  }, [project, chapter, studioPost]);
+
+  const revertAllChapters = useCallback(async () => {
+    if (!project) return;
+    if (!window.confirm("Angre siste AI-endring på ALLE kapitler som har en tidligere versjon? Dette gjenoppretter teksten slik den var før siste løft/omskriving.")) return;
+    const data = await studioPost({ mode: "revert_all_chapters", project_id: project.id }, "revertall", chapter?.chapter_title);
+    if (data) setStatus(`Gjenopprettet ${data.restored} kapitler til forrige versjon.`);
   }, [project, chapter, studioPost]);
 
   const runAnalyze = useCallback(async () => {
@@ -1055,6 +1064,13 @@ export default function ForfatterstudioPage() {
               <Button size="sm" onClick={liftAllBelow8} disabled={busy}>
                 {busyAction === "liftall" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 Løft alle under 8
+              </Button>
+            ) : null}
+            {chapters.some((c) => c.previous_draft) ? (
+              <Button variant="outline" size="sm" onClick={revertAllChapters} disabled={busy}
+                className="border-amber-500/50 text-amber-600 hover:text-amber-700 dark:text-amber-400">
+                {busyAction === "revertall" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
+                Angre alle AI-endringer
               </Button>
             ) : null}
             <Button variant="outline" size="sm" onClick={runConsistency} disabled={busy || chapters.length < 2}>
