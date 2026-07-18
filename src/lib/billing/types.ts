@@ -10,6 +10,8 @@ export const BILLING_DOCUMENT_STATUSES = [
   "partially_paid",
   "paid",
   "overdue",
+  "partially_credited",
+  "fully_credited",
   "credited",
   "replaced",
 ] as const;
@@ -146,8 +148,14 @@ export type BillingDocument = {
   tax_total: string;
   total: string;
   accounting_total: string;
+  signed_total: string;
+  signed_tax_total: string;
+  signed_accounting_total: string;
   amount_paid: string;
+  amount_credited: string;
+  amount_refunded: string;
   balance: string;
+  refund_due: string;
   snapshot_hash: string | null;
   locked_at: string | null;
   sent_at: string | null;
@@ -156,6 +164,46 @@ export type BillingDocument = {
   created_at: string;
   updated_at: string;
   billing_customers?: Pick<BillingCustomer, "id" | "name" | "email" | "country_code" | "vat_number"> | null;
+};
+
+export type BillingCreditAllocation = {
+  id: string;
+  organization_id: string;
+  credit_note_id: string;
+  original_invoice_id: string;
+  amount: string;
+  accounting_amount: string;
+  created_by_email: string;
+  created_at: string;
+  credit_note?: Pick<BillingDocument, "id" | "document_number" | "issue_date" | "status"> | null;
+};
+
+export type BillingRefund = {
+  id: string;
+  organization_id: string;
+  customer_id: string;
+  refund_date: string;
+  currency: string;
+  amount: string;
+  exchange_rate: string;
+  method: "bank_transfer" | "card" | "cash" | "other";
+  reference: string | null;
+  notes: string | null;
+  external_refund_id: string | null;
+  created_by_email: string;
+  created_at: string;
+};
+
+export type BillingRefundAllocation = {
+  id: string;
+  organization_id: string;
+  refund_id: string;
+  original_invoice_id: string;
+  credit_note_id: string | null;
+  amount: string;
+  accounting_amount: string;
+  created_at: string;
+  billing_refunds?: BillingRefund | null;
 };
 
 export type BillingDocumentLine = {

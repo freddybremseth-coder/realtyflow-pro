@@ -19,20 +19,22 @@ type Bootstrap = {
   taxRules: BillingTaxRule[];
   documents: BillingDocument[];
   payments: Array<Record<string, any>>;
+  refunds: Array<Record<string, any>>;
   series: Array<Record<string, any>>;
   jobs: Array<Record<string, any>>;
 };
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Kladd", ready: "Klar", issued: "Utstedt", sent: "Sendt", opened: "Åpnet",
-  partially_paid: "Delvis betalt", paid: "Betalt", overdue: "Forfalt", credited: "Kreditert", replaced: "Erstattet",
+  partially_paid: "Delvis betalt", paid: "Betalt", overdue: "Forfalt", partially_credited: "Delvis kreditert",
+  fully_credited: "Fullt kreditert", credited: "Kreditert", replaced: "Erstattet",
 };
 const TYPE_LABELS: Record<string, string> = { quote: "Tilbud", proforma: "Proforma", invoice: "Faktura", credit_note: "Kreditnota" };
 
 function badgeVariant(status: string) {
   if (status === "paid") return "success" as const;
-  if (["overdue", "credited"].includes(status)) return "destructive" as const;
-  if (["partially_paid", "ready"].includes(status)) return "warning" as const;
+  if (["overdue", "credited", "fully_credited"].includes(status)) return "destructive" as const;
+  if (["partially_paid", "partially_credited", "ready"].includes(status)) return "warning" as const;
   if (["draft", "replaced"].includes(status)) return "secondary" as const;
   return "default" as const;
 }
@@ -92,7 +94,7 @@ export function BillingDashboard() {
     const documents = data?.documents || [];
     const today = new Date().toISOString().slice(0, 10);
     const month = today.slice(0, 7);
-    const issued = (document: BillingDocument) => Boolean(document.locked_at) && !["credited", "replaced"].includes(document.status);
+    const issued = (document: BillingDocument) => Boolean(document.locked_at) && document.status !== "replaced";
     const invoices = (document: BillingDocument) => issued(document) && document.document_type === "invoice";
     const credits = (document: BillingDocument) => issued(document) && document.document_type === "credit_note";
     const monthly = (document: BillingDocument) => document.issue_date?.startsWith(month) || false;
@@ -100,7 +102,7 @@ export function BillingDashboard() {
     return {
       invoiced: amountsByCurrency(documents, (document) => document.total, (document) => monthly(document) && invoices(document)),
       credits: amountsByCurrency(documents, (document) => document.total, (document) => monthly(document) && credits(document)),
-      paid: amountsByCurrency(documents, (document) => document.amount_paid, (document) => monthly(document) && invoices(document)),
+      paid: amountsByCurrency(documents, (document) => addDecimalAmounts([document.amount_paid, `-${document.amount_refunded}`]), (document) => monthly(document) && invoices(document)),
       outstanding: amountsByCurrency(documents, (document) => document.balance, (document) => invoices(document) && decimalToMinorUnits(document.balance) > BigInt(0)),
       tax: amountsByCurrency(documents, (document) => document.tax_total, (document) => monthly(document) && invoices(document)),
       overdue,

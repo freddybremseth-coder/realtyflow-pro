@@ -58,13 +58,23 @@ export async function loadBillingDocumentBundle(supabase: BillingSupabaseClient,
     .eq("id", documentId)
     .single();
   if (error || !document) throw new Error(error?.message || "Dokumentet finnes ikke.");
-  const [linesResult, organizationResult, settingsResult, snapshotResult] = await Promise.all([
+  const [linesResult, organizationResult, settingsResult, snapshotResult, creditAllocationsResult, refundAllocationsResult] = await Promise.all([
     supabase.from("billing_document_lines").select("*").eq("document_id", documentId).order("position"),
     supabase.from("billing_organizations").select("*").eq("id", document.organization_id).single(),
     supabase.from("billing_organization_settings").select("*").eq("organization_id", document.organization_id).maybeSingle(),
     supabase.from("billing_document_snapshots").select("*").eq("document_id", documentId).maybeSingle(),
+    supabase
+      .from("billing_credit_allocations")
+      .select("*,credit_note:billing_documents!billing_credit_allocations_credit_note_id_fkey(id,document_number,issue_date,status)")
+      .or(`original_invoice_id.eq.${documentId},credit_note_id.eq.${documentId}`)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("billing_refund_allocations")
+      .select("*,billing_refunds(*)")
+      .eq("original_invoice_id", documentId)
+      .order("created_at", { ascending: false }),
   ]);
-  const failure = [linesResult, organizationResult, settingsResult, snapshotResult].find((result) => result.error);
+  const failure = [linesResult, organizationResult, settingsResult, snapshotResult, creditAllocationsResult, refundAllocationsResult].find((result) => result.error);
   if (failure?.error) throw new Error(failure.error.message);
   return {
     document,
@@ -73,6 +83,8 @@ export async function loadBillingDocumentBundle(supabase: BillingSupabaseClient,
     settings: settingsResult.data,
     lines: linesResult.data || [],
     snapshot: snapshotResult.data || null,
+    creditAllocations: creditAllocationsResult.data || [],
+    refundAllocations: refundAllocationsResult.data || [],
   };
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { billingDatabaseError, requireBillingOrganization, requireBillingRequest } from "@/lib/billing/request";
-import { paymentInputSchema, validationMessage } from "@/lib/billing/validation";
+import { paymentInputSchema, refundInputSchema, validationMessage } from "@/lib/billing/validation";
 import { copyDocumentLines, copyDocumentPayload, loadBillingDocumentBundle, normalizeBillingLinesForSave } from "@/services/billing/document-service";
 import { generateAndStoreBillingPdf, markBillingPdfForRetry } from "@/services/billing/pdf-storage";
 import { sendBrandEmail } from "@/services/email/send-brand-email";
@@ -9,6 +9,7 @@ import { sendBrandEmail } from "@/services/email/send-brand-email";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("issue"), issueDate: z.string().date().optional(), expectedVersion: z.number().int().positive().optional() }),
   z.object({ action: z.literal("payment"), payment: paymentInputSchema }),
+  z.object({ action: z.literal("refund"), refund: refundInputSchema }),
   z.object({ action: z.literal("convert_to_invoice") }),
   z.object({ action: z.literal("create_credit_note"), reason: z.string().trim().min(3).max(2000) }),
   z.object({ action: z.literal("send"), recipient: z.string().trim().email().optional(), subject: z.string().trim().max(240).optional(), message: z.string().trim().max(5000).optional() }),
@@ -72,6 +73,24 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ paymentId: data });
   }
 
+  if (action.action === "refund") {
+    const refund = action.refund;
+    const { data, error } = await auth.value.supabase.rpc("billing_record_refund", {
+      p_document_id: params.id,
+      p_amount: refund.amount,
+      p_refund_date: refund.refundDate,
+      p_currency: refund.currency,
+      p_method: refund.method,
+      p_reference: refund.reference || "",
+      p_notes: refund.notes || "",
+      p_actor_email: auth.value.context.email,
+      p_credit_note_id: refund.creditNoteId || null,
+      p_external_refund_id: refund.externalRefundId || null,
+    });
+    if (error) return billingDatabaseError(error);
+    return NextResponse.json({ refundId: data });
+  }
+
   if (action.action === "convert_to_invoice") {
     if (bundle.document.document_type !== "quote" || !bundle.document.locked_at) {
       return NextResponse.json({ error: "Bare utstedte tilbud kan konverteres til faktura." }, { status: 409 });
@@ -105,6 +124,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (action.action === "create_credit_note") {
     if (bundle.document.document_type !== "invoice" || !bundle.document.locked_at) {
       return NextResponse.json({ error: "Kreditnota må opprettes fra en utstedt faktura." }, { status: 409 });
+    }
+    if (Number(bundle.document.amount_credited || 0) >= Number(bundle.document.total)) {
+      return NextResponse.json({ error: "Fakturaen er allerede fullt kreditert." }, { status: 409 });
     }
     const today = new Date().toISOString().slice(0, 10);
     const sourceLines = copyDocumentLines(bundle.lines);
@@ -161,8 +183,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ error: result.skipped ? "Firmaet mangler aktiv SMTP-konfigurasjon under E-post AI." : result.error || "E-posten kunne ikke sendes." }, { status: 409 });
   }
   const now = new Date().toISOString();
+  const deliveryStatus = ["partially_paid", "paid", "partially_credited", "fully_credited", "credited"].includes(bundle.document.status)
+    ? bundle.document.status
+    : "sent";
   await Promise.all([
-    auth.value.supabase.from("billing_documents").update({ status: "sent", sent_at: now }).eq("id", params.id),
+    auth.value.supabase.from("billing_documents").update({ status: deliveryStatus, sent_at: now }).eq("id", params.id),
     auth.value.supabase.from("billing_email_events").insert({
       organization_id: bundle.document.organization_id,
       document_id: params.id,
