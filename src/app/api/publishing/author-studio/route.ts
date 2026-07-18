@@ -227,7 +227,14 @@ async function runChapterEdit(
   const task = EDIT_ACTIONS[action] || EDIT_ACTIONS.improve;
   const craft = resolveCraft(project.genre);
   const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
-  const prompt = `
+  const originalDraft = String(chapter.draft || "");
+  const originalWords = wordCount(originalDraft);
+  // «Utvid» skal vokse; alt annet skal beholde lengden. AI-er har en sterk
+  // tendens til å komprimere når de skriver om — derfor både eksplisitt
+  // lengdekrav i prompten OG hard kontroll av svaret etterpå.
+  const minWords = action === "expand" ? originalWords : Math.round(originalWords * 0.9);
+
+  const buildPrompt = (extraDemand: string) => `
 Du er en prisbelønt forfatter og manusredaktør.
 
 Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
@@ -240,6 +247,12 @@ ${voice}
 HÅNDVERKSREGLER (${craft.label}):
 ${craft.writing_rules}
 
+LENGDEKRAV (ufravikelig):
+- Originalkapittelet er ${originalWords} ord. Ditt ferdige kapittel skal være på MINST ${minWords} ord.
+- Du skal ALDRI komprimere, kutte avsnitt, slå sammen seksjoner eller fjerne innhold — forbedre setning for setning, avsnitt for avsnitt.
+- Alt innhold, alle poenger, eksempler, navn og fakta fra originalen skal finnes igjen i din versjon.
+${extraDemand}
+
 Viktige regler:
 - ALDRI finn opp fakta, personer, hendelser, datoer eller sitater.
 - Behold markdown-struktur hvis kapittelet har det.
@@ -247,7 +260,7 @@ Viktige regler:
 
 Kapittel: "${chapter.chapter_title}"
 ---
-${String(chapter.draft || "").slice(0, 24000)}
+${originalDraft.slice(0, 26000)}
 ---
 
 FORMAT PÅ SVARET (viktig — ingen JSON, ingen kodeblokker):
@@ -255,9 +268,28 @@ Første linje: SAMMENDRAG: én setning om hva du gjorde.
 Deretter en linje med kun: ---
 Deretter HELE det ferdige kapittelet i ren markdown.
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 8000, temperature: 0.4 });
-  const { draft, summary } = extractPlainDraft(raw);
-  if (!draft || draft.length < 200) throw new Error("AI-en returnerte ikke et gyldig kapittel. Prøv igjen.");
+
+  const attempt = async (extraDemand: string) => {
+    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: 0.4 });
+    return extractPlainDraft(raw);
+  };
+
+  let { draft, summary } = await attempt("");
+  // For kort svar = innhold har forsvunnet. Ett strengere forsøk, deretter
+  // avbrytes redigeringen slik at originalen står urørt.
+  if (!draft || wordCount(draft) < originalWords * 0.7) {
+    const retry = await attempt(
+      `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord). Dette er uakseptabelt. Gå gjennom originalen avsnitt for avsnitt og behold ALT — svaret skal være minst ${minWords} ord.`,
+    );
+    draft = retry.draft;
+    summary = retry.summary || summary;
+  }
+  if (!draft || draft.length < 200) throw new Error("AI-en returnerte ikke et gyldig kapittel. Ingenting er endret — prøv igjen.");
+  if (wordCount(draft) < originalWords * 0.7) {
+    throw new Error(
+      `AI-en leverte et for kort kapittel (${wordCount(draft)} av ${originalWords} ord) — endringen ble IKKE lagret, originalen står urørt. Prøv igjen, eller del kapittelet opp først.`,
+    );
+  }
   return { draft, changeSummary: summary };
 }
 
@@ -336,16 +368,22 @@ Deretter HELE kapittelet oversatt, i ren markdown.
 }
 
 async function formatChapter(chapter: Chapter, language: string) {
+  const originalDraft = String(chapter.draft || "");
+  const originalWords = wordCount(originalDraft);
   const prompt = `
 Du er en bokdesigner og typograf.
 
 Formater kapittelet til ren, profesjonell markdown: tydelige mellomtitler (##/###)
 der det er naturlig, avsnitt på 2-5 setninger, punktlister der innholdet er
-oppramsing, og uthevinger med måte. IKKE endre ordlyd, mening eller språk (${language}).
+oppramsing, og uthevinger med måte.
+
+ABSOLUTT KRAV: IKKE endre, kutt, forkort eller omskriv ordlyden. Behold HVER setning
+og HVERT ord — kun formateringen (avsnitt, overskrifter, lister) skal endres.
+Original er ${originalWords} ord; svaret skal ha samme antall ord (±5 %).
 
 Kapittel: "${chapter.chapter_title}"
 ---
-${String(chapter.draft || "").slice(0, 22000)}
+${originalDraft.slice(0, 24000)}
 ---
 
 Returner KUN hele det formaterte kapittelet i ren markdown — ingen JSON, ingen innledning, ingen kodeblokker.
@@ -353,6 +391,8 @@ Returner KUN hele det formaterte kapittelet i ren markdown — ingen JSON, ingen
   const raw = await askClaude(prompt, { model: "haiku", maxTokens: 8000, temperature: 0.2 });
   const { draft } = extractPlainDraft(raw);
   if (!draft || draft.length < 100) throw new Error(`Formateringen av "${chapter.chapter_title}" feilet.`);
+  // Formatering skal aldri miste innhold — mister den mer enn 10 %, behold originalen.
+  if (wordCount(draft) < originalWords * 0.9) return originalDraft;
   return draft;
 }
 
@@ -553,9 +593,9 @@ export async function POST(request: NextRequest) {
       if (action === "custom" && !instruction) {
         return NextResponse.json({ error: "Skriv hva AI-en skal gjøre med kapittelet." }, { status: 400 });
       }
-      if (String(chapter.draft || "").length > 30000) {
+      if (String(chapter.draft || "").length > 26000) {
         return NextResponse.json(
-          { error: "Kapittelet er for langt til trygg AI-redigering (hele endringen ville ikke fått plass). Bruk «Del opp i kapitler» først, og rediger deretter kapittel for kapittel." },
+          { error: "Kapittelet er for langt til trygg AI-redigering (innhold ville gått tapt). Bruk «Del opp i kapitler» først, og rediger deretter kapittel for kapittel." },
           { status: 400 },
         );
       }
@@ -609,6 +649,24 @@ export async function POST(request: NextRequest) {
         new_score: newQuality?.score ?? null,
         project: updated,
       });
+    }
+
+    // Nødbrems: angre siste AI-endring på ALLE kapitler som har en
+    // tidligere versjon lagret — gjenoppretter boken etter et dårlig løft.
+    if (mode === "revert_all_chapters") {
+      let restored = 0;
+      const reverted = chapters.map((c) => {
+        if (c.previous_draft && String(c.previous_draft).trim()) {
+          restored += 1;
+          return { ...c, draft: c.previous_draft, previous_draft: undefined, quality: undefined, last_edit: undefined };
+        }
+        return c;
+      });
+      if (restored === 0) {
+        return NextResponse.json({ error: "Ingen kapitler har en tidligere versjon å gå tilbake til." }, { status: 400 });
+      }
+      const updated = await saveChapters(supabase, projectId, reverted);
+      return NextResponse.json({ success: true, mode, restored, project: updated });
     }
 
     // Angre siste AI-redigering på et kapittel.
