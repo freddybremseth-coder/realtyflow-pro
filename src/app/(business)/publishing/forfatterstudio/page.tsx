@@ -279,10 +279,22 @@ export default function ForfatterstudioPage() {
   const runEdit = useCallback(
     async (action: string) => {
       if (!project || !chapter) return;
+      // Ulagrede endringer i editoren lagres automatisk først, så AI-en
+      // jobber videre på den nyeste teksten din.
       if (dirty) {
-        setStatus("Lagre kapittelet før du kjører AI-endringer, så ingenting går tapt.");
-        return;
+        setStatus("Lagrer endringene dine først…");
+        const saved = await studioPost(
+          { mode: "save_chapter", project_id: project.id, chapter_title: chapter.chapter_title, draft: draftText },
+          "save",
+          chapter.chapter_title,
+        );
+        if (!saved) return; // feilmelding er allerede satt
       }
+      setStatus(
+        action === "lift"
+          ? "Løfter kapittelet: retter redaktørens punkter og scorer på nytt — tar ca. ett minutt…"
+          : "AI-en jobber med kapittelet — tar gjerne et halvt til ett minutt…",
+      );
       const data = await studioPost(
         {
           mode: "edit_chapter",
@@ -295,12 +307,46 @@ export default function ForfatterstudioPage() {
         chapter.chapter_title,
       );
       if (data) {
-        setStatus(data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.");
+        const scorePart = data.new_score ? ` Ny score: ★ ${data.new_score}/10.` : "";
+        setStatus((data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.") + scorePart);
         if (action === "custom") setCustomInstruction("");
       }
+      return data;
     },
-    [project, chapter, dirty, customInstruction, studioPost],
+    [project, chapter, dirty, draftText, customInstruction, studioPost],
   );
+
+  const liftAllBelow8 = useCallback(async () => {
+    if (!project) return;
+    const targets = chapters.filter((c) => Number(c.quality?.score || 0) > 0 && Number(c.quality?.score) < 8);
+    if (targets.length === 0) {
+      setStatus("Ingen vurderte kapitler under 8 — kjør «Vurder kvalitet» først, eller alt er allerede løftet. 🎉");
+      return;
+    }
+    setBusyAction("liftall");
+    try {
+      let done = 0;
+      for (const target of targets) {
+        setStatus(`Løfter «${target.chapter_title}» (${done + 1}/${targets.length}) — retter redaktørens punkter og scorer på nytt…`);
+        const res = await fetch("/api/publishing/author-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "edit_chapter", project_id: project.id, chapter_title: target.chapter_title, action: "lift", instruction: "" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setStatus(`Stoppet ved «${target.chapter_title}»: ${data.error || "ukjent feil"} — ${done} kapitler ble løftet.`);
+          if (data.project) applyProject(data.project as FullProject, chapter?.chapter_title);
+          return;
+        }
+        if (data.project) applyProject(data.project as FullProject, chapter?.chapter_title);
+        done += 1;
+      }
+      setStatus(`Ferdig: ${done} kapitler løftet med ny score. Kjør gjerne «Vurder kvalitet» igjen for full oversikt.`);
+    } finally {
+      setBusyAction(null);
+    }
+  }, [project, chapters, chapter, applyProject]);
 
   const revertChapter = useCallback(async () => {
     if (!project || !chapter) return;
@@ -1004,6 +1050,12 @@ export default function ForfatterstudioPage() {
               {busyAction === "score" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Vurder kvalitet
             </Button>
+            {chapters.some((c) => Number(c.quality?.score || 0) > 0 && Number(c.quality?.score) < 8) ? (
+              <Button size="sm" onClick={liftAllBelow8} disabled={busy}>
+                {busyAction === "liftall" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                Løft alle under 8
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={runConsistency} disabled={busy || chapters.length < 2}>
               {busyAction === "consistency" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookOpen className="mr-2 h-4 w-4" />}
               Konsistenspass
@@ -1346,7 +1398,15 @@ export default function ForfatterstudioPage() {
                 <CardContent className="space-y-3">
                   {chapter.quality?.score ? (
                     <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
-                      <span className="font-semibold">Redaktørens score: {chapter.quality.score}/10</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold">Redaktørens score: {chapter.quality.score}/10</span>
+                        {Number(chapter.quality.score) < 8 ? (
+                          <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => runEdit("lift")} disabled={busy}>
+                            {busyAction === "edit:lift" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Wand2 className="mr-1 h-3 w-3" />}
+                            Løft til 8+ (retter punktene under)
+                          </Button>
+                        ) : null}
+                      </div>
                       {(chapter.quality.notes || []).length > 0 ? (
                         <ul className="mt-1 list-disc pl-4 text-muted-foreground">
                           {(chapter.quality.notes || []).map((note, i) => <li key={i}>{note}</li>)}
@@ -1383,6 +1443,7 @@ export default function ForfatterstudioPage() {
                       Gjør endringen
                     </Button>
                   </div>
+                  {status ? <p className="text-xs text-muted-foreground border-t pt-2">{status}</p> : null}
                 </CardContent>
               </Card>
 
