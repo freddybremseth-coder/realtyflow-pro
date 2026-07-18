@@ -12,6 +12,18 @@ const settlementMigration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/20260718174545_billing_credit_settlement_refunds.sql"),
   "utf8",
 ).toLowerCase();
+const issueQualificationMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718175938_billing_issue_function_qualification.sql"),
+  "utf8",
+).toLowerCase();
+const issuePgcryptoMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718180122_billing_issue_pgcrypto_search_path.sql"),
+  "utf8",
+).toLowerCase();
+const settlementGrantMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718180249_billing_settlement_append_only_grants.sql"),
+  "utf8",
+).toLowerCase();
 
 test("billing migration assigns invoice numbers inside the issuance transaction", () => {
   const issueFunction = migration.slice(migration.indexOf("function public.billing_issue_document"), migration.indexOf("function public.billing_record_payment"));
@@ -20,6 +32,12 @@ test("billing migration assigns invoice numbers inside the issuance transaction"
   assert.match(issueFunction, /insert into public\.billing_document_snapshots/);
   assert.match(issueFunction, /digest\(/);
   assert.match(issueFunction, /insert into public\.billing_audit_events/);
+});
+
+test("billing issuance qualifies document_id against its OUT parameter", () => {
+  assert.match(issueQualificationMigration, /where billing_document_lines\.document_id = p_document_id/);
+  assert.doesNotMatch(issueQualificationMigration, /from public\.billing_document_lines where document_id = p_document_id/);
+  assert.match(issuePgcryptoMigration, /set search_path = public, extensions/);
 });
 
 test("billing migration makes issued content immutable and keeps a VeriFactu chain", () => {
@@ -76,7 +94,9 @@ test("settlement tables are tenant-readable but server-write-only", () => {
   }
   assert.match(settlementMigration, /for select to authenticated/);
   assert.match(settlementMigration, /grant select, insert on[\s\S]*to service_role/);
-  assert.doesNotMatch(settlementMigration, /grant (all|update|delete) on[\s\S]*billing_refunds[\s\S]*to service_role/);
+  assert.match(settlementGrantMigration, /revoke all on[\s\S]*from service_role/);
+  assert.match(settlementGrantMigration, /grant select, insert on[\s\S]*to service_role/);
+  assert.doesNotMatch(settlementGrantMigration, /grant (all|update|delete|truncate)/);
 });
 
 test("billing actions expose refunds through the guarded database function", () => {
