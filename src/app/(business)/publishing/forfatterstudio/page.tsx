@@ -1390,6 +1390,10 @@ export default function ForfatterstudioPage() {
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                   <CardTitle className="text-base">{chapter.chapter_title}</CardTitle>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={() => runEdit("lift")} disabled={busy}>
+                      {busyAction === "edit:lift" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1 h-4 w-4" />}
+                      Løft til 8+
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => runEdit("improve")} disabled={busy}>
                       {busyAction === "edit:improve" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
                       Forbedre
