@@ -29,6 +29,56 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+/**
+ * Reparerer et AVKUTTET JSON-svar (typisk når modellen når token-taket midt i
+ * en lang liste): kutter til siste fullstendige element, dropper etterhengende
+ * komma og lukker åpne klammer. Berger dermed f.eks. en kapitteloversikt der
+ * bare det siste kapittelet ble kappet, i stedet for å forkaste alt.
+ */
+function repairTruncatedJson(raw: string): unknown {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  const s = raw.slice(start).replace(/```\s*$/i, "").trim();
+  let inStr = false;
+  let esc = false;
+  let lastSafe = -1; // indeks (eksklusiv) frem til en trygg avslutningsposisjon
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') { inStr = false; lastSafe = i + 1; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "}" || ch === "]" || ch === ",") lastSafe = i + 1;
+  }
+  if (lastSafe < 0) return null;
+  let cut = s.slice(0, lastSafe).replace(/,\s*$/, "");
+  const closers: string[] = [];
+  let inStr2 = false;
+  let esc2 = false;
+  for (let i = 0; i < cut.length; i += 1) {
+    const ch = cut[i];
+    if (inStr2) {
+      if (esc2) esc2 = false;
+      else if (ch === "\\") esc2 = true;
+      else if (ch === '"') inStr2 = false;
+      continue;
+    }
+    if (ch === '"') inStr2 = true;
+    else if (ch === "{") closers.push("}");
+    else if (ch === "[") closers.push("]");
+    else if (ch === "}" || ch === "]") closers.pop();
+  }
+  while (closers.length) cut += closers.pop();
+  try {
+    return JSON.parse(cut);
+  } catch {
+    return null;
+  }
+}
+
 function safeJsonParse<T>(value: string, fallback: T): T {
   try {
     const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -40,10 +90,11 @@ function safeJsonParse<T>(value: string, fallback: T): T {
       try {
         return JSON.parse(value.slice(start, end + 1)) as T;
       } catch {
-        return fallback;
+        // ignorer — prøv reparasjon under
       }
     }
-    return fallback;
+    const repaired = repairTruncatedJson(value);
+    return repaired !== null ? (repaired as T) : fallback;
   }
 }
 
@@ -120,7 +171,7 @@ ${sample}
 
 JSON schema:
 { "chapters": [{ "title": "string", "start_marker": "string" }] }`,
-      { model: "sonnet", maxTokens: 2500, temperature: 0.2 },
+      { model: "sonnet", maxTokens: 4000, temperature: 0.2 },
     );
     const parsed = safeJsonParse<{ chapters?: Array<{ title?: string; start_marker?: string }> }>(raw, {});
     const markers = asArray(parsed.chapters)
@@ -727,17 +778,31 @@ Lag kapitteloversikten for den reviderte utgaven:
 - Hvert kapittel som bygger på et eksisterende, skal ha source_chapter satt til den EKSAKTE gamle tittelen. Helt nye kapitler har source_chapter: null.
 - Sett realistiske target_words (bruk gamle ordtall som utgangspunkt, 1200-3000 for nye).
 
+Returner KOMPAKT JSON (ingen unødvendige linjeskift) og hold goal-feltene korte, så hele oversikten får plass.
+
 JSON schema:
 {
   "title": "string (behold med mindre instruksen ber om nytt)",
   "subtitle": "string",
   "toc": [{"chapter":1,"title":"string","goal":"string","target_words":1800,"source_chapter":"string|null"}]
 }`,
-        { model: "sonnet", maxTokens: 3000, temperature: 0.35 },
+        { model: "sonnet", maxTokens: 8000, temperature: 0.35 },
       );
-      const plan = safeJsonParse<{ title?: string; subtitle?: string; toc?: Array<Record<string, any>> }>(planRaw, {});
-      const toc = asArray<Record<string, any>>(plan.toc);
-      if (toc.length === 0) return NextResponse.json({ error: "Klarte ikke å planlegge den nye utgaven. Prøv igjen." }, { status: 500 });
+      let plan = safeJsonParse<{ title?: string; subtitle?: string; toc?: Array<Record<string, any>> }>(planRaw, {});
+      let toc = asArray<Record<string, any>>(plan.toc);
+      // Nødplan: hvis modellen ikke ga en brukbar oversikt, speil de
+      // eksisterende kapitlene 1:1 så omskrivingen alltid kan starte —
+      // instruksen brukes uansett når hvert kapittel faktisk skrives om.
+      if (toc.length === 0) {
+        plan = { title: project.title, subtitle: project.subtitle };
+        toc = chapters.map((c, i) => ({
+          chapter: i + 1,
+          title: c.chapter_title,
+          goal: "",
+          target_words: Math.max(800, wordCount(c.draft)),
+          source_chapter: c.chapter_title,
+        }));
+      }
 
       const { data: edition, error } = await supabase
         .from("publishing_book_projects")
@@ -912,7 +977,7 @@ JSON schema:
   "issues": [{"type":"gjentakelse|brutt_løfte|terminologi|tonebrudd|selvmotsigelse|struktur","chapters":["kapitteltitler"],"issue":"string (konkret)","fix":"string (konkret grep)"}],
   "reading_order_ok": true
 }`,
-        { model: "sonnet", maxTokens: 3000, temperature: 0.3 },
+        { model: "sonnet", maxTokens: 5000, temperature: 0.3 },
       );
       const report = safeJsonParse(raw, {
         overall: "Kunne ikke fullføre konsistenspasset. Prøv igjen.",

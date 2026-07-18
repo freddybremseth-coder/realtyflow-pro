@@ -18,12 +18,69 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+/** Berger et avkuttet JSON-svar: kutter til siste komplette element og lukker
+ *  åpne klammer, så en lang kapitteloversikt ikke forkastes fordi det siste
+ *  elementet ble kappet ved token-taket. */
+function repairTruncatedJson(raw: string): unknown {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  const s = raw.slice(start).replace(/```\s*$/i, "").trim();
+  let inStr = false;
+  let esc = false;
+  let lastSafe = -1;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') { inStr = false; lastSafe = i + 1; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "}" || ch === "]" || ch === ",") lastSafe = i + 1;
+  }
+  if (lastSafe < 0) return null;
+  let cut = s.slice(0, lastSafe).replace(/,\s*$/, "");
+  const closers: string[] = [];
+  let inStr2 = false;
+  let esc2 = false;
+  for (let i = 0; i < cut.length; i += 1) {
+    const ch = cut[i];
+    if (inStr2) {
+      if (esc2) esc2 = false;
+      else if (ch === "\\") esc2 = true;
+      else if (ch === '"') inStr2 = false;
+      continue;
+    }
+    if (ch === '"') inStr2 = true;
+    else if (ch === "{") closers.push("}");
+    else if (ch === "[") closers.push("]");
+    else if (ch === "}" || ch === "]") closers.pop();
+  }
+  while (closers.length) cut += closers.pop();
+  try {
+    return JSON.parse(cut);
+  } catch {
+    return null;
+  }
+}
+
 function safeJsonParse<T>(value: string, fallback: T): T {
   try {
     const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     return JSON.parse(cleaned) as T;
   } catch {
-    return fallback;
+    const start = value.indexOf("{");
+    const end = value.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(value.slice(start, end + 1)) as T;
+      } catch {
+        // prøv reparasjon under
+      }
+    }
+    const repaired = repairTruncatedJson(value);
+    return repaired !== null ? (repaired as T) : fallback;
   }
 }
 
