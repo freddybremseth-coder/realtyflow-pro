@@ -16,7 +16,7 @@ const indexMigration = readFileSync(
   "utf8",
 ).toLowerCase();
 const operationalMigration = readFileSync(
-  resolve(process.cwd(), "supabase/migrations/20260718191708_dona_anna_partial_fulfillment_stock_ledger.sql"),
+  resolve(process.cwd(), "supabase/migrations/20260718193003_dona_anna_partial_fulfillment_stock_ledger.sql"),
   "utf8",
 ).toLowerCase();
 
