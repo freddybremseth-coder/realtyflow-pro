@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
           run_type: 'weekly',
           opportunities_found: opportunities.length,
           categories_scanned: Array.from(new Set(opportunities.map((o) => o.category))),
-          ai_model: 'claude-sonnet-4-20250514',
+          ai_model: 'claude-sonnet-5',
           raw_analysis,
         });
       } catch {
