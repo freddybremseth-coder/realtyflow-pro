@@ -308,10 +308,15 @@ export default function ForfatterstudioPage() {
         chapter.chapter_title,
       );
       if (data) {
-        const scorePart = data.new_score ? ` Ny score: ★ ${data.new_score}/10.` : "";
-        const updatedChapter = (data.project?.chapter_drafts || []).find((c: Chapter) => c.chapter_title === chapter.chapter_title);
-        const wordPart = updatedChapter ? ` (${wordsOf(updatedChapter.draft).toLocaleString("nb-NO")} ord)` : "";
-        setStatus((data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.") + scorePart + wordPart);
+        if (data.warning) {
+          // Endringen ER lagret, men ble kortere enn ventet — vis advarsel
+          // med angre-hint i stedet for å behandle det som en feil.
+          setStatus(`⚠ ${data.warning}`);
+        } else {
+          const scorePart = data.new_score ? ` Ny score: ★ ${data.new_score}/10.` : "";
+          const wordPart = data.new_words ? ` (${Number(data.new_words).toLocaleString("nb-NO")} ord)` : "";
+          setStatus((data.change_summary ? `AI: ${data.change_summary}` : "Kapittelet er oppdatert av AI.") + scorePart + wordPart);
+        }
         if (action === "custom") setCustomInstruction("");
       }
       return data;

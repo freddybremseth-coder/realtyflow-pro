@@ -346,18 +346,23 @@ Deretter HELE det ferdige kapittelet i ren markdown.
       summary = retry.summary || summary;
     }
   }
-  if (!draft || draft.length < 200) throw new Error("AI-en returnerte ikke et gyldig kapittel. Ingenting er endret — prøv igjen.");
-  if (isExpand && wordCount(draft) < originalWords) {
-    throw new Error(
-      `Klarte ikke å gjøre kapittelet lengre (endte på ${wordCount(draft)} av ${originalWords} ord) — kapittelet er tynt på innhold å bygge på. Originalen står urørt. Skriv noen stikkord eller detaljer du vil ha med i «Egendefinert endring»-feltet, så veved AI-en dem inn.`,
-    );
+  // Blokker BARE på tomt/søppelsvar. Ellers lagrer vi alltid resultatet
+  // (forrige versjon bevares, så «Angre AI» henter originalen) — og
+  // varsler tydelig hvis kapittelet ble kortere enn ventet, med ordtelling.
+  // Slik havner brukeren aldri i en blindvei, og krymping er alltid synlig
+  // og angrbar (i motsetning til den stille akkumuleringen som var problemet).
+  if (!draft || wordCount(draft) < 30) {
+    throw new Error("AI-en returnerte ikke et gyldig kapittel. Ingenting er endret — prøv igjen.");
   }
-  if (!isExpand && wordCount(draft) < originalWords * 0.7) {
-    throw new Error(
-      `AI-en leverte et for kort kapittel (${wordCount(draft)} av ${originalWords} ord) — endringen ble IKKE lagret, originalen står urørt. Prøv igjen, eller bruk «Egendefinert endring» med tydelig instruks.`,
-    );
-  }
-  return { draft, changeSummary: summary };
+  const newWords = wordCount(draft);
+  const expected = isExpand ? Math.max(originalWords, 1) : Math.round(originalWords * 0.85);
+  const shrunk = newWords < expected;
+  const warning = shrunk
+    ? isExpand
+      ? `Kapittelet ble ikke lengre (${newWords} av ${originalWords} ord) — det er tynt på innhold å bygge på. Vil du fylle det ut, skriv stikkord/detaljer i «Egendefinert endring». Trykk «Angre AI» for å beholde originalen.`
+      : `Obs: kapittelet ble kortere (${newWords} av ${originalWords} ord). Trykk «Angre AI» hvis du vil ha den lengre originalen tilbake.`
+    : "";
+  return { draft, changeSummary: summary, warning, newWords, originalWords };
 }
 
 async function runAnalysis(project: Record<string, any>, chapters: Chapter[]) {
@@ -728,6 +733,8 @@ export async function POST(request: NextRequest) {
         mode,
         chapter_title: chapter.chapter_title,
         change_summary: result.changeSummary,
+        warning: result.warning || null,
+        new_words: result.newWords,
         new_score: newQuality?.score ?? null,
         project: updated,
       });
