@@ -16,6 +16,7 @@ function commandRpc(command: DonaAnnaCommandInput["command"]) {
     adjust_inventory: "donaanna_adjust_inventory",
     create_order: "donaanna_create_order",
     order_action: "donaanna_order_action",
+    fulfill_order: "donaanna_fulfill_order",
     pos_action: "donaanna_pos_action",
     upsert_commission_rule: "donaanna_upsert_commission_rule",
     create_return: "donaanna_create_return",
@@ -28,10 +29,19 @@ function commandRpc(command: DonaAnnaCommandInput["command"]) {
 }
 
 export async function loadDonaAnnaSnapshot(client: RpcClient): Promise<DonaAnnaSnapshot> {
-  const { data, error } = await client.rpc("donaanna_snapshot", { p_workspace_slug: "dona-anna" });
-  if (error) throw new Error(error.message);
-  if (!data || typeof data !== "object") throw new Error("Doña Anna returnerte ingen arbeidsdata.");
-  return data as DonaAnnaSnapshot;
+  const [snapshotResult, activityResult] = await Promise.all([
+    client.rpc("donaanna_snapshot", { p_workspace_slug: "dona-anna" }),
+    client.rpc("donaanna_stock_activity", { p_workspace_slug: "dona-anna", p_limit: 200 }),
+  ]);
+  if (snapshotResult.error) throw new Error(snapshotResult.error.message);
+  if (activityResult.error) throw new Error(activityResult.error.message);
+  if (!snapshotResult.data || typeof snapshotResult.data !== "object") {
+    throw new Error("Doña Anna returnerte ingen arbeidsdata.");
+  }
+  return {
+    ...(snapshotResult.data as DonaAnnaSnapshot),
+    stockMovements: Array.isArray(activityResult.data) ? activityResult.data : [],
+  };
 }
 
 export async function executeDonaAnnaCommand(
@@ -45,6 +55,12 @@ export async function executeDonaAnnaCommand(
     args = {
       p_order_id: input.payload.orderId,
       p_action: input.payload.action,
+      p_payload: input.payload,
+      p_actor_email: actorEmail,
+    };
+  } else if (input.command === "fulfill_order") {
+    args = {
+      p_order_id: input.payload.orderId,
       p_payload: input.payload,
       p_actor_email: actorEmail,
     };

@@ -157,6 +157,21 @@ const orderActionPayload = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+const fulfillmentLinePayload = z.object({
+  orderLineId: id,
+  lotId: optionalId,
+  quantity: decimal,
+});
+
+const fulfillmentPayload = z.object({
+  orderId: id,
+  idempotencyKey: id,
+  occurredAt: z.string().datetime({ offset: true }).optional().nullable(),
+  reference: z.string().trim().max(240).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  lines: z.array(fulfillmentLinePayload).min(1).max(100),
+});
+
 const posPayload = z.object({
   workspaceSlug: z.string().default("dona-anna"),
   action: z.enum(["open", "close"]),
@@ -244,6 +259,7 @@ export const donaAnnaCommandSchema = z.discriminatedUnion("command", [
   z.object({ command: z.literal("adjust_inventory"), payload: adjustmentPayload }),
   z.object({ command: z.literal("create_order"), payload: orderPayload }),
   z.object({ command: z.literal("order_action"), payload: orderActionPayload }),
+  z.object({ command: z.literal("fulfill_order"), payload: fulfillmentPayload }),
   z.object({ command: z.literal("pos_action"), payload: posPayload }),
   z.object({ command: z.literal("upsert_commission_rule"), payload: commissionRulePayload }),
   z.object({ command: z.literal("create_return"), payload: returnPayload }),

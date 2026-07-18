@@ -15,6 +15,10 @@ const indexMigration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/20260718131253_billing_dona_anna_foreign_key_indexes.sql"),
   "utf8",
 ).toLowerCase();
+const operationalMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718193003_dona_anna_partial_fulfillment_stock_ledger.sql"),
+  "utf8",
+).toLowerCase();
 
 test("Doña Anna keeps operations private and exposes only server RPCs", () => {
   assert.match(migration, /create schema if not exists commerce/);
@@ -97,4 +101,25 @@ test("every unindexed module foreign key receives a covering index", () => {
   assert.match(indexMigration, /nspname in \('commerce', 'inventory', 'integrations'\)/);
   assert.match(indexMigration, /index_row\.indisvalid/);
   assert.match(indexMigration, /create index if not exists/);
+});
+
+test("order fulfillment is partial, idempotent, cost-aware and lot-safe", () => {
+  assert.match(operationalMigration, /function public\.donaanna_fulfill_order/);
+  assert.match(operationalMigration, /correlation_id = event_id/);
+  assert.match(operationalMigration, /'partially_fulfilled'/);
+  assert.match(operationalMigration, /fulfilled_quantity = fulfilled_quantity \+ quantity_value/);
+  assert.match(operationalMigration, /owner_organization_id is not distinct from order_row\.seller_organization_id/);
+  assert.match(operationalMigration, /movement_cost_value/);
+  assert.match(operationalMigration, /status = 'released'/);
+  assert.match(operationalMigration, /when quantity - quantity_value <= 0 then quantity/);
+  assert.match(operationalMigration, /then 'committed' else 'active'/);
+});
+
+test("stock activity stays server-only and immutable movements remain authoritative", () => {
+  assert.match(operationalMigration, /function public\.donaanna_stock_activity/);
+  assert.match(operationalMigration, /security invoker/);
+  assert.match(operationalMigration, /revoke execute on function public\.donaanna_stock_activity\(text, integer\) from public, anon, authenticated/);
+  assert.match(operationalMigration, /grant execute on function public\.donaanna_stock_activity\(text, integer\) to service_role/);
+  assert.match(operationalMigration, /create or replace view inventory\.available_stock/);
+  assert.match(operationalMigration, /coalesce\(lot\.status, 'blocked'\) <> 'released'/);
 });

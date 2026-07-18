@@ -44,6 +44,22 @@ test("accepts sales orders but rejects missing lines", () => {
   }).success, false);
 });
 
+test("requires idempotent, line-specific order fulfillment", () => {
+  assert.equal(donaAnnaCommandSchema.safeParse({
+    command: "fulfill_order",
+    payload: {
+      orderId: productId,
+      idempotencyKey: "10000000-0000-4000-8000-000000000004",
+      occurredAt: "2026-07-18T19:00:00.000Z",
+      lines: [{ orderLineId: priceListId, lotId: null, quantity: "2.5" }],
+    },
+  }).success, true);
+  assert.equal(donaAnnaCommandSchema.safeParse({
+    command: "fulfill_order",
+    payload: { orderId: productId, idempotencyKey: "retry-me", lines: [] },
+  }).success, false);
+});
+
 test("only implemented commission and landed-cost modes pass validation", () => {
   assert.equal(donaAnnaCommandSchema.safeParse({
     command: "upsert_commission_rule",
