@@ -74,7 +74,7 @@ export abstract class BaseAgent {
   expertise: string[];
 
   protected client: Anthropic;
-  protected model: string = "claude-sonnet-4-20250514";
+  protected model: string = "claude-sonnet-5";
 
   constructor(name: string, role: string, expertise: string[]) {
     this.name = name;

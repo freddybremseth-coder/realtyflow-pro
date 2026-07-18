@@ -317,7 +317,7 @@ Best platforms: ${perf.best_platforms.join(', ') || 'no data'}`;
         .join('\n---\n');
 
       const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 4096,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -462,7 +462,7 @@ Svar som JSON-array: { "actions": [...] }`,
     const brand = BRANDS.find((b) => b.id === action.brand);
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -512,7 +512,7 @@ Gi meg JSON:
     const brand = BRANDS.find((b) => b.id === action.brand);
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 3000,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -571,7 +571,7 @@ Gi meg JSON:
     const brand = BRANDS.find((b) => b.id === action.brand);
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -631,7 +631,7 @@ Gi meg JSON:
 
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 3000,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -717,7 +717,7 @@ Gi meg JSON:
 
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         system: this.SYSTEM_PROMPT,
         messages: [
@@ -991,7 +991,7 @@ Gi meg JSON:
 
     try {
       const msg = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 2048,
         system: this.SYSTEM_PROMPT,
         messages: [

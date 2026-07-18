@@ -155,7 +155,7 @@ export async function askClaude(
   // og «overloaded» (529), så forbigående grenser leger seg selv.
   if (process.env.ANTHROPIC_API_KEY) {
     const model = options?.model === 'sonnet'
-      ? 'claude-sonnet-4-20250514'
+      ? 'claude-sonnet-5'
       : 'claude-haiku-4-5-20251001';
     const maxAttempts = 4;
     let lastErr: any = null;
@@ -265,7 +265,7 @@ export async function askClaudeWithWebSearch(
   try {
     const claude = getClient();
     const response = await claude.messages.create({
-      model: options?.model === 'haiku' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514',
+      model: options?.model === 'haiku' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-5',
       max_tokens: options?.maxTokens ?? 2500,
       tools: [
         {
