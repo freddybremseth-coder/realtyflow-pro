@@ -268,14 +268,16 @@ JSON schema:
 {
   "overall_score": 7,
   "verdict": "string (2-3 setninger, ærlig helhetsvurdering)",
-  "strengths": ["string"],
-  "weaknesses": ["string"],
+  "strengths": ["string (maks 5)"],
+  "weaknesses": ["string (maks 5)"],
   "chapter_notes": [{"chapter_title":"string","note":"string (konkret forbedringsforslag)"}],
   "market_fit": "string (hvem kjøper denne boken og hvorfor)",
-  "recommended_actions": ["string (prioritert, mest verdifullt først)"]
+  "recommended_actions": ["string (prioritert, mest verdifullt først, maks 6)"]
 }
+
+VIKTIG: Returner KOMPAKT JSON. Maks 10 chapter_notes — velg kapitlene som trenger det mest. Hold hver note under 2 setninger, så hele svaret får plass.
 `;
-  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 3000, temperature: 0.35 });
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 6000, temperature: 0.35 });
   return safeJsonParse(raw, {
     overall_score: 0,
     verdict: "Kunne ikke fullføre analysen. Prøv igjen.",
@@ -539,14 +541,41 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
-      const result = await runChapterEdit(project, chapter, action, instruction);
+
+      // «Løft»: målrettet omskriving som retter redaktørens konkrete notater
+      // fra kvalitetsvurderingen — og scorer kapittelet på nytt etterpå.
+      const liftNotes = asArray<string>(chapter.quality?.notes).map(String).filter(Boolean);
+      const effectiveInstruction =
+        action === "lift"
+          ? `Løft kapittelet til publiseringsnivå (mål: 8+/10). Rett SPESIFIKT disse punktene fra redaktøren:\n${
+              liftNotes.length ? liftNotes.map((n, i) => `${i + 1}. ${n}`).join("\n") : "- Stram språket, konkretiser abstraksjoner, styrk åpning og avslutning."
+            }\nBehold alt faktainnhold og omtrent samme lengde.`
+          : instruction;
+
+      const result = await runChapterEdit(project, chapter, action === "lift" ? "custom" : action, effectiveInstruction);
+
+      let newQuality: Record<string, any> | undefined;
+      if (action === "lift") {
+        const craft = resolveCraft(project.genre);
+        const scoreRaw = await askClaude(
+          `Du er en streng forlagsredaktør. Returner KUN gyldig JSON.\n\nVurder kapittelet mot rubrikken. Score 1-10 der 8+ er utgivelsesklart.\n\nRUBRIKK (${craft.label}):\n${craft.critique_rubric}\n\nKapittel «${chapter.chapter_title}»:\n---\n${result.draft.slice(0, 20000)}\n---\n\nJSON schema:\n{ "score": 8, "notes": ["string (maks 3)"] }`,
+          { model: "sonnet", maxTokens: 700, temperature: 0.3 },
+        );
+        const scored = safeJsonParse<{ score?: number; notes?: string[] }>(scoreRaw, {});
+        newQuality = {
+          score: Math.max(1, Math.min(10, Number(scored.score || 7))),
+          notes: asArray<string>(scored.notes).map(String).slice(0, 3),
+          at: new Date().toISOString(),
+        };
+      }
+
       chapters[index] = {
         ...chapter,
         previous_draft: chapter.draft,
         draft: result.draft,
-        last_edit: { action, instruction, summary: result.changeSummary, at: new Date().toISOString() },
+        last_edit: { action, instruction: effectiveInstruction.slice(0, 500), summary: result.changeSummary, at: new Date().toISOString() },
         formatted: false,
-        quality: undefined, // scoren gjelder ikke lenger etter omskriving
+        quality: newQuality, // undefined for vanlige endringer — scoren gjelder ikke lenger
       };
       const updated = await saveChapters(supabase, projectId, chapters);
       return NextResponse.json({
@@ -554,6 +583,7 @@ export async function POST(request: NextRequest) {
         mode,
         chapter_title: chapter.chapter_title,
         change_summary: result.changeSummary,
+        new_score: newQuality?.score ?? null,
         project: updated,
       });
     }
