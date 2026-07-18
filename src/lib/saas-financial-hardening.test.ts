@@ -7,6 +7,10 @@ const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/20260718170950_saas_stripe_financial_hardening.sql"),
   "utf8",
 ).toLowerCase();
+const indexesMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/20260718172540_saas_stripe_financial_indexes.sql"),
+  "utf8",
+).toLowerCase();
 
 test("legacy SaaS control-plane tables no longer allow browser access", () => {
   for (const table of [
@@ -53,5 +57,17 @@ test("all financial lifecycle RPCs are service-role only", () => {
   ]) {
     assert.match(migration, new RegExp(`revoke execute on function public\\.${rpc}\\([\\s\\S]*?from public, anon, authenticated`));
     assert.match(migration, new RegExp(`grant execute on function public\\.${rpc}\\([\\s\\S]*?to service_role`));
+  }
+});
+
+test("Stripe invoice and legacy opportunity foreign keys have covering indexes", () => {
+  for (const index of [
+    "core_stripe_invoices_tenant_subscription_idx",
+    "core_stripe_invoices_legacy_subscription_idx",
+    "core_stripe_invoices_legacy_app_idx",
+    "core_stripe_invoices_last_event_idx",
+    "saas_opportunities_saas_app_idx",
+  ]) {
+    assert.match(indexesMigration, new RegExp(`create index if not exists ${index}`));
   }
 });
