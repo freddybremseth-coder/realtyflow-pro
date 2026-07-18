@@ -129,6 +129,33 @@ export type DonaAnnaStock = {
   lot_status: string | null;
 };
 
+export type DonaAnnaStockMovement = {
+  id: string;
+  workspace_id: string;
+  owner_organization_id: string | null;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  lot_id: string | null;
+  lot_number: string | null;
+  warehouse_id: string;
+  warehouse_name: string;
+  movement_type: string;
+  quantity: string | number;
+  unit_cost: string | number;
+  currency: string;
+  source_type: string;
+  source_id: string | null;
+  order_number: string | null;
+  correlation_id: string | null;
+  external_reference: string | null;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  created_by_email: string;
+  created_at: string;
+};
+
 export type DonaAnnaOrder = {
   id: string;
   order_number: string;
@@ -263,6 +290,7 @@ export type DonaAnnaSnapshot = {
   warehouses: DonaAnnaWarehouse[];
   lots: DonaAnnaLot[];
   stock: DonaAnnaStock[];
+  stockMovements: DonaAnnaStockMovement[];
   orders: DonaAnnaOrder[];
   orderLines: DonaAnnaOrderLine[];
   posSessions: DonaAnnaPosSession[];
@@ -293,6 +321,7 @@ export type DonaAnnaCommand =
   | "adjust_inventory"
   | "create_order"
   | "order_action"
+  | "fulfill_order"
   | "pos_action"
   | "upsert_commission_rule"
   | "create_return"

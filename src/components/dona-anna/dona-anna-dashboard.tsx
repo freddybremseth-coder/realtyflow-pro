@@ -50,6 +50,7 @@ type CommandName =
   | "adjust_inventory"
   | "create_order"
   | "order_action"
+  | "fulfill_order"
   | "pos_action"
   | "upsert_commission_rule"
   | "create_return"
@@ -202,7 +203,7 @@ export function DonaAnnaDashboard() {
     {tab === "overview" && <Overview data={data} />}
     {tab === "products" && <Products data={data} busy={busy} runCommand={runCommand} />}
     {tab === "inventory" && <Inventory data={data} busy={busy} runCommand={runCommand} />}
-    {tab === "orders" && <Orders data={data} busy={busy} runCommand={runCommand} />}
+    {tab === "orders" && <div className="space-y-5"><Orders data={data} busy={busy} runCommand={runCommand} /><FulfillmentPanel data={data} busy={busy} runCommand={runCommand} /></div>}
     {tab === "pos" && <Pos data={data} busy={busy} runCommand={runCommand} />}
     {tab === "partners" && <Partners data={data} busy={busy} runCommand={runCommand} />}
     {tab === "quality" && <Quality data={data} busy={busy} runCommand={runCommand} />}
@@ -291,7 +292,8 @@ function Inventory({ data, busy, runCommand }: { data: DonaAnnaSnapshot; busy: s
       <FormCard title="Ny batch / lot" description="Matsporing fra produksjon til kunde." icon={ScanLine}><form onSubmit={lotSubmit} className="space-y-3"><Field label="Produkt"><ProductSelect data={data} name="productId" required /></Field><Field label="Lotnummer"><Input name="lotNumber" required /></Field><div className="grid grid-cols-2 gap-3"><Field label="Status"><select name="status" className={selectClass}><option value="planned">Planlagt</option><option value="quarantine">Karantene</option><option value="released">Frigitt</option></select></Field><Field label="Høsteår"><Input name="harvestYear" type="number" /></Field></div><div className="grid grid-cols-2 gap-3"><Field label="Produksjon"><Input name="productionDate" type="date" /></Field><Field label="Tapping"><Input name="bottlingDate" type="date" /></Field></div><Field label="Best før"><Input name="bestBeforeDate" type="date" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Opprinnelse"><Input name="originCountryCode" maxLength={2} defaultValue="ES" /></Field><Field label="Olivenvariant"><Input name="oliveVariety" /></Field></div><Field label="Økologisk status"><Input name="organicStatus" /></Field><Field label="Juridisk eier"><EntitySelect data={data} name="ownerOrganizationId" /></Field><Button className="w-full" disabled={busy === "upsert_lot"}>Lagre batch</Button></form></FormCard>
       <FormCard title="Lagerjustering" description="Alle endringer blir append-only bevegelser med sporbar årsak." icon={Boxes}><form onSubmit={adjustmentSubmit} className="space-y-3"><Field label="Produkt"><ProductSelect data={data} name="productId" required /></Field><Field label="Batch"><LotSelect data={data} name="lotId" /></Field><Field label="Varehus"><WarehouseSelect data={data} name="warehouseId" required /></Field><div className="grid grid-cols-2 gap-3"><Field label="Antall (+/-)"><Input name="quantity" inputMode="decimal" required /></Field><Field label="Enhetskost"><Input name="unitCost" inputMode="decimal" defaultValue="0" /></Field></div><div className="grid grid-cols-2 gap-3"><Field label="Valuta"><Input name="currency" maxLength={3} defaultValue="EUR" /></Field><Field label="Eier"><EntitySelect data={data} name="ownerOrganizationId" /></Field></div><Field label="Årsak"><Input name="reason" required placeholder="Opptelling / åpningsbalanse" /></Field><Button className="w-full" disabled={busy === "adjust_inventory"}>Bokfør bevegelse</Button></form></FormCard>
     </div>
-    <Card><CardHeader><CardTitle>Lagerbeholdning</CardTitle><CardDescription>Tilgjengelig = fysisk beholdning minus aktive reservasjoner.</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-3">Produkt</th><th>Varehus</th><th>Batch</th><th className="text-right">På lager</th><th className="text-right">Reservert</th><th className="text-right">Tilgjengelig</th><th className="text-right">Snittkost</th><th>Best før</th></tr></thead><tbody>{data.stock.map((stock) => <tr key={`${stock.owner_organization_id || "unowned"}-${stock.warehouse_id}-${stock.product_id}-${stock.lot_id || "no-lot"}`} className="border-t border-slate-800"><td className="p-3"><p className="font-medium text-white">{stock.product_name}</p><p className="font-mono text-xs text-slate-500">{stock.sku}</p></td><td>{stock.warehouse_name}</td><td>{stock.lot_number || "—"}</td><td className="text-right font-mono">{quantity(stock.on_hand)}</td><td className="text-right font-mono text-amber-300">{quantity(stock.reserved)}</td><td className="text-right font-mono text-emerald-300">{quantity(stock.available)}</td><td className="text-right font-mono">{money(stock.average_receipt_cost)}</td><td>{shortDate(stock.best_before_date)}</td></tr>)}{data.stock.length === 0 && <tr><td colSpan={8}><Empty text="Lagerbeholdningen er 0. Det er forventet før oppstart." /></td></tr>}</tbody></table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Lagerbeholdning</CardTitle><CardDescription>Tilgjengelig = fysisk beholdning minus aktive reservasjoner. Batch i karantene eller recall er ikke tilgjengelig for salg.</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-3">Produkt</th><th>Varehus</th><th>Batch</th><th className="text-right">På lager</th><th className="text-right">Reservert</th><th className="text-right">Tilgjengelig</th><th className="text-right">Snittkost</th><th>Best før</th></tr></thead><tbody>{data.stock.map((stock) => <tr key={`${stock.owner_organization_id || "unowned"}-${stock.warehouse_id}-${stock.product_id}-${stock.lot_id || "no-lot"}`} className="border-t border-slate-800"><td className="p-3"><p className="font-medium text-white">{stock.product_name}</p><p className="font-mono text-xs text-slate-500">{stock.sku}</p></td><td>{stock.warehouse_name}</td><td>{stock.lot_number || "—"}</td><td className="text-right font-mono">{quantity(stock.on_hand)}</td><td className="text-right font-mono text-amber-300">{quantity(stock.reserved)}</td><td className="text-right font-mono text-emerald-300">{quantity(stock.available)}</td><td className="text-right font-mono">{money(stock.average_receipt_cost)}</td><td>{shortDate(stock.best_before_date)}</td></tr>)}{data.stock.length === 0 && <tr><td colSpan={8}><Empty text="Lagerbeholdningen er 0. Det er forventet før oppstart." /></td></tr>}</tbody></table></CardContent></Card>
+    <Card><CardHeader><CardTitle>Lagerjournal</CardTitle><CardDescription>Append-only historikk over mottak, leveranser, returer og justeringer.</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-3">Tidspunkt</th><th>Transaksjon</th><th>Produkt / batch</th><th>Varehus</th><th>Ordre / referanse</th><th className="text-right">Antall</th><th className="text-right">Enhetskost</th></tr></thead><tbody>{data.stockMovements.map((movement) => <tr key={movement.id} className="border-t border-slate-800"><td className="p-3 text-slate-400">{shortDate(movement.occurred_at)}</td><td><Badge variant={numberValue(movement.quantity) >= 0 ? "success" : "warning"}>{movement.movement_type}</Badge></td><td><p className="font-medium text-white">{movement.product_name}</p><p className="font-mono text-xs text-slate-500">{movement.sku} · {movement.lot_number || "uten batch"}</p></td><td>{movement.warehouse_name}</td><td><p className="font-mono text-xs text-slate-300">{movement.order_number || movement.source_type}</p><p className="text-xs text-slate-500">{movement.external_reference || movement.reason || "—"}</p></td><td className={`text-right font-mono ${numberValue(movement.quantity) >= 0 ? "text-emerald-300" : "text-amber-300"}`}>{numberValue(movement.quantity) > 0 ? "+" : ""}{quantity(movement.quantity)}</td><td className="text-right font-mono">{money(movement.unit_cost, movement.currency)}</td></tr>)}{data.stockMovements.length === 0 && <tr><td colSpan={7}><Empty text="Ingen lagertransaksjoner ennå." /></td></tr>}</tbody></table></CardContent></Card>
   </div>;
 }
 
@@ -304,9 +306,85 @@ function Orders({ data, busy, runCommand }: { data: DonaAnnaSnapshot; busy: stri
       <div className="space-y-3">{lines.map((line, index) => <div key={line.clientId} className="grid gap-3 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 md:grid-cols-4 xl:grid-cols-[1.4fr_1.2fr_0.6fr_0.7fr_0.7fr_0.6fr_0.5fr_auto]"><Field label="Produkt"><select className={selectClass} value={line.productId} onChange={(event) => productChanged(index, event.target.value)} required><option value="">Velg</option>{data.products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></Field><Field label="Batch"><select className={selectClass} value={line.lotId} onChange={(event) => updateLine(index, { lotId: event.target.value })}><option value="">Ikke valgt</option>{data.lots.filter((lot) => lot.product_id === line.productId).map((lot) => <option key={lot.id} value={lot.id}>{lot.lot_number}</option>)}</select></Field><Field label="Antall"><Input value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} /></Field><Field label="Pris"><Input value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: event.target.value })} /></Field><Field label="Kost"><Input value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: event.target.value })} /></Field><Field label="Avgift %"><Input value={line.taxRate} onChange={(event) => updateLine(index, { taxRate: event.target.value })} /></Field><Field label="Rabatt %"><Input value={line.discountPercent} onChange={(event) => updateLine(index, { discountPercent: event.target.value })} /></Field><div className="flex items-end"><Button type="button" size="icon" variant="ghost" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}><RotateCcw size={15} /></Button></div></div>)}</div><div className="flex justify-between"><Button type="button" variant="outline" onClick={() => setLines((current) => [...current, makeLine(data.products[0])])}><Plus size={15} className="mr-2" />Ordrelinje</Button><Button disabled={busy === "create_order" || data.products.length === 0}>Opprett ordrekladd</Button></div></form></CardContent></Card><Card><CardHeader><CardTitle>Ordreoversikt</CardTitle></CardHeader><CardContent><OrderTable data={data} runCommand={runCommand} busy={busy} /></CardContent></Card></div>;
 }
 
+function FulfillmentPanel({ data, busy, runCommand }: { data: DonaAnnaSnapshot; busy: string; runCommand: Runner }) {
+  const eligibleOrders = useMemo(() => data.orders.filter((order) => {
+    if (order.order_type.includes("purchase")) return ["confirmed", "partially_fulfilled"].includes(order.status);
+    if (order.order_type === "pos") return ["confirmed", "reserved", "partially_fulfilled"].includes(order.status);
+    return ["reserved", "partially_fulfilled"].includes(order.status);
+  }), [data.orders]);
+  const [orderId, setOrderId] = useState(eligibleOrders[0]?.id || "");
+  const order = eligibleOrders.find((item) => item.id === orderId) || null;
+  const orderLines = useMemo(() => data.orderLines.filter((line) => (
+    line.order_id === orderId && numberValue(line.fulfilled_quantity) < numberValue(line.quantity)
+  )), [data.orderLines, orderId]);
+  const [drafts, setDrafts] = useState<Record<string, { quantity: string; lotId: string }>>({});
+
+  useEffect(() => {
+    if (!eligibleOrders.some((item) => item.id === orderId)) {
+      setOrderId(eligibleOrders[0]?.id || "");
+    }
+  }, [eligibleOrders, orderId]);
+
+  useEffect(() => {
+    setDrafts(Object.fromEntries(orderLines.map((line) => [line.id, {
+      quantity: String(numberValue(line.quantity) - numberValue(line.fulfilled_quantity)),
+      lotId: line.lot_id || "",
+    }])));
+  }, [orderLines]);
+
+  const updateDraft = (lineId: string, patch: Partial<{ quantity: string; lotId: string }>) => {
+    setDrafts((current) => ({
+      ...current,
+      [lineId]: { quantity: current[lineId]?.quantity || "0", lotId: current[lineId]?.lotId || "", ...patch },
+    }));
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!order) return;
+    const form = new FormData(event.currentTarget);
+    const lines = orderLines.flatMap((line) => {
+      const draft = drafts[line.id];
+      if (!draft || numberValue(draft.quantity) <= 0) return [];
+      return [{ orderLineId: line.id, lotId: nullable(draft.lotId), quantity: draft.quantity }];
+    });
+    if (lines.length === 0) return;
+    await runCommand("fulfill_order", {
+      orderId: order.id,
+      idempotencyKey: crypto.randomUUID(),
+      occurredAt: new Date().toISOString(),
+      reference: fieldValue(form, "reference"),
+      notes: fieldValue(form, "notes"),
+      lines,
+    }, `${order.order_type.includes("purchase") ? "Varemottaket" : "Leveringen"} er bokført på ${order.order_number}.`);
+  };
+
+  return <Card><CardHeader><CardTitle>Varemottak og levering</CardTitle><CardDescription>Registrer hele eller deler av en ordre. Hver innsending blir én idempotent, sporbar lagerhendelse.</CardDescription></CardHeader><CardContent>{eligibleOrders.length === 0 ? <Empty text="Ingen bekreftede ordre er klare for mottak eller levering." /> : <form onSubmit={submit} className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Field label="Ordre"><select value={orderId} onChange={(event) => setOrderId(event.target.value)} className={selectClass}>{eligibleOrders.map((item) => <option key={item.id} value={item.id}>{item.order_number} · {item.order_type} · {item.status}</option>)}</select></Field><Field label="Ekstern referanse"><Input name="reference" placeholder="Pakkseddel / fraktbrev" /></Field><Field label="Notat"><Input name="notes" placeholder="Valgfritt operatørnotat" /></Field></div><div className="space-y-3">{orderLines.map((line) => { const product = data.products.find((item) => item.id === line.product_id); const draft = drafts[line.id] || { quantity: "0", lotId: line.lot_id || "" }; const remaining = numberValue(line.quantity) - numberValue(line.fulfilled_quantity); const lots = data.lots.filter((lot) => lot.product_id === line.product_id && (order?.order_type.includes("purchase") ? ["planned", "quarantine", "released"].includes(lot.status) : lot.status === "released")); return <div key={line.id} className="grid gap-3 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 md:grid-cols-[1.4fr_1fr_0.7fr_0.7fr]"><div><p className="font-medium text-white">{line.product_name}</p><p className="font-mono text-xs text-slate-500">{line.sku} · bestilt {quantity(line.quantity)} · tidligere {quantity(line.fulfilled_quantity)}</p></div><Field label={product?.track_lots ? "Batch (påkrevd)" : "Batch"}><select className={selectClass} value={draft.lotId} onChange={(event) => updateDraft(line.id, { lotId: event.target.value })} required={Boolean(product?.track_lots)}><option value="">Uten batch</option>{lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.lot_number} · {lot.status}</option>)}</select></Field><Field label="Antall nå"><Input type="number" min="0" max={remaining} step="0.0001" value={draft.quantity} onChange={(event) => updateDraft(line.id, { quantity: event.target.value })} /></Field><div className="flex items-end justify-end pb-2 text-xs text-slate-500">Gjenstår {quantity(remaining)}</div></div>; })}</div><div className="flex justify-end"><Button disabled={busy === "fulfill_order" || orderLines.length === 0}>{order?.order_type.includes("purchase") ? "Bokfør varemottak" : "Bokfør levering"}</Button></div></form>}</CardContent></Card>;
+}
+
 function OrderTable({ data, compact = false, runCommand, busy = "" }: { data: DonaAnnaSnapshot; compact?: boolean; runCommand?: Runner; busy?: string }) {
   const orders = compact ? data.orders.slice(0, 8) : data.orders;
-  const action = async (order: DonaAnnaOrder, name: "confirm" | "reserve" | "fulfill" | "cancel") => { if (!runCommand) return; await runCommand("order_action", { orderId: order.id, action: name }, `Ordre ${order.order_number} er oppdatert.`); };
+  const action = async (order: DonaAnnaOrder, name: "confirm" | "reserve" | "fulfill" | "cancel") => {
+    if (!runCommand) return;
+    if (name === "fulfill") {
+      const lines = data.orderLines
+        .filter((line) => line.order_id === order.id && numberValue(line.fulfilled_quantity) < numberValue(line.quantity))
+        .map((line) => ({
+          orderLineId: line.id,
+          lotId: line.lot_id,
+          quantity: String(numberValue(line.quantity) - numberValue(line.fulfilled_quantity)),
+        }));
+      if (lines.length === 0) return;
+      await runCommand("fulfill_order", {
+        orderId: order.id,
+        idempotencyKey: crypto.randomUUID(),
+        occurredAt: new Date().toISOString(),
+        lines,
+      }, `${order.order_type.includes("purchase") ? "Varemottaket" : "Leveringen"} er bokført på ${order.order_number}.`);
+      return;
+    }
+    await runCommand("order_action", { orderId: order.id, action: name }, `Ordre ${order.order_number} er oppdatert.`);
+  };
   const payment = async (order: DonaAnnaOrder) => { if (!runCommand) return; const amount = window.prompt("Betalt beløp", String(Math.max(numberValue(order.total) - numberValue(order.paid_amount), 0))); if (!amount) return; const method = window.prompt("Metode: cash, card, bank_transfer, vipps, stripe eller other", order.order_type === "pos" ? "cash" : "bank_transfer") || "bank_transfer"; await runCommand("order_action", { orderId: order.id, action: "payment", amount, method, paymentDate: new Date().toISOString() }, `Betaling er registrert på ${order.order_number}.`); };
   const invoice = async (order: DonaAnnaOrder) => { if (!runCommand) return; const result = await runCommand("create_invoice", { orderId: order.id }, `Fakturakladd er opprettet fra ${order.order_number}.`); const documentId = result?.documentId; if (typeof documentId === "string") window.location.assign(`/billing/documents/${documentId}`); };
   return <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-3">Ordre</th><th>Type/kanal</th><th>Motpart</th><th>Varehus</th><th className="text-right">Total</th><th>Betaling</th><th>Status</th>{!compact && <th className="text-right">Handling</th>}</tr></thead><tbody>{orders.map((order) => <tr key={order.id} className="border-t border-slate-800 align-top"><td className="p-3"><p className="font-mono font-medium text-white">{order.order_number}</p><p className="text-xs text-slate-500">{shortDate(order.ordered_at)}</p></td><td>{order.order_type}<p className="text-xs text-slate-500">{order.sales_channel}</p></td><td>{order.party_name || "—"}{order.sales_rep_name && <p className="text-xs text-slate-500">Selger: {order.sales_rep_name}</p>}</td><td>{order.warehouse_name || "—"}</td><td className="text-right font-mono text-slate-200">{money(order.total, order.currency)}</td><td><Badge variant={order.payment_status === "paid" ? "success" : "secondary"}>{order.payment_status}</Badge></td><td><Badge variant={order.status === "fulfilled" ? "success" : order.status === "cancelled" ? "destructive" : "warning"}>{order.status}</Badge></td>{!compact && <td><div className="flex justify-end gap-1">{order.status === "draft" && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => action(order, "confirm")}>Bekreft</Button>}{order.status === "confirmed" && ["sale", "intercompany_sale"].includes(order.order_type) && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => action(order, "reserve")}>Reserver</Button>}{((order.status === "confirmed" && ["purchase", "intercompany_purchase", "pos"].includes(order.order_type)) || order.status === "reserved") && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => action(order, "fulfill")}>{order.order_type.includes("purchase") ? "Motta" : "Lever"}</Button>}{order.status !== "draft" && order.payment_status !== "paid" && <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => payment(order)}>Betaling</Button>}{["sale", "intercompany_sale"].includes(order.order_type) && order.status !== "draft" && !order.billing_document_id && <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => invoice(order)}>Faktura</Button>}{order.billing_document_id && <Button asChild size="icon" variant="ghost"><Link href={`/billing/documents/${order.billing_document_id}`}><ArrowUpRight size={15} /></Link></Button>}{!["fulfilled", "cancelled", "returned"].includes(order.status) && <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => action(order, "cancel")}>Avbryt</Button>}</div></td>}</tr>)}{orders.length === 0 && <tr><td colSpan={8}><Empty text="Ingen ordre ennå." /></td></tr>}</tbody></table></div>;
