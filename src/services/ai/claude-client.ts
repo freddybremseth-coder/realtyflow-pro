@@ -151,48 +151,71 @@ export async function askClaude(
     return text;
   };
 
-  // Try Anthropic first
+  // Try Anthropic first — med automatisk backoff-retry på rate limit (429)
+  // og «overloaded» (529), så forbigående grenser leger seg selv.
   if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      const claude = getClient();
-      const model = options?.model === 'sonnet'
-        ? 'claude-sonnet-4-20250514'
-        : 'claude-haiku-4-5-20251001';
-
-      const response = await claude.messages.create({
-        model,
-        max_tokens: options?.maxTokens ?? 1000,
-        temperature: options?.temperature ?? 0.7,
-        ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const textBlock = response.content.find((b) => b.type === 'text');
-      const accepted = acceptGeneratedText(
-        'Anthropic',
-        textBlock?.text || '',
-        !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
-      );
-      if (accepted !== null) return accepted;
-    } catch (err: any) {
-      const msg = err?.message || err?.error?.message || String(err);
-      // anthropicOnly: ikke degrader stille til svakere modell — feil tydelig.
-      if (options?.anthropicOnly) {
-        const isCredits = msg.includes('credit balance') || msg.includes('billing') || msg.includes('rate_limit') || err?.status === 429;
-        throw new Error(
-          isCredits
-            ? 'Anthropic AI er midlertidig utilgjengelig (kreditt eller rate limit). Vent litt og prøv igjen, eller sjekk Anthropic-kontoen.'
-            : `Anthropic AI-feil: ${msg}`,
+    const model = options?.model === 'sonnet'
+      ? 'claude-sonnet-4-20250514'
+      : 'claude-haiku-4-5-20251001';
+    const maxAttempts = 4;
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const claude = getClient();
+        const response = await claude.messages.create({
+          model,
+          max_tokens: options?.maxTokens ?? 1000,
+          temperature: options?.temperature ?? 0.7,
+          ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const textBlock = response.content.find((b) => b.type === 'text');
+        const accepted = acceptGeneratedText(
+          'Anthropic',
+          textBlock?.text || '',
+          !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
         );
+        if (accepted !== null) return accepted;
+        break; // gyldig svar men avvist av validator → gå til fallback
+      } catch (err: any) {
+        lastErr = err;
+        const status = err?.status;
+        const msg = err?.message || err?.error?.message || String(err);
+        const retriable = status === 429 || status === 529 || /overloaded|rate.?limit/i.test(msg);
+        if (retriable && attempt < maxAttempts - 1) {
+          // Respekter Retry-After hvis oppgitt, ellers eksponentiell backoff.
+          const retryAfter = Number(err?.headers?.['retry-after']);
+          const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(2 ** attempt * 2000, 15000);
+          console.warn(`[AI] Anthropic ${status || 'feil'} — venter ${waitMs}ms og prøver igjen (${attempt + 1}/${maxAttempts})`);
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+        break; // ikke-retriable, eller oppbrukte forsøk
       }
-      const isCredits = msg.includes('credit balance') || msg.includes('billing') || msg.includes('rate_limit');
-      const isOverloaded = msg.includes('overloaded') || err?.status === 529;
-      if (isCredits || isOverloaded || err?.status === 400 || err?.status === 429) {
-        console.warn(`[AI Fallback] Anthropic unavailable (${err?.status || 'error'}), trying Gemini...`);
-      } else {
-        console.error(`[AI] Anthropic error:`, msg);
-        // For unexpected errors, still try fallback
-      }
+    }
+
+    // Klassifiser feilen presist for tydelig beskjed / riktig fallback-beslutning.
+    const err = lastErr || {};
+    const msg = err?.message || err?.error?.message || String(err);
+    const status = err?.status;
+    const isRateLimit = status === 429 || /rate.?limit|overloaded/i.test(msg) || status === 529;
+    const isCredit = /credit balance|insufficient|billing/i.test(msg);
+    const isAuth = status === 401 || /authentication|invalid.*api.?key|unauthorized/i.test(msg);
+    if (options?.anthropicOnly) {
+      throw new Error(
+        isRateLimit
+          ? 'Anthropic-grensen er nådd akkurat nå (rate limit) — for mange forespørsler på kort tid. Vent 1–2 minutter og prøv igjen. (Dette er IKKE mangel på kreditt.)'
+          : isCredit
+            ? 'Anthropic-kontoen er tom for kreditt. Fyll på på console.anthropic.com → Billing.'
+            : isAuth
+              ? 'Anthropic API-nøkkelen er ugyldig eller mangler tilgang — sjekk ANTHROPIC_API_KEY i Vercel.'
+              : `Anthropic AI-feil: ${msg}`,
+      );
+    }
+    if (isRateLimit || isCredit || status === 400) {
+      console.warn(`[AI Fallback] Anthropic unavailable (${status || 'error'}), trying Gemini...`);
+    } else {
+      console.error(`[AI] Anthropic error:`, msg);
     }
   }
   if (options?.anthropicOnly) {
