@@ -138,6 +138,7 @@ export const SIDEBAR_NAV = {
     { label: "Forretningsoversikt", href: "/business-overview", icon: "PieChart" },
   ],
   saas: [
+    { label: "Platform & moduler", href: "/platform", icon: "Boxes" },
     { label: "SaaS & abonnement", href: "/saas", icon: "Rocket" },
     { label: "DemoSites CRM", href: "/demosites", icon: "Globe" },
     { label: "Revenue Engine", href: "/revenue-engine", icon: "Target" },

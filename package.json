@@ -48,7 +48,7 @@
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts",
     "test:billing": "tsx --test src/lib/billing/money.test.ts src/lib/billing/tax-engine.test.ts src/lib/billing/migration-contract.test.ts",
     "test:dona-anna": "tsx --test src/lib/dona-anna/validation.test.ts src/lib/dona-anna/integration-auth.test.ts src/lib/dona-anna/migration-contract.test.ts",
-    "test:platform": "tsx --test src/lib/platform/migration-contract.test.ts"
+    "test:platform": "NODE_OPTIONS=--conditions=react-server tsx --test src/lib/platform/migration-contract.test.ts src/lib/platform/validation.test.ts src/app/api/platform/routes-auth.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

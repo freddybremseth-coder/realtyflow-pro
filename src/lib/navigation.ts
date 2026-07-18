@@ -142,6 +142,7 @@ const GROUPS: Array<{
     label: "Forretningsområder",
     icon: "Briefcase",
     hrefs: [
+      "/platform",
       "/demosites",
       "/saas",
       "/revenue-engine",
