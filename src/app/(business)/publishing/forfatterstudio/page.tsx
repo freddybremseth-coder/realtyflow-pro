@@ -59,6 +59,7 @@ type Chapter = {
   formatted?: boolean;
   last_edit?: { action?: string; instruction?: string; summary?: string; at?: string };
   quality?: { score?: number; notes?: string[]; revised?: boolean; at?: string };
+  to_ten?: { already_strong?: string; suggestions?: Array<{ type?: string; where?: string; need?: string; instruction_template?: string }>; at?: string };
   research?: string;
 };
 
@@ -391,6 +392,17 @@ export default function ForfatterstudioPage() {
     );
     if (data) setStatus("Stemmeprøven er lagret — all skriving og redigering bruker den nå.");
   }, [project, voiceText, chapter, studioPost]);
+
+  const runAdviseToTen = useCallback(async () => {
+    if (!project || !chapter) return;
+    setStatus("Toppredaktøren leser kapittelet og finner hva som mangler for en 10-er…");
+    const data = await studioPost(
+      { mode: "advise_to_ten", project_id: project.id, chapter_title: chapter.chapter_title },
+      "advise",
+      chapter.chapter_title,
+    );
+    if (data) setStatus("Klart — se «Hva mangler for 10?» under teksten.");
+  }, [project, chapter, studioPost]);
 
   const runScoreAll = useCallback(async () => {
     if (!project) return;
@@ -1410,6 +1422,11 @@ export default function ForfatterstudioPage() {
                     <Button size="sm" variant="outline" onClick={() => runEdit("simplify")} disabled={busy}>
                       Forenkle
                     </Button>
+                    <Button size="sm" variant="outline" onClick={runAdviseToTen} disabled={busy}
+                      className="border-amber-500/50 text-amber-600 dark:text-amber-400">
+                      {busyAction === "advise" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                      Hva mangler for 10?
+                    </Button>
                     {chapter.previous_draft ? (
                       <Button size="sm" variant="ghost" onClick={revertChapter} disabled={busy}>
                         <Undo2 className="mr-1 h-4 w-4" /> Angre AI
@@ -1443,6 +1460,36 @@ export default function ForfatterstudioPage() {
                           {(chapter.quality.notes || []).map((note, i) => <li key={i}>{note}</li>)}
                         </ul>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {chapter.to_ten && (chapter.to_ten.suggestions || []).length > 0 ? (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+                      <p className="font-semibold text-amber-700 dark:text-amber-300">Hva mangler for 10?</p>
+                      {chapter.to_ten.already_strong ? (
+                        <p className="mt-1 text-muted-foreground"><span className="font-medium">Allerede sterkt:</span> {chapter.to_ten.already_strong}</p>
+                      ) : null}
+                      <p className="mt-2 text-muted-foreground">Dette må komme fra deg — det AI-en ikke kan finne opp. Trykk «Bruk denne» for å legge malen i egendefinert-feltet og fyll inn ditt eget:</p>
+                      <div className="mt-2 space-y-2">
+                        {(chapter.to_ten.suggestions || []).map((s, i) => (
+                          <div key={i} className="rounded border bg-background/60 p-2">
+                            <p>
+                              <span className="mr-1 inline-block rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">{s.type || "tips"}</span>
+                              {s.where ? <span className="text-muted-foreground">{s.where}: </span> : null}
+                              {s.need}
+                            </p>
+                            {s.instruction_template ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="mt-1 h-6 px-2 text-[11px]"
+                                onClick={() => { setCustomInstruction(String(s.instruction_template)); setStatus("Malen er lagt i «Egendefinert endring» — fyll inn ditt eget og trykk «Gjør endringen»."); }}
+                              >
+                                Bruk denne →
+                              </Button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   {chapter.last_edit?.summary ? (
