@@ -245,7 +245,7 @@ const EDIT_ACTIONS: Record<string, string> = {
   improve:
     "Forbedre kapittelet som en prisbelønt redaktør: strammere språk, bedre flyt, sterkere åpning og avslutning. Behold forfatterens stemme, alle fakta og omtrent samme lengde.",
   expand:
-    "Utvid kapittelet med mer dybde: flere eksempler, forklaringer og konkrete detaljer som gir leseren mer verdi. Behold strukturen og forfatterens stemme. Ikke finn opp fakta, personer eller hendelser.",
+    "GJØR KAPITTELET BETYDELIG LENGRE. Utvid hvert eksisterende poeng: utdyp resonnementet, legg til konkrete eksempler og situasjoner leseren kjenner seg igjen i, gi bakgrunn og kontekst, forklar hvorfor det er viktig, og bind avsnittene sammen med rikere overganger. Å utdype, forklare og eksemplifisere rundt det som allerede står er IKKE å finne opp fakta — det er å utvikle materialet. Behold forfatterens stemme og alt eksisterende innhold, og bygg videre på det.",
   simplify:
     "Forenkle kapittelet: kortere setninger, tydeligere språk, lettere å lese. Behold alt meningsinnhold.",
   custom: "Følg instruksen fra forfatteren nøyaktig.",
@@ -280,17 +280,25 @@ async function runChapterEdit(
   const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
   const originalDraft = String(chapter.draft || "");
   const originalWords = wordCount(originalDraft);
-  // «Utvid» skal vokse; alt annet skal beholde lengden. AI-er har en sterk
-  // tendens til å komprimere når de skriver om — derfor både eksplisitt
-  // lengdekrav i prompten OG hard kontroll av svaret etterpå.
-  const minWords = action === "expand" ? originalWords : Math.round(originalWords * 0.9);
+  const isExpand = action === "expand";
+  // «Utvid» skal vokse markant (mål ~2x, minst ~800 ord). Alt annet skal
+  // beholde lengden. Guarden avviser aldri en LENGRE tekst — bare tap.
+  const expandTarget = Math.max(originalWords * 2, 800);
+  const minWords = isExpand ? originalWords : Math.round(originalWords * 0.9);
+  const lengthBlock = isExpand
+    ? `LENGDEKRAV (ufravikelig):
+- Originalen er ${originalWords} ord. Ditt kapittel skal være BETYDELIG lengre — sikt mot ca. ${expandTarget} ord, og aldri under ${minWords}.
+- Behold alt fra originalen og bygg videre. Ikke komprimer, ikke oppsummer.`
+    : `LENGDEKRAV (ufravikelig):
+- Originalkapittelet er ${originalWords} ord. Ditt ferdige kapittel skal være på MINST ${minWords} ord.
+- Du skal ALDRI komprimere, kutte avsnitt, slå sammen seksjoner eller fjerne innhold — forbedre setning for setning, avsnitt for avsnitt.
+- Alt innhold, alle poenger, eksempler, navn og fakta fra originalen skal finnes igjen i din versjon.`;
 
   const buildPrompt = (extraDemand: string) => `
 Du er en prisbelønt forfatter og manusredaktør.
 
 Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
-Språk: ${project.language || "no"} (svar på samme språk som kapittelet er skrevet i)
-Sjanger: ${craft.label}
+Målgruppe: ${project.audience || "generell"} · Språk: ${project.language || "no"} (svar på samme språk som kapittelet) · Sjanger: ${craft.label}
 
 Oppgave: ${task}
 ${instruction ? `Forfatterens instruks: ${instruction}` : ""}
@@ -298,14 +306,11 @@ ${voice}
 HÅNDVERKSREGLER (${craft.label}):
 ${craft.writing_rules}
 
-LENGDEKRAV (ufravikelig):
-- Originalkapittelet er ${originalWords} ord. Ditt ferdige kapittel skal være på MINST ${minWords} ord.
-- Du skal ALDRI komprimere, kutte avsnitt, slå sammen seksjoner eller fjerne innhold — forbedre setning for setning, avsnitt for avsnitt.
-- Alt innhold, alle poenger, eksempler, navn og fakta fra originalen skal finnes igjen i din versjon.
+${lengthBlock}
 ${extraDemand}
 
 Viktige regler:
-- ALDRI finn opp fakta, personer, hendelser, datoer eller sitater.
+- ALDRI finn opp harde fakta, personer, hendelser, datoer eller sitater. (Å utdype, forklare og gi generelle eksempler rundt temaet er tillatt.)
 - Behold markdown-struktur hvis kapittelet har det.
 - Returner hele det ferdige kapittelet, ikke bare endringene.
 
@@ -321,24 +326,35 @@ Deretter HELE det ferdige kapittelet i ren markdown.
 `;
 
   const attempt = async (extraDemand: string) => {
-    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: 0.4 });
+    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: isExpand ? 0.55 : 0.4 });
     return extractPlainDraft(raw);
   };
 
   let { draft, summary } = await attempt("");
-  // For kort svar = innhold har forsvunnet. Ett strengere forsøk, deretter
-  // avbrytes redigeringen slik at originalen står urørt.
-  if (!draft || wordCount(draft) < originalWords * 0.7) {
+  // For kort svar = utvidelsen/redigeringen mislyktes. Prøv strengere
+  // (to ganger for utvid, som er mest utsatt), ellers avbryt uten å lagre.
+  const floor = () => !draft || wordCount(draft) < (isExpand ? originalWords : originalWords * 0.7);
+  const maxRetries = isExpand ? 2 : 1;
+  for (let r = 0; r < maxRetries && floor(); r += 1) {
     const retry = await attempt(
-      `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord). Dette er uakseptabelt. Gå gjennom originalen avsnitt for avsnitt og behold ALT — svaret skal være minst ${minWords} ord.`,
+      isExpand
+        ? `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord) — du KOMPRIMERTE i stedet for å utvide. Skriv kapittelet på nytt og gjør det MYE lengre: utdyp hvert avsnitt, legg til flere eksempler, forklaringer og kontekst. Mål: ca. ${expandTarget} ord.`
+        : `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord). Dette er uakseptabelt. Gå gjennom originalen avsnitt for avsnitt og behold ALT — svaret skal være minst ${minWords} ord.`,
     );
-    draft = retry.draft;
-    summary = retry.summary || summary;
+    if (retry.draft && wordCount(retry.draft) > wordCount(draft || "")) {
+      draft = retry.draft;
+      summary = retry.summary || summary;
+    }
   }
   if (!draft || draft.length < 200) throw new Error("AI-en returnerte ikke et gyldig kapittel. Ingenting er endret — prøv igjen.");
-  if (wordCount(draft) < originalWords * 0.7) {
+  if (isExpand && wordCount(draft) < originalWords) {
     throw new Error(
-      `AI-en leverte et for kort kapittel (${wordCount(draft)} av ${originalWords} ord) — endringen ble IKKE lagret, originalen står urørt. Prøv igjen, eller del kapittelet opp først.`,
+      `Klarte ikke å gjøre kapittelet lengre (endte på ${wordCount(draft)} av ${originalWords} ord) — kapittelet er tynt på innhold å bygge på. Originalen står urørt. Skriv noen stikkord eller detaljer du vil ha med i «Egendefinert endring»-feltet, så veved AI-en dem inn.`,
+    );
+  }
+  if (!isExpand && wordCount(draft) < originalWords * 0.7) {
+    throw new Error(
+      `AI-en leverte et for kort kapittel (${wordCount(draft)} av ${originalWords} ord) — endringen ble IKKE lagret, originalen står urørt. Prøv igjen, eller bruk «Egendefinert endring» med tydelig instruks.`,
     );
   }
   return { draft, changeSummary: summary };
