@@ -781,6 +781,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project: updated });
     }
 
+    // «Hva mangler for 10?»: rådgivning i stedet for omskriving. Peker ut det
+    // eneste-forfatteren-kan-tilføre (ekte historier, tall, eksempler, en
+    // mening med kant) som ville løftet kapittelet til topps — med hvor i
+    // kapittelet, hvorfor, og en ferdig instruks-mal å fylle ut.
+    if (mode === "advise_to_ten") {
+      const { index, chapter } = findChapter(chapters, String(body.chapter_title || ""));
+      if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
+      const craft = resolveCraft(project.genre);
+      const raw = await askClaude(
+        `Du er en av landets fremste forlagsredaktører. Kapittelet under er teknisk godt, men mangler det siste for en toppkarakter. Returner KUN gyldig JSON.
+
+Din jobb: fortell forfatteren PRESIST hva DE selv må tilføre av EGET materiale for å løfte kapittelet til 10/10 — ting en AI ikke kan eller bør finne opp: personlige historier og opplevelser, konkrete tall fra virkeligheten, ekte eksempler/case, en tydelig mening med kant, en overraskende innsikt.
+
+For hvert forslag:
+- "type": en av "historie" | "tall" | "eksempel" | "mening" | "innsikt"
+- "where": hvor i kapittelet det bør inn (f.eks. «i åpningen», «etter avsnittet om priser»)
+- "need": hva slags input trengs, konkret og spesifikt for DETTE kapittelet
+- "instruction_template": en ferdig instruks forfatteren kan lime inn i «Egendefinert endring» og fylle inn sitt eget, med [FYLL INN …]-plassholder
+
+Sjanger: ${craft.label} · Bok: "${project.title}" · Målgruppe: ${project.audience || "generell"}
+
+Kapittel «${chapter.chapter_title}»:
+---
+${String(chapter.draft || "").slice(0, 22000)}
+---
+
+Gi 3-5 forslag, det viktigste først. Returner også 1-2 setninger om hva som allerede er sterkt.
+
+JSON schema:
+{ "already_strong": "string", "suggestions": [{ "type": "string", "where": "string", "need": "string", "instruction_template": "string" }] }`,
+        { model: "sonnet", maxTokens: 2500, temperature: 0.5 },
+      );
+      const advice = safeJsonParse<{ already_strong?: string; suggestions?: Array<Record<string, string>> }>(raw, {
+        already_strong: "",
+        suggestions: [],
+      });
+      const toTen = {
+        already_strong: String(advice.already_strong || ""),
+        suggestions: asArray<Record<string, string>>(advice.suggestions).slice(0, 5),
+        at: new Date().toISOString(),
+      };
+      chapters[index] = { ...chapter, to_ten: toTen };
+      const updated = await saveChapters(supabase, projectId, chapters);
+      return NextResponse.json({ success: true, mode, to_ten: toTen, project: updated });
+    }
+
     // «Skriv på nytt»: lag en forbedret/endret utgave av hele boken etter
     // forfatterens instruks. Oppretter et NYTT prosjekt med revidert
     // kapitteloversikt der hvert kapittel peker på kildekapittelet det
