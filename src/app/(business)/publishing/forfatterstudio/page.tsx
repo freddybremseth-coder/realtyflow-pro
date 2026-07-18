@@ -277,7 +277,7 @@ export default function ForfatterstudioPage() {
   }, [project, chapter, draftText, studioPost]);
 
   const runEdit = useCallback(
-    async (action: string) => {
+    async (action: string, target?: number) => {
       if (!project || !chapter) return;
       // Ulagrede endringer i editoren lagres automatisk først, så AI-en
       // jobber videre på den nyeste teksten din.
@@ -301,6 +301,7 @@ export default function ForfatterstudioPage() {
           project_id: project.id,
           chapter_title: chapter.chapter_title,
           action,
+          target,
           instruction: action === "custom" ? customInstruction : "",
         },
         `edit:${action}`,
@@ -1404,6 +1405,11 @@ export default function ForfatterstudioPage() {
                           <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => runEdit("lift")} disabled={busy}>
                             {busyAction === "edit:lift" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Wand2 className="mr-1 h-3 w-3" />}
                             Løft til 8+ (retter punktene under)
+                          </Button>
+                        ) : Number(chapter.quality.score) < 10 ? (
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => runEdit("lift", 10)} disabled={busy}>
+                            {busyAction === "edit:lift" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                            Løft mot 10
                           </Button>
                         ) : null}
                       </div>
