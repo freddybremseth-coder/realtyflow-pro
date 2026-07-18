@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptPassword } from "@/services/email/crypto";
-import { sendEmail, type SmtpConfig } from "@/services/email/smtp-sender";
+import { sendEmail, type OutgoingAttachment, type SmtpConfig } from "@/services/email/smtp-sender";
 
 /**
  * Send a one-off email from a brand's configured SMTP account.
@@ -20,6 +20,7 @@ export async function sendBrandEmail(
     subject: string;
     bodyText: string;
     bodyHtml?: string;
+    attachments?: OutgoingAttachment[];
     /** Eksplisitt avsenderadresse når et merke har flere konfig-rader
      *  (f.eks. pinosoecolife: freddy@ vs post@). */
     fromAddress?: string;
@@ -64,6 +65,7 @@ export async function sendBrandEmail(
     subject: params.subject,
     bodyText: params.bodyText,
     bodyHtml: params.bodyHtml,
+    attachments: params.attachments,
   });
 
   if (!result.success) {

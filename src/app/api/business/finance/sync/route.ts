@@ -45,7 +45,7 @@ function getOliviaSupabase() {
 
 function getOliviaSchemaCandidates() {
   const configured = String(process.env.OLIVIA_SCHEMA || "").trim();
-  const ordered = [configured, "olivia", "public"].filter(Boolean);
+  const ordered = [configured, "olivia"].filter(Boolean);
   return Array.from(new Set(ordered));
 }
 

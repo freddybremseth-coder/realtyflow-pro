@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { getDonaAnnaSupabase } from "@/lib/dona-anna/supabase";
+import { loadDonaAnnaSnapshot } from "@/services/dona-anna/commerce-service";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -29,7 +31,7 @@ function getOliviaHost() {
 
 function getOliviaSchemaCandidates() {
   const configured = String(process.env.OLIVIA_SCHEMA || "").trim();
-  const ordered = [configured, "olivia", "public"].filter(Boolean);
+  const ordered = [configured, "olivia"].filter(Boolean);
   return Array.from(new Set(ordered));
 }
 
@@ -144,6 +146,25 @@ export async function GET(request: NextRequest) {
     const warnings = Object.entries(tableErrors)
       .filter(([, message]) => isCriticalOliviaTableError(message))
       .map(([table, message]) => `${table}: ${message}`);
+    const canonicalClient = getDonaAnnaSupabase();
+    let canonicalCommerce = null;
+    if (canonicalClient) {
+      try {
+        const snapshot = await loadDonaAnnaSnapshot(canonicalClient);
+        canonicalCommerce = {
+          source: "realtyflow",
+          metrics: snapshot.metrics,
+          products: snapshot.products,
+          priceLists: snapshot.priceLists,
+          priceItems: snapshot.priceItems,
+          warehouses: snapshot.warehouses,
+          lots: snapshot.lots,
+          stock: snapshot.stock,
+        };
+      } catch (error) {
+        warnings.push(`Canonical commerce: ${error instanceof Error ? error.message : "unavailable"}`);
+      }
+    }
 
     return NextResponse.json({
       source: "supabase",
@@ -154,6 +175,8 @@ export async function GET(request: NextRequest) {
         (settingsRes.status === "fulfilled" && (settingsRes.value as any).schema) ||
         null,
       configuredSeparateOliviaDb: Boolean(process.env.OLIVIA_SUPABASE_URL && process.env.OLIVIA_SUPABASE_KEY),
+      commerceSystemOfRecord: "realtyflow",
+      canonicalCommerce,
       warnings,
       tableErrors,
       farmName: settings?.farm_name || "DonaAnna",

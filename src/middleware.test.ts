@@ -42,3 +42,11 @@ test("middleware redirects cron requests without valid cron credentials", async 
     "https://realtyflow.test/login?next=%2Fapi%2Fcron%2Flead-nurture%3Fdry%3D1",
   );
 });
+
+test("middleware passes Doña Anna integrations to route-level Bearer authentication", async () => {
+  const response = await middleware(request("/api/dona-anna/integrations/olivia"));
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-middleware-next"), "1");
+  assert.equal(response.headers.get("location"), null);
+});
