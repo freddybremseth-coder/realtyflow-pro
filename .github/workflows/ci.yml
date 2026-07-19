@@ -74,6 +74,8 @@ jobs:
         run: npm run test:continuous-improvement
       - name: Navigation Information Architecture tests
         run: npm run test:navigation
+      - name: DemoSites Signature design tests
+        run: npm run test:demosites-design
       - name: Build
         id: next_build
         shell: bash
