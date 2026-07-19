@@ -1501,6 +1501,89 @@ Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, in
       return NextResponse.json({ success: true, mode, project: updated });
     }
 
+    // Klargjør boken for Amazon KDP: generer salgs-metadata (beskrivelse,
+    // 7 søkeord, kategorier, pris) og returner en sjekkliste. Selve
+    // opplastingen gjør forfatteren på kdp.amazon.com — KDP har ingen
+    // publiserings-API — men EPUB + denne metadataen er alt de trenger.
+    if (mode === "kdp_package") {
+      if (chapters.length === 0) return NextResponse.json({ error: "Boken har ingen kapitler ennå." }, { status: 400 });
+      const totalWords = chapters.reduce((s, c) => s + wordCount(String(c.draft || "")), 0);
+      const meta = (project.metadata_plan || {}) as Record<string, any>;
+      const hasCover = !!(meta.cover_image_url || meta.image_plan?.cover?.image_url);
+      const craft = resolveCraft(project.genre);
+      const lang = String(project.language || "no");
+      const sample = chapters
+        .slice(0, 6)
+        .map((c) => `## ${c.chapter_title}\n${String(c.draft || "").slice(0, 1500)}`)
+        .join("\n\n");
+      const kdpPrompt = `Du er ekspert på Amazon KDP-utgivelse og metadata som selger. Returner KUN gyldig JSON.
+
+Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
+Språk: ${lang} · Sjanger: ${craft.label} · Målgruppe: ${project.audience || "generell"}
+Lengde: ~${totalWords} ord fordelt på ${chapters.length} kapitler.
+
+Utdrag fra boken:
+---
+${sample.slice(0, 12000)}
+---
+
+Lag KDP-metadata som maksimerer synlighet og salg. Beskrivelsen skrives på bokens språk (${lang}) som en selgende bokomtale med krok i første setning.
+
+JSON schema (fyll alle felt):
+{
+  "description_html": "150-250 ord salgsomtale i enkel HTML (kun <p>, <b>, <br>). Krok først, deretter hva leseren får, så en avslutning som lokker til kjøp.",
+  "subtitle_suggestion": "forslag til undertittel som styrker søkbarhet (kan ligne dagens)",
+  "keywords": ["7 søkeord/fraser kjøpere FAKTISK søker etter i denne nisjen — ikke gjenta boktittelen"],
+  "categories": ["3 forslag til KDP-kategoristier, f.eks. 'Books > Business & Money > Entrepreneurship'"],
+  "bisac": ["2 BISAC-emner/koder"],
+  "price_usd": 9.99,
+  "price_local": { "currency": "NOK", "amount": 99 },
+  "reading_age": "kort tekst eller tom streng"
+}`;
+      let parsed = safeJsonParse<Record<string, any>>(
+        await askClaude(kdpPrompt, { model: "sonnet", maxTokens: 1600, temperature: 0.5 }),
+        {},
+      );
+      if (!parsed || !parsed.description_html) {
+        parsed = safeJsonParse<Record<string, any>>(
+          await askClaude(`${kdpPrompt}\n\nDu MÅ returnere gyldig JSON med alle feltene fylt ut.`, { model: "sonnet", maxTokens: 1600, temperature: 0.4 }),
+          {},
+        );
+      }
+      const kdpData = {
+        description_html: String(parsed.description_html || ""),
+        subtitle_suggestion: String(parsed.subtitle_suggestion || project.subtitle || ""),
+        keywords: asArray<string>(parsed.keywords).map(String).filter(Boolean).slice(0, 7),
+        categories: asArray<string>(parsed.categories).map(String).filter(Boolean).slice(0, 3),
+        bisac: asArray<string>(parsed.bisac).map(String).filter(Boolean).slice(0, 2),
+        price_usd: Number(parsed.price_usd) || null,
+        price_local: parsed.price_local && typeof parsed.price_local === "object" ? parsed.price_local : null,
+        reading_age: String(parsed.reading_age || ""),
+        generated_at: new Date().toISOString(),
+      };
+      if (!kdpData.description_html) {
+        return NextResponse.json({ error: "Klarte ikke å lage KDP-metadata nå. Prøv igjen om litt." }, { status: 502 });
+      }
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        metadata_plan: { ...meta, kdp: kdpData },
+      });
+      return NextResponse.json({
+        success: true,
+        mode,
+        project: updated,
+        kdp: kdpData,
+        checklist: {
+          has_cover: hasCover,
+          chapters: chapters.length,
+          words: totalWords,
+          title: String(project.title || ""),
+          subtitle: String(project.subtitle || ""),
+          author: String(meta.author || "Freddy Bremseth"),
+          language: lang,
+        },
+      });
+    }
+
     // Lagre forfatterens stemmeprøve — brukes i all skriving og redigering.
     if (mode === "save_voice") {
       const voiceSample = String(body.voice_sample || "").slice(0, 12000);
