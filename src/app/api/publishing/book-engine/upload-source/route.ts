@@ -23,10 +23,12 @@ function extOf(name: string) {
  */
 function htmlToMarkdownish(html: string): string {
   return String(html || "")
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gis, "\n\n# $1\n\n")
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gis, "\n\n## $1\n\n")
-    .replace(/<h[3-6][^>]*>(.*?)<\/h[3-6]>/gis, "\n\n### $1\n\n")
-    .replace(/<li[^>]*>(.*?)<\/li>/gis, "\n- $1")
+    // [\s\S] i stedet for . med s-flagget — prosjektets TS-mål tillater ikke
+    // dotAll-flagget.
+    .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, "\n\n# $1\n\n")
+    .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n\n## $1\n\n")
+    .replace(/<h[3-6][^>]*>([\s\S]*?)<\/h[3-6]>/gi, "\n\n### $1\n\n")
+    .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "\n- $1")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
     .replace(/<[^>]+>/g, "")
