@@ -188,6 +188,7 @@ export default function ForfatterstudioPage() {
     target_title: string;
   }> | null>(null);
   const [updateExisting, setUpdateExisting] = useState<Array<{ title: string; words: number }>>([]);
+  const [updateManuscript, setUpdateManuscript] = useState("");
   const [showKdp, setShowKdp] = useState(false);
   const [kdpBusy, setKdpBusy] = useState(false);
   const [kdpError, setKdpError] = useState<string | null>(null);
@@ -1076,9 +1077,11 @@ export default function ForfatterstudioPage() {
       }));
       setUpdatePlan(rows);
       setUpdateExisting(Array.isArray(data.existing) ? data.existing : []);
+      setUpdateManuscript(String(upData.content || ""));
       setUpdateFileName(`${file.name} — ${rows.length} deler funnet ✓`);
     } catch (e) {
       setUpdateFileName("");
+      setUpdateManuscript("");
       setUpdateError(e instanceof Error ? e.message : "Kunne ikke lese filen.");
     } finally {
       setUpdateBusy(false);
@@ -1089,25 +1092,17 @@ export default function ForfatterstudioPage() {
     setUpdatePlan((prev) => (prev ? prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)) : prev));
   }, []);
 
-  const runUpdateFromFile = useCallback(async () => {
-    if (!project || !updatePlan) return;
-    const queueStart = updatePlan
-      .filter((r) => r.action !== "skip")
-      .map((r) => {
-        const needsTarget = r.action === "merge" || r.action === "replace";
-        // Mål mangler for merge/replace → legg til som nytt i stedet for å
-        // feile stille. «insert» beholder tomt mål (AI velger kapittel).
-        if (needsTarget && !r.target_title) return { title: r.title, draft: r.draft, action: "append", target_title: "" };
-        const keepTarget = needsTarget || r.action === "insert";
-        return { title: r.title, draft: r.draft, action: r.action, target_title: keepTarget ? r.target_title : "" };
-      });
+  // Kjør en ferdig items-kø gjennom apply_update_from_file, én tung AI-
+  // operasjon per kall, med fremdrift. Brukes både av per-kapittel-planen og
+  // «Sett inn i hele boken».
+  const applyItems = useCallback(async (queueStart: Record<string, any>[]) => {
+    if (!project) return;
     if (queueStart.length === 0) {
       setUpdateError("Ingen deler er valgt.");
       return;
     }
     setUpdateBusy(true);
     setUpdateError(null);
-    // Antall AI-tunge deler (merge/insert) — brukes til fremdriftsvisning.
     const aiTotal = queueStart.filter((i) => i.action === "merge" || i.action === "insert").length;
     setStatus(aiTotal > 0 ? `Oppdaterer boken… 0 av ${aiTotal} AI-deler ferdig.` : "Oppdaterer boken fra filen…");
     let latest: FullProject | null = null;
@@ -1116,8 +1111,6 @@ export default function ForfatterstudioPage() {
     try {
       let queue: Record<string, any>[] = queueStart;
       let guard = 0;
-      // Hvert kall gjør én tung AI-operasjon, så vi trenger minst like mange
-      // runder som AI-deler, pluss litt slark.
       const maxRounds = Math.max(aiTotal + 5, 20);
       while (queue.length > 0 && guard < maxRounds) {
         guard += 1;
@@ -1130,7 +1123,7 @@ export default function ForfatterstudioPage() {
             signal: AbortSignal.timeout(290000),
           });
         } catch {
-          throw new Error("Én del tok for lang tid. Det som er gjort så langt er lagret — trykk «Kjør oppdateringen» igjen for å fortsette med resten.");
+          throw new Error("Én del tok for lang tid. Det som er gjort så langt er lagret — trykk igjen for å fortsette med resten.");
         }
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((data as Record<string, any>).error || "Oppdateringen feilet.");
@@ -1147,6 +1140,7 @@ export default function ForfatterstudioPage() {
       if (latest) applyProject(latest);
       await loadLibrary();
       setUpdatePlan(null);
+      setUpdateManuscript("");
       setUpdateFileName("");
       setShowUpdateFile(false);
       const summary = `Boken er oppdatert: ${totals.merged} slått sammen, ${totals.woven} vevd inn, ${totals.replaced} erstattet, ${totals.added} lagt til.`;
@@ -1162,7 +1156,48 @@ export default function ForfatterstudioPage() {
     } finally {
       setUpdateBusy(false);
     }
-  }, [project, updatePlan, applyProject, loadLibrary]);
+  }, [project, applyProject, loadLibrary]);
+
+  const runUpdateFromFile = useCallback(async () => {
+    if (!project || !updatePlan) return;
+    const queueStart = updatePlan
+      .filter((r) => r.action !== "skip")
+      .map((r) => {
+        const needsTarget = r.action === "merge" || r.action === "replace";
+        // Mål mangler for merge/replace → legg til som nytt i stedet for å
+        // feile stille. «insert» beholder tomt mål (AI velger kapittel).
+        if (needsTarget && !r.target_title) return { title: r.title, draft: r.draft, action: "append", target_title: "" };
+        const keepTarget = needsTarget || r.action === "insert";
+        return { title: r.title, draft: r.draft, action: r.action, target_title: keepTarget ? r.target_title : "" };
+      });
+    await applyItems(queueStart);
+  }, [project, updatePlan, applyItems]);
+
+  // Én knapp for hele dokumentet: AI fordeler all den nye informasjonen ut
+  // over kapitlene der den hører hjemme, så forfatteren slipper å velge
+  // plassering per del.
+  const distributeWholeDoc = useCallback(async () => {
+    if (!project || !updateManuscript.trim()) return;
+    setUpdateBusy(true);
+    setUpdateError(null);
+    setStatus("AI fordeler informasjonen til riktige kapitler…");
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "plan_distribute_info", project_id: project.id, manuscript: updateManuscript }),
+        signal: AbortSignal.timeout(290000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.items) || data.items.length === 0) {
+        throw new Error((data as Record<string, any>).error || "Fant ingen tydelig plass for informasjonen.");
+      }
+      await applyItems(data.items as Record<string, any>[]);
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : "Kunne ikke fordele informasjonen.");
+      setUpdateBusy(false);
+    }
+  }, [project, updateManuscript, applyItems]);
 
   const generateKdp = useCallback(async () => {
     if (!project) return;
@@ -1551,8 +1586,20 @@ export default function ForfatterstudioPage() {
                 {updateBusy && !updatePlan ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
               </div>
               {updateError ? <p className="text-xs text-destructive">{updateError}</p> : null}
+              {updatePlan && updateManuscript ? (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                  <p className="mb-2 text-xs">
+                    <strong>Enkleste vei:</strong> la AI fordele hele dokumentet automatisk — den finner rett kapittel for hver bit av den nye infoen og vever den inn. Da slipper du å velge plassering per del under.
+                  </p>
+                  <Button size="sm" onClick={distributeWholeDoc} disabled={updateBusy}>
+                    {updateBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                    Sett inn i hele boken der det passer
+                  </Button>
+                </div>
+              ) : null}
               {updatePlan ? (
                 <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">…eller bestem selv per del:</p>
                   <div className="max-h-[440px] divide-y overflow-y-auto rounded-md border">
                     {updatePlan.map((row, idx) => {
                       const needsTarget = row.action === "merge" || row.action === "replace";
