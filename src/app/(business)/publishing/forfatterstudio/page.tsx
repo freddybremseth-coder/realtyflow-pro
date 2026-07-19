@@ -170,6 +170,21 @@ export default function ForfatterstudioPage() {
   const [showImportManus, setShowImportManus] = useState(false);
   const [importManus, setImportManus] = useState({ title: "", genre: "guide", language: "no", content: "", fileName: "" });
   const [importManusBusy, setImportManusBusy] = useState(false);
+  const [showUpdateFile, setShowUpdateFile] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateFileName, setUpdateFileName] = useState("");
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updatePlan, setUpdatePlan] = useState<Array<{
+    incoming_index: number;
+    title: string;
+    words: number;
+    preview: string;
+    draft: string;
+    matched_title: string | null;
+    action: string;
+    target_title: string;
+  }> | null>(null);
+  const [updateExisting, setUpdateExisting] = useState<Array<{ title: string; words: number }>>([]);
   const [showCover, setShowCover] = useState(false);
   const [coverPrompt, setCoverPrompt] = useState("");
   const [coverUseOpenArt, setCoverUseOpenArt] = useState(false);
@@ -1015,6 +1030,106 @@ export default function ForfatterstudioPage() {
     }
   }, [chapter]);
 
+  // Oppdater en EKSISTERENDE bok fra en opplastet fil: les fila, del i
+  // kapitler, og få en plan brukeren kan justere før den kjøres.
+  const handleUpdateFilePick = useCallback(async (file: File) => {
+    if (!project) return;
+    setUpdateBusy(true);
+    setUpdateError(null);
+    setUpdatePlan(null);
+    setUpdateFileName(`Leser ${file.name}…`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const up = await fetch("/api/publishing/book-engine/upload-source", { method: "POST", body: form });
+      const upData = await up.json().catch(() => ({}));
+      if (!up.ok || !upData.content) throw new Error(upData.error || `Kunne ikke lese filen (${up.status}).`);
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "plan_update_from_file", project_id: project.id, manuscript: upData.content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke lese kapitlene fra filen.");
+      const rows = (Array.isArray(data.plan) ? data.plan : []).map((r: Record<string, any>) => ({
+        incoming_index: Number(r.incoming_index),
+        title: String(r.title || ""),
+        words: Number(r.words || 0),
+        preview: String(r.preview || ""),
+        draft: String(r.draft || ""),
+        matched_title: r.matched_title ? String(r.matched_title) : null,
+        action: String(r.action || "append"),
+        target_title: r.matched_title ? String(r.matched_title) : "",
+      }));
+      setUpdatePlan(rows);
+      setUpdateExisting(Array.isArray(data.existing) ? data.existing : []);
+      setUpdateFileName(`${file.name} — ${rows.length} deler funnet ✓`);
+    } catch (e) {
+      setUpdateFileName("");
+      setUpdateError(e instanceof Error ? e.message : "Kunne ikke lese filen.");
+    } finally {
+      setUpdateBusy(false);
+    }
+  }, [project]);
+
+  const setPlanRow = useCallback((idx: number, patch: Record<string, any>) => {
+    setUpdatePlan((prev) => (prev ? prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)) : prev));
+  }, []);
+
+  const runUpdateFromFile = useCallback(async () => {
+    if (!project || !updatePlan) return;
+    const queueStart = updatePlan
+      .filter((r) => r.action !== "skip")
+      .map((r) => {
+        const needsTarget = r.action === "merge" || r.action === "replace";
+        // Mål mangler → legg til som nytt i stedet for å feile stille.
+        if (needsTarget && !r.target_title) return { title: r.title, draft: r.draft, action: "append", target_title: "" };
+        return { title: r.title, draft: r.draft, action: r.action, target_title: needsTarget ? r.target_title : "" };
+      });
+    if (queueStart.length === 0) {
+      setUpdateError("Ingen deler er valgt.");
+      return;
+    }
+    setUpdateBusy(true);
+    setUpdateError(null);
+    setStatus("Oppdaterer boken fra filen…");
+    try {
+      let queue: Record<string, any>[] = queueStart;
+      let guard = 0;
+      let latest: FullProject | null = null;
+      const totals = { replaced: 0, merged: 0, added: 0 };
+      const allWarnings: string[] = [];
+      while (queue.length > 0 && guard < 15) {
+        guard += 1;
+        const res = await fetch("/api/publishing/author-studio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "apply_update_from_file", project_id: project.id, items: queue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Oppdateringen feilet.");
+        totals.replaced += data.applied?.replaced || 0;
+        totals.merged += data.applied?.merged || 0;
+        totals.added += data.applied?.added || 0;
+        if (Array.isArray(data.warnings)) allWarnings.push(...data.warnings);
+        latest = data.project as FullProject;
+        queue = Array.isArray(data.pending) ? data.pending : [];
+        if (queue.length > 0) setStatus(`Slår sammen kapitler… ${queue.length} igjen.`);
+      }
+      if (latest) applyProject(latest);
+      await loadLibrary();
+      setUpdatePlan(null);
+      setUpdateFileName("");
+      setShowUpdateFile(false);
+      const summary = `Boken er oppdatert: ${totals.merged} slått sammen, ${totals.replaced} erstattet, ${totals.added} lagt til.`;
+      setStatus(allWarnings.length ? `${summary} Noe feilet: ${allWarnings.join("; ")}` : summary);
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : "Oppdateringen feilet.");
+    } finally {
+      setUpdateBusy(false);
+    }
+  }, [project, updatePlan, applyProject, loadLibrary]);
+
   const handleImportFile = useCallback(async (file: File) => {
     setImportBusy(true);
     setImportError(null);
@@ -1170,6 +1285,12 @@ export default function ForfatterstudioPage() {
                 Skriv på nytt
               </Button>
             ) : null}
+            {chapters.length > 0 ? (
+              <Button variant={showUpdateFile ? "secondary" : "outline"} size="sm" onClick={() => setShowUpdateFile((v) => !v)} disabled={busy}>
+                <Upload className="mr-2 h-4 w-4" />
+                Oppdater fra fil
+              </Button>
+            ) : null}
             {chapters.length > 0 && chapters.length <= 3 && chapters.some((c) => wordsOf(c.draft) > 3500) ? (
               <Button size="sm" onClick={runSplitChapters} disabled={busy}>
                 {busyAction === "split" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BookOpen className="mr-2 h-4 w-4" />}
@@ -1309,6 +1430,89 @@ export default function ForfatterstudioPage() {
                 </Button>
                 <span className="text-xs text-muted-foreground">Skriver kapittel for kapittel — regn med ca. 1 min per kapittel.</span>
               </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showUpdateFile ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><Upload className="h-4 w-4" /> Oppdater boken fra en fil</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Har du jobbet videre på boken i Word? Last opp fila, så deler AI-en den i kapitler og foreslår hva som skal skje med hvert: <strong>slå sammen</strong> den gamle og nye teksten til én bedre versjon, <strong>erstatte</strong> kapittelet helt, eller <strong>legge det til</strong> som nytt. Du bestemmer per kapittel før noe lagres.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex w-fit cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
+                  <Upload className="h-4 w-4" />
+                  Velg fil (Word/PDF)
+                  <input
+                    type="file"
+                    accept=".doc,.docx,.pdf,.txt,.md,text/plain"
+                    className="hidden"
+                    disabled={updateBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpdateFilePick(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {updateFileName ? <span className="text-xs text-muted-foreground">{updateFileName}</span> : null}
+                {updateBusy && !updatePlan ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+              </div>
+              {updateError ? <p className="text-xs text-destructive">{updateError}</p> : null}
+              {updatePlan ? (
+                <div className="space-y-2">
+                  <div className="max-h-[440px] divide-y overflow-y-auto rounded-md border">
+                    {updatePlan.map((row, idx) => {
+                      const needsTarget = row.action === "merge" || row.action === "replace";
+                      return (
+                        <div key={idx} className="space-y-1.5 p-2.5 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium">{row.title}</span>
+                            <span className="whitespace-nowrap text-xs text-muted-foreground">{row.words} ord</span>
+                          </div>
+                          <p className="line-clamp-2 text-xs text-muted-foreground">{row.preview}…</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              className="h-8 rounded-md border bg-background px-2 text-xs"
+                              value={row.action}
+                              onChange={(e) => setPlanRow(idx, { action: e.target.value })}
+                            >
+                              <option value="merge">Slå sammen (AI) med…</option>
+                              <option value="replace">Erstatt kapittel…</option>
+                              <option value="append">Legg til som nytt kapittel</option>
+                              <option value="skip">Hopp over</option>
+                            </select>
+                            {needsTarget ? (
+                              <select
+                                className="h-8 min-w-[190px] rounded-md border bg-background px-2 text-xs"
+                                value={row.target_title}
+                                onChange={(e) => setPlanRow(idx, { target_title: e.target.value })}
+                              >
+                                <option value="">— velg kapittel —</option>
+                                {updateExisting.map((ex) => (
+                                  <option key={ex.title} value={ex.title}>{ex.title}</option>
+                                ))}
+                              </select>
+                            ) : null}
+                            {needsTarget && !row.target_title ? <span className="text-xs text-amber-600">velg kapittel</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={runUpdateFromFile} disabled={updateBusy}>
+                      {updateBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1 h-4 w-4" />}
+                      Kjør oppdateringen
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Sammenslåing tar ca. 20–30 sek per kapittel. Originalene beholdes — «Angre alle AI-endringer» tar dem tilbake.</span>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         ) : null}
