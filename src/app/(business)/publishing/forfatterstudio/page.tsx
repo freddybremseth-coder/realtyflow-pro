@@ -1107,22 +1107,33 @@ export default function ForfatterstudioPage() {
     }
     setUpdateBusy(true);
     setUpdateError(null);
-    setStatus("Oppdaterer boken fra filen…");
+    // Antall AI-tunge deler (merge/insert) — brukes til fremdriftsvisning.
+    const aiTotal = queueStart.filter((i) => i.action === "merge" || i.action === "insert").length;
+    setStatus(aiTotal > 0 ? `Oppdaterer boken… 0 av ${aiTotal} AI-deler ferdig.` : "Oppdaterer boken fra filen…");
+    let latest: FullProject | null = null;
+    const totals = { replaced: 0, merged: 0, added: 0, woven: 0 };
+    const allWarnings: string[] = [];
     try {
       let queue: Record<string, any>[] = queueStart;
       let guard = 0;
-      let latest: FullProject | null = null;
-      const totals = { replaced: 0, merged: 0, added: 0, woven: 0 };
-      const allWarnings: string[] = [];
-      while (queue.length > 0 && guard < 15) {
+      // Hvert kall gjør én tung AI-operasjon, så vi trenger minst like mange
+      // runder som AI-deler, pluss litt slark.
+      const maxRounds = Math.max(aiTotal + 5, 20);
+      while (queue.length > 0 && guard < maxRounds) {
         guard += 1;
-        const res = await fetch("/api/publishing/author-studio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "apply_update_from_file", project_id: project.id, items: queue }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Oppdateringen feilet.");
+        let res: Response;
+        try {
+          res = await fetch("/api/publishing/author-studio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "apply_update_from_file", project_id: project.id, items: queue }),
+            signal: AbortSignal.timeout(290000),
+          });
+        } catch {
+          throw new Error("Én del tok for lang tid. Det som er gjort så langt er lagret — trykk «Kjør oppdateringen» igjen for å fortsette med resten.");
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as Record<string, any>).error || "Oppdateringen feilet.");
         totals.replaced += data.applied?.replaced || 0;
         totals.merged += data.applied?.merged || 0;
         totals.added += data.applied?.added || 0;
@@ -1130,7 +1141,8 @@ export default function ForfatterstudioPage() {
         if (Array.isArray(data.warnings)) allWarnings.push(...data.warnings);
         latest = data.project as FullProject;
         queue = Array.isArray(data.pending) ? data.pending : [];
-        if (queue.length > 0) setStatus(`Slår sammen kapitler… ${queue.length} igjen.`);
+        const done = totals.merged + totals.woven;
+        if (queue.length > 0) setStatus(`Bearbeider boken med AI… ${done} av ${aiTotal} ferdig (${queue.length} igjen).`);
       }
       if (latest) applyProject(latest);
       await loadLibrary();
@@ -1140,6 +1152,12 @@ export default function ForfatterstudioPage() {
       const summary = `Boken er oppdatert: ${totals.merged} slått sammen, ${totals.woven} vevd inn, ${totals.replaced} erstattet, ${totals.added} lagt til.`;
       setStatus(allWarnings.length ? `${summary} Noe feilet: ${allWarnings.join("; ")}` : summary);
     } catch (e) {
+      // Behold delvis fremgang synlig. La bare AI-delene (merge/insert) stå i
+      // planen — «legg til»/«erstatt» er allerede utført i første runde, så en
+      // ny «Kjør» må ikke dubletere dem. Merge/insert er trygt å kjøre på nytt.
+      if (latest) applyProject(latest);
+      await loadLibrary().catch(() => {});
+      setUpdatePlan((prev) => (prev ? prev.filter((r) => r.action === "merge" || r.action === "insert") : prev));
       setUpdateError(e instanceof Error ? e.message : "Oppdateringen feilet.");
     } finally {
       setUpdateBusy(false);

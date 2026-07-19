@@ -1153,7 +1153,12 @@ export async function POST(request: NextRequest) {
       const applied = { replaced: 0, merged: 0, added: 0, woven: 0 };
       const warnings: string[] = [];
       const pending: Record<string, any>[] = [];
-      const AI_CAP = 4; // maks AI-tunge operasjoner (merge + insert) per kall
+      // Én tung AI-operasjon (merge/insert) per kall. Da returnerer hvert kall
+      // raskt, klienten viser tydelig fremgang («N igjen»), og en lang bok
+      // fryser aldri et enkelt kall mot funksjonens tidsgrense. Telles på
+      // FORSØK (ikke suksess), så et mislykket kall ikke sluker hele køen.
+      const AI_CAP = 1;
+      let aiAttempts = 0;
       for (const item of items) {
         const action = String(item.action || "").toLowerCase();
         const incomingDraft = String(item.draft || "").trim();
@@ -1167,10 +1172,11 @@ export async function POST(request: NextRequest) {
         // «Sett inn info der den passer»: finn rett kapittel (valgt eller
         // AI-plukket) og vev den nye infoen inn der den hører hjemme.
         if (action === "insert") {
-          if (applied.merged + applied.woven >= AI_CAP) {
+          if (aiAttempts >= AI_CAP) {
             pending.push(item);
             continue;
           }
+          aiAttempts += 1;
           let target = findChapter(chapters, String(item.target_title || ""));
           if (!target.chapter) {
             const pickedIdx = await pickChapterForInfo(chapters, incomingDraft);
@@ -1200,10 +1206,11 @@ export async function POST(request: NextRequest) {
           chapters[index] = { ...chapter, previous_draft: chapter.draft, draft: incomingDraft, formatted: false, quality: undefined };
           applied.replaced += 1;
         } else if (action === "merge") {
-          if (applied.merged + applied.woven >= AI_CAP) {
+          if (aiAttempts >= AI_CAP) {
             pending.push(item);
             continue;
           }
+          aiAttempts += 1;
           try {
             const merged = await mergeChapterVersions(project, chapter.chapter_title, String(chapter.draft || ""), incomingDraft);
             chapters[index] = { ...chapter, previous_draft: chapter.draft, draft: merged, formatted: false, quality: undefined };
