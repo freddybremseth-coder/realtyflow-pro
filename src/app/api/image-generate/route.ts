@@ -30,6 +30,7 @@ const ASPECT_RATIO_HINTS: Record<string, string> = {
   "16:9": "wide landscape composition, cinematic widescreen",
   "9:16": "tall vertical composition, portrait orientation for mobile/stories",
   "4:5": "slightly tall composition, ideal for Instagram feed",
+  "2:3": "tall portrait book-cover composition, 1.6:1 height-to-width ratio (KDP Kindle cover), full-bleed",
 };
 
 function getSupabase() {
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
       provider = "gemini",
       openartModel = "",
       openartResolution = "1K",
+      allowText = false,
     } = body;
 
     if (!prompt || typeof prompt !== "string") {
@@ -127,7 +129,9 @@ export async function POST(req: NextRequest) {
       : prompt;
     const noTextInstruction = sourceImageUrl
       ? "Do not invent new label text. Keep existing readable product label details as close as possible."
-      : "No text, letters, words, or watermarks in the image.";
+      : allowText
+        ? "Render any specified title, subtitle and author text crisply and CORRECTLY spelled, with professional book-cover typography, clear hierarchy, and strong contrast against the artwork for readability."
+        : "No text, letters, words, or watermarks in the image.";
     const enhancedPrompt = `${variantInstruction}. ${styleHint}. ${ratioHint}. ${brandHint} ${noTextInstruction}`.trim();
 
     // ─── OpenArt path (opt-in — uses credits from the connected account) ──

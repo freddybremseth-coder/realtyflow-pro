@@ -512,6 +512,88 @@ Deretter HELE det sammenslåtte kapittelet i ren markdown.
   return merged;
 }
 
+/**
+ * Vever LØS ny informasjon (notater, oppdateringer, fakta som «passer litt
+ * her og der») inn i ET kapittel — på rett sted, og forbedrer teksten rundt
+ * så det flyter. Legger til, fjerner aldri. Kun den delen av infoen som hører
+ * til dette kapittelet brukes; resten ignoreres. Aldri kortere enn originalen.
+ */
+async function weaveInInfo(
+  project: Record<string, any>,
+  chapterTitle: string,
+  oldDraft: string,
+  info: string,
+): Promise<string> {
+  const craft = resolveCraft(project.genre);
+  const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
+  const originalWords = wordCount(oldDraft);
+  const prompt = `
+Du er en prisbelønt forfatter og manusredaktør. Du får ETT eksisterende kapittel og et stykke NY INFORMASJON (løse notater, oppdateringer eller fakta forfatteren har lagt til).
+
+Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
+Språk: ${project.language || "no"} (svar på samme språk som kapittelet) · Sjanger: ${craft.label}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+
+DIN OPPGAVE:
+- Vev den nye informasjonen inn i kapittelet DER den naturlig hører hjemme — i rett avsnitt, på rett sted — og forbedre teksten rundt så overgangene flyter.
+- Bruk KUN den delen av informasjonen som passer til nettopp dette kapittelet. Ignorer det som tydelig hører til et annet tema/kapittel.
+- Behold ALT eksisterende innhold. Du legger til og forbedrer — du fjerner ingenting.
+- ALDRI dikt opp harde fakta utover det som står i notatene.
+- Resultatet skal være MINST ${originalWords} ord (originalens lengde), gjerne litt lengre.
+
+KAPITTEL: "${chapterTitle}"
+---
+${String(oldDraft || "").slice(0, 24000)}
+---
+
+NY INFORMASJON Å VEVE INN:
+---
+${String(info || "").slice(0, 12000)}
+---
+
+FORMAT PÅ SVARET (viktig — ingen JSON, ingen kodeblokker):
+Første linje: SAMMENDRAG: én setning om hva du vevet inn.
+Deretter en linje med kun: ---
+Deretter HELE det oppdaterte kapittelet i ren markdown.
+`;
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 16000, temperature: 0.4, anthropicOnly: true });
+  const woven = await finishIfCut(extractPlainDraft(raw).draft);
+  if (!woven || wordCount(woven) < 30) {
+    throw new Error("Innfletting mislyktes (tomt svar). Kapittelet er UENDRET. Prøv igjen om litt.");
+  }
+  return woven;
+}
+
+/**
+ * Lar AI velge hvilket eksisterende kapittel et stykke løs info passer best i.
+ * Returnerer indeksen, eller -1 hvis ingenting passer.
+ */
+async function pickChapterForInfo(chapters: Chapter[], info: string): Promise<number> {
+  if (chapters.length === 0) return -1;
+  const list = chapters
+    .map((c, i) => `${i}. ${c.chapter_title} — ${String(c.draft || "").slice(0, 220).replace(/\s+/g, " ")}`)
+    .join("\n");
+  const raw = await askClaude(
+    `Du får en kapittelliste og et stykke ny informasjon. Hvilket kapittel hører informasjonen best hjemme i? Returner KUN gyldig JSON.
+
+KAPITLER:
+${list.slice(0, 12000)}
+
+NY INFORMASJON:
+---
+${String(info || "").slice(0, 4000)}
+---
+
+JSON schema: { "index": 0 }  (bruk kapittelnummeret foran tittelen; -1 hvis ingen passer)`,
+    { model: "haiku", maxTokens: 200, temperature: 0.1 },
+  );
+  const parsed = safeJsonParse<{ index?: number }>(raw, {});
+  const idx = Number(parsed.index);
+  return Number.isInteger(idx) && idx >= 0 && idx < chapters.length ? idx : -1;
+}
+
 async function runAnalysis(project: Record<string, any>, chapters: Chapter[]) {
   const manuscriptSample = chapters
     .map((c) => `## ${c.chapter_title}\n${String(c.draft || "").slice(0, 2200)}`)
@@ -1068,10 +1150,10 @@ export async function POST(request: NextRequest) {
     if (mode === "apply_update_from_file") {
       const items = asArray<Record<string, any>>(body.items);
       if (items.length === 0) return NextResponse.json({ error: "Ingen endringer å bruke." }, { status: 400 });
-      const applied = { replaced: 0, merged: 0, added: 0 };
+      const applied = { replaced: 0, merged: 0, added: 0, woven: 0 };
       const warnings: string[] = [];
       const pending: Record<string, any>[] = [];
-      const MERGE_CAP = 4;
+      const AI_CAP = 4; // maks AI-tunge operasjoner (merge + insert) per kall
       for (const item of items) {
         const action = String(item.action || "").toLowerCase();
         const incomingDraft = String(item.draft || "").trim();
@@ -1080,6 +1162,32 @@ export async function POST(request: NextRequest) {
         if (action === "append") {
           chapters.push({ chapter_title: title, draft: incomingDraft });
           applied.added += 1;
+          continue;
+        }
+        // «Sett inn info der den passer»: finn rett kapittel (valgt eller
+        // AI-plukket) og vev den nye infoen inn der den hører hjemme.
+        if (action === "insert") {
+          if (applied.merged + applied.woven >= AI_CAP) {
+            pending.push(item);
+            continue;
+          }
+          let target = findChapter(chapters, String(item.target_title || ""));
+          if (!target.chapter) {
+            const pickedIdx = await pickChapterForInfo(chapters, incomingDraft);
+            if (pickedIdx >= 0) target = { index: pickedIdx, chapter: chapters[pickedIdx] };
+          }
+          if (!target.chapter) {
+            chapters.push({ chapter_title: title, draft: incomingDraft });
+            applied.added += 1;
+            continue;
+          }
+          try {
+            const woven = await weaveInInfo(project, target.chapter.chapter_title, String(target.chapter.draft || ""), incomingDraft);
+            chapters[target.index] = { ...target.chapter, previous_draft: target.chapter.draft, draft: woven, formatted: false, quality: undefined };
+            applied.woven += 1;
+          } catch (e) {
+            warnings.push(`«${target.chapter.chapter_title}»: ${e instanceof Error ? e.message : "innfletting feilet"}`);
+          }
           continue;
         }
         const { index, chapter } = findChapter(chapters, String(item.target_title || ""));
@@ -1092,7 +1200,7 @@ export async function POST(request: NextRequest) {
           chapters[index] = { ...chapter, previous_draft: chapter.draft, draft: incomingDraft, formatted: false, quality: undefined };
           applied.replaced += 1;
         } else if (action === "merge") {
-          if (applied.merged >= MERGE_CAP) {
+          if (applied.merged + applied.woven >= AI_CAP) {
             pending.push(item);
             continue;
           }

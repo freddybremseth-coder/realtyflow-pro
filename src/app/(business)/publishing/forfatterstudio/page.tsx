@@ -695,24 +695,28 @@ export default function ForfatterstudioPage() {
     }
   }, [importManus, loadLibrary, applyProject]);
 
-  const generateCover = useCallback(async () => {
+  // withTitle=true: KDP-klart omslag i stående format med tittel/undertittel/
+  // forfatter rendret på bildet. false: rent kunstomslag uten tekst.
+  const generateCover = useCallback(async (withTitle: boolean) => {
     if (!project) return;
     setCoverBusy(true);
-    setStatus("Lager bokomslag…");
+    setStatus(withTitle ? "Lager KDP-omslag med tittel…" : "Lager bokomslag…");
     try {
-      const prompt =
-        coverPrompt.trim() ||
-        String(project.metadata_plan?.cover_brief || "") ||
-        `Premium bokomslag-konsept for «${project.title}»${project.subtitle ? ` — ${project.subtitle}` : ""}. Stemningsfullt, elegant, uten tekst.`;
+      const author = String(project.metadata_plan?.author || "Freddy Bremseth");
+      const artBrief = coverPrompt.trim() || String(project.metadata_plan?.cover_brief || "");
+      const prompt = withTitle
+        ? `Professional, best-selling Kindle/KDP book cover for a "${project.genre || "non-fiction"}" book. Full-bleed portrait cover art, striking and genre-appropriate, with clear space in the upper area for the title and lower area for the author. ${artBrief ? `Art direction: ${artBrief}. ` : ""}Render this text on the cover, spelled EXACTLY: title "${project.title}"${project.subtitle ? `, subtitle "${project.subtitle}"` : ""}, author name "${author}". Elegant modern typography, strong readability, professional composition.`
+        : (artBrief || `Premium bokomslag-konsept for «${project.title}»${project.subtitle ? ` — ${project.subtitle}` : ""}. Stemningsfullt, elegant, uten tekst.`);
       const res = await fetch("/api/image-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
           style: "luxury",
-          aspectRatio: "4:5",
+          aspectRatio: withTitle ? "2:3" : "4:5",
           brand: "freddypublishing",
           persist: true,
+          allowText: withTitle,
           provider: coverUseOpenArt ? "openart" : "gemini",
         }),
       });
@@ -726,7 +730,7 @@ export default function ForfatterstudioPage() {
       const savedData = await saved.json();
       if (!saved.ok) throw new Error(savedData.error || "Kunne ikke lagre omslaget.");
       if (savedData.project) applyProject(savedData.project as FullProject, chapter?.chapter_title);
-      setStatus("Omslaget er lagret på boken.");
+      setStatus(withTitle ? "KDP-omslaget er lagret. Sjekk at tittelen er riktig stavet — lag nytt hvis ikke." : "Omslaget er lagret på boken.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Omslagsgenereringen feilet.");
     } finally {
@@ -1091,9 +1095,11 @@ export default function ForfatterstudioPage() {
       .filter((r) => r.action !== "skip")
       .map((r) => {
         const needsTarget = r.action === "merge" || r.action === "replace";
-        // Mål mangler → legg til som nytt i stedet for å feile stille.
+        // Mål mangler for merge/replace → legg til som nytt i stedet for å
+        // feile stille. «insert» beholder tomt mål (AI velger kapittel).
         if (needsTarget && !r.target_title) return { title: r.title, draft: r.draft, action: "append", target_title: "" };
-        return { title: r.title, draft: r.draft, action: r.action, target_title: needsTarget ? r.target_title : "" };
+        const keepTarget = needsTarget || r.action === "insert";
+        return { title: r.title, draft: r.draft, action: r.action, target_title: keepTarget ? r.target_title : "" };
       });
     if (queueStart.length === 0) {
       setUpdateError("Ingen deler er valgt.");
@@ -1106,7 +1112,7 @@ export default function ForfatterstudioPage() {
       let queue: Record<string, any>[] = queueStart;
       let guard = 0;
       let latest: FullProject | null = null;
-      const totals = { replaced: 0, merged: 0, added: 0 };
+      const totals = { replaced: 0, merged: 0, added: 0, woven: 0 };
       const allWarnings: string[] = [];
       while (queue.length > 0 && guard < 15) {
         guard += 1;
@@ -1120,6 +1126,7 @@ export default function ForfatterstudioPage() {
         totals.replaced += data.applied?.replaced || 0;
         totals.merged += data.applied?.merged || 0;
         totals.added += data.applied?.added || 0;
+        totals.woven += data.applied?.woven || 0;
         if (Array.isArray(data.warnings)) allWarnings.push(...data.warnings);
         latest = data.project as FullProject;
         queue = Array.isArray(data.pending) ? data.pending : [];
@@ -1130,7 +1137,7 @@ export default function ForfatterstudioPage() {
       setUpdatePlan(null);
       setUpdateFileName("");
       setShowUpdateFile(false);
-      const summary = `Boken er oppdatert: ${totals.merged} slått sammen, ${totals.replaced} erstattet, ${totals.added} lagt til.`;
+      const summary = `Boken er oppdatert: ${totals.merged} slått sammen, ${totals.woven} vevd inn, ${totals.replaced} erstattet, ${totals.added} lagt til.`;
       setStatus(allWarnings.length ? `${summary} Noe feilet: ${allWarnings.join("; ")}` : summary);
     } catch (e) {
       setUpdateError(e instanceof Error ? e.message : "Oppdateringen feilet.");
@@ -1455,11 +1462,18 @@ export default function ForfatterstudioPage() {
                   <input type="checkbox" checked={coverUseOpenArt} onChange={(e) => setCoverUseOpenArt(e.target.checked)} />
                   Bruk OpenArt
                 </label>
-                <Button size="sm" onClick={generateCover} disabled={coverBusy}>
-                  {coverBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-1 h-4 w-4" />}
-                  {project.metadata_plan?.cover_image_url ? "Lag nytt omslag" : "Lag omslag"}
+                <Button size="sm" onClick={() => generateCover(true)} disabled={coverBusy}>
+                  {coverBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <BookOpen className="mr-1 h-4 w-4" />}
+                  KDP-omslag med tittel
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => generateCover(false)} disabled={coverBusy}>
+                  <ImageIcon className="mr-1 h-4 w-4" />
+                  Kun kunst (uten tekst)
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                «KDP-omslag med tittel» lager et stående Kindle-omslag (1,6:1) med tittel, undertittel og forfatter rendret på bildet — klart for KDP. Skriv gjerne en kort stil-idé i feltet over. Sjekk alltid at teksten er riktig stavet; lag nytt hvis ikke.
+              </p>
             </CardContent>
           </Card>
         ) : null}
@@ -1497,7 +1511,7 @@ export default function ForfatterstudioPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Har du jobbet videre på boken i Word? Last opp fila, så deler AI-en den i kapitler og foreslår hva som skal skje med hvert: <strong>slå sammen</strong> den gamle og nye teksten til én bedre versjon, <strong>erstatte</strong> kapittelet helt, eller <strong>legge det til</strong> som nytt. Du bestemmer per kapittel før noe lagres.
+                Har du jobbet videre på boken i Word? Last opp fila, så deler AI-en den i kapitler og foreslår hva som skal skje med hvert: <strong>slå sammen</strong> den gamle og nye teksten til én bedre versjon, <strong>sette inn info der den passer</strong> (AI finner rett kapittel og vever den nye infoen inn på rett sted), <strong>erstatte</strong> kapittelet helt, eller <strong>legge det til</strong> som nytt. Du bestemmer per del før noe lagres.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="inline-flex w-fit cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
@@ -1524,6 +1538,7 @@ export default function ForfatterstudioPage() {
                   <div className="max-h-[440px] divide-y overflow-y-auto rounded-md border">
                     {updatePlan.map((row, idx) => {
                       const needsTarget = row.action === "merge" || row.action === "replace";
+                      const showTarget = needsTarget || row.action === "insert";
                       return (
                         <div key={idx} className="space-y-1.5 p-2.5 text-sm">
                           <div className="flex items-center justify-between gap-2">
@@ -1538,17 +1553,18 @@ export default function ForfatterstudioPage() {
                               onChange={(e) => setPlanRow(idx, { action: e.target.value })}
                             >
                               <option value="merge">Slå sammen (AI) med…</option>
+                              <option value="insert">Sett inn info der den passer</option>
                               <option value="replace">Erstatt kapittel…</option>
                               <option value="append">Legg til som nytt kapittel</option>
                               <option value="skip">Hopp over</option>
                             </select>
-                            {needsTarget ? (
+                            {showTarget ? (
                               <select
                                 className="h-8 min-w-[190px] rounded-md border bg-background px-2 text-xs"
                                 value={row.target_title}
                                 onChange={(e) => setPlanRow(idx, { target_title: e.target.value })}
                               >
-                                <option value="">— velg kapittel —</option>
+                                <option value="">{row.action === "insert" ? "— AI velger kapittel —" : "— velg kapittel —"}</option>
                                 {updateExisting.map((ex) => (
                                   <option key={ex.title} value={ex.title}>{ex.title}</option>
                                 ))}
