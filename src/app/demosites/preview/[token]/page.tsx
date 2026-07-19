@@ -3,13 +3,11 @@ import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
 import { DemoSignatureSiteRenderer } from "@/components/demosites/demo-signature-site-renderer";
+import { DemoHeroVideo } from "@/components/demosites/demo-hero-video";
 import { DemoCountdownBar } from "@/components/demosites/demo-countdown-bar";
 import { DemoDesignSwitcher } from "@/components/demosites/demo-design-switcher";
 import { getDemoSitePackage } from "@/lib/demosites";
-import {
-  isSignatureDemoSiteLayout,
-  resolveDemoSiteDesign,
-} from "@/lib/demosites-design";
+import { isSignatureDemoSiteLayout, resolveDemoSiteDesign } from "@/lib/demosites-design";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -50,94 +48,64 @@ function getSupabase() {
 
 async function loadOrder(token: string) {
   const supabase = getSupabase();
-  if (!token || !supabase)
-    return {
-      supabase: null,
-      order: null as DemoOrder | null,
-      orderId: null as string | null,
-    };
+  if (!token || !supabase) return { supabase: null, order: null as DemoOrder | null, orderId: null as string | null };
 
   const { data } = await supabase
     .from("demo_site_orders")
-    .select(
-      "id, status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, template_slug, logo_url, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes",
-    )
+    .select("id, status, company_name, customer_email, customer_phone, industry, website_url, package_id, setup_fee_nok, monthly_fee_nok, template_slug, logo_url, claim_url, expires_at, brand_color, extracted_profile, editable_fields, notes")
     .eq("claim_token", token)
     .maybeSingle();
 
-  if (!data)
-    return {
-      supabase,
-      order: null as DemoOrder | null,
-      orderId: null as string | null,
-    };
+  if (!data) return { supabase, order: null as DemoOrder | null, orderId: null as string | null };
   const { id, ...order } = data as DemoOrder & { id: string };
   return { supabase, order: order as DemoOrder, orderId: id };
 }
 
-export async function generateMetadata({
-  params,
-}: PreviewPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PreviewPageProps): Promise<Metadata> {
   const resolvedParams = await params;
   const { order } = await loadOrder(String(resolvedParams.token || "").trim());
   if (!order) return { title: "DemoSites preview" };
 
+  const fields = order.editable_fields || {};
   const title = `${order.company_name} — din nye nettside`;
   const description = `Se hvordan den nye nettsiden til ${order.company_name} kan se ut. Demoen er live nå — bestill for å beholde den.`;
-  const logo = order.logo_url || undefined;
+  const socialImage = String(fields.hero_image_url || "").trim() || order.logo_url || undefined;
 
   return {
     title,
     description,
-    // Trial previews must never compete with the published /sites page.
     robots: { index: false, follow: false },
     openGraph: {
       title,
       description,
       type: "website",
-      ...(logo ? { images: [{ url: logo }] } : {}),
+      ...(socialImage ? { images: [{ url: socialImage }] } : {}),
     },
     twitter: { card: "summary_large_image", title, description },
   };
 }
 
-export default async function DemoPreviewPage({
-  params,
-  searchParams,
-}: PreviewPageProps) {
+export default async function DemoPreviewPage({ params, searchParams }: PreviewPageProps) {
   const resolvedParams = await params;
   const resolvedSearch = ((await searchParams) || {}) as SearchParams;
   const token = String(resolvedParams.token || "").trim();
   const { supabase, order, orderId } = await loadOrder(token);
 
   if (!order) {
-    return (
-      <NotFound
-        title="Fant ikke preview"
-        description="Denne preview-lenken finnes ikke, eller demoen er ikke lenger tilgjengelig."
-      />
-    );
+    return <NotFound title="Fant ikke preview" description="Denne preview-lenken finnes ikke, eller demoen er ikke lenger tilgjengelig." />;
   }
 
   const fields = order.editable_fields || {};
   const extractedProfile = order.extracted_profile || null;
   const pkg = getDemoSitePackage(order.package_id);
-  const templateSlug = String(
-    fields.template_slug || order.template_slug || "local-service",
-  );
-
-  // Layout/style: URL override (design switcher) → saved fields → industry default.
+  const templateSlug = String(fields.template_slug || order.template_slug || "local-service");
   const design = resolveDemoSiteDesign({
     templateSlug,
     editableFields: fields,
-    layoutOverride:
-      typeof resolvedSearch.layout === "string" ? resolvedSearch.layout : null,
-    styleOverride:
-      typeof resolvedSearch.style === "string" ? resolvedSearch.style : null,
+    layoutOverride: typeof resolvedSearch.layout === "string" ? resolvedSearch.layout : null,
+    styleOverride: typeof resolvedSearch.style === "string" ? resolvedSearch.style : null,
   });
 
-  // Social proof for the countdown bar: real inquiries captured by THIS
-  // demo via the contact form (stored as demo_inquiry events).
   let leadCount = 0;
   if (supabase && orderId) {
     const { count } = await supabase
@@ -148,26 +116,20 @@ export default async function DemoPreviewPage({
     leadCount = count || 0;
   }
 
-  // Heat signal for the seller portal: every open is logged (best effort).
   if (supabase && orderId) {
     try {
       await supabase.from("demo_site_order_events").insert({
         order_id: orderId,
         event_type: "demo_viewed",
         title: "Prøvesiden ble åpnet",
-        metadata: {
-          via: "preview",
-          layout: design.layout,
-          style: design.style,
-        },
+        metadata: { via: "preview", layout: design.layout, style: design.style },
       });
     } catch {
       // View logging must never break the page.
     }
   }
 
-  const showConversionBar =
-    order.status !== "claimed" && Boolean(order.claim_url);
+  const showConversionBar = order.status !== "claimed" && Boolean(order.claim_url);
   const isPresentation = resolvedSearch.present === "1";
   const rendererProps = {
     mode: "public" as const,
@@ -189,47 +151,32 @@ export default async function DemoPreviewPage({
     inquiryToken: token,
     packageId: order.package_id,
   };
+  const heroVideoUrl = String(fields.hero_video_kind || "") === "direct" ? String(fields.hero_video_url || "") : "";
+  const heroPosterUrl = String(fields.hero_video_poster_url || fields.hero_image_url || "");
 
   return (
     <>
       {showConversionBar && !isPresentation && (
-        <DemoCountdownBar
-          expiresAt={order.expires_at}
-          claimUrl={order.claim_url}
-          leadCount={leadCount}
-        />
+        <DemoCountdownBar expiresAt={order.expires_at} claimUrl={order.claim_url} leadCount={leadCount} />
       )}
       {isSignatureDemoSiteLayout(design.layout) ? (
         <DemoSignatureSiteRenderer {...rendererProps} />
       ) : (
         <DemoSitePreviewRenderer {...rendererProps} />
       )}
-      {!isPresentation && (
-        <DemoDesignSwitcher
-          basePath={`/demosites/preview/${token}`}
-          design={design}
-        />
-      )}
+      <DemoHeroVideo videoUrl={heroVideoUrl} posterUrl={heroPosterUrl} companyName={order.company_name} />
+      {!isPresentation && <DemoDesignSwitcher basePath={`/demosites/preview/${token}`} design={design} />}
     </>
   );
 }
 
-function NotFound({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
+function NotFound({ title, description }: { title: string; description: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
       <div className="max-w-xl rounded-lg border border-slate-800 bg-slate-900 p-8 text-center">
         <h1 className="text-3xl font-bold">{title}</h1>
         <p className="mt-4 text-slate-300">{description}</p>
-        <Link
-          href="/demosites"
-          className="mt-6 inline-flex rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-        >
+        <Link href="/demosites" className="mt-6 inline-flex rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-400">
           Gå til DemoSites
         </Link>
       </div>
