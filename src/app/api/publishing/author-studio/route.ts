@@ -1226,6 +1226,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project: updated, applied, warnings, pending, remaining: pending.length });
     }
 
+    // Fordel ETT helt dokument med løs info ut over HELE boken automatisk:
+    // AI ruter hver bit av informasjonen til kapittelet der den hører hjemme
+    // (uten å duplisere). Returnerer ferdige «insert»-items som klienten
+    // kjører gjennom apply_update_from_file — så forfatteren slipper å velge
+    // kapittel manuelt for hver del.
+    if (mode === "plan_distribute_info") {
+      const manuscript = String(body.manuscript || "").trim();
+      if (!manuscript) return NextResponse.json({ error: "Last opp filen først." }, { status: 400 });
+      if (chapters.length === 0) return NextResponse.json({ error: "Boken har ingen kapitler å fordele info til." }, { status: 400 });
+      const list = chapters
+        .map((c, i) => `${i}. ${c.chapter_title} — ${String(c.draft || "").slice(0, 240).replace(/\s+/g, " ")}`)
+        .join("\n");
+      const raw = await askClaude(
+        `Du får en bok (kapittelliste med utdrag) og et dokument med NY, LØS informasjon (notater, oppdateringer, fakta som passer litt her og der). Fordel informasjonen til kapitlene der den hører hjemme. Returner KUN gyldig JSON.
+
+Regler:
+- Del informasjonen i biter og send HVER bit til DET ENE kapittelet den passer best i. IKKE dupliser samme info til flere kapitler.
+- Ta kun med kapitler som faktisk skal ha ny info.
+- "info" skal inneholde den relevante delen av dokumentet, ordrett eller lett omskrevet — det som senere skal veves inn i kapittelet.
+- Info som ikke passer i noe eksisterende kapittel: bruk index = -1 (blir et nytt tillegg til slutt).
+
+KAPITLER:
+${list.slice(0, 16000)}
+
+NY INFORMASJON:
+---
+${manuscript.slice(0, 40000)}
+---
+
+JSON schema:
+{ "assignments": [ { "index": 0, "info": "streng" } ] }`,
+        { model: "sonnet", maxTokens: 8000, temperature: 0.3 },
+      );
+      const parsed = safeJsonParse<{ assignments?: Array<{ index?: number; info?: string }> }>(raw, {});
+      const items = asArray(parsed.assignments)
+        .map((a) => {
+          const info = String(a.info || "").trim();
+          if (!info) return null;
+          const idx = Number(a.index);
+          if (Number.isInteger(idx) && idx >= 0 && idx < chapters.length) {
+            return { title: chapters[idx].chapter_title, target_title: chapters[idx].chapter_title, action: "insert", draft: info };
+          }
+          return { title: "Nytt tillegg", target_title: "", action: "append", draft: info };
+        })
+        .filter(Boolean) as Record<string, any>[];
+      if (items.length === 0) {
+        return NextResponse.json({ error: "Fant ingen tydelig plass for informasjonen. Prøv «Oppdater fra fil» og velg plassering selv." }, { status: 422 });
+      }
+      return NextResponse.json({ success: true, mode, items, count: items.length });
+    }
+
     // «Hva mangler for 10?»: rådgivning i stedet for omskriving. Peker ut det
     // eneste-forfatteren-kan-tilføre (ekte historier, tall, eksempler, en
     // mening med kant) som ville løftet kapittelet til topps — med hvor i
