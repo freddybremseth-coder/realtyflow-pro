@@ -15,6 +15,32 @@ function extOf(name: string) {
   return "";
 }
 
+/**
+ * Word-overskrifter til markdown. mammoth.extractRawText kaster bort all
+ * struktur, så et 33-kapitlers manus kommer ut som én tekstvegg og
+ * kapittelsplittingen finner ingenting. Ved å gå via HTML beholder vi
+ * Overskrift 1-3 som #/##/### — da finner kapittelsplittingen alle kapitlene.
+ */
+function htmlToMarkdownish(html: string): string {
+  return String(html || "")
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gis, "\n\n# $1\n\n")
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gis, "\n\n## $1\n\n")
+    .replace(/<h[3-6][^>]*>(.*?)<\/h[3-6]>/gis, "\n\n### $1\n\n")
+    .replace(/<li[^>]*>(.*?)<\/li>/gis, "\n- $1")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function extractPdfText(buffer: Buffer): Promise<string> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
@@ -41,8 +67,18 @@ export async function POST(request: NextRequest) {
     let text = "";
     if (ext === "docx") {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const parsed = await mammoth.extractRawText({ buffer });
-      text = String(parsed.value || "");
+      // Først via HTML, så overskriftene (og dermed kapittelinndelingen)
+      // overlever. Faller tilbake til ren tekst hvis konverteringen svikter.
+      try {
+        const html = await mammoth.convertToHtml({ buffer });
+        text = htmlToMarkdownish(String(html.value || ""));
+      } catch {
+        text = "";
+      }
+      if (!text) {
+        const parsed = await mammoth.extractRawText({ buffer });
+        text = String(parsed.value || "");
+      }
     } else if (ext === "pdf") {
       const buffer = Buffer.from(await file.arrayBuffer());
       text = await extractPdfText(buffer);
@@ -63,13 +99,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Taket lå på 120k tegn — det kuttet et manus på ~10 kapitler midt i, så
+    // en hel bok aldri kom inn. 1,5 mill. tegn dekker selv svært lange bøker
+    // (~250 000 ord) og holder seg godt innenfor grensen for request-body.
+    const MAX_CHARS = 1_500_000;
     return NextResponse.json({
       success: true,
       file_name: file.name,
       char_count: text.length,
       preview: text.slice(0, 700),
-      content: text.slice(0, 120000),
-      truncated: text.length > 120000,
+      content: text.slice(0, MAX_CHARS),
+      truncated: text.length > MAX_CHARS,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Kunne ikke lese filen.";

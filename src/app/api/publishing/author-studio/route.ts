@@ -190,62 +190,86 @@ function splitManuscript(raw: string): Chapter[] {
  * som ett gigantisk kapittel.
  */
 async function aiSplitChapters(text: string): Promise<Chapter[]> {
-  const sample = text.slice(0, 90000);
-  try {
-    const raw = await askClaude(
-      `Du er en manusredaktør som skal finne kapittelgrensene i et manus der formateringen har gått tapt. Returner KUN gyldig JSON.
+  // Del opp i vinduer og let etter kapittelgrenser i HELE manuset. Tidligere
+  // så vi bare de første 90k tegnene, slik at en lang bok endte med en håndfull
+  // kapitler og resten som ett gigantisk siste kapittel.
+  const WINDOW = 80000;
+  const MAX_WINDOWS = 6;
+  const mechanical = (slice: string, label: (n: number) => string): Chapter[] => {
+    const words = slice.split(/\s+/).filter(Boolean);
+    const perPart = 2200;
+    const parts: Chapter[] = [];
+    for (let i = 0; i < words.length; i += perPart) {
+      parts.push({ chapter_title: label(parts.length + 1), draft: words.slice(i, i + perPart).join(" ") });
+    }
+    return parts;
+  };
 
-For hvert kapittel/naturlige hovedavsnitt:
+  const found: Array<{ title: string; index: number }> = [];
+  let cursor = 0;
+  for (let w = 0; w < MAX_WINDOWS; w += 1) {
+    const start = w * WINDOW;
+    if (start >= text.length) break;
+    const sample = text.slice(start, start + WINDOW);
+    if (sample.trim().length < 500) break;
+    try {
+      const raw = await askClaude(
+        `Du er en manusredaktør som skal finne kapittelgrensene i en DEL av et manus der formateringen har gått tapt. Returner KUN gyldig JSON.
+
+For hvert kapittel/naturlige hovedavsnitt som starter i denne delen:
 - "title": kort, beskrivende kapitteltittel
 - "start_marker": de FØRSTE 30-60 tegnene av kapittelets første setning, KOPIERT HELT EKSAKT fra teksten under (samme tegnsetting og stor/liten bokstav — ingen omskriving)
 
-Finn 5-25 kapitler avhengig av manusets lengde og struktur.
+Finn ALLE kapitlene som begynner i denne delen (typisk 3-15). Dette er del ${w + 1} av manuset — teksten kan starte midt i et kapittel, og da hopper du bare over den innledende biten.
 
-Manus:
+Manusdel:
 ---
 ${sample}
 ---
 
 JSON schema:
 { "chapters": [{ "title": "string", "start_marker": "string" }] }`,
-      { model: "sonnet", maxTokens: 4000, temperature: 0.2 },
-    );
-    const parsed = safeJsonParse<{ chapters?: Array<{ title?: string; start_marker?: string }> }>(raw, {});
-    const markers = asArray(parsed.chapters)
-      .map((c) => ({ title: String(c?.title || "").trim(), marker: String(c?.start_marker || "").trim() }))
-      .filter((c) => c.title && c.marker.length >= 10);
+        { model: "sonnet", maxTokens: 4000, temperature: 0.2 },
+      );
+      const parsed = safeJsonParse<{ chapters?: Array<{ title?: string; start_marker?: string }> }>(raw, {});
+      const markers = asArray(parsed.chapters)
+        .map((c) => ({ title: String(c?.title || "").trim(), marker: String(c?.start_marker || "").trim() }))
+        .filter((c) => c.title && c.marker.length >= 10);
+      for (const m of markers) {
+        const idx = text.indexOf(m.marker, Math.max(cursor, start));
+        if (idx >= 0) {
+          found.push({ title: m.title, index: idx });
+          cursor = idx + m.marker.length;
+        }
+      }
+    } catch (error) {
+      console.warn("[Author Studio] AI-kapitteldeling feilet i vindu", w, error);
+      break;
+    }
+  }
 
-    const found: Array<{ title: string; index: number }> = [];
-    let cursor = 0;
-    for (const m of markers) {
-      const idx = text.indexOf(m.marker, cursor);
-      if (idx >= 0) {
-        found.push({ title: m.title, index: idx });
-        cursor = idx + m.marker.length;
+  if (found.length >= 2) {
+    const chapters: Chapter[] = [];
+    if (found[0].index > 400) chapters.push({ chapter_title: "Innledning", draft: text.slice(0, found[0].index).trim() });
+    for (let i = 0; i < found.length; i += 1) {
+      const end = i + 1 < found.length ? found[i + 1].index : text.length;
+      const body = text.slice(found[i].index, end).trim();
+      if (!body) continue;
+      // Sluttbiten kan være hele resten av boken hvis markørene tok slutt før
+      // manuset gjorde det — del den mekanisk i stedet for ett kjempekapittel.
+      if (i === found.length - 1 && body.split(/\s+/).filter(Boolean).length > 4500) {
+        const parts = mechanical(body, (n) => (n === 1 ? found[i].title : `${found[i].title} (del ${n})`));
+        chapters.push(...parts);
+      } else {
+        chapters.push({ chapter_title: found[i].title, draft: body });
       }
     }
-    if (found.length >= 2) {
-      const chapters: Chapter[] = [];
-      if (found[0].index > 400) chapters.push({ chapter_title: "Innledning", draft: text.slice(0, found[0].index).trim() });
-      for (let i = 0; i < found.length; i += 1) {
-        const end = i + 1 < found.length ? found[i + 1].index : text.length;
-        const body = text.slice(found[i].index, end).trim();
-        if (body) chapters.push({ chapter_title: found[i].title, draft: body });
-      }
-      if (chapters.length >= 2) return chapters;
-    }
-  } catch (error) {
-    console.warn("[Author Studio] AI-kapitteldeling feilet, bruker mekanisk deling:", error);
+    if (chapters.length >= 2) return chapters;
   }
 
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length < 3500) return [{ chapter_title: "Manuskript", draft: text }];
-  const perPart = 2200;
-  const parts: Chapter[] = [];
-  for (let i = 0; i < words.length; i += perPart) {
-    parts.push({ chapter_title: `Del ${parts.length + 1}`, draft: words.slice(i, i + perPart).join(" ") });
-  }
-  return parts;
+  return mechanical(text, (n) => `Del ${n}`);
 }
 
 async function loadProject(supabase: NonNullable<ReturnType<typeof getSupabase>>, id: string) {
