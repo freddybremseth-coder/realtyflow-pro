@@ -6,6 +6,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  Download,
   Feather,
   Image as ImageIcon,
   Languages,
@@ -17,6 +18,7 @@ import {
   Undo2,
   Upload,
   Wand2,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,7 @@ type Chapter = {
   draft: string;
   previous_draft?: string;
   image_url?: string | null;
+  images?: string[];
   formatted?: boolean;
   last_edit?: { action?: string; instruction?: string; summary?: string; at?: string };
   quality?: { score?: number; notes?: string[]; revised?: boolean; at?: string };
@@ -927,7 +930,7 @@ export default function ForfatterstudioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode: "set_chapter_image",
+          mode: "add_chapter_image",
           project_id: project.id,
           chapter_title: chapter.chapter_title,
           image_url: data.imageUrl,
@@ -943,6 +946,74 @@ export default function ForfatterstudioPage() {
       setBusyAction(null);
     }
   }, [project, chapter, imagePrompt, imageStyle, useOpenArt, applyProject]);
+
+  const uploadChapterImage = useCallback(async (file: File) => {
+    if (!project || !chapter) return;
+    if (!file.type.startsWith("image/")) { setStatus("Filen er ikke et bilde."); return; }
+    if (file.size > 12 * 1024 * 1024) { setStatus("Bildet er for stort (maks 12 MB)."); return; }
+    setBusyAction("image");
+    setStatus("Laster opp bildet…");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Kunne ikke lese filen."));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "add_chapter_image", project_id: project.id, chapter_title: chapter.chapter_title, image_url: dataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Opplastingen feilet.");
+      if (data.project) applyProject(data.project as FullProject, chapter.chapter_title);
+      setStatus("Bildet er lastet opp og lagt til kapittelet.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Opplastingen feilet.");
+    } finally {
+      setBusyAction(null);
+    }
+  }, [project, chapter, applyProject]);
+
+  const removeChapterImage = useCallback(async (imageUrl: string) => {
+    if (!project || !chapter) return;
+    setBusyAction("image");
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "remove_chapter_image", project_id: project.id, chapter_title: chapter.chapter_title, image_url: imageUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke fjerne bildet.");
+      if (data.project) applyProject(data.project as FullProject, chapter.chapter_title);
+      setStatus("Bildet er fjernet.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Kunne ikke fjerne bildet.");
+    } finally {
+      setBusyAction(null);
+    }
+  }, [project, chapter, applyProject]);
+
+  const downloadImage = useCallback(async (imageUrl: string, idx: number) => {
+    try {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      const ext = (blob.type.split("/")[1] || "png").replace("jpeg", "jpg");
+      const base = (chapter?.chapter_title || "kapittel").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "kapittel";
+      const a = document.createElement("a");
+      const objectUrl = URL.createObjectURL(blob);
+      a.href = objectUrl;
+      a.download = `${base}-bilde-${idx + 1}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(imageUrl, "_blank", "noopener,noreferrer");
+    }
+  }, [chapter]);
 
   const handleImportFile = useCallback(async (file: File) => {
     setImportBusy(true);
@@ -1417,7 +1488,9 @@ export default function ForfatterstudioPage() {
                     <span className={`text-xs ${i === chapterIndex ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                       {wordsOf(c.draft).toLocaleString("nb-NO")} ord
                       {c.quality?.score ? ` · ★ ${c.quality.score}/10` : ""}
-                      {c.image_url ? " · 🖼" : ""}
+                      {(Array.isArray(c.images) && c.images.length > 0) || c.image_url
+                        ? ` · 🖼${(c.images?.length || (c.image_url ? 1 : 0)) > 1 ? ` ${c.images?.length || 1}` : ""}`
+                        : ""}
                       {c.formatted ? " · ✓ formatert" : ""}
                     </span>
                   </button>
@@ -1593,12 +1666,33 @@ export default function ForfatterstudioPage() {
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="text-base flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Illustrasjon til kapittelet</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Bilder til kapittelet</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  {chapter.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={chapter.image_url} alt={chapter.chapter_title} className="max-h-64 rounded-md border" />
-                  ) : null}
+                  {(() => {
+                    const imgs = [
+                      ...(Array.isArray(chapter.images) ? chapter.images : []),
+                      ...(chapter.image_url ? [chapter.image_url] : []),
+                    ].filter((u, i, a) => u && a.indexOf(u) === i) as string[];
+                    if (imgs.length === 0) return null;
+                    return (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        {imgs.map((url, idx) => (
+                          <div key={url} className="group relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt={`${chapter.chapter_title} – bilde ${idx + 1}`} className="h-40 w-full rounded-md border object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 rounded-b-md bg-black/45 p-1 opacity-0 transition group-hover:opacity-100">
+                              <Button type="button" size="icon" variant="secondary" className="h-7 w-7" title="Last ned" onClick={() => downloadImage(url, idx)}>
+                                <Download className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button type="button" size="icon" variant="destructive" className="h-7 w-7" title="Fjern" disabled={busy} onClick={() => removeChapterImage(url)}>
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       placeholder={`Beskriv bildet (standard: illustrasjon til «${chapter.chapter_title}»)`}
@@ -1623,9 +1717,25 @@ export default function ForfatterstudioPage() {
                     </label>
                     <Button size="sm" onClick={generateImage} disabled={busy}>
                       {busyAction === "image" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-1 h-4 w-4" />}
-                      {chapter.image_url ? "Lag nytt bilde" : "Lag bilde"}
+                      Lag bilde
                     </Button>
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
+                      <Upload className="h-4 w-4" />
+                      Last opp bilde
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={busy}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadChapterImage(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
                   </div>
+                  <p className="text-xs text-muted-foreground">Et kapittel kan ha flere bilder. Hold musepekeren over et bilde for å laste ned eller fjerne det.</p>
                 </CardContent>
               </Card>
             </div>
