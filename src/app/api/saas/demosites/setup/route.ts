@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
-import { DEMO_SITE_TEMPLATE_SEEDS, buildDefaultTemplateFields } from "@/lib/demosites";
+import {
+  DEMO_SITE_TEMPLATE_SEEDS,
+  buildDefaultTemplateFields,
+} from "@/lib/demosites";
+import {
+  isDemoSiteLayout,
+  isDemoSiteStyle,
+  type DemoSiteLayout,
+  type DemoSiteStyleId,
+} from "@/lib/demosites-design";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,6 +34,8 @@ type SetupContent = {
   accent_color?: string | null;
   gallery_images?: string[];
   suggested_sections?: string[];
+  layout_variant?: DemoSiteLayout | null;
+  style_preset?: DemoSiteStyleId | null;
 };
 
 type SetupOrder = {
@@ -44,7 +55,8 @@ type SetupOrder = {
 
 type SupabaseClientLike = any;
 
-const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
+const REALTYFLOW_BASE_URL =
+  process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
 const DEFAULT_TEMPLATE_SLUG = DEMO_SITE_TEMPLATE_SEEDS[0]?.slug || "elektro";
 const DEFAULT_EXPIRY_DAYS = 7;
 
@@ -59,7 +71,10 @@ function text(value: unknown, maxLength = 4000) {
 
 function textList(value: unknown, maxItems = 12) {
   if (Array.isArray(value)) {
-    return value.map((item) => text(item, 500)).filter(Boolean).slice(0, maxItems);
+    return value
+      .map((item) => text(item, 500))
+      .filter(Boolean)
+      .slice(0, maxItems);
   }
 
   return String(value || "")
@@ -97,7 +112,9 @@ function url(value: unknown) {
 
   try {
     const parsed = new URL(output);
-    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : null;
+    return ["http:", "https:"].includes(parsed.protocol)
+      ? parsed.toString()
+      : null;
   } catch {
     return null;
   }
@@ -113,6 +130,16 @@ function templateSlug(value: unknown) {
   const output = text(value, 80);
   if (!output) return null;
   return /^[a-z0-9æøåé-]+$/iu.test(output) ? output.toLowerCase() : null;
+}
+
+function layoutVariant(value: unknown): DemoSiteLayout | null {
+  const output = text(value, 40);
+  return isDemoSiteLayout(output) ? output : null;
+}
+
+function stylePreset(value: unknown): DemoSiteStyleId | null {
+  const output = text(value, 40);
+  return isDemoSiteStyle(output) ? output : null;
 }
 
 function daysFromNow(days: number) {
@@ -143,13 +170,17 @@ function hasClaimUrl(value?: string | null) {
   return Boolean(value && value.includes("/demosites/claim/"));
 }
 
-async function repairOrderLinks(supabase: SupabaseClientLike, order: SetupOrder) {
+async function repairOrderLinks(
+  supabase: SupabaseClientLike,
+  order: SetupOrder,
+) {
   const token = order.claim_token || generateClaimToken();
   const patch: Record<string, unknown> = {};
 
   if (!order.claim_token) patch.claim_token = token;
   if (!hasClaimUrl(order.claim_url)) patch.claim_url = buildClaimUrl(token);
-  if (!hasCustomerPreviewUrl(order.preview_url)) patch.preview_url = buildPreviewUrl(token);
+  if (!hasCustomerPreviewUrl(order.preview_url))
+    patch.preview_url = buildPreviewUrl(token);
   if (!order.expires_at) patch.expires_at = daysFromNow(DEFAULT_EXPIRY_DAYS);
   if (!order.template_slug) patch.template_slug = DEFAULT_TEMPLATE_SLUG;
 
@@ -159,7 +190,9 @@ async function repairOrderLinks(supabase: SupabaseClientLike, order: SetupOrder)
     .from("demo_site_orders")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", order.id)
-    .select("id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields, notes")
+    .select(
+      "id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields, notes",
+    )
     .single();
 
   if (error) return { ...order, ...patch } as SetupOrder;
@@ -178,7 +211,10 @@ function buildSetupContent(body: RequestBody): SetupContent {
     services: textList(body.services, 12) as string[],
     products: textList(body.products, 12) as string[],
     prices: textList(body.prices, 12) as string[],
-    trust_points: textList(body.trust_points ?? body.trustPoints, 12) as string[],
+    trust_points: textList(
+      body.trust_points ?? body.trustPoints,
+      12,
+    ) as string[],
     faq: faqList(body.faq),
     call_to_action: text(body.call_to_action ?? body.callToAction, 160),
     contact_text: text(body.contact_text ?? body.contactText, 800),
@@ -187,11 +223,18 @@ function buildSetupContent(body: RequestBody): SetupContent {
     secondary_color: color(body.secondary_color ?? body.secondaryColor),
     accent_color: color(body.accent_color ?? body.accentColor),
     gallery_images: galleryImages,
-    suggested_sections: textList(body.suggested_sections ?? body.suggestedSections, 16) as string[],
+    suggested_sections: textList(
+      body.suggested_sections ?? body.suggestedSections,
+      16,
+    ) as string[],
+    layout_variant: layoutVariant(body.layout_variant ?? body.layoutVariant),
+    style_preset: stylePreset(body.style_preset ?? body.stylePreset),
   };
 }
 
-function getSetupContentDefaults(order: Pick<SetupOrder, "company_name" | "template_slug" | "notes">) {
+function getSetupContentDefaults(
+  order: Pick<SetupOrder, "company_name" | "template_slug" | "notes">,
+) {
   return buildDefaultTemplateFields({
     companyName: order.company_name,
     notes: order.notes || undefined,
@@ -200,7 +243,10 @@ function getSetupContentDefaults(order: Pick<SetupOrder, "company_name" | "templ
 }
 
 function mergeSetupContentDefaults(order: SetupOrder) {
-  const currentFields = order.editable_fields && typeof order.editable_fields === "object" ? order.editable_fields : {};
+  const currentFields =
+    order.editable_fields && typeof order.editable_fields === "object"
+      ? order.editable_fields
+      : {};
   return {
     ...getSetupContentDefaults(order),
     ...currentFields,
@@ -212,21 +258,37 @@ export async function GET(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
+  if (!supabase)
+    return NextResponse.json(
+      { error: "Supabase server key is not configured" },
+      { status: 503 },
+    );
 
-  const orderId = request.nextUrl.searchParams.get("order_id") || request.nextUrl.searchParams.get("id");
-  if (!orderId) return NextResponse.json({ error: "order_id is required" }, { status: 400 });
+  const orderId =
+    request.nextUrl.searchParams.get("order_id") ||
+    request.nextUrl.searchParams.get("id");
+  if (!orderId)
+    return NextResponse.json(
+      { error: "order_id is required" },
+      { status: 400 },
+    );
 
   const { data, error } = await supabase
     .from("demo_site_orders")
-    .select("id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields, notes")
+    .select(
+      "id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields, notes",
+    )
     .eq("id", orderId)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
 
   const order = await repairOrderLinks(supabase, data as SetupOrder);
-  return NextResponse.json({ order, setup_content: mergeSetupContentDefaults(order) });
+  return NextResponse.json({
+    order,
+    setup_content: mergeSetupContentDefaults(order),
+  });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -234,24 +296,37 @@ export async function PATCH(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase server key is not configured" }, { status: 503 });
+  if (!supabase)
+    return NextResponse.json(
+      { error: "Supabase server key is not configured" },
+      { status: 503 },
+    );
 
   try {
     const body = (await request.json().catch(() => ({}))) as RequestBody;
     const orderId = text(body.order_id ?? body.orderId ?? body.id, 80);
-    if (!orderId) return NextResponse.json({ error: "order_id is required" }, { status: 400 });
+    if (!orderId)
+      return NextResponse.json(
+        { error: "order_id is required" },
+        { status: 400 },
+      );
 
     const { data: existing, error: existingError } = await supabase
       .from("demo_site_orders")
-      .select("id, company_name, editable_fields, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, notes")
+      .select(
+        "id, company_name, editable_fields, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, notes",
+      )
       .eq("id", orderId)
       .single();
 
     if (existingError) throw existingError;
 
     const setupContent = buildSetupContent(body);
-    const selectedTemplateSlug = templateSlug(body.template_slug ?? body.templateSlug);
-    const currentTemplateSlug = selectedTemplateSlug || existing?.template_slug || DEFAULT_TEMPLATE_SLUG;
+    const selectedTemplateSlug = templateSlug(
+      body.template_slug ?? body.templateSlug,
+    );
+    const currentTemplateSlug =
+      selectedTemplateSlug || existing?.template_slug || DEFAULT_TEMPLATE_SLUG;
     const existingOrderForDefaults = {
       ...(existing as SetupOrder),
       template_slug: currentTemplateSlug,
@@ -275,7 +350,9 @@ export async function PATCH(request: NextRequest) {
       .from("demo_site_orders")
       .update(patch)
       .eq("id", orderId)
-      .select("id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields")
+      .select(
+        "id, company_name, status, template_slug, preview_url, claim_token, claim_url, production_url, expires_at, logo_url, editable_fields",
+      )
       .single();
 
     if (error) throw error;
@@ -285,16 +362,32 @@ export async function PATCH(request: NextRequest) {
     await supabase.from("demo_site_order_events").insert({
       order_id: orderId,
       event_type: "setup_content_updated",
-      title: "Oppsettinnhold oppdatert",
-      description: "Logo, tekst, farger, innhold eller malvalg ble lagret i DemoSites-oppsettet.",
+      title: "Oppsettinnhold og design oppdatert",
+      description:
+        "Logo, tekst, farger, innhold, bransjemal eller designkonsept ble lagret i DemoSites-oppsettet.",
       metadata: {
-        fields: Object.keys(setupContent).filter((key) => setupContent[key as keyof SetupContent]),
+        fields: Object.keys(setupContent).filter(
+          (key) => setupContent[key as keyof SetupContent],
+        ),
         template_slug: selectedTemplateSlug,
+        layout_variant: setupContent.layout_variant,
+        style_preset: setupContent.style_preset,
       },
     });
 
-    return NextResponse.json({ order: repairedOrder, setup_content: repairedOrder.editable_fields });
+    return NextResponse.json({
+      order: repairedOrder,
+      setup_content: repairedOrder.editable_fields,
+    });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save setup content" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not save setup content",
+      },
+      { status: 500 },
+    );
   }
 }

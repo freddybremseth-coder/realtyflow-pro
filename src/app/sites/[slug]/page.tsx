@@ -1,18 +1,14 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
+import { DemoSignatureSiteRenderer } from "@/components/demosites/demo-signature-site-renderer";
+import { DemoHeroVideo } from "@/components/demosites/demo-hero-video";
 import { getDemoSitesPreviewModel } from "@/lib/demosites-preview";
-import { resolveDemoSiteDesign } from "@/lib/demosites-design";
+import { isSignatureDemoSiteLayout, resolveDemoSiteDesign } from "@/lib/demosites-design";
 import { buildLiveSiteUrl } from "@/lib/demosites-publish";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-/**
- * /sites/[slug] — the REAL published one-pager for paying customers.
- * Same renderer as the trial preview, but: indexable, full SEO metadata,
- * schema.org LocalBusiness, no trial UI and a delivered-by footer.
- */
 
 type SitePageProps = {
   params: Promise<{ slug: string }> | { slug: string };
@@ -63,7 +59,6 @@ function buildPreviewInput(order: LiveOrder) {
   return {
     companyName: order.company_name,
     templateSlug: String(fields.template_slug || order.template_slug || "local-service"),
-    // Live sites never link back to the old site they replaced.
     websiteUrl: null,
     logoUrl: order.logo_url,
     brandColor: order.brand_color,
@@ -84,10 +79,11 @@ export async function generateMetadata({ params }: SitePageProps): Promise<Metad
   if (!order) return { title: "Siden finnes ikke", robots: { index: false } };
 
   const preview = getDemoSitesPreviewModel(buildPreviewInput(order));
+  const fields = order.editable_fields || {};
   const title = `${preview.companyName} – ${preview.content.hero_title}`.slice(0, 70);
   const description = (preview.content.hero_subtitle || preview.content.intro_text || "").slice(0, 160);
   const url = buildLiveSiteUrl(slug);
-  const image = preview.content.gallery_images[0] || preview.content.logo_url || undefined;
+  const image = String(fields.hero_image_url || "").trim() || preview.content.gallery_images[0] || preview.content.logo_url || undefined;
 
   return {
     title,
@@ -124,19 +120,19 @@ export default async function LiveSitePage({ params }: SitePageProps) {
 
   const input = buildPreviewInput(order);
   const preview = getDemoSitesPreviewModel(input);
-  const design = resolveDemoSiteDesign({
-    templateSlug: preview.templateSlug,
-    editableFields: input.editableFields,
-  });
+  const fields = order.editable_fields || {};
+  const design = resolveDemoSiteDesign({ templateSlug: preview.templateSlug, editableFields: input.editableFields });
+  const heroImage = String(fields.hero_image_url || "").trim() || preview.content.gallery_images[0] || "";
 
-  // schema.org LocalBusiness — the delivered SEO package.
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
     name: preview.companyName,
     url: buildLiveSiteUrl(slug),
     ...(preview.content.logo_url ? { logo: preview.content.logo_url } : {}),
-    ...(preview.content.gallery_images.length ? { image: preview.content.gallery_images } : {}),
+    ...(heroImage || preview.content.gallery_images.length
+      ? { image: [heroImage, ...preview.content.gallery_images].filter(Boolean).filter((value, index, list) => list.indexOf(value) === index) }
+      : {}),
     ...(preview.contact.phone ? { telephone: preview.contact.phone } : {}),
     ...(preview.contact.email ? { email: preview.contact.email } : {}),
     ...(preview.contact.address ? { address: preview.contact.address } : {}),
@@ -155,17 +151,26 @@ export default async function LiveSitePage({ params }: SitePageProps) {
       : {}),
   };
 
+  const rendererProps = {
+    mode: "public" as const,
+    ...input,
+    design,
+    inquiryToken: order.claim_token || undefined,
+    isLiveSite: true,
+    packageId: order.package_id || undefined,
+  };
+  const heroVideoUrl = String(fields.hero_video_kind || "") === "direct" ? String(fields.hero_video_url || "") : "";
+  const heroPosterUrl = String(fields.hero_video_poster_url || fields.hero_image_url || "");
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <DemoSitePreviewRenderer
-        mode="public"
-        {...input}
-        design={design}
-        inquiryToken={order.claim_token || undefined}
-        isLiveSite
-        packageId={order.package_id || undefined}
-      />
+      {isSignatureDemoSiteLayout(design.layout) ? (
+        <DemoSignatureSiteRenderer {...rendererProps} />
+      ) : (
+        <DemoSitePreviewRenderer {...rendererProps} />
+      )}
+      <DemoHeroVideo videoUrl={heroVideoUrl} posterUrl={heroPosterUrl} companyName={order.company_name} />
     </>
   );
 }

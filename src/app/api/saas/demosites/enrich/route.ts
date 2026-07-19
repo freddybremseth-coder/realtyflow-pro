@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase } from "@/lib/demosites-api-supabase";
-import { enrichDemoSiteOrder } from "@/lib/demosites-enrichment";
+import { enrichDemoSiteOrderWithHeroAssets } from "@/lib/demosites-hero-assets";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,15 +10,10 @@ export const maxDuration = 300;
 /**
  * POST /api/saas/demosites/enrich   Body: { order_id }
  *
- * Admin/seller action: (re)enrich an existing demo with real content —
- * snapshot of the customer's old site, AI-written copy and AI-generated
- * gallery images. Used from the DemoSites CRM before a physical customer
- * visit, and to refresh demos created before enrichment existed.
+ * Admin/seller action: (re)enrich an existing demo with real content,
+ * quality-controlled hero media, AI copy and AI-generated fallback images.
  */
 export async function POST(request: NextRequest) {
-  // Same auth as the rest of the DemoSites admin APIs (realtyflow_admin
-  // session cookie / access roles) — the first version read a non-existent
-  // cookie name and rejected every request with 401.
   const unauthorized = await requireAdminApi(request);
   if (unauthorized) return unauthorized;
 
@@ -44,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await enrichDemoSiteOrder(supabase, order, {
+    const result = await enrichDemoSiteOrderWithHeroAssets(supabase, order, {
       generateImages: body.generate_images !== false,
       regenerateImages: body.regenerate_images === true,
       imagesOnly: body.images_only === true,

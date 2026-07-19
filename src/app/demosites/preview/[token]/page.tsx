@@ -2,10 +2,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
+import { DemoSignatureSiteRenderer } from "@/components/demosites/demo-signature-site-renderer";
+import { DemoHeroVideo } from "@/components/demosites/demo-hero-video";
 import { DemoCountdownBar } from "@/components/demosites/demo-countdown-bar";
 import { DemoDesignSwitcher } from "@/components/demosites/demo-design-switcher";
 import { getDemoSitePackage } from "@/lib/demosites";
-import { resolveDemoSiteDesign } from "@/lib/demosites-design";
+import { isSignatureDemoSiteLayout, resolveDemoSiteDesign } from "@/lib/demosites-design";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -64,20 +66,20 @@ export async function generateMetadata({ params }: PreviewPageProps): Promise<Me
   const { order } = await loadOrder(String(resolvedParams.token || "").trim());
   if (!order) return { title: "DemoSites preview" };
 
+  const fields = order.editable_fields || {};
   const title = `${order.company_name} — din nye nettside`;
   const description = `Se hvordan den nye nettsiden til ${order.company_name} kan se ut. Demoen er live nå — bestill for å beholde den.`;
-  const logo = order.logo_url || undefined;
+  const socialImage = String(fields.hero_image_url || "").trim() || order.logo_url || undefined;
 
   return {
     title,
     description,
-    // Trial previews must never compete with the published /sites page.
     robots: { index: false, follow: false },
     openGraph: {
       title,
       description,
       type: "website",
-      ...(logo ? { images: [{ url: logo }] } : {}),
+      ...(socialImage ? { images: [{ url: socialImage }] } : {}),
     },
     twitter: { card: "summary_large_image", title, description },
   };
@@ -96,17 +98,14 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
   const fields = order.editable_fields || {};
   const extractedProfile = order.extracted_profile || null;
   const pkg = getDemoSitePackage(order.package_id);
-
-  // Layout/style: URL override (design switcher) → saved fields → industry default.
+  const templateSlug = String(fields.template_slug || order.template_slug || "local-service");
   const design = resolveDemoSiteDesign({
-    templateSlug: String(fields.template_slug || order.template_slug || "local-service"),
+    templateSlug,
     editableFields: fields,
     layoutOverride: typeof resolvedSearch.layout === "string" ? resolvedSearch.layout : null,
     styleOverride: typeof resolvedSearch.style === "string" ? resolvedSearch.style : null,
   });
 
-  // Social proof for the countdown bar: real inquiries captured by THIS
-  // demo via the contact form (stored as demo_inquiry events).
   let leadCount = 0;
   if (supabase && orderId) {
     const { count } = await supabase
@@ -117,14 +116,13 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
     leadCount = count || 0;
   }
 
-  // Heat signal for the seller portal: every open is logged (best effort).
   if (supabase && orderId) {
     try {
       await supabase.from("demo_site_order_events").insert({
         order_id: orderId,
         event_type: "demo_viewed",
         title: "Prøvesiden ble åpnet",
-        metadata: { via: "preview" },
+        metadata: { via: "preview", layout: design.layout, style: design.style },
       });
     } catch {
       // View logging must never break the page.
@@ -133,32 +131,40 @@ export default async function DemoPreviewPage({ params, searchParams }: PreviewP
 
   const showConversionBar = order.status !== "claimed" && Boolean(order.claim_url);
   const isPresentation = resolvedSearch.present === "1";
+  const rendererProps = {
+    mode: "public" as const,
+    companyName: order.company_name,
+    templateSlug,
+    websiteUrl: order.website_url,
+    expiresAt: order.expires_at,
+    logoUrl: order.logo_url,
+    brandColor: order.brand_color,
+    customerEmail: order.customer_email,
+    customerPhone: order.customer_phone,
+    profile: extractedProfile,
+    extractedProfile,
+    editableFields: fields,
+    notes: order.notes,
+    packageName: pkg.shortName,
+    fallbackMode: "defaults" as const,
+    design,
+    inquiryToken: token,
+    packageId: order.package_id,
+  };
+  const heroVideoUrl = String(fields.hero_video_kind || "") === "direct" ? String(fields.hero_video_url || "") : "";
+  const heroPosterUrl = String(fields.hero_video_poster_url || fields.hero_image_url || "");
 
   return (
     <>
       {showConversionBar && !isPresentation && (
         <DemoCountdownBar expiresAt={order.expires_at} claimUrl={order.claim_url} leadCount={leadCount} />
       )}
-      <DemoSitePreviewRenderer
-        mode="public"
-        companyName={order.company_name}
-        templateSlug={String(fields.template_slug || order.template_slug || "local-service")}
-        websiteUrl={order.website_url}
-        expiresAt={order.expires_at}
-        logoUrl={order.logo_url}
-        brandColor={order.brand_color}
-        customerEmail={order.customer_email}
-        customerPhone={order.customer_phone}
-        profile={extractedProfile}
-        extractedProfile={extractedProfile}
-        editableFields={fields}
-        notes={order.notes}
-        packageName={pkg.shortName}
-        fallbackMode="defaults"
-        design={design}
-        inquiryToken={token}
-        packageId={order.package_id}
-      />
+      {isSignatureDemoSiteLayout(design.layout) ? (
+        <DemoSignatureSiteRenderer {...rendererProps} />
+      ) : (
+        <DemoSitePreviewRenderer {...rendererProps} />
+      )}
+      <DemoHeroVideo videoUrl={heroVideoUrl} posterUrl={heroPosterUrl} companyName={order.company_name} />
       {!isPresentation && <DemoDesignSwitcher basePath={`/demosites/preview/${token}`} design={design} />}
     </>
   );
