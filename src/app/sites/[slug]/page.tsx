@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
+import { DemoSignatureSiteRenderer } from "@/components/demosites/demo-signature-site-renderer";
 import { getDemoSitesPreviewModel } from "@/lib/demosites-preview";
-import { resolveDemoSiteDesign } from "@/lib/demosites-design";
+import {
+  isSignatureDemoSiteLayout,
+  resolveDemoSiteDesign,
+} from "@/lib/demosites-design";
 import { buildLiveSiteUrl } from "@/lib/demosites-publish";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /**
- * /sites/[slug] — the REAL published one-pager for paying customers.
- * Same renderer as the trial preview, but: indexable, full SEO metadata,
- * schema.org LocalBusiness, no trial UI and a delivered-by footer.
+ * /sites/[slug] — the real published one-pager for paying customers.
+ * Both legacy and Signature 2026 designs share the same content model, SEO,
+ * lead form and publishing pipeline.
  */
 
 type SitePageProps = {
@@ -50,7 +54,9 @@ async function loadLiveOrder(slug: string): Promise<LiveOrder | null> {
 
   const { data } = await supabase
     .from("demo_site_orders")
-    .select("id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, template_slug, logo_url, brand_color, claim_token, package_id, extracted_profile, editable_fields, notes")
+    .select(
+      "id, status, billing_status, company_name, customer_email, customer_phone, industry, website_url, template_slug, logo_url, brand_color, claim_token, package_id, extracted_profile, editable_fields, notes",
+    )
     .eq("site_slug", slug)
     .eq("status", "deployed")
     .maybeSingle();
@@ -62,7 +68,9 @@ function buildPreviewInput(order: LiveOrder) {
   const fields = order.editable_fields || {};
   return {
     companyName: order.company_name,
-    templateSlug: String(fields.template_slug || order.template_slug || "local-service"),
+    templateSlug: String(
+      fields.template_slug || order.template_slug || "local-service",
+    ),
     // Live sites never link back to the old site they replaced.
     websiteUrl: null,
     logoUrl: order.logo_url,
@@ -77,17 +85,27 @@ function buildPreviewInput(order: LiveOrder) {
   };
 }
 
-export async function generateMetadata({ params }: SitePageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: SitePageProps): Promise<Metadata> {
   const resolvedParams = await params;
   const slug = String(resolvedParams.slug || "").trim();
   const order = await loadLiveOrder(slug);
   if (!order) return { title: "Siden finnes ikke", robots: { index: false } };
 
   const preview = getDemoSitesPreviewModel(buildPreviewInput(order));
-  const title = `${preview.companyName} – ${preview.content.hero_title}`.slice(0, 70);
-  const description = (preview.content.hero_subtitle || preview.content.intro_text || "").slice(0, 160);
+  const title = `${preview.companyName} – ${preview.content.hero_title}`.slice(
+    0,
+    70,
+  );
+  const description = (
+    preview.content.hero_subtitle ||
+    preview.content.intro_text ||
+    ""
+  ).slice(0, 160);
   const url = buildLiveSiteUrl(slug);
-  const image = preview.content.gallery_images[0] || preview.content.logo_url || undefined;
+  const image =
+    preview.content.gallery_images[0] || preview.content.logo_url || undefined;
 
   return {
     title,
@@ -116,7 +134,9 @@ export default async function LiveSitePage({ params }: SitePageProps) {
       <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
         <div className="max-w-md rounded-lg border border-slate-800 bg-slate-900 p-8 text-center">
           <h1 className="text-2xl font-bold">Siden finnes ikke</h1>
-          <p className="mt-3 text-slate-300">Denne adressen er ikke publisert. Sjekk at lenken er riktig.</p>
+          <p className="mt-3 text-slate-300">
+            Denne adressen er ikke publisert. Sjekk at lenken er riktig.
+          </p>
         </div>
       </main>
     );
@@ -136,11 +156,14 @@ export default async function LiveSitePage({ params }: SitePageProps) {
     name: preview.companyName,
     url: buildLiveSiteUrl(slug),
     ...(preview.content.logo_url ? { logo: preview.content.logo_url } : {}),
-    ...(preview.content.gallery_images.length ? { image: preview.content.gallery_images } : {}),
+    ...(preview.content.gallery_images.length
+      ? { image: preview.content.gallery_images }
+      : {}),
     ...(preview.contact.phone ? { telephone: preview.contact.phone } : {}),
     ...(preview.contact.email ? { email: preview.contact.email } : {}),
     ...(preview.contact.address ? { address: preview.contact.address } : {}),
-    description: preview.content.hero_subtitle || preview.content.intro_text || "",
+    description:
+      preview.content.hero_subtitle || preview.content.intro_text || "",
     ...(preview.content.services.length
       ? {
           hasOfferCatalog: {
@@ -155,17 +178,26 @@ export default async function LiveSitePage({ params }: SitePageProps) {
       : {}),
   };
 
+  const rendererProps = {
+    mode: "public" as const,
+    ...input,
+    design,
+    inquiryToken: order.claim_token || undefined,
+    isLiveSite: true,
+    packageId: order.package_id || undefined,
+  };
+
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <DemoSitePreviewRenderer
-        mode="public"
-        {...input}
-        design={design}
-        inquiryToken={order.claim_token || undefined}
-        isLiveSite
-        packageId={order.package_id || undefined}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      {isSignatureDemoSiteLayout(design.layout) ? (
+        <DemoSignatureSiteRenderer {...rendererProps} />
+      ) : (
+        <DemoSitePreviewRenderer {...rendererProps} />
+      )}
     </>
   );
 }
