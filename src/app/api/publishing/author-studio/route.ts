@@ -19,6 +19,7 @@ type Chapter = Record<string, any> & {
   draft: string;
   previous_draft?: string;
   image_url?: string | null;
+  images?: string[];
   formatted?: boolean;
 };
 
@@ -27,6 +28,42 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+/**
+ * Ett kapittel kan ha flere bilder. Nye bilder ligger i `images[]`, men eldre
+ * kapitler har kun `image_url` — normaliser til én liste uten duplikater.
+ */
+function chapterImages(chapter: Record<string, any>): string[] {
+  const list = Array.isArray(chapter?.images) ? chapter.images : [];
+  const legacy = chapter?.image_url ? [String(chapter.image_url)] : [];
+  const seen = new Set<string>();
+  return [...list, ...legacy]
+    .map((u) => String(u || "").trim())
+    .filter((u) => u && !seen.has(u) && (seen.add(u), true));
+}
+
+/**
+ * Laster opp et opplastet bilde (data-URL) til content-images-bøtta og
+ * returnerer den offentlige URL-en. Brukes når forfatteren laster opp egne
+ * bilder til et kapittel.
+ */
+async function uploadDataUrl(dataUrl: string): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mimeType = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > 12 * 1024 * 1024) throw new Error("Bildet er for stort (maks 12 MB).");
+  const ext = mimeType.includes("jpeg") ? "jpg" : mimeType.includes("webp") ? "webp" : mimeType.includes("gif") ? "gif" : "png";
+  const storagePath = `forfatter/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("content-images").upload(storagePath, buffer, { contentType: mimeType, upsert: false });
+  if (error) {
+    console.error("[Forfatter] Bildeopplasting feilet:", error);
+    return null;
+  }
+  return supabase.storage.from("content-images").getPublicUrl(storagePath).data.publicUrl;
 }
 
 /**
@@ -573,7 +610,7 @@ export async function GET(request: NextRequest) {
       created_at: row.created_at,
       chapters: chapters.length,
       words: chapters.reduce((sum, c) => sum + wordCount(c.draft), 0),
-      images: chapters.filter((c) => c.image_url).length,
+      images: chapters.filter((c) => chapterImages(c).length > 0).length,
     };
   });
 
@@ -1381,7 +1418,40 @@ Returner KUN hele kapittelet i ren markdown — ingen JSON, ingen innledning, in
       const { index, chapter } = findChapter(chapters, String(body.chapter_title || ""));
       if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
       const imageUrl = String(body.image_url || "").trim();
-      chapters[index] = { ...chapter, image_url: imageUrl || null };
+      chapters[index] = { ...chapter, image_url: null, images: imageUrl ? [imageUrl] : [] };
+      const updated = await saveChapters(supabase, projectId, chapters);
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // Legg til ett bilde i kapittelet (fra AI-generering eller opplasting).
+    // Er image_url en data-URL, lastes den opp til storage først.
+    if (mode === "add_chapter_image") {
+      const { index, chapter } = findChapter(chapters, String(body.chapter_title || ""));
+      if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
+      let imageUrl = String(body.image_url || "").trim();
+      if (!imageUrl) return NextResponse.json({ error: "Mangler bilde." }, { status: 400 });
+      if (imageUrl.startsWith("data:")) {
+        try {
+          const uploaded = await uploadDataUrl(imageUrl);
+          if (!uploaded) return NextResponse.json({ error: "Kunne ikke lagre bildet." }, { status: 500 });
+          imageUrl = uploaded;
+        } catch (e) {
+          return NextResponse.json({ error: e instanceof Error ? e.message : "Kunne ikke lagre bildet." }, { status: 400 });
+        }
+      }
+      const nextImages = [...chapterImages(chapter), imageUrl].filter((u, i, a) => a.indexOf(u) === i);
+      chapters[index] = { ...chapter, image_url: null, images: nextImages };
+      const updated = await saveChapters(supabase, projectId, chapters);
+      return NextResponse.json({ success: true, mode, image_url: imageUrl, project: updated });
+    }
+
+    // Fjern ett bilde fra kapittelet (etter URL).
+    if (mode === "remove_chapter_image") {
+      const { index, chapter } = findChapter(chapters, String(body.chapter_title || ""));
+      if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
+      const target = String(body.image_url || "").trim();
+      const nextImages = chapterImages(chapter).filter((u) => u !== target);
+      chapters[index] = { ...chapter, image_url: null, images: nextImages };
       const updated = await saveChapters(supabase, projectId, chapters);
       return NextResponse.json({ success: true, mode, project: updated });
     }
