@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEMO_SITE_PACKAGES, analyzeDemoSiteProfile, buildDefaultTemplateFields, getDemoSitePackage, slugifyCompanyName } from "@/lib/demosites";
 import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
-import { enrichDemoSiteOrder } from "@/lib/demosites-enrichment";
+import { enrichDemoSiteOrderWithHeroAssets } from "@/lib/demosites-hero-assets";
 import { portalCorsHeaders, portalPreflight } from "@/lib/demosites-portal";
 import { buildSiteProfile, parseServiceList } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-// Enrichment (site snapshot + AI copy + AI images) runs inline so the demo
-// is "wow-ready" the moment the customer opens the preview link. The public
-// form shows a build animation while this runs.
 export const maxDuration = 300;
 
 const REALTYFLOW_BASE_URL = process.env.NEXT_PUBLIC_REALTYFLOW_URL || "https://realtyflow.chatgenius.pro";
-// The trial window communicated on chatgenius.pro: the demo is live for
-// 4 days, then the customer must order to keep it.
 const DEFAULT_EXPIRY_DAYS = 4;
 
 type RequestBody = Record<string, unknown>;
@@ -84,16 +79,13 @@ export async function GET() {
   });
 }
 
-/** CORS preflight — the order form on chatgenius.pro posts cross-origin. */
 export async function OPTIONS(request: NextRequest) {
   return portalPreflight(request);
 }
 
 export async function POST(request: NextRequest) {
   const response = await handleCreateDemoRequest(request);
-  for (const [key, value] of Object.entries(portalCorsHeaders(request))) {
-    response.headers.set(key, value);
-  }
+  for (const [key, value] of Object.entries(portalCorsHeaders(request))) response.headers.set(key, value);
   return response;
 }
 
@@ -103,7 +95,6 @@ async function handleCreateDemoRequest(request: NextRequest) {
     const companyName = text(body, "company_name", "companyName");
     const customerName = text(body, "customer_name", "customerName") || companyName;
     const customerEmail = text(body, "customer_email", "customerEmail");
-
     if (!companyName || !customerEmail) {
       return NextResponse.json({ error: "companyName and customerEmail are required" }, { status: 400 });
     }
@@ -154,11 +145,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
       brand_color: brandColor,
       secondary_color: secondaryColor,
       accent_color: accentColor,
-      brand_colors: {
-        primary: brandColor,
-        secondary: secondaryColor,
-        accent: accentColor,
-      },
+      brand_colors: { primary: brandColor, secondary: secondaryColor, accent: accentColor },
       gallery_images: galleryImages,
     };
 
@@ -196,13 +183,11 @@ async function handleCreateDemoRequest(request: NextRequest) {
       },
       editable_fields: editableFields,
       requested_changes: {},
-      provisioning_log: [
-        {
-          at: new Date().toISOString(),
-          type: "demo_request_created",
-          message: "Midlertidig demo-request opprettet. Kunden må kjøpe eller demoen utløper.",
-        },
-      ],
+      provisioning_log: [{
+        at: new Date().toISOString(),
+        type: "demo_request_created",
+        message: "Midlertidig demo-request opprettet. Kunden må kjøpe eller demoen utløper.",
+      }],
       claim_token: claimToken,
       claim_url: claimUrl,
       expires_at: expiresAt,
@@ -217,15 +202,20 @@ async function handleCreateDemoRequest(request: NextRequest) {
       event_type: "demo_request_created",
       title: "Demo-request opprettet",
       description: `${companyName} fikk en midlertidig demo som utløper om ${DEFAULT_EXPIRY_DAYS} dager.`,
-      metadata: { claim_url: claimUrl, preview_url: previewUrl, expires_at: expiresAt, package_id: selectedPackage.id, template_slug: selectedTemplateSlug, has_logo: Boolean(logoAsset), gallery_images: galleryImages.length },
+      metadata: {
+        claim_url: claimUrl,
+        preview_url: previewUrl,
+        expires_at: expiresAt,
+        package_id: selectedPackage.id,
+        template_slug: selectedTemplateSlug,
+        has_logo: Boolean(logoAsset),
+        gallery_images: galleryImages.length,
+      },
     });
 
-    // Enrich with real content (old-site snapshot, AI copy, AI images when
-    // the gallery is thin). Fail-safe: a demo with template defaults is still
-    // returned if enrichment has problems.
     let enrichment = null;
     try {
-      enrichment = await enrichDemoSiteOrder(supabase, {
+      enrichment = await enrichDemoSiteOrderWithHeroAssets(supabase, {
         id: data.id,
         company_name: companyName,
         package_id: selectedPackage.id,
@@ -255,7 +245,7 @@ async function handleCreateDemoRequest(request: NextRequest) {
     if (lower.includes("claim_token") || lower.includes("expires_at") || lower.includes("status_check")) {
       return NextResponse.json(
         { error: "DemoSites claim-flow migration must be applied before creating demo requests.", details: message },
-        { status: 500 }
+        { status: 500 },
       );
     }
     return NextResponse.json({ error: message }, { status: 500 });
