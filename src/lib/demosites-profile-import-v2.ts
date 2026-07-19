@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
   });
   if (!upgraded.changed) return legacyResponse;
 
+  const normalizedWarnings = Array.isArray(upgraded.warnings) ? upgraded.warnings : [];
   const orderId = text(body.order_id ?? body.orderId, 120);
   const importId = text(raw.import_id, 120);
   await persistQualityCheckedResult({
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
     importId,
     profile: upgraded.profile,
     editableFields: upgraded.editable_fields,
-    warnings: upgraded.warnings,
+    warnings: normalizedWarnings,
   }).catch((error) => {
     console.warn("[DemoSites profile import v2] Could not persist upgraded classification:", error);
   });
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
     ...raw,
     profile: upgraded.profile,
     editable_fields: upgraded.editable_fields,
-    warnings: upgraded.warnings,
+    warnings: normalizedWarnings,
     classification_upgraded: true,
   });
 }
