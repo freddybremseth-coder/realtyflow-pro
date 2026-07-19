@@ -157,6 +157,9 @@ export async function askClaude(
     const model = options?.model === 'sonnet'
       ? 'claude-sonnet-5'
       : 'claude-haiku-4-5-20251001';
+    // temperature er avviklet for Sonnet 5 (og nyere modeller) — send den kun
+    // for modeller som fortsatt støtter den, ellers gir API-et 400.
+    const supportsTemperature = model.startsWith('claude-haiku-4-5');
     const maxAttempts = 4;
     let lastErr: any = null;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -165,7 +168,7 @@ export async function askClaude(
         const response = await claude.messages.create({
           model,
           max_tokens: options?.maxTokens ?? 1000,
-          temperature: options?.temperature ?? 0.7,
+          ...(supportsTemperature ? { temperature: options?.temperature ?? 0.7 } : {}),
           ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
           messages: [{ role: 'user', content: prompt }],
         });
