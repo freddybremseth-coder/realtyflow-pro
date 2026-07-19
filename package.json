@@ -43,7 +43,7 @@
     "test:weekly-management-review": "tsx --test src/lib/revenue/weekly-management-review.test.ts",
     "test:continuous-improvement": "tsx --test src/lib/revenue/continuous-improvement.test.ts",
     "test:navigation": "tsx --test src/lib/navigation.test.ts src/lib/constants.test.ts",
-    "test:demosites-design": "tsx --test src/lib/demosites-design.test.ts src/lib/demosites-local-industries.test.ts src/lib/demosites-hero-assets.test.ts",
+    "test:demosites-design": "tsx --test src/lib/demosites-design.test.ts src/lib/demosites-local-industries.test.ts src/lib/demosites-hero-assets.test.ts src/lib/demosites-domains.test.ts",
     "test:observability": "tsx --test src/lib/observability.test.ts",
     "test:remaster-brand": "tsx --test src/services/integrations/airtable-client.test.ts",
     "test:remaster-jobs": "NODE_OPTIONS=--conditions=react-server tsx --test src/services/pipelines/remaster-job-core.test.ts src/services/pipelines/remaster-job-api.test.ts",
