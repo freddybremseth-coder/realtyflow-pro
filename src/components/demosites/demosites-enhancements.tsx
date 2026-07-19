@@ -55,6 +55,15 @@ function isPreviewAnchor(anchor: HTMLAnchorElement) {
   return text.includes("preview") || text.includes("prøveside") || text.includes("kundevisning");
 }
 
+function setAnchorHrefIfChanged(anchor: HTMLAnchorElement, nextHref: string, guard: string) {
+  const current = normalizeHref(anchor.getAttribute("href"));
+  const next = normalizeHref(nextHref);
+  if (!next || current === next) return false;
+  anchor.setAttribute("href", nextHref);
+  anchor.dataset.previewGuard = guard;
+  return true;
+}
+
 function repairPreviewAnchors(orders: DemoOrder[]) {
   const replacements = new Map<string, string>();
   for (const order of orders) {
@@ -71,8 +80,7 @@ function repairPreviewAnchors(orders: DemoOrder[]) {
     const current = normalizeHref(anchor.getAttribute("href"));
     const direct = replacements.get(current);
     if (direct) {
-      anchor.href = direct;
-      anchor.dataset.previewGuard = "corrected";
+      setAnchorHrefIfChanged(anchor, direct, "corrected");
       return;
     }
 
@@ -82,8 +90,7 @@ function repairPreviewAnchors(orders: DemoOrder[]) {
     const claim = container?.querySelector<HTMLAnchorElement>('a[href*="/demosites/claim/"]');
     if (claim) {
       const corrected = claim.href.replace("/demosites/claim/", "/demosites/preview/");
-      anchor.href = corrected;
-      anchor.dataset.previewGuard = "claim-derived";
+      setAnchorHrefIfChanged(anchor, corrected, "claim-derived");
     }
   });
 }
@@ -93,6 +100,16 @@ function usePreviewLinkGuard() {
     let active = true;
     let orders: DemoOrder[] = [];
     let observer: MutationObserver | null = null;
+    let repairScheduled = false;
+
+    function scheduleRepair() {
+      if (repairScheduled || !active) return;
+      repairScheduled = true;
+      window.requestAnimationFrame(() => {
+        repairScheduled = false;
+        if (active) repairPreviewAnchors(orders);
+      });
+    }
 
     async function loadAndRepair() {
       try {
@@ -101,8 +118,10 @@ function usePreviewLinkGuard() {
         if (!active || !response.ok) return;
         orders = Array.isArray(data.orders) ? data.orders : [];
         repairPreviewAnchors(orders);
-        observer = new MutationObserver(() => repairPreviewAnchors(orders));
-        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["href"] });
+        observer = new MutationObserver(scheduleRepair);
+        // Observe React adding/removing content only. Watching href attributes
+        // caused the guard to react to its own corrections and could lock the UI.
+        observer.observe(document.body, { childList: true, subtree: true });
       } catch {
         // Link guard is best effort; the server-side preview remains available.
       }
