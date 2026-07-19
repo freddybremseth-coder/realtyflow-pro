@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
+  Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   Download,
+  ExternalLink,
   Feather,
   Image as ImageIcon,
   Languages,
@@ -185,6 +188,12 @@ export default function ForfatterstudioPage() {
     target_title: string;
   }> | null>(null);
   const [updateExisting, setUpdateExisting] = useState<Array<{ title: string; words: number }>>([]);
+  const [showKdp, setShowKdp] = useState(false);
+  const [kdpBusy, setKdpBusy] = useState(false);
+  const [kdpError, setKdpError] = useState<string | null>(null);
+  const [kdpData, setKdpData] = useState<Record<string, any> | null>(null);
+  const [kdpChecklist, setKdpChecklist] = useState<Record<string, any> | null>(null);
+  const [kdpCopied, setKdpCopied] = useState<string | null>(null);
   const [showCover, setShowCover] = useState(false);
   const [coverPrompt, setCoverPrompt] = useState("");
   const [coverUseOpenArt, setCoverUseOpenArt] = useState(false);
@@ -1130,6 +1139,47 @@ export default function ForfatterstudioPage() {
     }
   }, [project, updatePlan, applyProject, loadLibrary]);
 
+  const generateKdp = useCallback(async () => {
+    if (!project) return;
+    setKdpBusy(true);
+    setKdpError(null);
+    setStatus("Lager KDP-metadata…");
+    try {
+      const res = await fetch("/api/publishing/author-studio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "kdp_package", project_id: project.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke lage KDP-metadata.");
+      setKdpData(data.kdp || null);
+      setKdpChecklist(data.checklist || null);
+      if (data.project) applyProject(data.project as FullProject, chapter?.chapter_title);
+      setStatus("KDP-metadata er klar.");
+    } catch (e) {
+      setKdpError(e instanceof Error ? e.message : "Kunne ikke lage KDP-metadata.");
+    } finally {
+      setKdpBusy(false);
+    }
+  }, [project, applyProject, chapter]);
+
+  const copyKdp = useCallback(async (field: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setKdpCopied(field);
+      setTimeout(() => setKdpCopied((c) => (c === field ? null : c)), 1800);
+    } catch {
+      setKdpError("Kunne ikke kopiere — marker teksten og kopier manuelt.");
+    }
+  }, []);
+
+  // Vis tidligere generert KDP-metadata når en bok åpnes.
+  useEffect(() => {
+    setKdpData(((project?.metadata_plan as Record<string, any>) || {}).kdp || null);
+    setKdpChecklist(null);
+    setKdpError(null);
+  }, [project?.id]);
+
   const handleImportFile = useCallback(async (file: File) => {
     setImportBusy(true);
     setImportError(null);
@@ -1289,6 +1339,12 @@ export default function ForfatterstudioPage() {
               <Button variant={showUpdateFile ? "secondary" : "outline"} size="sm" onClick={() => setShowUpdateFile((v) => !v)} disabled={busy}>
                 <Upload className="mr-2 h-4 w-4" />
                 Oppdater fra fil
+              </Button>
+            ) : null}
+            {chapters.length > 0 ? (
+              <Button variant={showKdp ? "secondary" : "outline"} size="sm" onClick={() => setShowKdp((v) => !v)} disabled={busy}>
+                <BookOpen className="mr-2 h-4 w-4" />
+                Publiser til KDP
               </Button>
             ) : null}
             {chapters.length > 0 && chapters.length <= 3 && chapters.some((c) => wordsOf(c.draft) > 3500) ? (
@@ -1511,6 +1567,128 @@ export default function ForfatterstudioPage() {
                     </Button>
                     <span className="text-xs text-muted-foreground">Sammenslåing tar ca. 20–30 sek per kapittel. Originalene beholdes — «Angre alle AI-endringer» tar dem tilbake.</span>
                   </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showKdp ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><BookOpen className="h-4 w-4" /> Publiser til Amazon KDP</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-xs text-muted-foreground">
+                Amazon KDP har ingen publiserings-API, så selve opplastingen gjør du på kdp.amazon.com. Men her får du <strong>alt KDP ber om</strong>: en KDP-klar EPUB (med omslag), og AI-generert salgs-metadata (beskrivelse, 7 søkeord, kategorier og prisforslag). Da tar opplastingen bare noen minutter.
+              </p>
+
+              {/* Sjekkliste */}
+              <div className="space-y-1.5 rounded-md border p-3">
+                {(() => {
+                  const hasCover = !!(project.metadata_plan?.cover_image_url || (project.metadata_plan as Record<string, any>)?.image_plan?.cover?.image_url);
+                  const totalWords = chapters.reduce((s, c) => s + wordsOf(c.draft), 0);
+                  const row = (ok: boolean, label: string, extra?: JSX.Element | null) => (
+                    <div className="flex items-center gap-2">
+                      {ok ? <Check className="h-4 w-4 text-emerald-600" /> : <span className="inline-block h-4 w-4 rounded-full border border-amber-500" />}
+                      <span className={ok ? "" : "text-amber-600"}>{label}</span>
+                      {extra}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {row(chapters.length > 0, `${chapters.length} kapitler · ${totalWords.toLocaleString("no")} ord`)}
+                      {row(
+                        hasCover,
+                        hasCover ? "Omslag klart" : "Mangler omslag",
+                        hasCover ? null : (
+                          <button className="text-xs underline" onClick={() => { setShowKdp(false); setShowCover(true); }}>Lag omslag</button>
+                        ),
+                      )}
+                      {row(!!kdpData?.description_html, kdpData?.description_html ? "KDP-metadata generert" : "KDP-metadata ikke generert ennå")}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={generateKdp} disabled={kdpBusy}>
+                  {kdpBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                  {kdpData?.description_html ? "Lag metadata på nytt" : "Generer KDP-metadata"}
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`/api/publishing/book-engine/export-file?id=${encodeURIComponent(project.id)}&format=epub`}>
+                    <Download className="mr-1 h-4 w-4" /> Last ned EPUB for KDP
+                  </a>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <a href="https://kdp.amazon.com/en_US/create" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="mr-1 h-4 w-4" /> Åpne KDP
+                  </a>
+                </Button>
+              </div>
+              {kdpError ? <p className="text-xs text-destructive">{kdpError}</p> : null}
+
+              {kdpData?.description_html ? (
+                <div className="space-y-3">
+                  {kdpData.subtitle_suggestion ? (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">Undertittel-forslag</span>
+                        <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => copyKdp("subtitle", String(kdpData.subtitle_suggestion))}>
+                          {kdpCopied === "subtitle" ? <Check className="inline h-3 w-3" /> : <Copy className="inline h-3 w-3" />} Kopier
+                        </button>
+                      </div>
+                      <p className="rounded-md border bg-muted/40 p-2 text-sm">{kdpData.subtitle_suggestion}</p>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">Bokbeskrivelse (KDP «Description»)</span>
+                      <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => copyKdp("desc", String(kdpData.description_html))}>
+                        {kdpCopied === "desc" ? <Check className="inline h-3 w-3" /> : <Copy className="inline h-3 w-3" />} Kopier HTML
+                      </button>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto rounded-md border bg-muted/40 p-2 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: String(kdpData.description_html) }} />
+                  </div>
+
+                  {Array.isArray(kdpData.keywords) && kdpData.keywords.length > 0 ? (
+                    <div>
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">7 søkeord (KDP «Keywords»)</span>
+                        <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => copyKdp("kw", (kdpData.keywords as string[]).join("\n"))}>
+                          {kdpCopied === "kw" ? <Check className="inline h-3 w-3" /> : <Copy className="inline h-3 w-3" />} Kopier alle
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(kdpData.keywords as string[]).map((k, i) => (
+                          <span key={i} className="rounded-full border bg-muted/40 px-2 py-0.5 text-xs">{k}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(kdpData.categories) && kdpData.categories.length > 0 ? (
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground">Kategori-forslag</span>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm">
+                        {(kdpData.categories as string[]).map((c, i) => <li key={i}>{c}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    {kdpData.price_usd ? <span><span className="text-muted-foreground">Pris (USD): </span><strong>${Number(kdpData.price_usd).toFixed(2)}</strong></span> : null}
+                    {kdpData.price_local?.amount ? (
+                      <span><span className="text-muted-foreground">Pris ({String(kdpData.price_local.currency || "")}): </span><strong>{kdpData.price_local.amount} {String(kdpData.price_local.currency || "")}</strong></span>
+                    ) : null}
+                    {kdpData.reading_age ? <span><span className="text-muted-foreground">Lesealder: </span>{kdpData.reading_age}</span> : null}
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Slik gjør du: åpne KDP → «Create» → «Kindle eBook». Lim inn tittel, undertittel, beskrivelse og søkeordene over, velg kategoriene, last opp EPUB-en og omslaget, sett prisen — og publiser.
+                  </p>
                 </div>
               ) : null}
             </CardContent>

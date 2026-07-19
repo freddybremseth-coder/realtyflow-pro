@@ -113,8 +113,16 @@ function getProjectParts(project: Record<string, any>) {
   const outline = (project.outline_plan || {}) as Record<string, any>;
   const chapterDrafts = asArray<Record<string, any>>(project.chapter_drafts);
   const toc = asArray<Record<string, any>>(outline.toc);
-  const imagePlan = ((project.metadata_plan || {}) as Record<string, any>).image_plan || {};
-  return { title, subtitle, chapterDrafts, toc, imagePlan };
+  const metadata = (project.metadata_plan || {}) as Record<string, any>;
+  const imagePlan = metadata.image_plan || {};
+  // Omslaget kan ligge to steder: book-engine bruker image_plan.cover, mens
+  // Forfatterstudio (set_cover) lagrer det på metadata_plan.cover_image_url.
+  // Godta begge, ellers havner ikke studio-omslaget i EPUB/DOCX (og dermed
+  // ikke på KDP).
+  const coverUrl = clean(imagePlan?.cover?.image_url) || clean(metadata.cover_image_url);
+  const author = clean(metadata.author) || "Freddy Bremseth";
+  const kdpDescription = clean((metadata.kdp || {}).description_html) || clean((metadata.kdp || {}).description);
+  return { title, subtitle, chapterDrafts, toc, imagePlan, coverUrl, author, kdpDescription };
 }
 
 type LoadedImage = { buffer: Buffer; type: "jpg" | "png" | "gif" | "bmp" };
@@ -140,8 +148,8 @@ async function fetchImageBuffer(url: string): Promise<LoadedImage | null> {
 }
 
 async function toDocxBuffer(project: Record<string, any>) {
-  const { title, subtitle, chapterDrafts, imagePlan } = getProjectParts(project);
-  const coverImageUrl = clean(imagePlan?.cover?.image_url);
+  const { title, subtitle, chapterDrafts, imagePlan, coverUrl } = getProjectParts(project);
+  const coverImageUrl = coverUrl;
   const chapterImages = asArray<Record<string, any>>(imagePlan?.chapters);
   const chapterImageMap = new Map<string, string>();
   for (const row of chapterImages) {
@@ -214,8 +222,7 @@ async function toDocxBuffer(project: Record<string, any>) {
 }
 
 async function toEpubBuffer(project: Record<string, any>) {
-  const { title, subtitle, chapterDrafts, toc, imagePlan } = getProjectParts(project);
-  const author = "Freddy Bremseth";
+  const { title, subtitle, chapterDrafts, toc, coverUrl, author, kdpDescription } = getProjectParts(project);
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 
@@ -249,8 +256,9 @@ async function toEpubBuffer(project: Record<string, any>) {
   const navListItems: string[] = [];
   const imageManifest: string[] = [];
 
-  const coverImageUrl = clean(imagePlan?.cover?.image_url);
+  const coverImageUrl = coverUrl;
   let coverImageHref = "";
+  let coverPageHref = "";
   if (coverImageUrl && images) {
     const loaded = await fetchImageBuffer(coverImageUrl);
     if (loaded) {
@@ -261,6 +269,22 @@ async function toEpubBuffer(project: Record<string, any>) {
       imageManifest.push(
         `<item id="cover-image" href="${coverImageHref}" media-type="${loaded.type === "jpg" ? "image/jpeg" : `image/${loaded.type}`}" properties="cover-image"/>`,
       );
+      // Egen omslagsside først i spine — KDP forventer at boken åpner på
+      // omslaget, ikke rett i første kapittel.
+      const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="${xmlEscape(clean(project.language) || "en")}">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${xmlEscape(title)}</title>
+    <style>body{margin:0;padding:0;text-align:center;}img{max-width:100%;height:auto;}</style>
+  </head>
+  <body>
+    <img src="${coverImageHref}" alt="${xmlEscape(title)}" />
+  </body>
+</html>`;
+      text?.file("cover.xhtml", coverXhtml);
+      coverPageHref = "text/cover.xhtml";
     }
   }
 
@@ -313,6 +337,11 @@ async function toEpubBuffer(project: Record<string, any>) {
 
   const bookId = slug(title) || `book-${Date.now()}`;
   const modifiedIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  // KDP-beskrivelse (fra kdp_package) uten HTML-tagger til dc:description.
+  const descriptionText = (kdpDescription || subtitle || title).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const coverManifestItem = coverPageHref ? `<item id="coverpage" href="${coverPageHref}" media-type="application/xhtml+xml"/>` : "";
+  const coverSpineItem = coverPageHref ? `<itemref idref="coverpage" linear="yes"/>` : "";
+  const legacyCoverMeta = coverImageHref ? `<meta name="cover" content="cover-image"/>` : "";
   const contentOpf = `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -320,15 +349,18 @@ async function toEpubBuffer(project: Record<string, any>) {
     <dc:title>${xmlEscape(title)}</dc:title>
     <dc:creator>${xmlEscape(author)}</dc:creator>
     <dc:language>${xmlEscape(clean(project.language) || "en")}</dc:language>
-    <dc:description>${xmlEscape(subtitle || title)}</dc:description>
+    <dc:description>${xmlEscape(descriptionText.slice(0, 4000))}</dc:description>
+    ${legacyCoverMeta}
     <meta property="dcterms:modified">${modifiedIso}</meta>
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    ${coverManifestItem}
     ${imageManifest.join("\n")}
     ${manifestItems.join("\n")}
   </manifest>
   <spine>
+    ${coverSpineItem}
     ${spineItems.join("\n")}
   </spine>
 </package>`;
