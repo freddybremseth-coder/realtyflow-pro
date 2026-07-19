@@ -34,31 +34,18 @@ const PUBLIC_PATHS = [
   "/oauth/remaster-return",
   "/demosites/preview",
   "/demosites/claim",
-  // Presentation mode for physical sales meetings: sellers and customers
-  // (QR scan) are not RealtyFlow users. Token-gated by the route itself.
   "/demosites/present",
   "/api/saas/demosites/request",
   "/api/saas/demosites/claim",
-  // Stripe Checkout for claiming — public, claim-token-gated in the route.
   "/api/saas/demosites/checkout",
-  // Published customer sites — fully public and indexable.
   "/sites",
-  // chatgenius.pro seller portal — authenticates with its own Bearer token.
   "/api/saas/demosites/portal/login",
   "/api/saas/demosites/portal/orders",
-  // Working contact form on public demo previews.
   "/api/public/demo-inquiry",
-  // The live AI receptionist on demo/live sites (token-gated in route).
   "/api/public/demo-chat",
-  // Public app-subscription API for chatgenius.pro (Astro, Family, …).
   "/api/saas/subscribe",
-  // Stripe cannot hold a RealtyFlow browser session. The route verifies the
-  // raw request with STRIPE_WEBHOOK_SECRET before any database access.
   "/api/saas/stripe",
-  // Direct PDF book sales on freddybremseth.com (grant-token gated).
   "/api/public/books",
-  // Olivia OS and Donaanna.com authenticate with separate Bearer secrets in
-  // the route itself; no RealtyFlow browser session is involved.
   "/api/dona-anna/integrations",
 ];
 
@@ -73,8 +60,8 @@ const REMASTER_PROXY_PATHS = [
   "/api/neural-beat/upload",
   "/api/youtube/status",
 ];
-
 const REMASTER_PROXY_PREFIXES = ["/api/neural-beat/jobs"];
+
 const ROLE_HOME: Record<AccessRole, string> = {
   OWNER: "/",
   SALES: "/today",
@@ -110,7 +97,9 @@ function safeLeadIntelligenceReturnPath(value: string | null) {
     const url = new URL(trimmed, "https://realtyflow.local");
     if (url.pathname !== "/lead-intelligence") return null;
     return `${url.pathname}${url.search}`;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
@@ -120,7 +109,9 @@ function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
     const refererUrl = new URL(referer);
     if (refererUrl.origin !== request.nextUrl.origin) return null;
     return safeLeadIntelligenceReturnPath(`${refererUrl.pathname}${refererUrl.search}`);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function inventoryLeadIntelligenceReturnRedirect(request: NextRequest) {
@@ -164,7 +155,9 @@ async function verifyToken(token?: string): Promise<{ email: string; role: Acces
     const role = normalizeRole(data.role);
     if (!role || role === "OWNER") return null;
     return { email, role };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function roleDenied(request: NextRequest, role: AccessRole, requirement: string) {
@@ -174,9 +167,6 @@ function roleDenied(request: NextRequest, role: AccessRole, requirement: string)
   return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
 }
 
-// Customer-site subdomains (<slug>.chatgenius.pro) rewrite to /sites/<slug>.
-// Reserved labels keep their normal behaviour (realtyflow = this app's own
-// host, www = the static marketing site on another project, etc.).
 const CUSTOMER_SITE_ROOT = process.env.DEMOSITES_ROOT_DOMAIN || "chatgenius.pro";
 const RESERVED_SITE_SUBDOMAINS = new Set([
   "www", "api", "mail", "smtp", "imap", "pop", "ftp", "webmail",
@@ -189,19 +179,55 @@ function customerSiteRewrite(request: NextRequest): NextResponse | null {
   if (!host.endsWith(`.${CUSTOMER_SITE_ROOT}`)) return null;
   const label = host.slice(0, -(CUSTOMER_SITE_ROOT.length + 1));
   if (!label || label.includes(".") || RESERVED_SITE_SUBDOMAINS.has(label)) return null;
-
-  const { pathname } = request.nextUrl;
-  // The one-pager lives at "/"; APIs (contact form) and assets pass through.
-  if (pathname === "/") {
-    return NextResponse.rewrite(new URL(`/sites/${label}`, request.url));
-  }
+  if (request.nextUrl.pathname === "/") return NextResponse.rewrite(new URL(`/sites/${label}`, request.url));
   return null;
+}
+
+function shouldLookupCustomDomain(host: string) {
+  if (!host || host === "localhost" || host === CUSTOMER_SITE_ROOT) return false;
+  if (host.endsWith(`.${CUSTOMER_SITE_ROOT}`) || host.endsWith(".vercel.app")) return false;
+  return host.includes(".");
+}
+
+/**
+ * Customer-owned domains are attached to the same Vercel project. The Host
+ * header is looked up against demo_site_orders.custom_domain and rewritten to
+ * the matching site_slug. This keeps the customer's URL in the address bar;
+ * it is normal multi-tenant routing, not masking or iframe cloaking.
+ */
+async function customDomainSiteRewrite(request: NextRequest): Promise<NextResponse | null> {
+  if (request.nextUrl.pathname !== "/") return null;
+  const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
+  if (!shouldLookupCustomDomain(host)) return null;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+
+  try {
+    const query = new URL(`${supabaseUrl}/rest/v1/demo_site_orders`);
+    query.searchParams.set("select", "site_slug");
+    query.searchParams.set("custom_domain", `eq.${host}`);
+    query.searchParams.set("status", "eq.deployed");
+    query.searchParams.set("limit", "1");
+    const response = await fetch(query, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!response.ok) return null;
+    const rows = (await response.json()) as Array<{ site_slug?: string | null }>;
+    const slug = String(rows[0]?.site_slug || "").trim();
+    if (!slug) return null;
+    return NextResponse.rewrite(new URL(`/sites/${encodeURIComponent(slug)}`, request.url));
+  } catch {
+    return null;
+  }
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const siteRewrite = customerSiteRewrite(request);
+  const siteRewrite = customerSiteRewrite(request) || await customDomainSiteRewrite(request);
   if (siteRewrite) return siteRewrite;
 
   const requestHeaders = new Headers(request.headers);
