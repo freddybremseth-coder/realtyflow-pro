@@ -16,6 +16,7 @@ import {
   Palette, ChevronDown, ChevronRight, Play, Pause, X, Inbox, Trash2, Edit3, RefreshCw,
 } from "lucide-react";
 import { BRANDS } from "@/lib/constants";
+import { SendToForfatterstudio } from "@/components/publishing/send-to-forfatterstudio";
 import { prepareImageForUpload } from "@/lib/client/image-files";
 import { createClient } from "@supabase/supabase-js";
 import ContentCalendar from "@/components/ContentCalendar"
@@ -3043,6 +3044,18 @@ export default function ContentHubPage() {
                       rows={4}
                       className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 resize-none"
                     />
+                    <div className="mt-2 flex items-center gap-2">
+                      <SendToForfatterstudio
+                        getPayload={() => ({
+                          title: title.trim(),
+                          brief: description.trim(),
+                          doc_type: "article",
+                          source: "content-hub",
+                        })}
+                        label="Utvikle i Forfatterstudio"
+                      />
+                      <span className="text-xs text-slate-500">Gjør dette til en full artikkel/analyse med kvalitetsmotoren.</span>
+                    </div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">

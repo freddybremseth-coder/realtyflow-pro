@@ -638,6 +638,77 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project, chapters: chapters.length });
     }
 
+    // Universell inngang: opprett et prosjekt i Forfatterstudio fra hvor som
+    // helst i appen (Content Hub, oppgaver, Victoria-forslag). Tar en tittel,
+    // valgfritt kildeinnhold (blir kapitler/seksjoner), en brief og en
+    // dokumenttype. Returnerer prosjektet så kalleren kan dyplenke inn i
+    // studioet på /publishing/forfatterstudio?project=<id>.
+    if (mode === "create_project") {
+      const title = String(body.title || "").trim();
+      if (!title) return NextResponse.json({ error: "Tittel mangler." }, { status: 400 });
+      const docType = String(body.doc_type || "book").toLowerCase();
+      // Dokumenttype → sjanger (håndverksregler). Presentasjon/analyse/artikkel
+      // bruker sakprosa-reglene inntil egne formater bygges.
+      const genreByType: Record<string, string> = {
+        book: "guide",
+        analyse: "guide",
+        analysis: "guide",
+        presentation: "guide",
+        presentasjon: "guide",
+        article: "guide",
+        artikkel: "guide",
+        children: "children",
+        memoir: "memoir",
+        fiction: "fiction",
+        self_development: "self_development",
+      };
+      const genre = String(body.genre || genreByType[docType] || "guide");
+      const sourceText = String(body.source_text || "").trim();
+
+      let chapters: Chapter[] = [];
+      if (sourceText) {
+        chapters = splitManuscript(sourceText);
+        if (chapters.length === 1 && sourceText.length > 6000) chapters = await aiSplitChapters(sourceText);
+      }
+
+      const { data: project, error } = await supabase
+        .from("publishing_book_projects")
+        .insert({
+          brand_id: "freddypublishing",
+          title,
+          subtitle: String(body.subtitle || "").trim(),
+          language: String(body.language || "no"),
+          genre,
+          audience: String(body.audience || "").trim() || null,
+          positioning: String(body.brief || "").trim() || null,
+          status: chapters.length > 0 ? "ready_for_export" : "draft",
+          metadata_plan: {
+            doc_type: docType,
+            created_from: String(body.source || "app"),
+            source_material: sourceText ? sourceText.slice(0, 60000) : "",
+            source_instructions: String(body.brief || "").trim(),
+            created_at: new Date().toISOString(),
+          },
+          outline_plan: {
+            book_promise: "",
+            toc: chapters.map((c, i) => ({ chapter: i + 1, title: c.chapter_title, goal: "", target_words: wordCount(c.draft) })),
+            writing_plan: [],
+          },
+          chapter_drafts: chapters,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({
+        success: true,
+        mode,
+        project,
+        chapters: chapters.length,
+        studio_url: `/publishing/forfatterstudio?project=${project.id}`,
+      });
+    }
+
     const projectId = String(body.project_id || "").trim();
     if (!projectId) return NextResponse.json({ error: "project_id mangler." }, { status: 400 });
 
