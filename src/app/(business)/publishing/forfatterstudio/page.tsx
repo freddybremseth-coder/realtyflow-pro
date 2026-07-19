@@ -201,6 +201,18 @@ export default function ForfatterstudioPage() {
     loadLibrary();
   }, [loadLibrary]);
 
+  // Dyplenke fra andre deler av appen: /publishing/forfatterstudio?project=<id>
+  // åpner prosjektet direkte. Kjøres én gang ved oppstart.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const deepLink = params.get("project");
+    if (deepLink) {
+      openProject(deepLink);
+      window.history.replaceState({}, "", "/publishing/forfatterstudio");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const applyProject = useCallback((next: FullProject, keepChapterTitle?: string) => {
     setProject(next);
     setVoiceText(String(next.metadata_plan?.voice_sample || ""));
