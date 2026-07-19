@@ -315,6 +315,31 @@ function extractPlainDraft(raw: string): { draft: string; summary: string } {
   return { draft: text, summary };
 }
 
+// Ser teksten ut til å være kuttet midt i? (Lange kapitler traff før et
+// token-tak og stoppet midt i en setning.) Ferdig prosa ender på setnings-
+// tegn, anførsel eller listetegn — ikke midt i et ord.
+function looksCut(t: string) {
+  const s = String(t || "").trimEnd();
+  if (s.length < 40) return false;
+  return !/[.!?…»"”'’)\]:*_`-]$/.test(s);
+}
+
+// Fullfør en tekst som ble kuttet på slutten ved å be modellen fortsette
+// sømløst der den stoppet, og skjøt sammen. Inntil to runder.
+async function finishIfCut(text: string): Promise<string> {
+  let out = String(text || "");
+  for (let i = 0; i < 2 && looksCut(out); i += 1) {
+    const cont = await askClaude(
+      `Du fortsetter en tekst som ble avbrutt midt i. Skriv KUN fortsettelsen, sømløst der den slapp — ingen gjentakelse, ingen «SAMMENDRAG», ingen innledning, ingen kodeblokker. Fullfør naturlig.\n\nSlik slutter teksten så langt:\n---\n${out.slice(-1600)}\n---`,
+      { model: "sonnet", maxTokens: 16000, anthropicOnly: true },
+    );
+    const tail = extractPlainDraft(cont).draft.trim();
+    if (!tail) break;
+    out = `${out.replace(/\s+$/, "")}${/\s$/.test(text) ? "" : " "}${tail}`;
+  }
+  return out;
+}
+
 async function runChapterEdit(
   project: Record<string, any>,
   chapter: Chapter,
@@ -380,31 +405,6 @@ Deretter en linje med kun: ---
 Deretter HELE det ferdige kapittelet i ren markdown.
 `;
 
-  // Ser teksten ut til å være kuttet midt i? (Lange kapitler traff før et
-  // token-tak og stoppet midt i en setning.) Ferdig prosa ender på setnings-
-  // tegn, anførsel eller listetegn — ikke midt i et ord.
-  const looksCut = (t: string) => {
-    const s = String(t || "").trimEnd();
-    if (s.length < 40) return false;
-    return !/[.!?…»"”'’)\]:*_`-]$/.test(s);
-  };
-
-  // Fullfør et kapittel som ble kuttet på slutten ved å be modellen fortsette
-  // sømløst der den stoppet, og skjøt sammen. Inntil to runder.
-  const finishIfCut = async (text: string): Promise<string> => {
-    let out = String(text || "");
-    for (let i = 0; i < 2 && looksCut(out); i += 1) {
-      const cont = await askClaude(
-        `Du fortsetter et kapittel som ble avbrutt midt i teksten. Skriv KUN fortsettelsen, sømløst der den slapp — ingen gjentakelse, ingen «SAMMENDRAG», ingen innledning, ingen kodeblokker. Fullfør kapittelet naturlig.\n\nSlik slutter teksten så langt:\n---\n${out.slice(-1600)}\n---`,
-        { model: "sonnet", maxTokens: 16000, anthropicOnly: true },
-      );
-      const tail = extractPlainDraft(cont).draft.trim();
-      if (!tail) break;
-      out = `${out.replace(/\s+$/, "")}${/\s$/.test(text) ? "" : " "}${tail}`;
-    }
-    return out;
-  };
-
   const attempt = async (extraDemand: string) => {
     // anthropicOnly: bokprosa MÅ komme fra Claude — faller vi tilbake til en
     // svakere modell, følger den ikke formatet og leverer kort/ødelagt tekst.
@@ -457,6 +457,59 @@ Deretter HELE det ferdige kapittelet i ren markdown.
       : `Obs: kapittelet ble kortere (${newWords} av ${originalWords} ord). Trykk «Angre AI» hvis du vil ha den lengre originalen tilbake.`
     : "";
   return { draft, changeSummary: summary, warning, newWords, originalWords };
+}
+
+/**
+ * Slår sammen den eksisterende kapittelversjonen med en ny versjon (typisk
+ * fra en opplastet Word-fil der forfatteren har gjort endringer) til ÉN bedre
+ * versjon. AI-en tar det beste fra begge: den nyere teksten vinner der de er
+ * uenige, men ingenting av substans skal gå tapt. Aldri kortere enn den
+ * lengste av de to. Kuttes svaret, fullføres det av finishIfCut.
+ */
+async function mergeChapterVersions(
+  project: Record<string, any>,
+  chapterTitle: string,
+  oldDraft: string,
+  newDraft: string,
+): Promise<string> {
+  const craft = resolveCraft(project.genre);
+  const voice = voiceForPrompt(project.metadata_plan?.voice_sample);
+  const floorWords = Math.max(wordCount(oldDraft), wordCount(newDraft));
+  const prompt = `
+Du er en prisbelønt forfatter og manusredaktør. Du skal SLÅ SAMMEN to versjoner av samme kapittel til én, klart bedre versjon.
+
+Bok: "${project.title}"${project.subtitle ? ` — ${project.subtitle}` : ""}
+Språk: ${project.language || "no"} (svar på samme språk som kapittelet) · Sjanger: ${craft.label}
+${voice}
+HÅNDVERKSREGLER (${craft.label}):
+${craft.writing_rules}
+
+SLIK SLÅR DU SAMMEN:
+- Den NYE versjonen er forfatterens seneste endringer og skal veie tyngst der de to er uenige.
+- Behold ALT av substans fra BEGGE versjoner: poenger, eksempler, navn, fakta, formuleringer som er bedre i den gamle.
+- Ikke bare lim sammen — vev det til én sammenhengende, gjennomarbeidet tekst med god flyt.
+- Fjern ekte gjentakelser, men aldri unikt innhold. Resultatet skal være MINST ${floorWords} ord.
+- ALDRI dikt opp nye harde fakta, personer, datoer eller sitater.
+
+Kapittel: "${chapterTitle}"
+
+=== GAMMEL VERSJON ===
+${String(oldDraft || "").slice(0, 24000)}
+
+=== NY VERSJON (forfatterens endringer) ===
+${String(newDraft || "").slice(0, 24000)}
+
+FORMAT PÅ SVARET (viktig — ingen JSON, ingen kodeblokker):
+Første linje: SAMMENDRAG: én setning om hva du slo sammen.
+Deretter en linje med kun: ---
+Deretter HELE det sammenslåtte kapittelet i ren markdown.
+`;
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 16000, temperature: 0.4, anthropicOnly: true });
+  const merged = await finishIfCut(extractPlainDraft(raw).draft);
+  if (!merged || wordCount(merged) < 30) {
+    throw new Error("Sammenslåingen mislyktes (tomt svar). Kapittelet er UENDRET. Prøv igjen om litt.");
+  }
+  return merged;
 }
 
 async function runAnalysis(project: Record<string, any>, chapters: Chapter[]) {
@@ -975,6 +1028,87 @@ export async function POST(request: NextRequest) {
         outline_plan: { ...((project as any).outline_plan || {}), toc: rebuildToc(chapters) },
       });
       return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // Les en opplastet fil (Word/PDF, allerede uttrukket til tekst) mot en
+    // EKSISTERENDE bok: del den nye teksten i kapitler og foreslå hva som skal
+    // skje med hvert — slå sammen (AI) med et eksisterende kapittel, erstatte
+    // det, eller legge til som nytt. Ingen lagring; bare en plan brukeren kan
+    // justere før den kjøres.
+    if (mode === "plan_update_from_file") {
+      const manuscript = String(body.manuscript || "").trim();
+      if (!manuscript) return NextResponse.json({ error: "Last opp filen først." }, { status: 400 });
+      let incoming = splitManuscript(manuscript);
+      if (incoming.length === 1 && manuscript.length > 6000) incoming = await aiSplitChapters(manuscript);
+      const plan = incoming.map((inc, i) => {
+        const match = chapters.find((e) => normalizeTitleKey(e.chapter_title) === normalizeTitleKey(inc.chapter_title));
+        return {
+          incoming_index: i,
+          title: inc.chapter_title,
+          words: wordCount(inc.draft),
+          preview: String(inc.draft || "").slice(0, 240),
+          draft: inc.draft,
+          matched_title: match ? match.chapter_title : null,
+          action: match ? "merge" : "append",
+        };
+      });
+      return NextResponse.json({
+        success: true,
+        mode,
+        plan,
+        existing: chapters.map((e) => ({ title: e.chapter_title, words: wordCount(e.draft) })),
+      });
+    }
+
+    // Kjør oppdateringen fra en fil-plan. Erstatt/legg-til skjer umiddelbart;
+    // AI-sammenslåing er tungt, så vi tar inntil 4 sammenslåinger per kall og
+    // returnerer resten i `pending` slik at klienten kaller på nytt til køen er
+    // tom (samme mønster som oversettelse/omskriving). Originaler beholdes som
+    // previous_draft, så «Angre AI» virker.
+    if (mode === "apply_update_from_file") {
+      const items = asArray<Record<string, any>>(body.items);
+      if (items.length === 0) return NextResponse.json({ error: "Ingen endringer å bruke." }, { status: 400 });
+      const applied = { replaced: 0, merged: 0, added: 0 };
+      const warnings: string[] = [];
+      const pending: Record<string, any>[] = [];
+      const MERGE_CAP = 4;
+      for (const item of items) {
+        const action = String(item.action || "").toLowerCase();
+        const incomingDraft = String(item.draft || "").trim();
+        const title = String(item.title || "").trim() || "Nytt kapittel";
+        if (action === "skip" || !incomingDraft) continue;
+        if (action === "append") {
+          chapters.push({ chapter_title: title, draft: incomingDraft });
+          applied.added += 1;
+          continue;
+        }
+        const { index, chapter } = findChapter(chapters, String(item.target_title || ""));
+        if (!chapter) {
+          chapters.push({ chapter_title: title, draft: incomingDraft });
+          applied.added += 1;
+          continue;
+        }
+        if (action === "replace") {
+          chapters[index] = { ...chapter, previous_draft: chapter.draft, draft: incomingDraft, formatted: false, quality: undefined };
+          applied.replaced += 1;
+        } else if (action === "merge") {
+          if (applied.merged >= MERGE_CAP) {
+            pending.push(item);
+            continue;
+          }
+          try {
+            const merged = await mergeChapterVersions(project, chapter.chapter_title, String(chapter.draft || ""), incomingDraft);
+            chapters[index] = { ...chapter, previous_draft: chapter.draft, draft: merged, formatted: false, quality: undefined };
+            applied.merged += 1;
+          } catch (e) {
+            warnings.push(`«${chapter.chapter_title}»: ${e instanceof Error ? e.message : "sammenslåing feilet"}`);
+          }
+        }
+      }
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        outline_plan: { ...((project as any).outline_plan || {}), toc: rebuildToc(chapters) },
+      });
+      return NextResponse.json({ success: true, mode, project: updated, applied, warnings, pending, remaining: pending.length });
     }
 
     // «Hva mangler for 10?»: rådgivning i stedet for omskriving. Peker ut det
