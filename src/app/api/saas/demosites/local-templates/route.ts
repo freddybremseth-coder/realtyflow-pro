@@ -94,13 +94,17 @@ export async function POST(request: NextRequest) {
   }
   if (update.error) return NextResponse.json({ error: update.error.message }, { status: 500 });
 
-  await supabase.from("demo_site_order_events").insert({
-    order_id: orderId,
-    event_type: "local_template_selected",
-    title: `Bransjemal valgt: ${template.name}`,
-    description: replaceContent ? "Bransjeinnhold og CTA-er ble oppdatert. Logo, bilder og kontaktinformasjon ble beholdt." : "Bransjemalen ble valgt uten å erstatte eksisterende innhold.",
-    metadata: { template_slug: template.slug, replace_content: replaceContent },
-  }).catch(() => null);
+  try {
+    await supabase.from("demo_site_order_events").insert({
+      order_id: orderId,
+      event_type: "local_template_selected",
+      title: `Bransjemal valgt: ${template.name}`,
+      description: replaceContent ? "Bransjeinnhold og CTA-er ble oppdatert. Logo, bilder og kontaktinformasjon ble beholdt." : "Bransjemalen ble valgt uten å erstatte eksisterende innhold.",
+      metadata: { template_slug: template.slug, replace_content: replaceContent },
+    });
+  } catch {
+    // Event logging is best effort and must never block a template change.
+  }
 
   return NextResponse.json({ order: update.data, template: { slug: template.slug, name: template.name } });
 }
