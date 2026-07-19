@@ -792,6 +792,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, mode, project: updated });
     }
 
+    // Bygg kapitteloversikten (toc) på nytt fra gjeldende kapittelrekkefølge.
+    const rebuildToc = (list: Chapter[]) =>
+      list.map((c, i) => ({ chapter: i + 1, title: c.chapter_title, goal: "", target_words: wordCount(c.draft) }));
+
+    // Slett ett kapittel.
+    if (mode === "delete_chapter") {
+      const { index, chapter } = findChapter(chapters, String(body.chapter_title || ""));
+      if (!chapter) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
+      chapters.splice(index, 1);
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        outline_plan: { ...((project as any).outline_plan || {}), toc: rebuildToc(chapters) },
+      });
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    // Flytt ett kapittel opp/ned (bytt plass med nabo).
+    if (mode === "move_chapter") {
+      const { index } = findChapter(chapters, String(body.chapter_title || ""));
+      if (index < 0) return NextResponse.json({ error: "Fant ikke kapittelet." }, { status: 404 });
+      const dir = String(body.direction || "");
+      const target = dir === "up" ? index - 1 : dir === "down" ? index + 1 : -1;
+      if (target < 0 || target >= chapters.length) {
+        return NextResponse.json({ success: true, mode, project }); // allerede ytterst
+      }
+      [chapters[index], chapters[target]] = [chapters[target], chapters[index]];
+      const updated = await saveChapters(supabase, projectId, chapters, {
+        outline_plan: { ...((project as any).outline_plan || {}), toc: rebuildToc(chapters) },
+      });
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
+
     // «Hva mangler for 10?»: rådgivning i stedet for omskriving. Peker ut det
     // eneste-forfatteren-kan-tilføre (ekte historier, tall, eksempler, en
     // mening med kant) som ville løftet kapittelet til topps — med hvor i

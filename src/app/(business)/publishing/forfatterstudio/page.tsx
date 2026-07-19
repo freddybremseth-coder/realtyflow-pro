@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
+  ChevronDown,
+  ChevronUp,
   Feather,
   Image as ImageIcon,
   Languages,
@@ -983,6 +985,32 @@ export default function ForfatterstudioPage() {
     }
   }, [importBookId, importText, importLanguage, loadLibrary, applyProject]);
 
+  const moveChapter = useCallback(
+    async (chapterTitle: string, direction: "up" | "down") => {
+      if (!project) return;
+      const data = await studioPost(
+        { mode: "move_chapter", project_id: project.id, chapter_title: chapterTitle, direction },
+        `move:${direction}`,
+        chapterTitle,
+      );
+      if (data) setStatus("Rekkefølgen er oppdatert.");
+    },
+    [project, studioPost],
+  );
+
+  const deleteChapter = useCallback(
+    async (chapterTitle: string) => {
+      if (!project) return;
+      if (!window.confirm(`Slette kapittelet «${chapterTitle}»? Dette kan ikke angres.`)) return;
+      const data = await studioPost(
+        { mode: "delete_chapter", project_id: project.id, chapter_title: chapterTitle },
+        "delchapter",
+      );
+      if (data) setStatus(`Kapittelet «${chapterTitle}» er slettet.`);
+    },
+    [project, studioPost],
+  );
+
   const deleteProject = useCallback(
     async (id: string, title: string) => {
       if (!window.confirm(`Slette kladden «${title}»? Dette kan ikke angres. Utgitte bøker påvirkes ikke.`)) return;
@@ -1366,21 +1394,48 @@ export default function ForfatterstudioPage() {
                 </div>
               ) : null}
               {chapters.map((c, i) => (
-                <button
+                <div
                   key={`${c.chapter_title}-${i}`}
-                  onClick={() => selectChapter(i)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                  className={`group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors ${
                     i === chapterIndex ? "bg-primary text-primary-foreground" : "hover:bg-muted"
                   }`}
                 >
-                  <span className="block truncate font-medium">{i + 1}. {c.chapter_title}</span>
-                  <span className={`text-xs ${i === chapterIndex ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                    {wordsOf(c.draft).toLocaleString("nb-NO")} ord
-                    {c.quality?.score ? ` · ★ ${c.quality.score}/10` : ""}
-                    {c.image_url ? " · 🖼" : ""}
-                    {c.formatted ? " · ✓ formatert" : ""}
-                  </span>
-                </button>
+                  <button onClick={() => selectChapter(i)} className="min-w-0 flex-1 text-left">
+                    <span className="block truncate font-medium">{i + 1}. {c.chapter_title}</span>
+                    <span className={`text-xs ${i === chapterIndex ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                      {wordsOf(c.draft).toLocaleString("nb-NO")} ord
+                      {c.quality?.score ? ` · ★ ${c.quality.score}/10` : ""}
+                      {c.image_url ? " · 🖼" : ""}
+                      {c.formatted ? " · ✓ formatert" : ""}
+                    </span>
+                  </button>
+                  <div className={`flex shrink-0 items-center ${i === chapterIndex ? "" : "opacity-0 group-hover:opacity-100"}`}>
+                    <button
+                      title="Flytt opp"
+                      disabled={busy || i === 0}
+                      onClick={() => moveChapter(c.chapter_title, "up")}
+                      className="rounded p-1 disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      title="Flytt ned"
+                      disabled={busy || i === chapters.length - 1}
+                      onClick={() => moveChapter(c.chapter_title, "down")}
+                      className="rounded p-1 disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      title="Slett kapittel"
+                      disabled={busy}
+                      onClick={() => deleteChapter(c.chapter_title)}
+                      className="rounded p-1 hover:bg-black/10 dark:hover:bg-white/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
               ))}
               {chapters.length === 0 ? (
                 <div className="space-y-2">
