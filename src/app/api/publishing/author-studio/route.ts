@@ -290,14 +290,23 @@ async function runChapterEdit(
   const originalDraft = String(chapter.draft || "");
   const originalWords = wordCount(originalDraft);
   const isExpand = action === "expand";
+  // «Løft» skal gjøre teksten BEDRE, aldri kortere. Både Utvid og Løft er
+  // derfor «vokse aldri krymp»-handlinger — guarden avviser en kortere tekst
+  // og beholder originalen i stedet.
+  const isLift = action === "lift";
+  const noShrink = isExpand || isLift;
   // «Utvid» skal vokse markant (mål ~2x, minst ~800 ord). Alt annet skal
   // beholde lengden. Guarden avviser aldri en LENGRE tekst — bare tap.
   const expandTarget = Math.max(originalWords * 2, 800);
-  const minWords = isExpand ? originalWords : Math.round(originalWords * 0.9);
+  const minWords = noShrink ? originalWords : Math.round(originalWords * 0.9);
   const lengthBlock = isExpand
     ? `LENGDEKRAV (ufravikelig):
 - Originalen er ${originalWords} ord. Ditt kapittel skal være BETYDELIG lengre — sikt mot ca. ${expandTarget} ord, og aldri under ${minWords}.
 - Behold alt fra originalen og bygg videre. Ikke komprimer, ikke oppsummer.`
+    : isLift
+    ? `LENGDEKRAV (ufravikelig):
+- Originalen er ${originalWords} ord. Et løft hever kvaliteten — det gjør ALDRI teksten kortere. Ditt ferdige kapittel skal være på MINST ${originalWords} ord.
+- Behold alt innhold, alle poenger, eksempler, navn og fakta. Stram språket og løft kvaliteten uten å fjerne substans; utdyp der det styrker kapittelet.`
     : `LENGDEKRAV (ufravikelig):
 - Originalkapittelet er ${originalWords} ord. Ditt ferdige kapittel skal være på MINST ${minWords} ord.
 - Du skal ALDRI komprimere, kutte avsnitt, slå sammen seksjoner eller fjerne innhold — forbedre setning for setning, avsnitt for avsnitt.
@@ -334,22 +343,52 @@ Deretter en linje med kun: ---
 Deretter HELE det ferdige kapittelet i ren markdown.
 `;
 
+  // Ser teksten ut til å være kuttet midt i? (Lange kapitler traff før et
+  // token-tak og stoppet midt i en setning.) Ferdig prosa ender på setnings-
+  // tegn, anførsel eller listetegn — ikke midt i et ord.
+  const looksCut = (t: string) => {
+    const s = String(t || "").trimEnd();
+    if (s.length < 40) return false;
+    return !/[.!?…»"”'’)\]:*_`-]$/.test(s);
+  };
+
+  // Fullfør et kapittel som ble kuttet på slutten ved å be modellen fortsette
+  // sømløst der den stoppet, og skjøt sammen. Inntil to runder.
+  const finishIfCut = async (text: string): Promise<string> => {
+    let out = String(text || "");
+    for (let i = 0; i < 2 && looksCut(out); i += 1) {
+      const cont = await askClaude(
+        `Du fortsetter et kapittel som ble avbrutt midt i teksten. Skriv KUN fortsettelsen, sømløst der den slapp — ingen gjentakelse, ingen «SAMMENDRAG», ingen innledning, ingen kodeblokker. Fullfør kapittelet naturlig.\n\nSlik slutter teksten så langt:\n---\n${out.slice(-1600)}\n---`,
+        { model: "sonnet", maxTokens: 16000, anthropicOnly: true },
+      );
+      const tail = extractPlainDraft(cont).draft.trim();
+      if (!tail) break;
+      out = `${out.replace(/\s+$/, "")}${/\s$/.test(text) ? "" : " "}${tail}`;
+    }
+    return out;
+  };
+
   const attempt = async (extraDemand: string) => {
     // anthropicOnly: bokprosa MÅ komme fra Claude — faller vi tilbake til en
     // svakere modell, følger den ikke formatet og leverer kort/ødelagt tekst.
-    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 8000, temperature: isExpand ? 0.55 : 0.4, anthropicOnly: true });
-    return extractPlainDraft(raw);
+    // maxTokens høyt nok til at lange kapitler ikke kuttes; blir de likevel
+    // kuttet, fullføres de av finishIfCut.
+    const raw = await askClaude(buildPrompt(extraDemand), { model: "sonnet", maxTokens: 16000, temperature: isExpand ? 0.55 : 0.4, anthropicOnly: true });
+    const parsed = extractPlainDraft(raw);
+    return { ...parsed, draft: await finishIfCut(parsed.draft) };
   };
 
   let { draft, summary } = await attempt("");
   // For kort svar = utvidelsen/redigeringen mislyktes. Prøv strengere
   // (to ganger for utvid, som er mest utsatt), ellers avbryt uten å lagre.
-  const floor = () => !draft || wordCount(draft) < (isExpand ? originalWords : originalWords * 0.7);
-  const maxRetries = isExpand ? 2 : 1;
+  const floor = () => !draft || wordCount(draft) < (noShrink ? originalWords : originalWords * 0.7);
+  const maxRetries = noShrink ? 2 : 1;
   for (let r = 0; r < maxRetries && floor(); r += 1) {
     const retry = await attempt(
       isExpand
         ? `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord) — du KOMPRIMERTE i stedet for å utvide. Skriv kapittelet på nytt og gjør det MYE lengre: utdyp hvert avsnitt, legg til flere eksempler, forklaringer og kontekst. Mål: ca. ${expandTarget} ord.`
+        : isLift
+        ? `- FORRIGE FORSØK BLE KORTERE ENN ORIGINALEN (${wordCount(draft || "")} av ${originalWords} ord). Et løft skal ALDRI korte ned. Skriv kapittelet på nytt, behold alt innhold og hev kvaliteten — svaret skal være minst ${originalWords} ord.`
         : `- FORRIGE FORSØK BLE FOR KORT (${wordCount(draft || "")} ord). Dette er uakseptabelt. Gå gjennom originalen avsnitt for avsnitt og behold ALT — svaret skal være minst ${minWords} ord.`,
     );
     if (retry.draft && wordCount(retry.draft) > wordCount(draft || "")) {
@@ -364,6 +403,13 @@ Deretter HELE det ferdige kapittelet i ren markdown.
   if (!draft || newWords < 30 || (originalWords > 80 && newWords < originalWords * 0.5)) {
     throw new Error(
       `AI-en mistet mesteparten av teksten (${newWords} av ${originalWords} ord) — sannsynligvis en midlertidig feil. Originalen er trygg og UENDRET. Prøv igjen om litt.`,
+    );
+  }
+  // Et løft skal aldri gi kortere tekst. Kom den kortere ut selv etter nye
+  // forsøk, avvis den og behold originalen — heller det enn å barbere teksten.
+  if (isLift && originalWords > 40 && newWords < originalWords) {
+    throw new Error(
+      `Løftet ga en kortere tekst (${newWords} av ${originalWords} ord), og et løft skal aldri korte ned. Originalen er UENDRET. Prøv igjen, eller bruk «Utvid» hvis du vil ha mer tekst.`,
     );
   }
   const expected = isExpand ? Math.max(originalWords, 1) : Math.round(originalWords * 0.85);
