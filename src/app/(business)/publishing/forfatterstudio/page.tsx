@@ -1252,7 +1252,7 @@ export default function ForfatterstudioPage() {
       if (!res.ok || !data.content) throw new Error(data.error || `Kunne ikke lese filen (${res.status}).`);
       setImportText(String(data.content));
       setImportFileName(
-        `${data.file_name} — ${Math.round(Number(data.char_count || 0) / 1000)}k tegn lest${data.truncated ? " (kuttet ved 120k)" : ""} ✓`,
+        `${data.file_name} — ${Math.round(Number(data.char_count || 0) / 1000)}k tegn lest${data.truncated ? " (kuttet ved 1,5 mill. tegn)" : ""} ✓`,
       );
     } catch (error) {
       setImportFileName("");
