@@ -161,22 +161,57 @@ function splitManuscript(raw: string): Chapter[] {
   const text = String(raw || "").replace(/\r\n/g, "\n").trim();
   if (!text) return [];
 
-  const headingPattern = /^(#{1,3}\s+.+|(?:kapittel|chapter|del|part)\s+\d+.{0,80})$/gim;
-  const matches = [...text.matchAll(headingPattern)];
+  // Finn hvilket overskriftsnivå som markerer KAPITLER. Et manus bruker typisk
+  // Overskrift 1 til kapitler og Overskrift 2/3 til underavsnitt inne i
+  // kapittelet. Splitter vi på alle nivåer, blir hvert underavsnitt et eget
+  // «kapittel» (en bok med 33 kapitler ble til 264). Vi bruker derfor det
+  // ØVERSTE nivået som forekommer minst to ganger, og lar dypere overskrifter
+  // bli stående som en del av kapittelteksten.
+  const countLevel = (n: number) => (text.match(new RegExp(`^#{${n}}[ \\t]+\\S.*$`, "gm")) || []).length;
+  let chapterLevel = 0;
+  for (const n of [1, 2, 3]) {
+    if (countLevel(n) >= 2) {
+      chapterLevel = n;
+      break;
+    }
+  }
+
+  const matches = chapterLevel > 0
+    ? [...text.matchAll(new RegExp(`^#{${chapterLevel}}[ \\t]+.+$`, "gm"))]
+    // Ingen markdown-overskrifter (typisk PDF-uttrekk): se etter linjer som
+    // «Kapittel 3 – …» / «Chapter 3: …».
+    : [...text.matchAll(/^(?:kapittel|chapter|del|part)\s+\d+.{0,80}$/gim)];
+
   if (matches.length >= 2) {
-    const chapters: Chapter[] = [];
+    const sections: Chapter[] = [];
     for (let i = 0; i < matches.length; i += 1) {
       const start = matches[i].index ?? 0;
       const end = i + 1 < matches.length ? matches[i + 1].index ?? text.length : text.length;
-      const heading = matches[i][0].replace(/^#{1,3}\s+/, "").trim();
+      const heading = matches[i][0].replace(/^#{1,6}[ \t]+/, "").trim();
       const body = text.slice(start + matches[i][0].length, end).trim();
-      if (body) chapters.push({ chapter_title: heading, draft: body });
+      sections.push({ chapter_title: heading, draft: body });
     }
-    if (chapters.length > 0) {
-      const preamble = text.slice(0, matches[0].index ?? 0).trim();
-      if (preamble) chapters.unshift({ chapter_title: "Innledning", draft: preamble });
-      return chapters;
+    const preamble = text.slice(0, matches[0].index ?? 0).trim();
+    if (preamble) sections.unshift({ chapter_title: "Innledning", draft: preamble });
+
+    // Overskrifter uten egen brødtekst — boktittelen og «PART I»-skillere —
+    // skal ikke bli tomme kapitler. De henges på kapittelet under, så
+    // strukturen beholdes uten å blåse opp kapittellisten.
+    const chapters: Chapter[] = [];
+    let carry = "";
+    for (const s of sections) {
+      if (wordCount(s.draft) < 40) {
+        carry += `${carry ? "\n\n" : ""}## ${s.chapter_title}${s.draft ? `\n\n${s.draft}` : ""}`;
+        continue;
+      }
+      chapters.push(carry ? { ...s, draft: `${carry}\n\n${s.draft}` } : s);
+      carry = "";
     }
+    if (carry) {
+      if (chapters.length > 0) chapters[chapters.length - 1].draft += `\n\n${carry}`;
+      else chapters.push({ chapter_title: "Manuskript", draft: carry });
+    }
+    if (chapters.length >= 2) return chapters;
   }
   return [{ chapter_title: "Manuskript", draft: text }];
 }
