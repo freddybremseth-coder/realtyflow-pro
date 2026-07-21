@@ -368,14 +368,43 @@ export default function ForfatterstudioPage() {
   );
 
   const liftAllBelow8 = useCallback(async () => {
-    if (!project) return;
-    const targets = chapters.filter((c) => Number(c.quality?.score || 0) > 0 && Number(c.quality?.score) < 8);
-    if (targets.length === 0) {
-      setStatus("Ingen vurderte kapitler under 8 — kjør «Vurder kvalitet» først, eller alt er allerede løftet. 🎉");
-      return;
-    }
+    if (!project || chapters.length === 0) return;
     setBusyAction("liftall");
     try {
+      // Boka må være vurdert for å vite hva som er under 8. Er ingenting scoret
+      // ennå (typisk rett etter import), vurder alt automatisk først — da
+      // slipper brukeren å huske å kjøre «Vurder kvalitet» manuelt.
+      let workingChapters: Chapter[] = chapters;
+      const anyScored = chapters.some((c) => Number(c.quality?.score || 0) > 0);
+      if (!anyScored) {
+        setStatus("Vurderer kapitlene først…");
+        let remaining = 1;
+        let total = 0;
+        while (remaining > 0) {
+          const res = await fetch("/api/publishing/author-studio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "score_chapters", project_id: project.id }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setStatus(`Kunne ikke vurdere kapitlene: ${data.error || "ukjent feil"}`);
+            return;
+          }
+          total += Number(data.scored || 0);
+          remaining = Number(data.remaining || 0);
+          if (data.project) {
+            applyProject(data.project as FullProject, chapter?.chapter_title);
+            workingChapters = ((data.project as Record<string, any>).chapter_drafts as Chapter[]) || workingChapters;
+          }
+          setStatus(`Vurdert ${total} kapitler… ${remaining} igjen.`);
+        }
+      }
+      const targets = workingChapters.filter((c) => Number(c.quality?.score || 0) > 0 && Number(c.quality?.score) < 8);
+      if (targets.length === 0) {
+        setStatus("Alle vurderte kapitler er allerede 8 eller høyere. 🎉");
+        return;
+      }
       let done = 0;
       for (const target of targets) {
         setStatus(`Løfter «${target.chapter_title}» (${done + 1}/${targets.length}) — retter redaktørens punkter og scorer på nytt…`);
@@ -1425,7 +1454,7 @@ export default function ForfatterstudioPage() {
               {busyAction === "score" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Vurder kvalitet
             </Button>
-            {chapters.some((c) => Number(c.quality?.score || 0) > 0 && Number(c.quality?.score) < 8) ? (
+            {chapters.length > 0 ? (
               <Button size="sm" onClick={liftAllBelow8} disabled={busy}>
                 {busyAction === "liftall" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 Løft alle under 8
