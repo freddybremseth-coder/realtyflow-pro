@@ -17,7 +17,6 @@ type ClaimDemoButtonProps = {
  */
 export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimDemoButtonProps) {
   const [loading, setLoading] = useState(false);
-  const [claimed] = useState(Boolean(alreadyClaimed));
   const [seoAddon, setSeoAddon] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,8 +33,8 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Kunne ikke starte betalingen.");
 
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.url || data.checkout_url) {
+        window.location.href = data.url || data.checkout_url;
         return;
       }
       throw new Error("Betalingsleverandøren returnerte ingen checkout-lenke.");
@@ -50,7 +49,7 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
     return (
       <div className="rounded-xl bg-emerald-500/20 p-3 text-sm font-medium text-emerald-50">
         <CheckCircle className="mr-2 inline h-4 w-4" />
-        Betaling mottatt! Vi klargjør og publiserer siden din — du hører fra oss straks den er live.
+        Betaling mottatt! Vi klargjør og publiserer siden din.
       </div>
     );
   }
@@ -59,12 +58,14 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
     return <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-100">Denne prøvesiden er utløpt. Kontakt ChatGenius, så åpner vi den igjen.</div>;
   }
 
-  if (claimed) {
-    return <div className="rounded-xl bg-emerald-500/20 p-3 text-sm font-medium text-emerald-50"><CheckCircle className="mr-2 inline h-4 w-4" />Siden er reservert. Vi tar neste steg med faktura/godkjenning.</div>;
-  }
-
   return (
     <div className="space-y-3">
+      {alreadyClaimed && (
+        <div className="rounded-xl bg-emerald-500/20 p-3 text-sm font-medium text-emerald-50">
+          <CheckCircle className="mr-2 inline h-4 w-4" />
+          Siden er reservert. Du kan fullføre betaling når du er klar.
+        </div>
+      )}
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
         <input
           type="checkbox"
@@ -87,7 +88,7 @@ export function ClaimDemoButton({ token, alreadyClaimed, expired, paid }: ClaimD
         className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-4 py-3.5 text-sm font-bold text-slate-950 transition-transform hover:scale-[1.01] hover:bg-emerald-300 disabled:opacity-70"
       >
         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-        {loading ? "Åpner sikker betaling…" : "Bestill og betal nå"}
+        {loading ? "Åpner sikker betaling..." : "Bestill og betal nå"}
       </button>
       <p className="text-center text-[11px] text-slate-400">
         Sikker betaling via Stripe · Oppstart + første måned · Ingen bindingstid utover måneden
