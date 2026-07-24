@@ -23,9 +23,13 @@ CREATE TABLE IF NOT EXISTS market_insights (
 ALTER TABLE market_insights ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'market_insights' AND policyname = 'Service role full access'
+    SELECT 1 FROM pg_policies WHERE tablename = 'market_insights' AND policyname = 'Deny direct API access to market insights'
   ) THEN
-    CREATE POLICY "Service role full access" ON market_insights FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY "Deny direct API access to market insights"
+      ON market_insights FOR ALL
+      TO anon, authenticated
+      USING (false)
+      WITH CHECK (false);
   END IF;
 END $$;
 `;

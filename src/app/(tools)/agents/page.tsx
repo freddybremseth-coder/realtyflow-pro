@@ -197,6 +197,20 @@ function todayIsoStart() {
   return d.toISOString();
 }
 
+async function fetchOutboundEmailCount(since: string) {
+  try {
+    const response = await fetch(`/api/email/outbound-count?since=${encodeURIComponent(since)}`, { cache: "no-store" });
+    if (!response.ok) return { count: null, error: { message: `Email count returned ${response.status}` } };
+    const payload = await response.json().catch(() => ({}));
+    return { count: Number(payload.count || 0), error: null };
+  } catch (error) {
+    return {
+      count: null,
+      error: { message: error instanceof Error ? error.message : "Email count request failed" },
+    };
+  }
+}
+
 function formatRelativeActivity(dateValue?: string | null) {
   if (!dateValue) return "Ingen registrert aktivitet";
   const diff = Date.now() - new Date(dateValue).getTime();
@@ -489,11 +503,7 @@ export default function AgentsCommandCenter() {
           .from("content_publications")
           .select("id", { count: "exact", head: true })
           .gte("created_at", startOfDay),
-        supabase
-          .from("email_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("direction", "outbound")
-          .gte("created_at", startOfDay),
+        fetchOutboundEmailCount(startOfDay),
       ]);
 
       const executions = executionsResult.data || [];
