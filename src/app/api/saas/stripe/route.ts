@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSaasSupabase } from '@/lib/saas-api-supabase';
 import { verifyStripeWebhookSignature } from '@/lib/stripe-webhook';
+import { provisionDemoSiteAfterPayment, type DemoSiteProvisioningOrder } from '@/lib/demosites-provisioning';
 
 type StripeObject = Record<string, any>;
 
@@ -230,7 +231,7 @@ Freddy Bremseth`,
           const paidAt = new Date().toISOString();
           const order = requireDbResult<any>(await supabase
             .from('demo_site_orders')
-            .select('id, status, editable_fields, company_name')
+            .select('*')
             .eq('id', demositeOrderId)
             .maybeSingle(), 'Find DemoSites order');
 
@@ -246,12 +247,29 @@ Freddy Bremseth`,
               fields.addons = { ...(fields.addons || {}), seo: true };
             }
 
-            requireDbResult(await supabase.from('demo_site_orders').update({
+            const paidOrder = requireDbResult<any>(await supabase.from('demo_site_orders').update({
               billing_status: 'paid',
               status: order.status === 'deployed' ? 'deployed' : 'approved',
               claimed_at: paidAt,
               editable_fields: fields,
-            }).eq('id', demositeOrderId), 'Mark DemoSites order paid');
+            }).eq('id', demositeOrderId).select('*').single(), 'Mark DemoSites order paid');
+
+            let hostingerProvisioning: unknown = null;
+            try {
+              const provisioned = await provisionDemoSiteAfterPayment(
+                supabase,
+                paidOrder as DemoSiteProvisioningOrder,
+                'stripe_webhook',
+              );
+              hostingerProvisioning = provisioned.result;
+              console.log('[Stripe Webhook] DemoSites Hostinger provisioning:', JSON.stringify(provisioned.result));
+            } catch (provisionError) {
+              hostingerProvisioning = {
+                status: 'failed',
+                message: provisionError instanceof Error ? provisionError.message : 'Hostinger provisioning failed',
+              };
+              console.error('[Stripe Webhook] DemoSites Hostinger provisioning failed:', provisionError);
+            }
 
             requireDbResult(await supabase.from('demo_site_order_events').upsert({
               order_id: demositeOrderId,
@@ -265,6 +283,7 @@ Freddy Bremseth`,
                 subscription_id: data.subscription || null,
                 amount_total: data.amount_total || null,
                 currency: data.currency || null,
+                hostinger: hostingerProvisioning,
               },
             }, { onConflict: 'stripe_event_id' }), 'Record DemoSites payment event');
 

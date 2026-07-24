@@ -46,6 +46,84 @@ async function fetchDashboardContacts() {
   }
 }
 
+interface SocialAccountSummary {
+  brand?: string | null;
+  platform?: string | null;
+  is_active?: boolean | null;
+}
+
+interface AutomationErrorSummary {
+  id: string;
+  action?: string | null;
+  agent_name?: string | null;
+  details?: Record<string, string> | null;
+  created_at?: string | null;
+}
+
+interface DashboardWorkItem {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  brand_id?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+async function fetchSocialAccountSummary() {
+  try {
+    const response = await fetch("/api/social-accounts/summary", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Social accounts summary returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { data: (Array.isArray(payload.accounts) ? payload.accounts : []) as SocialAccountSummary[], error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Social accounts summary request failed" },
+    };
+  }
+}
+
+async function fetchAutomationErrorSummary() {
+  try {
+    const response = await fetch("/api/dashboard/automation-errors", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Automation errors returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { data: (Array.isArray(payload.errors) ? payload.errors : []) as AutomationErrorSummary[], error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Automation errors request failed" },
+    };
+  }
+}
+
+async function fetchWebsiteLeadWorkItems() {
+  try {
+    const response = await fetch("/api/work-items?status=TO_DO&limit=50", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Work items API returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const rows = (Array.isArray(payload.work_items) ? payload.work_items : []) as DashboardWorkItem[];
+    return { data: rows.filter((item) => item.source_type === "website_lead").slice(0, 5), error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Work items API request failed" },
+    };
+  }
+}
+
 interface DashboardStats {
   activeLeads: number;
   hotSignals: number;
@@ -358,24 +436,13 @@ export default function Dashboard() {
             .eq("status", "failed")
             .order("updated_at", { ascending: false })
             .limit(5),
-          // Recent automation errors
-          supabase.from("automation_logs")
-            .select("id, action, agent_name, details, created_at")
-            .eq("status", "error")
-            .order("created_at", { ascending: false })
-            .limit(5),
+          fetchAutomationErrorSummary(),
           supabase.from("content_publications")
             .select("brand_id,status")
             .order("updated_at", { ascending: false })
             .limit(500),
-          supabase.from("social_accounts")
-            .select("brand,platform,is_active"),
-          supabase.from("work_items")
-            .select("id,title,description,brand_id,source_id,created_at,updated_at,metadata")
-            .eq("source_type", "website_lead")
-            .eq("status", "TO_DO")
-            .order("updated_at", { ascending: false })
-            .limit(5),
+          fetchSocialAccountSummary(),
+          fetchWebsiteLeadWorkItems(),
         ]);
 
         // Build recent activity from real data
@@ -458,10 +525,9 @@ export default function Dashboard() {
             new Set(
               socialAccounts
                 .filter((account) => {
-                  const typed = account as { brand?: string | null; platform?: string | null; is_active?: boolean | null };
-                  return typed.is_active !== false && brandMatches(typed.brand, workspace.aliases) && typed.platform;
+                  return account.is_active !== false && brandMatches(account.brand, workspace.aliases) && account.platform;
                 })
-                .map((account) => String((account as { platform?: string | null }).platform || "").toLowerCase()),
+                .map((account) => String(account.platform || "").toLowerCase()),
             ),
           ).sort();
           const pipelineValue = leads.reduce((sum, contact) => sum + (Number((contact as { pipeline_value?: number | null }).pipeline_value) || 0), 0);
@@ -495,7 +561,7 @@ export default function Dashboard() {
           totalDrafts: draftsRes.count || 0,
           failedPosts: alerts.filter((alert) => alert.type === "error").length,
           aiAgents: 8,
-          connectedChannels: socialAccounts.filter((account) => (account as { is_active?: boolean | null }).is_active !== false).length,
+          connectedChannels: socialAccounts.filter((account) => account.is_active !== false).length,
           brandWorkspaces,
           recentActivity,
           alerts,

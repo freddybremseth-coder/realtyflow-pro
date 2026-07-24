@@ -9,6 +9,7 @@ export const revalidate = 0;
 
 type ClaimPageProps = {
   params: Promise<{ token: string }> | { token: string };
+  searchParams?: Promise<{ paid?: string; payment?: string; cancelled?: string; session_id?: string }> | { paid?: string; payment?: string; cancelled?: string; session_id?: string };
 };
 
 type DemoOrder = {
@@ -55,6 +56,12 @@ function getPackageLabel(packageId: string) {
   return `${pkg.shortName} — ${formatNok(pkg.setupFeeNok)} + ${formatNok(pkg.monthlyFeeNok)} / mnd`;
 }
 
+function getPaymentLabel(status: string) {
+  if (status === "paid") return "Betalt";
+  if (status === "pending") return "Venter på betaling";
+  return "Ikke betalt";
+}
+
 function getStatusLabel(order: DemoOrder, expired: boolean) {
   if (expired) return "Utløpt";
   if (order.claimed_at) return "Claimet av kunde";
@@ -63,8 +70,9 @@ function getStatusLabel(order: DemoOrder, expired: boolean) {
   return "Midlertidig demo";
 }
 
-export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
+export default async function ClaimDemoSitePage({ params, searchParams }: ClaimPageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const token = String(resolvedParams.token || "").trim();
   const supabase = getSupabase();
 
@@ -84,6 +92,8 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
 
   const order = data as DemoOrder;
   const expired = isExpired(order);
+  const paymentSuccess = resolvedSearchParams.paid === "1" || resolvedSearchParams.payment === "success";
+  const paymentCancelled = resolvedSearchParams.cancelled === "1" || resolvedSearchParams.payment === "cancelled";
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-10 text-white">
@@ -110,8 +120,19 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
           <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6">
             <h2 className="text-xl font-semibold">Demo-status</h2>
+            {paymentSuccess && (
+              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                Betaling er sendt til bekreftelse. Når Stripe bekrefter betalingen, starter publisering og Hostinger-oppsett.
+              </div>
+            )}
+            {paymentCancelled && (
+              <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                Betalingen ble avbrutt. Du kan starte betaling igjen når du er klar.
+              </div>
+            )}
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <Info label="Status" value={getStatusLabel(order, expired)} />
+              <Info label="Betaling" value={getPaymentLabel(order.billing_status)} />
               <Info label="Pakke" value={getPackageLabel(order.package_id)} />
               <Info label="Bransje" value={order.industry || "Ikke satt"} />
               <Info label="Eksisterende nettside" value={order.website_url || "Ikke satt"} href={order.website_url || undefined} />
@@ -121,7 +142,7 @@ export default async function ClaimDemoSitePage({ params }: ClaimPageProps) {
               <h3 className="flex items-center gap-2 font-semibold"><Globe className="h-4 w-4 text-blue-300" /> Neste steg</h3>
               <div className="mt-4 space-y-3 text-sm text-slate-300">
                 <Step text="Betal trygt med kort via Stripe — oppstart + første måned i én betaling." />
-                <Step text="Vi klargjør og publiserer siden med hosting, SSL og eventuelle justeringer du ønsker." />
+                <Step text="Når Stripe bekrefter betaling, publiseres siden og Hostinger-oppsett kjøres hvis API-nøklene er aktive." />
                 <Step text="Månedlig drift fornyes automatisk. Ingen bindingstid utover inneværende måned." />
               </div>
             </div>

@@ -274,10 +274,10 @@ test("profile import falls back to local-service for unknown businesses", async 
   setProfileImportFetchForTests((async () =>
     htmlResponse(`
       <html>
-        <head><title>Nordvik Partner AS</title><meta name="description" content="Lokal bedrift med rådgivning og oppfølging."></head>
+        <head><title>Nordvik Partner AS</title><meta name="description" content="Lokal bedrift med oppfølging og praktisk koordinering."></head>
         <body>
           <h1>Nordvik Partner AS</h1>
-          <p>Vi hjelper lokale kunder med rådgivning, oppfølging og praktisk koordinering.</p>
+          <p>Vi hjelper lokale kunder med oppfølging, planlegging og praktisk koordinering.</p>
           <p>Kontakt oss for en uforpliktende prat om behovet ditt.</p>
         </body>
       </html>
