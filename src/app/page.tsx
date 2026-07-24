@@ -60,6 +60,18 @@ interface AutomationErrorSummary {
   created_at?: string | null;
 }
 
+interface DashboardWorkItem {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  brand_id?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 async function fetchSocialAccountSummary() {
   try {
     const response = await fetch("/api/social-accounts/summary", { cache: "no-store" });
@@ -90,6 +102,24 @@ async function fetchAutomationErrorSummary() {
     return {
       data: [],
       error: { message: error instanceof Error ? error.message : "Automation errors request failed" },
+    };
+  }
+}
+
+async function fetchWebsiteLeadWorkItems() {
+  try {
+    const response = await fetch("/api/work-items?status=TO_DO&limit=50", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Work items API returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const rows = (Array.isArray(payload.work_items) ? payload.work_items : []) as DashboardWorkItem[];
+    return { data: rows.filter((item) => item.source_type === "website_lead").slice(0, 5), error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Work items API request failed" },
     };
   }
 }
@@ -412,12 +442,7 @@ export default function Dashboard() {
             .order("updated_at", { ascending: false })
             .limit(500),
           fetchSocialAccountSummary(),
-          supabase.from("work_items")
-            .select("id,title,description,brand_id,source_id,created_at,updated_at,metadata")
-            .eq("source_type", "website_lead")
-            .eq("status", "TO_DO")
-            .order("updated_at", { ascending: false })
-            .limit(5),
+          fetchWebsiteLeadWorkItems(),
         ]);
 
         // Build recent activity from real data

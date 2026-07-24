@@ -25,6 +25,17 @@ function getSupabase() {
 
 const CHART_COLORS = ["#06b6d4", "#8b5cf6", "#ec4899", "#10b981", "#f59e0b"];
 
+async function fetchLeadCount() {
+  try {
+    const response = await fetch("/api/leads", { cache: "no-store" });
+    if (!response.ok) return 0;
+    const payload = await response.json().catch(() => ({}));
+    return Array.isArray(payload.leads) ? payload.leads.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [realtyMetrics, setRealtyMetrics] = useState([
@@ -80,8 +91,8 @@ export default function AnalyticsPage() {
       if (!supabase) { setLoading(false); return; }
 
       try {
-        const [leadsRes, propsRes, pubsRes, draftsRes, scheduledRes, allPubsRes] = await Promise.all([
-          supabase.from("leads").select("id", { count: "exact", head: true }),
+        const [leadCount, propsRes, pubsRes, draftsRes, scheduledRes, allPubsRes] = await Promise.all([
+          fetchLeadCount(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
           supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
@@ -89,7 +100,7 @@ export default function AnalyticsPage() {
           supabase.from("content_publications").select("id, brand_id, tags, status, created_at, published_at").limit(500),
         ]);
 
-        const leads = leadsRes.count || 0;
+        const leads = leadCount || 0;
         const props = propsRes.count || 0;
         const published = pubsRes.count || 0;
         const draftCount = draftsRes.count || 0;
