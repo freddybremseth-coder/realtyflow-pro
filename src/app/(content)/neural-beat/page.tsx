@@ -447,8 +447,7 @@ export default function NeuralBeatPage() {
     }
   };
 
-  // Two-step upload: get signed URL from API, then upload directly to Supabase
-  // This bypasses both Vercel 4.5MB limit AND Supabase RLS
+  // Two-step upload: get a short-lived signed URL from our API, then send the file to storage.
   const handleMp3Upload = async () => {
     if (!mp3File || !mp3Title) return;
     setIsUploading(true);
@@ -465,16 +464,10 @@ export default function NeuralBeatPage() {
         throw new Error(err.error || 'Kunne ikke opprette opplastings-URL');
       }
 
-      const { uploadUrl, token, publicUrl, method: uploadMethod } = await signRes.json();
+      const { uploadUrl, publicUrl } = await signRes.json();
 
       // Step 2: Upload MP3 directly to Supabase Storage (large file, no Vercel limit)
-      // Signed URLs use PUT with token in URL (no Authorization header needed)
-      // Direct URLs use POST with Authorization: Bearer <service_role_key>
       const headers: Record<string, string> = { 'Content-Type': 'audio/mpeg' };
-      if (uploadMethod === 'direct') {
-        headers['Authorization'] = `Bearer ${token}`;
-        headers['x-upsert'] = 'true';
-      }
 
       const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
@@ -529,12 +522,8 @@ export default function NeuralBeatPage() {
       body: JSON.stringify({ fileName: `${prefix}-${file.name}` }),
     });
     if (!signRes.ok) throw new Error('Kunne ikke opprette opplastings-URL');
-    const { uploadUrl, token, publicUrl, method: uploadMethod } = await signRes.json();
+    const { uploadUrl, publicUrl } = await signRes.json();
     const headers: Record<string, string> = { 'Content-Type': file.type || 'image/png' };
-    if (uploadMethod === 'direct') {
-      headers['Authorization'] = `Bearer ${token}`;
-      headers['x-upsert'] = 'true';
-    }
     const uploadRes = await fetch(uploadUrl, { method: 'PUT', headers, body: file });
     if (!uploadRes.ok) throw new Error('Bildeopplasting feilet');
     return publicUrl;

@@ -15,6 +15,7 @@ import { DELETE as DELETEReportsInsights, GET as GETReportsInsights, POST as POS
 import { GET as GETReports, POST as POSTReports } from "./reports/route";
 import { GET as GETSchedule, POST as POSTSchedule } from "./schedule/route";
 import { POST as POSTUploadImage } from "./upload-image/route";
+import { POST as POSTNeuralBeatUpload } from "./neural-beat/upload/route";
 
 function jsonRequest(path: string, method: string, body?: Record<string, unknown>) {
   return new NextRequest(`https://realtyflow.test${path}`, {
@@ -97,6 +98,7 @@ test("content and document admin routes require admin before database, AI, or pu
       }) as any,
     ),
     POSTUploadImage(jsonRequest("/api/upload-image", "POST") as any),
+    POSTNeuralBeatUpload(jsonRequest("/api/neural-beat/upload", "POST", { fileName: "song.mp3" }) as any),
   ]);
 
   for (const response of responses) {

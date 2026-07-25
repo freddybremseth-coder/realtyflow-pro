@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApi } from '@/lib/api-admin';
 
 /**
  * POST /api/neural-beat/upload
@@ -8,10 +9,22 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(request);
+    if (unauthorized) return unauthorized;
+
     const { fileName } = await request.json();
 
     if (!fileName || typeof fileName !== 'string') {
       return NextResponse.json({ error: 'fileName is required' }, { status: 400 });
+    }
+
+    const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
+    const allowedExtensions = new Set(['mp3', 'jpg', 'jpeg', 'png', 'webp']);
+    if (!allowedExtensions.has(fileExtension)) {
+      return NextResponse.json(
+        { error: 'Only MP3 and image uploads are supported' },
+        { status: 415 }
+      );
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
