@@ -5,6 +5,7 @@ import { GET as GETContent, POST as POSTContent } from "./content/route";
 import { POST as POSTContentPublish } from "./content/publish/route";
 import { GET as GETContentHubDrafts } from "./content-hub/drafts/route";
 import { POST as POSTContentHubImageAttach } from "./content-hub/images/attach/route";
+import { DELETE as DELETEContentHubPublications, GET as GETContentHubPublications, PATCH as PATCHContentHubPublications } from "./content-hub/publications/route";
 import { GET as GETDocumentsList } from "./documents/list/route";
 import { DELETE as DELETEDocumentsPublish, PATCH as PATCHDocumentsPublish, POST as POSTDocumentsPublish } from "./documents/publish/route";
 import { POST as POSTPublish } from "./publish/route";
@@ -13,6 +14,7 @@ import { POST as POSTReportsFromInsights } from "./reports/from-insights/route";
 import { DELETE as DELETEReportsInsights, GET as GETReportsInsights, POST as POSTReportsInsights } from "./reports/insights/route";
 import { GET as GETReports, POST as POSTReports } from "./reports/route";
 import { GET as GETSchedule, POST as POSTSchedule } from "./schedule/route";
+import { POST as POSTUploadImage } from "./upload-image/route";
 
 function jsonRequest(path: string, method: string, body?: Record<string, unknown>) {
   return new NextRequest(`https://realtyflow.test${path}`, {
@@ -44,6 +46,9 @@ test("content and document admin routes require admin before database, AI, or pu
       }) as any,
     ),
     GETContentHubDrafts(jsonRequest("/api/content-hub/drafts", "GET") as any),
+    GETContentHubPublications(jsonRequest("/api/content-hub/publications?mode=dashboard", "GET") as any),
+    PATCHContentHubPublications(jsonRequest("/api/content-hub/publications", "PATCH", { id: "draft-1", status: "draft" }) as any),
+    DELETEContentHubPublications(jsonRequest("/api/content-hub/publications?id=draft-1", "DELETE") as any),
     POSTContentHubImageAttach(
       jsonRequest("/api/content-hub/images/attach", "POST", {
         draftId: "draft-1",
@@ -91,6 +96,7 @@ test("content and document admin routes require admin before database, AI, or pu
         brand_id: "soleada",
       }) as any,
     ),
+    POSTUploadImage(jsonRequest("/api/upload-image", "POST") as any),
   ]);
 
   for (const response of responses) {

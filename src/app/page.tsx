@@ -72,6 +72,55 @@ interface DashboardWorkItem {
   metadata?: Record<string, unknown> | null;
 }
 
+interface DashboardPublication {
+  id?: string;
+  title?: string | null;
+  status?: string | null;
+  brand_id?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
+  scheduled_at?: string | null;
+  last_publish_error?: string | null;
+  publish_attempts?: number | null;
+  updated_at?: string | null;
+}
+
+interface DashboardContentSummary {
+  counts: { published: number; scheduled: number; draft: number };
+  recent: DashboardPublication[];
+  failed: DashboardPublication[];
+  brandItems: DashboardPublication[];
+}
+
+async function fetchDashboardContentSummary() {
+  try {
+    const response = await fetch("/api/content-hub/publications?mode=dashboard", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: null, error: { message: `Content summary returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return {
+      data: {
+        counts: {
+          published: Number(payload.counts?.published) || 0,
+          scheduled: Number(payload.counts?.scheduled) || 0,
+          draft: Number(payload.counts?.draft) || 0,
+        },
+        recent: Array.isArray(payload.recent) ? payload.recent : [],
+        failed: Array.isArray(payload.failed) ? payload.failed : [],
+        brandItems: Array.isArray(payload.brandItems) ? payload.brandItems : [],
+      } as DashboardContentSummary,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      data: null,
+      error: { message: error instanceof Error ? error.message : "Content summary request failed" },
+    };
+  }
+}
+
 async function fetchSocialAccountSummary() {
   try {
     const response = await fetch("/api/social-accounts/summary", { cache: "no-store" });
@@ -410,44 +459,30 @@ export default function Dashboard() {
           contactsRes,
           propertiesRes,
           plotsRes,
-          pubsRes,
-          scheduledRes,
-          draftsRes,
-          recentPubsRes,
-          failedPubsRes,
+          contentSummaryRes,
           automationErrorsRes,
-          contentByBrandRes,
           socialAccountsRes,
           websiteLeadTasksRes,
         ] = await Promise.all([
           fetchDashboardContacts(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("land_plots").select("id", { count: "exact", head: true }),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
-          supabase.from("content_publications")
-            .select("title, status, brand_id, created_at, published_at, scheduled_at")
-            .order("created_at", { ascending: false })
-            .limit(6),
-          // Failed publications with error details
-          supabase.from("content_publications")
-            .select("id, title, brand_id, last_publish_error, publish_attempts, updated_at")
-            .eq("status", "failed")
-            .order("updated_at", { ascending: false })
-            .limit(5),
+          fetchDashboardContentSummary(),
           fetchAutomationErrorSummary(),
-          supabase.from("content_publications")
-            .select("brand_id,status")
-            .order("updated_at", { ascending: false })
-            .limit(500),
           fetchSocialAccountSummary(),
           fetchWebsiteLeadWorkItems(),
         ]);
 
+        const contentSummary = contentSummaryRes.data || {
+          counts: { published: 0, scheduled: 0, draft: 0 },
+          recent: [],
+          failed: [],
+          brandItems: [],
+        };
+
         // Build recent activity from real data
-        const recentActivity = (recentPubsRes.data || []).map((pub: Record<string, string>) => {
-          const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at));
+        const recentActivity = contentSummary.recent.map((pub) => {
+          const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at || Date.now()));
           if (pub.status === "published") {
             return { type: "content", text: `Publisert: ${pub.title}`, time: timeAgo };
           } else if (pub.status === "scheduled") {
@@ -460,7 +495,7 @@ export default function Dashboard() {
         // Build alerts from failed publishes and automation errors
         const alerts: DashboardStats["alerts"] = [];
 
-        const failedPubs = failedPubsRes.data || [];
+        const failedPubs = contentSummary.failed;
         for (const pub of failedPubs) {
           const updatedAt = pub.updated_at ? new Date(pub.updated_at) : new Date();
           const ageDays = (Date.now() - updatedAt.getTime()) / 86400000;
@@ -512,7 +547,7 @@ export default function Dashboard() {
         }
 
         const activeContacts = (contactsRes.data || []) as DashboardContact[];
-        const contentItems = contentByBrandRes.data || [];
+        const contentItems = contentSummary.brandItems;
         const socialAccounts = socialAccountsRes.data || [];
         const brandWorkspaces: BrandWorkspaceStats[] = BRAND_WORKSPACES.map((workspace) => {
           const leads = activeContacts.filter((contact) => {
@@ -556,9 +591,9 @@ export default function Dashboard() {
           plots: plotsRes.count || 0,
           pipelineValue: formatEuroCompact(pipelineValueRaw),
           pipelineValueRaw,
-          publishedPosts: pubsRes.count || 0,
-          scheduledPosts: scheduledRes.count || 0,
-          totalDrafts: draftsRes.count || 0,
+          publishedPosts: contentSummary.counts.published,
+          scheduledPosts: contentSummary.counts.scheduled,
+          totalDrafts: contentSummary.counts.draft,
           failedPosts: alerts.filter((alert) => alert.type === "error").length,
           aiAgents: 8,
           connectedChannels: socialAccounts.filter((account) => account.is_active !== false).length,

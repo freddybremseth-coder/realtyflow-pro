@@ -73,13 +73,21 @@ export async function GET(request: NextRequest) {
     .map((status) => status.trim())
     .filter(Boolean);
 
-  async function runQuery(selectClause: string) {
-    return supabase!
+  const isMissingColumn = (msg: string, col: string) =>
+    new RegExp(`column[^\\n]*${col}[^\\n]*does not exist|${col}[^\\n]*schema cache`, "i").test(msg);
+
+  async function runQuery(selectClause: string, filterArchived = true) {
+    let query = supabase!
       .from("content_publications")
       .select(selectClause)
       .in("status", statuses)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+      .order("created_at", { ascending: false });
+
+    if (filterArchived) {
+      query = query.or("archive_status.is.null,archive_status.neq.archived");
+    }
+
+    return query.limit(limit);
   }
 
   if (id) {
@@ -106,22 +114,21 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const initialResult = await runQuery(listSelect);
+  let initialResult = await runQuery(listSelect);
   let data = initialResult.data as unknown as Record<string, unknown>[] | null;
   let error = initialResult.error as { message: string } | null;
   let usedFallback = false;
   let missingPlatforms = false;
-
-  const isMissingColumn = (msg: string, col: string) =>
-    new RegExp(`column[^\\n]*${col}[^\\n]*does not exist|${col}[^\\n]*schema cache`, "i").test(msg);
+  let missingArchiveStatus = false;
 
   if (error) {
     missingPlatforms = isMissingColumn(error.message, "scheduled_platforms");
+    missingArchiveStatus = isMissingColumn(error.message, "archive_status");
     let nextSelect: string | null = null;
     if (missingPlatforms) nextSelect = listMinimalSelect;
 
-    if (nextSelect) {
-      const fallback = await runQuery(nextSelect);
+    if (nextSelect || missingArchiveStatus) {
+      const fallback = await runQuery(nextSelect || listSelect, !missingArchiveStatus);
       data = (fallback.data as unknown as Record<string, unknown>[] | null)?.map((row) => ({
         ...row,
         ...(missingPlatforms ? { scheduled_platforms: [] } : {}),
