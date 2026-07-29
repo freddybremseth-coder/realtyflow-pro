@@ -9,7 +9,7 @@ const HOME_BY_ROLE: Record<string, string> = {
   CLOSING: "/closing",
   FINANCE: "/monthly-close",
   MARKETING: "/attribution",
-  KEYHOLDING: "/service-revenue",
+  KEYHOLDING: "/care",
   VIEWER: "/revenue-command",
 };
 

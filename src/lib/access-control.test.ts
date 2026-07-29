@@ -25,6 +25,8 @@ test("known API routes map to explicit permissions and unknown routes stay owner
   assert.equal(accessRequirementForApi("/api/revenue/commissions", "POST"), "finance.write");
   assert.equal(accessRequirementForApi("/api/revenue/closing-pack", "POST"), "documents.write");
   assert.equal(accessRequirementForApi("/api/revenue/service-revenue", "PATCH"), "keyholding.write");
+  assert.equal(accessRequirementForApi("/api/care/dashboard", "GET"), "keyholding.read");
+  assert.equal(accessRequirementForApi("/api/care/properties", "POST"), "keyholding.write");
   assert.equal(accessRequirementForApi("/api/contacts/abc", "GET"), "customers.read");
   assert.equal(accessRequirementForApi("/api/team-workload", "GET"), "revenue.read");
   assert.equal(accessRequirementForApi("/api/team-workload", "POST"), "access.manage");
@@ -43,6 +45,8 @@ test("navigation is reduced by role", () => {
   assert.equal(canSeeNavHref("FINANCE", "/monthly-close"), true);
   assert.equal(canSeeNavHref("FINANCE", "/dona-anna"), true);
   assert.equal(canSeeNavHref("FINANCE", "/service-revenue"), false);
+  assert.equal(canSeeNavHref("KEYHOLDING", "/care"), true);
+  assert.equal(canSeeNavHref("KEYHOLDING", "/care/reports"), true);
   assert.equal(canSeeNavHref("KEYHOLDING", "/service-revenue"), true);
   assert.equal(canSeeNavHref("VIEWER", "/audit-log"), true);
   assert.equal(canSeeNavHref("VIEWER", "/team-workload"), true);

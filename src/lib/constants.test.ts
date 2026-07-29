@@ -37,3 +37,10 @@ test("RealtyFlow sidebar keeps property scanner with property tools", () => {
   assert.equal(SIDEBAR_NAV.properties.some((item) => item.href === "/scanner"), true);
   assert.equal(SIDEBAR_NAV.admin.some((item) => item.href === "/scanner"), false);
 });
+
+test("RealtyFlow sidebar exposes Keyholding Care as a dedicated business area", () => {
+  assert.equal(SIDEBAR_NAV.care.some((item) => item.href === "/care"), true);
+  assert.equal(SIDEBAR_NAV.care.some((item) => item.href === "/care/reports"), true);
+  assert.equal(SIDEBAR_NAV.care.some((item) => item.href === "/care/invoices"), true);
+  assert.equal(SIDEBAR_NAV.operations.some((item) => item.href === "/service-revenue"), false);
+});

@@ -5,6 +5,7 @@ export type NavigationItem = { label: string; href: string; icon: string };
 export type NavigationSectionId =
   | "workspace"
   | "customers"
+  | "care"
   | "revenue"
   | "reports"
   | "properties"
@@ -66,6 +67,19 @@ const GROUPS: Array<{
     ],
   },
   {
+    id: "care",
+    label: "Keyholding Care",
+    icon: "KeyRound",
+    hrefs: [
+      "/care",
+      "/care/customers",
+      "/care/reports",
+      "/care/invoices",
+      "/care/keys",
+      "/service-revenue",
+    ],
+  },
+  {
     id: "revenue",
     label: "Økonomi",
     icon: "Handshake",
@@ -91,7 +105,6 @@ const GROUPS: Array<{
       "/weekly-management-review",
       "/continuous-improvement",
       "/attribution",
-      "/service-revenue",
       "/team-workload",
       "/revenue-data-health",
     ],
@@ -213,12 +226,12 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
     "/executive-briefing",
   ],
   KEYHOLDING: [
-    "/today",
-    "/service-revenue",
-    "/execution",
-    "/customers",
+    "/care",
+    "/care/customers",
+    "/care/reports",
+    "/care/invoices",
+    "/care/keys",
     "/communications",
-    "/internal-alerts",
   ],
   VIEWER: [
     "/revenue-command",

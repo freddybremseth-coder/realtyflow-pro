@@ -23,7 +23,7 @@ test("owner navigation is split into focused work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
-    ["workspace", "customers", "revenue", "reports", "properties", "content", "marketing", "business", "system"],
+    ["workspace", "customers", "care", "revenue", "reports", "properties", "content", "marketing", "business", "system"],
   );
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
@@ -32,6 +32,8 @@ test("owner navigation is split into focused work areas", () => {
   // Daily money tools stay in "Økonomi"; rarely-used routines live in
   // their own "Rapporter & rutiner" group so they never drown the daily.
   assert.equal(sections.find((section) => section.id === "revenue")?.items.some((item) => item.href === "/closing"), true);
+  assert.equal(sections.find((section) => section.id === "care")?.items.some((item) => item.href === "/care"), true);
+  assert.equal(sections.find((section) => section.id === "care")?.items.some((item) => item.href === "/care/invoices"), true);
   assert.equal(sections.find((section) => section.id === "reports")?.items.some((item) => item.href === "/continuous-improvement"), true);
   assert.equal(sections.find((section) => section.id === "business")?.items.some((item) => item.href === "/demosites"), true);
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/reach"), true);
@@ -52,6 +54,7 @@ test("role navigation excludes inaccessible owner and finance tools", () => {
 test("active section follows nested routes", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.equal(activeNavigationSection("/customers/abc-123", sections), "customers");
+  assert.equal(activeNavigationSection("/care/reports", sections), "care");
   assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
   assert.equal(activeNavigationSection("/continuous-improvement", sections), "reports");
 });
@@ -94,4 +97,17 @@ test("quick links prefer favorites and fall back to role defaults", () => {
   assert.deepEqual(quick.slice(0, 2).map((item) => item.href), ["/communications", "/customers"]);
   assert.equal(quick.length, 6);
   assert.equal(new Set(quick.map((item) => item.href)).size, quick.length);
+});
+
+test("keyholding role gets the Care workspace as its main menu area", () => {
+  const sections = buildVisibleNavigation("KEYHOLDING", permissionsForRole("KEYHOLDING"));
+  const care = sections.find((section) => section.id === "care");
+  assert.ok(care);
+  assert.deepEqual(
+    care.items.map((item) => item.href),
+    ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"],
+  );
+
+  const quick = quickNavigationItems("KEYHOLDING", sections, []);
+  assert.deepEqual(quick.map((item) => item.href), ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/communications"]);
 });

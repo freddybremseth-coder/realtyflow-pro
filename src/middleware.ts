@@ -68,7 +68,7 @@ const ROLE_HOME: Record<AccessRole, string> = {
   CLOSING: "/closing",
   FINANCE: "/monthly-close",
   MARKETING: "/attribution",
-  KEYHOLDING: "/service-revenue",
+  KEYHOLDING: "/care",
   VIEWER: "/revenue-command",
 };
 
