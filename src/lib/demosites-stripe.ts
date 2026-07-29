@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 /**
  * Stripe Checkout for DemoSites — the money moment.
  *
@@ -6,15 +8,17 @@
  * monthly subscription in one payment, so a customer can buy their trial
  * site at 22:00 on a Sunday with zero manual work.
  *
- * Plain Stripe REST (form-encoded) — no SDK dependency. The existing
- * webhook (/api/saas/stripe) marks the order paid on
- * checkout.session.completed via metadata.demosite_order_id.
+ * Plain Stripe REST (form-encoded) — no SDK dependency. The Stripe webhook
+ * marks the order paid on checkout.session.completed via metadata.
  */
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
 
-export function isStripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
+type EnvLike = Record<string, string | undefined>;
+type FetchLike = typeof fetch;
+
+export function isStripeConfigured(env: EnvLike = process.env): boolean {
+  return Boolean(env.STRIPE_SECRET_KEY);
 }
 
 /** Optional ONE-TIME add-on: SEO & Google Search optimisation setup. */
@@ -40,8 +44,11 @@ export type DemoSiteCheckoutSession = {
 
 export async function createDemoSiteCheckoutSession(
   input: DemoSiteCheckoutInput,
+  options: { env?: EnvLike; fetchFn?: FetchLike } = {},
 ): Promise<DemoSiteCheckoutSession> {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const env = options.env || process.env;
+  const fetchFn = options.fetchFn || fetch;
+  const secretKey = env.STRIPE_SECRET_KEY;
   if (!secretKey) throw new Error("STRIPE_SECRET_KEY is not configured");
 
   const claimUrl = `${input.baseUrl}/demosites/claim/${input.claimToken}`;
@@ -55,20 +62,19 @@ export async function createDemoSiteCheckoutSession(
   params.set("client_reference_id", input.orderId);
   params.set("allow_promotion_codes", "true");
   params.set("locale", "auto");
-  params.set("success_url", `${claimUrl}?paid=1&session_id={CHECKOUT_SESSION_ID}`);
-  params.set("cancel_url", `${claimUrl}?cancelled=1`);
+  params.set("success_url", `${claimUrl}?paid=1&payment=success&session_id={CHECKOUT_SESSION_ID}`);
+  params.set("cancel_url", `${claimUrl}?cancelled=1&payment=cancelled`);
 
   // Monthly subscription line.
   params.set("line_items[0][quantity]", "1");
   params.set("line_items[0][price_data][currency]", "nok");
   params.set("line_items[0][price_data][unit_amount]", String(Math.round(input.monthlyFeeNok * 100)));
   params.set("line_items[0][price_data][recurring][interval]", "month");
-  params.set("line_items[0][price_data][product_data][name]", `${input.packageName} – månedlig drift (${input.companyName})`);
+  params.set("line_items[0][price_data][product_data][name]", `${input.packageName} - månedlig drift (${input.companyName})`);
 
   let lineIndex = 1;
 
-  // Optional SEO & Google Search optimisation — ONE-TIME fee (easier
-  // upsell than a subscription line).
+  // Optional SEO & Google Search optimisation — ONE-TIME fee.
   if (input.seoAddon) {
     params.set(`line_items[${lineIndex}][quantity]`, "1");
     params.set(`line_items[${lineIndex}][price_data][currency]`, "nok");
@@ -82,18 +88,22 @@ export async function createDemoSiteCheckoutSession(
     params.set(`line_items[${lineIndex}][quantity]`, "1");
     params.set(`line_items[${lineIndex}][price_data][currency]`, "nok");
     params.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(Math.round(input.setupFeeNok * 100)));
-    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `${input.packageName} – oppstart (${input.companyName})`);
+    params.set(`line_items[${lineIndex}][price_data][product_data][name]`, `${input.packageName} - oppstart (${input.companyName})`);
   }
 
   // Metadata on both the session and the subscription so every later
   // webhook event can be traced back to the demo order.
+  params.set("metadata[product]", "demosites");
+  params.set("metadata[order_id]", input.orderId);
   params.set("metadata[demosite_order_id]", input.orderId);
   params.set("metadata[claim_token]", input.claimToken);
   params.set("metadata[seo_addon]", input.seoAddon ? "true" : "false");
+  params.set("subscription_data[metadata][product]", "demosites");
+  params.set("subscription_data[metadata][order_id]", input.orderId);
   params.set("subscription_data[metadata][demosite_order_id]", input.orderId);
   params.set("subscription_data[metadata][company_name]", input.companyName);
 
-  const res = await fetch(`${STRIPE_API_BASE}/checkout/sessions`, {
+  const res = await fetchFn(`${STRIPE_API_BASE}/checkout/sessions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${secretKey}`,
@@ -109,4 +119,31 @@ export async function createDemoSiteCheckoutSession(
   }
 
   return { id: data.id, url: data.url };
+}
+
+export function verifyStripeSignature(payload: string, signatureHeader: string | null, secret: string, toleranceSeconds = 300) {
+  if (!signatureHeader) return false;
+  const timestamp = signatureHeader
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("t="))
+    ?.slice(2);
+  const signatures = signatureHeader
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith("v1="))
+    .map((part) => part.slice(3));
+
+  if (!timestamp || signatures.length === 0) return false;
+  const timestampNumber = Number(timestamp);
+  if (!Number.isFinite(timestampNumber)) return false;
+  if (Math.abs(Date.now() / 1000 - timestampNumber) > toleranceSeconds) return false;
+
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+
+  return signatures.some((signature) => {
+    const receivedBuffer = Buffer.from(signature, "hex");
+    return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
+  });
 }

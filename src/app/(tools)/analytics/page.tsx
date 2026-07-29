@@ -25,6 +25,70 @@ function getSupabase() {
 
 const CHART_COLORS = ["#06b6d4", "#8b5cf6", "#ec4899", "#10b981", "#f59e0b"];
 
+async function fetchLeadCount() {
+  try {
+    const response = await fetch("/api/leads", { cache: "no-store" });
+    if (!response.ok) return 0;
+    const payload = await response.json().catch(() => ({}));
+    return Array.isArray(payload.leads) ? payload.leads.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+interface AnalyticsPublication {
+  id: string;
+  brand_id?: string | null;
+  title?: string | null;
+  tags?: string[] | null;
+  status?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
+  total_likes?: number | null;
+  total_comments?: number | null;
+  total_shares?: number | null;
+  total_views?: number | null;
+}
+
+interface AnalyticsSnapshot {
+  publication_id: string;
+  platform?: string | null;
+  likes?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  reach?: number | null;
+  impressions?: number | null;
+}
+
+interface ContentAnalyticsPayload {
+  counts: { published: number; scheduled: number; draft: number };
+  publications: AnalyticsPublication[];
+  engagementPublications: AnalyticsPublication[];
+  engagementSnapshots: AnalyticsSnapshot[];
+}
+
+async function fetchContentAnalytics() {
+  try {
+    const response = await fetch("/api/content-hub/publications?mode=analytics", { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json().catch(() => ({}));
+    return {
+      counts: {
+        published: Number(payload.counts?.published) || 0,
+        scheduled: Number(payload.counts?.scheduled) || 0,
+        draft: Number(payload.counts?.draft) || 0,
+      },
+      publications: Array.isArray(payload.publications) ? payload.publications : [],
+      engagementPublications: Array.isArray(payload.engagementPublications) ? payload.engagementPublications : [],
+      engagementSnapshots: Array.isArray(payload.engagementSnapshots) ? payload.engagementSnapshots : [],
+    } as ContentAnalyticsPayload;
+  } catch {
+    return null;
+  }
+}
+
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [realtyMetrics, setRealtyMetrics] = useState([
@@ -80,22 +144,19 @@ export default function AnalyticsPage() {
       if (!supabase) { setLoading(false); return; }
 
       try {
-        const [leadsRes, propsRes, pubsRes, draftsRes, scheduledRes, allPubsRes] = await Promise.all([
-          supabase.from("leads").select("id", { count: "exact", head: true }),
+        const [leadCount, propsRes, contentAnalytics] = await Promise.all([
+          fetchLeadCount(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
-          supabase.from("content_publications").select("id, brand_id, tags, status, created_at, published_at").limit(500),
+          fetchContentAnalytics(),
         ]);
 
-        const leads = leadsRes.count || 0;
+        const leads = leadCount || 0;
         const props = propsRes.count || 0;
-        const published = pubsRes.count || 0;
-        const draftCount = draftsRes.count || 0;
-        const scheduled = scheduledRes.count || 0;
+        const published = contentAnalytics?.counts.published || 0;
+        const draftCount = contentAnalytics?.counts.draft || 0;
+        const scheduled = contentAnalytics?.counts.scheduled || 0;
         const total = published + draftCount + scheduled;
-        const allPubs = allPubsRes.data || [];
+        const allPubs = contentAnalytics?.publications || [];
 
         setRealtyMetrics([
           { label: "Totale Leads", value: String(leads), change: "–", icon: Users },
@@ -137,11 +198,11 @@ export default function AnalyticsPage() {
           const year = d.getFullYear();
           const month = d.getMonth();
           const pubCount = allPubs.filter((p) => {
-            const pd = new Date(p.published_at || p.created_at);
+            const pd = new Date(p.published_at || p.created_at || 0);
             return pd.getFullYear() === year && pd.getMonth() === month && p.status === "published";
           }).length;
           const draftC = allPubs.filter((p) => {
-            const pd = new Date(p.created_at);
+            const pd = new Date(p.created_at || 0);
             return pd.getFullYear() === year && pd.getMonth() === month && p.status === "draft";
           }).length;
           months.push({ month: monthStr, published: pubCount, drafts: draftC });
@@ -162,18 +223,8 @@ export default function AnalyticsPage() {
         );
 
         // Fetch real SoMe engagement data
-        const { data: pubsWithEngagement } = await supabase
-          .from("content_publications")
-          .select("id, title, brand_id, tags, published_at, total_likes, total_comments, total_shares, total_views")
-          .eq("status", "published")
-          .order("published_at", { ascending: false })
-          .limit(50);
-
-        const { data: snapshots } = await supabase
-          .from("engagement_snapshots")
-          .select("publication_id, platform, likes, comments, shares, reach, impressions")
-          .order("snapshot_at", { ascending: false })
-          .limit(500);
+        const pubsWithEngagement = contentAnalytics?.engagementPublications || [];
+        const snapshots = contentAnalytics?.engagementSnapshots || [];
 
         // Aggregate snapshots by publication
         const snapByPub = new Map<string, { likes: number; comments: number; shares: number; reach: number; impressions: number }>();
@@ -219,7 +270,7 @@ export default function AnalyticsPage() {
             return {
               id: p.id,
               title: p.title || "Uten tittel",
-              brand: p.brand_id,
+              brand: p.brand_id || "Ukjent brand",
               platform: (p.tags && p.tags[0]) || "-",
               published_at: p.published_at || "",
               likes, comments, shares, views, reach,

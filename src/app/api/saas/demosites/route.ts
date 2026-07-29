@@ -11,6 +11,7 @@ import {
 } from "@/lib/demosites";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getDemoSitesSupabase, type DemoSitesSupabaseClientLike } from "@/lib/demosites-api-supabase";
+import { provisionDemoSiteAfterPayment, type DemoSiteProvisioningOrder } from "@/lib/demosites-provisioning";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,6 +47,7 @@ type DemoSiteOrder = {
   extracted_profile?: Record<string, unknown>;
   editable_fields?: Record<string, unknown>;
   requested_changes?: Record<string, unknown>;
+  provisioning_log?: unknown[] | null;
   notes?: string | null;
   created_at?: string;
 };
@@ -776,19 +778,33 @@ export async function PATCH(request: NextRequest) {
       logApiError("DemoSites PATCH update failed", error, { order_id: body.id });
       return NextResponse.json(formatApiError(error, "Could not update DemoSites order"), { status: 500 });
     }
-    const updatedOrder = await repairOrderLinks(supabase, data as DemoSiteOrderRow);
+    let updatedOrder = await repairOrderLinks(supabase, data as DemoSiteOrderRow);
+    let provisioningResult: unknown = null;
+
+    if (body.billing_status === "paid" && updatedOrder.billing_status === "paid") {
+      const provisioned = await provisionDemoSiteAfterPayment(
+        supabase,
+        updatedOrder as DemoSiteProvisioningOrder,
+        "manual_paid_status",
+      );
+      updatedOrder = (await repairOrderLinks(supabase, provisioned.order as DemoSiteOrderRow)) as DemoSiteOrderRow;
+      provisioningResult = provisioned.result;
+    }
 
     const eventInsert = await supabase.from("demo_site_order_events").insert({
       order_id: body.id,
-      event_type: "order_updated",
-      title: "Bestilling oppdatert",
-      description: `Status: ${updatedOrder.status}. Betaling: ${updatedOrder.billing_status}.`,
-      metadata: patch,
+      event_type: body.billing_status === "paid" ? "payment_paid" : "order_updated",
+      title: body.billing_status === "paid" ? "Betaling registrert" : "Bestilling oppdatert",
+      description:
+        body.billing_status === "paid" && provisioningResult && typeof provisioningResult === "object"
+          ? String((provisioningResult as { message?: unknown }).message || "Betaling registrert.")
+          : `Status: ${updatedOrder.status}. Betaling: ${updatedOrder.billing_status}.`,
+      metadata: { ...patch, provisioning: provisioningResult },
     });
     if (eventInsert.error) logApiError("DemoSites order update event insert failed", eventInsert.error, { order_id: body.id });
 
     const summary = await getSummaryAfterOrderMutation(supabase);
-    return NextResponse.json({ order: updatedOrder, summary });
+    return NextResponse.json({ order: updatedOrder, summary, provisioning: provisioningResult });
   } catch (error) {
     logApiError("DemoSites PATCH failed", error);
     return NextResponse.json(formatApiError(error, "Could not update DemoSites order"), { status: 500 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { uploadThumbnail } from "@/services/storage/media";
+import { requireAdminApi } from "@/lib/api-admin";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,6 +15,9 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdminApi(req);
+    if (unauthorized) return unauthorized;
+
     const supabase = getSupabase();
     if (!supabase) {
       return NextResponse.json(

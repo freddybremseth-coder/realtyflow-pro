@@ -18,7 +18,6 @@ import {
 import { BRANDS } from "@/lib/constants";
 import { SendToForfatterstudio } from "@/components/publishing/send-to-forfatterstudio";
 import { prepareImageForUpload } from "@/lib/client/image-files";
-import { createClient } from "@supabase/supabase-js";
 import ContentCalendar from "@/components/ContentCalendar"
 
 // --- Types ---
@@ -99,6 +98,46 @@ interface DraftItem {
   ai_timing_reasoning?: string;
 }
 
+interface PublicationSummaryRow {
+  id: string;
+  brand_id?: string | null;
+  title?: string | null;
+  status?: string | null;
+  tags?: string[] | null;
+  created_at?: string | null;
+  published_at?: string | null;
+  scheduled_at?: string | null;
+  total_likes?: number | null;
+  total_comments?: number | null;
+  total_shares?: number | null;
+  total_views?: number | null;
+}
+
+interface EngagementSnapshotRow {
+  publication_id: string;
+  platform?: string | null;
+  likes?: number | null;
+  comments?: number | null;
+  shares?: number | null;
+  reach?: number | null;
+  impressions?: number | null;
+  snapshot_at?: string | null;
+}
+
+interface ContentHubCalendarPayload {
+  timelinePublications: PublicationSummaryRow[];
+  counts: { total: number; published: number; failed: number; scheduled: number };
+  summaryPublications: PublicationSummaryRow[];
+  topPublications: PublicationSummaryRow[];
+  engagementSnapshots: EngagementSnapshotRow[];
+  recentPublished: PublicationSummaryRow[];
+  trackedPublications: PublicationSummaryRow[];
+}
+
+interface ImagePublicationsPayload {
+  publications: DraftItem[];
+}
+
 interface WebsiteCmsDestination {
   id: string;
   label: string;
@@ -128,13 +167,6 @@ function toDatetimeLocalValue(value?: string | null) {
 
 function getDraftDateValue(draft: DraftItem) {
   return draft.scheduled_at || draft.created_at || "";
-}
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
 }
 
 // --- Constants ---
@@ -250,6 +282,40 @@ function imageStyleToApiStyle(style: string) {
   if (lower.includes("minimal")) return "minimal";
   if (lower.includes("luksus")) return "luxury";
   return "photo";
+}
+
+async function fetchPublicationPayload<T>(mode: string, params: Record<string, string> = {}) {
+  const searchParams = new URLSearchParams({ mode, ...params });
+  const res = await fetch(`/api/content-hub/publications?${searchParams.toString()}`, { cache: "no-store" });
+  const data = await res.json().catch(() => ({ error: "Kunne ikke lese publiseringsdata." }));
+  if (!res.ok) {
+    throw new Error(data.error || "Kunne ikke hente publiseringsdata.");
+  }
+  return data as T;
+}
+
+async function patchPublication(id: string, body: Record<string, unknown>) {
+  const res = await fetch("/api/content-hub/publications", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...body }),
+  });
+  const data = await res.json().catch(() => ({ error: "Kunne ikke lese publiseringsrespons." }));
+  if (!res.ok) {
+    throw new Error(data.error || "Kunne ikke lagre endringen.");
+  }
+  return data as { publication?: DraftItem };
+}
+
+async function deletePublication(id: string) {
+  const res = await fetch(`/api/content-hub/publications?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  const data = await res.json().catch(() => ({ error: "Kunne ikke lese sletterespons." }));
+  if (!res.ok) {
+    throw new Error(data.error || "Kunne ikke slette saken.");
+  }
+  return data as { success?: boolean };
 }
 
 const PLATFORM_ASSESSMENT = `PLATTFORM-VURDERING:
@@ -545,28 +611,31 @@ export default function ContentHubPage() {
   }, []);
 
   const updateDraftStatus = useCallback(async (id: string, status: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     const draft = drafts.find((item) => item.id === id);
     const isWebsitePublication = draft?.content_type?.startsWith("website_");
     const target = draft ? getWebsiteTargetForBrand(draft.brand_id) : null;
 
-    if (draft && isWebsitePublication && target?.publishingMode === "direct" && status === "draft") {
-      const res = await fetch("/api/website-cms/manage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "unpublish",
-          publication_id: id,
-        }),
-      });
-      const data = await res.json().catch(() => ({ error: "Kunne ikke trekke tilbake nettsideartikkelen." }));
-      if (!res.ok || !data.success) {
-        alert(data.error || "Kunne ikke trekke tilbake nettsideartikkelen.");
-        return;
+    try {
+      if (draft && isWebsitePublication && target?.publishingMode === "direct" && status === "draft") {
+        const res = await fetch("/api/website-cms/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "unpublish",
+            publication_id: id,
+          }),
+        });
+        const data = await res.json().catch(() => ({ error: "Kunne ikke trekke tilbake nettsideartikkelen." }));
+        if (!res.ok || !data.success) {
+          alert(data.error || "Kunne ikke trekke tilbake nettsideartikkelen.");
+          return;
+        }
+      } else {
+        await patchPublication(id, { status });
       }
-    } else {
-      await supabase.from("content_publications").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Kunne ikke oppdatere status.");
+      return;
     }
 
     setDrafts((prev) => (
@@ -577,8 +646,6 @@ export default function ContentHubPage() {
   }, [drafts, getWebsiteTargetForBrand]);
 
   const deleteDraft = useCallback(async (id: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     const confirmed = window.confirm("Slette denne saken permanent? Dette kan ikke angres.");
     if (!confirmed) return;
     const draft = drafts.find((item) => item.id === id);
@@ -604,9 +671,10 @@ export default function ContentHubPage() {
     }
 
     if (!handledByWebsiteManager) {
-      const { error } = await supabase.from("content_publications").delete().eq("id", id);
-      if (error) {
-        alert(error.message || "Kunne ikke slette saken.");
+      try {
+        await deletePublication(id);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Kunne ikke slette saken.");
         return;
       }
     }
@@ -616,34 +684,36 @@ export default function ContentHubPage() {
   }, [drafts, getWebsiteTargetForBrand, publishDraft?.id, websiteDraft?.id]);
 
   const saveDraftEdit = useCallback(async (id: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     const draft = drafts.find((item) => item.id === id);
     const isWebsitePublication = draft?.content_type?.startsWith("website_");
     const target = draft ? getWebsiteTargetForBrand(draft.brand_id) : null;
 
-    if (draft && isWebsitePublication && target?.publishingMode === "direct" && draft.status === "published") {
-      const res = await fetch("/api/website-cms/manage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          publication_id: id,
+    try {
+      if (draft && isWebsitePublication && target?.publishingMode === "direct" && draft.status === "published") {
+        const res = await fetch("/api/website-cms/manage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update",
+            publication_id: id,
+            title: editTitle,
+            content: editDescription,
+          }),
+        });
+        const data = await res.json().catch(() => ({ error: "Kunne ikke oppdatere nettsideartikkelen." }));
+        if (!res.ok || !data.success) {
+          alert(data.error || "Kunne ikke oppdatere nettsideartikkelen.");
+          return;
+        }
+      } else {
+        await patchPublication(id, {
           title: editTitle,
-          content: editDescription,
-        }),
-      });
-      const data = await res.json().catch(() => ({ error: "Kunne ikke oppdatere nettsideartikkelen." }));
-      if (!res.ok || !data.success) {
-        alert(data.error || "Kunne ikke oppdatere nettsideartikkelen.");
-        return;
+          description: editDescription,
+        });
       }
-    } else {
-      await supabase.from("content_publications").update({
-        title: editTitle,
-        description: editDescription,
-        updated_at: new Date().toISOString(),
-      }).eq("id", id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Kunne ikke lagre saken.");
+      return;
     }
 
     setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, title: editTitle, description: editDescription } : d));
@@ -666,18 +736,10 @@ export default function ContentHubPage() {
   const fetchAvailableImages = useCallback(async (brandId?: string) => {
     setLoadingImages(true);
     try {
-      const supabase = getSupabase();
-      if (!supabase) return;
-      let query = supabase
-        .from("content_publications")
-        .select("id, brand_id, content_type, title, description, tags, ai_generated, ai_image_url, thumbnail_url, status, created_at")
-        .not("ai_image_url", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (brandId) {
-        query = query.eq("brand_id", brandId);
-      }
-      const { data } = await query;
+      const data = await fetchPublicationPayload<ImagePublicationsPayload>(
+        "images",
+        brandId ? { brandId } : {},
+      );
       const bankRes = await fetch("/api/neural-beat/image-bank?owner=all&limit=24");
       const bankData = await bankRes.json().catch(() => ({ images: [] }));
       const bankImages: DraftItem[] = (bankData.images || [])
@@ -696,7 +758,7 @@ export default function ContentHubPage() {
           created_at: img.created_at,
           scheduled_platforms: [],
         }));
-      setAvailableImages([...(data || []), ...bankImages]);
+      setAvailableImages([...(data.publications || []), ...bankImages]);
     } catch (err) {
       console.error("Failed to fetch images:", err);
     } finally {
@@ -1176,15 +1238,9 @@ export default function ContentHubPage() {
 
   const fetchCalendarEvents = useCallback(async () => {
     try {
-      const supabase = getSupabase();
-      if (!supabase) return;
+      const payload = await fetchPublicationPayload<ContentHubCalendarPayload>("calendar");
       // Load scheduled and published posts for calendar + stats
-      const { data } = await supabase
-        .from("content_publications")
-        .select("id, title, brand_id, tags, scheduled_at, published_at, status, created_at")
-        .in("status", ["scheduled", "published"])
-        .order("created_at", { ascending: false })
-        .limit(500);
+      const data = payload.timelinePublications;
       if (data) {
         const events: CalendarEvent[] = [];
         for (const p of data) {
@@ -1195,7 +1251,7 @@ export default function ContentHubPage() {
           events.push({
             id: p.id,
             title: p.title || "Uten tittel",
-            brand: brand?.name || p.brand_id,
+            brand: brand?.name || p.brand_id || "Ukjent brand",
             brandColor: brand?.color || "#64748b",
             platform: (p.tags && p.tags[0]) || "post",
             date: d.toISOString().split("T")[0],
@@ -1206,37 +1262,21 @@ export default function ContentHubPage() {
         setCalendarEvents(events);
       }
       // Fetch total counts for stats
-      const { count: totalCount } = await supabase
-        .from("content_publications")
-        .select("id", { count: "exact", head: true });
-      const { count: publishedCount } = await supabase
-        .from("content_publications")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "published");
-      const { count: failedCount } = await supabase
-        .from("content_publications")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "failed");
-      const { count: scheduledCount } = await supabase
-        .from("content_publications")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "scheduled");
       setStatsCount({
-        total: totalCount || 0,
-        published: publishedCount || 0,
-        failed: failedCount || 0,
-        scheduled: scheduledCount || 0,
+        total: payload.counts.total || 0,
+        published: payload.counts.published || 0,
+        failed: payload.counts.failed || 0,
+        scheduled: payload.counts.scheduled || 0,
       });
 
       // Fetch per-brand post counts
-      const { data: allPubs } = await supabase
-        .from("content_publications")
-        .select("brand_id, tags, status");
+      const allPubs = payload.summaryPublications;
       if (allPubs) {
         const brandCounts: Record<string, number> = {};
         const platCounts: Record<string, number> = {};
         for (const pub of allPubs) {
-          brandCounts[pub.brand_id] = (brandCounts[pub.brand_id] || 0) + 1;
+          const brandKey = pub.brand_id || "unknown";
+          brandCounts[brandKey] = (brandCounts[brandKey] || 0) + 1;
           if (pub.tags && Array.isArray(pub.tags)) {
             for (const tag of pub.tags) {
               const t = tag.toLowerCase();
@@ -1251,30 +1291,21 @@ export default function ContentHubPage() {
       }
 
       // Fetch top content (most recent published)
-      const { data: topPubs } = await supabase
-        .from("content_publications")
-        .select("title, brand_id, tags, status, created_at")
-        .eq("status", "published")
-        .order("created_at", { ascending: false })
-        .limit(5);
+      const topPubs = payload.topPublications;
       if (topPubs) {
         setTopContent(topPubs.map((p) => ({
           title: p.title || "Uten tittel",
-          brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id,
+          brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id || "Ukjent brand",
           platform: (p.tags && p.tags[0]) || "post",
-          status: p.status,
-          created_at: p.created_at,
+          status: p.status || "published",
+          created_at: p.created_at || "",
         })));
       }
 
       // Fetch real engagement data. Use the latest snapshot per
       // publication/platform and include older tracked posts, not only the
       // newest 50 publications, otherwise historical likes disappear.
-      const { data: snapshots } = await supabase
-        .from("engagement_snapshots")
-        .select("publication_id, platform, likes, comments, shares, reach, impressions, snapshot_at")
-        .order("snapshot_at", { ascending: false })
-        .limit(1000);
+      const snapshots = payload.engagementSnapshots;
 
       const latestSnapshotByPubPlatform = new Map<string, {
         publication_id: string;
@@ -1301,27 +1332,10 @@ export default function ContentHubPage() {
         }
       }
 
-      const trackedPublicationIds = Array.from(new Set(
-        Array.from(latestSnapshotByPubPlatform.values()).map((snap) => snap.publication_id).filter(Boolean)
-      ));
+      const recentPublished = payload.recentPublished;
+      const trackedPublications = payload.trackedPublications;
 
-      const { data: recentPublished } = await supabase
-        .from("content_publications")
-        .select("id, title, brand_id, tags, published_at, created_at, total_likes, total_comments, total_shares, total_views")
-        .eq("status", "published")
-        .order("created_at", { ascending: false })
-        .limit(120);
-
-      let trackedPublications: typeof recentPublished = [];
-      if (trackedPublicationIds.length > 0) {
-        const { data: trackedRows } = await supabase
-          .from("content_publications")
-          .select("id, title, brand_id, tags, published_at, created_at, total_likes, total_comments, total_shares, total_views")
-          .in("id", trackedPublicationIds);
-        trackedPublications = trackedRows || [];
-      }
-
-      const publicationsById = new Map<string, NonNullable<typeof recentPublished>[number]>();
+      const publicationsById = new Map<string, PublicationSummaryRow>();
       for (const pub of [...(recentPublished || []), ...(trackedPublications || [])]) {
         publicationsById.set(pub.id, pub);
       }
@@ -1375,7 +1389,7 @@ export default function ContentHubPage() {
           return {
             id: p.id,
             title: p.title || "Uten tittel",
-            brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id,
+            brand: BRANDS.find((b) => b.id === p.brand_id)?.name || p.brand_id || "Ukjent brand",
             platform: snapRows[0]?.platform || (p.tags && p.tags[0]) || "–",
             published_at: p.published_at || "",
             likes, comments, shares, views, reach, impressions,

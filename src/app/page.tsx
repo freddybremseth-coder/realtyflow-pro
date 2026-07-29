@@ -46,6 +46,133 @@ async function fetchDashboardContacts() {
   }
 }
 
+interface SocialAccountSummary {
+  brand?: string | null;
+  platform?: string | null;
+  is_active?: boolean | null;
+}
+
+interface AutomationErrorSummary {
+  id: string;
+  action?: string | null;
+  agent_name?: string | null;
+  details?: Record<string, string> | null;
+  created_at?: string | null;
+}
+
+interface DashboardWorkItem {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  brand_id?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface DashboardPublication {
+  id?: string;
+  title?: string | null;
+  status?: string | null;
+  brand_id?: string | null;
+  created_at?: string | null;
+  published_at?: string | null;
+  scheduled_at?: string | null;
+  last_publish_error?: string | null;
+  publish_attempts?: number | null;
+  updated_at?: string | null;
+}
+
+interface DashboardContentSummary {
+  counts: { published: number; scheduled: number; draft: number };
+  recent: DashboardPublication[];
+  failed: DashboardPublication[];
+  brandItems: DashboardPublication[];
+}
+
+async function fetchDashboardContentSummary() {
+  try {
+    const response = await fetch("/api/content-hub/publications?mode=dashboard", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: null, error: { message: `Content summary returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return {
+      data: {
+        counts: {
+          published: Number(payload.counts?.published) || 0,
+          scheduled: Number(payload.counts?.scheduled) || 0,
+          draft: Number(payload.counts?.draft) || 0,
+        },
+        recent: Array.isArray(payload.recent) ? payload.recent : [],
+        failed: Array.isArray(payload.failed) ? payload.failed : [],
+        brandItems: Array.isArray(payload.brandItems) ? payload.brandItems : [],
+      } as DashboardContentSummary,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      data: null,
+      error: { message: error instanceof Error ? error.message : "Content summary request failed" },
+    };
+  }
+}
+
+async function fetchSocialAccountSummary() {
+  try {
+    const response = await fetch("/api/social-accounts/summary", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Social accounts summary returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { data: (Array.isArray(payload.accounts) ? payload.accounts : []) as SocialAccountSummary[], error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Social accounts summary request failed" },
+    };
+  }
+}
+
+async function fetchAutomationErrorSummary() {
+  try {
+    const response = await fetch("/api/dashboard/automation-errors", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Automation errors returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    return { data: (Array.isArray(payload.errors) ? payload.errors : []) as AutomationErrorSummary[], error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Automation errors request failed" },
+    };
+  }
+}
+
+async function fetchWebsiteLeadWorkItems() {
+  try {
+    const response = await fetch("/api/work-items?status=TO_DO&limit=50", { cache: "no-store" });
+    if (!response.ok) {
+      return { data: [], error: { message: `Work items API returned ${response.status}` } };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const rows = (Array.isArray(payload.work_items) ? payload.work_items : []) as DashboardWorkItem[];
+    return { data: rows.filter((item) => item.source_type === "website_lead").slice(0, 5), error: null };
+  } catch (error) {
+    return {
+      data: [],
+      error: { message: error instanceof Error ? error.message : "Work items API request failed" },
+    };
+  }
+}
+
 interface DashboardStats {
   activeLeads: number;
   hotSignals: number;
@@ -332,55 +459,30 @@ export default function Dashboard() {
           contactsRes,
           propertiesRes,
           plotsRes,
-          pubsRes,
-          scheduledRes,
-          draftsRes,
-          recentPubsRes,
-          failedPubsRes,
+          contentSummaryRes,
           automationErrorsRes,
-          contentByBrandRes,
           socialAccountsRes,
           websiteLeadTasksRes,
         ] = await Promise.all([
           fetchDashboardContacts(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           supabase.from("land_plots").select("id", { count: "exact", head: true }),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "published"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
-          supabase.from("content_publications").select("id", { count: "exact", head: true }).eq("status", "draft"),
-          supabase.from("content_publications")
-            .select("title, status, brand_id, created_at, published_at, scheduled_at")
-            .order("created_at", { ascending: false })
-            .limit(6),
-          // Failed publications with error details
-          supabase.from("content_publications")
-            .select("id, title, brand_id, last_publish_error, publish_attempts, updated_at")
-            .eq("status", "failed")
-            .order("updated_at", { ascending: false })
-            .limit(5),
-          // Recent automation errors
-          supabase.from("automation_logs")
-            .select("id, action, agent_name, details, created_at")
-            .eq("status", "error")
-            .order("created_at", { ascending: false })
-            .limit(5),
-          supabase.from("content_publications")
-            .select("brand_id,status")
-            .order("updated_at", { ascending: false })
-            .limit(500),
-          supabase.from("social_accounts")
-            .select("brand,platform,is_active"),
-          supabase.from("work_items")
-            .select("id,title,description,brand_id,source_id,created_at,updated_at,metadata")
-            .eq("source_type", "website_lead")
-            .eq("status", "TO_DO")
-            .order("updated_at", { ascending: false })
-            .limit(5),
+          fetchDashboardContentSummary(),
+          fetchAutomationErrorSummary(),
+          fetchSocialAccountSummary(),
+          fetchWebsiteLeadWorkItems(),
         ]);
 
+        const contentSummary = contentSummaryRes.data || {
+          counts: { published: 0, scheduled: 0, draft: 0 },
+          recent: [],
+          failed: [],
+          brandItems: [],
+        };
+
         // Build recent activity from real data
-        const recentActivity = (recentPubsRes.data || []).map((pub: Record<string, string>) => {
-          const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at));
+        const recentActivity = contentSummary.recent.map((pub) => {
+          const timeAgo = getTimeAgo(new Date(pub.published_at || pub.created_at || Date.now()));
           if (pub.status === "published") {
             return { type: "content", text: `Publisert: ${pub.title}`, time: timeAgo };
           } else if (pub.status === "scheduled") {
@@ -393,7 +495,7 @@ export default function Dashboard() {
         // Build alerts from failed publishes and automation errors
         const alerts: DashboardStats["alerts"] = [];
 
-        const failedPubs = failedPubsRes.data || [];
+        const failedPubs = contentSummary.failed;
         for (const pub of failedPubs) {
           const updatedAt = pub.updated_at ? new Date(pub.updated_at) : new Date();
           const ageDays = (Date.now() - updatedAt.getTime()) / 86400000;
@@ -445,7 +547,7 @@ export default function Dashboard() {
         }
 
         const activeContacts = (contactsRes.data || []) as DashboardContact[];
-        const contentItems = contentByBrandRes.data || [];
+        const contentItems = contentSummary.brandItems;
         const socialAccounts = socialAccountsRes.data || [];
         const brandWorkspaces: BrandWorkspaceStats[] = BRAND_WORKSPACES.map((workspace) => {
           const leads = activeContacts.filter((contact) => {
@@ -458,10 +560,9 @@ export default function Dashboard() {
             new Set(
               socialAccounts
                 .filter((account) => {
-                  const typed = account as { brand?: string | null; platform?: string | null; is_active?: boolean | null };
-                  return typed.is_active !== false && brandMatches(typed.brand, workspace.aliases) && typed.platform;
+                  return account.is_active !== false && brandMatches(account.brand, workspace.aliases) && account.platform;
                 })
-                .map((account) => String((account as { platform?: string | null }).platform || "").toLowerCase()),
+                .map((account) => String(account.platform || "").toLowerCase()),
             ),
           ).sort();
           const pipelineValue = leads.reduce((sum, contact) => sum + (Number((contact as { pipeline_value?: number | null }).pipeline_value) || 0), 0);
@@ -490,12 +591,12 @@ export default function Dashboard() {
           plots: plotsRes.count || 0,
           pipelineValue: formatEuroCompact(pipelineValueRaw),
           pipelineValueRaw,
-          publishedPosts: pubsRes.count || 0,
-          scheduledPosts: scheduledRes.count || 0,
-          totalDrafts: draftsRes.count || 0,
+          publishedPosts: contentSummary.counts.published,
+          scheduledPosts: contentSummary.counts.scheduled,
+          totalDrafts: contentSummary.counts.draft,
           failedPosts: alerts.filter((alert) => alert.type === "error").length,
           aiAgents: 8,
-          connectedChannels: socialAccounts.filter((account) => (account as { is_active?: boolean | null }).is_active !== false).length,
+          connectedChannels: socialAccounts.filter((account) => account.is_active !== false).length,
           brandWorkspaces,
           recentActivity,
           alerts,

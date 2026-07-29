@@ -37,14 +37,6 @@ import {
   Phone,
   AtSign,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
 
 // --- Types ---
 
@@ -195,19 +187,6 @@ function todayIsoStart() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
-}
-
-function formatRelativeActivity(dateValue?: string | null) {
-  if (!dateValue) return "Ingen registrert aktivitet";
-  const diff = Date.now() - new Date(dateValue).getTime();
-  if (!Number.isFinite(diff) || diff < 0) return "Nylig aktivitet";
-  const minutes = Math.round(diff / 60000);
-  if (minutes < 1) return "Akkurat nå";
-  if (minutes < 60) return `${minutes} min siden`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} t siden`;
-  const days = Math.round(hours / 24);
-  return `${days} d siden`;
 }
 
 // recentActions is now loaded dynamically from Supabase (see state in component)
@@ -419,127 +398,45 @@ export default function AgentsCommandCenter() {
   const [selectedSession, setSelectedSession] = useState<ChatbotSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
 
-  // Fetch real recent actions from Supabase
+  // Fetch recent actions through the admin API
   const fetchRecentActions = useCallback(async () => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     try {
-      // Fetch recent command executions
-      const { data: executions } = await supabase
-        .from("command_executions")
-        .select("plan_title, status, summary, created_at")
-        .order("created_at", { ascending: false })
-        .limit(4);
-
-      // Fetch recent content publications as fallback/supplement
-      const { data: publications } = await supabase
-        .from("content_publications")
-        .select("title, status, created_at")
-        .in("status", ["published", "scheduled", "failed"])
-        .order("created_at", { ascending: false })
-        .limit(4);
-
-      const actions: {label: string; time: string; status: "done" | "error"}[] = [];
-
-      if (executions && executions.length > 0) {
-        for (const exec of executions) {
-          const d = new Date(exec.created_at);
-          actions.push({
-            label: exec.plan_title || exec.summary || "Plan utfort",
-            time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
-            status: exec.status === "completed" ? "done" : "error",
-          });
-        }
-      }
-
-      if (publications && publications.length > 0) {
-        for (const pub of publications) {
-          if (actions.length >= 6) break;
-          const d = new Date(pub.created_at);
-          actions.push({
-            label: `${pub.status === "published" ? "Publisert" : pub.status === "scheduled" ? "Planlagt" : "Feilet"}: ${pub.title || "Uten tittel"}`,
-            time: d.toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" }),
-            status: pub.status === "failed" ? "error" : "done",
-          });
-        }
-      }
-
-      // Sort by time descending and take top 6
-      setRecentActions(actions.slice(0, 6));
+      const params = new URLSearchParams({ since: todayIsoStart() });
+      const response = await fetch(`/api/agents/command/dashboard?${params}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      setRecentActions(Array.isArray(data.recentActions) ? data.recentActions : []);
     } catch (err) {
       console.error("Failed to fetch recent actions:", err);
     }
   }, []);
 
   const fetchRuntimeStats = useCallback(async () => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-
-    const startOfDay = todayIsoStart();
-
     try {
-      const [executionsResult, publicationsCount, emailCount] = await Promise.all([
-        supabase
-          .from("command_executions")
-          .select("status, steps, created_at")
-          .gte("created_at", startOfDay)
-          .order("created_at", { ascending: false })
-          .limit(200),
-        supabase
-          .from("content_publications")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", startOfDay),
-        supabase
-          .from("email_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("direction", "outbound")
-          .gte("created_at", startOfDay),
-      ]);
-
-      const executions = executionsResult.data || [];
-      let completedSteps = 0;
-      const agentCounts: Record<string, number> = {};
-      const agentLatest: Record<string, string> = {};
-
-      for (const execution of executions) {
-        const steps = Array.isArray(execution.steps) ? execution.steps : [];
-        for (const rawStep of steps) {
-          const step = rawStep as { status?: string; agent?: string };
-          const done = step.status === "completed" || step.status === "done";
-          if (!done) continue;
-          completedSteps += 1;
-          const agentId = (step.agent || "").toLowerCase().replace(/\s+/g, "-");
-          const matchedAgent = agents.find(
-            (agent) =>
-              agentId.includes(agent.id) ||
-              agent.name.toLowerCase().includes((step.agent || "").toLowerCase())
-          );
-          const key = matchedAgent?.id || agentId;
-          if (key) {
-            agentCounts[key] = (agentCounts[key] || 0) + 1;
-            agentLatest[key] = execution.created_at;
-          }
-        }
-      }
-
-      const totalExecutions = executions.length;
-      const successfulExecutions = executions.filter((execution) =>
-        ["completed", "partial", "done"].includes(execution.status)
-      ).length;
+      const params = new URLSearchParams({ since: todayIsoStart() });
+      const response = await fetch(`/api/agents/command/dashboard?${params}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
 
       setRuntimeStats({
-        tasksToday: completedSteps,
-        successRate: totalExecutions > 0 ? Math.round((successfulExecutions / totalExecutions) * 100) : null,
-        emailsToday: emailCount.error ? null : emailCount.count ?? 0,
-        contentToday: publicationsCount.error ? null : publicationsCount.count ?? 0,
+        tasksToday: typeof data.runtimeStats?.tasksToday === "number" ? data.runtimeStats.tasksToday : null,
+        successRate: typeof data.runtimeStats?.successRate === "number" ? data.runtimeStats.successRate : null,
+        emailsToday: typeof data.runtimeStats?.emailsToday === "number" ? data.runtimeStats.emailsToday : null,
+        contentToday: typeof data.runtimeStats?.contentToday === "number" ? data.runtimeStats.contentToday : null,
       });
 
+      const activity = Array.isArray(data.agentActivity) ? data.agentActivity : [];
       setAgentStatuses((previous) =>
-        previous.map((agent) => ({
-          ...agent,
-          tasksCompleted: agentCounts[agent.id] || 0,
-          lastActivity: agentCounts[agent.id] ? formatRelativeActivity(agentLatest[agent.id]) : "Ingen registrert aktivitet i dag",
-        }))
+        previous.map((agent) => {
+          const item = activity.find((entry: { id?: string }) => entry.id === agent.id) as
+            | { tasksCompleted?: unknown; lastActivity?: unknown }
+            | undefined;
+          return {
+            ...agent,
+            tasksCompleted: typeof item?.tasksCompleted === "number" ? item.tasksCompleted : 0,
+            lastActivity: typeof item?.lastActivity === "string" ? item.lastActivity : "Ingen registrert aktivitet i dag",
+          };
+        })
       );
     } catch (err) {
       console.error("Failed to fetch command center stats:", err);
@@ -549,30 +446,19 @@ export default function AgentsCommandCenter() {
   // ── Conversation persistence ──
 
   const saveConversation = useCallback(async (msgs: ChatMessage[], plan: Plan | null, convId: string | null) => {
-    const supabase = getSupabase();
-    if (!supabase || msgs.length === 0) return convId;
-
-    // Derive title from first user message
-    const firstUserMsg = msgs.find((m) => m.role === "user");
-    const title = firstUserMsg?.content?.slice(0, 100) || "Ny samtale";
-
-    const payload = {
-      title,
-      messages: JSON.parse(JSON.stringify(msgs)),
-      active_plan: plan ? JSON.parse(JSON.stringify(plan)) : null,
-      updated_at: new Date().toISOString(),
-    };
+    if (msgs.length === 0) return convId;
 
     try {
-      if (convId) {
-        await supabase.from("command_conversations").update(payload).eq("id", convId);
-        return convId;
-      } else {
-        const { data } = await supabase.from("command_conversations").insert({ ...payload, status: "active" }).select("id").single();
-        if (data?.id) {
-          setConversationId(data.id);
-          return data.id as string;
-        }
+      const response = await fetch("/api/agents/command/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: convId, messages: msgs, activePlan: plan }),
+      });
+      if (!response.ok) return convId;
+      const data = await response.json().catch(() => ({}));
+      if (data.id) {
+        setConversationId(data.id);
+        return data.id as string;
       }
     } catch (err) {
       console.error("Failed to save conversation:", err);
@@ -588,37 +474,27 @@ export default function AgentsCommandCenter() {
   }, [saveConversation]);
 
   const loadConversations = useCallback(async () => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     try {
-      const { data } = await supabase
-        .from("command_conversations")
-        .select("id, title, status, updated_at, active_plan")
-        .order("updated_at", { ascending: false })
-        .limit(20);
-      if (data) {
-        setConversations(data.map((c: { id: string; title: string; status: string; updated_at: string; active_plan: unknown }) => ({
-          id: c.id,
-          title: c.title || "Uten tittel",
-          status: c.status as "active" | "archived",
-          updated_at: c.updated_at,
-          has_plan: !!c.active_plan,
-        })));
-      }
+      const response = await fetch("/api/agents/command/conversations", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (Array.isArray(data.conversations)) setConversations(data.conversations);
     } catch (err) {
       console.error("Failed to load conversations:", err);
     }
   }, []);
 
   const loadConversation = useCallback(async (id: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     try {
-      const { data } = await supabase.from("command_conversations").select("*").eq("id", id).single();
-      if (data) {
-        setConversationId(data.id);
-        setMessages(data.messages || []);
-        setActivePlan(data.active_plan || null);
+      const params = new URLSearchParams({ id });
+      const response = await fetch(`/api/agents/command/conversations?${params}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      const conversation = data.conversation;
+      if (conversation) {
+        setConversationId(conversation.id);
+        setMessages(conversation.messages || []);
+        setActivePlan(conversation.active_plan || null);
         setShowHistory(false);
       }
     } catch (err) {
@@ -627,10 +503,9 @@ export default function AgentsCommandCenter() {
   }, []);
 
   const deleteConversation = useCallback(async (id: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     try {
-      await supabase.from("command_conversations").delete().eq("id", id);
+      const params = new URLSearchParams({ id });
+      await fetch(`/api/agents/command/conversations?${params}`, { method: "DELETE" });
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (conversationId === id) {
         setConversationId(null);
