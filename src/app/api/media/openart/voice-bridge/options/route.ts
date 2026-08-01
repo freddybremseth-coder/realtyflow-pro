@@ -14,11 +14,12 @@ export async function GET(request: NextRequest) {
     if (force) assertMediaRateLimit(context.scope.actorEmail, "capability_refresh");
 
     const discovered = await discoverOpenArtVoiceBridgeOptions({ force });
+    const options = discovered?.options || [];
     return NextResponse.json({
-      available: discovered.options.length > 0,
-      rawModelModeCount: discovered.rawCount,
-      options: discovered.options.map(({ formSchema: _formSchema, ...option }) => option),
-      message: discovered.options.length
+      available: options.length > 0,
+      rawModelModeCount: discovered?.rawCount || 0,
+      options: options.map(({ formSchema: _formSchema, ...option }) => option),
+      message: options.length
         ? undefined
         : "OpenArt-kontoen rapporterer foreløpig ingen modell/mode med både lyd- og visuell referansestøtte gjennom MCP.",
     });
