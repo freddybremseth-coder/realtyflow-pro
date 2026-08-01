@@ -27,14 +27,51 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 512 * 1024;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+type ErrorContext = {
+  action?: string;
+  organizationId?: string;
+  userEmail?: string;
+};
 
 function headers(correlationId: string) {
   return {
     [CORRELATION_ID_HEADER]: correlationId,
     "cache-control": "no-store",
   };
+}
+
+function redactEmail(value?: string) {
+  if (!value) return undefined;
+  const [name, domain] = value.split("@");
+  if (!domain) return "***";
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
+function getErrorField(error: unknown, key: string) {
+  if (!error || typeof error !== "object" || !(key in error)) return undefined;
+  const value = (error as Record<string, unknown>)[key];
+  return typeof value === "string" || typeof value === "number" ? value : undefined;
+}
+
+function isZodLikeError(error: unknown) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      ((error as { name?: unknown }).name === "ZodError" || Array.isArray((error as { issues?: unknown }).issues)),
+  );
+}
+
+function zodMessage(error: unknown) {
+  if (!error || typeof error !== "object" || !Array.isArray((error as { issues?: unknown }).issues)) {
+    return "Ugyldig forespørsel.";
+  }
+  const issues = (error as { issues: Array<{ path?: unknown[]; message?: string }> }).issues;
+  const first = issues[0];
+  const path = Array.isArray(first?.path) ? first.path.join(".") : "input";
+  return `${path || "input"}: ${first?.message || "ugyldig verdi"}`;
 }
 
 async function requireSocialAccess(request: NextRequest, mode: "read" | "write") {
@@ -79,11 +116,17 @@ function assertRateLimit(identity: string, weight = 1, now = Date.now()) {
 async function readJsonBody(request: NextRequest) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
-    throw Object.assign(new Error("Request body is too large"), { code: "INPUT_TOO_LONG", status: 413 });
+    throw Object.assign(
+      new Error("Profilinnholdet er for stort. Maksimal størrelse er 512 KB."),
+      { code: "INPUT_TOO_LONG", status: 413 },
+    );
   }
   const text = await request.text();
   if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
-    throw Object.assign(new Error("Request body is too large"), { code: "INPUT_TOO_LONG", status: 413 });
+    throw Object.assign(
+      new Error("Profilinnholdet er for stort. Maksimal størrelse er 512 KB."),
+      { code: "INPUT_TOO_LONG", status: 413 },
+    );
   }
   try {
     return text ? JSON.parse(text) : {};
@@ -92,51 +135,92 @@ async function readJsonBody(request: NextRequest) {
   }
 }
 
-function errorResponse(error: unknown, correlationId: string) {
+function logRouteError(error: unknown, correlationId: string, context: ErrorContext = {}) {
   const summarized = summarizeSafeError(error);
-  const code =
-    error && typeof error === "object" && "code" in error && typeof (error as { code?: unknown }).code === "string"
+  console.error("[Social Intelligence]", {
+    correlationId,
+    action: context.action || "unknown",
+    organizationId: context.organizationId,
+    userEmail: redactEmail(context.userEmail),
+    code: getErrorField(error, "code") || summarized.code,
+    status: getErrorField(error, "status") || summarized.status,
+    message: summarized.message,
+    errorName: error instanceof Error ? error.name : typeof error,
+    stack: error instanceof Error ? error.stack : undefined,
+    supabaseCode: getErrorField(error, "supabaseCode"),
+    supabaseDetails: getErrorField(error, "supabaseDetails"),
+    supabaseHint: getErrorField(error, "supabaseHint"),
+    operation: getErrorField(error, "operation"),
+    table: getErrorField(error, "table"),
+  });
+}
+
+function errorResponse(error: unknown, correlationId: string, context: ErrorContext = {}) {
+  const summarized = summarizeSafeError(error);
+  const validationError = isZodLikeError(error);
+  const code = validationError
+    ? "INVALID_REQUEST"
+    : error && typeof error === "object" && "code" in error && typeof (error as { code?: unknown }).code === "string"
       ? String((error as { code: string }).code)
       : summarized.code;
-  const status =
-    error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number"
+  const status = validationError
+    ? 400
+    : error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number"
       ? Number((error as { status: number }).status)
       : summarized.status;
-  const message = summarized.message || (error instanceof Error ? error.message : "Social Intelligence-handlingen feilet.");
+  const safeMessage = validationError ? zodMessage(error) : summarized.message;
+  const message = status >= 500 && code !== "SCHEMA_NOT_READY"
+    ? "Social Intelligence-handlingen feilet."
+    : safeMessage;
 
-  return NextResponse.json(
-    createErrorEnvelope({
-      correlationId,
-      code,
-      message: status >= 500 && code !== "SCHEMA_NOT_READY" ? "Social Intelligence-handlingen feilet." : message,
-      status,
-      retryable: status >= 500 || status === 429 ? "retryable" : "not_retryable",
-    }),
-    { status, headers: headers(correlationId) },
-  );
+  logRouteError(error, correlationId, context);
+
+  const payload = createErrorEnvelope({
+    correlationId,
+    code,
+    message,
+    status,
+    retryable: status >= 500 || status === 429 ? "retryable" : "not_retryable",
+  });
+
+  return NextResponse.json(payload, { status, headers: headers(correlationId) });
 }
 
 export async function GET(request: NextRequest) {
   const correlationId = getOrCreateCorrelationId(request.headers);
+  let errorContext: ErrorContext = { action: "load_dashboard" };
   try {
     const access = await requireSocialAccess(request, "read");
     if (access.response || !access.context) return access.response;
     const context = getSocialRouteContext(access.context);
+    errorContext = {
+      action: "load_dashboard",
+      organizationId: context.organizationId,
+      userEmail: context.userEmail,
+    };
     const dashboard = await loadSocialDashboard(context);
     return NextResponse.json({ ok: true, correlationId, dashboard }, { headers: headers(correlationId) });
   } catch (error) {
-    return errorResponse(error, correlationId);
+    return errorResponse(error, correlationId, errorContext);
   }
 }
 
 export async function POST(request: NextRequest) {
   const correlationId = getOrCreateCorrelationId(request.headers);
+  let errorContext: ErrorContext = { action: "unknown" };
   try {
     const access = await requireSocialAccess(request, "write");
     if (access.response || !access.context) return access.response;
     const context = getSocialRouteContext(access.context);
+    errorContext = {
+      organizationId: context.organizationId,
+      userEmail: context.userEmail,
+    };
     assertRateLimit(`${context.organizationId}:${context.userEmail}`, 1);
     const body = await readJsonBody(request);
+    if (body && typeof body === "object" && "action" in body) {
+      errorContext.action = String((body as { action?: unknown }).action || "unknown");
+    }
     const parsed = SocialIntelligenceActionSchema.parse(body);
 
     if (parsed.action === "save_profile") {
@@ -188,6 +272,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: false, error: "Unsupported action" }, { status: 400, headers: headers(correlationId) });
   } catch (error) {
-    return errorResponse(error, correlationId);
+    return errorResponse(error, correlationId, errorContext);
   }
 }
