@@ -15,10 +15,12 @@ import {
 } from "./types";
 import { GeminiMediaProvider } from "./providers/gemini-media-provider";
 import { OpenArtMediaProvider } from "./providers/openart-media-provider";
+import { OpenAIVoiceProvider } from "./providers/openai-voice-provider";
 
 function providerFor(id: string): MediaProvider {
   if (id === "gemini") return new GeminiMediaProvider();
   if (id === "openart") return new OpenArtMediaProvider();
+  if (id === "openai") return new OpenAIVoiceProvider();
   throw new Error(`Ukjent media-provider: ${id}`);
 }
 
@@ -395,6 +397,17 @@ async function submitToProvider(provider: MediaProvider, plan: MediaPromptPlan, 
       resolution: plan.resolution,
       qualityTier: plan.qualityTier,
       sourceImageUrl: sourceImageUrls[0],
+      model: plan.providerRecommendation.model,
+    });
+  }
+  if ((plan.mediaType === "voice" || plan.mediaType === "audio") && provider.generateVoice) {
+    return provider.generateVoice({
+      text: plan.originalRequest,
+      language: plan.voiceLanguage || "Norwegian",
+      voiceId: plan.voiceId,
+      tone: plan.voiceTone,
+      speed: plan.voiceSpeed,
+      outputFormat: plan.outputFormat,
       model: plan.providerRecommendation.model,
     });
   }
