@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 const migration = readFileSync(
-  resolve(process.cwd(), "supabase/migrations/20260801120000_social_intelligence_mvp.sql"),
+  resolve(process.cwd(), "supabase/migrations/20260801112121_social_intelligence_mvp.sql"),
   "utf8",
 ).toLowerCase();
 
@@ -31,7 +31,7 @@ test("social intelligence migration creates an isolated additive schema", () => 
   }
 
   assert.doesNotMatch(migration, /alter table public\.(contacts|customers|leads|properties|crm_[a-z_]+)/);
-  assert.match(migration, /browser access stays mediated by server-side apis/);
+  assert.match(migration, /browser access stays[\s-]+mediated by server-side apis/);
 });
 
 test("social intelligence tables are RLS-protected and server-mediated", () => {

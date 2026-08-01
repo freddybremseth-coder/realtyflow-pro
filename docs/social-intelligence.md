@@ -21,7 +21,7 @@
 - AI and deterministic generation: `src/services/social-intelligence/analysis.ts`
 - Scoring formulas: `src/services/social-intelligence/scoring.ts`
 - Persistence: `src/services/social-intelligence/repository.ts`
-- Database migration: `supabase/migrations/20260801120000_social_intelligence_mvp.sql`
+- Database migration: `supabase/migrations/20260801112121_social_intelligence_mvp.sql`
 
 The API uses the existing RealtyFlow admin cookie/access model. GET requests require `marketing.read`; write actions require `marketing.write`.
 

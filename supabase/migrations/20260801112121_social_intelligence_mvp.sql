@@ -1,9 +1,9 @@
 -- RealtyFlow Social Intelligence MVP.
 --
--- Supabase CLI was not available in this workspace (local binary missing and
--- npx package had no darwin-arm64 binary), so this migration file was created
--- manually with a date-based name. It is additive and does not modify existing
--- CRM tables. Browser access stays mediated by server-side APIs.
+-- This migration was applied through the Supabase connector and keeps the
+-- local migration version aligned with the remote migration history. It is
+-- additive and does not modify existing CRM tables. Browser access stays
+-- mediated by server-side APIs.
 
 create extension if not exists pgcrypto;
 
