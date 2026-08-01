@@ -21,7 +21,7 @@ test("registers all five Signature 2026 layouts", () => {
   }
 });
 
-test("saved signature design resolves without changing legacy defaults", () => {
+test("saved signature design resolves while industry defaults prefer premium concepts", () => {
   assert.deepEqual(
     resolveDemoSiteDesign({
       templateSlug: "restaurant",
@@ -35,7 +35,23 @@ test("saved signature design resolves without changing legacy defaults", () => {
       templateSlug: "restaurant",
       editableFields: {},
     }),
-    { layout: "fullbleed", style: "warm" },
+    { layout: "cinematic", style: "warm" },
+  );
+
+  assert.deepEqual(
+    resolveDemoSiteDesign({
+      templateSlug: "ai-teknologi",
+      editableFields: {},
+    }),
+    { layout: "kinetic", style: "tech" },
+  );
+
+  assert.deepEqual(
+    resolveDemoSiteDesign({
+      templateSlug: "dekk",
+      editableFields: {},
+    }),
+    { layout: "panorama", style: "modern" },
   );
 });
 

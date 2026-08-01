@@ -6,11 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, CreditCard, ExternalLink, FileText, Globe, History, ImageIcon, Link2, Loader2, MonitorSmartphone, Palette, PlusCircle, Rocket, Search, Send, Sparkles, Trash2, Wallet, XCircle } from "lucide-react";
 import { DemoSitePreviewRenderer } from "@/components/demosites/demo-site-preview-renderer";
+import { DemoSignatureSiteRenderer } from "@/components/demosites/demo-signature-site-renderer";
 import { TempDemoCard } from "@/components/demosites/temp-demo-card";
 import { PortalUsersCard } from "@/components/demosites/portal-users-card";
 import { LeadPipelineCard } from "@/components/demosites/lead-pipeline-card";
 import { buildVersionedImportReviewEditableFields, getImportReviewVersions, IMPORT_REVIEW_VERSIONS_KEY, type ImportReviewVersion } from "@/lib/demosites-import-review-versions";
 import { DEMO_SITE_PACKAGES, DEMO_SITE_TEMPLATE_SEEDS, formatNok, type DemoSiteBillingStatus, type DemoSitePackageId, type DemoSiteStatus } from "@/lib/demosites";
+import { isSignatureDemoSiteLayout, resolveDemoSiteDesign } from "@/lib/demosites-design";
 
 type DemoSiteOrder = {
   id: string;
@@ -1926,6 +1928,23 @@ function ImportReviewLivePreviewPanel({ result, templates }: { result: WebsiteIm
   const [showFullPreview, setShowFullPreview] = useState(false);
   const resetKey = `${result.import_id || ""}:${result.profile.website_url || ""}`;
   const templateSlug = String(getImportReviewValue(result, "recommended_template_slug") || "").trim();
+  const design = resolveDemoSiteDesign({
+    templateSlug,
+    editableFields: result.editable_fields,
+  });
+  const rendererProps = {
+    mode: "internal" as const,
+    compact: true,
+    showFull: showFullPreview,
+    companyName: result.profile.company_name,
+    templateSlug,
+    templateLabel: getTemplateLabel(templates, templateSlug),
+    websiteUrl: result.profile.website_url,
+    profile: result.profile,
+    editableFields: result.editable_fields,
+    fallbackMode: "placeholders" as const,
+    className: "mt-4",
+  };
 
   useEffect(() => {
     setShowFullPreview(false);
@@ -1951,19 +1970,11 @@ function ImportReviewLivePreviewPanel({ result, templates }: { result: WebsiteIm
         </Button>
       </div>
 
-      <DemoSitePreviewRenderer
-        mode="internal"
-        compact
-        showFull={showFullPreview}
-        companyName={result.profile.company_name}
-        templateSlug={templateSlug}
-        templateLabel={getTemplateLabel(templates, templateSlug)}
-        websiteUrl={result.profile.website_url}
-        profile={result.profile}
-        editableFields={result.editable_fields}
-        fallbackMode="placeholders"
-        className="mt-4"
-      />
+      {isSignatureDemoSiteLayout(design.layout) ? (
+        <DemoSignatureSiteRenderer {...rendererProps} design={design} />
+      ) : (
+        <DemoSitePreviewRenderer {...rendererProps} design={design} />
+      )}
     </div>
   );
 }
