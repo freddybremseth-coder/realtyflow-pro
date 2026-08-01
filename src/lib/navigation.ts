@@ -127,6 +127,7 @@ const GROUPS: Array<{
     label: "Innhold & medier",
     icon: "Clapperboard",
     hrefs: [
+      "/media-studio",
       "/content-studio",
       "/ai-personal-brand",
       "/content-hub",
