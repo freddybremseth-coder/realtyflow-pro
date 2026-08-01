@@ -19,6 +19,12 @@
 - Provider badge and capability reporting for OpenAI Voice.
 - Additive Storage MIME-type migration and voice-over template.
 
+## Production requirements
+
+- Run `20260801194500_media_studio_voice_assets.sql`.
+- Configure the server-side `OPENAI_API_KEY` to activate Voice Studio.
+- Deploy the merged `main` branch after the migration and environment configuration.
+
 ## Intentionally unavailable
 
 Avatar Studio remains disabled until an official connected provider reports avatar or talking-avatar capabilities. This prevents the UI from promising functionality that is not exposed by the current OpenArt MCP connection.
