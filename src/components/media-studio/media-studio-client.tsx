@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ElementType } from "react";
 import {
   AlertCircle,
-  Archive,
   BadgeCheck,
   Boxes,
   Briefcase,
@@ -21,6 +20,7 @@ import {
   Mic2,
   Palette,
   PanelTop,
+  Play,
   RefreshCw,
   Rocket,
   Send,
@@ -33,7 +33,7 @@ import {
 import { BRANDS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type ViewId =
@@ -51,6 +51,10 @@ type ViewId =
   | "templates"
   | "jobs"
   | "settings";
+
+type QualityTier = "fast" | "balanced" | "premium";
+type MediaTypeChoice = "" | "image" | "video" | "avatar" | "voice";
+type VoiceFormat = "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
 
 interface ProviderCapabilities {
   provider: string;
@@ -79,9 +83,14 @@ interface MediaPromptPlan {
   aspectRatio?: string;
   durationSeconds?: number;
   resolution?: string;
-  qualityTier: "fast" | "balanced" | "premium";
+  qualityTier: QualityTier;
+  voiceLanguage?: string;
+  voiceId?: string;
+  voiceTone?: string;
+  voiceSpeed?: number;
+  outputFormat?: VoiceFormat;
   providerRecommendation: {
-    provider: "gemini" | "openart";
+    provider: "gemini" | "openart" | "openai";
     displayName: string;
     reason: string;
     estimatedCostTier: "low" | "medium" | "high" | "premium";
@@ -91,6 +100,25 @@ interface MediaPromptPlan {
   safetyNotes: string[];
   estimatedCostTier: "low" | "medium" | "high" | "premium";
   promptBlocks: Record<string, string>;
+}
+
+interface MediaAsset {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  media_type: string;
+  mime_type?: string | null;
+  public_url?: string | null;
+  thumbnail_url?: string | null;
+  provider?: string | null;
+  brand_id?: string | null;
+  aspect_ratio?: string | null;
+  resolution?: string | null;
+  is_favorite?: boolean;
+  exported_to_content_hub_at?: string | null;
+  content_hub_publication_id?: string | null;
+  created_at: string;
+  tags?: string[];
 }
 
 interface MediaJob {
@@ -113,27 +141,10 @@ interface MediaJob {
   result_assets_json?: MediaAsset[];
 }
 
-interface MediaAsset {
-  id: string;
-  title?: string | null;
-  description?: string | null;
-  media_type: string;
-  public_url?: string | null;
-  thumbnail_url?: string | null;
-  provider?: string | null;
-  brand_id?: string | null;
-  aspect_ratio?: string | null;
-  resolution?: string | null;
-  is_favorite?: boolean;
-  exported_to_content_hub_at?: string | null;
-  content_hub_publication_id?: string | null;
-  created_at: string;
-  tags?: string[];
-}
-
 interface MediaProject {
   id: string;
   name: string;
+  description?: string | null;
   project_type?: string | null;
   brand_id?: string | null;
   status: string;
@@ -146,7 +157,7 @@ interface MediaTemplate {
   category: string;
   media_type: string;
   default_aspect_ratio?: string | null;
-  default_quality_tier: "fast" | "balanced" | "premium";
+  default_quality_tier: QualityTier;
   required_inputs?: string[];
 }
 
@@ -189,10 +200,12 @@ const formatPacks = [
   { id: "book", label: "Book Cover Pack", ratios: ["2:3", "1:1"] },
 ];
 
+const voiceOptions = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"];
+
 function statusVariant(status: string) {
-  if (status === "completed" || status === "available") return "success" as const;
+  if (status === "completed" || status === "available" || status === "active") return "success" as const;
   if (status === "failed" || status === "unavailable") return "destructive" as const;
-  if (status === "processing" || status === "submitted" || status === "queued" || status === "degraded") return "warning" as const;
+  if (["processing", "submitted", "queued", "degraded"].includes(status)) return "warning" as const;
   return "secondary" as const;
 }
 
@@ -208,10 +221,20 @@ function costLabel(value?: string | null) {
   return "Ukjent";
 }
 
+function errorMessage(data: unknown, status: number) {
+  if (typeof data === "object" && data) {
+    const record = data as { error?: string | { message?: string }; message?: string };
+    if (typeof record.error === "string") return record.error;
+    if (record.error && typeof record.error === "object" && record.error.message) return record.error.message;
+    if (record.message) return record.message;
+  }
+  return `Request failed (${status})`;
+}
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { cache: "no-store", ...init });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(errorMessage(data, res.status));
   return data as T;
 }
 
@@ -230,10 +253,10 @@ export function MediaStudioClient() {
   const [requestText, setRequestText] = useState("Lag et eksklusivt bilde av en moderne villa i Altea Hills ved solnedgang, til LinkedIn, rettet mot skandinaviske boligkjøpere.");
   const [mode, setMode] = useState<"simple" | "guided" | "professional">("simple");
   const [brandId, setBrandId] = useState("soleada");
-  const [mediaType, setMediaType] = useState<"" | "image" | "video" | "avatar" | "voice">("");
+  const [mediaType, setMediaType] = useState<MediaTypeChoice>("");
   const [platform, setPlatform] = useState("linkedin");
   const [audience, setAudience] = useState("");
-  const [qualityTier, setQualityTier] = useState<"fast" | "balanced" | "premium">("balanced");
+  const [qualityTier, setQualityTier] = useState<QualityTier>("balanced");
   const [aspectRatio, setAspectRatio] = useState("");
   const [durationSeconds, setDurationSeconds] = useState(5);
   const [sourceImageUrl, setSourceImageUrl] = useState("");
@@ -241,33 +264,45 @@ export function MediaStudioClient() {
   const [formatPackId, setFormatPackId] = useState("linkedin");
   const [plan, setPlan] = useState<MediaPromptPlan | null>(null);
 
+  const [voiceScript, setVoiceScript] = useState("Velkommen. Dette er en profesjonell presentasjon laget i RealtyFlow AI Media Studio.");
+  const [voiceLanguage, setVoiceLanguage] = useState("Norwegian");
+  const [voiceId, setVoiceId] = useState("alloy");
+  const [voiceTone, setVoiceTone] = useState("Varm, profesjonell, naturlig og troverdig.");
+  const [voiceSpeed, setVoiceSpeed] = useState(1);
+  const [voiceFormat, setVoiceFormat] = useState<VoiceFormat>("mp3");
+
   const openArt = capabilities.find((capability) => capability.provider === "openart");
   const gemini = capabilities.find((capability) => capability.provider === "gemini");
+  const openai = capabilities.find((capability) => capability.provider === "openai");
+  const voiceAvailable = Boolean(openai?.voice?.textToSpeech || openArt?.voice?.textToSpeech);
+  const avatarAvailable = Boolean(openArt?.avatar?.avatarCreation || openArt?.avatar?.talkingAvatar);
   const selectedPack = formatPacks.find((pack) => pack.id === formatPackId) || formatPacks[0];
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    setError("");
-    try {
-      const [overviewRes, jobsRes, assetsRes, projectsRes, templatesRes, capsRes] = await Promise.all([
-        readJson<{ overview: OverviewPayload }>("/api/media/overview"),
-        readJson<{ jobs: MediaJob[] }>("/api/media/jobs?limit=40"),
-        readJson<{ assets: MediaAsset[] }>("/api/media/assets?limit=60"),
-        readJson<{ projects: MediaProject[] }>("/api/media/projects"),
-        readJson<{ templates: MediaTemplate[] }>("/api/media/templates"),
-        readJson<{ capabilities: ProviderCapabilities[] }>("/api/media/providers/capabilities"),
-      ]);
-      setOverview(overviewRes.overview);
-      setJobs(jobsRes.jobs);
-      setAssets(assetsRes.assets);
-      setProjects(projectsRes.projects);
-      setTemplates(templatesRes.templates);
-      setCapabilities(capsRes.capabilities);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kunne ikke laste Media Studio.");
-    } finally {
-      setLoading(false);
-    }
+    const failures: string[] = [];
+    await Promise.all([
+      readJson<{ overview: OverviewPayload }>("/api/media/overview")
+        .then((res) => setOverview(res.overview))
+        .catch((err) => failures.push(`Overview: ${err instanceof Error ? err.message : String(err)}`)),
+      readJson<{ jobs: MediaJob[] }>("/api/media/jobs?limit=40")
+        .then((res) => setJobs(res.jobs))
+        .catch((err) => failures.push(`Jobs: ${err instanceof Error ? err.message : String(err)}`)),
+      readJson<{ assets: MediaAsset[] }>("/api/media/assets?limit=60")
+        .then((res) => setAssets(res.assets))
+        .catch((err) => failures.push(`Library: ${err instanceof Error ? err.message : String(err)}`)),
+      readJson<{ projects: MediaProject[] }>("/api/media/projects")
+        .then((res) => setProjects(res.projects))
+        .catch((err) => failures.push(`Projects: ${err instanceof Error ? err.message : String(err)}`)),
+      readJson<{ templates: MediaTemplate[] }>("/api/media/templates")
+        .then((res) => setTemplates(res.templates))
+        .catch((err) => failures.push(`Templates: ${err instanceof Error ? err.message : String(err)}`)),
+      readJson<{ capabilities: ProviderCapabilities[] }>("/api/media/providers/capabilities")
+        .then((res) => setCapabilities(res.capabilities))
+        .catch((err) => failures.push(`Providers: ${err instanceof Error ? err.message : String(err)}`)),
+    ]);
+    setError(failures.join(" · "));
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -282,18 +317,23 @@ export function MediaStudioClient() {
         active.map((job) => readJson<{ job: MediaJob }>(`/api/media/jobs/${job.id}`).then((res) => res.job)),
       );
       const latest = new Map<string, MediaJob>();
+      let completed = false;
       for (const item of updated) {
-        if (item.status === "fulfilled") latest.set(item.value.id, item.value);
+        if (item.status === "fulfilled") {
+          latest.set(item.value.id, item.value);
+          if (item.value.status === "completed") completed = true;
+        }
       }
-      if (latest.size) {
-        setJobs((current) => current.map((job) => latest.get(job.id) || job));
+      if (latest.size) setJobs((current) => current.map((job) => latest.get(job.id) || job));
+      if (completed) {
         void readJson<{ assets: MediaAsset[] }>("/api/media/assets?limit=60").then((res) => setAssets(res.assets)).catch(() => undefined);
+        void readJson<{ projects: MediaProject[] }>("/api/media/projects").then((res) => setProjects(res.projects)).catch(() => undefined);
       }
     }, 6000);
     return () => window.clearInterval(timer);
   }, [jobs]);
 
-  const createPlan = async (overrides: Partial<MediaPromptPlan> = {}) => {
+  const createPlan = async (overrides: Record<string, unknown> = {}) => {
     setBusy("plan");
     setError("");
     try {
@@ -325,33 +365,70 @@ export function MediaStudioClient() {
     }
   };
 
+  const createJob = async (jobPlan: MediaPromptPlan, ratio?: string) => {
+    const normalizedPlan = ratio ? { ...jobPlan, aspectRatio: ratio } : jobPlan;
+    const res = await readJson<{ job: MediaJob }>("/api/media/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan: normalizedPlan,
+        brandId: normalizedPlan.brandId || brandId,
+        sourceImageUrls: sourceImageUrl ? [sourceImageUrl] : [],
+        idempotencyKey: `${crypto.randomUUID()}-${ratio || normalizedPlan.mediaType}`,
+      }),
+    });
+    return res.job;
+  };
+
   const generate = async () => {
     setBusy("generate");
     setError("");
     try {
       const activePlan = plan || await createPlan();
       if (!activePlan) return;
-      const ratios = multiFormat ? selectedPack.ratios : [activePlan.aspectRatio || aspectRatio || "1:1"];
+      const ratios = multiFormat && ["image", "video"].includes(activePlan.mediaType)
+        ? selectedPack.ratios
+        : [activePlan.aspectRatio || aspectRatio || "1:1"];
       const created: MediaJob[] = [];
-      for (const ratio of ratios) {
-        const jobPlan = { ...activePlan, aspectRatio: ratio };
-        const res = await readJson<{ job: MediaJob }>("/api/media/jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan: jobPlan,
-            brandId: jobPlan.brandId || brandId,
-            sourceImageUrls: sourceImageUrl ? [sourceImageUrl] : [],
-            idempotencyKey: `${crypto.randomUUID()}-${ratio}`,
-          }),
-        });
-        created.push(res.job);
-      }
-      setJobs((current) => [...created, ...current]);
+      for (const ratio of ratios) created.push(await createJob(activePlan, ratio));
+      setJobs((current) => [...created, ...current.filter((job) => !created.some((newJob) => newJob.id === job.id))]);
       setView("jobs");
-      void loadAll();
+      window.setTimeout(() => void loadAll(), 750);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke starte generering.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const generateVoice = async () => {
+    setBusy("voice");
+    setError("");
+    try {
+      const data = await readJson<{ plan: MediaPromptPlan; capabilities: ProviderCapabilities[] }>("/api/media/create-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request: voiceScript,
+          mode: "guided",
+          mediaType: "voice",
+          useCase: "voice_over",
+          brandId,
+          qualityTier,
+          voiceLanguage,
+          voiceId,
+          voiceTone,
+          voiceSpeed,
+          outputFormat: voiceFormat,
+        }),
+      });
+      setCapabilities(data.capabilities);
+      const job = await createJob(data.plan);
+      setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+      setView("jobs");
+      window.setTimeout(() => void loadAll(), 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kunne ikke generere voice-over.");
     } finally {
       setBusy(null);
     }
@@ -372,8 +449,17 @@ export function MediaStudioClient() {
   const exportAsset = async (assetId: string) => {
     setBusy(`export-${assetId}`);
     try {
-      await readJson(`/api/media/assets/${assetId}/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      setAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, exported_to_content_hub_at: new Date().toISOString() } : asset));
+      await readJson(`/api/media/assets/${assetId}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const exportedAt = new Date().toISOString();
+      setAssets((current) => current.map((asset) => asset.id === assetId ? { ...asset, exported_to_content_hub_at: exportedAt } : asset));
+      setJobs((current) => current.map((job) => ({
+        ...job,
+        result_assets_json: job.result_assets_json?.map((asset) => asset.id === assetId ? { ...asset, exported_to_content_hub_at: exportedAt } : asset),
+      })));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kunne ikke sende til Content Hub.");
     } finally {
@@ -392,17 +478,19 @@ export function MediaStudioClient() {
   };
 
   const useTemplate = (template: MediaTemplate) => {
-    setMediaType(template.media_type as typeof mediaType);
+    setMediaType(template.media_type as MediaTypeChoice);
     setAspectRatio(template.default_aspect_ratio || "");
     setQualityTier(template.default_quality_tier);
     setRequestText(`${template.name}: `);
+    setPlan(null);
     setView("create");
   };
 
   const startVariant = (asset: MediaAsset) => {
     setSourceImageUrl(asset.public_url || "");
     setMediaType(asset.media_type === "video" ? "video" : "image");
-    setRequestText(`Lag en ny variant av denne asseten. Behold hovedmotiv og brand, men gjør uttrykket mer premium.`);
+    setRequestText("Lag en ny variant av denne asseten. Behold hovedmotiv og brand, men gjør uttrykket mer premium.");
+    setPlan(null);
     setView("create");
   };
 
@@ -426,9 +514,8 @@ export function MediaStudioClient() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(openArt?.status || "unknown")}>OpenArt: {openArt?.status || "unknown"}</Badge>
             <Badge variant={statusVariant(gemini?.status || "unknown")}>Gemini: {gemini?.status || "unknown"}</Badge>
-            {typeof openArt?.account?.credits === "number" && (
-              <Badge variant="outline">{Math.round(Number(openArt.account.credits))} OpenArt-kreditter</Badge>
-            )}
+            <Badge variant={statusVariant(openai?.status || "unknown")}>OpenAI Voice: {openai?.status || "unknown"}</Badge>
+            {typeof openArt?.account?.credits === "number" && <Badge variant="outline">{Math.round(Number(openArt.account.credits))} OpenArt-kreditter</Badge>}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -436,17 +523,17 @@ export function MediaStudioClient() {
             {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             Oppdater
           </Button>
-          <Button onClick={() => setView("create")} className="gap-2">
-            <Wand2 size={16} />
-            Create
-          </Button>
+          <Button onClick={() => setView("create")} className="gap-2"><Wand2 size={16} />Create</Button>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-          <AlertCircle size={16} />
-          {error}
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">Noen deler kunne ikke lastes</p>
+            <p className="mt-1 text-xs text-amber-200/80">{error}</p>
+          </div>
         </div>
       )}
 
@@ -455,12 +542,7 @@ export function MediaStudioClient() {
           <TabsList className="min-w-max">
             {views.map((item) => {
               const Icon = item.icon;
-              return (
-                <TabsTrigger key={item.id} value={item.id} className="gap-1.5 whitespace-nowrap text-xs">
-                  <Icon size={14} />
-                  {item.label}
-                </TabsTrigger>
-              );
+              return <TabsTrigger key={item.id} value={item.id} className="gap-1.5 whitespace-nowrap text-xs"><Icon size={14} />{item.label}</TabsTrigger>;
             })}
           </TabsList>
         </div>
@@ -468,50 +550,30 @@ export function MediaStudioClient() {
         <TabsContent value="overview">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             {topStats.map((stat) => (
-              <Card key={stat.label}>
-                <CardContent className="p-4">
-                  <div className={`text-2xl font-semibold ${stat.tone}`}>{stat.value}</div>
-                  <div className="text-xs text-slate-400">{stat.label}</div>
-                </CardContent>
-              </Card>
+              <Card key={stat.label}><CardContent className="p-4"><div className={`text-2xl font-semibold ${stat.tone}`}>{stat.value}</div><div className="text-xs text-slate-400">{stat.label}</div></CardContent></Card>
             ))}
           </div>
           <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <Card>
-              <CardHeader>
-                <CardTitle>Nylige medier</CardTitle>
-                <CardDescription>Faktiske assets fra Media Studio</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AssetGrid assets={overview?.recentAssets || []} onExport={exportAsset} onVariant={startVariant} onFavorite={toggleFavorite} busy={busy} compact />
-              </CardContent>
+              <CardHeader><CardTitle>Nylige medier</CardTitle><CardDescription>Faktiske assets fra Media Studio</CardDescription></CardHeader>
+              <CardContent><AssetGrid assets={overview?.recentAssets || assets.slice(0, 8)} onExport={exportAsset} onVariant={startVariant} onFavorite={toggleFavorite} busy={busy} compact /></CardContent>
             </Card>
             <div className="space-y-4">
               <Card>
-                <CardHeader>
-                  <CardTitle>Neste handlinger</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Neste handlinger</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
                   {(overview?.recommendedNextActions || []).map((action) => (
                     <button key={action.label} onClick={() => setView(action.href.includes("jobs") ? "jobs" : action.href.includes("library") ? "library" : "create")} className="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-left text-sm text-slate-200 hover:border-primary-400/50">
-                      {action.label}
-                      <ExternalLink size={13} className="text-slate-500" />
+                      {action.label}<ExternalLink size={13} className="text-slate-500" />
                     </button>
                   ))}
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader>
-                  <CardTitle>Mest brukte brands</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Mest brukte brands</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
                   {(overview?.mostUsedBrands || []).length === 0 && <p className="text-sm text-slate-500">Ingen assets ennå.</p>}
-                  {(overview?.mostUsedBrands || []).map((row) => (
-                    <div key={row.brandId} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-300">{brandName(row.brandId)}</span>
-                      <Badge variant="secondary">{row.count}</Badge>
-                    </div>
-                  ))}
+                  {(overview?.mostUsedBrands || []).map((row) => <div key={row.brandId} className="flex items-center justify-between text-sm"><span className="text-slate-300">{brandName(row.brandId)}</span><Badge variant="secondary">{row.count}</Badge></div>)}
                 </CardContent>
               </Card>
             </div>
@@ -521,244 +583,121 @@ export function MediaStudioClient() {
         <TabsContent value="create">
           <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
             <Card>
-              <CardHeader>
-                <CardTitle>Hva ønsker du å lage?</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Hva ønsker du å lage?</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
-                  {(["simple", "guided", "professional"] as const).map((item) => (
-                    <button key={item} onClick={() => setMode(item)} className={`rounded-lg border px-3 py-2 text-xs ${mode === item ? "border-primary-400 bg-primary-500/15 text-primary-200" : "border-slate-700 text-slate-400 hover:border-slate-500"}`}>
-                      {item === "simple" ? "Enkel" : item === "guided" ? "Veiledet" : "Profesjonell"}
-                    </button>
-                  ))}
+                  {(["simple", "guided", "professional"] as const).map((item) => <button key={item} onClick={() => setMode(item)} className={`rounded-lg border px-3 py-2 text-xs ${mode === item ? "border-primary-400 bg-primary-500/15 text-primary-200" : "border-slate-700 text-slate-400 hover:border-slate-500"}`}>{item === "simple" ? "Enkel" : item === "guided" ? "Veiledet" : "Profesjonell"}</button>)}
                 </div>
-                <textarea
-                  value={requestText}
-                  onChange={(event) => setRequestText(event.target.value)}
-                  rows={7}
-                  className="w-full resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 outline-none focus:border-primary-400"
-                />
-                <GuidedFields
-                  visible={mode !== "simple"}
-                  brandId={brandId}
-                  setBrandId={setBrandId}
-                  mediaType={mediaType}
-                  setMediaType={setMediaType}
-                  platform={platform}
-                  setPlatform={setPlatform}
-                  audience={audience}
-                  setAudience={setAudience}
-                  qualityTier={qualityTier}
-                  setQualityTier={setQualityTier}
-                  aspectRatio={aspectRatio}
-                  setAspectRatio={setAspectRatio}
-                  durationSeconds={durationSeconds}
-                  setDurationSeconds={setDurationSeconds}
-                  sourceImageUrl={sourceImageUrl}
-                  setSourceImageUrl={setSourceImageUrl}
-                />
+                <textarea value={requestText} onChange={(event) => { setRequestText(event.target.value); setPlan(null); }} rows={7} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 outline-none focus:border-primary-400" />
+                {mode !== "simple" && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <SelectField label="Brand" value={brandId} onChange={setBrandId} options={BRANDS.map((brand) => ({ value: brand.id, label: brand.name }))} />
+                    <SelectField label="Type" value={mediaType} onChange={(value) => setMediaType(value as MediaTypeChoice)} options={[{ value: "", label: "Auto" }, { value: "image", label: "Bilde" }, { value: "video", label: "Video" }, { value: "avatar", label: "Avatar" }, { value: "voice", label: "Voice" }]} />
+                    <SelectField label="Plattform" value={platform} onChange={setPlatform} options={["linkedin", "instagram", "facebook", "tiktok", "website", "youtube"].map((value) => ({ value, label: value }))} />
+                    <SelectField label="Kvalitet" value={qualityTier} onChange={(value) => setQualityTier(value as QualityTier)} options={[{ value: "fast", label: "Rask og rimelig" }, { value: "balanced", label: "Balansert" }, { value: "premium", label: "Beste kvalitet" }]} />
+                    <SelectField label="Format" value={aspectRatio} onChange={setAspectRatio} options={["", "1:1", "4:5", "16:9", "9:16", "3:2", "2:3"].map((value) => ({ value, label: value || "Auto" }))} />
+                    <div><label className="mb-1 block text-xs text-slate-400">Varighet</label><input type="number" min={3} max={15} value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" /></div>
+                    <div className="md:col-span-2"><label className="mb-1 block text-xs text-slate-400">Referanse-URL</label><input value={sourceImageUrl} onChange={(event) => setSourceImageUrl(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" placeholder="https://..." /></div>
+                    <div className="md:col-span-2"><label className="mb-1 block text-xs text-slate-400">Målgruppe</label><input value={audience} onChange={(event) => setAudience(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" /></div>
+                  </div>
+                )}
                 <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
-                  <label className="flex items-center gap-2 text-sm text-slate-200">
-                    <input type="checkbox" checked={multiFormat} onChange={(event) => setMultiFormat(event.target.checked)} />
-                    Lag flere formater
-                  </label>
-                  {multiFormat && (
-                    <select value={formatPackId} onChange={(event) => setFormatPackId(event.target.value)} className="mt-3 h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100">
-                      {formatPacks.map((pack) => <option key={pack.id} value={pack.id}>{pack.label} ({pack.ratios.join(", ")})</option>)}
-                    </select>
-                  )}
+                  <label className="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" checked={multiFormat} onChange={(event) => setMultiFormat(event.target.checked)} />Lag flere formater</label>
+                  {multiFormat && <select value={formatPackId} onChange={(event) => setFormatPackId(event.target.value)} className="mt-3 h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100">{formatPacks.map((pack) => <option key={pack.id} value={pack.id}>{pack.label} ({pack.ratios.join(", ")})</option>)}</select>}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => void createPlan()} disabled={busy === "plan" || !requestText.trim()} variant="outline" className="gap-2">
-                    {busy === "plan" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                    Lag forslag
-                  </Button>
-                  <Button onClick={() => void generate()} disabled={busy === "generate" || !requestText.trim()} className="gap-2">
-                    {busy === "generate" ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                    Generer
-                  </Button>
-                  <Button variant="ghost" onClick={() => { setQualityTier("fast"); void createPlan({ qualityTier: "fast" } as Partial<MediaPromptPlan>); }}>Rimeligere</Button>
-                  <Button variant="ghost" onClick={() => { setQualityTier("premium"); void createPlan({ qualityTier: "premium" } as Partial<MediaPromptPlan>); }}>Beste kvalitet</Button>
+                  <Button onClick={() => void createPlan()} disabled={busy === "plan" || !requestText.trim()} variant="outline" className="gap-2">{busy === "plan" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}Lag forslag</Button>
+                  <Button onClick={() => void generate()} disabled={busy === "generate" || !requestText.trim()} className="gap-2">{busy === "generate" ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}Generer</Button>
                 </div>
               </CardContent>
             </Card>
-
             <PlanPanel plan={plan} onCopy={() => plan && navigator.clipboard.writeText(plan.optimizedPrompt)} />
           </div>
         </TabsContent>
 
-        <TabsContent value="image">
-          <TaskStudio
-            title="Image Studio 2.0"
-            icon={ImageIcon}
-            tasks={["Sosial post", "Annonse", "Hero-bilde", "Portrett", "Eiendom", "Produkt", "Bokomslag", "Bytt bakgrunn", "Lag variant", "Endre format"]}
-            onPick={(task) => { setMediaType("image"); setRequestText(`${task}: `); setView("create"); }}
-          />
-        </TabsContent>
+        <TabsContent value="image"><TaskStudio title="Image Studio 2.0" icon={ImageIcon} tasks={["Sosial post", "Annonse", "Hero-bilde", "Portrett", "Eiendom", "Produkt", "Bokomslag", "Bytt bakgrunn", "Lag variant", "Endre format"]} onPick={(task) => { setMediaType("image"); setRequestText(`${task}: `); setPlan(null); setView("create"); }} /></TabsContent>
+        <TabsContent value="product"><TaskStudio title="Product Studio" icon={Boxes} tasks={["Studiobilde", "Premium reklame", "Middelhavsmiljø", "Kjøkken", "Sommer", "Jul", "Instagram", "LinkedIn", "Annonsebanner"]} onPick={(task) => { setMediaType("image"); setRequestText(`${task} for produkt. Preserve the real product identity, package shape, label, logo, colors and recognizable details.`); setPlan(null); setView("create"); }} /></TabsContent>
+        <TabsContent value="property"><TaskStudio title="Property Studio" icon={Briefcase} tasks={["Forbedre boligfoto", "Dag til solnedgang", "Virtuell styling", "Annonsebilde", "Drone-lignende hero", "Kort eiendoms-Reel"]} onPick={(task) => { setMediaType(task.includes("Reel") ? "video" : "image"); setRequestText(`${task}. Merk som AI-generert visualisering dersom resultatet er konseptuelt.`); setPlan(null); setView("create"); }} /></TabsContent>
+        <TabsContent value="video"><TaskStudio title="Video Studio" icon={Film} tasks={["Text-to-video", "Image-to-video", "Animer bilde", "Eiendoms-Reel", "Produktvideo", "Sosial annonse", "Boktrailer", "Logoanimasjon"]} disabled={!openArt?.video?.textToVideo && !openArt?.video?.imageToVideo} onPick={(task) => { setMediaType("video"); setRequestText(`${task}: `); setAspectRatio("9:16"); setQualityTier("premium"); setPlan(null); setView("create"); }} /></TabsContent>
 
-        <TabsContent value="product">
-          <TaskStudio
-            title="Product Studio"
-            icon={Boxes}
-            tasks={["Studiobilde", "Premium reklame", "Middelhavsmiljø", "Kjøkken", "Sommer", "Jul", "Instagram", "LinkedIn", "Annonsebanner"]}
-            onPick={(task) => { setMediaType("image"); setRequestText(`${task} for produkt. Preserve the real product identity, package shape, label, logo, colors and recognizable details.`); setView("create"); }}
-          />
-        </TabsContent>
-
-        <TabsContent value="property">
-          <TaskStudio
-            title="Property Studio"
-            icon={Briefcase}
-            tasks={["Forbedre boligfoto", "Dag til solnedgang", "Virtuell styling", "Annonsebilde", "Drone-lignende hero", "Kort eiendoms-Reel"]}
-            onPick={(task) => { setMediaType(task.includes("Reel") ? "video" : "image"); setRequestText(`${task}. Merk som AI-generert visualisering dersom resultatet er konseptuelt.`); setView("create"); }}
-          />
-        </TabsContent>
-
-        <TabsContent value="video">
-          <TaskStudio
-            title="Video Studio"
-            icon={Film}
-            tasks={["Text-to-video", "Image-to-video", "Animer bilde", "Eiendoms-Reel", "Produktvideo", "Sosial annonse", "Boktrailer", "Logoanimasjon"]}
-            disabled={!openArt?.video?.textToVideo && !openArt?.video?.imageToVideo}
-            onPick={(task) => { setMediaType("video"); setRequestText(`${task}: `); setAspectRatio("9:16"); setQualityTier("premium"); setView("create"); }}
-          />
+        <TabsContent value="voice">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Mic2 size={18} className="text-primary-400" />Voice Studio</CardTitle>
+              <CardDescription>Lag AI-generert voice-over og lagre resultatet direkte i Media Library.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!voiceAvailable && <CapabilityNotice title="Voice-provider mangler" text="Konfigurer OPENAI_API_KEY i Vercel, eller koble en provider som rapporterer text-to-speech. Voice cloning er bevisst deaktivert." />}
+              <div>
+                <label className="mb-1 block text-xs text-slate-400">Manus</label>
+                <textarea value={voiceScript} onChange={(event) => setVoiceScript(event.target.value)} rows={8} maxLength={4096} className="w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 outline-none focus:border-primary-400" />
+                <p className="mt-1 text-right text-[11px] text-slate-500">{voiceScript.length}/4096</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <SelectField label="Språk" value={voiceLanguage} onChange={setVoiceLanguage} options={["Norwegian", "English", "Spanish", "Swedish", "Danish", "German", "French"].map((value) => ({ value, label: value }))} />
+                <SelectField label="Stemme" value={voiceId} onChange={setVoiceId} options={voiceOptions.map((value) => ({ value, label: value }))} />
+                <SelectField label="Format" value={voiceFormat} onChange={(value) => setVoiceFormat(value as VoiceFormat)} options={["mp3", "wav", "aac", "opus", "flac"].map((value) => ({ value, label: value.toUpperCase() }))} />
+                <div><label className="mb-1 block text-xs text-slate-400">Hastighet</label><input type="number" min={0.25} max={4} step={0.05} value={voiceSpeed} onChange={(event) => setVoiceSpeed(Number(event.target.value))} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" /></div>
+                <SelectField label="Kvalitet" value={qualityTier} onChange={(value) => setQualityTier(value as QualityTier)} options={[{ value: "fast", label: "Rask" }, { value: "balanced", label: "Balansert" }, { value: "premium", label: "Premium" }]} />
+              </div>
+              <div><label className="mb-1 block text-xs text-slate-400">Stil og instruksjoner</label><input value={voiceTone} onChange={(event) => setVoiceTone(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" /></div>
+              <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-3 text-xs text-sky-200">Lydresultatet er AI-generert. Ikke presenter det som en ekte persons innspilling uten samtykke.</div>
+              <Button onClick={() => void generateVoice()} disabled={!voiceAvailable || busy === "voice" || voiceScript.trim().length < 3} className="gap-2">{busy === "voice" ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}Generer voice-over</Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="avatar">
-          <CapabilityShell title="Avatar Studio" icon={UserRound} capability={openArt?.avatar?.avatarCreation || openArt?.avatar?.talkingAvatar} />
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><UserRound size={18} className="text-primary-400" />Avatar Studio</CardTitle><CardDescription>Arkitekturen er klar, men en faktisk avatar-provider må rapportere capability før generering aktiveres.</CardDescription></CardHeader>
+            <CardContent>
+              {avatarAvailable
+                ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">Avatar-capability er tilgjengelig. Bruk Create for provider-styrt generering.</div>
+                : <CapabilityNotice title="Ingen avatar-provider tilkoblet" text="OpenArt MCP rapporterer ikke avatar/talking-avatar nå. Modulen aktiveres først når en offisiell provider med samtykke, referansebilder og asynkrone jobber er koblet til." />}
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="voice">
-          <CapabilityShell title="Voice Studio" icon={Mic2} capability={openArt?.voice?.textToSpeech} />
-        </TabsContent>
-
-        <TabsContent value="brand">
-          <BrandStudio brands={BRANDS.map((brand) => ({ id: brand.id, name: brand.name, color: brand.color, tone: brand.tone || "", audience: brand.target_audience || "" }))} />
-        </TabsContent>
+        <TabsContent value="brand"><BrandStudio /></TabsContent>
 
         <TabsContent value="projects">
           <Card>
-            <CardHeader>
-              <CardTitle>Projects</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Projects</CardTitle><CardDescription>Prosjekter opprettes automatisk for genereringer og kan senere organiseres manuelt.</CardDescription></CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {projects.map((project) => (
-                <div key={project.id} className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-medium text-slate-100">{project.name}</h3>
-                      <p className="text-xs text-slate-500">{project.project_type || "general"} · {brandName(project.brand_id)}</p>
-                    </div>
-                    <Badge variant={statusVariant(project.status)}>{project.status}</Badge>
-                  </div>
-                </div>
-              ))}
+              {projects.map((project) => <div key={project.id} className="rounded-lg border border-slate-700 bg-slate-900/40 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-medium text-slate-100">{project.name}</h3><p className="text-xs text-slate-500">{project.project_type || "general"} · {brandName(project.brand_id)}</p>{project.description && <p className="mt-2 line-clamp-2 text-xs text-slate-400">{project.description}</p>}</div><Badge variant={statusVariant(project.status)}>{project.status}</Badge></div></div>)}
               {projects.length === 0 && <p className="text-sm text-slate-500">Ingen prosjekter ennå.</p>}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="library">
-          <Card>
-            <CardHeader>
-              <CardTitle>Media Library</CardTitle>
-              <CardDescription>{assets.length} assets</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AssetGrid assets={assets} onExport={exportAsset} onVariant={startVariant} onFavorite={toggleFavorite} busy={busy} />
-            </CardContent>
-          </Card>
+          <Card><CardHeader><CardTitle>Media Library</CardTitle><CardDescription>{assets.length} assets</CardDescription></CardHeader><CardContent><AssetGrid assets={assets} onExport={exportAsset} onVariant={startVariant} onFavorite={toggleFavorite} busy={busy} /></CardContent></Card>
         </TabsContent>
 
         <TabsContent value="templates">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {templates.map((template) => (
-              <Card key={template.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-medium text-slate-100">{template.name}</h3>
-                      <p className="text-xs text-slate-500">{template.category} · {template.media_type}</p>
-                    </div>
-                    <Badge variant="outline">{template.default_aspect_ratio || "auto"}</Badge>
-                  </div>
-                  <Button size="sm" className="mt-4 gap-2" onClick={() => useTemplate(template)}>
-                    <Wand2 size={14} />
-                    Bruk
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+            {templates.map((template) => <Card key={template.id}><CardContent className="p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-medium text-slate-100">{template.name}</h3><p className="text-xs text-slate-500">{template.category} · {template.media_type}</p></div><Badge variant="outline">{template.default_aspect_ratio || "auto"}</Badge></div><Button size="sm" className="mt-4 gap-2" onClick={() => useTemplate(template)}><Wand2 size={14} />Bruk</Button></CardContent></Card>)}
           </div>
         </TabsContent>
 
         <TabsContent value="jobs">
           <div className="space-y-3">
-            {jobs.map((job) => (
-              <Card key={job.id}>
-                <CardContent className="p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
-                        <Badge variant="secondary">{job.provider}</Badge>
-                        <Badge variant="outline">{job.media_type}</Badge>
-                        <Badge variant="outline">{costLabel(job.estimated_cost)}</Badge>
-                      </div>
-                      <p className="mt-2 truncate text-sm font-medium text-slate-100">{job.original_request}</p>
-                      {job.error_message && <p className="mt-1 text-xs text-red-300">{job.error_message}</p>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-700">
-                        <div className="h-full bg-primary-400" style={{ width: `${Math.max(0, Math.min(job.progress || 0, 100))}%` }} />
-                      </div>
-                      {job.status === "failed" && (
-                        <Button size="sm" variant="outline" onClick={() => void retryJob(job.id)} disabled={busy === `retry-${job.id}`} className="gap-1.5">
-                          {busy === `retry-${job.id}` ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                          Retry
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {jobs.map((job) => <JobCard key={job.id} job={job} busy={busy} onRetry={retryJob} onExport={exportAsset} onVariant={startVariant} />)}
             {jobs.length === 0 && <Card><CardContent className="p-6 text-sm text-slate-500">Ingen jobber ennå.</CardContent></Card>}
           </div>
         </TabsContent>
 
         <TabsContent value="settings">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {capabilities.map((capability) => (
               <Card key={capability.provider}>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between gap-3">
-                    {capability.displayName}
-                    <Badge variant={statusVariant(capability.status)}>{capability.status}</Badge>
-                  </CardTitle>
-                  {capability.errorMessage && <CardDescription>{capability.errorMessage}</CardDescription>}
-                </CardHeader>
+                <CardHeader><CardTitle className="flex items-center justify-between gap-3">{capability.displayName}<Badge variant={statusVariant(capability.status)}>{capability.status}</Badge></CardTitle>{capability.errorMessage && <CardDescription>{capability.errorMessage}</CardDescription>}</CardHeader>
                 <CardContent className="space-y-3">
                   <CapabilityRow label="Image" values={capability.image} />
                   <CapabilityRow label="Video" values={capability.video} />
                   <CapabilityRow label="Avatar" values={capability.avatar} />
                   <CapabilityRow label="Voice" values={capability.voice} />
-                  {capability.provider === "openart" && (
-                    <Button variant="outline" size="sm" className="gap-2" onClick={async () => {
-                      setBusy("refresh-openart");
-                      try {
-                        const res = await readJson<{ capabilities: ProviderCapabilities }>("/api/media/openart/refresh-capabilities", { method: "POST" });
-                        setCapabilities((current) => current.map((item) => item.provider === "openart" ? res.capabilities : item));
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "Kunne ikke refreshe OpenArt.");
-                      } finally {
-                        setBusy(null);
-                      }
-                    }}>
-                      {busy === "refresh-openart" ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                      Refresh OpenArt
-                    </Button>
-                  )}
+                  {capability.provider === "openart" && <Button variant="outline" size="sm" className="gap-2" onClick={async () => { setBusy("refresh-openart"); try { const res = await readJson<{ capabilities: ProviderCapabilities }>("/api/media/openart/refresh-capabilities", { method: "POST" }); setCapabilities((current) => current.map((item) => item.provider === "openart" ? res.capabilities : item)); } catch (err) { setError(err instanceof Error ? err.message : "Kunne ikke refreshe OpenArt."); } finally { setBusy(null); } }}>{busy === "refresh-openart" ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh OpenArt</Button>}
                 </CardContent>
               </Card>
             ))}
@@ -769,127 +708,25 @@ export function MediaStudioClient() {
   );
 }
 
-function GuidedFields(props: {
-  visible: boolean;
-  brandId: string;
-  setBrandId: (value: string) => void;
-  mediaType: "" | "image" | "video" | "avatar" | "voice";
-  setMediaType: (value: "" | "image" | "video" | "avatar" | "voice") => void;
-  platform: string;
-  setPlatform: (value: string) => void;
-  audience: string;
-  setAudience: (value: string) => void;
-  qualityTier: "fast" | "balanced" | "premium";
-  setQualityTier: (value: "fast" | "balanced" | "premium") => void;
-  aspectRatio: string;
-  setAspectRatio: (value: string) => void;
-  durationSeconds: number;
-  setDurationSeconds: (value: number) => void;
-  sourceImageUrl: string;
-  setSourceImageUrl: (value: string) => void;
-}) {
-  if (!props.visible) return null;
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      <SelectField label="Brand" value={props.brandId} onChange={props.setBrandId} options={BRANDS.map((brand) => ({ value: brand.id, label: brand.name }))} />
-      <SelectField label="Type" value={props.mediaType} onChange={(value) => props.setMediaType(value as typeof props.mediaType)} options={[
-        { value: "", label: "Auto" },
-        { value: "image", label: "Bilde" },
-        { value: "video", label: "Video" },
-        { value: "avatar", label: "Avatar" },
-        { value: "voice", label: "Voice" },
-      ]} />
-      <SelectField label="Plattform" value={props.platform} onChange={props.setPlatform} options={["linkedin", "instagram", "facebook", "tiktok", "website", "youtube"].map((value) => ({ value, label: value }))} />
-      <SelectField label="Kvalitet" value={props.qualityTier} onChange={(value) => props.setQualityTier(value as typeof props.qualityTier)} options={[
-        { value: "fast", label: "Rask og rimelig" },
-        { value: "balanced", label: "Balansert" },
-        { value: "premium", label: "Beste kvalitet" },
-      ]} />
-      <SelectField label="Format" value={props.aspectRatio} onChange={props.setAspectRatio} options={["", "1:1", "4:5", "16:9", "9:16", "3:2", "2:3"].map((value) => ({ value, label: value || "Auto" }))} />
-      <div>
-        <label className="mb-1 block text-xs text-slate-400">Varighet</label>
-        <input type="number" min={3} max={15} value={props.durationSeconds} onChange={(event) => props.setDurationSeconds(Number(event.target.value))} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" />
-      </div>
-      <div className="md:col-span-2">
-        <label className="mb-1 block text-xs text-slate-400">Referanse-URL</label>
-        <input value={props.sourceImageUrl} onChange={(event) => props.setSourceImageUrl(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" placeholder="https://..." />
-      </div>
-      <div className="md:col-span-2">
-        <label className="mb-1 block text-xs text-slate-400">Målgruppe</label>
-        <input value={props.audience} onChange={(event) => props.setAudience(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100" />
-      </div>
-    </div>
-  );
-}
-
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-slate-400">{label}</label>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100">
-        {options.map((option) => <option key={option.value || "auto"} value={option.value}>{option.label}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function PlanPanel({ plan, onCopy }: { plan: MediaPromptPlan | null; onCopy: () => void }) {
-  if (!plan) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Produksjonsplan</CardTitle>
-          <CardDescription>Prompt Director lager en validert plan for neste jobb.</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-slate-500">Ingen plan ennå.</CardContent>
-      </Card>
-    );
-  }
+function JobCard({ job, busy, onRetry, onExport, onVariant }: { job: MediaJob; busy: string | null; onRetry: (id: string) => Promise<void>; onExport: (id: string) => Promise<void>; onVariant: (asset: MediaAsset) => void }) {
+  const results = Array.isArray(job.result_assets_json) ? job.result_assets_json : [];
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-3">
-          Produksjonsplan
-          <Badge variant="outline">{plan.providerRecommendation.displayName}</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Mini label="Type" value={plan.mediaType} />
-          <Mini label="Bruk" value={plan.useCase || plan.operation} />
-          <Mini label="Format" value={plan.aspectRatio || "auto"} />
-          <Mini label="Kost" value={costLabel(plan.estimatedCostTier)} />
-        </div>
-        <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-300">Forbedret prompt</span>
-            <Button size="sm" variant="ghost" onClick={onCopy} className="gap-1.5">
-              <Copy size={13} />
-              Kopier
-            </Button>
+      <CardContent className="p-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(job.status)}>{job.status}</Badge><Badge variant="secondary">{job.provider}</Badge><Badge variant="outline">{job.media_type}</Badge><Badge variant="outline">{costLabel(job.estimated_cost)}</Badge></div>
+              <p className="mt-2 text-sm font-medium text-slate-100">{job.original_request}</p>
+              {job.error_message && <p className="mt-1 text-xs text-red-300">{job.error_message}</p>}
+            </div>
+            <div className="flex items-center gap-2"><div className="h-2 w-28 overflow-hidden rounded-full bg-slate-700"><div className="h-full bg-primary-400" style={{ width: `${Math.max(0, Math.min(job.progress || 0, 100))}%` }} /></div><span className="text-xs text-slate-500">{Math.round(job.progress || 0)}%</span>{job.status === "failed" && <Button size="sm" variant="outline" onClick={() => void onRetry(job.id)} disabled={busy === `retry-${job.id}`} className="gap-1.5">{busy === `retry-${job.id}` ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}Retry</Button>}</div>
           </div>
-          <pre className="max-h-72 whitespace-pre-wrap text-xs leading-5 text-slate-300">{plan.optimizedPrompt}</pre>
+          {job.status === "completed" && results.length === 0 && <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">Jobben er fullført, men resultatmetadata mangler. Bildet eller lydfilen kan fortsatt finnes i Library etter oppdatering.</div>}
+          {results.length > 0 && <AssetGrid assets={results} onExport={onExport} onVariant={onVariant} onFavorite={() => undefined} busy={busy} compact />}
         </div>
-        {plan.referenceRequirements.length > 0 && (
-          <div className="space-y-2">
-            {plan.referenceRequirements.map((item) => (
-              <div key={`${item.type}-${item.reason}`} className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
-                {item.required ? "Krever referanse: " : "Anbefalt referanse: "}{item.reason}
-              </div>
-            ))}
-          </div>
-        )}
       </CardContent>
     </Card>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium text-slate-200">{value}</p>
-    </div>
   );
 }
 
@@ -900,113 +737,60 @@ function AssetGrid({ assets, onExport, onVariant, onFavorite, busy, compact = fa
       {assets.map((asset) => (
         <div key={asset.id} className="overflow-hidden rounded-lg border border-slate-700 bg-slate-900/40">
           <div className="aspect-video bg-slate-950">
-            {asset.media_type === "image" && (asset.thumbnail_url || asset.public_url) ? (
-              <img src={asset.thumbnail_url || asset.public_url || ""} alt={asset.title || "Media asset"} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-            ) : asset.media_type === "video" && asset.public_url ? (
-              <video src={asset.public_url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
-            ) : (
-              <div className="flex h-full items-center justify-center text-slate-600"><Library size={32} /></div>
-            )}
+            {asset.media_type === "image" && (asset.thumbnail_url || asset.public_url) ? <img src={asset.thumbnail_url || asset.public_url || ""} alt={asset.title || "Media asset"} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+              : asset.media_type === "video" && asset.public_url ? <video src={asset.public_url} className="h-full w-full object-cover" controls playsInline preload="metadata" />
+                : (asset.media_type === "audio" || asset.media_type === "voice") && asset.public_url ? <div className="flex h-full flex-col items-center justify-center gap-4 p-5"><Mic2 size={40} className="text-primary-400" /><audio src={asset.public_url} controls preload="metadata" className="w-full" /></div>
+                  : <div className="flex h-full items-center justify-center text-slate-600"><Library size={32} /></div>}
           </div>
           <div className="space-y-3 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-100">{asset.title || "AI asset"}</p>
-                <p className="text-xs text-slate-500">{brandName(asset.brand_id)} · {asset.provider || "provider"}</p>
-              </div>
-              <button onClick={() => onFavorite(asset)} className="rounded p-1 hover:bg-slate-800" title="Favoritt">
-                <Star size={15} className={asset.is_favorite ? "fill-amber-400 text-amber-400" : "text-slate-500"} />
-              </button>
-            </div>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-100">{asset.title || "AI asset"}</p><p className="text-xs text-slate-500">{brandName(asset.brand_id)} · {asset.provider || "provider"}</p></div><button onClick={() => onFavorite(asset)} className="rounded p-1 hover:bg-slate-800" title="Favoritt"><Star size={15} className={asset.is_favorite ? "fill-amber-400 text-amber-400" : "text-slate-500"} /></button></div>
             <div className="flex flex-wrap gap-2">
-              {asset.public_url && (
-                <Button asChild size="sm" variant="ghost" className="gap-1.5">
-                  <a href={asset.public_url} download target="_blank" rel="noreferrer">
-                    <Download size={13} />
-                    Last ned
-                  </a>
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => onVariant(asset)} className="gap-1.5">
-                <Wand2 size={13} />
-                Variant
-              </Button>
-              <Button size="sm" variant={asset.exported_to_content_hub_at ? "secondary" : "outline"} disabled={Boolean(asset.exported_to_content_hub_at) || busy === `export-${asset.id}`} onClick={() => onExport(asset.id)} className="gap-1.5">
-                {busy === `export-${asset.id}` ? <Loader2 size={13} className="animate-spin" /> : asset.exported_to_content_hub_at ? <CheckCircle size={13} /> : <Send size={13} />}
-                {asset.exported_to_content_hub_at ? "I Hub" : "Content Hub"}
-              </Button>
+              {asset.public_url && <Button asChild size="sm" variant="ghost" className="gap-1.5"><a href={asset.public_url} download target="_blank" rel="noreferrer"><Download size={13} />Last ned</a></Button>}
+              {asset.media_type === "image" && <Button size="sm" variant="ghost" onClick={() => onVariant(asset)} className="gap-1.5"><Wand2 size={13} />Variant</Button>}
+              <Button size="sm" variant={asset.exported_to_content_hub_at ? "secondary" : "outline"} disabled={Boolean(asset.exported_to_content_hub_at) || busy === `export-${asset.id}`} onClick={() => onExport(asset.id)} className="gap-1.5">{busy === `export-${asset.id}` ? <Loader2 size={13} className="animate-spin" /> : asset.exported_to_content_hub_at ? <CheckCircle size={13} /> : <Send size={13} />}{asset.exported_to_content_hub_at ? "I Hub" : "Content Hub"}</Button>
             </div>
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+function PlanPanel({ plan, onCopy }: { plan: MediaPromptPlan | null; onCopy: () => void }) {
+  if (!plan) return <Card><CardHeader><CardTitle>Produksjonsplan</CardTitle><CardDescription>Prompt Director lager en validert plan for neste jobb.</CardDescription></CardHeader><CardContent className="text-sm text-slate-500">Ingen plan ennå.</CardContent></Card>;
+  return (
+    <Card>
+      <CardHeader><CardTitle className="flex items-center justify-between gap-3">Produksjonsplan<Badge variant="outline">{plan.providerRecommendation.displayName}</Badge></CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><Mini label="Type" value={plan.mediaType} /><Mini label="Bruk" value={plan.useCase || plan.operation} /><Mini label="Format" value={plan.aspectRatio || plan.outputFormat || "auto"} /><Mini label="Kost" value={costLabel(plan.estimatedCostTier)} /></div>
+        <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3"><div className="mb-2 flex items-center justify-between"><span className="text-xs font-medium text-slate-300">Forbedret instruksjon</span><Button size="sm" variant="ghost" onClick={onCopy} className="gap-1.5"><Copy size={13} />Kopier</Button></div><pre className="max-h-72 whitespace-pre-wrap text-xs leading-5 text-slate-300">{plan.optimizedPrompt}</pre></div>
+        <p className="text-xs text-slate-400">{plan.providerRecommendation.reason}</p>
+      </CardContent>
+    </Card>
   );
 }
 
 function TaskStudio({ title, icon: Icon, tasks, onPick, disabled = false }: { title: string; icon: ElementType; tasks: string[]; onPick: (task: string) => void; disabled?: boolean }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Icon size={18} className="text-primary-400" />{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {tasks.map((task) => (
-          <button key={task} disabled={disabled} onClick={() => onPick(task)} className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-left text-sm text-slate-200 transition hover:border-primary-400/60 disabled:opacity-50">
-            {task}
-          </button>
-        ))}
-      </CardContent>
-    </Card>
-  );
+  return <Card><CardHeader><CardTitle className="flex items-center gap-2"><Icon size={18} className="text-primary-400" />{title}</CardTitle>{disabled && <CardDescription>Ingen tilkoblet provider rapporterer nødvendig capability akkurat nå.</CardDescription>}</CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{tasks.map((task) => <button key={task} disabled={disabled} onClick={() => onPick(task)} className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-left text-sm text-slate-200 transition hover:border-primary-400/60 disabled:cursor-not-allowed disabled:opacity-40">{task}</button>)}</CardContent></Card>;
 }
 
-function CapabilityShell({ title, icon: Icon, capability }: { title: string; icon: ElementType; capability?: boolean }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Icon size={18} className="text-primary-400" />{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className={`rounded-lg border p-4 ${capability ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-slate-700 bg-slate-900/40 text-slate-400"}`}>
-          {capability ? "Capability tilgjengelig. Bruk Create for provider-styrt generering." : "Ingen tilkoblet provider rapporterer denne capabilityen nå."}
-        </div>
-      </CardContent>
-    </Card>
-  );
+function CapabilityNotice({ title, text }: { title: string; text: string }) {
+  return <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4"><p className="font-medium text-slate-200">{title}</p><p className="mt-1 text-sm leading-6 text-slate-400">{text}</p></div>;
 }
 
 function CapabilityRow({ label, values }: { label: string; values: Record<string, boolean> }) {
   const entries = Object.entries(values || {});
-  return (
-    <div>
-      <p className="mb-1 text-xs text-slate-500">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {entries.length === 0 && <Badge variant="secondary">Ingen</Badge>}
-        {entries.map(([key, value]) => (
-          <Badge key={key} variant={value ? "success" : "secondary"}>{key}</Badge>
-        ))}
-      </div>
-    </div>
-  );
+  return <div><p className="mb-1 text-xs text-slate-500">{label}</p><div className="flex flex-wrap gap-1.5">{entries.length === 0 && <Badge variant="secondary">Ingen</Badge>}{entries.map(([key, value]) => <Badge key={key} variant={value ? "success" : "secondary"}>{key}</Badge>)}</div></div>;
 }
 
-function BrandStudio({ brands }: { brands: { id: string; name: string; color: string; tone: string; audience: string }[] }) {
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {brands.map((brand) => (
-        <Card key={brand.id}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="h-4 w-4 rounded-full" style={{ backgroundColor: brand.color }} />
-              <div>
-                <h3 className="font-medium text-slate-100">{brand.name}</h3>
-                <p className="text-xs text-slate-500">{brand.tone}</p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs leading-5 text-slate-400">{brand.audience}</p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
+function BrandStudio() {
+  return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{BRANDS.map((brand) => <Card key={brand.id}><CardContent className="p-4"><div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: brand.color }} /><div><h3 className="font-medium text-slate-100">{brand.name}</h3><p className="text-xs text-slate-500">{brand.tone || ""}</p></div></div><p className="mt-3 text-xs leading-5 text-slate-400">{brand.target_audience || ""}</p></CardContent></Card>)}</div>;
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+  return <div><label className="mb-1 block text-xs text-slate-400">{label}</label><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100">{options.map((option) => <option key={option.value || "auto"} value={option.value}>{option.label}</option>)}</select></div>;
+}
+
+function Mini({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3"><p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 truncate text-sm font-medium text-slate-200">{value}</p></div>;
 }
