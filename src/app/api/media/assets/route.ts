@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     let query = context.supabase
       .from("media_assets")
-      .select("*, media_projects(id,name)")
+      .select("*, media_projects!media_assets_project_id_fkey(id,name)")
       .eq("organization_id", context.scope.organizationId)
       .order("created_at", { ascending: false })
       .limit(limit);
