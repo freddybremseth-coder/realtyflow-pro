@@ -128,6 +128,7 @@ const GROUPS: Array<{
     icon: "Clapperboard",
     hrefs: [
       "/content-studio",
+      "/ai-personal-brand",
       "/content-hub",
       "/image-studio",
       "/website-cms",
@@ -220,6 +221,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
   MARKETING: [
     "/attribution",
     "/ad-campaigns",
+    "/ai-personal-brand",
     "/analytics",
     "/communications",
     "/goals",
