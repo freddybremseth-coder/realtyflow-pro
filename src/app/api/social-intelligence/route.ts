@@ -14,20 +14,28 @@ import {
   analyzeAndPersistProfile,
   compactAnalysisForClient,
   acceptProfileSection,
+  decideProfileSuggestion,
+  generateProfileSuggestions,
   getSocialRouteContext,
+  importKnowledgeFile,
   linkSocialEntity,
   loadSocialDashboard,
   saveBrandProfile,
+  saveProfileGoal,
+  saveProfileVariant,
   savePostMetrics,
   saveSocialPost,
+  saveTargetAudience,
   summarizeSafeError,
+  updateKnowledgeItem,
+  updateKnowledgeSource,
   updateRecommendationStatus,
 } from "@/services/social-intelligence/repository";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 192 * 1024;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
 function headers(correlationId: string) {
@@ -184,6 +192,56 @@ export async function POST(request: NextRequest) {
       const recommendation = await updateRecommendationStatus(context, parsed.recommendation);
       const dashboard = await loadSocialDashboard(context);
       return NextResponse.json({ ok: true, correlationId, recommendation, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "import_knowledge_file") {
+      assertRateLimit(`${context.organizationId}:${context.userEmail}:knowledge-import`, 3);
+      const result = await importKnowledgeFile(context, parsed.import);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, ...result, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "update_knowledge_item") {
+      const item = await updateKnowledgeItem(context, parsed.item);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, item, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "update_knowledge_source") {
+      const source = await updateKnowledgeSource(context, parsed.source);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, source, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "save_profile_goal") {
+      const goal = await saveProfileGoal(context, parsed.goal);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, goal, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "save_target_audience") {
+      const audience = await saveTargetAudience(context, parsed.audience);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, audience, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "save_profile_variant") {
+      const variant = await saveProfileVariant(context, parsed.variant);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, variant, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "generate_profile_suggestions") {
+      assertRateLimit(`${context.organizationId}:${context.userEmail}:profile-builder`, 3);
+      const result = await generateProfileSuggestions(context, parsed.payload);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, ...result, dashboard }, { headers: headers(correlationId) });
+    }
+
+    if (parsed.action === "decide_profile_suggestion") {
+      const suggestion = await decideProfileSuggestion(context, parsed.decision);
+      const dashboard = await loadSocialDashboard(context);
+      return NextResponse.json({ ok: true, correlationId, suggestion, dashboard }, { headers: headers(correlationId) });
     }
 
     return NextResponse.json({ ok: false, error: "Unsupported action" }, { status: 400, headers: headers(correlationId) });

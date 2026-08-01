@@ -2,21 +2,33 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
+  BookOpen,
   CalendarDays,
+  Check,
   CheckCircle2,
+  Database,
+  Eye,
+  EyeOff,
   FileText,
+  GitCompare,
+  Layers3,
   Link2,
   Loader2,
   MessageSquareText,
   RefreshCw,
   Save,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Target,
   TrendingUp,
+  Upload,
   UserRound,
+  Users,
   Wand2,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +99,63 @@ type Dashboard = {
   metrics: Array<{ id: string; post_id: string; impressions: number; reactions: number; comments: number; shares: number; saves: number; clicks: number; leads: number; meetings: number; sales: number; recorded_at: string }>;
   recommendations: Array<{ id: string; priority: string; category: string; title: string; description: string; rationale: string | null; status: string; action_type: string | null; evidence_json: Record<string, unknown> }>;
   links: Array<{ id: string; social_entity_type: string; social_entity_id: string; crm_entity_type: string; crm_entity_id: string; relationship_type: string; created_at: string }>;
+  knowledgeSources: Array<{
+    id: string;
+    source_type: string;
+    source_name: string;
+    source_filename: string | null;
+    mime_type: string | null;
+    content_hash: string;
+    item_count: number;
+    status: string;
+    visibility: string;
+    ai_use_allowed: boolean;
+    public_use_allowed: boolean;
+    imported_at: string;
+    source_metadata_json: Record<string, unknown>;
+  }>;
+  knowledgeItems: Array<{
+    id: string;
+    source_id: string | null;
+    source_type: string;
+    source_name: string;
+    source_ref: string | null;
+    source_excerpt: string | null;
+    category: string;
+    subcategory: string | null;
+    title: string;
+    content: string;
+    summary: string | null;
+    tags: string[];
+    visibility: string;
+    verification_status: string;
+    confidence: number;
+    public_use_allowed: boolean;
+    sensitive: boolean;
+    allowed_profile_types: string[];
+    platforms: string[];
+    fact_type: string;
+    possible_duplicate_of: string | null;
+    conflict_group: string | null;
+    conflict_reason: string | null;
+    review_notes: string | null;
+    created_at: string;
+  }>;
+  profileGoals: Array<{ id: string; name: string; description: string | null; primary_platform: string; profile_type: string; success_metrics: string[]; priority: number; is_active: boolean }>;
+  targetAudiences: Array<{ id: string; name: string; description: string | null; markets: string[]; needs: string[]; objections: string[]; languages: string[]; is_active: boolean }>;
+  profileVariants: Array<{ id: string; name: string; profile_type: string; primary_platform: string; goal_id: string | null; audience_id: string | null; tone: string[]; focus_tags: string[]; instructions: string | null; status: string; generated_profile_json: Record<string, unknown>; approved_profile_json: Record<string, unknown>; approved_suggestion_ids: string[]; coverage_json: Record<string, unknown>; last_generated_at: string | null }>;
+  profileSuggestions: Array<{ id: string; variant_id: string; field_key: string; label: string; suggested_value_json: unknown; current_value_json: unknown; rationale: string | null; confidence: number; source_knowledge_ids: string[]; source_summary_json: Array<{ id: string; title: string; category: string; sourceName: string; sourceRef: string | null; excerpt: string | null }>; safety_warnings: string[]; status: string; approved_value_json: unknown; created_at: string }>;
+  knowledgeSummary: {
+    totalItems: number;
+    needsReview: number;
+    approved: number;
+    rejected: number;
+    duplicates: number;
+    conflicts: number;
+    sensitive: number;
+    publicApproved: number;
+    activeSources: number;
+  };
   overviewScores: Record<string, ScoreItem>;
   performance: {
     engagementRate: number | null;
@@ -106,6 +175,8 @@ type Dashboard = {
     publishedPosts: number;
     scheduledPosts: number;
     recommendations: number;
+    knowledgeNeedsReview: number;
+    profileSuggestions: number;
   };
 };
 
@@ -116,6 +187,10 @@ const text = {
     overview: "Oversikt",
     brand: "Brand Profile",
     optimizer: "Profile Optimizer",
+    knowledge: "Kunnskap",
+    sources: "Datakilder",
+    builder: "Profilbygger",
+    variants: "Varianter",
     strategy: "Content Strategy",
     studio: "Post Studio",
     calendar: "Kalender",
@@ -136,6 +211,10 @@ const text = {
     overview: "Overview",
     brand: "Brand Profile",
     optimizer: "Profile Optimizer",
+    knowledge: "Knowledge",
+    sources: "Sources",
+    builder: "Profile Builder",
+    variants: "Variants",
     strategy: "Content Strategy",
     studio: "Post Studio",
     calendar: "Calendar",
@@ -227,6 +306,27 @@ function numberOrEmpty(value: number | string) {
 function firstWords(value: string, max = 18) {
   const words = value.split(/\s+/).filter(Boolean);
   return words.length > max ? `${words.slice(0, max).join(" ")}...` : value;
+}
+
+function valueToText(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${key}: ${Array.isArray(item) ? item.join(", ") : String(item ?? "")}`)
+      .join("\n");
+  }
+  return String(value ?? "");
+}
+
+function badgeVariantForReview(status: string) {
+  if (status === "user_confirmed" || status === "document_verified" || status === "approved") return "success" as const;
+  if (status === "rejected" || status === "deleted") return "destructive" as const;
+  if (status === "conflict" || status === "outdated") return "warning" as const;
+  return "outline" as const;
+}
+
+function sourceShortHash(hash: string | null | undefined) {
+  return hash ? hash.replace("sha256:v1:", "").slice(0, 8) : "ingen hash";
 }
 
 function Field({
@@ -333,6 +433,48 @@ export function SocialIntelligenceClient() {
     crmEntityId: "",
     relationshipType: "attributed_to",
   });
+  const [knowledgeImport, setKnowledgeImport] = useState({
+    sourceName: "Opplastet masterprofil",
+    sourceType: "master_profile",
+    filename: "",
+    mimeType: "text/markdown",
+    text: "",
+    aiUseAllowed: true,
+    publicUseAllowed: false,
+    visibility: "internal",
+  });
+  const [goalForm, setGoalForm] = useState({
+    id: "",
+    name: "Bygge profesjonell LinkedIn-profil",
+    description: "Tydelig personlig profil med offentlig godkjente fakta og kildebevis.",
+    primaryPlatform: "linkedin",
+    profileType: "linkedin",
+    successMetrics: "profilvisninger, relevante henvendelser, tillit",
+    priority: 2,
+    isActive: true,
+  });
+  const [audienceForm, setAudienceForm] = useState({
+    id: "",
+    name: "Skandinaviske boligkjøpere i Spania",
+    description: "Personer som vurderer kjøp, rådgivning eller nybygg i Spania.",
+    markets: "Spania, Costa Blanca",
+    needs: "trygg prosess, lokal kunnskap, tydelige vurderinger",
+    objections: "usikkerhet, språk, risiko, finansiering",
+    languages: ["no"] as string[],
+    isActive: true,
+  });
+  const [variantForm, setVariantForm] = useState({
+    id: "",
+    name: "LinkedIn hovedprofil",
+    profileType: "linkedin",
+    primaryPlatform: "linkedin",
+    goalId: "",
+    audienceId: "",
+    tone: "professional, warm, grounded",
+    focusTags: "real_estate, ai_crm, consultant",
+    instructions: "Bruk bare godkjente offentlige fakta. Hold private og sensitive opplysninger utenfor profiltekst.",
+    status: "draft",
+  });
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "error" | "success" | "info"; text: string } | null>(null);
@@ -368,6 +510,41 @@ export function SocialIntelligenceClient() {
       setMetricsForm((current) => current.postId ? current : { ...current, postId: firstPost.id });
       setLinkForm((current) => current.postId ? current : { ...current, postId: firstPost.id });
     }
+    const firstGoal = dashboard?.profileGoals?.[0];
+    const firstAudience = dashboard?.targetAudiences?.[0];
+    const firstVariant = dashboard?.profileVariants?.[0];
+    if (firstGoal) setGoalForm((current) => current.id ? current : {
+      id: firstGoal.id,
+      name: firstGoal.name,
+      description: firstGoal.description || "",
+      primaryPlatform: firstGoal.primary_platform,
+      profileType: firstGoal.profile_type,
+      successMetrics: listToText(firstGoal.success_metrics),
+      priority: firstGoal.priority,
+      isActive: firstGoal.is_active,
+    });
+    if (firstAudience) setAudienceForm((current) => current.id ? current : {
+      id: firstAudience.id,
+      name: firstAudience.name,
+      description: firstAudience.description || "",
+      markets: listToText(firstAudience.markets),
+      needs: listToText(firstAudience.needs),
+      objections: listToText(firstAudience.objections),
+      languages: firstAudience.languages || ["no"],
+      isActive: firstAudience.is_active,
+    });
+    if (firstVariant) setVariantForm((current) => current.id ? current : {
+      id: firstVariant.id,
+      name: firstVariant.name,
+      profileType: firstVariant.profile_type,
+      primaryPlatform: firstVariant.primary_platform,
+      goalId: firstVariant.goal_id || firstGoal?.id || "",
+      audienceId: firstVariant.audience_id || firstAudience?.id || "",
+      tone: listToText(firstVariant.tone),
+      focusTags: listToText(firstVariant.focus_tags),
+      instructions: firstVariant.instructions || "",
+      status: firstVariant.status,
+    });
   }, [dashboard]);
 
   const callAction = async (action: Record<string, unknown>, success: string) => {
@@ -416,6 +593,18 @@ export function SocialIntelligenceClient() {
   const selectedIdea = useMemo(
     () => dashboard?.ideas.find((idea) => idea.id === postForm.ideaId) || null,
     [dashboard?.ideas, postForm.ideaId],
+  );
+  const sourceById = useMemo(
+    () => new Map((dashboard?.knowledgeSources || []).map((source) => [source.id, source])),
+    [dashboard?.knowledgeSources],
+  );
+  const activeVariant = useMemo(
+    () => dashboard?.profileVariants.find((variant) => variant.id === variantForm.id) || dashboard?.profileVariants[0] || null,
+    [dashboard?.profileVariants, variantForm.id],
+  );
+  const activeVariantSuggestions = useMemo(
+    () => (dashboard?.profileSuggestions || []).filter((suggestion) => suggestion.variant_id === activeVariant?.id),
+    [dashboard?.profileSuggestions, activeVariant?.id],
   );
 
   const seedPostFromIdea = () => {
@@ -528,6 +717,129 @@ export function SocialIntelligenceClient() {
       "CRM-koblingen er lagret.",
     );
 
+  const readKnowledgeFile = async (file: File | undefined) => {
+    if (!file) return;
+    const text = await file.text();
+    setKnowledgeImport((current) => ({
+      ...current,
+      filename: file.name,
+      mimeType: file.type || (file.name.endsWith(".md") ? "text/markdown" : "text/plain"),
+      sourceName: current.sourceName || file.name,
+      sourceType: file.name.endsWith(".md") ? "uploaded_markdown" : "uploaded_text",
+      text,
+    }));
+  };
+
+  const importKnowledge = () =>
+    callAction(
+      {
+        action: "import_knowledge_file",
+        import: knowledgeImport,
+      },
+      "Kunnskapskilden er importert. Elementene ligger klare til gjennomgang.",
+    );
+
+  const reviewKnowledgeItem = (
+    item: Dashboard["knowledgeItems"][number],
+    verificationStatus: string,
+    publicUseAllowed: boolean,
+  ) =>
+    callAction(
+      {
+        action: "update_knowledge_item",
+        item: {
+          id: item.id,
+          verificationStatus,
+          publicUseAllowed,
+          visibility: publicUseAllowed ? "public_approved" : item.sensitive ? "private" : "internal",
+        },
+      },
+      publicUseAllowed ? "Elementet er godkjent for offentlig profilbruk." : verificationStatus === "rejected" ? "Elementet er avvist." : "Elementet er godkjent internt.",
+    );
+
+  const updateKnowledgeSourceSetting = (id: string, source: Record<string, unknown>) =>
+    callAction({ action: "update_knowledge_source", source: { id, ...source } }, "Datakilden er oppdatert.");
+
+  const saveGoal = () =>
+    callAction(
+      {
+        action: "save_profile_goal",
+        goal: {
+          id: goalForm.id || undefined,
+          name: goalForm.name,
+          description: goalForm.description,
+          primaryPlatform: goalForm.primaryPlatform,
+          profileType: goalForm.profileType,
+          successMetrics: textToList(goalForm.successMetrics),
+          priority: goalForm.priority,
+          isActive: goalForm.isActive,
+        },
+      },
+      "Profilmålet er lagret.",
+    );
+
+  const saveAudience = () =>
+    callAction(
+      {
+        action: "save_target_audience",
+        audience: {
+          id: audienceForm.id || undefined,
+          name: audienceForm.name,
+          description: audienceForm.description,
+          markets: textToList(audienceForm.markets),
+          needs: textToList(audienceForm.needs),
+          objections: textToList(audienceForm.objections),
+          languages: audienceForm.languages,
+          isActive: audienceForm.isActive,
+        },
+      },
+      "Målgruppen er lagret.",
+    );
+
+  const saveVariant = () =>
+    callAction(
+      {
+        action: "save_profile_variant",
+        variant: {
+          id: variantForm.id || undefined,
+          name: variantForm.name,
+          profileType: variantForm.profileType,
+          primaryPlatform: variantForm.primaryPlatform,
+          goalId: variantForm.goalId || null,
+          audienceId: variantForm.audienceId || null,
+          tone: textToList(variantForm.tone),
+          focusTags: textToList(variantForm.focusTags),
+          instructions: variantForm.instructions,
+          status: variantForm.status,
+        },
+      },
+      "Profilvarianten er lagret.",
+    );
+
+  const generateSuggestions = async () => {
+    const variantPayload = await saveVariant();
+    const variantId = variantPayload?.variant?.id || variantForm.id || activeVariant?.id;
+    if (!variantId) return;
+    setVariantForm((current) => ({ ...current, id: variantId }));
+    await callAction(
+      { action: "generate_profile_suggestions", payload: { variantId } },
+      "Profilforslagene er bygget fra godkjente kilder.",
+    );
+  };
+
+  const decideSuggestion = (id: string, status: "approved" | "rejected", approvedValue?: unknown) =>
+    callAction(
+      {
+        action: "decide_profile_suggestion",
+        decision: {
+          id,
+          status,
+          approvedValue,
+        },
+      },
+      status === "approved" ? "Profilforslaget er godkjent og versjonert." : "Profilforslaget er avvist.",
+    );
+
   const scoreIcons = [Sparkles, UserRound, TrendingUp, FileText, CalendarDays, Target, BarChart3, Link2];
   const overviewScoreItems = dashboard?.overviewScores
     ? [
@@ -570,6 +882,12 @@ export function SocialIntelligenceClient() {
             <Badge variant="default">LinkedIn MVP</Badge>
             <Badge variant="outline">Server-side AI</Badge>
             <Badge variant="outline">CRM attribution</Badge>
+            <Badge variant={dashboard?.knowledgeSummary?.needsReview ? "warning" : "outline"}>
+              {dashboard?.knowledgeSummary?.needsReview || 0} til gjennomgang
+            </Badge>
+            <Badge variant={dashboard?.knowledgeSummary?.publicApproved ? "success" : "outline"}>
+              {dashboard?.knowledgeSummary?.publicApproved || 0} offentlige fakta
+            </Badge>
             {dashboard?.rawProfile?.last_analyzed_at ? <Badge variant="success">Analysert</Badge> : <Badge variant="warning">Onboarding</Badge>}
           </div>
         </div>
@@ -597,6 +915,10 @@ export function SocialIntelligenceClient() {
             <TabsTrigger value="overview">{t.overview}</TabsTrigger>
             <TabsTrigger value="brand">{t.brand}</TabsTrigger>
             <TabsTrigger value="optimizer">{t.optimizer}</TabsTrigger>
+            <TabsTrigger value="knowledge">{t.knowledge}</TabsTrigger>
+            <TabsTrigger value="sources">{t.sources}</TabsTrigger>
+            <TabsTrigger value="builder">{t.builder}</TabsTrigger>
+            <TabsTrigger value="variants">{t.variants}</TabsTrigger>
             <TabsTrigger value="strategy">{t.strategy}</TabsTrigger>
             <TabsTrigger value="studio">{t.studio}</TabsTrigger>
             <TabsTrigger value="calendar">{t.calendar}</TabsTrigger>
@@ -821,6 +1143,411 @@ export function SocialIntelligenceClient() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="knowledge" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            {[
+              { label: "Elementer", count: dashboard?.knowledgeSummary?.totalItems || 0, icon: BookOpen },
+              { label: "Må vurderes", count: dashboard?.knowledgeSummary?.needsReview || 0, icon: AlertTriangle },
+              { label: "Mulige duplikater", count: dashboard?.knowledgeSummary?.duplicates || 0, icon: GitCompare },
+              { label: "Sensitive", count: dashboard?.knowledgeSummary?.sensitive || 0, icon: ShieldCheck },
+            ].map(({ label, count, icon: Icon }) => (
+              <Card key={label}>
+                <CardContent className="flex items-center justify-between gap-3 p-4">
+                  <div>
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="text-2xl font-semibold text-slate-50">{count}</p>
+                  </div>
+                  <Icon className="text-primary-300" size={22} />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Importer kunnskap</CardTitle>
+              <CardDescription>MD/TXT støttes i denne versjonen. Innholdet behandles som brukeropplastet data.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Kildenavn">
+                  <Input value={knowledgeImport.sourceName} onChange={(event) => setKnowledgeImport({ ...knowledgeImport, sourceName: event.target.value })} />
+                </Field>
+                <Field label="Kildetype">
+                  <select value={knowledgeImport.sourceType} onChange={(event) => setKnowledgeImport({ ...knowledgeImport, sourceType: event.target.value })} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    {["master_profile", "uploaded_markdown", "uploaded_text", "manual_note", "linkedin_profile", "website", "company_profile", "crm_profile", "other"].map((type) => (
+                      <option key={type} value={type}>{type.replace("_", " ")}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Fil">
+                  <Input type="file" accept=".md,.txt,text/markdown,text/plain" onChange={(event) => void readKnowledgeFile(event.target.files?.[0])} />
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-3 text-sm text-slate-300">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={knowledgeImport.aiUseAllowed} onChange={(event) => setKnowledgeImport({ ...knowledgeImport, aiUseAllowed: event.target.checked })} />
+                  Kan brukes av profilbyggeren
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={knowledgeImport.publicUseAllowed} onChange={(event) => setKnowledgeImport({ ...knowledgeImport, publicUseAllowed: event.target.checked })} />
+                  Ikke-sensitive elementer kan foreslås offentlig etter godkjenning
+                </label>
+              </div>
+              <TextArea
+                className="min-h-56"
+                value={knowledgeImport.text}
+                onChange={(event) => setKnowledgeImport({ ...knowledgeImport, text: event.target.value })}
+                placeholder="Lim inn markdown eller tekst hvis du ikke velger fil..."
+              />
+              <Button onClick={() => void importKnowledge()} disabled={Boolean(working) || knowledgeImport.text.trim().length < 20}>
+                {working === "import_knowledge_file" ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Upload size={16} className="mr-2" />}
+                Importer kunnskap
+              </Button>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {(dashboard?.knowledgeItems || [])
+              .slice()
+              .sort((a, b) => (a.verification_status === "needs_review" ? -1 : 1) - (b.verification_status === "needs_review" ? -1 : 1))
+              .slice(0, 80)
+              .map((item) => {
+                const source = item.source_id ? sourceById.get(item.source_id) : null;
+                return (
+                  <Card key={item.id}>
+                    <CardHeader>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <CardTitle className="text-base">{item.title}</CardTitle>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant={badgeVariantForReview(item.verification_status)}>{item.verification_status.replace("_", " ")}</Badge>
+                            <Badge variant="outline">{item.category}</Badge>
+                            {item.sensitive ? <Badge variant="destructive">sensitiv</Badge> : null}
+                            {item.public_use_allowed ? <Badge variant="success">offentlig tillatt</Badge> : null}
+                            {item.possible_duplicate_of ? <Badge variant="warning">mulig duplikat</Badge> : null}
+                            {item.conflict_group ? <Badge variant="warning">mulig konflikt</Badge> : null}
+                          </div>
+                        </div>
+                        <span className="text-xs text-slate-500">{Math.round(Number(item.confidence || 0) * 100)}%</span>
+                      </div>
+                      <CardDescription>
+                        {source?.source_name || item.source_name} · {item.source_ref || "kilde"} · {sourceShortHash(source?.content_hash)}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <p className="text-sm leading-6 text-slate-300">{firstWords(item.content, 70)}</p>
+                      {item.review_notes || item.conflict_reason ? (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                          {item.review_notes || item.conflict_reason}
+                        </div>
+                      ) : null}
+                      {item.tags?.length ? <p className="text-xs text-slate-500">Tags: {item.tags.join(", ")}</p> : null}
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => void reviewKnowledgeItem(item, "user_confirmed", false)} disabled={Boolean(working)}>
+                          <Check size={14} className="mr-2" />
+                          Godkjenn internt
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => void reviewKnowledgeItem(item, "user_confirmed", true)} disabled={Boolean(working) || item.sensitive}>
+                          <Eye size={14} className="mr-2" />
+                          Godkjenn offentlig
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => void reviewKnowledgeItem(item, "rejected", false)} disabled={Boolean(working)}>
+                          <XCircle size={14} className="mr-2" />
+                          Avvis
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="sources" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Datakilder</CardTitle>
+              <CardDescription>Velg hvilke kilder profilbyggeren kan bruke. Offentlig profiltekst krever også godkjente elementer.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-2">
+              {dashboard?.knowledgeSources.length ? dashboard.knowledgeSources.map((source) => (
+                <div key={source.id} className="rounded-lg border border-slate-700/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-slate-100">{source.source_name}</h3>
+                      <p className="mt-1 text-sm text-slate-500">{source.source_type.replace("_", " ")} · {source.source_filename || "tekst"} · {sourceShortHash(source.content_hash)}</p>
+                    </div>
+                    <Badge variant={source.status === "active" ? "success" : "outline"}>{source.status}</Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">Elementer</p>
+                      <p className="text-xl font-semibold text-slate-50">{source.item_count}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">AI-bruk</p>
+                      <p className="text-sm text-slate-100">{source.ai_use_allowed ? "Tillatt" : "Av"}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">Offentlig</p>
+                      <p className="text-sm text-slate-100">{source.public_use_allowed ? "Kandidat" : "Av"}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => void updateKnowledgeSourceSetting(source.id, { aiUseAllowed: !source.ai_use_allowed })}>
+                      {source.ai_use_allowed ? <EyeOff size={14} className="mr-2" /> : <Eye size={14} className="mr-2" />}
+                      {source.ai_use_allowed ? "Slå av AI-bruk" : "Bruk i profilbygger"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void updateKnowledgeSourceSetting(source.id, { publicUseAllowed: !source.public_use_allowed })}>
+                      <ShieldCheck size={14} className="mr-2" />
+                      {source.public_use_allowed ? "Fjern offentlig kandidat" : "Tillat offentlige kandidater"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void updateKnowledgeSourceSetting(source.id, { status: source.status === "active" ? "disabled" : "active" })}>
+                      <Database size={14} className="mr-2" />
+                      {source.status === "active" ? "Deaktiver" : "Aktiver"}
+                    </Button>
+                  </div>
+                </div>
+              )) : <p className="text-sm text-slate-400">Ingen datakilder importert ennå.</p>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="builder" className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Profilmål</CardTitle>
+                <CardDescription>Hva profilen skal oppnå.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Field label="Navn">
+                  <Input value={goalForm.name} onChange={(event) => setGoalForm({ ...goalForm, name: event.target.value })} />
+                </Field>
+                <Field label="Beskrivelse">
+                  <TextArea value={goalForm.description} onChange={(event) => setGoalForm({ ...goalForm, description: event.target.value })} />
+                </Field>
+                <Field label="Suksessmål">
+                  <Input value={goalForm.successMetrics} onChange={(event) => setGoalForm({ ...goalForm, successMetrics: event.target.value })} />
+                </Field>
+                <Button size="sm" onClick={() => void saveGoal()} disabled={Boolean(working)}>
+                  <Save size={14} className="mr-2" />
+                  Lagre mål
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Målgruppe</CardTitle>
+                <CardDescription>Hvem profilen skal treffe.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Field label="Navn">
+                  <Input value={audienceForm.name} onChange={(event) => setAudienceForm({ ...audienceForm, name: event.target.value })} />
+                </Field>
+                <Field label="Beskrivelse">
+                  <TextArea value={audienceForm.description} onChange={(event) => setAudienceForm({ ...audienceForm, description: event.target.value })} />
+                </Field>
+                <Field label="Markeder">
+                  <Input value={audienceForm.markets} onChange={(event) => setAudienceForm({ ...audienceForm, markets: event.target.value })} />
+                </Field>
+                <Field label="Behov">
+                  <Input value={audienceForm.needs} onChange={(event) => setAudienceForm({ ...audienceForm, needs: event.target.value })} />
+                </Field>
+                <Button size="sm" onClick={() => void saveAudience()} disabled={Boolean(working)}>
+                  <Users size={14} className="mr-2" />
+                  Lagre målgruppe
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Profilvariant</CardTitle>
+                <CardDescription>Velg retning før forslag bygges.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Field label="Eksisterende variant">
+                  <select value={variantForm.id} onChange={(event) => {
+                    const variant = dashboard?.profileVariants.find((item) => item.id === event.target.value);
+                    if (!variant) {
+                      setVariantForm({ ...variantForm, id: "" });
+                      return;
+                    }
+                    setVariantForm({
+                      id: variant.id,
+                      name: variant.name,
+                      profileType: variant.profile_type,
+                      primaryPlatform: variant.primary_platform,
+                      goalId: variant.goal_id || "",
+                      audienceId: variant.audience_id || "",
+                      tone: listToText(variant.tone),
+                      focusTags: listToText(variant.focus_tags),
+                      instructions: variant.instructions || "",
+                      status: variant.status,
+                    });
+                  }} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    <option value="">Ny variant</option>
+                    {dashboard?.profileVariants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Navn">
+                  <Input value={variantForm.name} onChange={(event) => setVariantForm({ ...variantForm, name: event.target.value })} />
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Type">
+                    <select value={variantForm.profileType} onChange={(event) => setVariantForm({ ...variantForm, profileType: event.target.value })} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                      {["linkedin", "real_estate", "ai_crm", "author", "speaker", "consultant", "website_bio", "general"].map((type) => <option key={type} value={type}>{type.replace("_", " ")}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Plattform">
+                    <select value={variantForm.primaryPlatform} onChange={(event) => setVariantForm({ ...variantForm, primaryPlatform: event.target.value })} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                      {["linkedin", "newsletter", "blog", "facebook", "instagram", "youtube", "other"].map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="Mål">
+                  <select value={variantForm.goalId} onChange={(event) => setVariantForm({ ...variantForm, goalId: event.target.value })} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    <option value="">Ingen</option>
+                    {dashboard?.profileGoals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Målgruppe">
+                  <select value={variantForm.audienceId} onChange={(event) => setVariantForm({ ...variantForm, audienceId: event.target.value })} className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
+                    <option value="">Ingen</option>
+                    {dashboard?.targetAudiences.map((audience) => <option key={audience.id} value={audience.id}>{audience.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Fokus-tags">
+                  <Input value={variantForm.focusTags} onChange={(event) => setVariantForm({ ...variantForm, focusTags: event.target.value })} />
+                </Field>
+                <Field label="Instruks">
+                  <TextArea value={variantForm.instructions} onChange={(event) => setVariantForm({ ...variantForm, instructions: event.target.value })} />
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => void saveVariant()} disabled={Boolean(working)}>
+                    <Save size={14} className="mr-2" />
+                    Lagre variant
+                  </Button>
+                  <Button size="sm" onClick={() => void generateSuggestions()} disabled={Boolean(working)}>
+                    {working === "generate_profile_suggestions" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Sparkles size={14} className="mr-2" />}
+                    Bygg profil med AI
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {activeVariantSuggestions.length ? activeVariantSuggestions.map((suggestion) => (
+              <Card key={suggestion.id}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">{suggestion.label}</CardTitle>
+                      <CardDescription>{suggestion.rationale || "Forslag fra godkjente kilder."}</CardDescription>
+                    </div>
+                    <Badge variant={badgeVariantForReview(suggestion.status)}>{suggestion.status}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 p-3">
+                    <p className="mb-2 text-xs text-slate-500">Forslag</p>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{valueToText(suggestion.suggested_value_json)}</p>
+                  </div>
+                  {suggestion.safety_warnings?.length ? (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      {suggestion.safety_warnings.join(" ")}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-400">Kilder bak forslaget</p>
+                    {suggestion.source_summary_json?.length ? suggestion.source_summary_json.slice(0, 6).map((source) => (
+                      <div key={`${suggestion.id}-${source.id}`} className="rounded-lg border border-slate-700/70 p-3 text-xs text-slate-400">
+                        <span className="font-medium text-slate-200">{source.title}</span> · {source.category} · {source.sourceName} · {source.sourceRef || "kilde"}
+                        {source.excerpt ? <p className="mt-1 text-slate-500">{firstWords(source.excerpt, 28)}</p> : null}
+                      </div>
+                    )) : <p className="text-sm text-slate-500">Ingen kilde knyttet til forslaget.</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => void decideSuggestion(suggestion.id, "approved", suggestion.suggested_value_json)} disabled={Boolean(working) || suggestion.status === "approved"}>
+                      <CheckCircle2 size={14} className="mr-2" />
+                      Godkjenn
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void decideSuggestion(suggestion.id, "rejected")} disabled={Boolean(working) || suggestion.status === "rejected"}>
+                      <XCircle size={14} className="mr-2" />
+                      Avvis
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <Card>
+                <CardContent className="p-6 text-sm text-slate-400">
+                  Ingen forslag ennå. Godkjenn noen ikke-sensitive fakta for offentlig bruk, lagre en variant og bygg profilen.
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="variants" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {dashboard?.profileVariants.length ? dashboard.profileVariants.map((variant) => (
+              <Card key={variant.id}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">{variant.name}</CardTitle>
+                      <CardDescription>{variant.profile_type.replace("_", " ")} · {variant.primary_platform}</CardDescription>
+                    </div>
+                    <Badge variant={variant.status === "approved" ? "success" : variant.status === "generated" ? "default" : "outline"}>{variant.status}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">Kilder valgt</p>
+                      <p className="text-xl font-semibold text-slate-50">{Number(variant.coverage_json?.selectedKnowledgeItems || 0)}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">Offentlige fakta</p>
+                      <p className="text-xl font-semibold text-slate-50">{Number(variant.coverage_json?.publicFactItems || 0)}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-900/60 p-3">
+                      <p className="text-xs text-slate-500">Godkjent</p>
+                      <p className="text-xl font-semibold text-slate-50">{Object.keys(variant.approved_profile_json || {}).length}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-700/70 p-3">
+                    <p className="mb-2 text-xs text-slate-500">Godkjent profil</p>
+                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-300">{valueToText(variant.approved_profile_json || {}) || "Ingen godkjente felt ennå."}</pre>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setVariantForm({
+                      id: variant.id,
+                      name: variant.name,
+                      profileType: variant.profile_type,
+                      primaryPlatform: variant.primary_platform,
+                      goalId: variant.goal_id || "",
+                      audienceId: variant.audience_id || "",
+                      tone: listToText(variant.tone),
+                      focusTags: listToText(variant.focus_tags),
+                      instructions: variant.instructions || "",
+                      status: variant.status,
+                    });
+                  }}>
+                    <SlidersHorizontal size={14} className="mr-2" />
+                    Rediger i profilbygger
+                  </Button>
+                </CardContent>
+              </Card>
+            )) : <p className="text-sm text-slate-400">Ingen profilvarianter ennå.</p>}
           </div>
         </TabsContent>
 

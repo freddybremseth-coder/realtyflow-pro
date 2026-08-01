@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BrandProfileInputSchema,
+  KnowledgeFileImportInputSchema,
   SocialIntelligenceActionSchema,
   SocialProfileImportInputSchema,
 } from "./contracts";
@@ -39,4 +40,31 @@ test("action contract covers server-mediated profile section approval", () => {
   });
 
   assert.equal(action.action, "accept_section");
+});
+
+test("knowledge import schema treats uploaded text as reviewable data", () => {
+  const parsed = KnowledgeFileImportInputSchema.parse({
+    sourceName: "Freddy master profile local fixture",
+    sourceType: "master_profile",
+    filename: "FREDDY_MASTER_PROFILE.md",
+    text: "# Profil\n\n- **Fullt navn:** Test Person\n- Private detaljer skal vurderes før bruk.",
+  });
+
+  assert.equal(parsed.sourceType, "master_profile");
+  assert.equal(parsed.aiUseAllowed, true);
+  assert.equal(parsed.publicUseAllowed, false);
+  assert.equal(parsed.visibility, "internal");
+});
+
+test("action contract covers profile builder suggestion decisions", () => {
+  const action = SocialIntelligenceActionSchema.parse({
+    action: "decide_profile_suggestion",
+    decision: {
+      id: "5b7ae28b-0d3f-4ec5-91c6-f421223f7c18",
+      status: "approved",
+      approvedValue: "Eiendomsrådgiver | AI CRM | Costa Blanca",
+    },
+  });
+
+  assert.equal(action.action, "decide_profile_suggestion");
 });
