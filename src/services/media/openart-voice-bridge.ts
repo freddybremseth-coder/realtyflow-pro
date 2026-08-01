@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -35,6 +36,12 @@ export interface OpenArtBridgeOption {
   formSchema: unknown;
 }
 
+interface OpenArtBridgeDiscovery {
+  expiresAt: number;
+  options: OpenArtBridgeOption[];
+  rawCount: number;
+}
+
 interface ModelCandidate {
   model: string;
   label: string;
@@ -63,7 +70,7 @@ interface StoredAsset {
   title?: string | null;
 }
 
-let optionCache: { expiresAt: number; options: OpenArtBridgeOption[]; rawCount: number } | null = null;
+let optionCache: OpenArtBridgeDiscovery | null = null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -117,73 +124,6 @@ function collectModelCandidates(node: unknown, output: ModelCandidate[], inherit
   }
 }
 
-function flattenSchemaText(node: unknown, path = "", output: string[] = []) {
-  if (Array.isArray(node)) {
-    node.forEach((value, index) => flattenSchemaText(value, `${path}.${index}`, output));
-    return output;
-  }
-  if (!isRecord(node)) {
-    if (typeof node === "string") output.push(`${path}:${node}`);
-    return output;
-  }
-  for (const [key, value] of Object.entries(node)) {
-    const next = path ? `${path}.${key}` : key;
-    output.push(next);
-    flattenSchemaText(value, next, output);
-  }
-  return output;
-}
-
-function schemaSupports(schema: unknown, pattern: RegExp) {
-  return pattern.test(flattenSchemaText(schema).join(" ").toLowerCase());
-}
-
-function candidateLooksRelevant(candidate: ModelCandidate) {
-  const text = `${candidate.model} ${candidate.label} ${candidate.description} ${candidate.mode} ${candidate.modeDescription}`.toLowerCase();
-  const videoMode = /video|avatar|talk|lip|dub/.test(candidate.mode.toLowerCase());
-  const directHint = /lip.?sync|talking|avatar|audio|voice|speech|dub|sound/.test(text);
-  const referenceMode = /element2video|image2video|video2video|reference2video/.test(candidate.mode.toLowerCase());
-  return videoMode && (directHint || referenceMode);
-}
-
-export async function discoverOpenArtVoiceBridgeOptions(options: { force?: boolean } = {}) {
-  if (!options.force && optionCache && optionCache.expiresAt > Date.now()) return optionCache;
-
-  const raw = await callOpenArtTool<unknown>("openart_model_list", {}, 60_000);
-  const candidates: ModelCandidate[] = [];
-  collectModelCandidates(raw, candidates);
-
-  const unique = new Map<string, ModelCandidate>();
-  for (const candidate of candidates.filter(candidateLooksRelevant)) {
-    unique.set(`${candidate.model}:${candidate.mode}`, candidate);
-  }
-
-  const inspected = await Promise.all([...unique.values()].slice(0, 18).map(async (candidate) => {
-    try {
-      const formSchema = await callOpenArtTool<unknown>(
-        "openart_model_form_get",
-        { model: candidate.model, mode: candidate.mode },
-        45_000,
-      );
-      const supportsAudioReference = schemaSupports(formSchema, /audio|voice|speech|sound/);
-      const supportsVisualReference = schemaSupports(formSchema, /visualreference|image|video|startframe|character|portrait|element/);
-      return supportsAudioReference && supportsVisualReference
-        ? { ...candidate, supportsAudioReference, supportsVisualReference, formSchema }
-        : null;
-    } catch {
-      return null;
-    }
-  }));
-
-  const bridgeOptions = inspected.filter((item): item is OpenArtBridgeOption => Boolean(item));
-  optionCache = { expiresAt: Date.now() + 10 * 60_000, options: bridgeOptions, rawCount: candidates.length };
-  return optionCache;
-}
-
-function toolByName(tools: OpenArtToolSummary[], name: string) {
-  return tools.find((tool) => tool.name === name);
-}
-
 function schemaProperties(schema: unknown): Record<string, unknown> {
   if (!isRecord(schema)) return {};
   if (isRecord(schema.properties)) return schema.properties;
@@ -206,11 +146,135 @@ function schemaRequired(schema: unknown): string[] {
   return [];
 }
 
-function propertyValue(definition: unknown, fallback: unknown) {
-  if (!isRecord(definition)) return fallback;
+function definitionText(value: unknown) {
+  try {
+    return JSON.stringify(value || {}).toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function schemaHasExternalAudioInput(schema: unknown) {
+  const properties = schemaProperties(schema);
+  return Object.entries(properties).some(([propertyName, definition]) => {
+    const key = normalizeKey(propertyName);
+    const text = definitionText(definition);
+
+    if (/generateaudio|withaudio|audioenabled|soundenabled|addaudio/.test(key)) return false;
+    if (/visualreferences|references|elements|assets/.test(key)) {
+      return /audio|voice|speech|soundtrack|narration/.test(text);
+    }
+    if (!/audio|voice|speech|soundtrack|narration/.test(key)) return false;
+    if (/boolean/.test(text) && !/url|file|upload|reference|asset|object|string/.test(text)) return false;
+    return /url|file|upload|reference|asset|object|string|visualreference/.test(text) || text === "{}";
+  });
+}
+
+function schemaHasVisualInput(schema: unknown) {
+  const properties = schemaProperties(schema);
+  return Object.entries(properties).some(([propertyName, definition]) => {
+    const key = normalizeKey(propertyName);
+    const text = definitionText(definition);
+    if (/videocount|imagecount|numoutputs|outputvideo|outputimage/.test(key)) return false;
+    if (/visualreferences|references|elements|assets/.test(key)) {
+      return /image|video|visual|character|portrait|startframe/.test(text);
+    }
+    if (!/startframe|image|portrait|character|visual|video|element/.test(key)) return false;
+    return /url|file|upload|reference|asset|object|string|visualreference/.test(text) || text === "{}";
+  });
+}
+
+function candidateScore(candidate: ModelCandidate) {
+  const text = `${candidate.model} ${candidate.label} ${candidate.description} ${candidate.mode} ${candidate.modeDescription}`.toLowerCase();
+  let score = 0;
+  if (/lip.?sync/.test(text)) score += 100;
+  if (/talking|avatar/.test(text)) score += 70;
+  if (/audio|voice|speech|dub/.test(text)) score += 50;
+  if (/element2video|reference2video/.test(candidate.mode.toLowerCase())) score += 25;
+  if (/image2video|video2video/.test(candidate.mode.toLowerCase())) score += 10;
+  return score;
+}
+
+function candidateLooksRelevant(candidate: ModelCandidate) {
+  const text = `${candidate.model} ${candidate.label} ${candidate.description} ${candidate.mode} ${candidate.modeDescription}`.toLowerCase();
+  const videoMode = /video|avatar|talk|lip|dub/.test(candidate.mode.toLowerCase());
+  const directHint = /lip.?sync|talking|avatar|audio|voice|speech|dub|sound/.test(text);
+  const referenceMode = /element2video|image2video|video2video|reference2video/.test(candidate.mode.toLowerCase());
+  return videoMode && (directHint || referenceMode);
+}
+
+export async function discoverOpenArtVoiceBridgeOptions(
+  options: { force?: boolean } = {},
+): Promise<OpenArtBridgeDiscovery> {
+  if (!options.force && optionCache && optionCache.expiresAt > Date.now()) return optionCache;
+
+  const raw = await callOpenArtTool<unknown>("openart_model_list", {}, 60_000);
+  const candidates: ModelCandidate[] = [];
+  collectModelCandidates(raw, candidates);
+
+  const unique = new Map<string, ModelCandidate>();
+  for (const candidate of candidates.filter(candidateLooksRelevant)) {
+    unique.set(`${candidate.model}:${candidate.mode}`, candidate);
+  }
+
+  const candidatesToInspect = [...unique.values()]
+    .sort((left, right) => candidateScore(right) - candidateScore(left))
+    .slice(0, 10);
+
+  const inspected = await Promise.all(candidatesToInspect.map(async (candidate) => {
+    try {
+      const formSchema = await callOpenArtTool<unknown>(
+        "openart_model_form_get",
+        { model: candidate.model, mode: candidate.mode },
+        45_000,
+      );
+      const supportsAudioReference = schemaHasExternalAudioInput(formSchema);
+      const supportsVisualReference = schemaHasVisualInput(formSchema);
+      return supportsAudioReference && supportsVisualReference
+        ? { ...candidate, supportsAudioReference, supportsVisualReference, formSchema }
+        : null;
+    } catch {
+      return null;
+    }
+  }));
+
+  const bridgeOptions = inspected.filter((item): item is OpenArtBridgeOption => Boolean(item));
+  const result: OpenArtBridgeDiscovery = {
+    expiresAt: Date.now() + 10 * 60_000,
+    options: bridgeOptions,
+    rawCount: candidates.length,
+  };
+  optionCache = result;
+  return result;
+}
+
+function toolByName(tools: OpenArtToolSummary[], name: string) {
+  return tools.find((tool) => tool.name === name);
+}
+
+function propertyValue(definition: unknown, requested: unknown) {
+  if (!isRecord(definition)) return requested;
+  const enumValues = Array.isArray(definition.enum) ? definition.enum : [];
+
+  if (requested !== undefined && requested !== null && requested !== "") {
+    if (enumValues.length) {
+      const requestedString = String(requested).toLowerCase();
+      const matching = enumValues.find((item) => String(item).toLowerCase() === requestedString);
+      if (matching !== undefined) return matching;
+      if (definition.default !== undefined && enumValues.includes(definition.default)) return definition.default;
+      return enumValues[0];
+    }
+    if (typeof requested === "number") {
+      const minimum = typeof definition.minimum === "number" ? definition.minimum : Number.NEGATIVE_INFINITY;
+      const maximum = typeof definition.maximum === "number" ? definition.maximum : Number.POSITIVE_INFINITY;
+      return Math.min(maximum, Math.max(minimum, requested));
+    }
+    return requested;
+  }
+
   if (definition.default !== undefined) return definition.default;
-  if (Array.isArray(definition.enum) && definition.enum.length) return definition.enum[0];
-  return fallback;
+  if (enumValues.length) return enumValues[0];
+  return requested;
 }
 
 function mapToolArgs(schema: unknown, values: Record<string, unknown>) {
@@ -354,8 +418,7 @@ async function uploadAssetToOpenArt(
 
 function expectedType(definition: unknown) {
   if (!isRecord(definition)) return "";
-  if (typeof definition.type === "string") return definition.type;
-  return "";
+  return typeof definition.type === "string" ? definition.type : "";
 }
 
 function adaptValueForDefinition(definition: unknown, reference: UploadedReference) {
@@ -383,15 +446,15 @@ function buildGenerationParams(
     const key = normalizeKey(propertyName);
     let value: unknown;
 
-    if (/prompt|instruction|description/.test(key)) value = values.prompt;
-    else if (/visualreferences|references|elements|assets/.test(key)) value = [values.visualReference, values.audioReference];
-    else if (/audio|voice|speech|sound/.test(key)) value = adaptValueForDefinition(definition, values.audioReference);
-    else if (/startframe|image|portrait|character|visual|video/.test(key)) value = adaptValueForDefinition(definition, values.visualReference);
+    if (/generateaudio|withaudio|audioenabled|soundenabled|addaudio/.test(key)) value = true;
+    else if (/count|videocount|imagecount|numoutputs/.test(key)) value = 1;
     else if (/duration|seconds|length/.test(key)) value = values.durationSeconds;
     else if (/resolution|quality/.test(key)) value = values.resolution;
     else if (/aspectratio|ratio/.test(key)) value = values.aspectRatio;
-    else if (/count|videocount|numoutputs/.test(key)) value = 1;
-    else if (/generateaudio|audioenabled|soundenabled/.test(key)) value = true;
+    else if (/prompt|instruction|description/.test(key)) value = values.prompt;
+    else if (/visualreferences|references|elements|assets/.test(key)) value = [values.visualReference, values.audioReference];
+    else if (/audio|voice|speech|soundtrack|narration/.test(key)) value = adaptValueForDefinition(definition, values.audioReference);
+    else if (/startframe|image|portrait|character|visual|video|element/.test(key)) value = adaptValueForDefinition(definition, values.visualReference);
 
     value = propertyValue(definition, value);
     if (value !== undefined && value !== null && value !== "") params[propertyName] = value;
@@ -539,6 +602,10 @@ export async function createOpenArtVoiceBridgeJob(
     estimatedCostTier: "premium",
   });
 
+  const promptHash = createHash("sha256")
+    .update([audioAsset.id, visualAsset.id, selected.model, selected.mode, request.prompt].join("|"))
+    .digest("hex");
+
   const { data: promptPlan, error: promptError } = await supabase
     .from("media_prompt_plans")
     .insert({
@@ -558,7 +625,7 @@ export async function createOpenArtVoiceBridgeJob(
       resolution: request.resolution || null,
       quality_tier: "premium",
       estimated_cost_tier: "premium",
-      prompt_hash: `openart-voice-${audioAsset.id}-${visualAsset.id}-${selected.model}-${selected.mode}`,
+      prompt_hash: promptHash,
     })
     .select("id")
     .single();
