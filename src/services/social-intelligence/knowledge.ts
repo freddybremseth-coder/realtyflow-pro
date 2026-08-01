@@ -123,8 +123,10 @@ function hasAny(value: string, patterns: Array<string | RegExp>) {
   );
 }
 
-function unique(values: string[], max = 16) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, max);
+function unique(values: Array<string | null | undefined>, max = 16) {
+  return Array.from(
+    new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)),
+  ).slice(0, max);
 }
 
 function classifyKnowledge(title: string, content: string, headingPath: string[]): {
