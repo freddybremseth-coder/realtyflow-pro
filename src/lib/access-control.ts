@@ -164,6 +164,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     return write ? "sales.write" : "revenue.read";
   }
   if (path.startsWith("/api/social-intelligence")) return write ? "marketing.write" : "marketing.read";
+  if (path.startsWith("/api/media")) return write ? "marketing.write" : "marketing.read";
 
   return "OWNER_ONLY";
 }
@@ -174,7 +175,7 @@ export function permissionForNavHref(href: string): AccessPermission | "OWNER_ON
   if (href === "/team-workload") return "revenue.read";
   if (href === "/customers" || href.startsWith("/customers/")) return "customers.read";
   if (["/billing", "/dona-anna", "/commissions", "/monthly-close", "/goals"].includes(href)) return "finance.read";
-  if (["/attribution", "/ad-campaigns", "/analytics", "/ai-personal-brand"].includes(href)) return "marketing.read";
+  if (["/attribution", "/ad-campaigns", "/analytics", "/ai-personal-brand", "/media-studio"].includes(href)) return "marketing.read";
   if (href === "/care" || href.startsWith("/care/")) return "keyholding.read";
   if (href === "/service-revenue") return "keyholding.read";
   if (["/closing", "/closing-pack"].includes(href)) return "closing.read";

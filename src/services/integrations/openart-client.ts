@@ -321,6 +321,61 @@ export async function callOpenArtTool<T = Record<string, unknown>>(
   return {} as T;
 }
 
+export interface OpenArtToolSummary {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+/** List MCP tools available for the connected OpenArt account. */
+export async function listOpenArtTools(): Promise<OpenArtToolSummary[]> {
+  const token = await getValidAccessToken();
+
+  const init = await mcpRequest(token, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "realtyflow-pro", version: "1.0.0" },
+    },
+  }, undefined, 30_000);
+  if (init.response?.error) {
+    throw new OpenArtError(`OpenArt MCP initialize feilet: ${init.response.error.message}`);
+  }
+
+  const sessionId = init.sessionId;
+  await mcpRequest(token, { jsonrpc: "2.0", method: "notifications/initialized" }, sessionId, 15_000)
+    .catch(() => undefined);
+
+  const listed = await mcpRequest(token, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/list",
+    params: {},
+  }, sessionId, 45_000);
+
+  if (listed.response?.error) {
+    throw new OpenArtError(`OpenArt tools/list feilet: ${listed.response.error.message}`);
+  }
+
+  const result = (listed.response?.result ?? {}) as { tools?: unknown[] };
+  const tools: OpenArtToolSummary[] = [];
+  for (const tool of Array.isArray(result.tools) ? result.tools : []) {
+    if (!tool || typeof tool !== "object") continue;
+    const row = tool as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name : "";
+    if (!name) continue;
+    tools.push({
+      name,
+      description: typeof row.description === "string" ? row.description : undefined,
+      inputSchema: row.inputSchema,
+    });
+  }
+  return tools;
+}
+
 // ─── Typed wrappers ─────────────────────────────────────────────────────────
 
 export interface OpenArtAccount {

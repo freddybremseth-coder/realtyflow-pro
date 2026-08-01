@@ -173,6 +173,7 @@ export const SIDEBAR_NAV = {
     { label: "Dokumenter", href: "/document-hub", icon: "FileText" },
   ],
   content: [
+    { label: "AI Media Studio", href: "/media-studio", icon: "Clapperboard" },
     { label: "Content Studio", href: "/content-studio", icon: "Sparkles" },
     { label: "AI Personal Brand", href: "/ai-personal-brand", icon: "Sparkles" },
     { label: "Publisert innhold (CMS)", href: "/website-cms", icon: "Globe" },
