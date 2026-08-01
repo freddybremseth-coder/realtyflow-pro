@@ -101,6 +101,24 @@ test("duplicate and conflict detection flags review risks", () => {
   assert.match(annotated[1].reviewNotes || "", /konflikt/i);
 });
 
+test("profile builder handles an empty profile and empty knowledge base without throwing", () => {
+  const generated = generateProfileSuggestionsFromKnowledge({
+    relevant: [],
+    variant: {
+      name: "Tom LinkedIn-profil",
+      profileType: "linkedin",
+      primaryPlatform: "linkedin",
+      tone: ["professional"],
+      focusTags: [],
+    },
+    currentProfile: null,
+  });
+
+  assert.deepEqual(generated.suggestions, []);
+  assert.equal(generated.sourceCoverage.selectedKnowledgeItems, 0);
+  assert.equal(generated.sourceCoverage.publicFactItems, 0);
+});
+
 test("profile builder only uses approved public facts and keeps control restrictions as safeguards", () => {
   const items = [
     baseItem({
