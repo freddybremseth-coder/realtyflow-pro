@@ -103,11 +103,14 @@ export function isDemoSiteStyle(value: unknown): value is DemoSiteStyleId {
 function defaultDesignForTemplate(templateSlug: string): DemoSiteDesign {
   const slug = templateSlug.toLowerCase();
 
-  if (/hotell|overnatting|restaurant|kafe|cafe/.test(slug)) return { layout: "fullbleed", style: "warm" };
-  if (/advokat|eiendomsmegler|klinikk|tannlege/.test(slug)) return { layout: "editorial", style: "elegant" };
-  if (/ai|tech|software|saas|automasjon|teknologi/.test(slug)) return { layout: "split", style: "tech" };
-  if (/frisor|skjonnhet|fysioterapi/.test(slug)) return { layout: "fullbleed", style: "elegant" };
-  return { layout: "split", style: "modern" };
+  if (/ai|tech|software|saas|automasjon|teknologi/.test(slug)) return { layout: "kinetic", style: "tech" };
+  if (/hotell|overnatting|restaurant|kafe|cafe/.test(slug)) return { layout: "cinematic", style: "warm" };
+  if (/advokat|eiendomsmegler/.test(slug)) return { layout: "atelier", style: "elegant" };
+  if (/klinikk|tannlege|fysioterapi|frisor|skjonnhet/.test(slug)) return { layout: "bento", style: "elegant" };
+  if (/dekk|bilverksted|elektro|rorlegger|snekker|bygg|frakt|transport|logistikk/.test(slug)) {
+    return { layout: "panorama", style: "modern" };
+  }
+  return { layout: "bento", style: "modern" };
 }
 
 export function resolveDemoSiteDesign(input: {

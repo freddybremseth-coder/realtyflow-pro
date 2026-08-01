@@ -33,10 +33,16 @@ import {
   type DemoSiteDesign,
   type SignatureDemoSiteLayout,
 } from "@/lib/demosites-design";
+import {
+  getDemoSitePreviewIndustryVisual,
+  type DemoSitesPreviewIndustryVariant,
+} from "@/lib/demosites-preview-visuals";
 
 export type DemoSignatureSiteRendererProps = DemoSitesPreviewInput & {
   mode: DemoSitesPreviewMode;
   design: DemoSiteDesign;
+  compact?: boolean;
+  showFull?: boolean;
   inquiryToken?: string;
   isLiveSite?: boolean;
   packageId?: string;
@@ -57,6 +63,28 @@ type SignatureTheme = {
   contact: string;
   footer: string;
   radius: string;
+};
+
+type SignatureBusinessCopy = {
+  heroBadge: string;
+  heroMeta: string;
+  heroPanelEyebrow: string;
+  heroPanelTitle: string;
+  serviceTitle: string;
+  serviceText: string;
+  serviceCardText: string;
+  galleryEyebrow: string;
+  galleryTitle: string;
+  galleryText: string;
+  trustTitle: string;
+  trustText: string;
+  offerTitle: string;
+  offerText: string;
+  productsTitle: string;
+  pricesTitle: string;
+  faqTitle: string;
+  contactTitle: string;
+  contactText: string;
 };
 
 const SIGNATURE_THEMES: Record<SignatureDemoSiteLayout, SignatureTheme> = {
@@ -132,6 +160,265 @@ const SIGNATURE_THEMES: Record<SignatureDemoSiteLayout, SignatureTheme> = {
   },
 };
 
+function getSignatureBusinessCopy(variant: DemoSitesPreviewIndustryVariant, companyName: string): SignatureBusinessCopy {
+  const common: SignatureBusinessCopy = {
+    heroBadge: "Moderne lokal business",
+    heroMeta: "Klar side",
+    heroPanelEyebrow: "Fokus",
+    heroPanelTitle: "Neste steg",
+    serviceTitle: "Tjenester forklart slik kunder handler",
+    serviceText: "Siden hjelper kunden å forstå hva bedriften tilbyr, hva som passer, og hvordan de tar kontakt.",
+    serviceCardText: "Kunden får et tydelig valg og en enkel vei videre til spørsmål, tilbud eller booking.",
+    galleryEyebrow: "Profil",
+    galleryTitle: `Et tydeligere førsteinntrykk for ${companyName}`,
+    galleryText: "Bilder brukes tidlig for å gjøre bedriften konkret, gjenkjennelig og trygg å kontakte.",
+    trustTitle: `Derfor velger kunder ${companyName}`,
+    trustText: "Tillit bygges med konkrete fordeler, ryddig informasjon og lav terskel for å ta kontakt.",
+    offerTitle: "Tydelige valg før kontakt",
+    offerText: "Pakker, produkter og prislinjer hjelper kunden å forstå neste steg uten å måtte lete.",
+    productsTitle: "Løsninger",
+    pricesTitle: "Pris og pakker",
+    faqTitle: "Svar som senker terskelen",
+    contactTitle: `Klar for neste steg med ${companyName}?`,
+    contactText: `Fortell kort hva du trenger fra ${companyName}, så får du et tydelig svar tilbake.`,
+  };
+
+  switch (variant) {
+    case "neon":
+      return {
+        ...common,
+        heroBadge: "AI og teknologi",
+        heroMeta: "Pilotklar",
+        heroPanelEyebrow: "Pilotløp",
+        heroPanelTitle: "AI-workshop",
+        serviceTitle: "Fra idé til smart arbeidsflyt",
+        serviceText: "Gjør AI, automasjon og integrasjoner forståelig for beslutningstakere som vil starte kontrollert.",
+        serviceCardText: "Knyttes til workshop, demo, pilot eller teknisk avklaring med tydelig effektmål.",
+        galleryEyebrow: "Teknologiprofil",
+        galleryTitle: "Neon glass, dataflyt og produktfølelse",
+        galleryText: "Uttrykket gjør ny teknologi konkret uten å drukne siden i buzzwords.",
+        trustTitle: "Innovasjon som fortsatt føles trygg",
+        trustText: "AI-løsningen presenteres med fokus på data, integrasjoner, sikkerhet og målbar effekt.",
+        offerTitle: "Fra idé til testbar pilot",
+        offerText: "Workshop, pilot og integrasjoner vises som konkrete valg før videre skalering.",
+        productsTitle: "AI-leveranser",
+        pricesTitle: "Pilot og pris",
+        faqTitle: "Svar om AI, data og oppstart",
+        contactTitle: `Book AI-workshop med ${companyName}`,
+        contactText: "Beskriv prosessen du vil forbedre, så avklarer vi hva som kan automatiseres og hvilket første steg som er trygt.",
+      };
+    case "auto":
+      return {
+        ...common,
+        heroBadge: "Dekk, felg og verksted",
+        heroMeta: "Klar for time",
+        heroPanelEyebrow: "Første valg",
+        heroPanelTitle: "Bestill time",
+        serviceTitle: "Dekk, felg og verkstedtjenester uten friksjon",
+        serviceText: "Kunden ser raskt hva som tilbys og får en tydelig vei videre til tilbud, riktig dimensjon eller verkstedtime.",
+        serviceCardText: "Knyttes til timebestilling, tilbud og praktisk rådgivning for bilen.",
+        galleryEyebrow: "Verksted og produkter",
+        galleryTitle: "Produkter og verkstedfølelse som bygger tillit",
+        galleryText: "Bilder og produktfoto gir siden et mer kjent og praktisk uttrykk for bilkunden.",
+        trustTitle: "Trygt valg når bilen skal være klar",
+        trustText: "Fordelene løfter erfaring, riktige produkter, tydelig prisvei og enkel kontakt med verkstedet.",
+        offerTitle: "Fra dekkvalg til verkstedtime",
+        offerText: "Tjenester, produkter og prislinjer vises som konkrete veier til tilbud eller time.",
+        productsTitle: "Tjenester og produktgrupper",
+        pricesTitle: "Pris og timebestilling",
+        faqTitle: "Svar før kunden bestiller",
+        contactTitle: `Bestill time eller få tilbud hos ${companyName}`,
+        contactText: "Send inn dekkdimensjon, ønsket tidspunkt eller verkstedbehov, så blir neste steg tydelig.",
+      };
+    case "hospitality":
+      return {
+        ...common,
+        heroBadge: "Restaurant og gjesteopplevelse",
+        heroMeta: "Book bord",
+        heroPanelEyebrow: "Gjestevalg",
+        heroPanelTitle: "Meny og booking",
+        serviceTitle: "Meny, booking og servering på ett sted",
+        serviceText: "Gjestene får raskt oversikt over meny, stemning og hvordan de booker eller tar kontakt.",
+        serviceCardText: "Gjør valget enklere for gjester som vil se meny, booke bord eller planlegge et besøk.",
+        galleryEyebrow: "Stemning",
+        galleryTitle: "Mat, lokale og atmosfære som skaper besøk",
+        galleryText: "Bilder kommer tidlig nok til at gjesten kjenner stedet før de booker.",
+        trustTitle: "Flere gjester handler når opplevelsen er tydelig",
+        trustText: "Meny, service, bilder og praktisk informasjon bygger trygghet før reservasjon.",
+        offerTitle: "Fra menyvalg til reservasjon",
+        offerText: "Meny, arrangementer og prisnivå presenteres med kort vei til booking.",
+        productsTitle: "Meny og konsepter",
+        pricesTitle: "Priser og reservasjon",
+        faqTitle: "Svar før besøket",
+        contactTitle: `Book bord eller spør ${companyName}`,
+        contactText: "Spør om bord, meny, allergener eller arrangement, så får du rask avklaring.",
+      };
+    case "clean":
+      return {
+        ...common,
+        heroBadge: "Renhold og befaring",
+        heroMeta: "Befaring",
+        heroPanelEyebrow: "Avtale",
+        heroPanelTitle: "Få pristilbud",
+        serviceTitle: "Renholdstjenester som er lette å bestille",
+        serviceText: "Kunden ser type renhold, avtaleform og hvordan de ber om befaring eller pristilbud.",
+        serviceCardText: "Kobler renholdstjenesten til befaring, avtale og rask prisforespørsel.",
+        galleryEyebrow: "Arbeid og resultat",
+        galleryTitle: "Et ryddig uttrykk for profesjonelt renhold",
+        galleryText: "Bilder og korte beskrivelser støtter tillit, kvalitet og forventet resultat.",
+        trustTitle: "Tilliten bygges før første befaring",
+        trustText: "Punktlighet, kvalitet og ryddig oppfølging får plass uten å gjøre siden tung.",
+        offerTitle: "Faste avtaler og prisforespørsel",
+        offerText: "Pakker og avtaler gir kunden en enkel inngang til riktig renholdsløsning.",
+        productsTitle: "Renholdspakker",
+        pricesTitle: "Prisforespørsel",
+        faqTitle: "Svar om befaring og oppstart",
+        contactTitle: `Be om befaring hos ${companyName}`,
+        contactText: "Beskriv lokalet, ønsket frekvens og behov, så blir veien til tilbud kortere.",
+      };
+    case "trade":
+      return {
+        ...common,
+        heroBadge: "Fagbedrift og befaring",
+        heroMeta: "Prosjektklar",
+        heroPanelEyebrow: "Prosess",
+        heroPanelTitle: "Bestill befaring",
+        serviceTitle: "Fra prosjektbehov til befaring",
+        serviceText: "Tjenester, prosess og dokumentasjon presenteres slik at kunden tør å be om tilbud.",
+        serviceCardText: "Hjelper kunden å beskrive jobben og forstå hvordan befaring, pris og oppstart fungerer.",
+        galleryEyebrow: "Fag og prosjekt",
+        galleryTitle: "Et seriøst uttrykk for håndverk og leveranse",
+        galleryText: "Visuelle detaljer gjør prosjektet mer konkret og styrker tilliten før første kontakt.",
+        trustTitle: "Faglig trygghet før kunden tar kontakt",
+        trustText: "Fordelene peker på prosess, dokumentasjon og en ryddig vei til tilbud.",
+        offerTitle: "Fra befaring til gjennomføring",
+        offerText: "Tjenester og pakker viser hva som kan bestilles og hvordan prosjektet starter.",
+        productsTitle: "Tjenester",
+        pricesTitle: "Tilbud og befaring",
+        faqTitle: "Svar om prosjekt, pris og oppstart",
+        contactTitle: `Bestill befaring hos ${companyName}`,
+        contactText: "Fortell kort om prosjektet, så blir neste steg mot befaring og tilbud tydelig.",
+      };
+    case "clinic":
+      return {
+        ...common,
+        heroBadge: "Klinikk og behandling",
+        heroMeta: "Bestill time",
+        heroPanelEyebrow: "Behandling",
+        heroPanelTitle: "Trygg timebestilling",
+        serviceTitle: "Behandlinger forklart rolig og tydelig",
+        serviceText: "Pasienten eller kunden får oversikt over behandlinger, pris og praktisk informasjon før de bestiller.",
+        serviceCardText: "Gjør det enkelt å forstå behandlingen, stille spørsmål og bestille riktig time.",
+        galleryEyebrow: "Miljø og behandling",
+        galleryTitle: "Et rolig førsteinntrykk som senker terskelen",
+        galleryText: "Bilder brukes for å gjøre klinikken mer gjenkjennelig og trygg før første besøk.",
+        trustTitle: "Trygghet før timebestilling",
+        trustText: "Behandling, oppfølging og praktisk informasjon vises uten å overlesse siden.",
+        offerTitle: "Fra behandling til time",
+        offerText: "Behandlinger og prislinjer gir kunden en tydelig vei til spørsmål eller booking.",
+        productsTitle: "Behandlinger",
+        pricesTitle: "Pris og time",
+        faqTitle: "Svar før første time",
+        contactTitle: `Bestill time hos ${companyName}`,
+        contactText: "Send inn hva du trenger hjelp med, så får du riktig anbefaling eller time.",
+      };
+    case "professional":
+      return {
+        ...common,
+        heroBadge: "Profesjonell rådgivning",
+        heroMeta: "Saksvurdering",
+        heroPanelEyebrow: "Fagområde",
+        heroPanelTitle: "Trygg henvendelse",
+        serviceTitle: "Rådgivning presentert presist",
+        serviceText: "Fagområder, prosess og kontakt blir tydelig uten å gjøre terskelen høy.",
+        serviceCardText: "Presenter fagområdet med lav terskel for en kontrollert første henvendelse.",
+        galleryEyebrow: "Rådgivning",
+        galleryTitle: "Diskret, tydelig og tillitsbyggende",
+        galleryText: "Et rolig visuelt uttrykk lar kompetanse og struktur bære siden.",
+        trustTitle: "Tillit før første samtale",
+        trustText: "Kunden ser fagområde, prosess og hvordan de tar kontakt på en trygg måte.",
+        offerTitle: "Fra spørsmål til vurdering",
+        offerText: "Tjenester og prislinjer gir en tydelig inngang til rådgivning eller saksvurdering.",
+        productsTitle: "Fagområder",
+        pricesTitle: "Avklaring og pris",
+        faqTitle: "Svar før første henvendelse",
+        contactTitle: `Send en trygg henvendelse til ${companyName}`,
+        contactText: "Beskriv saken kort, så får du avklart riktig neste steg.",
+      };
+    case "stay":
+      return {
+        ...common,
+        heroBadge: "Hotell og overnatting",
+        heroMeta: "Booking",
+        heroPanelEyebrow: "Opphold",
+        heroPanelTitle: "Sjekk tilgjengelighet",
+        serviceTitle: "Rom, fasiliteter og opphold gjort lett å velge",
+        serviceText: "Gjesten ser hva oppholdet inkluderer og hvordan de booker eller sender forespørsel.",
+        serviceCardText: "Gjør rom, fasiliteter og bookingvalg enklere å forstå før gjesten tar kontakt.",
+        galleryEyebrow: "Opphold",
+        galleryTitle: "Rom, fasiliteter og stemning før booking",
+        galleryText: "Bilder gjør oppholdet konkret og bygger forventning før gjesten velger.",
+        trustTitle: "Trygg booking starter med riktig informasjon",
+        trustText: "Komfort, beliggenhet og praktiske fordeler vises i en rolig kjøpsflyt.",
+        offerTitle: "Fra oppholdsønske til booking",
+        offerText: "Romtyper, pakker og prislinjer presenteres med tydelig vei videre.",
+        productsTitle: "Rom og pakker",
+        pricesTitle: "Pris og tilgjengelighet",
+        faqTitle: "Svar før oppholdet",
+        contactTitle: `Sjekk opphold hos ${companyName}`,
+        contactText: "Send ønsket dato, romtype eller spørsmål, så får du rask avklaring.",
+      };
+    case "property":
+      return {
+        ...common,
+        heroBadge: "Eiendom og verdivurdering",
+        heroMeta: "Verdivurdering",
+        heroPanelEyebrow: "Bolig",
+        heroPanelTitle: "Bestill vurdering",
+        serviceTitle: "Fra boligspørsmål til riktig meglerkontakt",
+        serviceText: "Selgere ser lokalkunnskap, prosess og hvordan de bestiller verdivurdering.",
+        serviceCardText: "Knytter tjenesten til verdivurdering, rådgivning og trygg oppfølging.",
+        galleryEyebrow: "Eiendom",
+        galleryTitle: "Bolig, område og rådgivning i samme uttrykk",
+        galleryText: "Bilder og ryddige seksjoner bygger tillit rundt marked, lokalkunnskap og salgsprosess.",
+        trustTitle: "Flere selgere tar kontakt når prosessen er tydelig",
+        trustText: "Tillit, områdekunnskap og neste steg løftes uten tung meglersjargong.",
+        offerTitle: "Fra vurdering til salgsplan",
+        offerText: "Tjenester og prislinjer viser hva kunden kan spørre om før de tar kontakt.",
+        productsTitle: "Megling og rådgivning",
+        pricesTitle: "Vurdering og salgsplan",
+        faqTitle: "Svar før verdivurdering",
+        contactTitle: `Bestill verdivurdering hos ${companyName}`,
+        contactText: "Send boligtype, område og ønsket tidspunkt, så blir neste steg enkelt.",
+      };
+    case "logistics":
+      return {
+        ...common,
+        heroBadge: "Transport og logistikk",
+        heroMeta: "Prisforespørsel",
+        heroPanelEyebrow: "Oppdrag",
+        heroPanelTitle: "Avklar transport",
+        serviceTitle: "Fra oppdrag til transportavtale",
+        serviceText: "Kunden ser område, oppdragstype og hvordan de får pris eller booking raskt.",
+        serviceCardText: "Viser levering, kapasitet og kontaktvei som konkrete valg.",
+        galleryEyebrow: "Transport",
+        galleryTitle: "Kapasitet, levering og oppdrag gjort konkret",
+        galleryText: "Bilder og tydelige valg gjør tjenesten lettere å forstå før kunden ber om pris.",
+        trustTitle: "Ryddig levering starter med tydelig avklaring",
+        trustText: "Fordelene viser hva som hentes, hvor det leveres, og hvordan pris avklares.",
+        offerTitle: "Fra henting til levering",
+        offerText: "Tjenester og prislinjer gjør det enklere å sende riktig forespørsel.",
+        productsTitle: "Oppdragstyper",
+        pricesTitle: "Pris og levering",
+        faqTitle: "Svar før transporten bestilles",
+        contactTitle: `Be om transportpris hos ${companyName}`,
+        contactText: "Send hentested, leveringssted og oppdragstype, så blir prisveien kortere.",
+      };
+    default:
+      return common;
+  }
+}
+
 type SignatureStyle = CSSProperties & {
   "--signature-primary": string;
   "--signature-secondary": string;
@@ -143,6 +430,8 @@ type SignatureStyle = CSSProperties & {
 export function DemoSignatureSiteRenderer({
   mode,
   design,
+  compact = false,
+  showFull = false,
   inquiryToken,
   isLiveSite = false,
   packageId = "standard",
@@ -153,20 +442,24 @@ export function DemoSignatureSiteRenderer({
   if (!isSignatureDemoSiteLayout(design.layout)) return null;
 
   const preview = getDemoSitesPreviewModel(input);
-  const { companyName, colors, contact, content } = preview;
+  const { companyName, colors, content } = preview;
   const layout = design.layout;
   const theme = SIGNATURE_THEMES[layout];
+  const visual = getDemoSitePreviewIndustryVisual(preview.templateSlug);
+  const copy = getSignatureBusinessCopy(visual.variant, companyName);
   const fonts = getDemoFontPair(design.style);
+  const fullPreview = mode === "public" || showFull || !compact;
   const packageTier = packageId === "premium" ? 3 : packageId === "basis" ? 1 : 2;
   const showLeadForm = mode === "public" && Boolean(inquiryToken);
-  const showOfferSection = packageTier >= 2 && (mode === "internal" || preview.hasCustomProducts || preview.hasCustomPrices);
-  const showFaqSection = packageTier >= 2;
-  const showTeamSection = packageTier >= 3 && preview.employees.length > 0;
+  const showOfferSection = fullPreview && packageTier >= 2 && (mode === "internal" || preview.hasCustomProducts || preview.hasCustomPrices);
+  const showFaqSection = fullPreview && packageTier >= 2;
+  const showTeamSection = fullPreview && packageTier >= 3 && preview.employees.length > 0;
   const ctaHref = mode === "public" ? "#kontakt" : preview.contactHref;
   const oldSiteUrl = isLiveSite ? "" : preview.websiteUrl;
-  const images = content.gallery_images.slice(0, 6);
-  const services = content.services.length ? content.services.slice(0, 9) : ["Personlig rådgivning", "Rask avklaring", "Trygg levering"];
+  const images = content.gallery_images.slice(0, fullPreview ? 6 : 3);
+  const services = content.services.length ? content.services.slice(0, fullPreview ? 9 : 3) : ["Personlig rådgivning", "Rask avklaring", "Trygg levering"];
   const trust = content.trust_points.length ? content.trust_points.slice(0, 5) : ["Tydelig kommunikasjon", "Kort vei til svar", "Lokal kompetanse"];
+  const Root = mode === "public" ? "main" : "div";
   const style: SignatureStyle = {
     "--signature-primary": colors.primary,
     "--signature-secondary": colors.secondary,
@@ -176,7 +469,7 @@ export function DemoSignatureSiteRenderer({
   };
 
   return (
-    <main className={`signature-site ${fonts.classNames} min-h-screen overflow-hidden ${theme.page} ${className}`} style={style}>
+    <Root className={`signature-site ${fonts.classNames} overflow-hidden ${mode === "public" ? "min-h-screen" : ""} ${theme.page} ${className}`} style={style}>
       <style>{`
         .signature-site { font-family: var(--signature-body); }
         .signature-site h1, .signature-site h2, .signature-site h3 { font-family: var(--signature-heading); }
@@ -199,38 +492,40 @@ export function DemoSignatureSiteRenderer({
         <DemoChatWidget token={inquiryToken} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} />
       )}
 
-      <SignatureHeader preview={preview} theme={theme} ctaHref={ctaHref} callToAction={content.call_to_action} layout={layout} />
-      <SignatureHero layout={layout} preview={preview} services={services} trust={trust} images={images} ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} mode={mode} />
+      <SignatureHeader preview={preview} theme={theme} ctaHref={ctaHref} callToAction={content.call_to_action} layout={layout} copy={copy} />
+      <SignatureHero layout={layout} preview={preview} services={services} trust={trust} images={images} ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} mode={mode} copy={copy} />
       <ProofRibbon layout={layout} trust={trust} colors={colors} />
 
       <section id="tjenester" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.section} px-4 py-20 md:py-28`}>
         <div className="mx-auto max-w-7xl">
-          <SectionHeading layout={layout} eyebrow="Tjenester" title="Gjort enkelt å velge riktig" text={content.intro_text || content.hero_subtitle} theme={theme} />
-          <ServiceGrid layout={layout} services={services} colors={colors} theme={theme} />
+          <SectionHeading layout={layout} eyebrow="Tjenester" title={copy.serviceTitle} text={content.intro_text || copy.serviceText} theme={theme} />
+          <ServiceGrid layout={layout} services={services} colors={colors} theme={theme} cardText={copy.serviceCardText} />
         </div>
       </section>
 
-      {images.length > 1 && (
+      {images.length > 1 && fullPreview && (
         <section id="bilder" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.alternate} px-4 py-20 md:py-28`}>
           <div className="mx-auto max-w-7xl">
-            <SectionHeading layout={layout} eyebrow="Utvalgt" title={`Et nærmere blikk på ${companyName}`} text="" theme={theme} />
+            <SectionHeading layout={layout} eyebrow={copy.galleryEyebrow} title={copy.galleryTitle} text={copy.galleryText} theme={theme} />
             <SignatureGallery layout={layout} images={images} companyName={companyName} theme={theme} />
           </div>
         </section>
       )}
 
+      {fullPreview && (
       <section id="fordeler" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.section} px-4 py-20 md:py-28`}>
         <div className="mx-auto max-w-7xl">
-          <SectionHeading layout={layout} eyebrow="Hvorfor oss" title="Trygghet før, under og etter" text="" theme={theme} />
+          <SectionHeading layout={layout} eyebrow="Hvorfor oss" title={copy.trustTitle} text={copy.trustText} theme={theme} />
           <TrustGrid layout={layout} trust={trust} colors={colors} theme={theme} />
         </div>
       </section>
+      )}
 
       {showOfferSection && (
         <section id="tilbud" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.alternate} px-4 py-20 md:py-28`}>
           <div className="mx-auto max-w-7xl">
-            <SectionHeading layout={layout} eyebrow="Muligheter" title="Velg løsningen som passer" text="" theme={theme} />
-            <OfferGrid layout={layout} products={content.products} prices={content.prices} colors={colors} theme={theme} />
+            <SectionHeading layout={layout} eyebrow="Tilbud" title={copy.offerTitle} text={copy.offerText} theme={theme} />
+            <OfferGrid layout={layout} products={content.products} prices={content.prices} colors={colors} theme={theme} productsTitle={copy.productsTitle} pricesTitle={copy.pricesTitle} />
           </div>
         </section>
       )}
@@ -238,7 +533,7 @@ export function DemoSignatureSiteRenderer({
       {showFaqSection && (
         <section id="faq" data-demo-reveal={mode === "public" ? "" : undefined} className={`${theme.section} px-4 py-20 md:py-28`}>
           <div className="mx-auto max-w-7xl">
-            <SectionHeading layout={layout} eyebrow="FAQ" title="Svar før du trenger å spørre" text="" theme={theme} />
+            <SectionHeading layout={layout} eyebrow="FAQ" title={copy.faqTitle} text="" theme={theme} />
             <FaqGrid layout={layout} faq={content.faq.length ? content.faq : [{ question: "Hvordan kommer vi i gang?", answer: "Ta kontakt, så avklarer vi behov, pris og neste steg." }]} theme={theme} />
           </div>
         </section>
@@ -253,23 +548,23 @@ export function DemoSignatureSiteRenderer({
         </section>
       )}
 
-      <SignatureContact preview={preview} theme={theme} layout={layout} inquiryToken={inquiryToken} showLeadForm={showLeadForm} />
+      {fullPreview && <SignatureContact preview={preview} theme={theme} layout={layout} inquiryToken={inquiryToken} showLeadForm={showLeadForm} copy={copy} />}
 
-      <footer className={`border-t px-4 py-8 text-center text-xs ${theme.footer}`}>
+      {mode === "public" && <footer className={`border-t px-4 py-8 text-center text-xs ${theme.footer}`}>
         {isLiveSite ? (
           <>
             © {new Date().getFullYear()} {companyName} · Nettside levert av{" "}
             <a href="https://www.chatgenius.pro/demosites/" target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline">ChatGenius.pro</a>
           </>
         ) : (
-          <>Signature 2026 demo · {packageName || "Standard"} · {layoutLabel(layout)}</>
+          <>Demo laget med ChatGenius DemoSites. Pakke: {packageName || "Standard"} · {layoutLabel(layout)}</>
         )}
-      </footer>
-    </main>
+      </footer>}
+    </Root>
   );
 }
 
-function SignatureHeader({ preview, theme, ctaHref, callToAction, layout }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; ctaHref: string; callToAction: string; layout: SignatureDemoSiteLayout }) {
+function SignatureHeader({ preview, theme, ctaHref, callToAction, layout, copy }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; ctaHref: string; callToAction: string; layout: SignatureDemoSiteLayout; copy: SignatureBusinessCopy }) {
   const { companyName, content, colors, contact } = preview;
   return (
     <header className={`sticky top-0 z-40 border-b ${theme.header}`}>
@@ -290,7 +585,8 @@ function SignatureHeader({ preview, theme, ctaHref, callToAction, layout }: { pr
           <a href="#tjenester" className="transition hover:opacity-60">Tjenester</a>
           <a href="#bilder" className="transition hover:opacity-60">Utvalgt</a>
           <a href="#fordeler" className="transition hover:opacity-60">Hvorfor oss</a>
-          <a href="#faq" className="transition hover:opacity-60">FAQ</a>
+          <a href="#tilbud" className="transition hover:opacity-60">{copy.productsTitle}</a>
+          <a href="#kontakt" className="transition hover:opacity-60">Kontakt</a>
         </nav>
         <div className="flex items-center gap-2">
           {contact.phone && <a href={`tel:${contact.phone}`} className={`hidden text-sm font-semibold ${theme.headerText} md:block`}>{contact.phone}</a>}
@@ -303,8 +599,8 @@ function SignatureHeader({ preview, theme, ctaHref, callToAction, layout }: { pr
   );
 }
 
-function SignatureHero({ layout, preview, services, trust, images, ctaHref, oldSiteUrl, mode }: { layout: SignatureDemoSiteLayout; preview: DemoSitesPreviewModel; services: string[]; trust: string[]; images: string[]; ctaHref: string; oldSiteUrl: string; mode: DemoSitesPreviewMode }) {
-  const props = { preview, services, trust, images, ctaHref, oldSiteUrl, mode };
+function SignatureHero({ layout, preview, services, trust, images, ctaHref, oldSiteUrl, mode, copy }: { layout: SignatureDemoSiteLayout; preview: DemoSitesPreviewModel; services: string[]; trust: string[]; images: string[]; ctaHref: string; oldSiteUrl: string; mode: DemoSitesPreviewMode; copy: SignatureBusinessCopy }) {
+  const props = { preview, services, trust, images, ctaHref, oldSiteUrl, mode, copy };
   switch (layout) {
     case "cinematic": return <CinematicHero {...props} />;
     case "bento": return <BentoHero {...props} />;
@@ -315,9 +611,9 @@ function SignatureHero({ layout, preview, services, trust, images, ctaHref, oldS
   return <CinematicHero {...props} />;
 }
 
-type HeroProps = { preview: DemoSitesPreviewModel; services: string[]; trust: string[]; images: string[]; ctaHref: string; oldSiteUrl: string; mode: DemoSitesPreviewMode };
+type HeroProps = { preview: DemoSitesPreviewModel; services: string[]; trust: string[]; images: string[]; ctaHref: string; oldSiteUrl: string; mode: DemoSitesPreviewMode; copy: SignatureBusinessCopy };
 
-function CinematicHero({ preview, services, trust, images, ctaHref, oldSiteUrl, mode }: HeroProps) {
+function CinematicHero({ preview, services, trust, images, ctaHref, oldSiteUrl, mode, copy }: HeroProps) {
   const { companyName, content, colors } = preview;
   const heroImage = images[0];
   return (
@@ -328,13 +624,13 @@ function CinematicHero({ preview, services, trust, images, ctaHref, oldSiteUrl, 
       <div className="pointer-events-none absolute -right-24 top-24 h-80 w-80 rounded-full border border-white/15 signature-orbit"><div className="absolute left-1/2 top-0 h-4 w-4 -translate-x-1/2 rounded-full" style={{ backgroundColor: colors.accent }} /></div>
       <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-12 px-4 pb-14 pt-32 lg:grid-cols-[1.2fr_0.8fr] lg:items-end lg:pb-20">
         <div>
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white/80 backdrop-blur-xl"><Sparkles className="h-4 w-4" style={{ color: colors.accent }} />{mode === "internal" ? "Intern preview" : "Signature experience"}</div>
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white/80 backdrop-blur-xl"><Sparkles className="h-4 w-4" style={{ color: colors.accent }} />{mode === "internal" ? "Intern preview" : copy.heroBadge}</div>
           <h1 className="max-w-5xl text-5xl font-black leading-[0.92] tracking-[-0.05em] text-white md:text-7xl xl:text-[7.5rem]">{content.hero_title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-white/75 md:text-2xl">{content.hero_subtitle}</p>
           <HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark square={false} />
         </div>
         <div className="signature-float border border-white/15 bg-white/[0.09] p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl md:p-8" style={{ borderRadius: "2rem" }}>
-          <div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.24em] text-white/40">Nå</p><p className="mt-2 text-xl font-black text-white">{services[0]}</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10"><ArrowUpRight className="h-5 w-5" style={{ color: colors.accent }} /></span></div>
+          <div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.24em] text-white/40">{copy.heroPanelEyebrow}</p><p className="mt-2 text-xl font-black text-white">{services[0]}</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10"><ArrowUpRight className="h-5 w-5" style={{ color: colors.accent }} /></span></div>
           <div className="mt-5 space-y-4">{trust.slice(0, 3).map((item, index) => <div key={item} className="flex items-start gap-4"><span className="text-xs font-black text-white/[0.35]">0{index + 1}</span><p className="text-sm leading-6 text-white/75">{item}</p></div>)}</div>
         </div>
       </div>
@@ -342,14 +638,14 @@ function CinematicHero({ preview, services, trust, images, ctaHref, oldSiteUrl, 
   );
 }
 
-function BentoHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: HeroProps) {
+function BentoHero({ preview, services, trust, images, ctaHref, oldSiteUrl, copy }: HeroProps) {
   const { companyName, content, colors } = preview;
   return (
     <section id="top" className="relative px-4 py-10 md:py-16">
       <div className="pointer-events-none absolute inset-0 opacity-50" style={{ backgroundImage: `radial-gradient(${withPreviewAlpha(colors.primary, "28")} 1px, transparent 1px)`, backgroundSize: "24px 24px" }} />
       <div className="relative mx-auto grid max-w-7xl gap-4 lg:grid-cols-12 lg:grid-rows-[minmax(220px,auto)_minmax(220px,auto)]">
         <div className="rounded-[2.5rem] bg-[#121815] p-7 text-white shadow-2xl lg:col-span-7 lg:row-span-2 lg:p-12">
-          <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white/65"><Layers3 className="h-4 w-4" /> Bento 2026</span><span className="text-xs font-semibold text-white/40">01 / 05</span></div>
+          <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white/65"><Layers3 className="h-4 w-4" /> {copy.heroBadge}</span><span className="text-xs font-semibold text-white/40">{copy.heroMeta}</span></div>
           <h1 className="mt-14 text-5xl font-black leading-[0.94] tracking-[-0.045em] md:text-7xl">{content.hero_title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-white/70">{content.hero_subtitle}</p>
           <HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark square={false} />
@@ -367,30 +663,30 @@ function BentoHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: He
   );
 }
 
-function AtelierHero({ preview, services, images, ctaHref, oldSiteUrl }: HeroProps) {
+function AtelierHero({ preview, services, images, ctaHref, oldSiteUrl, copy }: HeroProps) {
   const { companyName, content, colors } = preview;
   return (
     <section id="top" className="relative overflow-hidden border-b border-[#211f1b]/15 px-4 py-14 md:py-20">
       <div className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 text-[11rem] font-medium uppercase leading-none tracking-[-0.08em] text-[#211f1b]/[0.035] xl:block">Atelier</div>
       <div className="relative mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
         <div className="order-2 lg:order-1">
-          <div className="flex items-center gap-4 text-xs font-semibold uppercase tracking-[0.32em] text-[#777066]"><span className="h-px w-12 bg-[#211f1b]/35" />Curated business presence</div>
+          <div className="flex items-center gap-4 text-xs font-semibold uppercase tracking-[0.32em] text-[#777066]"><span className="h-px w-12 bg-[#211f1b]/35" />{copy.heroBadge}</div>
           <h1 className="mt-9 text-5xl font-medium leading-[0.98] tracking-[-0.045em] text-[#211f1b] md:text-7xl xl:text-[6.5rem]">{content.hero_title}</h1>
           <p className="mt-7 max-w-xl text-lg leading-8 text-[#615d55]">{content.hero_subtitle}</p>
-          <div className="mt-10 flex items-center gap-8 border-y border-[#211f1b]/15 py-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#777066]">Signatur</p><p className="mt-2 font-semibold text-[#211f1b]">{services[0]}</p></div><div className="h-10 w-px bg-[#211f1b]/15" /><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#777066]">Studio</p><p className="mt-2 font-semibold text-[#211f1b]">{companyName}</p></div></div>
+          <div className="mt-10 flex items-center gap-8 border-y border-[#211f1b]/15 py-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#777066]">{copy.heroPanelEyebrow}</p><p className="mt-2 font-semibold text-[#211f1b]">{services[0]}</p></div><div className="h-10 w-px bg-[#211f1b]/15" /><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#777066]">Bedrift</p><p className="mt-2 font-semibold text-[#211f1b]">{companyName}</p></div></div>
           <HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark={false} square />
         </div>
         <div className="order-1 relative min-h-[560px] lg:order-2">
           <div className="absolute left-0 top-0 h-[76%] w-[72%] overflow-hidden bg-[#d8d0c2] shadow-2xl">{images[0] ? <img src={images[0]} alt={`${companyName} bilde 1`} className="signature-image h-full w-full object-cover" /> : <div className="h-full w-full" style={{ backgroundColor: colors.primary }} />}</div>
           <div className="absolute bottom-0 right-0 h-[54%] w-[55%] overflow-hidden border-[10px] border-[#eee9df] bg-[#c8c0b2] shadow-2xl">{images[1] ? <img src={images[1]} alt={`${companyName} bilde 2`} className="signature-image h-full w-full object-cover" /> : <div className="h-full w-full" style={{ backgroundColor: colors.secondary }} />}</div>
-          <div className="absolute right-[4%] top-[8%] flex h-28 w-28 items-center justify-center rounded-full border border-[#211f1b]/25 bg-[#eee9df]/90 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-[#211f1b] shadow-xl backdrop-blur signature-orbit">Made to<br />be noticed</div>
+          <div className="absolute right-[4%] top-[8%] flex h-28 w-28 items-center justify-center rounded-full border border-[#211f1b]/25 bg-[#eee9df]/90 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-[#211f1b] shadow-xl backdrop-blur signature-orbit">Klar for<br />kontakt</div>
         </div>
       </div>
     </section>
   );
 }
 
-function KineticHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: HeroProps) {
+function KineticHero({ preview, services, trust, images, ctaHref, oldSiteUrl, copy }: HeroProps) {
   const { companyName, content, colors } = preview;
   const words = [...services.slice(0, 4), ...trust.slice(0, 2)];
   return (
@@ -399,10 +695,10 @@ function KineticHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: 
       <div className="pointer-events-none absolute -right-16 bottom-8 h-[28rem] w-[28rem] rounded-full blur-3xl" style={{ backgroundColor: withPreviewAlpha(colors.accent, "44") }} />
       <div className="signature-orbit pointer-events-none absolute right-[8%] top-[14%] h-52 w-52 rounded-full border border-white/15"><div className="absolute -left-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full" style={{ backgroundColor: colors.primary }} /><div className="absolute -right-2 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full" style={{ backgroundColor: colors.accent }} /></div>
       <div className="relative mx-auto max-w-7xl">
-        <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-5 text-xs font-bold uppercase tracking-[0.25em] text-white/[0.45]"><span>Digital presence / 2026</span><span>{companyName}</span></div>
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-5 text-xs font-bold uppercase tracking-[0.25em] text-white/[0.45]"><span>{copy.heroBadge}</span><span>{companyName}</span></div>
         <div className="grid gap-12 pt-12 lg:grid-cols-[1fr_340px] lg:items-end">
-          <div><div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white/70"><Zap className="h-4 w-4" style={{ color: colors.accent }} /> Kinetic</div><h1 className="mt-8 max-w-6xl text-5xl font-black uppercase leading-[0.83] tracking-[-0.065em] text-white md:text-8xl xl:text-[9rem]">{content.hero_title}</h1><p className="mt-9 max-w-2xl text-lg leading-8 text-white/65 md:text-xl">{content.hero_subtitle}</p><HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark square={false} /></div>
-          <div className="relative min-h-[360px] overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.055] p-4 shadow-2xl shadow-fuchsia-950/20 backdrop-blur-xl">{images[0] ? <img src={images[0]} alt={`${companyName} hovedbilde`} className="signature-image h-full min-h-[330px] w-full rounded-[1.4rem] object-cover opacity-85" /> : <div className="h-full min-h-[330px] rounded-[1.4rem]" style={{ background: `linear-gradient(145deg, ${colors.primary}, ${colors.secondary})` }} />}<div className="absolute inset-x-8 bottom-8 rounded-2xl border border-white/15 bg-black/50 p-4 backdrop-blur-xl"><p className="text-xs font-bold uppercase tracking-[0.2em] text-white/40">Featured</p><p className="mt-2 font-black text-white">{services[0]}</p></div></div>
+          <div><div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white/70"><Zap className="h-4 w-4" style={{ color: colors.accent }} /> {copy.heroPanelTitle}</div><h1 className="mt-8 max-w-6xl text-5xl font-black uppercase leading-[0.83] tracking-[-0.065em] text-white md:text-8xl xl:text-[9rem]">{content.hero_title}</h1><p className="mt-9 max-w-2xl pr-16 text-lg leading-8 text-white/65 sm:pr-0 md:text-xl">{content.hero_subtitle}</p><HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark square={false} /></div>
+          <div className="relative min-h-[360px] overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.055] p-4 shadow-2xl shadow-fuchsia-950/20 backdrop-blur-xl">{images[0] ? <img src={images[0]} alt={`${companyName} hovedbilde`} className="signature-image h-full min-h-[330px] w-full rounded-[1.4rem] object-cover opacity-85" /> : <div className="h-full min-h-[330px] rounded-[1.4rem]" style={{ background: `linear-gradient(145deg, ${colors.primary}, ${colors.secondary})` }} />}<div className="absolute inset-x-8 bottom-8 rounded-2xl border border-white/15 bg-black/50 p-4 backdrop-blur-xl"><p className="text-xs font-bold uppercase tracking-[0.2em] text-white/40">Fokus</p><p className="mt-2 font-black text-white">{services[0]}</p></div></div>
         </div>
       </div>
       <div className="relative mt-14 overflow-hidden border-y border-white/10 py-4"><div className="signature-marquee flex w-max gap-10 whitespace-nowrap text-sm font-black uppercase tracking-[0.22em] text-white/[0.45]">{[...words, ...words].map((word, index) => <span key={`${word}-${index}`} className="inline-flex items-center gap-10">{word} <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: index % 2 ? colors.accent : colors.primary }} /></span>)}</div></div>
@@ -410,7 +706,7 @@ function KineticHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: 
   );
 }
 
-function PanoramaHero({ preview, services, trust, images, ctaHref, oldSiteUrl }: HeroProps) {
+function PanoramaHero({ preview, services, trust, images, ctaHref, oldSiteUrl, copy }: HeroProps) {
   const { companyName, content, colors } = preview;
   return (
     <section id="top" className="px-4 pb-12 pt-8 md:pb-20 md:pt-12">
@@ -418,7 +714,7 @@ function PanoramaHero({ preview, services, trust, images, ctaHref, oldSiteUrl }:
         {images[0] ? <img src={images[0]} alt={`${companyName} panorama`} className="signature-image absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0" style={{ background: `linear-gradient(125deg, ${colors.secondary}, ${colors.primary})` }} />}
         <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/50 to-transparent" />
         <div className="relative z-10 flex min-h-[78vh] flex-col justify-between p-7 md:p-12 lg:p-16">
-          <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.25em] text-white/[0.55]"><span>Panorama / Signature 2026</span><span className="hidden md:block">{companyName}</span></div>
+          <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.25em] text-white/[0.55]"><span>{copy.heroBadge}</span><span className="hidden md:block">{companyName}</span></div>
           <div className="grid gap-10 lg:grid-cols-[1fr_360px] lg:items-end"><div><h1 className="max-w-5xl text-5xl font-black leading-[0.92] tracking-[-0.05em] text-white md:text-7xl xl:text-[7rem]">{content.hero_title}</h1><p className="mt-7 max-w-2xl text-lg leading-8 text-white/75 md:text-xl">{content.hero_subtitle}</p><HeroActions ctaHref={ctaHref} oldSiteUrl={oldSiteUrl} label={content.call_to_action} colors={colors} dark square={false} /></div><div className="space-y-3">{services.slice(0, 3).map((service, index) => <a key={service} href="#kontakt" className="group flex items-center justify-between rounded-[1.4rem] border border-white/15 bg-white/[0.1] p-4 text-white shadow-xl backdrop-blur-xl transition hover:bg-white/[0.18]"><div className="flex items-center gap-4"><span className="text-xs font-black text-white/40">0{index + 1}</span><span className="font-bold">{service}</span></div><ChevronRight className="h-5 w-5 transition group-hover:translate-x-1" style={{ color: index === 0 ? colors.accent : "white" }} /></a>)}<div className="mt-5 flex items-center gap-3 rounded-[1.4rem] border border-white/10 bg-black/25 p-4 text-sm text-white/65 backdrop-blur"><BadgeCheck className="h-5 w-5" style={{ color: colors.accent }} />{trust[0]}</div></div></div>
         </div>
       </div>
@@ -439,10 +735,10 @@ function SectionHeading({ layout, eyebrow, title, text, theme }: { layout: Signa
   return <div className={layout === "atelier" ? "grid gap-5 border-t border-current/15 pt-5 md:grid-cols-[220px_1fr]" : "max-w-4xl"}><div className={`text-xs font-bold uppercase tracking-[0.28em] ${theme.eyebrow}`}>{eyebrow}</div><div><h2 className={`text-4xl font-black leading-[0.98] tracking-[-0.04em] md:text-6xl ${layout === "atelier" ? "font-medium" : ""}`}>{title}</h2>{text && <p className={`mt-5 max-w-2xl text-base leading-8 md:text-lg ${theme.muted}`}>{text}</p>}</div></div>;
 }
 
-function ServiceGrid({ layout, services, colors, theme }: { layout: SignatureDemoSiteLayout; services: string[]; colors: DemoSitesPreviewModel["colors"]; theme: SignatureTheme }) {
+function ServiceGrid({ layout, services, colors, theme, cardText }: { layout: SignatureDemoSiteLayout; services: string[]; colors: DemoSitesPreviewModel["colors"]; theme: SignatureTheme; cardText: string }) {
   if (layout === "atelier") return <div className="mt-14 border-t border-current/15">{services.map((service, index) => <a key={service} href="#kontakt" className="group grid items-center gap-4 border-b border-current/15 py-6 transition hover:pl-3 md:grid-cols-[80px_1fr_auto]"><span className={`text-xs font-bold ${theme.eyebrow}`}>0{index + 1}</span><h3 className="text-2xl font-medium md:text-4xl">{service}</h3><ArrowUpRight className="h-6 w-6 transition group-hover:rotate-45" style={{ color: colors.primary }} /></a>)}</div>;
   const bentoSpan = layout === "bento";
-  return <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{services.map((service, index) => <a key={service} href="#kontakt" className={`${theme.card} ${theme.cardText} ${theme.radius} group border p-6 transition duration-500 hover:-translate-y-1 ${bentoSpan && index === 0 ? "md:col-span-2 lg:col-span-2" : ""}`}><div className="flex items-center justify-between"><span className={`text-xs font-black uppercase tracking-[0.22em] ${theme.eyebrow}`}>0{index + 1}</span><span className="flex h-11 w-11 items-center justify-center rounded-full border border-current/10 transition group-hover:scale-110" style={{ color: colors.primary }}><ArrowUpRight className="h-5 w-5" /></span></div><h3 className={`${bentoSpan && index === 0 ? "max-w-xl text-4xl md:text-5xl" : "text-2xl"} mt-12 font-black leading-tight`}>{service}</h3><p className={`mt-4 max-w-md text-sm leading-7 ${theme.muted}`}>Fortell oss hva du trenger, så får du en tydelig anbefaling og et konkret neste steg.</p></a>)}</div>;
+  return <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{services.map((service, index) => <a key={service} href="#kontakt" className={`${theme.card} ${theme.cardText} ${theme.radius} group border p-6 transition duration-500 hover:-translate-y-1 ${bentoSpan && index === 0 ? "md:col-span-2 lg:col-span-2" : ""}`}><div className="flex items-center justify-between"><span className={`text-xs font-black uppercase tracking-[0.22em] ${theme.eyebrow}`}>0{index + 1}</span><span className="flex h-11 w-11 items-center justify-center rounded-full border border-current/10 transition group-hover:scale-110" style={{ color: colors.primary }}><ArrowUpRight className="h-5 w-5" /></span></div><h3 className={`${bentoSpan && index === 0 ? "max-w-xl text-4xl md:text-5xl" : "text-2xl"} mt-12 font-black leading-tight`}>{service}</h3><p className={`mt-4 max-w-md text-sm leading-7 ${theme.muted}`}>{cardText}</p></a>)}</div>;
 }
 
 function SignatureGallery({ layout, images, companyName, theme }: { layout: SignatureDemoSiteLayout; images: string[]; companyName: string; theme: SignatureTheme }) {
@@ -455,10 +751,10 @@ function TrustGrid({ layout, trust, colors, theme }: { layout: SignatureDemoSite
   return <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">{trust.slice(0, 4).map((item, index) => <div key={item} className={`${theme.card} ${theme.radius} border p-6`}><div className="flex items-center justify-between"><Star className="h-5 w-5" style={{ color: colors.accent }} /><span className={`text-xs font-black ${theme.eyebrow}`}>0{index + 1}</span></div><p className={`${layout === "atelier" ? "font-medium" : "font-black"} mt-10 text-xl leading-8`}>{item}</p></div>)}</div>;
 }
 
-function OfferGrid({ layout, products, prices, colors, theme }: { layout: SignatureDemoSiteLayout; products: string[]; prices: string[]; colors: DemoSitesPreviewModel["colors"]; theme: SignatureTheme }) {
+function OfferGrid({ layout, products, prices, colors, theme, productsTitle, pricesTitle }: { layout: SignatureDemoSiteLayout; products: string[]; prices: string[]; colors: DemoSitesPreviewModel["colors"]; theme: SignatureTheme; productsTitle: string; pricesTitle: string }) {
   const productItems = products.length ? products : ["Skreddersydd løsning", "Personlig oppfølging"];
   const priceItems = prices.length ? prices : ["Pris etter behov", "Be om et konkret tilbud"];
-  return <div className="mt-14 grid gap-5 lg:grid-cols-2"><OfferCard title="Løsninger" items={productItems} colors={colors} theme={theme} square={layout === "atelier"} /><OfferCard title="Pris og pakker" items={priceItems} colors={colors} theme={theme} square={layout === "atelier"} /></div>;
+  return <div className="mt-14 grid gap-5 lg:grid-cols-2"><OfferCard title={productsTitle} items={productItems} colors={colors} theme={theme} square={layout === "atelier"} /><OfferCard title={pricesTitle} items={priceItems} colors={colors} theme={theme} square={layout === "atelier"} /></div>;
 }
 
 function OfferCard({ title, items, colors, theme, square }: { title: string; items: string[]; colors: DemoSitesPreviewModel["colors"]; theme: SignatureTheme; square: boolean }) {
@@ -473,9 +769,9 @@ function TeamGrid({ preview, layout, theme }: { preview: DemoSitesPreviewModel; 
   return <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{preview.employees.map((person) => <div key={`${person.name}-${person.title}`} className={`${theme.card} ${layout === "atelier" ? "rounded-none" : theme.radius} border p-5`}>{person.photo ? <img src={person.photo} alt={person.name} className={`h-72 w-full object-cover ${layout === "atelier" ? "" : "rounded-[1.4rem]"}`} /> : <div className={`flex h-72 items-center justify-center text-5xl font-black ${layout === "atelier" ? "" : "rounded-[1.4rem]"}`} style={{ backgroundColor: withPreviewAlpha(preview.colors.primary, "20"), color: preview.colors.primary }}>{person.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div>}<h3 className="mt-5 text-xl font-black">{person.name}</h3><p className={`mt-1 text-sm ${theme.muted}`}>{person.title}</p></div>)}</div>;
 }
 
-function SignatureContact({ preview, theme, layout, inquiryToken, showLeadForm }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; layout: SignatureDemoSiteLayout; inquiryToken?: string; showLeadForm: boolean }) {
+function SignatureContact({ preview, theme, layout, inquiryToken, showLeadForm, copy }: { preview: DemoSitesPreviewModel; theme: SignatureTheme; layout: SignatureDemoSiteLayout; inquiryToken?: string; showLeadForm: boolean; copy: SignatureBusinessCopy }) {
   const { companyName, contact, content, colors } = preview;
-  return <section id="kontakt" data-demo-reveal="" className={`${theme.contact} px-4 py-20 md:py-28`}><div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start"><div><div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.26em] text-white/[0.45]"><MessageCircle className="h-4 w-4" style={{ color: colors.accent }} /> Kontakt</div><h2 className={`${layout === "atelier" ? "font-medium" : "font-black"} mt-7 text-4xl leading-[0.98] tracking-[-0.04em] md:text-6xl`}>La oss finne riktig neste steg</h2><p className="mt-6 max-w-xl text-base leading-8 text-white/65">{content.contact_text || `Fortell kort hva du trenger fra ${companyName}, så svarer vi med en tydelig anbefaling.`}</p><div className="mt-9 space-y-3"><ContactItem icon={<Phone className="h-5 w-5" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} /><ContactItem icon={<Mail className="h-5 w-5" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} /><ContactItem icon={<MapPin className="h-5 w-5" />} label="Adresse" value={contact.address} /></div></div>{showLeadForm ? <DemoLeadForm token={inquiryToken || ""} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} /> : <div className={`border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-xl ${layout === "atelier" ? "rounded-none" : "rounded-[2rem]"}`}><div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">Direkte forespørsel</p><p className="mt-2 text-xl font-black">Hva kan vi hjelpe med?</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary, color: colors.primaryText }}><ArrowUpRight className="h-5 w-5" /></span></div><div className="mt-6 space-y-3">{preview.content.services.slice(0, 3).map((service) => <a key={service} href={preview.contactHref} className="flex items-center justify-between border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/80 transition hover:bg-white/[0.09]">{service} <ChevronRight className="h-4 w-4" /></a>)}</div><a href={preview.contactHref} className="mt-6 inline-flex w-full items-center justify-center px-6 py-4 text-sm font-black" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>{content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" /></a></div>}</div></section>;
+  return <section id="kontakt" data-demo-reveal="" className={`${theme.contact} px-4 py-20 md:py-28`}><div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-start"><div><div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.26em] text-white/[0.45]"><MessageCircle className="h-4 w-4" style={{ color: colors.accent }} /> Kontakt</div><h2 className={`${layout === "atelier" ? "font-medium" : "font-black"} mt-7 text-4xl leading-[0.98] tracking-[-0.04em] md:text-6xl`}>{copy.contactTitle}</h2><p className="mt-6 max-w-xl text-base leading-8 text-white/65">{content.contact_text || copy.contactText}</p><div className="mt-9 space-y-3"><ContactItem icon={<Phone className="h-5 w-5" />} label="Telefon" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : undefined} /><ContactItem icon={<Mail className="h-5 w-5" />} label="E-post" value={contact.email} href={contact.email ? `mailto:${contact.email}` : undefined} /><ContactItem icon={<MapPin className="h-5 w-5" />} label="Adresse" value={contact.address} /></div></div>{showLeadForm ? <DemoLeadForm token={inquiryToken || ""} companyName={companyName} accentColor={colors.primary} accentTextColor={colors.primaryText} /> : <div className={`border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-xl ${layout === "atelier" ? "rounded-none" : "rounded-[2rem]"}`}><div className="flex items-center justify-between border-b border-white/10 pb-5"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">Direkte forespørsel</p><p className="mt-2 text-xl font-black">Hva kan vi hjelpe med?</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: colors.primary, color: colors.primaryText }}><ArrowUpRight className="h-5 w-5" /></span></div><div className="mt-6 space-y-3">{preview.content.services.slice(0, 3).map((service) => <a key={service} href={preview.contactHref} className="flex items-center justify-between border border-white/10 bg-white/[0.04] p-4 text-sm font-semibold text-white/80 transition hover:bg-white/[0.09]">{service} <ChevronRight className="h-4 w-4" /></a>)}</div><a href={preview.contactHref} className="mt-6 inline-flex w-full items-center justify-center px-6 py-4 text-sm font-black" style={{ backgroundColor: colors.primary, color: colors.primaryText, borderRadius: layout === "atelier" ? 0 : "999px" }}>{content.call_to_action} <ArrowRight className="ml-2 h-4 w-4" /></a></div>}</div></section>;
 }
 
 function ContactItem({ icon, label, value, href }: { icon: ReactNode; label: string; value: string; href?: string }) {
