@@ -3,11 +3,13 @@ import { z } from "zod";
 export const mediaTypes = ["image", "video", "avatar", "voice", "audio"] as const;
 export const qualityTiers = ["fast", "balanced", "premium"] as const;
 export const costTiers = ["low", "medium", "high", "premium"] as const;
+export const providerIds = ["gemini", "openart", "openai"] as const;
 export const jobStatuses = ["draft", "queued", "submitted", "processing", "completed", "failed", "cancelled", "expired"] as const;
 
 export type MediaType = (typeof mediaTypes)[number];
 export type QualityTier = (typeof qualityTiers)[number];
 export type CostTier = (typeof costTiers)[number];
+export type ProviderId = (typeof providerIds)[number];
 export type MediaJobStatus = (typeof jobStatuses)[number];
 
 export const referenceRequirementSchema = z.object({
@@ -18,7 +20,7 @@ export const referenceRequirementSchema = z.object({
 });
 
 export const providerRecommendationSchema = z.object({
-  provider: z.enum(["gemini", "openart"]),
+  provider: z.enum(providerIds),
   displayName: z.string(),
   reason: z.string(),
   estimatedCostTier: z.enum(costTiers),
@@ -39,6 +41,11 @@ export const mediaPromptPlanSchema = z.object({
   durationSeconds: z.number().int().positive().max(120).optional(),
   resolution: z.string().optional(),
   qualityTier: z.enum(qualityTiers),
+  voiceLanguage: z.string().max(80).optional(),
+  voiceId: z.string().max(80).optional(),
+  voiceTone: z.string().max(500).optional(),
+  voiceSpeed: z.number().min(0.25).max(4).optional(),
+  outputFormat: z.enum(["mp3", "opus", "aac", "flac", "wav", "pcm"]).optional(),
   referenceRequirements: z.array(referenceRequirementSchema).default([]),
   providerRecommendation: providerRecommendationSchema,
   safetyNotes: z.array(z.string()).default([]),
@@ -148,7 +155,8 @@ export interface VoiceGenerationInput {
   voiceId?: string;
   tone?: string;
   speed?: number;
-  outputFormat?: string;
+  outputFormat?: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
+  model?: string;
 }
 
 export interface ProviderJobStatus {
@@ -173,7 +181,7 @@ export interface MediaGenerationJob {
 }
 
 export interface MediaProvider {
-  id: "gemini" | "openart";
+  id: ProviderId;
   displayName: string;
   getCapabilities(): Promise<ProviderCapabilities>;
   generateImage?(input: ImageGenerationInput): Promise<MediaGenerationJob>;
@@ -184,7 +192,7 @@ export interface MediaProvider {
 }
 
 export const createPlanRequestSchema = z.object({
-  request: z.string().min(3).max(4000),
+  request: z.string().min(3).max(4096),
   mode: z.enum(["simple", "guided", "professional"]).default("simple"),
   mediaType: z.enum(mediaTypes).optional(),
   useCase: z.string().optional(),
@@ -197,6 +205,11 @@ export const createPlanRequestSchema = z.object({
   sourceImageUrls: z.array(z.string().url()).default([]),
   durationSeconds: z.number().int().positive().max(60).optional(),
   allowText: z.boolean().default(false),
+  voiceLanguage: z.string().max(80).optional(),
+  voiceId: z.string().max(80).optional(),
+  voiceTone: z.string().max(500).optional(),
+  voiceSpeed: z.number().min(0.25).max(4).optional(),
+  outputFormat: z.enum(["mp3", "opus", "aac", "flac", "wav", "pcm"]).optional(),
 });
 
 export type CreatePlanRequest = z.infer<typeof createPlanRequestSchema>;
