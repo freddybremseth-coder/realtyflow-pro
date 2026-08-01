@@ -28,6 +28,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const MAX_BODY_BYTES = 512 * 1024;
+const MAX_ANALYSIS_TEXT_CHARS = 12_000;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
 type ErrorContext = {
@@ -72,6 +73,71 @@ function zodMessage(error: unknown) {
   const first = issues[0];
   const path = Array.isArray(first?.path) ? first.path.join(".") : "input";
   return `${path || "input"}: ${first?.message || "ugyldig verdi"}`;
+}
+
+function compactLongProfileText(value: string) {
+  if (value.length <= MAX_ANALYSIS_TEXT_CHARS) {
+    return { text: value, truncated: false, originalLength: value.length };
+  }
+
+  const marker = "\n\n[... RealtyFlow forkortet midtdelen av en lang profiltekst for analyse ...]\n\n";
+  const headLength = 8_000;
+  const tailLength = Math.max(1_000, MAX_ANALYSIS_TEXT_CHARS - headLength - marker.length);
+  return {
+    text: `${value.slice(0, headLength)}${marker}${value.slice(-tailLength)}`,
+    truncated: true,
+    originalLength: value.length,
+  };
+}
+
+function normalizeLargeAnalysisRequest(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  const record = body as Record<string, unknown>;
+  if (record.action !== "analyze_profile") {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  const payload = record.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  const importValue = (payload as Record<string, unknown>).import;
+  if (!importValue || typeof importValue !== "object" || Array.isArray(importValue)) {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  const reviewedText = (importValue as Record<string, unknown>).reviewedText;
+  if (typeof reviewedText !== "string") {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  const compacted = compactLongProfileText(reviewedText);
+  if (!compacted.truncated) {
+    return { body, warning: null as null | Record<string, unknown> };
+  }
+
+  return {
+    body: {
+      ...record,
+      payload: {
+        ...(payload as Record<string, unknown>),
+        import: {
+          ...(importValue as Record<string, unknown>),
+          reviewedText: compacted.text,
+        },
+      },
+    },
+    warning: {
+      code: "PROFILE_TEXT_COMPACTED",
+      message: "Profilteksten var svært lang. RealtyFlow analyserte starten og slutten av dokumentet.",
+      originalLength: compacted.originalLength,
+      analyzedLength: compacted.text.length,
+    },
+  };
 }
 
 async function requireSocialAccess(request: NextRequest, mode: "read" | "write") {
@@ -217,7 +283,9 @@ export async function POST(request: NextRequest) {
       userEmail: context.userEmail,
     };
     assertRateLimit(`${context.organizationId}:${context.userEmail}`, 1);
-    const body = await readJsonBody(request);
+    const rawBody = await readJsonBody(request);
+    const normalized = normalizeLargeAnalysisRequest(rawBody);
+    const body = normalized.body;
     if (body && typeof body === "object" && "action" in body) {
       errorContext.action = String((body as { action?: unknown }).action || "unknown");
     }
@@ -235,7 +303,13 @@ export async function POST(request: NextRequest) {
       const analysis = await analyzeAndPersistProfile(context, payload);
       const dashboard = await loadSocialDashboard(context);
       return NextResponse.json(
-        { ok: true, correlationId, analysis: compactAnalysisForClient(analysis), dashboard },
+        {
+          ok: true,
+          correlationId,
+          analysis: compactAnalysisForClient(analysis),
+          dashboard,
+          warning: normalized.warning,
+        },
         { headers: headers(correlationId) },
       );
     }
