@@ -104,12 +104,97 @@ export const PROFILE_SECTION_TYPES = [
   "profile_summary",
 ] as const;
 
+export const KNOWLEDGE_SOURCE_TYPES = [
+  "master_profile",
+  "uploaded_markdown",
+  "uploaded_text",
+  "manual_note",
+  "linkedin_profile",
+  "website",
+  "company_profile",
+  "crm_profile",
+  "other",
+] as const;
+
+export const KNOWLEDGE_CATEGORIES = [
+  "identity",
+  "role",
+  "experience",
+  "company",
+  "service",
+  "expertise",
+  "education",
+  "achievement",
+  "market",
+  "location",
+  "publication",
+  "speaking",
+  "course",
+  "skill",
+  "value",
+  "story",
+  "audience",
+  "restriction",
+  "positioning",
+  "other",
+] as const;
+
+export const KNOWLEDGE_VERIFICATION_STATUSES = [
+  "needs_review",
+  "user_confirmed",
+  "document_verified",
+  "rejected",
+  "conflict",
+  "outdated",
+  "deleted",
+] as const;
+
+export const KNOWLEDGE_VISIBILITIES = [
+  "private",
+  "internal",
+  "public_candidate",
+  "public_approved",
+] as const;
+
+export const PROFILE_VARIANT_TYPES = [
+  "linkedin",
+  "website_bio",
+  "real_estate",
+  "ai_crm",
+  "author",
+  "speaker",
+  "consultant",
+  "company",
+  "general",
+] as const;
+
+export const PROFILE_FACT_TYPES = [
+  "user_claim",
+  "document_derived",
+  "positioning_suggestion",
+  "restriction",
+  "third_party_reference",
+] as const;
+
+export const PROFILE_SUGGESTION_STATUSES = [
+  "draft",
+  "approved",
+  "rejected",
+  "archived",
+] as const;
+
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 export type SocialLanguage = (typeof SOCIAL_LANGUAGES)[number];
 export type SocialTone = (typeof SOCIAL_TONES)[number];
 export type PostStatus = (typeof POST_STATUSES)[number];
 export type QualityScoreCategory = (typeof QUALITY_SCORE_CATEGORIES)[number];
 export type ProfileSectionType = (typeof PROFILE_SECTION_TYPES)[number];
+export type KnowledgeCategory = (typeof KNOWLEDGE_CATEGORIES)[number];
+export type KnowledgeSourceType = (typeof KNOWLEDGE_SOURCE_TYPES)[number];
+export type KnowledgeVerificationStatus = (typeof KNOWLEDGE_VERIFICATION_STATUSES)[number];
+export type KnowledgeVisibility = (typeof KNOWLEDGE_VISIBILITIES)[number];
+export type ProfileVariantType = (typeof PROFILE_VARIANT_TYPES)[number];
+export type ProfileFactType = (typeof PROFILE_FACT_TYPES)[number];
 
 const nullableText = (max: number) =>
   z.preprocess((value) => {
@@ -252,6 +337,116 @@ export const SocialRecommendationStatusInputSchema = z
   })
   .strict();
 
+export const KnowledgeFileImportInputSchema = z
+  .object({
+    sourceName: optionalText(180).default("Opplastet kunnskapskilde"),
+    sourceType: z.enum(KNOWLEDGE_SOURCE_TYPES).default("uploaded_markdown"),
+    filename: nullableText(260).optional(),
+    mimeType: nullableText(120).optional(),
+    text: z.string().trim().min(20).max(120_000),
+    aiUseAllowed: z.coerce.boolean().default(true),
+    publicUseAllowed: z.coerce.boolean().default(false),
+    visibility: z.enum(KNOWLEDGE_VISIBILITIES).default("internal"),
+  })
+  .strict();
+
+export type KnowledgeFileImportInput = z.infer<typeof KnowledgeFileImportInputSchema>;
+
+export const KnowledgeItemUpdateInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    verificationStatus: z.enum(KNOWLEDGE_VERIFICATION_STATUSES).optional(),
+    publicUseAllowed: z.coerce.boolean().optional(),
+    sensitive: z.coerce.boolean().optional(),
+    visibility: z.enum(KNOWLEDGE_VISIBILITIES).optional(),
+    title: optionalText(220).optional(),
+    content: z.string().trim().min(1).max(6_000).optional(),
+    summary: optionalText(1_200).optional(),
+    tags: textList(30, 80).optional(),
+    allowedProfileTypes: z.array(z.enum(PROFILE_VARIANT_TYPES)).max(12).optional(),
+    reviewNotes: nullableText(2_000).optional(),
+  })
+  .strict();
+
+export type KnowledgeItemUpdateInput = z.infer<typeof KnowledgeItemUpdateInputSchema>;
+
+export const KnowledgeSourceUpdateInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["active", "disabled", "deleted"]).optional(),
+    aiUseAllowed: z.coerce.boolean().optional(),
+    publicUseAllowed: z.coerce.boolean().optional(),
+    visibility: z.enum(KNOWLEDGE_VISIBILITIES).optional(),
+  })
+  .strict();
+
+export type KnowledgeSourceUpdateInput = z.infer<typeof KnowledgeSourceUpdateInputSchema>;
+
+export const ProfileGoalInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    name: optionalText(160).default("Profesjonelt profilmal"),
+    description: nullableText(1_500),
+    primaryPlatform: z.enum(SOCIAL_PLATFORMS).default("linkedin"),
+    profileType: z.enum(PROFILE_VARIANT_TYPES).default("linkedin"),
+    successMetrics: textList(12, 120),
+    priority: z.coerce.number().int().min(1).max(5).default(3),
+    isActive: z.coerce.boolean().default(true),
+  })
+  .strict();
+
+export type ProfileGoalInput = z.infer<typeof ProfileGoalInputSchema>;
+
+export const TargetAudienceInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    name: optionalText(160).default("Primær målgruppe"),
+    description: nullableText(1_500),
+    markets: textList(20, 120),
+    needs: textList(20, 140),
+    objections: textList(20, 140),
+    languages: z.array(z.enum(SOCIAL_LANGUAGES)).min(1).max(3).default(["no"]),
+    isActive: z.coerce.boolean().default(true),
+  })
+  .strict();
+
+export type TargetAudienceInput = z.infer<typeof TargetAudienceInputSchema>;
+
+export const ProfileVariantInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    name: optionalText(160).default("LinkedIn hovedprofil"),
+    profileType: z.enum(PROFILE_VARIANT_TYPES).default("linkedin"),
+    primaryPlatform: z.enum(SOCIAL_PLATFORMS).default("linkedin"),
+    goalId: z.string().uuid().nullable().optional(),
+    audienceId: z.string().uuid().nullable().optional(),
+    tone: textList(8, 80),
+    focusTags: textList(20, 80),
+    instructions: nullableText(2_000),
+    status: z.enum(["draft", "generated", "approved", "archived"]).default("draft"),
+  })
+  .strict();
+
+export type ProfileVariantInput = z.infer<typeof ProfileVariantInputSchema>;
+
+export const GenerateProfileSuggestionsInputSchema = z
+  .object({
+    variantId: z.string().uuid(),
+  })
+  .strict();
+
+export type GenerateProfileSuggestionsInput = z.infer<typeof GenerateProfileSuggestionsInputSchema>;
+
+export const ProfileSuggestionDecisionInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["approved", "rejected"]),
+    approvedValue: z.unknown().optional(),
+  })
+  .strict();
+
+export type ProfileSuggestionDecisionInput = z.infer<typeof ProfileSuggestionDecisionInputSchema>;
+
 export const SocialIntelligenceActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save_profile"), profile: BrandProfileInputSchema }).strict(),
   z.object({ action: z.literal("analyze_profile"), payload: SocialAnalyzeRequestSchema }).strict(),
@@ -266,6 +461,14 @@ export const SocialIntelligenceActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save_metrics"), metrics: SocialMetricsInputSchema }).strict(),
   z.object({ action: z.literal("link_entity"), link: SocialEntityLinkInputSchema }).strict(),
   z.object({ action: z.literal("update_recommendation"), recommendation: SocialRecommendationStatusInputSchema }).strict(),
+  z.object({ action: z.literal("import_knowledge_file"), import: KnowledgeFileImportInputSchema }).strict(),
+  z.object({ action: z.literal("update_knowledge_item"), item: KnowledgeItemUpdateInputSchema }).strict(),
+  z.object({ action: z.literal("update_knowledge_source"), source: KnowledgeSourceUpdateInputSchema }).strict(),
+  z.object({ action: z.literal("save_profile_goal"), goal: ProfileGoalInputSchema }).strict(),
+  z.object({ action: z.literal("save_target_audience"), audience: TargetAudienceInputSchema }).strict(),
+  z.object({ action: z.literal("save_profile_variant"), variant: ProfileVariantInputSchema }).strict(),
+  z.object({ action: z.literal("generate_profile_suggestions"), payload: GenerateProfileSuggestionsInputSchema }).strict(),
+  z.object({ action: z.literal("decide_profile_suggestion"), decision: ProfileSuggestionDecisionInputSchema }).strict(),
 ]);
 
 export type SocialIntelligenceAction = z.infer<typeof SocialIntelligenceActionSchema>;
