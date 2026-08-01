@@ -238,7 +238,7 @@ export async function discoverOpenArtVoiceBridgeOptions(
     }
   }));
 
-  const bridgeOptions = inspected.filter((item): item is OpenArtBridgeOption => Boolean(item));
+  const bridgeOptions: OpenArtBridgeOption[] = inspected.flatMap((item) => item ? [item] : []);
   const result: OpenArtBridgeDiscovery = {
     expiresAt: Date.now() + 10 * 60_000,
     options: bridgeOptions,
