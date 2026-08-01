@@ -13,7 +13,7 @@ export class MediaApiGuardError extends Error {
 
 export function assertMediaRateLimit(
   identity: string,
-  action: "plan" | "generate" | "retry" | "export" | "capability_refresh",
+  action: "plan" | "generate" | "retry" | "export" | "capability_refresh" | "voice_script",
   now = Date.now(),
 ) {
   const windows = {
@@ -22,6 +22,7 @@ export function assertMediaRateLimit(
     retry: { max: 6, ms: 60_000, weight: 2 },
     export: { max: 20, ms: 60_000, weight: 1 },
     capability_refresh: { max: 4, ms: 60_000, weight: 1 },
+    voice_script: { max: 10, ms: 60_000, weight: 2 },
   } as const;
   const config = windows[action];
   const key = `${identity}:${action}`;
