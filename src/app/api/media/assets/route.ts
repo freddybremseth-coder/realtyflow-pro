@@ -15,9 +15,14 @@ export async function GET(request: NextRequest) {
     const status = request.nextUrl.searchParams.get("status") || "active";
     const favorite = request.nextUrl.searchParams.get("favorite");
 
+    // Do not embed media_projects here. media_assets and media_projects have
+    // two valid FK paths (asset.project_id and project.cover_asset_id), and
+    // PostgREST can reject embedded selects as ambiguous depending on schema
+    // cache state. The Library only needs the asset row and already carries
+    // project_id for a separate project lookup when required.
     let query = context.supabase
       .from("media_assets")
-      .select("*, media_projects!media_assets_project_id_fkey(id,name)")
+      .select("*")
       .eq("organization_id", context.scope.organizationId)
       .order("created_at", { ascending: false })
       .limit(limit);

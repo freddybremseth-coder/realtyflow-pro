@@ -21,9 +21,12 @@ export async function GET(request: NextRequest) {
     const context = await getMediaApiContext(request, { projects: [] });
     if ("error" in context) return context.error;
 
+    // Do not embed media_assets in the list query. There are two valid FK
+    // paths between projects and assets, and PostgREST may reject an embed as
+    // ambiguous. Project cards currently only need project metadata.
     const { data, error } = await context.supabase
       .from("media_projects")
-      .select("*, media_assets!media_assets_project_id_fkey(id,thumbnail_url,public_url,media_type,created_at)")
+      .select("*")
       .eq("organization_id", context.scope.organizationId)
       .neq("status", "archived")
       .order("updated_at", { ascending: false })

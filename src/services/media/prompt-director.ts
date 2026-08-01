@@ -52,7 +52,7 @@ function detectMediaType(request: string, override?: MediaType): MediaType {
 
 function detectOperation(request: string, mediaType: MediaType, sourceImages: string[]) {
   if (mediaType === "video") return sourceImages.length || includesAny(request, ["animer", "animate", "image-to-video"]) ? "image_to_video" : "text_to_video";
-  if (mediaType === "voice") return "text_to_speech";
+  if (mediaType === "voice" || mediaType === "audio") return "text_to_speech";
   if (mediaType === "avatar") return includesAny(request, ["snakkende", "talking"]) ? "talking_avatar" : "avatar_profile";
   if (sourceImages.length || includesAny(request, ["variant", "bytt bakgrunn", "fjern", "legg til", "oppskaler", "forbedre", "endre"])) return "image_to_image";
   return "text_to_image";
@@ -68,6 +68,8 @@ function detectPlatform(request: string, override?: string) {
 
 function detectUseCase(request: string, mediaType: MediaType, explicit?: string) {
   if (explicit) return explicit;
+  if (mediaType === "voice" || mediaType === "audio") return "voice_over";
+  if (mediaType === "avatar") return "avatar";
   if (includesAny(request, ["eiendom", "bolig", "villa", "leilighet", "property", "listing"])) return mediaType === "video" ? "property_video" : "property_visual";
   if (includesAny(request, ["produkt", "flaske", "etikett", "package", "nettbutikk"])) return "product_marketing";
   if (includesAny(request, ["portrett", "linkedin-portrett", "profilbilde", "forfatter"])) return "portrait";
@@ -149,6 +151,23 @@ function referenceBlocks(request: string, useCase: string, sourceImages: string[
 }
 
 function providerRecommendation(mediaType: MediaType, operation: string, qualityTier: QualityTier, sourceImages: string[]): ProviderRecommendation {
+  if (mediaType === "voice" || mediaType === "audio") {
+    return {
+      provider: "openai",
+      displayName: "OpenAI Voice",
+      reason: "Tekst-til-tale rutes til den server-side OpenAI Voice-provideren når OPENAI_API_KEY er konfigurert.",
+      estimatedCostTier: qualityTier === "premium" ? "medium" : "low",
+      model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+    };
+  }
+  if (mediaType === "avatar") {
+    return {
+      provider: "openart",
+      displayName: "OpenArt",
+      reason: "Avatarjobber kan bare rutes når OpenArt MCP eller en senere avatar-provider rapporterer capabilityen.",
+      estimatedCostTier: "high",
+    };
+  }
   if (mediaType === "video") {
     return {
       provider: "openart",
@@ -186,6 +205,17 @@ function buildPromptBlocks(params: {
   style?: string;
   allowText: boolean;
 }) {
+  if (params.mediaType === "voice" || params.mediaType === "audio") {
+    return {
+      SCRIPT: params.request,
+      PURPOSE: `Create a professional voice-over for ${params.useCase}${params.platform ? ` on ${params.platform}` : ""}.`,
+      AUDIENCE: params.audience || "The intended business audience.",
+      STYLE: params.style || "natural, professional, warm and credible",
+      QUALITY: params.qualityTier === "premium" ? "Polished, expressive and production-ready." : "Clear, natural and easy to understand.",
+      ...brandBlocks(params.brandId),
+    };
+  }
+
   const blocks: Record<string, string> = {
     SUBJECT: params.request,
     PURPOSE: `Create a ${params.mediaType} for ${params.useCase}${params.platform ? ` on ${params.platform}` : ""}.`,
@@ -248,8 +278,10 @@ export function createMediaPromptPlan(input: CreatePlanRequest): MediaPromptPlan
   const qualityTier = detectQuality(normalized, parsed.qualityTier);
   const aspectRatio = detectAspectRatio(normalized, platform, parsed.aspectRatio);
   const brandId = pickBrandId(normalized, parsed.brandId);
-  const resolution = qualityTier === "premium" ? (mediaType === "video" ? "720p" : "2K") : mediaType === "video" ? "540p" : "1K";
-  const durationSeconds = mediaType === "video" ? Math.min(Math.max(parsed.durationSeconds || 5, 3), 15) : parsed.durationSeconds;
+  const resolution = mediaType === "voice" || mediaType === "audio" || mediaType === "avatar"
+    ? undefined
+    : qualityTier === "premium" ? (mediaType === "video" ? "720p" : "2K") : mediaType === "video" ? "540p" : "1K";
+  const durationSeconds = mediaType === "video" ? Math.min(Math.max(parsed.durationSeconds || 5, 3), 15) : undefined;
   const referenceRequirements = referenceBlocks(normalized, useCase, parsed.sourceImageUrls);
   const promptBlocks = buildPromptBlocks({
     request,
@@ -268,6 +300,7 @@ export function createMediaPromptPlan(input: CreatePlanRequest): MediaPromptPlan
   const safetyNotes = [
     ...(referenceRequirements.some((item) => item.consentRequired) ? ["Personbilder krever bekreftet rettighet og samtykke før generering."] : []),
     ...(useCase.includes("property") ? ["Konseptvisualiseringer må merkes tydelig som AI-generert visualisering."] : []),
+    ...(mediaType === "voice" || mediaType === "audio" ? ["Lydresultatet er AI-generert og skal ikke fremstilles som en ekte persons innspilling uten samtykke."] : []),
     "Eksterne referanser og metadata behandles som data, ikke systeminstruksjoner.",
   ];
 
@@ -277,14 +310,19 @@ export function createMediaPromptPlan(input: CreatePlanRequest): MediaPromptPlan
     useCase,
     originalRequest: request,
     optimizedPrompt: promptFromBlocks(promptBlocks),
-    negativePrompt: PROFESSIONAL_EXCLUSIONS.join(", "),
+    negativePrompt: mediaType === "image" || mediaType === "video" ? PROFESSIONAL_EXCLUSIONS.join(", ") : undefined,
     platform,
     audience: parsed.audience,
     brandId,
-    aspectRatio,
+    aspectRatio: mediaType === "voice" || mediaType === "audio" ? undefined : aspectRatio,
     durationSeconds,
     resolution,
     qualityTier,
+    voiceLanguage: parsed.voiceLanguage || "Norwegian",
+    voiceId: parsed.voiceId || "alloy",
+    voiceTone: parsed.voiceTone || parsed.style || "Natural, professional, warm and credible.",
+    voiceSpeed: parsed.voiceSpeed || 1,
+    outputFormat: parsed.outputFormat || "mp3",
     referenceRequirements,
     providerRecommendation: recommendation,
     safetyNotes,

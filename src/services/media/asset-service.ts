@@ -7,13 +7,18 @@ const MEDIA_BUCKET = "media-studio";
 const MAX_REMOTE_ASSET_BYTES = 500 * 1024 * 1024;
 
 function extForMime(mimeType: string) {
-  if (mimeType.includes("jpeg")) return "jpg";
-  if (mimeType.includes("webp")) return "webp";
-  if (mimeType.includes("gif")) return "gif";
-  if (mimeType.includes("mp4")) return "mp4";
-  if (mimeType.includes("webm")) return "webm";
-  if (mimeType.includes("mpeg")) return "mp3";
-  if (mimeType.includes("wav")) return "wav";
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("jpeg")) return "jpg";
+  if (normalized.includes("webp")) return "webp";
+  if (normalized.includes("gif")) return "gif";
+  if (normalized.includes("mp4")) return normalized.startsWith("audio/") ? "m4a" : "mp4";
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("mpeg")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("aac")) return "aac";
+  if (normalized.includes("flac")) return "flac";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "opus";
+  if (normalized.includes("l16") || normalized.includes("pcm")) return "pcm";
   return "png";
 }
 
@@ -145,6 +150,11 @@ export async function persistMediaAsset(
         providerRemoteUrl: input.remoteUrl || null,
         promptBlocks: input.plan.promptBlocks,
         safetyNotes: input.plan.safetyNotes,
+        voiceLanguage: input.plan.voiceLanguage || null,
+        voiceId: input.plan.voiceId || null,
+        voiceTone: input.plan.voiceTone || null,
+        voiceSpeed: input.plan.voiceSpeed || null,
+        outputFormat: input.plan.outputFormat || null,
       },
       tags: [
         input.plan.mediaType,

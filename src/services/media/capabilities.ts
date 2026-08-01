@@ -6,10 +6,12 @@ import {
   OpenArtError,
   type OpenArtToolSummary,
 } from "@/services/integrations/openart-client";
+import { OpenAIVoiceProvider } from "./providers/openai-voice-provider";
 import {
   emptyCapabilities,
   providerCapabilitiesSchema,
   type ProviderCapabilities,
+  type ProviderId,
 } from "./types";
 
 function toolNames(tools: OpenArtToolSummary[]) {
@@ -102,7 +104,7 @@ export async function refreshOpenArtCapabilities(): Promise<ProviderCapabilities
 export async function getCachedProviderCapabilities(
   supabase: SupabaseClient,
   organizationId: string,
-  provider: "gemini" | "openart",
+  provider: ProviderId,
 ): Promise<ProviderCapabilities | null> {
   const { data, error } = await supabase
     .from("media_provider_capabilities")
@@ -157,7 +159,11 @@ export async function getProviderCapabilities(
   options: { refreshOpenArt?: boolean } = {},
 ): Promise<ProviderCapabilities[]> {
   const gemini = geminiCapabilities();
-  await saveProviderCapabilities(supabase, organizationId, gemini).catch(() => undefined);
+  const openai = await new OpenAIVoiceProvider().getCapabilities();
+  await Promise.all([
+    saveProviderCapabilities(supabase, organizationId, gemini).catch(() => undefined),
+    saveProviderCapabilities(supabase, organizationId, openai).catch(() => undefined),
+  ]);
 
   let openart: ProviderCapabilities | null = options.refreshOpenArt
     ? null
@@ -170,7 +176,7 @@ export async function getProviderCapabilities(
   }
   if (!openart) openart = emptyCapabilities("openart", "OpenArt", "unknown");
 
-  return [gemini, openart];
+  return [gemini, openart, openai];
 }
 
 export function supportsCapability(capabilities: ProviderCapabilities, mediaType: string, operation: string) {
