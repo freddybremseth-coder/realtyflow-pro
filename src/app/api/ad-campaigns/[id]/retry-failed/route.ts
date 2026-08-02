@@ -1,38 +1,45 @@
 // ─── POST /api/ad-campaigns/:id/retry-failed ───────────────────────────
-// Resets all 'failed' creatives back to 'pending' and any stuck
-// 'generating' rows older than 90s. The client's batch loop will then
-// pick them up on the next /generate call.
+// Resets failed creatives and rescues stale generating rows. Provider job
+// identifiers are cleared so an explicit retry starts a fresh paid job only
+// after the user requests it.
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 
 export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  { params }: { params: { id: string } },
 ) {
   const supabase = createServerClient();
 
-  // Reset failed rows
-  const { count: resetFailed } = await supabase
+  const reset = {
+    status: "pending",
+    error: null,
+    provider_job_id: null,
+    replicate_prediction_id: null,
+    source_url: null,
+  };
+
+  const { count: resetFailed, error: failedError } = await supabase
     .from("ad_creatives")
-    .update({ status: "pending", error: null, replicate_prediction_id: null }, { count: "exact" })
+    .update(reset, { count: "exact" })
     .eq("campaign_id", params.id)
     .eq("status", "failed");
+  if (failedError) return NextResponse.json({ error: failedError.message }, { status: 500 });
 
-  // Rescue stuck rows
-  const stuckThreshold = new Date(Date.now() - 90_000).toISOString();
-  const { count: rescued } = await supabase
+  const stuckThreshold = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { count: rescued, error: rescueError } = await supabase
     .from("ad_creatives")
-    .update({ status: "pending", replicate_prediction_id: null }, { count: "exact" })
+    .update(reset, { count: "exact" })
     .eq("campaign_id", params.id)
     .eq("status", "generating")
     .lt("updated_at", stuckThreshold);
+  if (rescueError) return NextResponse.json({ error: rescueError.message }, { status: 500 });
 
-  // Reset campaign status if currently 'failed'
   await supabase
     .from("ad_campaigns")
     .update({ status: "matrix_pending", error: null })
     .eq("id", params.id)
-    .eq("status", "failed");
+    .in("status", ["failed", "generating", "completed"]);
 
   return NextResponse.json({
     reset_failed: resetFailed ?? 0,
