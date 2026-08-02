@@ -52,7 +52,7 @@ export default function AdCampaignDetailPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/ad-campaigns/${id}`, { cache: "no-store" });
