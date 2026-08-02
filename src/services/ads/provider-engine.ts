@@ -76,9 +76,9 @@ export async function submitAdProvider(input: AdProviderInput): Promise<AdProvid
       prompt: input.prompt,
       sourceImageUrls: [input.productImageUrl],
       aspectRatio: input.aspectRatio,
-      imageCount: 1,
       qualityTier: input.qualityTier || "balanced",
       model,
+      allowText: false,
     });
     if (!result.inlineBase64) throw new Error("Gemini returnerte ingen bildefil.");
     return {
