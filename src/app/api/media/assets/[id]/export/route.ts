@@ -29,6 +29,14 @@ export async function POST(
       description: body.description,
     });
 
+    // Ad Campaign Generator uses Media Library assets as the canonical output.
+    // Keep the campaign card in sync when the same export endpoint is used.
+    await context.supabase
+      .from("ad_creatives")
+      .update({ pushed_to_hub: true })
+      .eq("output_asset_id", params.id)
+      .catch(() => undefined);
+
     return NextResponse.json({ publication });
   } catch (error) {
     return jsonError(error, 400);
