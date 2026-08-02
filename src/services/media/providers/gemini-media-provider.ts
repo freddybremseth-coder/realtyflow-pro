@@ -40,15 +40,35 @@ export class GeminiMediaProvider implements MediaProvider {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY er ikke konfigurert.");
 
+    const canvasInstruction = input.aspectRatio
+      ? `Required output composition: ${input.aspectRatio} aspect ratio. Compose the subject and negative space for that canvas; do not merely crop the reference.`
+      : "Use a commercially suitable social-media canvas.";
+    const sourceInstruction = input.sourceImageUrls?.length
+      ? "Use the attached image or images as visual references. Preserve recognizable product identity and do not replace branding unless the prompt explicitly requests it."
+      : "No visual reference was supplied.";
+    const textInstruction = input.allowText
+      ? "Only render text that is explicitly supplied in the prompt."
+      : "Do not render random copy, headlines, CTA text, watermarks or invented labels inside the image.";
+
     const promptParts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [
-      { text: `Generate a production-ready marketing image from this structured instruction:\n\n${input.prompt}\n\nNegative prompt: ${input.negativePrompt || "none"}` },
+      {
+        text: [
+          "Generate a production-ready marketing image from this structured instruction:",
+          input.prompt,
+          canvasInstruction,
+          sourceInstruction,
+          textInstruction,
+          `Negative prompt: ${input.negativePrompt || "none"}`,
+        ].join("\n\n"),
+      },
     ];
 
     for (const sourceUrl of input.sourceImageUrls || []) {
       promptParts.push({ inlineData: await imageUrlToInlineData(sourceUrl) });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
+    const model = input.model || "gemini-2.5-flash-image";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,7 +112,7 @@ export class GeminiMediaProvider implements MediaProvider {
       inlineBase64: imageBase64,
       mimeType,
       textResponse,
-      model: input.model || "gemini-2.5-flash-image",
+      model,
     };
   }
 
