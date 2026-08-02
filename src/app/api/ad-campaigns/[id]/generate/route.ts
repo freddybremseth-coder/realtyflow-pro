@@ -1,46 +1,99 @@
-// ─── POST /api/ad-campaigns/:id/generate  →  Step 3 batch worker ───────
-//
-// Designed to fit within Vercel's 60s serverless timeout.
-//
-// Per call:
-//  1. Rescue any 'generating' row stuck > 90s back to 'pending'
-//  2. Claim up to N pending rows
-//  3. Submit ALL of them to Replicate immediately (no `Prefer: wait`)
-//      → returns prediction IDs in ~1-2s total
-//  4. Poll all submitted predictions in parallel until every one settles
-//     OR the 50s soft-budget is reached (leaves 10s headroom for upload)
-//  5. Download + upload completed images to Supabase Storage
-//  6. Mark unfinished ones back as 'pending' so next call retries them
-//
-// Body: { batch_size?: number }   (default 4)
-// Returns: { processed, completed_total, pending_total, failed_total, status }
+// ─── POST /api/ad-campaigns/:id/generate  →  multi-provider batch worker ──
+// Gemini completes synchronously; OpenArt and Flux submit and poll.
+// Completed creatives are persisted to ad_creatives, Storage and Media Library.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { submitPrediction, pollPrediction, extractOutputUrl } from "@/services/ads/replicate-client";
-import { getOpenArtCreation, openArtGenerateImage } from "@/services/integrations/openart-client";
-import { uploadThumbnail } from "@/services/storage/media";
+import { getRequestAccessContext } from "@/lib/api-admin";
+import { getMediaAccessScope } from "@/services/media/organization";
+import {
+  ensureAdCampaignMediaProject,
+  persistAdCreativeImage,
+} from "@/services/ads/asset-persistence";
+import {
+  pollAdProvider,
+  submitAdProviderWithFallback,
+  type ConcreteAdProvider,
+} from "@/services/ads/provider-engine";
 
-export const maxDuration = 60;
+export const maxDuration = 180;
 
-// Soft budget — leave room for the final downloads + uploads
-const HARD_TIMEOUT_MS = 50_000;
-const STUCK_AFTER_MS = 90_000;
-const DEFAULT_BATCH_SIZE = 4;
+const HARD_TIMEOUT_MS = 155_000;
+const STUCK_AFTER_MS = 5 * 60_000;
+const DEFAULT_BATCH_SIZE = 3;
+
+interface TrackingItem {
+  row: Record<string, any>;
+  provider: ConcreteAdProvider;
+  model: string;
+  providerJobId?: string;
+  finished: boolean;
+  sourceUrl?: string;
+  bytes?: Buffer;
+  mimeType?: string;
+  fallbackFrom?: ConcreteAdProvider;
+  error?: string;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function timeLeft(startedAt: number) {
+  return Math.max(0, HARD_TIMEOUT_MS - (Date.now() - startedAt));
+}
+
+function normalizeProvider(value: unknown, campaignMode: unknown): ConcreteAdProvider {
+  const provider = String(value || "").toLowerCase();
+  if (provider === "gemini" || provider === "openart" || provider === "flux") return provider;
+  const mode = String(campaignMode || "").toLowerCase();
+  if (mode === "gemini" || mode === "openart" || mode === "flux") return mode;
+  if (mode === "replicate") return "flux";
+  return "openart";
+}
+
+function isRateLimitError(message: string) {
+  return /\b429\b|rate.?limit|throttl|quota|insufficient.*credit|billing/i.test(message);
+}
+
+async function resolveMediaIdentity(req: NextRequest, supabase: ReturnType<typeof createServerClient>, campaign: Record<string, any>) {
+  const access = await getRequestAccessContext(req).catch(() => null);
+  if (access) {
+    try {
+      const scope = await getMediaAccessScope(supabase, access);
+      return { organizationId: scope.organizationId, actorEmail: scope.actorEmail };
+    } catch {
+      // Ad generation may still complete even if Media Library scope is unavailable.
+    }
+  }
+  return {
+    organizationId: campaign.tenant_id ? String(campaign.tenant_id) : null,
+    actorEmail: access?.email || "ad-campaign-generator",
+  };
+}
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
-  const t0 = Date.now();
+  const startedAt = Date.now();
   const body = await req.json().catch(() => ({}));
-  const batchSize = Math.min(Math.max(Number(body.batch_size) || DEFAULT_BATCH_SIZE, 1), 8);
+  const batchSize = Math.min(Math.max(Number(body.batch_size) || DEFAULT_BATCH_SIZE, 1), 5);
   const supabase = createServerClient();
 
-  // ─── 1. Rescue stuck rows ──────────────────────────────────────────
+  const { data: campaign, error: campaignError } = await supabase
+    .from("ad_campaigns")
+    .select("*")
+    .eq("id", params.id)
+    .single();
+  if (campaignError || !campaign) {
+    return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+  }
+  if (!campaign.product_image_url) {
+    return NextResponse.json({ error: "Campaign image URL missing" }, { status: 400 });
+  }
+
   const stuckThreshold = new Date(Date.now() - STUCK_AFTER_MS).toISOString();
-  // Keep the prediction id when rescuing — the resume path polls it
-  // instead of paying for a brand-new generation.
   await supabase
     .from("ad_creatives")
     .update({ status: "pending" })
@@ -48,207 +101,205 @@ export async function POST(
     .eq("status", "generating")
     .lt("updated_at", stuckThreshold);
 
-  // Mark campaign as generating
   await supabase
     .from("ad_campaigns")
-    .update({ status: "generating" })
+    .update({ status: "generating", error: null })
     .eq("id", params.id)
     .neq("status", "completed");
 
-  // ─── 2. Claim a batch ──────────────────────────────────────────────
-  const { data: claimed, error: claimErr } = await supabase
+  const { data: claimed, error: claimError } = await supabase
     .from("ad_creatives")
     .select("*")
     .eq("campaign_id", params.id)
     .eq("status", "pending")
-    .order("scene_id")
+    .order("concept_group", { ascending: true })
+    .order("variant_index", { ascending: true })
     .limit(batchSize);
-  if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
+  if (claimError) return NextResponse.json({ error: claimError.message }, { status: 500 });
+  if (!claimed?.length) return summarize(supabase, params.id);
 
-  if (!claimed || claimed.length === 0) {
-    return await summarize(supabase, params.id);
+  const ids = claimed.map((row) => row.id);
+  await supabase
+    .from("ad_creatives")
+    .update({ status: "generating", error: null })
+    .in("id", ids);
+
+  const identity = await resolveMediaIdentity(req, supabase, campaign);
+  let mediaProjectId: string | null = campaign.media_project_id || null;
+  if (identity.organizationId && !mediaProjectId) {
+    mediaProjectId = await ensureAdCampaignMediaProject(supabase, {
+      organizationId: identity.organizationId,
+      actorEmail: identity.actorEmail,
+      campaign,
+    }).catch(() => null);
+    if (mediaProjectId) campaign.media_project_id = mediaProjectId;
   }
 
-  const ids = claimed.map((c) => c.id);
-  await supabase.from("ad_creatives").update({ status: "generating" }).in("id", ids);
+  const resumable = claimed.filter((row) => row.provider_job_id || row.replicate_prediction_id);
+  const fresh = claimed.filter((row) => !(row.provider_job_id || row.replicate_prediction_id));
+  const allowFallback = campaign.image_provider === "auto";
 
-  // Need the campaign image + provider once
-  const { data: campaign } = await supabase
-    .from("ad_campaigns")
-    .select("product_image_url, image_provider")
-    .eq("id", params.id)
-    .single();
-  if (!campaign?.product_image_url) {
-    return NextResponse.json({ error: "Campaign image URL missing" }, { status: 500 });
-  }
+  const submissions = await Promise.allSettled(fresh.map(async (row) => {
+    const requestedProvider = normalizeProvider(row.provider, campaign.image_provider);
+    const result = await submitAdProviderWithFallback({
+      provider: requestedProvider,
+      prompt: row.prompt,
+      productImageUrl: campaign.product_image_url,
+      aspectRatio: row.aspect_ratio,
+      model: row.model,
+      qualityTier: requestedProvider === "flux" ? "premium" : "balanced",
+    }, allowFallback);
+    return { row, requestedProvider, result };
+  }));
 
-  // Opt-in per campaign: OpenArt (credits from connected account) instead of
-  // Replicate. Both are submit-then-poll, so the tracking loop is shared —
-  // `replicate_prediction_id` stores the OpenArt historyId in that case.
-  const useOpenArt = campaign.image_provider === "openart";
+  const tracking: TrackingItem[] = resumable.map((row) => ({
+    row,
+    provider: normalizeProvider(row.provider, campaign.image_provider),
+    model: row.model || "unknown",
+    providerJobId: String(row.provider_job_id || row.replicate_prediction_id),
+    finished: false,
+  }));
 
-  // ─── 3. Submit / resume ────────────────────────────────────────────
-  // Rows released back to `pending` at the end of a previous batch keep
-  // their prediction id. RESUME those instead of submitting again — a
-  // resubmit restarts the generation from scratch, and any creative that
-  // takes longer than one 50s budget would restart forever ("behandler"
-  // uten fremdrift) while paying for a new prediction every round.
-  const resumable = claimed.filter((row) => row.replicate_prediction_id);
-  const fresh = claimed.filter((row) => !row.replicate_prediction_id);
-
-  const submissions = await Promise.allSettled(
-    fresh.map((row) =>
-      useOpenArt
-        ? openArtGenerateImage({
-            prompt: row.prompt,
-            aspectRatio: row.aspect_ratio,
-            sourceImageUrls: [campaign.product_image_url],
-            imageCount: 1,
-          }).then((historyId) => ({ row, id: historyId }))
-        : submitPrediction(
-            {
-              prompt: row.prompt,
-              input_image: campaign.product_image_url,
-              aspect_ratio: row.aspect_ratio,
-              output_format: "png",
-            },
-            0  // no wait — return prediction ID immediately
-          ).then((pred) => ({ row, id: pred.id }))
-    )
-  );
-
-  // Map submissions to a tracking structure
-  const tracking: Array<{
-    row: typeof claimed[number];
-    predictionId?: string;
-    finished: boolean;
-    error?: string;
-    outputUrl?: string;
-  }> = [
-    ...resumable.map((row) => ({
-      row,
-      predictionId: String(row.replicate_prediction_id),
-      finished: false,
-    })),
-    ...submissions.map((s, i) => {
-      if (s.status === "fulfilled") {
-        return { row: s.value.row, predictionId: s.value.id, finished: false };
-      }
-      return {
-        row: fresh[i],
+  for (let index = 0; index < submissions.length; index += 1) {
+    const submission = submissions[index];
+    const row = fresh[index];
+    if (submission.status === "rejected") {
+      tracking.push({
+        row,
+        provider: normalizeProvider(row.provider, campaign.image_provider),
+        model: row.model || "unknown",
         finished: true,
-        error: s.reason instanceof Error ? s.reason.message : String(s.reason),
-      };
-    }),
-  ];
+        error: submission.reason instanceof Error ? submission.reason.message : String(submission.reason),
+      });
+      continue;
+    }
 
-  // ─── 4. Poll loop ──────────────────────────────────────────────────
-  while (timeLeft(t0) > 8_000 && tracking.some((t) => !t.finished)) {
-    await sleep(3_000);
-    const pending = tracking.filter((t) => !t.finished && t.predictionId);
-    if (useOpenArt) {
-      const polls = await Promise.allSettled(
-        pending.map((p) => getOpenArtCreation(p.predictionId!).then((creation) => ({ p, creation })))
-      );
-      for (const r of polls) {
-        if (r.status !== "fulfilled") continue;
-        const { p, creation } = r.value;
-        if (creation.status === "COMPLETED" && creation.urls.length > 0) {
-          p.finished = true;
-          p.outputUrl = creation.urls[0];
-        } else if (creation.status === "FAILED" || creation.status === "CANCELLED") {
-          p.finished = true;
-          p.error = creation.failedReason || `OpenArt status=${creation.status}`;
-        }
-      }
+    const { result } = submission.value;
+    const fallbackFrom = "fallbackFrom" in result ? result.fallbackFrom : undefined;
+    if (result.state === "completed") {
+      tracking.push({
+        row,
+        provider: result.provider,
+        model: result.model,
+        bytes: result.bytes,
+        mimeType: result.mimeType,
+        fallbackFrom,
+        finished: true,
+      });
     } else {
-      const polls = await Promise.allSettled(
-        pending.map((p) => pollPrediction(p.predictionId!).then((pred) => ({ p, pred })))
-      );
-      for (const r of polls) {
-        if (r.status !== "fulfilled") continue;
-        const { p, pred } = r.value;
-        if (pred.status === "succeeded") {
-          p.finished = true;
-          p.outputUrl = extractOutputUrl(pred) ?? undefined;
-          if (!p.outputUrl) p.error = "No output URL";
-        } else if (pred.status === "failed" || pred.status === "canceled") {
-          p.finished = true;
-          p.error = pred.error || `Replicate status=${pred.status}`;
-        }
+      tracking.push({
+        row,
+        provider: result.provider,
+        model: result.model,
+        providerJobId: result.providerJobId,
+        fallbackFrom,
+        finished: false,
+      });
+      await supabase
+        .from("ad_creatives")
+        .update({
+          provider: result.provider,
+          model: result.model,
+          provider_job_id: result.providerJobId,
+          replicate_prediction_id: result.providerJobId,
+          metadata_json: {
+            ...(row.metadata_json || {}),
+            fallbackFrom: fallbackFrom || null,
+            submittedAt: new Date().toISOString(),
+          },
+        })
+        .eq("id", row.id);
+    }
+  }
+
+  while (timeLeft(startedAt) > 25_000 && tracking.some((item) => !item.finished)) {
+    await sleep(3_000);
+    const pending = tracking.filter((item) => !item.finished && item.providerJobId);
+    const polls = await Promise.allSettled(
+      pending.map(async (item) => ({ item, result: await pollAdProvider(item.provider, item.providerJobId!) })),
+    );
+
+    for (const poll of polls) {
+      if (poll.status !== "fulfilled") continue;
+      const { item, result } = poll.value;
+      if (result.state === "completed") {
+        item.finished = true;
+        item.sourceUrl = result.sourceUrl;
+      } else if (result.state === "failed") {
+        item.finished = true;
+        item.error = result.error;
       }
     }
   }
 
-  // ─── 5. Persist results ────────────────────────────────────────────
-  await Promise.all(
-    tracking.map(async (t) => {
-      if (t.error) {
-        // Rate limiting (HTTP 429 / throttling) is transient: Replicate
-        // throttles hard when the account has little/no credit. Release the
-        // row back to `pending` so the next batch call retries it instead of
-        // burying it as permanently failed — but keep the error text so the
-        // UI can tell the user to top up credit.
-        const isRateLimit = /\b429\b|rate.?limit|throttl/i.test(t.error);
-        await supabase.from("ad_creatives").update({
-          status: isRateLimit ? "pending" : "failed",
-          error: t.error,
-          replicate_prediction_id: t.predictionId ?? null,
-        }).eq("id", t.row.id);
-        return;
-      }
-      if (!t.finished || !t.outputUrl) {
-        // Not done yet — release back to pending so next call retries.
-        await supabase.from("ad_creatives").update({
+  await Promise.all(tracking.map(async (item) => {
+    if (item.error) {
+      const retryable = isRateLimitError(item.error);
+      await supabase
+        .from("ad_creatives")
+        .update({
+          status: retryable ? "pending" : "failed",
+          provider: item.provider,
+          model: item.model,
+          provider_job_id: item.providerJobId || null,
+          replicate_prediction_id: item.providerJobId || null,
+          error: item.error,
+          metadata_json: {
+            ...(item.row.metadata_json || {}),
+            fallbackFrom: item.fallbackFrom || null,
+            lastErrorAt: new Date().toISOString(),
+          },
+        })
+        .eq("id", item.row.id);
+      return;
+    }
+
+    if (!item.finished) {
+      await supabase
+        .from("ad_creatives")
+        .update({
           status: "pending",
-          replicate_prediction_id: t.predictionId ?? null,
-        }).eq("id", t.row.id);
-        return;
-      }
+          provider: item.provider,
+          model: item.model,
+          provider_job_id: item.providerJobId || null,
+          replicate_prediction_id: item.providerJobId || null,
+        })
+        .eq("id", item.row.id);
+      return;
+    }
 
-      try {
-        const imgRes = await fetch(t.outputUrl, { signal: AbortSignal.timeout(15_000) });
-        if (!imgRes.ok) throw new Error(`Download failed (${imgRes.status})`);
-        const buf = Buffer.from(await imgRes.arrayBuffer());
-
-        const path = `${params.id}/${t.row.scene_id}_${t.row.aspect_ratio.replace(":", "x")}.png`;
-        const { error: upErr } = await supabase
-          .storage
-          .from("ad-creatives")
-          .upload(path, buf, { contentType: "image/png", upsert: true });
-        if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
-
-        const { data: pub } = supabase.storage.from("ad-creatives").getPublicUrl(path);
-        const thumbnailUrl = await uploadThumbnail(supabase, buf, "image/png", path);
-
-        await supabase.from("ad_creatives").update({
-          status: "completed",
-          image_url: pub.publicUrl,
-          thumbnail_url: thumbnailUrl,
-          source_url: t.outputUrl,
-          replicate_prediction_id: t.predictionId ?? null,
-        }).eq("id", t.row.id);
-      } catch (e) {
-        await supabase.from("ad_creatives").update({
+    try {
+      await persistAdCreativeImage(supabase, {
+        organizationId: identity.organizationId,
+        actorEmail: identity.actorEmail,
+        campaign,
+        creative: item.row,
+        provider: item.provider,
+        model: item.model,
+        bytes: item.bytes,
+        sourceUrl: item.sourceUrl,
+        mimeType: item.mimeType,
+        fallbackFrom: item.fallbackFrom,
+        mediaProjectId,
+      });
+    } catch (error) {
+      await supabase
+        .from("ad_creatives")
+        .update({
           status: "failed",
-          error: e instanceof Error ? e.message : String(e),
-          replicate_prediction_id: t.predictionId ?? null,
-        }).eq("id", t.row.id);
-      }
-    })
-  );
+          provider: item.provider,
+          model: item.model,
+          provider_job_id: item.providerJobId || null,
+          replicate_prediction_id: item.providerJobId || null,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        .eq("id", item.row.id);
+    }
+  }));
 
-  const rateLimited = tracking.some(
-    (t) => t.error && /\b429\b|rate.?limit|throttl/i.test(t.error)
-  );
-  return await summarize(supabase, params.id, rateLimited);
+  const rateLimited = tracking.some((item) => item.error && isRateLimitError(item.error));
+  return summarize(supabase, params.id, rateLimited);
 }
-
-// ─── helpers ─────────────────────────────────────────────────────────
-function timeLeft(start: number): number {
-  return Math.max(0, HARD_TIMEOUT_MS - (Date.now() - start));
-}
-function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 async function summarize(
   supabase: ReturnType<typeof createServerClient>,
@@ -257,27 +308,40 @@ async function summarize(
 ) {
   const { data: rows } = await supabase
     .from("ad_creatives")
-    .select("status")
+    .select("status,provider")
     .eq("campaign_id", campaignId);
+
   const counts: Record<string, number> = { pending: 0, generating: 0, completed: 0, failed: 0 };
-  for (const r of rows ?? []) counts[r.status] = (counts[r.status] || 0) + 1;
+  const providers: Record<string, number> = {};
+  for (const row of rows || []) {
+    counts[row.status] = (counts[row.status] || 0) + 1;
+    if (row.provider) providers[row.provider] = (providers[row.provider] || 0) + 1;
+  }
 
   const allDone = counts.pending === 0 && counts.generating === 0;
   const status = allDone
     ? counts.failed > 0 && counts.completed === 0 ? "failed" : "completed"
     : "generating";
 
-  await supabase.from("ad_campaigns").update({
-    ...(allDone ? { status } : {}),
-    succeeded_count: counts.completed,
-    failed_count: counts.failed,
-  }).eq("id", campaignId);
+  await supabase
+    .from("ad_campaigns")
+    .update({
+      ...(allDone ? { status } : {}),
+      succeeded_count: counts.completed,
+      failed_count: counts.failed,
+      provider_strategy: {
+        providers,
+        lastBatchAt: new Date().toISOString(),
+      },
+    })
+    .eq("id", campaignId);
 
   return NextResponse.json({
     completed_total: counts.completed,
     pending_total: counts.pending,
     generating_total: counts.generating,
     failed_total: counts.failed,
+    provider_counts: providers,
     status,
     rate_limited: rateLimited,
   });

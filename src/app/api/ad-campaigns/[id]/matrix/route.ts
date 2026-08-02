@@ -1,76 +1,112 @@
 // ─── POST /api/ad-campaigns/:id/matrix  →  Step 2 ──────────────────────
-// Builds the 25-scene matrix from the brand template. Persists the matrix
-// AND seeds 50 ad_creatives rows with status='pending' so the UI can show
-// progress immediately when generation kicks off.
+// Builds a structured concept-family matrix and seeds ad_creatives rows.
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { buildMatrix } from "@/services/ads/claude-orchestrator";
-import { buildPrompt } from "@/services/ads/prompt-builder";
-import { BRANDS } from "@/lib/constants";
+import {
+  planAdCampaign,
+  type AdCampaignStyle,
+  type AdImageProvider,
+  type AdOverlayMode,
+} from "@/services/ads/campaign-planner";
+import type { AspectRatio } from "@/types/ads";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
   const body = await req.json().catch(() => ({}));
-  const target_total: number | undefined = body.target_total;
-  const aspect_ratios: ("1:1" | "9:16")[] | undefined = body.aspect_ratios;
-
   const supabase = createServerClient();
   const { data: campaign, error } = await supabase
     .from("ad_campaigns")
     .select("*")
     .eq("id", params.id)
     .single();
+
   if (error || !campaign) {
     return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   }
 
-  const brand = BRANDS.find((b) => b.id === campaign.brand_id);
-  const brandType = brand?.type ?? "ecommerce";
-  const matrix = buildMatrix(brandType, {
-    target_total: target_total ?? campaign.total_creatives ?? 50,
-    aspect_ratios: aspect_ratios ?? campaign.aspect_ratios ?? undefined,
+  const targetTotal = Math.min(
+    Math.max(Number(body.target_total || campaign.total_creatives || 50), 5),
+    50,
+  );
+  const ratios = (Array.isArray(body.aspect_ratios) && body.aspect_ratios.length
+    ? body.aspect_ratios
+    : campaign.aspect_ratios || ["1:1", "4:5", "9:16"]) as AspectRatio[];
+  const providerMode = (campaign.image_provider === "replicate"
+    ? "flux"
+    : campaign.image_provider || "auto") as AdImageProvider;
+
+  const planned = planAdCampaign({
+    productName: campaign.product_name,
+    productImageUrl: campaign.product_image_url,
+    labelDescription: campaign.label_description,
+    audienceSegments: campaign.audience_segments || [],
+    targetMarkets: campaign.target_markets || [],
+    brandVoice: campaign.brand_voice,
+    offer: campaign.offer,
+    providerMode,
+    campaignStyle: (campaign.campaign_style || "mixed") as AdCampaignStyle,
+    overlayMode: (campaign.overlay_mode || "suggestions") as AdOverlayMode,
+    preserveProductIdentity: campaign.preserve_product_identity !== false,
+    totalCreatives: targetTotal,
+    aspectRatios: ratios,
+    conceptCount: Number(campaign.concept_count || 10),
+    variantsPerConcept: Number(campaign.variants_per_concept || 5),
   });
 
-  // Pre-seed creative rows so progress UI can render immediately
-  const rows = [];
-  for (const scene of matrix.scenes) {
-    for (const ratio of matrix.aspect_ratios) {
-      const prompt = buildPrompt({
-        product_name: campaign.product_name,
-        label_description: campaign.label_description,
-        scene_body: scene.prompt_body,
-      });
-      rows.push({
-        campaign_id: campaign.id,
-        scene_id: scene.id,
-        angle: scene.angle,
-        mood: scene.mood,
-        scene_description: scene.prompt_body.slice(0, 200),
-        aspect_ratio: ratio,
-        prompt,
-        status: "pending",
-      });
-    }
-  }
+  const rows = planned.creatives.map((creative) => ({
+    campaign_id: campaign.id,
+    scene_id: creative.sceneId,
+    concept_group: creative.conceptGroup,
+    variant_index: creative.variantIndex,
+    angle: creative.angle,
+    mood: creative.mood,
+    scene_description: creative.sceneDescription,
+    aspect_ratio: creative.aspectRatio,
+    prompt: creative.prompt,
+    provider: creative.provider,
+    model: creative.model,
+    overlay_headline: creative.overlayHeadline,
+    overlay_subheadline: creative.overlaySubheadline,
+    overlay_cta: creative.overlayCta,
+    overlay_badge: creative.overlayBadge,
+    overlay_applied: false,
+    status: "pending",
+    metadata_json: {
+      requestedProvider: creative.provider,
+      overlayMode: campaign.overlay_mode || "suggestions",
+      preserveProductIdentity: campaign.preserve_product_identity !== false,
+    },
+  }));
 
-  // Replace existing creatives if matrix is rebuilt
   await supabase.from("ad_creatives").delete().eq("campaign_id", campaign.id);
-  const { error: insertErr } = await supabase.from("ad_creatives").insert(rows);
-  if (insertErr) {
-    return NextResponse.json({ error: insertErr.message }, { status: 500 });
+  const { error: insertError } = await supabase.from("ad_creatives").insert(rows);
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("ad_campaigns")
     .update({
-      matrix,
+      matrix: planned.matrix,
+      provider_strategy: planned.providerStrategy,
       total_creatives: rows.length,
       status: "matrix_pending",
-      estimated_cost_usd: rows.length * 0.04,
+      estimated_cost_usd: planned.estimatedCostUsd,
+      concept_count: planned.concepts.length,
+      variants_per_concept: Math.max(...planned.creatives.map((item) => item.variantIndex)),
+      error: null,
     })
     .eq("id", params.id);
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
 
-  return NextResponse.json({ matrix, seeded: rows.length });
+  return NextResponse.json({
+    matrix: planned.matrix,
+    provider_strategy: planned.providerStrategy,
+    estimated_cost_usd: planned.estimatedCostUsd,
+    seeded: rows.length,
+  });
 }
