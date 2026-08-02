@@ -76,6 +76,8 @@ jobs:
         run: npm run test:navigation
       - name: DemoSites Signature design tests
         run: npm run test:demosites-design
+      - name: Ad Campaign Generator planner tests
+        run: npx tsx --test src/services/ads/campaign-planner.test.ts
       - name: Build
         id: next_build
         shell: bash
