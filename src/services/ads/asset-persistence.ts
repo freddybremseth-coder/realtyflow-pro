@@ -14,20 +14,7 @@ interface CampaignRow {
   overlay_mode?: string | null;
 }
 
-interface CreativeRow {
-  id: string;
-  scene_id: string;
-  concept_group?: string | null;
-  variant_index?: number | null;
-  angle: string;
-  aspect_ratio: string;
-  prompt: string;
-  overlay_headline?: string | null;
-  overlay_subheadline?: string | null;
-  overlay_cta?: string | null;
-  overlay_badge?: string | null;
-  metadata_json?: Record<string, unknown> | null;
-}
+type CreativeRow = Record<string, any>;
 
 function extensionForMime(mimeType: string) {
   if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
@@ -109,9 +96,14 @@ export async function persistAdCreativeImage(
     bytes = Buffer.from(await response.arrayBuffer());
   }
 
+  const creativeId = String(params.creative.id || "creative");
+  const sceneId = String(params.creative.scene_id || "scene");
+  const aspectRatio = String(params.creative.aspect_ratio || "1:1");
+  const angle = String(params.creative.angle || "Ad creative");
+  const prompt = String(params.creative.prompt || "");
   const extension = extensionForMime(mimeType);
   const bucket = "ad-creatives";
-  const storagePath = `${params.campaign.id}/${params.creative.scene_id}_${params.creative.aspect_ratio.replace(":", "x")}_${params.creative.id.slice(0, 8)}.${extension}`;
+  const storagePath = `${params.campaign.id}/${sceneId}_${aspectRatio.replace(":", "x")}_${creativeId.slice(0, 8)}.${extension}`;
   const { error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(storagePath, bytes, { contentType: mimeType, upsert: true, cacheControl: "31536000" });
@@ -144,8 +136,8 @@ export async function persistAdCreativeImage(
         brand_id: params.campaign.brand_id || null,
         media_type: "image",
         asset_type: "ad_creative",
-        title: `${params.campaign.name} · ${params.creative.angle} · variant ${params.creative.variant_index || 1}`,
-        description: params.creative.overlay_headline || params.creative.angle,
+        title: `${params.campaign.name} · ${angle} · variant ${params.creative.variant_index || 1}`,
+        description: params.creative.overlay_headline || angle,
         storage_bucket: bucket,
         storage_path: storagePath,
         public_url: publicData.publicUrl,
@@ -155,16 +147,16 @@ export async function persistAdCreativeImage(
         file_size: bytes.byteLength,
         provider: params.provider,
         model: params.model,
-        prompt: params.creative.prompt,
-        aspect_ratio: params.creative.aspect_ratio,
+        prompt,
+        aspect_ratio: aspectRatio,
         ai_generated: true,
         ai_edited: false,
         source_asset_ids: sourceAsset?.id ? [sourceAsset.id] : [],
         metadata_json: {
           actorEmail: params.actorEmail || "system",
           adCampaignId: params.campaign.id,
-          adCreativeId: params.creative.id,
-          sceneId: params.creative.scene_id,
+          adCreativeId: creativeId,
+          sceneId,
           conceptGroup: params.creative.concept_group,
           variantIndex: params.creative.variant_index || 1,
           overlayMode: params.campaign.overlay_mode || "suggestions",
@@ -178,9 +170,9 @@ export async function persistAdCreativeImage(
         },
         tags: [
           "ad-campaign",
-          params.creative.concept_group || params.creative.angle,
+          params.creative.concept_group || angle,
           params.provider,
-          params.creative.aspect_ratio,
+          aspectRatio,
         ],
         status: "active",
       })
@@ -207,7 +199,7 @@ export async function persistAdCreativeImage(
         fallbackFrom: params.fallbackFrom || null,
       },
     })
-    .eq("id", params.creative.id);
+    .eq("id", creativeId);
 
   return {
     imageUrl: publicData.publicUrl,
