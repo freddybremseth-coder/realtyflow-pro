@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AspectRatio } from "@/types/ads";
 import { planAdCampaign } from "./campaign-planner";
 
 const baseInput = {
@@ -14,7 +15,7 @@ const baseInput = {
   overlayMode: "suggestions" as const,
   preserveProductIdentity: true,
   totalCreatives: 50,
-  aspectRatios: ["1:1", "4:5", "9:16"] as const,
+  aspectRatios: ["1:1", "4:5", "9:16"] as AspectRatio[],
   conceptCount: 10,
   variantsPerConcept: 5,
 };
@@ -81,7 +82,7 @@ test("Meta landscape is retained in planning and can be normalized by providers"
     totalCreatives: 10,
     conceptCount: 10,
     variantsPerConcept: 1,
-    aspectRatios: ["1.91:1"],
+    aspectRatios: ["1.91:1"] as AspectRatio[],
   });
   assert.ok(plan.creatives.every((creative) => creative.aspectRatio === "1.91:1"));
 });
