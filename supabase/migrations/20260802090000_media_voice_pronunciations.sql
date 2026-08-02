@@ -47,7 +47,8 @@ using (public.media_studio_can_access(organization_id));
 
 grant select, insert, update, delete on public.media_voice_pronunciations to authenticated, service_role;
 
--- Seed the known Doña Anna pronunciation for the default RealtyFlow tenant.
+-- Seed the known Doña Anna pronunciation as a global tenant rule so it is
+-- applied even if the user accidentally selects another brand profile.
 insert into public.media_voice_pronunciations (
   organization_id,
   brand_id,
@@ -56,7 +57,7 @@ insert into public.media_voice_pronunciations (
   pronunciation,
   notes
 )
-select id, 'donaanna', 'Norwegian', 'Doña Anna', 'Donja Anna', 'Brand pronunciation'
+select id, null, 'Norwegian', 'Doña Anna', 'Donja Anna', 'Global brand-name pronunciation'
 from core.tenants
 where slug = 'realtyflow'
 on conflict (organization_id, brand_id, language, term) do update
@@ -73,7 +74,7 @@ insert into public.media_voice_pronunciations (
   pronunciation,
   notes
 )
-select id, 'donaanna', 'Norwegian', 'Dona Anna', 'Donja Anna', 'ASCII spelling fallback'
+select id, null, 'Norwegian', 'Dona Anna', 'Donja Anna', 'ASCII spelling fallback'
 from core.tenants
 where slug = 'realtyflow'
 on conflict (organization_id, brand_id, language, term) do update
