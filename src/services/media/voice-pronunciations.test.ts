@@ -19,14 +19,14 @@ const rule = (overrides: Partial<VoicePronunciationRule> = {}): VoicePronunciati
   ...overrides,
 });
 
-test("pronunciation dictionary matches accented and ASCII brand spelling", () => {
+test("pronunciation dictionary matches accented and ASCII spelling without duplicates", () => {
   const instructions = pronunciationInstructionsForText([
     rule(),
     rule({ id: "00000000-0000-0000-0000-000000000003", term: "Dona Anna" }),
   ], "Dona Anna, premium spansk økologisk olivenolje.");
 
   assert.match(instructions, /Pronounce “Doña Anna” as “Donja Anna”/);
-  assert.match(instructions, /Pronounce “Dona Anna” as “Donja Anna”/);
+  assert.equal((instructions.match(/Pronounce/g) || []).length, 1);
 });
 
 test("pronunciation dictionary ignores unrelated and inactive rules", () => {
