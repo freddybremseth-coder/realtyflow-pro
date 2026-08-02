@@ -35,6 +35,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ReferenceMediaPicker } from "@/components/media-studio/reference-media-picker";
+import { MediaProjectsPanel } from "@/components/media-studio/media-projects-panel";
+import { AvatarStudioPanel } from "@/components/media-studio/avatar-studio-panel";
 
 type ViewId =
   | "overview"
@@ -589,6 +592,13 @@ export function MediaStudioClient() {
                   {(["simple", "guided", "professional"] as const).map((item) => <button key={item} onClick={() => setMode(item)} className={`rounded-lg border px-3 py-2 text-xs ${mode === item ? "border-primary-400 bg-primary-500/15 text-primary-200" : "border-slate-700 text-slate-400 hover:border-slate-500"}`}>{item === "simple" ? "Enkel" : item === "guided" ? "Veiledet" : "Profesjonell"}</button>)}
                 </div>
                 <textarea value={requestText} onChange={(event) => { setRequestText(event.target.value); setPlan(null); }} rows={7} className="w-full resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-100 outline-none focus:border-primary-400" />
+                <ReferenceMediaPicker
+                  value={sourceImageUrl}
+                  onChange={(url) => { setSourceImageUrl(url); setPlan(null); }}
+                  brandId={brandId}
+                  title="Bilde eller referanse som AI skal bruke"
+                  description="Påkrevd for «Animer bilde», image-to-video, portrettmaler, produktbilder og andre jobber som skal bevare et eksisterende motiv."
+                />
                 {mode !== "simple" && (
                   <div className="grid gap-3 md:grid-cols-2">
                     <SelectField label="Brand" value={brandId} onChange={setBrandId} options={BRANDS.map((brand) => ({ value: brand.id, label: brand.name }))} />
@@ -648,26 +658,25 @@ export function MediaStudioClient() {
         </TabsContent>
 
         <TabsContent value="avatar">
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><UserRound size={18} className="text-primary-400" />Avatar Studio</CardTitle><CardDescription>Arkitekturen er klar, men en faktisk avatar-provider må rapportere capability før generering aktiveres.</CardDescription></CardHeader>
-            <CardContent>
-              {avatarAvailable
-                ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">Avatar-capability er tilgjengelig. Bruk Create for provider-styrt generering.</div>
-                : <CapabilityNotice title="Ingen avatar-provider tilkoblet" text="OpenArt MCP rapporterer ikke avatar/talking-avatar nå. Modulen aktiveres først når en offisiell provider med samtykke, referansebilder og asynkrone jobber er koblet til." />}
-            </CardContent>
-          </Card>
+          <AvatarStudioPanel
+            avatarAvailable={avatarAvailable}
+            imageToVideoAvailable={Boolean(openArt?.video?.imageToVideo)}
+            onStartPortraitMotion={() => {
+              setMediaType("video");
+              setRequestText("Animer dette portrettet med naturlig blunking, diskret hodebevegelse og rolig profesjonell kamerabevegelse. Bevar personens identitet og ansiktstrekk. Ingen tale eller lip-sync.");
+              setAspectRatio("4:5");
+              setQualityTier("premium");
+              setSourceImageUrl("");
+              setPlan(null);
+              setView("create");
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="brand"><BrandStudio /></TabsContent>
 
         <TabsContent value="projects">
-          <Card>
-            <CardHeader><CardTitle>Projects</CardTitle><CardDescription>Prosjekter opprettes automatisk for genereringer og kan senere organiseres manuelt.</CardDescription></CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {projects.map((project) => <div key={project.id} className="rounded-lg border border-slate-700 bg-slate-900/40 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-medium text-slate-100">{project.name}</h3><p className="text-xs text-slate-500">{project.project_type || "general"} · {brandName(project.brand_id)}</p>{project.description && <p className="mt-2 line-clamp-2 text-xs text-slate-400">{project.description}</p>}</div><Badge variant={statusVariant(project.status)}>{project.status}</Badge></div></div>)}
-              {projects.length === 0 && <p className="text-sm text-slate-500">Ingen prosjekter ennå.</p>}
-            </CardContent>
-          </Card>
+          <MediaProjectsPanel />
         </TabsContent>
 
         <TabsContent value="library">
