@@ -36,7 +36,13 @@ export function pronunciationInstructionsForText(
   const normalizedText = normalized(text.trim());
   if (!normalizedText) return "";
 
-  const matching = rules.filter((rule) => rule.active && normalizedText.includes(normalized(rule.term)));
+  const unique = new Map<string, VoicePronunciationRule>();
+  for (const rule of rules) {
+    if (!rule.active || !normalizedText.includes(normalized(rule.term))) continue;
+    const key = `${normalized(rule.term)}::${normalized(rule.pronunciation)}`;
+    if (!unique.has(key)) unique.set(key, rule);
+  }
+  const matching = [...unique.values()];
   if (!matching.length) return "";
 
   return [
