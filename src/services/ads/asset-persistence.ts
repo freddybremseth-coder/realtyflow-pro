@@ -26,6 +26,7 @@ interface CreativeRow {
   overlay_subheadline?: string | null;
   overlay_cta?: string | null;
   overlay_badge?: string | null;
+  metadata_json?: Record<string, unknown> | null;
 }
 
 function extensionForMime(mimeType: string) {
@@ -44,6 +45,13 @@ export async function ensureAdCampaignMediaProject(
 ) {
   if (params.campaign.media_project_id) return params.campaign.media_project_id;
 
+  const { data: current } = await supabase
+    .from("ad_campaigns")
+    .select("media_project_id")
+    .eq("id", params.campaign.id)
+    .maybeSingle();
+  if (current?.media_project_id) return String(current.media_project_id);
+
   const { data, error } = await supabase
     .from("media_projects")
     .insert({
@@ -54,6 +62,7 @@ export async function ensureAdCampaignMediaProject(
       project_type: "ad_campaign",
       brand_id: params.campaign.brand_id || null,
       status: "active",
+      target_platforms: ["instagram", "facebook"],
       metadata_json: {
         actorEmail: params.actorEmail,
         adCampaignId: params.campaign.id,
@@ -67,7 +76,8 @@ export async function ensureAdCampaignMediaProject(
   await supabase
     .from("ad_campaigns")
     .update({ media_project_id: data.id })
-    .eq("id", params.campaign.id);
+    .eq("id", params.campaign.id)
+    .is("media_project_id", null);
 
   return String(data.id);
 }
@@ -85,6 +95,7 @@ export async function persistAdCreativeImage(
     sourceUrl?: string;
     mimeType?: string;
     fallbackFrom?: ConcreteAdProvider;
+    mediaProjectId?: string | null;
   },
 ) {
   let mimeType = params.mimeType || "image/png";
@@ -111,7 +122,7 @@ export async function persistAdCreativeImage(
 
   let outputAssetId: string | null = null;
   if (params.organizationId) {
-    const mediaProjectId = await ensureAdCampaignMediaProject(supabase, {
+    const mediaProjectId = params.mediaProjectId || await ensureAdCampaignMediaProject(supabase, {
       organizationId: params.organizationId,
       actorEmail: params.actorEmail || "system",
       campaign: params.campaign,
@@ -131,7 +142,6 @@ export async function persistAdCreativeImage(
         user_id: params.campaign.user_id || null,
         project_id: mediaProjectId || null,
         brand_id: params.campaign.brand_id || null,
-        campaign_id: params.campaign.id,
         media_type: "image",
         asset_type: "ad_creative",
         title: `${params.campaign.name} · ${params.creative.angle} · variant ${params.creative.variant_index || 1}`,
@@ -192,6 +202,7 @@ export async function persistAdCreativeImage(
       output_asset_id: outputAssetId,
       error: null,
       metadata_json: {
+        ...(params.creative.metadata_json || {}),
         completedAt: new Date().toISOString(),
         fallbackFrom: params.fallbackFrom || null,
       },
