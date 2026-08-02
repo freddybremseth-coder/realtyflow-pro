@@ -8,7 +8,8 @@ alter table public.ad_campaigns
   add column if not exists preserve_product_identity boolean not null default true,
   add column if not exists provider_strategy jsonb not null default '{}'::jsonb,
   add column if not exists concept_count integer not null default 10,
-  add column if not exists variants_per_concept integer not null default 5;
+  add column if not exists variants_per_concept integer not null default 5,
+  add column if not exists media_project_id uuid references public.media_projects(id) on delete set null;
 
 alter table public.ad_campaigns
   drop constraint if exists ad_campaigns_image_provider_check;
@@ -84,6 +85,10 @@ update public.ad_creatives
 set concept_group = angle
 where concept_group is null;
 
+create index if not exists ad_campaigns_media_project_idx
+  on public.ad_campaigns(media_project_id)
+  where media_project_id is not null;
+
 create index if not exists ad_creatives_campaign_concept_idx
   on public.ad_creatives(campaign_id, concept_group, variant_index);
 
@@ -98,6 +103,8 @@ comment on column public.ad_campaigns.image_provider is
   'Ad image routing mode: auto, openart, gemini, flux, or legacy replicate.';
 comment on column public.ad_campaigns.provider_strategy is
   'Resolved provider allocation and cost assumptions for this campaign.';
+comment on column public.ad_campaigns.media_project_id is
+  'Media Studio project used to group campaign source and generated assets.';
 comment on column public.ad_creatives.concept_group is
   'Campaign concept family used to group related ad variants.';
 comment on column public.ad_creatives.output_asset_id is
