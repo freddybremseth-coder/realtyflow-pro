@@ -87,11 +87,19 @@ export async function DELETE(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (campaign?.media_project_id) {
-    await supabase
+    const { error: archiveError } = await supabase
       .from("media_projects")
       .update({ status: "archived" })
-      .eq("id", campaign.media_project_id)
-      .catch(() => undefined);
+      .eq("id", campaign.media_project_id);
+
+    if (archiveError) {
+      console.warn("[Ad Campaigns] Could not archive linked Media Studio project", {
+        campaignId: params.id,
+        projectId: campaign.media_project_id,
+        code: archiveError.code,
+        message: archiveError.message,
+      });
+    }
   }
 
   return NextResponse.json({ ok: true, mediaPreserved: true });
