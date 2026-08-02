@@ -49,6 +49,12 @@ const MODELS: Record<ConcreteAdProvider, string> = {
   openart: "openart-dynamic-image",
 };
 
+function providerAspectRatio(value: string) {
+  // Meta's canonical landscape ratio is 1.91:1. The connected image
+  // providers expose 16:9 instead, which is the closest supported canvas.
+  return value === "1.91:1" ? "16:9" : value;
+}
+
 export function providerModel(provider: ConcreteAdProvider, requested?: string | null) {
   if (requested && !requested.includes("dynamic")) return requested;
   return MODELS[provider];
@@ -70,12 +76,13 @@ export function isProviderConfigurationError(error: unknown) {
 
 export async function submitAdProvider(input: AdProviderInput): Promise<AdProviderSubmission> {
   const model = providerModel(input.provider, input.model);
+  const aspectRatio = providerAspectRatio(input.aspectRatio);
 
   if (input.provider === "gemini") {
     const result = await new GeminiMediaProvider().generateImage({
       prompt: input.prompt,
       sourceImageUrls: [input.productImageUrl],
-      aspectRatio: input.aspectRatio,
+      aspectRatio,
       qualityTier: input.qualityTier || "balanced",
       model,
       allowText: false,
@@ -94,7 +101,7 @@ export async function submitAdProvider(input: AdProviderInput): Promise<AdProvid
   if (input.provider === "openart") {
     const historyId = await openArtGenerateImage({
       prompt: input.prompt,
-      aspectRatio: input.aspectRatio,
+      aspectRatio,
       sourceImageUrls: [input.productImageUrl],
       imageCount: 1,
     });
@@ -109,7 +116,7 @@ export async function submitAdProvider(input: AdProviderInput): Promise<AdProvid
   const prediction = await submitPrediction({
     prompt: input.prompt,
     input_image: input.productImageUrl,
-    aspect_ratio: input.aspectRatio,
+    aspect_ratio: aspectRatio,
     output_format: "png",
   }, 0);
   return {
