@@ -1,406 +1,305 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Layers3,
+  LayoutGrid,
+  Library,
+  Loader2,
+  RefreshCw,
+  Send,
+  Sparkles,
+  Star,
+  Wand2,
+} from "lucide-react";
+import { AdCampaignCreativeGallery } from "@/components/ad-campaigns/creative-gallery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Loader2, Sparkles, FileText, LayoutGrid, Wand2, Send, Star,
-  CheckCircle, AlertCircle, RefreshCw, ArrowRight,
-} from "lucide-react";
 import type { AdCampaign, AdCreative } from "@/types/ads";
 import { BRANDS } from "@/lib/constants";
+
+const STATUS_LABEL: Record<string, string> = {
+  draft: "Utkast",
+  brief_pending: "Brief klar",
+  matrix_pending: "Klar for generering",
+  generating: "Genererer",
+  completed: "Ferdig",
+  failed: "Feilet",
+};
+
+function providerLabel(provider: string) {
+  if (provider === "flux") return "Flux Kontext Pro";
+  if (provider === "openart") return "OpenArt";
+  if (provider === "gemini") return "Gemini";
+  if (provider === "auto") return "Auto";
+  return provider;
+}
 
 export default function AdCampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
-
   const [campaign, setCampaign] = useState<AdCampaign | null>(null);
   const [creatives, setCreatives] = useState<AdCreative[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string>("");
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/ad-campaigns/${id}`);
-    const data = await res.json();
-    setCampaign(data.campaign);
-    setCreatives(data.creatives ?? []);
+    const response = await fetch(`/api/ad-campaigns/${id}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Kunne ikke hente kampanjen.");
+    setCampaign(data.campaign || null);
+    setCreatives(data.creatives || []);
     setLoading(false);
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Poll while generating
   useEffect(() => {
-    if (campaign?.status === "generating") {
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(load, 4000);
-      return () => { if (pollRef.current) clearInterval(pollRef.current); };
-    } else if (pollRef.current) {
-      clearInterval(pollRef.current);
+    void load().catch((caught) => {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setLoading(false);
+    });
+  }, [load]);
+
+  useEffect(() => {
+    if (campaign?.status !== "generating") {
+      if (pollRef.current) window.clearInterval(pollRef.current);
       pollRef.current = null;
+      return;
     }
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    pollRef.current = window.setInterval(() => void load().catch(() => undefined), 5_000);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
   }, [campaign?.status, load]);
 
   const post = async (path: string, body?: Record<string, unknown>) => {
     setBusy(path);
     setError("");
+    setNotice("");
     try {
-      const res = await fetch(path, {
+      const response = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Handlingen feilet.");
       await load();
       return data;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      return null;
     } finally {
       setBusy("");
     }
   };
 
-  // Auto-batch loop while generating. Stops on safety conditions to
-  // avoid runaway loops if the API is misbehaving.
   const generateBatch = async () => {
     let keepGoing = true;
     let iterations = 0;
     let lastCompleted = -1;
     let stalledRounds = 0;
-    while (keepGoing && iterations < 60) {  // hard cap: 60 iterations
-      iterations++;
-      try {
-        const res = await fetch(`/api/ad-campaigns/${id}/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batch_size: 4 }),
-        });
-        const data = await res.json();
-        await load();
 
-        // Replicate throttles hard when the account has little/no credit.
-        // The rows are kept as pending, so generation resumes when the user
-        // has topped up and clicks generate again.
-        if (data.rate_limited) {
-          setError(
-            "Replicate rate limit: kontoen har for lav kreditt/rate limit. " +
-            "Øk kreditt på replicate.com → Account → Billing, og trykk 'Generer' igjen — " +
-            "de gjenværende annonsene ligger klare i køen."
-          );
-          break;
-        }
+    while (keepGoing && iterations < 70) {
+      iterations += 1;
+      const response = await fetch(`/api/ad-campaigns/${id}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_size: 3 }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Genereringen feilet.");
+      await load();
 
-        // Detect stalls. Long generations legitimately span several 50s
-        // batches now that predictions are resumed instead of restarted,
-        // so allow more quiet rounds before giving up.
-        if (data.completed_total === lastCompleted) {
-          stalledRounds++;
-          if (stalledRounds >= 6) {
-            setError("Genereringen tar uvanlig lang tid. Trykk 'Generer' igjen for å fortsette der den slapp — påbegynte annonser gjenopptas.");
-            break;
-          }
-        } else {
-          stalledRounds = 0;
-          lastCompleted = data.completed_total;
-        }
-
-        keepGoing = data.pending_total > 0;
-        if (data.status === "completed" || data.status === "failed") keepGoing = false;
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+      if (data.rate_limited) {
+        setError("En provider nådde kreditt- eller rategrensen. De gjenværende annonsene ligger fortsatt i køen. Fyll på kreditt eller velg Auto/regenerer med en annen provider.");
         break;
       }
+
+      if (data.completed_total === lastCompleted) {
+        stalledRounds += 1;
+        if (stalledRounds >= 8) {
+          setNotice("Noen eksterne bildejobber behandler fortsatt. Trykk «Fortsett generering» om litt; eksisterende provider-jobber gjenopptas uten dobbelt innsending.");
+          break;
+        }
+      } else {
+        lastCompleted = data.completed_total;
+        stalledRounds = 0;
+      }
+
+      keepGoing = data.pending_total > 0 || data.generating_total > 0;
+      if (data.status === "completed" || data.status === "failed") keepGoing = false;
     }
-    setBusy("");
   };
 
   const startGeneration = async () => {
-    setBusy("/api/ad-campaigns/generate");
+    setBusy("generate");
     setError("");
+    setNotice("");
     try {
       await generateBatch();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
       setBusy("");
     }
   };
 
+  const exportAll = async () => {
+    setBusy("export-all");
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/ad-campaigns/${id}/export-all`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Kampanjeeksporten feilet.");
+      setNotice(`${data.exported || 0} nye annonser ble sendt til Content Hub. ${data.alreadyExported || 0} var allerede eksportert.${data.failed?.length ? ` ${data.failed.length} feilet.` : ""}`);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const providerCounts = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const creative of creatives) {
+      if (creative.provider) result[creative.provider] = (result[creative.provider] || 0) + 1;
+    }
+    return result;
+  }, [creatives]);
+
   if (loading) {
-    return (
-      <div className="p-6 flex items-center gap-2 text-gray-400">
-        <Loader2 className="w-4 h-4 animate-spin" /> Laster…
-      </div>
-    );
+    return <div className="flex items-center gap-2 p-6 text-gray-400"><Loader2 className="h-4 w-4 animate-spin" />Laster kampanjen…</div>;
   }
-  if (!campaign) {
-    return <div className="p-6 text-red-400">Kampanje ikke funnet.</div>;
-  }
+  if (!campaign) return <div className="p-6 text-red-400">Kampanjen ble ikke funnet.</div>;
 
-  const brand = BRANDS.find((b) => b.id === campaign.brand_id);
-  const total = campaign.total_creatives || 50;
-  const done = campaign.succeeded_count || 0;
-  const failed = campaign.failed_count || 0;
-  const pct = total > 0 ? (done / total) * 100 : 0;
+  const brand = BRANDS.find((item) => item.id === campaign.brand_id);
+  const total = campaign.total_creatives || creatives.length || 50;
+  const done = campaign.succeeded_count || creatives.filter((creative) => creative.status === "completed").length;
+  const failed = campaign.failed_count || creatives.filter((creative) => creative.status === "failed").length;
+  const pending = creatives.filter((creative) => creative.status === "pending").length;
+  const processing = creatives.filter((creative) => creative.status === "generating").length;
+  const percent = total > 0 ? (done / total) * 100 : 0;
+  const canGenerate = Boolean(campaign.matrix && (pending > 0 || processing > 0 || failed > 0));
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="mx-auto max-w-[1500px] space-y-6 p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-amber-400" />
-            {campaign.name}
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">
-            {brand?.name} · {campaign.product_name}
-          </p>
+          <h1 className="flex items-center gap-2 text-2xl font-bold"><Sparkles className="h-6 w-6 text-amber-400" />{campaign.name}</h1>
+          <p className="mt-1 text-sm text-gray-400">{brand?.name || campaign.brand_id} · {campaign.product_name}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge>{STATUS_LABEL[campaign.status] || campaign.status}</Badge>
+            <Badge variant="outline">Motor: {providerLabel(campaign.image_provider || "auto")}</Badge>
+            <Badge variant="outline">{campaign.campaign_style?.replace(/_/g, " ") || "mixed"}</Badge>
+            <Badge variant="outline">Overlay: {campaign.overlay_mode || "suggestions"}</Badge>
+            {campaign.preserve_product_identity && <Badge variant="success">Produktidentitet låst</Badge>}
+          </div>
         </div>
-        <Badge className="text-xs">{campaign.status}</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/ad-campaigns/new"><Button variant="outline">Ny kampanje</Button></Link>
+          <Link href="/media-studio"><Button variant="outline" className="gap-2"><Library className="h-4 w-4" />Media Library</Button></Link>
+        </div>
       </div>
 
-      {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-md text-sm text-red-400 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">{error}</div>
-        </div>
-      )}
+      {error && <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
+      {notice && <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{notice}</span></div>}
 
-      {/* Progress strip */}
       <Card>
-        <CardContent className="py-4 space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Fremgang</span>
-            <span className="font-medium">{done}/{total} ferdige · {failed} feil</span>
+        <CardContent className="space-y-4 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="text-gray-400">Kampanjefremgang</span>
+            <span className="font-medium">{done}/{total} ferdige · {pending} i kø · {processing} behandler · {failed} feil</span>
           </div>
-          <Progress value={pct} className="h-2" />
-          <div className="flex items-center gap-3 text-xs text-gray-500">
-            <span>Estimert: ${campaign.estimated_cost_usd ?? "?"}</span>
+          <Progress value={percent} className="h-2" />
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">Estimert kostnad: ${Number(campaign.estimated_cost_usd || 0).toFixed(2)}</Badge>
+            {Object.entries(providerCounts).map(([provider, count]) => <Badge key={provider} variant="outline">{providerLabel(provider)}: {count}</Badge>)}
+            {campaign.matrix?.concept_groups && <Badge variant="outline">{campaign.matrix.concept_groups.length} konsepter</Badge>}
           </div>
         </CardContent>
       </Card>
 
-      {/* Step 1 — Brief */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FileText className="w-4 h-4" /> 1. Creative Brief
-          </CardTitle>
-          {!campaign.brief && (
-            <Button size="sm" disabled={!!busy} onClick={() => post(`/api/ad-campaigns/${id}/research`)} className="gap-2">
-              {busy.includes("research") ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-              Generer brief
-            </Button>
-          )}
-        </CardHeader>
-        {campaign.brief && (
-          <CardContent className="space-y-3 text-sm">
-            <ul className="space-y-1.5 list-disc list-inside text-gray-300">
-              {campaign.brief.bullets?.map((b, i) => <li key={i}>{b}</li>)}
-            </ul>
-            <div className="flex flex-wrap gap-1.5 pt-2">
-              {campaign.brief.top_angles?.map((a) => (
-                <Badge key={a} variant="outline" className="text-xs">{a}</Badge>
-              ))}
-            </div>
-            {campaign.brief.sources?.length > 0 && (
-              <div className="text-xs text-gray-500 pt-2">
-                Kilder: {campaign.brief.sources.map((s, i) => (
-                  <a key={i} href={s.url} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline ml-1">
-                    {s.title}
-                  </a>
-                ))}
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4" />1. Creative Brief</CardTitle>
+            {!campaign.brief && <Button size="sm" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/research`)} className="gap-2">{busy.includes("research") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}Generer brief</Button>}
+          </CardHeader>
+          <CardContent>
+            {campaign.brief ? (
+              <div className="space-y-3 text-sm">
+                <ul className="space-y-1.5 text-gray-300">{campaign.brief.bullets?.map((bullet, index) => <li key={index} className="flex gap-2"><span className="text-amber-400">•</span><span>{bullet}</span></li>)}</ul>
+                <div className="flex flex-wrap gap-1.5">{campaign.brief.top_angles?.map((angle) => <Badge key={angle} variant="outline">{angle}</Badge>)}</div>
               </div>
-            )}
+            ) : <p className="text-sm text-gray-500">Research og brief må genereres før kampanjematrisen bygges.</p>}
           </CardContent>
-        )}
-      </Card>
+        </Card>
 
-      {/* Step 2 — Matrix */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <LayoutGrid className="w-4 h-4" /> 2. 50-Ad Matrix
-          </CardTitle>
-          {campaign.brief && !campaign.matrix && (
-            <Button size="sm" disabled={!!busy} onClick={() => post(`/api/ad-campaigns/${id}/matrix`)} className="gap-2">
-              {busy.includes("matrix") ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-              Bygg matrise
-            </Button>
-          )}
-        </CardHeader>
-        {campaign.matrix && (
-          <CardContent className="space-y-2 text-sm">
-            <div className="text-gray-400">
-              {campaign.matrix.scenes.length} scener × {campaign.matrix.aspect_ratios.length} ratios = {campaign.matrix.total_creatives} ads
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5 pt-2">
-              {Object.entries(campaign.matrix.mood_distribution || {}).map(([mood, count]) => (
-                <Badge key={mood} variant="outline" className="text-xs justify-center">
-                  {mood}: {count as number}
-                </Badge>
-              ))}
-            </div>
+        <Card>
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base"><LayoutGrid className="h-4 w-4" />2. Konseptmatrise</CardTitle>
+            {campaign.brief && !campaign.matrix && <Button size="sm" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/matrix`)} className="gap-2">{busy.includes("matrix") ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}Bygg kampanjematrise</Button>}
+          </CardHeader>
+          <CardContent>
+            {campaign.matrix ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-400">{campaign.matrix.concept_groups?.length || campaign.matrix.scenes.length} konseptfamilier · {campaign.matrix.total_creatives} annonser · {campaign.matrix.aspect_ratios.join(", ")}</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {(campaign.matrix.concept_groups || campaign.matrix.scenes.map((scene) => ({ id: scene.id, angle: scene.angle, description: scene.prompt_body }))).map((concept) => <div key={concept.id} className="rounded-lg border border-gray-800 p-2"><p className="text-xs font-medium text-gray-200">{concept.angle}</p><p className="mt-1 line-clamp-2 text-[11px] text-gray-500">{concept.description}</p></div>)}
+                </div>
+              </div>
+            ) : <p className="text-sm text-gray-500">Bygg matrisen for å opprette provider-rutede annonsevarianter.</p>}
           </CardContent>
-        )}
-      </Card>
+        </Card>
+      </div>
 
-      {/* Step 3 — Generation */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Wand2 className="w-4 h-4" /> 3. Generering
-          </CardTitle>
-          {campaign.matrix && campaign.status !== "completed" && campaign.status !== "generating" && (
-            <Button size="sm" disabled={!!busy} onClick={startGeneration} className="gap-2">
-              {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-              Start generering (~$2, ~9 min)
-            </Button>
-          )}
-          {campaign.status === "generating" && (
-            <Button size="sm" disabled={!!busy} onClick={startGeneration} variant="outline" className="gap-2">
-              <RefreshCw className="w-3 h-3 animate-spin" /> Behandler…
-            </Button>
-          )}
-          {failed > 0 && campaign.status !== "generating" && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!!busy}
-              onClick={async () => {
-                await post(`/api/ad-campaigns/${id}/retry-failed`);
-                await startGeneration();
-              }}
-              className="gap-2 text-amber-300 border-amber-500/40"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Retry {failed} failed
-            </Button>
-          )}
+        <CardHeader className="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div><CardTitle className="flex items-center gap-2 text-base"><Layers3 className="h-4 w-4" />3. Produksjon og annonser</CardTitle><p className="mt-1 text-xs text-gray-500">Resultatene grupperes etter annonsevinkel. Teksten ligger separat fra AI-bildet og kan redigeres uten regenerering.</p></div>
+          <div className="flex flex-wrap gap-2">
+            {campaign.matrix && canGenerate && <Button size="sm" disabled={Boolean(busy)} onClick={() => void startGeneration()} className="gap-2">{busy === "generate" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}{done > 0 ? "Fortsett generering" : "Start generering"}</Button>}
+            {failed > 0 && campaign.status !== "generating" && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={async () => { const result = await post(`/api/ad-campaigns/${id}/retry-failed`); if (result) await startGeneration(); }} className="gap-2 text-amber-300"><RefreshCw className="h-3 w-3" />Prøv {failed} feil på nytt</Button>}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {creatives.length === 0 ? (
-            <p className="text-sm text-gray-500">Ingen creatives ennå — bygg matrisen først.</p>
-          ) : (
-            <CreativeGallery creatives={creatives} />
-          )}
+        <CardContent>
+          {creatives.length ? <AdCampaignCreativeGallery campaign={campaign} creatives={creatives} onRefresh={load} onError={setError} /> : <p className="text-sm text-gray-500">Ingen annonser er opprettet ennå. Generer brief og bygg matrisen først.</p>}
         </CardContent>
       </Card>
 
-      {/* Step 4 — Delivery */}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Send className="w-4 h-4" /> 4. Leveranse
-          </CardTitle>
-          <div className="flex gap-2">
-            {campaign.status === "completed" && !campaign.delivery && (
-              <Button size="sm" disabled={!!busy} onClick={() => post(`/api/ad-campaigns/${id}/delivery`)} className="gap-2">
-                {busy.includes("delivery") ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                Generer captions + top 5
-              </Button>
-            )}
-            {campaign.delivery && (
-              <Button size="sm" variant="outline" disabled={!!busy} onClick={() => post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2">
-                {busy.includes("push-to-hub") ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                Push top 5 til Content Hub
-              </Button>
-            )}
+        <CardHeader className="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <CardTitle className="flex items-center gap-2 text-base"><Send className="h-4 w-4" />4. Leveranse og Content Hub</CardTitle>
+          <div className="flex flex-wrap gap-2">
+            {done > 0 && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void exportAll()} className="gap-2">{busy === "export-all" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Eksporter alle ferdige</Button>}
+            {campaign.status === "completed" && !campaign.delivery && <Button size="sm" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/delivery`)} className="gap-2">{busy.includes("delivery") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}Captions og toppliste</Button>}
+            {campaign.delivery && <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void post(`/api/ad-campaigns/${id}/push-to-hub`)} className="gap-2"><Star className="h-3 w-3" />Push toppliste</Button>}
           </div>
         </CardHeader>
-        {campaign.delivery && (
-          <CardContent className="space-y-4 text-sm">
-            <div>
-              <h3 className="font-medium mb-2 flex items-center gap-2">
-                <Star className="w-4 h-4 text-amber-400" /> Top 5 A/B picks
-              </h3>
-              <ol className="space-y-1.5 list-decimal list-inside text-gray-300">
-                {campaign.delivery.top_picks?.map((p) => {
-                  const c = creatives.find((x) => x.id === p.creative_id);
-                  return (
-                    <li key={p.creative_id}>
-                      <span className="font-medium">{c?.scene_id} {c?.aspect_ratio}</span>
-                      <span className="text-gray-400"> — {p.rationale}</span>
-                    </li>
-                  );
-                })}
-              </ol>
+        <CardContent>
+          {campaign.delivery ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div><h3 className="mb-2 text-sm font-medium">Top picks</h3><ol className="space-y-2 text-sm text-gray-300">{campaign.delivery.top_picks?.map((pick) => { const creative = creatives.find((item) => item.id === pick.creative_id); return <li key={pick.creative_id} className="rounded-lg border border-gray-800 p-2"><strong>#{pick.rank} {creative?.angle || creative?.scene_id}</strong><span className="mt-1 block text-xs text-gray-500">{pick.rationale}</span></li>; })}</ol></div>
+              <div><h3 className="mb-2 text-sm font-medium">Captions per vinkel</h3><div className="space-y-2">{Object.entries(campaign.delivery.per_angle_captions || {}).map(([angle, pack]) => <div key={angle} className="rounded-lg border border-gray-800 p-3"><p className="text-xs font-medium text-amber-300">{angle}</p><p className="mt-1 text-sm text-gray-300">{pack.primary}</p><p className="mt-1 text-xs text-gray-500">{pack.hashtags?.join(" ")}</p></div>)}</div></div>
             </div>
-            {campaign.delivery.per_angle_captions && (
-              <div>
-                <h3 className="font-medium mb-2">Captions per angle</h3>
-                <div className="space-y-2">
-                  {Object.entries(campaign.delivery.per_angle_captions).map(([angle, pack]) => (
-                    <div key={angle} className="p-3 bg-gray-900/40 rounded-md">
-                      <div className="text-xs text-amber-400 mb-1">{angle}</div>
-                      <div className="text-gray-300">{pack.primary}</div>
-                      {pack.secondary && (
-                        <div className="text-gray-400 text-xs italic">{pack.secondary}</div>
-                      )}
-                      <div className="text-xs text-gray-500 mt-1">{pack.hashtags?.join(" ")}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        )}
+          ) : <p className="text-sm text-gray-500">Ferdige annonser kan eksporteres direkte. Når hele kampanjen er ferdig, kan AI også lage captions, toppliste og lanseringsforslag.</p>}
+        </CardContent>
       </Card>
-    </div>
-  );
-}
-
-// ─── Gallery component ─────────────────────────────────────────────────
-function CreativeGallery({ creatives }: { creatives: AdCreative[] }) {
-  const byAngle: Record<string, AdCreative[]> = {};
-  for (const c of creatives) {
-    (byAngle[c.angle] ||= []).push(c);
-  }
-
-  return (
-    <div className="space-y-6">
-      {Object.entries(byAngle).map(([angle, items]) => (
-        <div key={angle}>
-          <h4 className="text-sm font-medium text-gray-300 mb-2">{angle}</h4>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {items.map((c) => (
-              <div key={c.id} className="relative aspect-square bg-gray-900 rounded-md overflow-hidden border border-gray-800">
-                {c.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.thumbnail_url || c.image_url} alt={c.scene_id} loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                ) : c.status === "generating" ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  </div>
-                ) : c.status === "failed" ? (
-                  <div
-                    className="absolute inset-0 flex flex-col items-center justify-center text-red-400 p-2 text-center cursor-help"
-                    title={c.error || "Failed"}
-                  >
-                    <AlertCircle className="w-4 h-4 mb-1" />
-                    <span className="text-[10px] line-clamp-3">{c.error?.slice(0, 80) || "Failed"}</span>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-600 text-xs">
-                    pending
-                  </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-black/70 text-xs flex items-center justify-between">
-                  <span>{c.scene_id} {c.aspect_ratio}</span>
-                  {c.is_top_pick && <Star className="w-3 h-3 text-amber-400 fill-amber-400" />}
-                </div>
-                {c.status === "completed" && (
-                  <CheckCircle className="absolute top-1 right-1 w-3 h-3 text-emerald-400" />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
