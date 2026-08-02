@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createMediaPromptPlan } from "./prompt-director";
 import { routeMediaProvider } from "./provider-router";
-import { OpenAIVoiceProvider } from "./providers/openai-voice-provider";
+import { OpenAIVoiceProvider, redactOpenAIErrorMessage } from "./providers/openai-voice-provider";
 import { emptyCapabilities, providerCapabilitiesSchema } from "./types";
 
 test("Prompt Director creates an OpenAI voice plan", () => {
@@ -63,4 +63,12 @@ test("OpenAI voice capability is unavailable without an API key", async () => {
   } finally {
     if (previous) process.env.OPENAI_API_KEY = previous;
   }
+});
+
+test("OpenAI provider errors never expose API key material", () => {
+  const raw = "Incorrect API key provided: AQ.Ab8RN********************************4F3g. You can find your API key at https://platform.openai.com/account/api-keys.";
+  const safe = redactOpenAIErrorMessage(raw);
+  assert.match(safe, /\[REDACTED\]/);
+  assert.doesNotMatch(safe, /Ab8RN/);
+  assert.doesNotMatch(safe, /4F3g/);
 });

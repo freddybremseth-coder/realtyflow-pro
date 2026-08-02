@@ -5,6 +5,7 @@ import { routeMediaProvider } from "@/services/media/provider-router";
 import { createPlanRequestSchema, mediaPromptPlanSchema } from "@/services/media/types";
 import { getMediaApiContext, jsonError } from "@/services/media/api-context";
 import { assertMediaRateLimit } from "@/services/media/api-guards";
+import { buildPronunciationInstructions } from "@/services/media/voice-pronunciations";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,27 @@ export async function POST(request: NextRequest) {
     assertMediaRateLimit(context.scope.actorEmail, "plan");
 
     const body = createPlanRequestSchema.parse(await request.json());
-    const basePlan = createMediaPromptPlan(body);
+    let basePlan = createMediaPromptPlan(body);
+
+    if (basePlan.mediaType === "voice" || basePlan.mediaType === "audio") {
+      const pronunciationInstructions = await buildPronunciationInstructions(context.supabase, {
+        organizationId: context.scope.organizationId,
+        brandId: basePlan.brandId || null,
+        language: basePlan.voiceLanguage || "Norwegian",
+        text: basePlan.originalRequest,
+      });
+      if (pronunciationInstructions) {
+        basePlan = mediaPromptPlanSchema.parse({
+          ...basePlan,
+          voiceTone: [basePlan.voiceTone, pronunciationInstructions].filter(Boolean).join(" "),
+          promptBlocks: {
+            ...basePlan.promptBlocks,
+            pronunciationDictionaryApplied: "true",
+          },
+        });
+      }
+    }
+
     const capabilities = await getProviderCapabilities(context.supabase, context.scope.organizationId);
     const decision = routeMediaProvider(basePlan, capabilities);
     const plan = mediaPromptPlanSchema.parse({

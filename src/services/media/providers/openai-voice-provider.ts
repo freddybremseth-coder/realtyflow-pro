@@ -51,6 +51,16 @@ function supportsInstructions(model: string) {
   return model !== "tts-1" && model !== "tts-1-hd";
 }
 
+export function redactOpenAIErrorMessage(message: string) {
+  return message
+    .replace(
+      /(incorrect api key provided:\s*).*?(\.\s*you can find your api key)/i,
+      "$1[REDACTED]$2",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
+    .replace(/\b(?:AQ|sess|proj)\.[A-Za-z0-9_*.-]{12,}\b/g, "[REDACTED]");
+}
+
 export class OpenAIVoiceProvider implements MediaProvider {
   readonly id = "openai" as const;
   readonly displayName = "OpenAI Voice";
@@ -115,7 +125,8 @@ export class OpenAIVoiceProvider implements MediaProvider {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-      throw new Error(body.error?.message || `OpenAI Voice feilet (${response.status}).`);
+      const rawMessage = body.error?.message || `OpenAI Voice feilet (${response.status}).`;
+      throw new Error(redactOpenAIErrorMessage(rawMessage));
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());

@@ -92,3 +92,71 @@ export async function GET(
     return jsonError(error);
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const context = await getMediaApiContext(request);
+    if ("error" in context) return context.error;
+
+    const deleteAssets = request.nextUrl.searchParams.get("deleteAssets") === "true";
+    const { data: job, error: jobError } = await context.supabase
+      .from("media_generation_jobs")
+      .select("id, status, media_type, provider, prompt_plan_id")
+      .eq("organization_id", context.scope.organizationId)
+      .eq("id", params.id)
+      .maybeSingle();
+    if (jobError) throw new Error(jobError.message);
+    if (!job) return NextResponse.json({ error: "Fant ikke media-jobben." }, { status: 404 });
+
+    if (["queued", "submitted", "processing"].includes(job.status)) {
+      return NextResponse.json({
+        error: "Aktive jobber kan ikke slettes. Vent til jobben er ferdig eller kansellert.",
+      }, { status: 409 });
+    }
+
+    const { data: resultAssets, error: assetError } = await context.supabase
+      .from("media_assets")
+      .select("id, status, exported_to_content_hub_at")
+      .eq("organization_id", context.scope.organizationId)
+      .eq("job_id", params.id)
+      .neq("status", "deleted");
+    if (assetError) throw new Error(assetError.message);
+
+    if ((resultAssets || []).length && !deleteAssets) {
+      return NextResponse.json({
+        error: "Jobben har lagrede resultater. Bekreft at lydfilen eller mediefilen også skal fjernes.",
+        assetCount: resultAssets?.length || 0,
+      }, { status: 409 });
+    }
+
+    if (deleteAssets && (resultAssets || []).length) {
+      const deletedAt = new Date().toISOString();
+      const { error: deleteAssetsError } = await context.supabase
+        .from("media_assets")
+        .update({ status: "deleted", deleted_at: deletedAt })
+        .eq("organization_id", context.scope.organizationId)
+        .eq("job_id", params.id)
+        .neq("status", "deleted");
+      if (deleteAssetsError) throw new Error(deleteAssetsError.message);
+    }
+
+    const { error: deleteJobError } = await context.supabase
+      .from("media_generation_jobs")
+      .delete()
+      .eq("organization_id", context.scope.organizationId)
+      .eq("id", params.id);
+    if (deleteJobError) throw new Error(deleteJobError.message);
+
+    return NextResponse.json({
+      success: true,
+      deletedJobId: params.id,
+      deletedAssetCount: deleteAssets ? resultAssets?.length || 0 : 0,
+      contentHubCopiesPreserved: (resultAssets || []).some((asset) => Boolean(asset.exported_to_content_hub_at)),
+    });
+  } catch (error) {
+    return jsonError(error, 400);
+  }
+}
