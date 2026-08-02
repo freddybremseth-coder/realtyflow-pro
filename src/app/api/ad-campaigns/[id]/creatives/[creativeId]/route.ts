@@ -4,12 +4,13 @@ import { createServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const overlayPatchSchema = z.object({
+const creativePatchSchema = z.object({
   overlay_headline: z.string().max(160).nullable().optional(),
   overlay_subheadline: z.string().max(300).nullable().optional(),
   overlay_cta: z.string().max(80).nullable().optional(),
   overlay_badge: z.string().max(100).nullable().optional(),
   overlay_applied: z.boolean().optional(),
+  pushed_to_hub: z.boolean().optional(),
 });
 
 const actionSchema = z.object({
@@ -17,10 +18,7 @@ const actionSchema = z.object({
   provider: z.enum(["openart", "gemini", "flux"]).optional(),
 });
 
-async function loadCreative(
-  campaignId: string,
-  creativeId: string,
-) {
+async function loadCreative(campaignId: string, creativeId: string) {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("ad_creatives")
@@ -29,8 +27,32 @@ async function loadCreative(
     .eq("id", creativeId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) return { supabase, creative: null };
-  return { supabase, creative: data };
+  return { supabase, creative: data || null };
+}
+
+async function refreshCampaignCounts(
+  supabase: ReturnType<typeof createServerClient>,
+  campaignId: string,
+  status = "matrix_pending",
+) {
+  const { data, error } = await supabase
+    .from("ad_creatives")
+    .select("status")
+    .eq("campaign_id", campaignId);
+  if (error) throw new Error(error.message);
+  const rows = data || [];
+  const succeeded = rows.filter((row) => row.status === "completed").length;
+  const failed = rows.filter((row) => row.status === "failed").length;
+  await supabase
+    .from("ad_campaigns")
+    .update({
+      status,
+      total_creatives: rows.length,
+      succeeded_count: succeeded,
+      failed_count: failed,
+      error: null,
+    })
+    .eq("id", campaignId);
 }
 
 export async function PATCH(
@@ -38,13 +60,11 @@ export async function PATCH(
   { params }: { params: { id: string; creativeId: string } },
 ) {
   try {
-    const body = overlayPatchSchema.parse(await request.json());
+    const body = creativePatchSchema.parse(await request.json());
     const { supabase, creative } = await loadCreative(params.id, params.creativeId);
     if (!creative) return NextResponse.json({ error: "Fant ikke annonsen." }, { status: 404 });
 
-    const update = Object.fromEntries(
-      Object.entries(body).filter(([, value]) => value !== undefined),
-    );
+    const update = Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
     const { data, error } = await supabase
       .from("ad_creatives")
       .update(update)
@@ -56,7 +76,7 @@ export async function PATCH(
     return NextResponse.json({ creative: data });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: "Ugyldige overlay-felt.", details: error.flatten() }, { status: 400 });
+      return NextResponse.json({ error: "Ugyldige creative-felt.", details: error.flatten() }, { status: 400 });
     }
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
@@ -89,6 +109,7 @@ export async function POST(
           thumbnail_url: null,
           source_url: null,
           output_asset_id: null,
+          pushed_to_hub: false,
           error: null,
           metadata_json: {
             ...(creative.metadata_json || {}),
@@ -99,11 +120,7 @@ export async function POST(
         .select("*")
         .single();
       if (error) throw new Error(error.message);
-
-      await supabase
-        .from("ad_campaigns")
-        .update({ status: "matrix_pending", error: null })
-        .eq("id", params.id);
+      await refreshCampaignCounts(supabase, params.id);
       return NextResponse.json({ creative: data, action: "regenerate" });
     }
 
@@ -152,19 +169,7 @@ export async function POST(
       .single();
     if (variantError) throw new Error(variantError.message);
 
-    const { count } = await supabase
-      .from("ad_creatives")
-      .select("id", { count: "exact", head: true })
-      .eq("campaign_id", params.id);
-    await supabase
-      .from("ad_campaigns")
-      .update({
-        status: "matrix_pending",
-        total_creatives: count || 0,
-        error: null,
-      })
-      .eq("id", params.id);
-
+    await refreshCampaignCounts(supabase, params.id);
     return NextResponse.json({ creative: variant, action: "create_variant" }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
