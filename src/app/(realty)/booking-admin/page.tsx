@@ -9,6 +9,7 @@ import {
   Code2,
   Copy,
   ExternalLink,
+  EyeOff,
   Globe,
   Loader2,
   Mail,
@@ -827,10 +828,16 @@ export default function BookingAdminPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved && <Badge className="border-emerald-500/30 bg-emerald-500/15 text-emerald-300"><CheckCircle2 size={13} /> Lagret</Badge>}
-          <Button variant="outline" onClick={() => save(false)} disabled={saving || !config}>
+          <Button variant="outline" onClick={() => save()} disabled={saving || !config}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Lagre utkast
+            Lagre
           </Button>
+          {config?.published && (
+            <Button variant="ghost" onClick={() => save(false)} disabled={saving || !config}>
+              <EyeOff className="mr-2 h-4 w-4" />
+              Avpubliser
+            </Button>
+          )}
           <Button onClick={() => save(true)} disabled={saving || !config}>
             <Globe className="mr-2 h-4 w-4" />
             Publiser
