@@ -656,6 +656,63 @@ export function getChatGeniusServiceCatalog() {
   return sortChatGeniusServices(CHATGENIUS_SERVICE_CATALOG.map((service) => normalizeChatGeniusServiceRow(service)));
 }
 
+function hasManifestValue(value: unknown) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+export function mergeChatGeniusServiceRecord(
+  base: Partial<ChatGeniusService>,
+  incoming: Partial<ChatGeniusService> & Record<string, unknown>,
+) {
+  const merged: Record<string, unknown> = { ...base };
+
+  for (const [key, value] of Object.entries(incoming)) {
+    if (["id", "created_at", "updated_at"].includes(key)) continue;
+    if (!hasManifestValue(value)) continue;
+
+    if (
+      key === "metadata" &&
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      merged.metadata &&
+      typeof merged.metadata === "object" &&
+      !Array.isArray(merged.metadata)
+    ) {
+      merged.metadata = { ...(merged.metadata as Record<string, unknown>), ...(value as Record<string, unknown>) };
+      continue;
+    }
+
+    merged[key] = value;
+  }
+
+  return normalizeChatGeniusServiceRow(merged);
+}
+
+export function mergeChatGeniusServiceSets(
+  baseServices: Array<Partial<ChatGeniusService>>,
+  incomingServices: Array<Partial<ChatGeniusService> & Record<string, unknown>>,
+) {
+  const servicesBySlug = new Map<string, ChatGeniusService>();
+
+  for (const service of baseServices) {
+    const normalized = normalizeChatGeniusServiceRow(service as Partial<ChatGeniusService> & Record<string, unknown>);
+    if (normalized.slug) servicesBySlug.set(normalized.slug, normalized);
+  }
+
+  for (const service of incomingServices) {
+    const incoming = normalizeChatGeniusServiceRow(service);
+    if (!incoming.slug) continue;
+    const existing = servicesBySlug.get(incoming.slug);
+    servicesBySlug.set(incoming.slug, existing ? mergeChatGeniusServiceRecord(existing, service) : incoming);
+  }
+
+  return sortChatGeniusServices(Array.from(servicesBySlug.values()));
+}
+
 export function summarizeChatGeniusServices(services: ChatGeniusService[]): ChatGeniusServiceSummary {
   const summary: ChatGeniusServiceSummary = {
     totalServices: services.length,

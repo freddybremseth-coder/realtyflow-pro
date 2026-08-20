@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   buildChatGeniusServiceUpsertPayload,
   getChatGeniusServiceCatalog,
+  mergeChatGeniusServiceSets,
   summarizeChatGeniusServices,
 } from "@/lib/chatgenius-services";
 
@@ -47,6 +48,45 @@ test("ChatGenius service upsert payload is Supabase-table friendly", () => {
   assert.equal(payload.brand_id, "chatgenius");
   assert.equal(payload.recommended_budget_amount, 7000);
   assert.ok(Array.isArray(payload.campaign_channels));
+});
+
+test("ChatGenius manifest merge preserves operational fields and adds new services", () => {
+  const catalog = getChatGeniusServiceCatalog();
+  const demoSites = catalog.find((service) => service.slug === "demosites-nettsidepakke");
+  assert.ok(demoSites);
+
+  const merged = mergeChatGeniusServiceSets(
+    [{ ...demoSites, stripe_price_id: "price_live_demo", recommended_budget_amount: 12345 }],
+    [
+      {
+        slug: "demosites-nettsidepakke",
+        brand_id: "chatgenius",
+        offer: "Oppdatert salgstekst fra chatgenius.pro-manifestet.",
+      },
+      {
+        slug: "ny-chatgenius-tjeneste",
+        brand_id: "chatgenius",
+        name: "Ny ChatGenius-tjeneste",
+        service_type: "consulting",
+        status: "published",
+        pricing_model: "hourly",
+        price_amount: 890,
+        currency: "NOK",
+        recommended_budget_amount: 1500,
+        campaign_channels: ["LinkedIn"],
+        campaign_angles: ["Ny tjeneste kan annonseres fra RealtyFlow"],
+      },
+    ],
+  );
+
+  const syncedDemoSites = merged.find((service) => service.slug === "demosites-nettsidepakke");
+  const newService = merged.find((service) => service.slug === "ny-chatgenius-tjeneste");
+
+  assert.equal(syncedDemoSites?.stripe_price_id, "price_live_demo");
+  assert.equal(syncedDemoSites?.recommended_budget_amount, 12345);
+  assert.equal(syncedDemoSites?.offer, "Oppdatert salgstekst fra chatgenius.pro-manifestet.");
+  assert.equal(newService?.status, "published");
+  assert.equal(newService?.price_amount, 890);
 });
 
 test("ChatGenius service migration locks direct browser access", () => {
