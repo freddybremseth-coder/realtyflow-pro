@@ -5,13 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { summarizeChatGeniusServices, type ChatGeniusService, type ChatGeniusServiceSummary } from '@/lib/chatgenius-services';
 import {
   Globe, Plus, ExternalLink, Code2, Users, DollarSign, TrendingUp,
   BarChart3, Loader2, Rocket, PauseCircle, Wrench, Archive,
   Eye, Zap, CheckCircle, XCircle, Clock, Sparkles, Layout, Package,
   Search, ThumbsUp, ThumbsDown, Microscope, Brain, Copy, ChevronRight,
   Target, Lightbulb, Shield, Star, AlertCircle, RefreshCw, FileText,
-  ArrowRight, X,
+  ArrowRight, X, Megaphone, CreditCard, WalletCards,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -134,6 +135,34 @@ const CATEGORY_LABELS: Record<string, string> = {
   'developer-tools': 'Utviklerverktoy', legal: 'Juridisk', marketing: 'Markedsforing',
 };
 
+function formatCurrency(value: number, currency = 'NOK') {
+  return new Intl.NumberFormat('nb-NO', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function formatServicePrice(service: ChatGeniusService) {
+  const currency = service.currency || 'NOK';
+  if (service.pricing_model === 'free') return 'Gratis';
+  if (service.pricing_model === 'hourly' && service.price_amount) return `${formatCurrency(service.price_amount, currency)} / t`;
+  if (service.monthly_fee_amount && service.setup_fee_amount) {
+    return `${formatCurrency(service.setup_fee_amount, currency)} + ${formatCurrency(service.monthly_fee_amount, currency)} / mnd`;
+  }
+  if (service.monthly_fee_amount) return `${formatCurrency(service.monthly_fee_amount, currency)} / mnd`;
+  if (service.setup_fee_amount) return `Fra ${formatCurrency(service.setup_fee_amount, currency)}`;
+  if (service.price_amount) return formatCurrency(service.price_amount, currency);
+  return 'Tilpasses';
+}
+
+const STRIPE_STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  configured: { label: 'Stripe klar', className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  manual: { label: 'Manuell faktura', className: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
+  needs_setup: { label: 'Trenger price ID', className: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  not_required: { label: 'Ikke påkrevd', className: 'bg-slate-600/30 text-slate-300 border-slate-500/30' },
+};
+
 const SEED_APPS: Partial<SaaSApp>[] = [
   {
     slug: 'chatgenius', name: 'ChatGenius.pro', domain: 'chatgenius.pro',
@@ -189,6 +218,12 @@ export default function SaaSPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dbWarning, setDbWarning] = useState<string | null>(null);
+  const [chatGeniusServices, setChatGeniusServices] = useState<ChatGeniusService[]>([]);
+  const [serviceSummary, setServiceSummary] = useState<ChatGeniusServiceSummary | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesSyncing, setServicesSyncing] = useState(false);
+  const [serviceWarning, setServiceWarning] = useState<string | null>(null);
+  const [serviceSource, setServiceSource] = useState<string | null>(null);
 
   // Opportunity state
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -264,6 +299,27 @@ export default function SaaSPage() {
     }
   }, []);
 
+  const fetchChatGeniusServices = useCallback(async () => {
+    setServicesLoading(true);
+    try {
+      const res = await fetch('/api/chatgenius/services', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kunne ikke hente ChatGenius-tjenester');
+      setChatGeniusServices(data.services || []);
+      setServiceSummary(data.summary || null);
+      setServiceSource(data.source || null);
+      setServiceWarning(data.warning || null);
+    } catch (err) {
+      console.error('[SaaS] Failed to fetch ChatGenius services:', err);
+      setServiceWarning(err instanceof Error ? err.message : 'Kunne ikke hente ChatGenius-tjenester');
+      setChatGeniusServices([]);
+      setServiceSummary(null);
+      setServiceSource(null);
+    } finally {
+      setServicesLoading(false);
+    }
+  }, []);
+
   const fetchOpportunities = useCallback(async () => {
     setLoadingOpps(true);
     try {
@@ -278,7 +334,10 @@ export default function SaaSPage() {
     }
   }, []);
 
-  useEffect(() => { fetchApps(); }, [fetchApps]);
+  useEffect(() => {
+    fetchApps();
+    fetchChatGeniusServices();
+  }, [fetchApps, fetchChatGeniusServices]);
 
   // Check build readiness on mount
   useEffect(() => {
@@ -286,6 +345,27 @@ export default function SaaSPage() {
   }, []);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
+
+  const syncChatGeniusServices = async () => {
+    setServicesSyncing(true);
+    setServiceWarning(null);
+    try {
+      const res = await fetch('/api/chatgenius/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_seed' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Synk feilet');
+      setChatGeniusServices(data.services || []);
+      setServiceSummary(data.summary || null);
+      setServiceSource(data.source || 'supabase');
+    } catch (err) {
+      setServiceWarning(err instanceof Error ? err.message : 'Kunne ikke synke ChatGenius-tjenester');
+    } finally {
+      setServicesSyncing(false);
+    }
+  };
 
   const handleSaveApp = async () => {
     if (!formSlug || !formName) return;
@@ -577,6 +657,7 @@ export default function SaaSPage() {
 
   const liveApps = apps.filter(a => a.status === 'live');
   const devApps = apps.filter(a => a.status !== 'live' && a.status !== 'archived');
+  const serviceStats = serviceSummary || summarizeChatGeniusServices(chatGeniusServices);
 
   // ─── Pipeline counts ──────────────────────────────────────────────────────
   const discoveredCount = opportunities.filter(o => o.status === 'discovered').length;
@@ -613,9 +694,10 @@ export default function SaaSPage() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-3 xl:grid-cols-6">
         {[
           { icon: Package, label: 'Totalt Apper', value: totals.totalApps, color: 'text-purple-400' },
+          { icon: Megaphone, label: 'Tjenester', value: serviceStats.totalServices, color: 'text-cyan-300' },
           { icon: Rocket, label: 'Live', value: totals.liveApps, color: 'text-green-400' },
           { icon: Users, label: 'Brukere', value: totals.totalUsers, color: 'text-blue-400' },
           { icon: DollarSign, label: 'MRR', value: `$${totals.totalMRR.toFixed(0)}`, color: 'text-emerald-400' },
@@ -643,6 +725,9 @@ export default function SaaSPage() {
           </TabsTrigger>
           <TabsTrigger value="clone"><Zap className="mr-2 h-4 w-4" /> Clone Competitor</TabsTrigger>
           <TabsTrigger value="customer-plan"><Target className="mr-2 h-4 w-4" /> Kundeplan</TabsTrigger>
+          <TabsTrigger value="services">
+            <Megaphone className="mr-2 h-4 w-4" /> Tjenester {serviceStats.needsStripeSetup > 0 && <Badge className="ml-2 bg-amber-500/20 text-amber-300 text-[10px]">{serviceStats.needsStripeSetup} Stripe</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="portfolio"><Layout className="mr-2 h-4 w-4" /> Mine Apper ({apps.length})</TabsTrigger>
           <TabsTrigger value="analytics"><BarChart3 className="mr-2 h-4 w-4" /> Analytics</TabsTrigger>
         </TabsList>
@@ -1095,6 +1180,136 @@ export default function SaaSPage() {
               )}
             </div>
           )}
+        </TabsContent>
+
+        {/* ─── ChatGenius Services Tab ─────────────────────────────────────── */}
+        <TabsContent value="services" className="space-y-6">
+          <Card className="border-cyan-500/25 bg-gradient-to-br from-cyan-500/10 via-slate-900/70 to-violet-500/10">
+            <CardContent className="p-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="max-w-3xl">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-300">
+                    <Megaphone className="h-4 w-4" /> ChatGenius servicekatalog
+                    {serviceSource && <Badge variant="outline" className="border-cyan-500/30 text-cyan-200">{serviceSource}</Badge>}
+                  </div>
+                  <h3 className="mt-2 text-2xl font-bold text-white">Tilbudene på chatgenius.pro styres operativt her</h3>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Hver tjeneste har pris, Stripe-status, anbefalt annonsebudsjett og kampanjevinkler som kan brukes i CRM, annonser, økonomi og publisering.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={syncChatGeniusServices} disabled={servicesSyncing} className="bg-cyan-600 hover:bg-cyan-500">
+                    {servicesSyncing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Synker...</> : <><RefreshCw className="mr-2 h-4 w-4" /> Synk katalog</>}
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="https://www.chatgenius.pro" target="_blank" rel="noopener noreferrer">
+                      ChatGenius <ExternalLink className="ml-2 h-4 w-4" />
+                    </a>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="https://appointment.chatgenius.pro/booking.html?brand=chat" target="_blank" rel="noopener noreferrer">
+                      Booking <ExternalLink className="ml-2 h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {serviceWarning && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              <AlertCircle className="mr-2 inline h-4 w-4" /> {serviceWarning}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {[
+              { label: 'Publisert', value: serviceStats.publishedServices, icon: CheckCircle, color: 'text-emerald-300' },
+              { label: 'Kampanjeklare', value: serviceStats.campaignReady, icon: Target, color: 'text-cyan-300' },
+              { label: 'Stripe klare', value: serviceStats.stripeReady, icon: CreditCard, color: 'text-emerald-300' },
+              { label: 'Mangler Stripe', value: serviceStats.needsStripeSetup, icon: AlertCircle, color: 'text-amber-300' },
+              { label: 'Annonsebudsjett', value: formatCurrency(serviceStats.monthlyBudgetNok, 'NOK'), icon: WalletCards, color: 'text-violet-200' },
+              { label: 'Timepris', value: serviceStats.hourlyRateNok ? `${serviceStats.hourlyRateNok} kr` : 'Tilpasses', icon: DollarSign, color: 'text-blue-300' },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <Card key={label} className="border-slate-700/50 bg-slate-900/60">
+                <CardContent className="p-4">
+                  <Icon className={`mb-2 h-4 w-4 ${color}`} />
+                  <p className={`text-xl font-bold ${color}`}>{value}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+            <div className="space-y-4">
+              {servicesLoading ? (
+                <Card className="border-slate-700/50 bg-slate-800/50">
+                  <CardContent className="flex items-center justify-center p-12 text-slate-400">
+                    <Loader2 className="mr-3 h-6 w-6 animate-spin text-cyan-400" /> Henter ChatGenius-tjenester ...
+                  </CardContent>
+                </Card>
+              ) : chatGeniusServices.length === 0 ? (
+                <Card className="border-slate-700/50 bg-slate-800/50">
+                  <CardContent className="p-12 text-center">
+                    <Megaphone className="mx-auto mb-3 h-10 w-10 text-slate-600" />
+                    <p className="font-semibold text-white">Ingen tjenester funnet</p>
+                    <p className="mt-1 text-sm text-slate-400">Synk katalogen for å fylle RealtyFlow med ChatGenius-tilbudene.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                  {chatGeniusServices.map((service) => (
+                    <ChatGeniusServiceCard key={service.slug} service={service} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <Card className="border-slate-700/50 bg-slate-900/70">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sm text-white">
+                    <Shield className="h-4 w-4 text-cyan-300" /> Driftskobling
+                  </CardTitle>
+                  <CardDescription>ChatGenius selger. RealtyFlow styrer.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-slate-300">
+                  <div className="rounded-lg bg-slate-800/70 p-3">
+                    <p className="font-medium text-white">CRM og booking</p>
+                    <p className="mt-1 text-xs text-slate-400">Skjemaer og booking går til RealtyFlow/appointment-oppsettet med brand_id chatgenius.</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-800/70 p-3">
+                    <p className="font-medium text-white">Stripe og budsjetter</p>
+                    <p className="mt-1 text-xs text-slate-400">Price IDs, manuell faktura og anbefalte annonsebudsjetter ligger på tjenesten.</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-800/70 p-3">
+                    <p className="font-medium text-white">Kampanjer</p>
+                    <p className="mt-1 text-xs text-slate-400">Vinkler, målgruppe og kanaler kan brukes videre i Growth Hub og annonsegeneratoren.</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-violet-500/25 bg-violet-500/10">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sm text-white">
+                    <Sparkles className="h-4 w-4 text-violet-300" /> Neste kommersielle grep
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {[
+                    'Fyll inn Stripe product/price ID på betalte tjenester.',
+                    'Lag én kampanje per hovedtilbud: AI-opplæring, appbygging, DemoSites og AI-resepsjonist.',
+                    'Bruk Gratis AI-samtale som lavterskel leadmagnet og funnel-gjennomgang som betalt kvalifisering.',
+                  ].map((item) => (
+                    <div key={item} className="flex gap-2 text-xs text-slate-300">
+                      <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" /> {item}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         {/* ─── Portfolio Tab ───────────────────────────────────────────────── */}
@@ -1879,6 +2094,92 @@ function OpportunityCard({ opp, onApprove, onInvestigate, onReject, onSelect, sh
           </Button>
           <Button size="sm" onClick={onReject} variant="outline" className="h-7 text-xs border-red-500/30 text-red-400 hover:bg-red-500/10">
             <ThumbsDown className="h-3 w-3" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── ChatGenius Service Card ────────────────────────────────────────────────
+
+function ChatGeniusServiceCard({ service }: { service: ChatGeniusService }) {
+  const stripe = STRIPE_STATUS_LABELS[service.stripe_status] || STRIPE_STATUS_LABELS.needs_setup;
+  const budget = service.recommended_budget_amount
+    ? `${formatCurrency(service.recommended_budget_amount, service.recommended_budget_currency)} / ${service.recommended_budget_period === 'month' ? 'mnd' : service.recommended_budget_period}`
+    : 'Ikke satt';
+
+  return (
+    <Card className="border-slate-700/50 bg-slate-800/55">
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-white">{service.name}</h3>
+              <Badge className={`text-[10px] ${service.status === 'published' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-slate-600/30 text-slate-300 border-slate-500/30'}`}>
+                {service.status}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{service.short_name || service.service_type} · {service.saas_app_slug || 'chatgenius'}</p>
+          </div>
+          <Badge className={`shrink-0 text-[10px] ${stripe.className}`}>
+            <CreditCard className="mr-1 h-3 w-3" /> {stripe.label}
+          </Badge>
+        </div>
+
+        <p className="mb-3 line-clamp-2 text-sm text-slate-300">{service.description}</p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-wide text-slate-500">Pris</p>
+            <p className="mt-1 text-sm font-semibold text-white">{formatServicePrice(service)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-900/70 p-3">
+            <p className="text-[10px] uppercase tracking-wide text-slate-500">Annonsebudsjett</p>
+            <p className="mt-1 text-sm font-semibold text-cyan-200">{budget}</p>
+          </div>
+        </div>
+
+        {service.offer && (
+          <div className="mt-3 rounded-lg border border-violet-500/20 bg-violet-500/10 p-3">
+            <p className="text-xs font-medium text-violet-100">{service.offer}</p>
+          </div>
+        )}
+
+        <div className="mt-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Kampanjevinkler</p>
+          {service.campaign_angles.slice(0, 3).map((angle) => (
+            <div key={angle} className="flex gap-2 text-xs text-slate-300">
+              <ChevronRight className="mt-0.5 h-3 w-3 shrink-0 text-cyan-300" /> {angle}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {service.campaign_channels.map((channel) => (
+            <Badge key={channel} variant="outline" className="border-slate-600 text-[10px] text-slate-400">{channel}</Badge>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {service.public_url && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={service.public_url} target="_blank" rel="noopener noreferrer">
+                Side <ExternalLink className="ml-1.5 h-3 w-3" />
+              </a>
+            </Button>
+          )}
+          {service.booking_url && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={service.booking_url} target="_blank" rel="noopener noreferrer">
+                Booking <ExternalLink className="ml-1.5 h-3 w-3" />
+              </a>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" asChild>
+            <a href={`/growth-hub?brand_id=chatgenius&service=${encodeURIComponent(service.slug)}`}>
+              Kampanje <ArrowRight className="ml-1.5 h-3 w-3" />
+            </a>
           </Button>
         </div>
       </CardContent>

@@ -4,6 +4,7 @@ import { BRANDS } from "@/lib/constants";
 import { MONDEO_CONTRACT, summarizeMondeoLedgerEvents } from "@/lib/mondeo";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
 import { requireAdminApi } from "@/lib/api-admin";
+import { getChatGeniusServiceCatalog, normalizeChatGeniusServiceRow, summarizeChatGeniusServices } from "@/lib/chatgenius-services";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -26,6 +27,11 @@ type BrandData = {
   saasApps: number;
   saasMrr: number;
   saasRevenue: number;
+  chatgeniusServices: number;
+  chatgeniusCampaignReady: number;
+  chatgeniusStripeReady: number;
+  chatgeniusNeedsStripeSetup: number;
+  chatgeniusBudgetMonthlyNok: number;
   publishingBooks: number;
   publishingOrders: number;
   publishingRoyalties: number;
@@ -242,6 +248,11 @@ function emptyBrandData(brandId: string): BrandData {
     saasApps: 0,
     saasMrr: 0,
     saasRevenue: 0,
+    chatgeniusServices: 0,
+    chatgeniusCampaignReady: 0,
+    chatgeniusStripeReady: 0,
+    chatgeniusNeedsStripeSetup: 0,
+    chatgeniusBudgetMonthlyNok: 0,
     publishingBooks: 0,
     publishingOrders: 0,
     publishingRoyalties: 0,
@@ -273,12 +284,13 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, publishingRes, ledgerRes, oliviaData] = await Promise.all([
+  const [contentRes, accountsRes, contactsRes, actionsRes, saasRes, chatgeniusServicesRes, publishingRes, ledgerRes, oliviaData] = await Promise.all([
     supabase.from("content_publications").select("id, brand_id, brand, status, created_at").order("created_at", { ascending: false }).limit(500),
     supabase.from("social_accounts").select("id, brand, brand_id, is_active"),
     supabase.from("contacts").select("id, brand_id, pipeline_status, pipeline_value, sale_price, commission_amount, commission_paid_date"),
     supabase.from("growth_actions").select("id, brand, brand_id, status, created_at, updated_at"),
     supabase.from("saas_apps").select("id, slug, name, status, total_users, active_users_30d, total_revenue, mrr, arr"),
+    supabase.from("chatgenius_services").select("id, slug, brand_id, saas_app_slug, name, short_name, service_type, status, public_url, booking_url, description, audience, offer, cta_label, pricing_model, price_amount, currency, billing_interval, setup_fee_amount, monthly_fee_amount, stripe_product_id, stripe_price_id, stripe_mode, stripe_status, recommended_budget_amount, recommended_budget_currency, recommended_budget_period, campaign_objective, campaign_channels, campaign_angles, funnel_stage, readiness, priority, metadata"),
     supabase.from("publishing_books").select("id, brand_id, title, orders, royalties, ad_spend, reviews_count, role, status"),
     supabase.from("business_financial_events").select("id, brand_id, source_type, stream, direction, status, amount, currency, event_date"),
     getOliviaData(),
@@ -289,6 +301,9 @@ export async function GET(request: NextRequest) {
   const contacts: Record<string, any>[] = contactsRes.data || [];
   const growthActions: Record<string, any>[] = actionsRes.data || [];
   const saasApps: Record<string, any>[] = saasRes.data || [];
+  const chatgeniusServices = (chatgeniusServicesRes.data?.length ? chatgeniusServicesRes.data : getChatGeniusServiceCatalog())
+    .map((row: Record<string, any>) => normalizeChatGeniusServiceRow(row));
+  const chatgeniusServiceSummary = summarizeChatGeniusServices(chatgeniusServices);
   const publishingBooks: Record<string, any>[] = publishingRes.data || [];
   const ledgerEvents: Record<string, any>[] = ledgerRes.data || [];
   const hasLedger = ledgerEvents.length > 0;
@@ -366,6 +381,11 @@ export async function GET(request: NextRequest) {
       data.saasRevenue = hasLedger
         ? brandLedger.filter((event) => event.stream === "saas_revenue").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
         : saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0);
+      data.chatgeniusServices = chatgeniusServiceSummary.totalServices;
+      data.chatgeniusCampaignReady = chatgeniusServiceSummary.campaignReady;
+      data.chatgeniusStripeReady = chatgeniusServiceSummary.stripeReady;
+      data.chatgeniusNeedsStripeSetup = chatgeniusServiceSummary.needsStripeSetup;
+      data.chatgeniusBudgetMonthlyNok = chatgeniusServiceSummary.monthlyBudgetNok;
       data.revenueAmount += data.saasRevenue;
     }
 
@@ -429,6 +449,11 @@ export async function GET(request: NextRequest) {
     saasRevenue: hasLedger
       ? ledgerEvents.filter((event) => event.stream === "saas_revenue").reduce((sum, event) => sum + (Number(event.amount) || 0), 0)
       : saasApps.reduce((sum, app) => sum + (Number(app.total_revenue) || 0), 0),
+    chatgeniusServices: chatgeniusServiceSummary.totalServices,
+    chatgeniusCampaignReady: chatgeniusServiceSummary.campaignReady,
+    chatgeniusStripeReady: chatgeniusServiceSummary.stripeReady,
+    chatgeniusNeedsStripeSetup: chatgeniusServiceSummary.needsStripeSetup,
+    chatgeniusBudgetMonthlyNok: chatgeniusServiceSummary.monthlyBudgetNok,
     publishingBooks: publishingBooks.length,
     publishingOrders: publishingBooks.reduce((sum, book) => sum + (Number(book.orders) || 0), 0),
     publishingRoyalties: hasLedger
@@ -461,6 +486,7 @@ export async function GET(request: NextRequest) {
     source: "supabase",
     tableWarnings: {
       saas: saasRes.error?.message || null,
+      chatgeniusServices: chatgeniusServicesRes.error?.message || null,
       publishing: publishingRes.error?.message || null,
       contacts: contactsRes.error?.message || null,
       finance: ledgerRes.error?.message || null,

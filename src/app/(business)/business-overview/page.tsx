@@ -20,6 +20,11 @@ type BrandData = {
   publishedPosts: number;
   crmContacts: number;
   growthActions: number;
+  chatgeniusServices?: number;
+  chatgeniusCampaignReady?: number;
+  chatgeniusStripeReady?: number;
+  chatgeniusNeedsStripeSetup?: number;
+  chatgeniusBudgetMonthlyNok?: number;
   financialNet: number;
   mondeoPaymentCount: number;
   mondeoKpiAdjustmentCount: number;
@@ -61,6 +66,8 @@ export default function BusinessOverviewPage() {
     totalBrands: BRANDS.length,
     crmContacts: 0,
     saasMrr: 0,
+    chatgeniusServices: 0,
+    chatgeniusBudgetMonthlyNok: 0,
     oliviaNetProfit: 0,
   });
 
@@ -172,9 +179,11 @@ export default function BusinessOverviewPage() {
 
       <SaasSubscriptionOverview />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <StatCard label="Brands" value={String(totals.totalBrands)} />
         <StatCard label="Totalt innlegg" value={Number(totals.totalPosts || 0).toLocaleString()} />
+        <StatCard label="CG tjenester" value={String(Number(totals.chatgeniusServices || 0))} tone="text-cyan-300" />
+        <StatCard label="CG budsjett" value={money(Number(totals.chatgeniusBudgetMonthlyNok || 0), "NOK")} tone="text-violet-200" />
         <StatCard label="SaaS MRR" value={money(Number(totals.saasMrr || 0), "NOK")} tone="text-emerald-400" />
         <StatCard label="Kommisjon" value={money(totalCommission, "EUR")} tone="text-amber-400" />
         <StatCard label="CRM kunder" value={String(totals.crmContacts)} tone="text-blue-400" />

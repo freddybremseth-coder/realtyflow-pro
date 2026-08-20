@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Loader2, Rocket, WalletCards } from "lucide-react";
+import { ExternalLink, Loader2, Megaphone, Rocket, WalletCards } from "lucide-react";
+import type { ChatGeniusServiceSummary } from "@/lib/chatgenius-services";
 
 type SaasApp = {
   id: string;
@@ -47,6 +48,11 @@ type DemoSitesResponse = {
   };
 };
 
+type ChatGeniusServicesResponse = {
+  summary?: ChatGeniusServiceSummary;
+  warning?: string | null;
+};
+
 function formatNok(value: number) {
   return new Intl.NumberFormat("nb-NO", {
     style: "currency",
@@ -58,6 +64,7 @@ function formatNok(value: number) {
 export function SaasSubscriptionOverview() {
   const [saas, setSaas] = useState<SaasResponse | null>(null);
   const [demoSites, setDemoSites] = useState<DemoSitesResponse | null>(null);
+  const [services, setServices] = useState<ChatGeniusServicesResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,14 +72,16 @@ export function SaasSubscriptionOverview() {
 
     async function load() {
       try {
-        const [saasRes, demoRes] = await Promise.allSettled([
+        const [saasRes, demoRes, servicesRes] = await Promise.allSettled([
           fetch("/api/saas", { cache: "no-store" }).then((res) => res.json()),
           fetch("/api/saas/demosites", { cache: "no-store" }).then((res) => res.json()),
+          fetch("/api/chatgenius/services", { cache: "no-store" }).then((res) => res.json()),
         ]);
 
         if (!isMounted) return;
         setSaas(saasRes.status === "fulfilled" ? saasRes.value : null);
         setDemoSites(demoRes.status === "fulfilled" ? demoRes.value : null);
+        setServices(servicesRes.status === "fulfilled" ? servicesRes.value : null);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -94,6 +103,7 @@ export function SaasSubscriptionOverview() {
   const demoSetup = Number(demoSummary.bookedSetupRevenue || 0);
   const demoNetMrr = Number(demoSummary.netMrr || 0);
   const demoArr = Number(demoSummary.arr || 0);
+  const serviceSummary = services?.summary;
 
   const bestSignal = useMemo(() => {
     if (demoMrr > 0) return "DemoSites bygger forutsigbar månedlig inntekt.";
@@ -138,10 +148,18 @@ export function SaasSubscriptionOverview() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
               <div className="rounded-xl bg-slate-950/40 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">SaaS apps</p>
                 <p className="text-2xl font-bold text-white">{Number(saas?.totals?.totalApps || chatGeniusApps.length)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-950/40 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Tjenester</p>
+                <p className="text-2xl font-bold text-cyan-300">{Number(serviceSummary?.totalServices || 0)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-950/40 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Stripe klare</p>
+                <p className="text-2xl font-bold text-emerald-300">{Number(serviceSummary?.stripeReady || 0)}</p>
               </div>
               <div className="rounded-xl bg-slate-950/40 p-3">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">Aktive abonnement</p>
@@ -167,9 +185,13 @@ export function SaasSubscriptionOverview() {
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">DemoSites ordre</p>
                 <p className="text-2xl font-bold text-white">{Number(demoSummary.totalOrders || 0)}</p>
               </div>
+              <div className="rounded-xl bg-slate-950/40 p-3">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Annonsebudsjett</p>
+                <p className="text-2xl font-bold text-violet-200">{formatNok(Number(serviceSummary?.monthlyBudgetNok || 0))}</p>
+              </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+            <div className="grid gap-3 xl:grid-cols-[0.9fr_0.9fr_1.4fr]">
               <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-violet-100">
                   <WalletCards size={16} /> Abonnementstrakt
@@ -178,6 +200,17 @@ export function SaasSubscriptionOverview() {
                   Bestilling og endringer gjøres i RealtyFlow. Kunder ser markedsføring og priser på ChatGenius, men får ikke tilgang til backend.
                 </p>
                 <p className="mt-2 text-xs text-emerald-200">{bestSignal}</p>
+              </div>
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-cyan-100">
+                  <Megaphone size={16} /> ChatGenius tjenester
+                </div>
+                <p className="mt-2 text-sm text-slate-300">
+                  {Number(serviceSummary?.publishedServices || 0)} publiserte tilbud kan brukes til kampanjer, budsjetter og Stripe-oppsett fra RealtyFlow.
+                </p>
+                <p className="mt-2 text-xs text-amber-200">
+                  {Number(serviceSummary?.needsStripeSetup || 0)} tjenester mangler fortsatt Stripe price ID.
+                </p>
               </div>
               <div className="grid gap-2 rounded-xl border border-slate-700/60 bg-slate-950/30 p-4 md:grid-cols-3">
                 {chatGeniusApps.slice(0, 3).map((app) => (
