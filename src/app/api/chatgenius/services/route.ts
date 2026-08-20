@@ -144,7 +144,10 @@ export async function GET(request: NextRequest) {
   const storedServices = data?.length
     ? sortChatGeniusServices(data.map((row: Record<string, unknown>) => normalizeChatGeniusServiceRow(row)))
     : getChatGeniusServiceCatalog();
-  const services = manifest.services.length ? mergeChatGeniusServiceSets(storedServices, manifest.services) : storedServices;
+  const manifestServices = manifest.services.length
+    ? mergeChatGeniusServiceSets(getChatGeniusServiceCatalog(), manifest.services)
+    : getChatGeniusServiceCatalog();
+  const services = data?.length ? mergeChatGeniusServiceSets(manifestServices, storedServices) : manifestServices;
 
   return NextResponse.json({
     services,
@@ -196,10 +199,10 @@ export async function POST(request: NextRequest) {
     const baseServices = existingRows?.length
       ? sortChatGeniusServices(existingRows.map((row: Record<string, unknown>) => normalizeChatGeniusServiceRow(row)))
       : getChatGeniusServiceCatalog();
-    services = mergeChatGeniusServiceSets(baseServices, getChatGeniusServiceCatalog());
-    if (manifest.services.length) {
-      services = mergeChatGeniusServiceSets(services, manifest.services);
-    }
+    const bootstrapServices = manifest.services.length
+      ? mergeChatGeniusServiceSets(getChatGeniusServiceCatalog(), manifest.services)
+      : getChatGeniusServiceCatalog();
+    services = existingRows?.length ? mergeChatGeniusServiceSets(bootstrapServices, baseServices) : bootstrapServices;
   }
 
   if (services.some((service) => !service.slug || !service.name)) {

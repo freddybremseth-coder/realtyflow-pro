@@ -50,13 +50,12 @@ test("ChatGenius service upsert payload is Supabase-table friendly", () => {
   assert.ok(Array.isArray(payload.campaign_channels));
 });
 
-test("ChatGenius manifest merge preserves operational fields and adds new services", () => {
+test("ChatGenius manifest merge can preserve RealtyFlow edits and add new services", () => {
   const catalog = getChatGeniusServiceCatalog();
   const demoSites = catalog.find((service) => service.slug === "demosites-nettsidepakke");
   assert.ok(demoSites);
 
   const merged = mergeChatGeniusServiceSets(
-    [{ ...demoSites, stripe_price_id: "price_live_demo", recommended_budget_amount: 12345 }],
     [
       {
         slug: "demosites-nettsidepakke",
@@ -77,6 +76,14 @@ test("ChatGenius manifest merge preserves operational fields and adds new servic
         campaign_angles: ["Ny tjeneste kan annonseres fra RealtyFlow"],
       },
     ],
+    [
+      {
+        ...demoSites,
+        stripe_price_id: "price_live_demo",
+        recommended_budget_amount: 12345,
+        offer: "Lagret salgstekst fra RealtyFlow.",
+      },
+    ],
   );
 
   const syncedDemoSites = merged.find((service) => service.slug === "demosites-nettsidepakke");
@@ -84,7 +91,7 @@ test("ChatGenius manifest merge preserves operational fields and adds new servic
 
   assert.equal(syncedDemoSites?.stripe_price_id, "price_live_demo");
   assert.equal(syncedDemoSites?.recommended_budget_amount, 12345);
-  assert.equal(syncedDemoSites?.offer, "Oppdatert salgstekst fra chatgenius.pro-manifestet.");
+  assert.equal(syncedDemoSites?.offer, "Lagret salgstekst fra RealtyFlow.");
   assert.equal(newService?.status, "published");
   assert.equal(newService?.price_amount, 890);
 });

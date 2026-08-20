@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { summarizeChatGeniusServices, type ChatGeniusService, type ChatGeniusServiceSummary } from '@/lib/chatgenius-services';
 import {
   Globe, Plus, ExternalLink, Code2, Users, DollarSign, TrendingUp,
@@ -163,6 +164,189 @@ const STRIPE_STATUS_LABELS: Record<string, { label: string; className: string }>
   not_required: { label: 'Ikke påkrevd', className: 'bg-slate-600/30 text-slate-300 border-slate-500/30' },
 };
 
+type ServiceEditorDraft = {
+  slug: string;
+  name: string;
+  short_name: string;
+  service_type: string;
+  status: ChatGeniusService['status'];
+  saas_app_slug: string;
+  public_url: string;
+  booking_url: string;
+  description: string;
+  audience: string;
+  offer: string;
+  cta_label: string;
+  pricing_model: ChatGeniusService['pricing_model'];
+  price_amount: string;
+  currency: string;
+  billing_interval: string;
+  setup_fee_amount: string;
+  monthly_fee_amount: string;
+  stripe_mode: string;
+  stripe_status: ChatGeniusService['stripe_status'];
+  stripe_product_id: string;
+  stripe_price_id: string;
+  recommended_budget_amount: string;
+  recommended_budget_currency: string;
+  recommended_budget_period: string;
+  campaign_objective: string;
+  campaign_channels: string;
+  campaign_angles: string;
+  funnel_stage: string;
+  readiness: string;
+  priority: string;
+  metadata: string;
+};
+
+const DEFAULT_SERVICE_BOOKING_URL = 'https://appointment.chatgenius.pro/booking.html?brand=chat';
+
+const SERVICE_STATUS_OPTIONS: Array<{ value: ChatGeniusService['status']; label: string }> = [
+  { value: 'published', label: 'Publisert' },
+  { value: 'draft', label: 'Utkast' },
+  { value: 'paused', label: 'Pauset' },
+  { value: 'archived', label: 'Arkivert' },
+];
+
+const SERVICE_PRICING_OPTIONS: Array<{ value: ChatGeniusService['pricing_model']; label: string }> = [
+  { value: 'hourly', label: 'Timepris' },
+  { value: 'fixed', label: 'Fastpris' },
+  { value: 'subscription', label: 'Abonnement' },
+  { value: 'project', label: 'Prosjekt' },
+  { value: 'free', label: 'Gratis' },
+  { value: 'custom', label: 'Tilpasses' },
+];
+
+const SERVICE_STRIPE_OPTIONS: Array<{ value: ChatGeniusService['stripe_status']; label: string }> = [
+  { value: 'configured', label: 'Stripe klar' },
+  { value: 'needs_setup', label: 'Mangler Stripe price ID' },
+  { value: 'manual', label: 'Manuell faktura' },
+  { value: 'not_required', label: 'Ikke påkrevd' },
+];
+
+const SERVICE_TYPE_OPTIONS = [
+  'training',
+  'consulting',
+  'audit',
+  'app_build',
+  'automation',
+  'website_package',
+  'chatbot',
+  'vertical_app',
+  'consumer_app',
+  'education_app',
+  'media_app',
+  'internal_platform',
+];
+
+function slugifyServiceName(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/æ/g, 'ae')
+    .replace(/ø/g, 'o')
+    .replace(/å/g, 'a')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function csvToArray(value: string) {
+  return value
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function optionalNumber(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function createServiceDraft(service?: ChatGeniusService | null, priority = 150): ServiceEditorDraft {
+  return {
+    slug: service?.slug || '',
+    name: service?.name || '',
+    short_name: service?.short_name || '',
+    service_type: service?.service_type || 'consulting',
+    status: service?.status || 'draft',
+    saas_app_slug: service?.saas_app_slug || 'chatgenius',
+    public_url: service?.public_url || 'https://www.chatgenius.pro/#services',
+    booking_url: service?.booking_url || DEFAULT_SERVICE_BOOKING_URL,
+    description: service?.description || '',
+    audience: service?.audience || '',
+    offer: service?.offer || '',
+    cta_label: service?.cta_label || '',
+    pricing_model: service?.pricing_model || 'custom',
+    price_amount: service?.price_amount ? String(service.price_amount) : '',
+    currency: service?.currency || 'NOK',
+    billing_interval: service?.billing_interval || '',
+    setup_fee_amount: service?.setup_fee_amount ? String(service.setup_fee_amount) : '',
+    monthly_fee_amount: service?.monthly_fee_amount ? String(service.monthly_fee_amount) : '',
+    stripe_mode: service?.stripe_mode || 'manual_invoice',
+    stripe_status: service?.stripe_status || 'needs_setup',
+    stripe_product_id: service?.stripe_product_id || '',
+    stripe_price_id: service?.stripe_price_id || '',
+    recommended_budget_amount: service?.recommended_budget_amount ? String(service.recommended_budget_amount) : '',
+    recommended_budget_currency: service?.recommended_budget_currency || 'NOK',
+    recommended_budget_period: service?.recommended_budget_period || 'month',
+    campaign_objective: service?.campaign_objective || '',
+    campaign_channels: service?.campaign_channels?.join(', ') || '',
+    campaign_angles: service?.campaign_angles?.join('\n') || '',
+    funnel_stage: service?.funnel_stage || 'lead',
+    readiness: service?.readiness || 'campaign_ready',
+    priority: String(service?.priority || priority),
+    metadata: JSON.stringify(service?.metadata || {}, null, 2),
+  };
+}
+
+function serviceFromDraft(draft: ServiceEditorDraft): ChatGeniusService {
+  let metadata: Record<string, unknown> = {};
+  if (draft.metadata.trim()) {
+    const parsed = JSON.parse(draft.metadata) as unknown;
+    metadata = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  }
+
+  return {
+    slug: draft.slug.trim(),
+    brand_id: 'chatgenius',
+    saas_app_slug: draft.saas_app_slug.trim() || null,
+    name: draft.name.trim(),
+    short_name: draft.short_name.trim() || null,
+    service_type: draft.service_type.trim() || 'service',
+    status: draft.status,
+    source_url: draft.public_url.trim() || null,
+    public_url: draft.public_url.trim() || null,
+    booking_url: draft.booking_url.trim() || null,
+    description: draft.description.trim() || null,
+    audience: draft.audience.trim() || null,
+    offer: draft.offer.trim() || null,
+    cta_label: draft.cta_label.trim() || null,
+    pricing_model: draft.pricing_model,
+    price_amount: optionalNumber(draft.price_amount),
+    currency: draft.currency.trim().toUpperCase() || 'NOK',
+    billing_interval: draft.billing_interval.trim() || null,
+    setup_fee_amount: optionalNumber(draft.setup_fee_amount),
+    monthly_fee_amount: optionalNumber(draft.monthly_fee_amount),
+    stripe_product_id: draft.stripe_product_id.trim() || null,
+    stripe_price_id: draft.stripe_price_id.trim() || null,
+    stripe_mode: draft.stripe_mode.trim() || 'manual_invoice',
+    stripe_status: draft.stripe_status,
+    recommended_budget_amount: optionalNumber(draft.recommended_budget_amount) || 0,
+    recommended_budget_currency: draft.recommended_budget_currency.trim().toUpperCase() || 'NOK',
+    recommended_budget_period: draft.recommended_budget_period.trim() || 'month',
+    campaign_objective: draft.campaign_objective.trim() || null,
+    campaign_channels: csvToArray(draft.campaign_channels),
+    campaign_angles: csvToArray(draft.campaign_angles),
+    funnel_stage: draft.funnel_stage.trim() || 'lead',
+    readiness: draft.readiness.trim() || 'campaign_ready',
+    priority: optionalNumber(draft.priority) || 150,
+    metadata,
+  };
+}
+
 const SEED_APPS: Partial<SaaSApp>[] = [
   {
     slug: 'chatgenius', name: 'ChatGenius.pro', domain: 'chatgenius.pro',
@@ -224,6 +408,12 @@ export default function SaaSPage() {
   const [servicesSyncing, setServicesSyncing] = useState(false);
   const [serviceWarning, setServiceWarning] = useState<string | null>(null);
   const [serviceSource, setServiceSource] = useState<string | null>(null);
+  const [serviceEditorOpen, setServiceEditorOpen] = useState(false);
+  const [selectedService, setSelectedService] = useState<ChatGeniusService | null>(null);
+  const [serviceDraft, setServiceDraft] = useState<ServiceEditorDraft>(() => createServiceDraft());
+  const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceSaveMessage, setServiceSaveMessage] = useState<string | null>(null);
+  const [serviceSaveError, setServiceSaveError] = useState<string | null>(null);
 
   // Opportunity state
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -364,6 +554,78 @@ export default function SaaSPage() {
       setServiceWarning(err instanceof Error ? err.message : 'Kunne ikke synke ChatGenius-tjenester');
     } finally {
       setServicesSyncing(false);
+    }
+  };
+
+  const openNewServiceEditor = () => {
+    const nextPriority = Math.max(0, ...chatGeniusServices.map((service) => service.priority || 0)) + 10;
+    setSelectedService(null);
+    setServiceDraft(createServiceDraft(null, nextPriority || 150));
+    setServiceSaveError(null);
+    setServiceSaveMessage(null);
+    setServiceEditorOpen(true);
+  };
+
+  const openEditServiceEditor = (service: ChatGeniusService) => {
+    setSelectedService(service);
+    setServiceDraft(createServiceDraft(service));
+    setServiceSaveError(null);
+    setServiceSaveMessage(null);
+    setServiceEditorOpen(true);
+  };
+
+  const updateServiceDraft = <K extends keyof ServiceEditorDraft>(key: K, value: ServiceEditorDraft[K]) => {
+    setServiceDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleServiceNameChange = (value: string) => {
+    setServiceDraft((current) => ({
+      ...current,
+      name: value,
+      slug: selectedService || current.slug ? current.slug : slugifyServiceName(value),
+    }));
+  };
+
+  const saveChatGeniusService = async () => {
+    setServiceSaveError(null);
+    setServiceSaveMessage(null);
+
+    if (!serviceDraft.name.trim()) {
+      setServiceSaveError('Navn må fylles ut.');
+      return;
+    }
+    if (!serviceDraft.slug.trim()) {
+      setServiceSaveError('Slug må fylles ut.');
+      return;
+    }
+
+    let service: ChatGeniusService;
+    try {
+      service = serviceFromDraft(serviceDraft);
+    } catch {
+      setServiceSaveError('Metadata må være gyldig JSON, for eksempel {}.');
+      return;
+    }
+
+    setServiceSaving(true);
+    try {
+      const res = await fetch('/api/chatgenius/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upsert', service }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kunne ikke lagre tjenesten');
+      await fetchChatGeniusServices();
+      setServiceWarning(null);
+      setServiceSaveMessage('Lagret i RealtyFlow. Tjenesten er klar for kampanjer, Stripe-oppsett og budsjettering.');
+      setServiceEditorOpen(false);
+      setSelectedService(null);
+      setServiceDraft(createServiceDraft());
+    } catch (err) {
+      setServiceSaveError(err instanceof Error ? err.message : 'Kunne ikke lagre tjenesten.');
+    } finally {
+      setServiceSaving(false);
     }
   };
 
@@ -1198,6 +1460,9 @@ export default function SaaSPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button onClick={openNewServiceEditor} className="bg-emerald-600 hover:bg-emerald-500">
+                    <Plus className="mr-2 h-4 w-4" /> Ny tjeneste
+                  </Button>
                   <Button onClick={syncChatGeniusServices} disabled={servicesSyncing} className="bg-cyan-600 hover:bg-cyan-500">
                     {servicesSyncing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Synker...</> : <><RefreshCw className="mr-2 h-4 w-4" /> Synk katalog</>}
                   </Button>
@@ -1220,6 +1485,27 @@ export default function SaaSPage() {
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
               <AlertCircle className="mr-2 inline h-4 w-4" /> {serviceWarning}
             </div>
+          )}
+          {serviceSaveMessage && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+              <CheckCircle className="mr-2 inline h-4 w-4" /> {serviceSaveMessage}
+            </div>
+          )}
+          {serviceEditorOpen && (
+            <ChatGeniusServiceEditor
+              draft={serviceDraft}
+              selectedService={selectedService}
+              saving={serviceSaving}
+              error={serviceSaveError}
+              onChange={updateServiceDraft}
+              onNameChange={handleServiceNameChange}
+              onSave={saveChatGeniusService}
+              onCancel={() => {
+                setServiceEditorOpen(false);
+                setSelectedService(null);
+                setServiceSaveError(null);
+              }}
+            />
           )}
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -1260,7 +1546,7 @@ export default function SaaSPage() {
               ) : (
                 <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
                   {chatGeniusServices.map((service) => (
-                    <ChatGeniusServiceCard key={service.slug} service={service} />
+                    <ChatGeniusServiceCard key={service.slug} service={service} onEdit={openEditServiceEditor} />
                   ))}
                 </div>
               )}
@@ -2101,9 +2387,233 @@ function OpportunityCard({ opp, onApprove, onInvestigate, onReject, onSelect, sh
   );
 }
 
+// ─── ChatGenius Service Editor ──────────────────────────────────────────────
+
+function ChatGeniusServiceEditor({
+  draft,
+  selectedService,
+  saving,
+  error,
+  onChange,
+  onNameChange,
+  onSave,
+  onCancel,
+}: {
+  draft: ServiceEditorDraft;
+  selectedService: ChatGeniusService | null;
+  saving: boolean;
+  error: string | null;
+  onChange: <K extends keyof ServiceEditorDraft>(key: K, value: ServiceEditorDraft[K]) => void;
+  onNameChange: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const selectClass = 'h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500';
+  const textareaClass = 'min-h-[92px] w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500';
+  const labelClass = 'space-y-1.5 text-xs font-medium text-slate-300';
+
+  return (
+    <Card className="border-emerald-500/25 bg-slate-900/80">
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-white">
+              <Wrench className="h-4 w-4 text-emerald-300" />
+              {selectedService ? 'Rediger tjeneste' : 'Ny ChatGenius-tjeneste'}
+            </CardTitle>
+            <CardDescription>
+              Lagres i RealtyFlow/Supabase og kan brukes til CRM, kampanjer, Stripe og budsjettering.
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCancel} disabled={saving}>
+              <X className="mr-2 h-4 w-4" /> Lukk
+            </Button>
+            <Button onClick={onSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lagrer...</> : <><CheckCircle className="mr-2 h-4 w-4" /> Lagre i RealtyFlow</>}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {error && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+            <AlertCircle className="mr-2 inline h-4 w-4" /> {error}
+          </div>
+        )}
+
+        <div className="grid gap-3 lg:grid-cols-4">
+          <label className={`${labelClass} lg:col-span-2`}>
+            Navn
+            <Input value={draft.name} onChange={(event) => onNameChange(event.target.value)} placeholder="F.eks. AI-workshop for ledergruppe" />
+          </label>
+          <label className={labelClass}>
+            Slug
+            <Input value={draft.slug} onChange={(event) => onChange('slug', slugifyServiceName(event.target.value))} placeholder="ai-workshop-ledergruppe" />
+          </label>
+          <label className={labelClass}>
+            Kortnavn
+            <Input value={draft.short_name} onChange={(event) => onChange('short_name', event.target.value)} placeholder="AI-workshop" />
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className={labelClass}>
+            Type
+            <select className={selectClass} value={draft.service_type} onChange={(event) => onChange('service_type', event.target.value)}>
+              {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Status
+            <select className={selectClass} value={draft.status} onChange={(event) => onChange('status', event.target.value as ServiceEditorDraft['status'])}>
+              {SERVICE_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>
+            App / område
+            <Input value={draft.saas_app_slug} onChange={(event) => onChange('saas_app_slug', event.target.value)} placeholder="chatgenius" />
+          </label>
+          <label className={labelClass}>
+            Prioritet
+            <Input type="number" value={draft.priority} onChange={(event) => onChange('priority', event.target.value)} placeholder="150" />
+          </label>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <label className={labelClass}>
+            Offentlig URL
+            <Input value={draft.public_url} onChange={(event) => onChange('public_url', event.target.value)} placeholder="https://www.chatgenius.pro/#services" />
+          </label>
+          <label className={labelClass}>
+            Booking URL
+            <Input value={draft.booking_url} onChange={(event) => onChange('booking_url', event.target.value)} placeholder={DEFAULT_SERVICE_BOOKING_URL} />
+          </label>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          <label className={`${labelClass} lg:col-span-1`}>
+            Beskrivelse
+            <textarea className={textareaClass} value={draft.description} onChange={(event) => onChange('description', event.target.value)} placeholder="Hva kunden kjøper eller får hjelp med." />
+          </label>
+          <label className={`${labelClass} lg:col-span-1`}>
+            Målgruppe
+            <textarea className={textareaClass} value={draft.audience} onChange={(event) => onChange('audience', event.target.value)} placeholder="Hvem dette passer for." />
+          </label>
+          <label className={`${labelClass} lg:col-span-1`}>
+            Tilbud / salgstekst
+            <textarea className={textareaClass} value={draft.offer} onChange={(event) => onChange('offer', event.target.value)} placeholder="Kort selgende tekst med pris, resultat eller leveranse." />
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <label className={labelClass}>
+            Prismodell
+            <select className={selectClass} value={draft.pricing_model} onChange={(event) => onChange('pricing_model', event.target.value as ServiceEditorDraft['pricing_model'])}>
+              {SERVICE_PRICING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Pris
+            <Input type="number" value={draft.price_amount} onChange={(event) => onChange('price_amount', event.target.value)} placeholder="890" />
+          </label>
+          <label className={labelClass}>
+            Valuta
+            <Input value={draft.currency} onChange={(event) => onChange('currency', event.target.value.toUpperCase())} placeholder="NOK" />
+          </label>
+          <label className={labelClass}>
+            Intervall
+            <Input value={draft.billing_interval} onChange={(event) => onChange('billing_interval', event.target.value)} placeholder="hour, month, session" />
+          </label>
+          <label className={labelClass}>
+            Oppstart
+            <Input type="number" value={draft.setup_fee_amount} onChange={(event) => onChange('setup_fee_amount', event.target.value)} placeholder="4900" />
+          </label>
+          <label className={labelClass}>
+            Månedlig
+            <Input type="number" value={draft.monthly_fee_amount} onChange={(event) => onChange('monthly_fee_amount', event.target.value)} placeholder="990" />
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <label className={labelClass}>
+            Stripe-status
+            <select className={selectClass} value={draft.stripe_status} onChange={(event) => onChange('stripe_status', event.target.value as ServiceEditorDraft['stripe_status'])}>
+              {SERVICE_STRIPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>
+            Stripe-modus
+            <Input value={draft.stripe_mode} onChange={(event) => onChange('stripe_mode', event.target.value)} placeholder="checkout eller manual_invoice" />
+          </label>
+          <label className={labelClass}>
+            Product ID
+            <Input value={draft.stripe_product_id} onChange={(event) => onChange('stripe_product_id', event.target.value)} placeholder="prod_..." />
+          </label>
+          <label className={labelClass}>
+            Price ID
+            <Input value={draft.stripe_price_id} onChange={(event) => onChange('stripe_price_id', event.target.value)} placeholder="price_..." />
+          </label>
+          <label className={labelClass}>
+            CTA
+            <Input value={draft.cta_label} onChange={(event) => onChange('cta_label', event.target.value)} placeholder="Book samtale" />
+          </label>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+          <label className={labelClass}>
+            Annonsebudsjett
+            <Input type="number" value={draft.recommended_budget_amount} onChange={(event) => onChange('recommended_budget_amount', event.target.value)} placeholder="7000" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className={labelClass}>
+              Valuta
+              <Input value={draft.recommended_budget_currency} onChange={(event) => onChange('recommended_budget_currency', event.target.value.toUpperCase())} placeholder="NOK" />
+            </label>
+            <label className={labelClass}>
+              Periode
+              <Input value={draft.recommended_budget_period} onChange={(event) => onChange('recommended_budget_period', event.target.value)} placeholder="month" />
+            </label>
+          </div>
+          <label className={labelClass}>
+            Kampanjemål
+            <Input value={draft.campaign_objective} onChange={(event) => onChange('campaign_objective', event.target.value)} placeholder="Booke kvalifiserte møter" />
+          </label>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <label className={labelClass}>
+            Kanaler
+            <textarea className={textareaClass} value={draft.campaign_channels} onChange={(event) => onChange('campaign_channels', event.target.value)} placeholder="LinkedIn, Google Search, Facebook/Instagram" />
+          </label>
+          <label className={labelClass}>
+            Kampanjevinkler
+            <textarea className={textareaClass} value={draft.campaign_angles} onChange={(event) => onChange('campaign_angles', event.target.value)} placeholder={'En vinkel per linje\nHva får kunden igjen?\nHvorfor nå?'} />
+          </label>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_2fr]">
+          <label className={labelClass}>
+            Funnel stage
+            <Input value={draft.funnel_stage} onChange={(event) => onChange('funnel_stage', event.target.value)} placeholder="lead, booking, sales" />
+          </label>
+          <label className={labelClass}>
+            Readiness
+            <Input value={draft.readiness} onChange={(event) => onChange('readiness', event.target.value)} placeholder="campaign_ready" />
+          </label>
+          <label className={labelClass}>
+            Metadata JSON
+            <textarea className={textareaClass} value={draft.metadata} onChange={(event) => onChange('metadata', event.target.value)} placeholder='{"expertise_since":"2022"}' />
+          </label>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── ChatGenius Service Card ────────────────────────────────────────────────
 
-function ChatGeniusServiceCard({ service }: { service: ChatGeniusService }) {
+function ChatGeniusServiceCard({ service, onEdit }: { service: ChatGeniusService; onEdit: (service: ChatGeniusService) => void }) {
   const stripe = STRIPE_STATUS_LABELS[service.stripe_status] || STRIPE_STATUS_LABELS.needs_setup;
   const budget = service.recommended_budget_amount
     ? `${formatCurrency(service.recommended_budget_amount, service.recommended_budget_currency)} / ${service.recommended_budget_period === 'month' ? 'mnd' : service.recommended_budget_period}`
@@ -2162,6 +2672,9 @@ function ChatGeniusServiceCard({ service }: { service: ChatGeniusService }) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => onEdit(service)} className="bg-emerald-600 hover:bg-emerald-500">
+            <Wrench className="mr-1.5 h-3 w-3" /> Rediger
+          </Button>
           {service.public_url && (
             <Button size="sm" variant="outline" asChild>
               <a href={service.public_url} target="_blank" rel="noopener noreferrer">
