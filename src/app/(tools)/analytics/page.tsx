@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   BarChart3, TrendingUp, Users, Eye, Heart, DollarSign, Loader2, FileText, Calendar,
   ThumbsUp, MessageSquare, Share2, Youtube, Play, Sparkles, Target, Lightbulb,
-  CheckCircle, AlertCircle, ArrowUpRight, ListMusic, Flame,
+  CheckCircle, AlertCircle, ArrowUpRight, ListMusic, Flame, Rocket, Bookmark, Link2, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +58,7 @@ interface AnalyticsSnapshot {
   shares?: number | null;
   reach?: number | null;
   impressions?: number | null;
+  snapshot_at?: string | null;
 }
 
 interface ContentAnalyticsPayload {
@@ -65,6 +66,33 @@ interface ContentAnalyticsPayload {
   publications: AnalyticsPublication[];
   engagementPublications: AnalyticsPublication[];
   engagementSnapshots: AnalyticsSnapshot[];
+}
+
+interface SocialGrowthPayload {
+  totals: { views: number; reach: number; interactions: number; shares: number; saves: number; leads: number };
+  dataQuality: { publicationCount: number; trackedPostCount: number; attributedLeadCount: number; highConfidenceCount: number };
+  posts: Array<{
+    id: string; brand: string; title: string; score: number; confidence: string;
+    views: number; reach: number; shares: number; saves: number; leads: number;
+    trackingUrl: string;
+    engagementRate: number | null; shareRate: number | null; saveRate: number | null; leadRate: number | null;
+    comparisonWindow: string;
+  }>;
+  recommendations: Array<{
+    id: string; priority: string; title: string; description: string; rationale: string;
+    action: string; publicationId?: string;
+  }>;
+  patternInsights: Array<{ dimension: string; value: string; sampleSize: number; averageScore: number; liftPercent: number; confidence: string }>;
+}
+
+async function fetchSocialGrowth(): Promise<SocialGrowthPayload | null> {
+  try {
+    const response = await fetch('/api/social-growth', { cache: 'no-store' });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 async function fetchContentAnalytics() {
@@ -112,6 +140,34 @@ export default function AnalyticsPage() {
     likes: number; comments: number; shares: number; views: number; reach: number;
   }[]>([]);
   const [platformEngagement, setPlatformEngagement] = useState<{ platform: string; likes: number; comments: number; shares: number; views: number }[]>([]);
+  const [socialGrowth, setSocialGrowth] = useState<SocialGrowthPayload | null>(null);
+  const [growthActionLoading, setGrowthActionLoading] = useState<string | null>(null);
+  const [growthNotice, setGrowthNotice] = useState<string | null>(null);
+
+  const copyTrackingUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url);
+    setGrowthNotice('Sporingslenken er kopiert. Bruk den i bio, Story, annonse eller CTA.');
+  };
+
+  const createWinningVariant = async (publicationId: string) => {
+    setGrowthActionLoading(publicationId);
+    setGrowthNotice(null);
+    try {
+      const response = await fetch('/api/social-growth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'create_variant', publicationId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Kunne ikke lage varianten.');
+      setGrowthNotice('En sporbar testvariant er opprettet som utkast i Content Hub.');
+      setSocialGrowth(await fetchSocialGrowth());
+    } catch (error) {
+      setGrowthNotice(error instanceof Error ? error.message : 'Kunne ikke lage varianten.');
+    } finally {
+      setGrowthActionLoading(null);
+    }
+  };
 
   // YouTube / Neural Beat analytics state
   const [ytLoading, setYtLoading] = useState(false);
@@ -144,11 +200,13 @@ export default function AnalyticsPage() {
       if (!supabase) { setLoading(false); return; }
 
       try {
-        const [leadCount, propsRes, contentAnalytics] = await Promise.all([
+        const [leadCount, propsRes, contentAnalytics, growthPayload] = await Promise.all([
           fetchLeadCount(),
           supabase.from("properties").select("id", { count: "exact", head: true }),
           fetchContentAnalytics(),
+          fetchSocialGrowth(),
         ]);
+        setSocialGrowth(growthPayload);
 
         const leads = leadCount || 0;
         const props = propsRes.count || 0;
@@ -226,18 +284,12 @@ export default function AnalyticsPage() {
         const pubsWithEngagement = contentAnalytics?.engagementPublications || [];
         const snapshots = contentAnalytics?.engagementSnapshots || [];
 
-        // Aggregate snapshots by publication
+        // Use only the newest cumulative snapshot per publication. Summing
+        // snapshots would count the same Instagram interactions repeatedly.
         const snapByPub = new Map<string, { likes: number; comments: number; shares: number; reach: number; impressions: number }>();
         if (snapshots) {
           for (const snap of snapshots) {
-            const existing = snapByPub.get(snap.publication_id);
-            if (existing) {
-              existing.likes += snap.likes || 0;
-              existing.comments += snap.comments || 0;
-              existing.shares += snap.shares || 0;
-              existing.reach += snap.reach || 0;
-              existing.impressions += snap.impressions || 0;
-            } else {
+            if (!snapByPub.has(snap.publication_id)) {
               snapByPub.set(snap.publication_id, {
                 likes: snap.likes || 0, comments: snap.comments || 0,
                 shares: snap.shares || 0, reach: snap.reach || 0, impressions: snap.impressions || 0,
@@ -252,9 +304,9 @@ export default function AnalyticsPage() {
 
           const posts = pubsWithEngagement.map((p) => {
             const snapData = snapByPub.get(p.id);
-            const likes = (p.total_likes || 0) + (snapData?.likes || 0);
-            const comments = (p.total_comments || 0) + (snapData?.comments || 0);
-            const shares = (p.total_shares || 0) + (snapData?.shares || 0);
+            const likes = Math.max(p.total_likes || 0, snapData?.likes || 0);
+            const comments = Math.max(p.total_comments || 0, snapData?.comments || 0);
+            const shares = Math.max(p.total_shares || 0, snapData?.shares || 0);
             const views = p.total_views || 0;
             const reach = snapData?.reach || 0;
             tLikes += likes; tComments += comments; tShares += shares; tViews += views; tReach += reach; tImpressions += (snapData?.impressions || 0);
@@ -317,6 +369,7 @@ export default function AnalyticsPage() {
           <TabsTrigger value="realty">Eiendom</TabsTrigger>
           <TabsTrigger value="content">Innhold & SoMe</TabsTrigger>
           <TabsTrigger value="engagement">SoMe Engasjement</TabsTrigger>
+          <TabsTrigger value="growth"><Rocket className="mr-1.5 h-3.5 w-3.5" />Instagram Growth</TabsTrigger>
           <TabsTrigger value="cross">Innhold per Brand</TabsTrigger>
           <TabsTrigger value="youtube"><Youtube className="mr-1.5 h-3.5 w-3.5" />YouTube</TabsTrigger>
         </TabsList>
@@ -350,6 +403,133 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="growth">
+          <div className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Instagram Growth Intelligence</h2>
+                <p className="mt-1 text-sm text-slate-400">Fra visninger til sporbare leads, eksperimenter og neste anbefalte handling.</p>
+              </div>
+              <Button variant="outline" onClick={async () => setSocialGrowth(await fetchSocialGrowth())}>
+                <RefreshCw className="mr-2 h-4 w-4" />Oppdater analyse
+              </Button>
+            </div>
+
+            {socialGrowth?.patternInsights?.length ? (
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2"><Lightbulb className="h-5 w-5 text-amber-400" />Hva som sannsynligvis virker</CardTitle></CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                  {socialGrowth.patternInsights.map((insight) => (
+                    <div key={`${insight.dimension}:${insight.value}`} className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{insight.dimension}</p>
+                      <p className="mt-1 font-semibold capitalize text-white">{insight.value}</p>
+                      <p className={`mt-3 text-lg font-bold ${insight.liftPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {insight.liftPercent >= 0 ? '+' : ''}{insight.liftPercent}%
+                      </p>
+                      <p className="text-xs text-slate-500">mot eget snitt · {insight.sampleSize} innlegg · {insight.confidence}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {growthNotice ? <div className="rounded-lg border border-primary-500/30 bg-primary-500/10 p-3 text-sm text-primary-200">{growthNotice}</div> : null}
+
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+              {[
+                { label: 'Visninger', value: socialGrowth?.totals.views || 0, icon: Eye },
+                { label: 'Rekkevidde', value: socialGrowth?.totals.reach || 0, icon: TrendingUp },
+                { label: 'Interaksjoner', value: socialGrowth?.totals.interactions || 0, icon: Heart },
+                { label: 'Delinger', value: socialGrowth?.totals.shares || 0, icon: Share2 },
+                { label: 'Lagringer', value: socialGrowth?.totals.saves || 0, icon: Bookmark },
+                { label: 'Attribuerte leads', value: socialGrowth?.totals.leads || 0, icon: Users },
+              ].map((metric) => (
+                <Card key={metric.label}>
+                  <CardContent className="p-4 text-center">
+                    <metric.icon className="mx-auto mb-2 h-5 w-5 text-primary-400" />
+                    <p className="text-2xl font-bold text-white">{metric.value.toLocaleString('nb-NO')}</p>
+                    <p className="text-xs text-slate-400">{metric.label}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-amber-400" />Neste beste handlinger</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {socialGrowth?.recommendations.length ? socialGrowth.recommendations.map((recommendation) => (
+                    <div key={recommendation.id} className="rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="mb-2 flex items-center gap-2">
+                            <Badge variant={recommendation.priority === 'critical' ? 'destructive' : 'outline'}>{recommendation.priority}</Badge>
+                            <h3 className="font-medium text-white">{recommendation.title}</h3>
+                          </div>
+                          <p className="text-sm text-slate-300">{recommendation.description}</p>
+                          <p className="mt-2 text-xs text-slate-500">{recommendation.rationale}</p>
+                        </div>
+                        {recommendation.action === 'create_variant' && recommendation.publicationId ? (
+                          <Button size="sm" onClick={() => void createWinningVariant(recommendation.publicationId!)} disabled={Boolean(growthActionLoading)}>
+                            {growthActionLoading === recommendation.publicationId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
+                            Lag variant
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )) : <p className="py-8 text-center text-sm text-slate-500">Koble Instagram og samle resultater for å få anbefalinger.</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2"><Link2 className="h-5 w-5 text-emerald-400" />Datakvalitet</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  {[
+                    ['Publiserte innlegg', socialGrowth?.dataQuality.publicationCount || 0],
+                    ['Innlegg med resultatdata', socialGrowth?.dataQuality.trackedPostCount || 0],
+                    ['Høy datatillit', socialGrowth?.dataQuality.highConfidenceCount || 0],
+                    ['Sporbare leads', socialGrowth?.dataQuality.attributedLeadCount || 0],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <span className="text-sm text-slate-400">{label}</span><span className="font-semibold text-white">{value}</span>
+                    </div>
+                  ))}
+                  <p className="text-xs leading-5 text-slate-500">RealtyFlow viser lav datatillit til et innlegg har minst 200 nådde kontoer, og høy tillit fra 1 000.</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader><CardTitle>Innlegg rangert etter forretningsverdi</CardTitle></CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b border-slate-700 text-slate-400">
+                      <th className="px-2 py-3 text-left">Innlegg</th><th className="px-2 py-3 text-right">Score</th>
+                      <th className="px-2 py-3 text-right">Delinger</th><th className="px-2 py-3 text-right">Lagringer</th>
+                      <th className="px-2 py-3 text-right">Leads</th><th className="px-2 py-3 text-right">Vindu</th><th className="px-2 py-3 text-right">Datatillit</th><th className="px-2 py-3 text-right">Sporing</th>
+                    </tr></thead>
+                    <tbody>{socialGrowth?.posts.slice(0, 20).map((post) => (
+                      <tr key={post.id} className="border-b border-slate-800">
+                        <td className="px-2 py-3"><p className="max-w-[360px] truncate text-slate-200">{post.title}</p><p className="text-xs text-slate-500">{post.brand}</p></td>
+                        <td className="px-2 py-3 text-right font-semibold text-primary-300">{post.score}/100</td>
+                        <td className="px-2 py-3 text-right text-emerald-400">{post.shares}</td>
+                        <td className="px-2 py-3 text-right text-amber-400">{post.saves}</td>
+                        <td className="px-2 py-3 text-right text-sky-400">{post.leads}</td>
+                        <td className="px-2 py-3 text-right text-slate-400">{post.comparisonWindow}</td>
+                        <td className="px-2 py-3 text-right"><Badge variant="outline">{post.confidence}</Badge></td>
+                        <td className="px-2 py-3 text-right"><Button size="sm" variant="ghost" onClick={() => void copyTrackingUrl(post.trackingUrl)}><Link2 className="mr-1 h-3.5 w-3.5" />Kopier</Button></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="content">

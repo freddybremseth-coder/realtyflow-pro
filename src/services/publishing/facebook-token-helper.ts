@@ -24,7 +24,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { encrypt } from "@/lib/oauth/crypto";
 import { getMetaCredentials } from "@/lib/oauth/providers";
 
-const GRAPH = "https://graph.facebook.com/v19.0";
+const GRAPH = "https://graph.facebook.com/v25.0";
 
 export interface TokenDebugInfo {
   valid: boolean;

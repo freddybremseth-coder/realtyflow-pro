@@ -57,7 +57,7 @@ async function checkFacebookLikeToken(account: {
   }
 
   const id = account.account_id || "me";
-  const url = `https://graph.facebook.com/v19.0/${encodeURIComponent(id)}?fields=id,name&access_token=${encodeURIComponent(token)}`;
+  const url = `https://graph.facebook.com/v25.0/${encodeURIComponent(id)}?fields=id,name&access_token=${encodeURIComponent(token)}`;
   try {
     const res = await fetchWithTimeout(url);
     const body = await res.json().catch(() => ({}));

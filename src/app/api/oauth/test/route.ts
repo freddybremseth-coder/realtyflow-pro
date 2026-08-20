@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       }
       case "facebook": {
         const r = await fetch(
-          `https://graph.facebook.com/v19.0/${channel.external_id}?fields=id,name,category&access_token=${encodeURIComponent(tokens.accessToken)}`,
+          `https://graph.facebook.com/v25.0/${channel.external_id}?fields=id,name,category&access_token=${encodeURIComponent(tokens.accessToken)}`,
         );
         const data = await r.json();
         if (!r.ok || data.error) {
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
       }
       case "instagram": {
         const r = await fetch(
-          `https://graph.facebook.com/v19.0/${channel.external_id}?fields=id,username&access_token=${encodeURIComponent(tokens.accessToken)}`,
+          `https://graph.facebook.com/v25.0/${channel.external_id}?fields=id,username&access_token=${encodeURIComponent(tokens.accessToken)}`,
         );
         const data = await r.json();
         if (!r.ok || data.error) {

@@ -127,7 +127,7 @@ export async function publishToInstagram(
 
   try {
     // Step 1: Create media container
-    const createUrl = `https://graph.facebook.com/v19.0/${accountId}/media`;
+    const createUrl = `https://graph.facebook.com/v25.0/${accountId}/media`;
     const createParams: Record<string, string> = {
       access_token: accessToken,
       caption: content,
@@ -150,7 +150,7 @@ export async function publishToInstagram(
     const { id: creationId } = await createRes.json();
 
     // Step 2: Publish the container
-    const publishUrl = `https://graph.facebook.com/v19.0/${accountId}/media_publish`;
+    const publishUrl = `https://graph.facebook.com/v25.0/${accountId}/media_publish`;
     const publishRes = await fetch(publishUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -204,8 +204,8 @@ export async function publishToFacebook(
 
   try {
     const endpoint = imageUrl
-      ? `https://graph.facebook.com/v19.0/${pageId}/photos`
-      : `https://graph.facebook.com/v19.0/${pageId}/feed`;
+      ? `https://graph.facebook.com/v25.0/${pageId}/photos`
+      : `https://graph.facebook.com/v25.0/${pageId}/feed`;
 
     const params: Record<string, string> = {
       access_token: accessToken,
