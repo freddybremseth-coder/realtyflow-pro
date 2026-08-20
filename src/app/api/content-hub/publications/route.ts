@@ -78,7 +78,7 @@ async function getAnalyticsPayload(supabase: NonNullable<ReturnType<typeof getSu
       .limit(50),
     supabase
       .from("engagement_snapshots")
-      .select("publication_id, platform, likes, comments, shares, reach, impressions")
+      .select("publication_id, platform, likes, comments, shares, reach, impressions, snapshot_at")
       .order("snapshot_at", { ascending: false })
       .limit(500),
   ]);

@@ -144,6 +144,7 @@ export function accessRequirementForApi(pathname: string, method = "GET"): Route
     return write ? "finance.write" : "finance.read";
   }
   if (path.startsWith("/api/revenue/attribution")) return write ? "marketing.write" : "marketing.read";
+  if (path.startsWith("/api/social-growth")) return write ? "marketing.write" : "marketing.read";
   if (path.startsWith("/api/revenue/service-revenue")) return write ? "keyholding.write" : "keyholding.read";
   if (path.startsWith("/api/revenue/closing-pack")) return write ? "documents.write" : "closing.read";
   if (path.startsWith("/api/revenue/closing")) return write ? "closing.write" : "closing.read";

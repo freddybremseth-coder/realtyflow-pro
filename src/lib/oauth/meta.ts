@@ -18,7 +18,7 @@
 import { saveTokens, upsertChannel } from "./channels";
 import { createServerClient } from "@/lib/supabase/server";
 
-const GRAPH = "https://graph.facebook.com/v19.0";
+const GRAPH = "https://graph.facebook.com/v25.0";
 
 export interface FacebookPageInfo {
   id: string;

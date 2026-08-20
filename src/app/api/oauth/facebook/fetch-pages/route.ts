@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // Try /me/accounts first
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,category&access_token=${userToken}`
+      `https://graph.facebook.com/v25.0/me/accounts?fields=id,name,access_token,category&access_token=${userToken}`
     );
     const pagesData = await pagesRes.json();
     console.log("[Fetch Pages] /me/accounts response:", JSON.stringify(pagesData).substring(0, 500));
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       for (const known of knownPages) {
         try {
           const pageRes = await fetch(
-            `https://graph.facebook.com/v19.0/${known.id}?fields=id,name,access_token&access_token=${userToken}`
+            `https://graph.facebook.com/v25.0/${known.id}?fields=id,name,access_token&access_token=${userToken}`
           );
           const pageData = await pageRes.json();
           console.log(`[Fetch Pages] Page ${known.id}:`, JSON.stringify(pageData).substring(0, 300));
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       const appId = process.env.FACEBOOK_APP_ID!;
       const appSecret = process.env.FACEBOOK_APP_SECRET!;
       const debugRes = await fetch(
-        `https://graph.facebook.com/v19.0/debug_token?input_token=${userToken}&access_token=${appId}|${appSecret}`
+        `https://graph.facebook.com/v25.0/debug_token?input_token=${userToken}&access_token=${appId}|${appSecret}`
       );
       const debugData = await debugRes.json();
       console.log("[Fetch Pages] Token debug:", JSON.stringify(debugData).substring(0, 500));
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       try {
         const pageToken = page.access_token || userToken;
         const igRes = await fetch(
-          `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`
+          `https://graph.facebook.com/v25.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`
         );
         const igData = await igRes.json();
         console.log(`[Fetch Pages] Instagram check for ${page.name} (${page.id}):`, JSON.stringify(igData).substring(0, 300));
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
           const igId = igData.instagram_business_account.id;
           // Fetch Instagram username and profile info
           const igInfoRes = await fetch(
-            `https://graph.facebook.com/v19.0/${igId}?fields=username,name,profile_picture_url,followers_count&access_token=${pageToken}`
+            `https://graph.facebook.com/v25.0/${igId}?fields=username,name,profile_picture_url,followers_count&access_token=${pageToken}`
           );
           const igInfo = await igInfoRes.json();
           console.log(`[Fetch Pages] Instagram account ${igId}:`, JSON.stringify(igInfo).substring(0, 300));

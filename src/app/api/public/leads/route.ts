@@ -111,7 +111,9 @@ export async function POST(request: NextRequest) {
     body.property_type ? `Boligtype: ${cleanText(body.property_type, 120)}` : "",
     body.bedrooms ? `Soverom: ${cleanText(body.bedrooms, 40)}` : "",
     timeline ? `Tidslinje: ${timeline}` : "",
-    body.utm_source || body.utm_campaign ? `UTM: ${cleanText(body.utm_source, 80)} / ${cleanText(body.utm_campaign, 120)}` : "",
+    body.utm_source || body.utm_campaign || body.utm_content
+      ? `UTM: ${cleanText(body.utm_source, 80)} / ${cleanText(body.utm_campaign, 120)} / ${cleanText(body.utm_content, 160)}`
+      : "",
     message,
     rawNotes,
   ].filter(Boolean).join("\n");
@@ -132,6 +134,13 @@ export async function POST(request: NextRequest) {
     date: now,
     direction: "in",
     brand_id: brandId,
+    metadata: {
+      utm_source: cleanText(body.utm_source, 80) || null,
+      utm_medium: cleanText(body.utm_medium, 80) || null,
+      utm_campaign: cleanText(body.utm_campaign, 120) || null,
+      utm_content: cleanText(body.utm_content, 160) || null,
+      page_url: pageUrl || null,
+    },
   };
   const existingInteractions = Array.isArray(existing?.interactions) ? existing.interactions : [];
   const existingStatus = String(existing?.pipeline_status || "");

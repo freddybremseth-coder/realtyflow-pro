@@ -90,8 +90,8 @@ export async function publishToFacebook(
   console.log(`[Publish Facebook] pageId=${pageId}, hasImage=${!!imageUrl}`);
 
   const endpoint = imageUrl
-    ? `https://graph.facebook.com/v19.0/${pageId}/photos`
-    : `https://graph.facebook.com/v19.0/${pageId}/feed`;
+    ? `https://graph.facebook.com/v25.0/${pageId}/photos`
+    : `https://graph.facebook.com/v25.0/${pageId}/feed`;
 
   const params = new URLSearchParams({ access_token: accessToken, message });
   if (imageUrl) params.set("url", imageUrl);
@@ -153,7 +153,7 @@ export async function publishToInstagram(
     access_token: accessToken,
   });
   const createRes = await fetch(
-    `https://graph.facebook.com/v19.0/${igAccountId}/media`,
+    `https://graph.facebook.com/v25.0/${igAccountId}/media`,
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -174,7 +174,7 @@ export async function publishToInstagram(
     access_token: accessToken,
   });
   const publishRes = await fetch(
-    `https://graph.facebook.com/v19.0/${igAccountId}/media_publish`,
+    `https://graph.facebook.com/v25.0/${igAccountId}/media_publish`,
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

@@ -120,3 +120,37 @@ Full-project `tsc` currently reports unrelated pre-existing test type errors in 
 - Network intelligence scoring with explicit imported data.
 - Team-level comparisons after tenant/team membership is finalized.
 - More granular recommendation lifecycle and approvals.
+
+## Instagram Growth Intelligence
+
+Instagram Business/Creator accounts connected through the existing Meta OAuth
+flow now request `instagram_manage_insights`. The daily engagement tracker reads
+the encrypted `social_channels` token and collects public media counters plus
+available media Insights: views/plays, reach, impressions, shares, saves and
+total interactions. Metrics remain linked to `content_publications` and are
+stored in `engagement_snapshots`; extended metrics are retained in `raw_data`
+without exposing OAuth tokens to the browser.
+
+Existing Instagram connections must be reconnected once so Meta can grant the
+new Insights permission. The application can pin a supported Graph API version
+with `META_GRAPH_API_VERSION`; the existing integration version remains the
+fallback until the wider Meta integration is upgraded together.
+
+Phase 2 adds a closed learning loop in `/analytics` → `Instagram Growth`:
+
+- Latest-snapshot semantics prevent cumulative Meta counters from being added repeatedly.
+- A business-value score weights shares, saves and attributed leads above vanity metrics.
+- Every publication gets a reproducible `utm_content=<publication_id>` tracking link.
+- Public lead intake preserves UTM source, campaign and content on the CRM interaction.
+- Content is classified by area, format, language, hook, goal and property type.
+- Pattern insights require at least five posts; small groups are labelled directional.
+- Winning variants create a Content Hub draft and a measurable growth experiment.
+- Automatic Instagram results are mirrored into AI Personal Brand metrics when the
+  publication is linked through `source_social_post_id`.
+
+Optional configuration:
+
+```env
+NEXT_PUBLIC_SOCIAL_LEAD_URL=https://example.com/contact
+META_GRAPH_API_VERSION=v25.0
+```

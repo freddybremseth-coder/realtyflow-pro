@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
   //   pages_read_user_content   — read Page comments etc. (used elsewhere)
   //   business_management       — needed for some Business-Suite Pages
   //   instagram_basic           — read IG Business profile info
+  //   instagram_manage_insights — read reach, views, shares and saves
   //   instagram_content_publish — post to IG Business
   //
   // Auto-approved without app review when paired with a Business account.
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
     "pages_read_user_content",
     "business_management",
     "instagram_basic",
+    "instagram_manage_insights",
     "instagram_content_publish",
   ].join(",");
 
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
     metadata: {},
   });
 
-  const authUrl = new URL("https://www.facebook.com/v19.0/dialog/oauth");
+  const authUrl = new URL("https://www.facebook.com/v25.0/dialog/oauth");
   authUrl.searchParams.set("client_id", credentials.clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("scope", scope);
