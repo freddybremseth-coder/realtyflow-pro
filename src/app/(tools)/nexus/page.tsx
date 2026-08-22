@@ -546,7 +546,7 @@ export default function NexusCockpitPage() {
         {/* ── 5. LIVE CHAIN-OF-THOUGHT / TOOL TRACE ── */}
         <Panel className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <SectionTitle icon={Terminal} title="Live Chain-of-Thought" hint="Sanntids resonnering + tool-calls" tone="#a78bfa" />
+            <SectionTitle icon={Terminal} title="Agent Activity" hint="Action Trace: hendelse → verktøy → resultat → beslutning → godkjenning" tone="#a78bfa" />
             <div className="flex items-center gap-1">
               {(["all", "thought", "tool", "result"] as const).map((k) => (
                 <button
@@ -556,7 +556,7 @@ export default function NexusCockpitPage() {
                     logFilter === k ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"
                   }`}
                 >
-                  {k === "all" ? "Alle" : k === "thought" ? "Tanke" : k === "tool" ? "Tool" : "Resultat"}
+                  {k === "all" ? "Alle" : k === "thought" ? "Aktivitet" : k === "tool" ? "Verktøy" : "Resultat"}
                 </button>
               ))}
             </div>
@@ -568,7 +568,7 @@ export default function NexusCockpitPage() {
               <div key={l.id} className="flex gap-2 border-b border-white/[0.04] py-1.5 last:border-b-0">
                 <span className="shrink-0 text-slate-600">{l.ts}</span>
                 <span className="shrink-0 text-slate-500">[{l.agent}]</span>
-                <span className={`shrink-0 uppercase ${classForKind(l.kind)}`}>{l.kind === "thought" ? "cot" : l.kind}</span>
+                <span className={`shrink-0 uppercase ${classForKind(l.kind)}`}>{l.kind === "thought" ? "activity" : l.kind}</span>
                 <div className="min-w-0">
                   <p className="text-slate-300">{l.text}</p>
                   {l.json && <pre className="mt-0.5 whitespace-pre-wrap break-all text-cyan-300/70">{l.json}</pre>}

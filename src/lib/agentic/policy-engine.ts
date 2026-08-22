@@ -17,17 +17,22 @@ import { computeAutonomy } from "./confidence";
 const ALWAYS_HUMAN: ActionClass[] = ["contract", "financial_transfer", "offer_response", "price_change"];
 
 export interface PolicyThresholds {
-  live: number; // autonomi-score for auto-live
-  draft: number; // autonomi-score for auto-draft
-  bulkApprovalRecipients: number; // over dette → minst manual-review
+  /** Minste autonomi-score for at en MEDIUM-risiko-handling auto-lager utkast. */
+  draft: number;
+  /** Over dette antall mottakere → minst manual-review. */
+  bulkApprovalRecipients: number;
 }
 
 export const DEFAULT_THRESHOLDS: PolicyThresholds = {
-  live: 0.55,
-  draft: 0.25,
+  draft: 0.2,
   bulkApprovalRecipients: 200,
 };
 
+/**
+ * Nøkkelidé: confidence-porten gjelder RISIKABLE handlinger. Lav-risiko/read-
+ * only/interne handlinger (søk, klassifisering, tag, utkast internt) kjøres
+ * automatisk uansett confidence. Medium/høy/kritisk gates av risiko + score.
+ */
 export function decideAutonomy(ctx: ActionContext, thresholds: PolicyThresholds = DEFAULT_THRESHOLDS): AutonomyDecision {
   const risk = classifyRisk(ctx);
   const autonomy = computeAutonomy(ctx, risk);
@@ -52,15 +57,20 @@ export function decideAutonomy(ctx: ActionContext, thresholds: PolicyThresholds 
   } else if ((ctx.recipients ?? 1) > thresholds.bulkApprovalRecipients) {
     mode = "manual-review";
     reason = `Utsending til ${ctx.recipients} mottakere — krever godkjenning.`;
-  } else if (score >= thresholds.live && risk === "low") {
+  } else if (risk === "low") {
     mode = "live";
-    reason = "Høy autonomi-score og lav risiko — kan kjøre automatisk.";
-  } else if (score >= thresholds.draft) {
-    mode = "draft-first";
-    reason = "Middels autonomi — genererer utkast for gjennomgang.";
+    reason = "Lav risiko — trygg å kjøre automatisk.";
+  } else if (risk === "medium") {
+    if (score >= thresholds.draft) {
+      mode = "draft-first";
+      reason = "Middels risiko — auto-utkast for menneskelig gjennomgang.";
+    } else {
+      mode = "manual-review";
+      reason = "Middels risiko og lav autonomi — manuell gjennomgang.";
+    }
   } else {
     mode = "manual-review";
-    reason = "Lav autonomi-score — krever manuell gjennomgang.";
+    reason = "Høy risiko — krever godkjenning.";
   }
 
   return { mode, autonomyScore: score, risk, factors, hardGate, reason };

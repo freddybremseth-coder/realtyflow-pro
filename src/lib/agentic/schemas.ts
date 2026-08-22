@@ -93,6 +93,13 @@ export interface AutonomyDecision {
 export const RUN_STATUSES = ["pending", "running", "waiting_approval", "completed", "failed", "cancelled"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
+/**
+ * Utfall som revenue_events må kunne skille (prinsipp 5): foreslo AI bare noe,
+ * eller ble handlingen faktisk gjennomført?
+ */
+export const RUN_OUTCOMES = ["recommended", "approved", "executed", "failed", "rejected"] as const;
+export type RunOutcome = (typeof RUN_OUTCOMES)[number];
+
 export type TraceKind =
   | "event"
   | "reason"
@@ -103,15 +110,30 @@ export type TraceKind =
   | "execution"
   | "error";
 
+/**
+ * Action Trace (IKKE chain-of-thought, prinsipp 4). Lagrer input/output-
+ * sammendrag, verktøy, beslutning, risiko, confidence, latency, modell og
+ * token/kostnad — aldri privat resonnering.
+ */
 export interface AgentTraceStep {
   id: string;
   ts: string;
   kind: TraceKind;
   label: string;
   tool?: string;
-  data?: unknown;
+  inputSummary?: string;
+  outputSummary?: string;
+  decisionMode?: AutonomyMode;
+  risk?: RiskLevel;
+  outcome?: RunOutcome;
   confidence?: number;
+  latencyMs?: number;
+  model?: string;
+  tokens?: number;
+  costUsd?: number;
   revenueImpactEur?: number;
+  /** Strukturerte, ikke-sensitive detaljer (aldri rå CoT). */
+  data?: Record<string, unknown>;
 }
 
 export interface AgentRun {
