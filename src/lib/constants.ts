@@ -194,6 +194,7 @@ export const SIDEBAR_NAV = {
     { label: "Automatisering", href: "/automation", icon: "Zap" },
     { label: "Lead Nurture", href: "/automation/nurture", icon: "Sparkles" },
     { label: "Kommandosenter", href: "/agents", icon: "Bot" },
+    { label: "Dealflow OS", href: "/nexus", icon: "Boxes" },
     { label: "E-post AI", href: "/email", icon: "Mail" },
     { label: "Reach Nyhetsbrev", href: "/reach", icon: "Send" },
   ],

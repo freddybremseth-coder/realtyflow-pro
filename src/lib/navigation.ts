@@ -173,6 +173,7 @@ const GROUPS: Array<{
       "/automation",
       "/automation/nurture",
       "/agents",
+      "/nexus",
       "/email",
       "/access-control",
       "/audit-log",
