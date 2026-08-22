@@ -24,6 +24,17 @@ export type MondeoLedgerEvent = {
   event_date?: string | null;
   description?: string | null;
   source_type?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type MondeoFamilySnapshot = {
+  balance: number;
+  totalInterest: number;
+  totalCharges: number;
+  totalLateFee: number;
+  totalPaid: number;
+  arrears: number;
+  asOf: string | null;
 };
 
 export type MondeoMonthRow = {
@@ -244,6 +255,32 @@ export function mondeoPaymentsFromLedgerEvents(events: MondeoLedgerEvent[]): Mon
       source: event.source_type || "business_financial_events",
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Family er master for Mondeo-ledgeren og publiserer sin autoritative tilstand som
+// et mondeo_balance-metric-event. Bruk den til å VISE family sin restgjeld/rente i
+// stedet for å regne på nytt (RealtyFlow sin kontraktsmodell mangler tillegg,
+// forsinkelsesrente og daglig akkrual, så den ville alltid avvike).
+export function mondeoFamilySnapshotFromLedgerEvents(events: MondeoLedgerEvent[]): MondeoFamilySnapshot | null {
+  const balanceEvent = events
+    .filter((event) => normalizeLedgerText(event.stream) === "mondeo_balance" && isActiveLedgerEvent(event))
+    .sort((a, b) => String(a.event_date || "").localeCompare(String(b.event_date || "")))
+    .pop();
+  if (!balanceEvent) return null;
+  const meta = (balanceEvent.metadata || {}) as Record<string, unknown>;
+  const num = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return {
+    balance: ledgerEventAmount(balanceEvent),
+    totalInterest: num(meta.total_interest),
+    totalCharges: num(meta.total_charges),
+    totalLateFee: num(meta.total_late_fee),
+    totalPaid: num(meta.total_paid),
+    arrears: num(meta.arrears_total),
+    asOf: (typeof meta.as_of === "string" ? meta.as_of : null) || balanceEvent.event_date || null,
+  };
 }
 
 export function mondeoKpiAdjustmentsFromLedgerEvents(events: MondeoLedgerEvent[]): MondeoKpiAdjustment[] {
