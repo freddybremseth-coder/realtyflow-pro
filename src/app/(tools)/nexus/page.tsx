@@ -14,6 +14,7 @@ import {
   Cpu,
   Filter,
   Gauge,
+  Loader2,
   Pause,
   Pencil,
   Play,
@@ -269,6 +270,32 @@ export default function NexusCockpitPage() {
 
   const openJarvis = () => window.dispatchEvent(new Event("jarvis:open"));
 
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoMsg, setDemoMsg] = useState<string | null>(null);
+  const runDemoLead = async () => {
+    setDemoBusy(true);
+    setDemoMsg(null);
+    try {
+      const res = await fetch("/api/agentic/lead-intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "demo",
+          externalId: `demo-${Date.now()}`,
+          contactName: "Harald Nilsen",
+          contactEmail: "harald@example.com",
+          message: "Hei, jeg ser etter en villa i Albir eller Finestrat med minst 3 soverom, budsjett rundt 450k euro.",
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setDemoMsg(res.ok ? `Kjørt → ${d.status} (${d.outcome ?? "-"}). Se Approval Center.` : d.error || "Feil");
+    } catch {
+      setDemoMsg("Nettverksfeil");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
   /* live tanke-/tool-feed + telemetri */
   useEffect(() => {
     const t = setInterval(() => {
@@ -412,9 +439,21 @@ export default function NexusCockpitPage() {
               >
                 <Sparkles className="h-4 w-4" /> Jarvis
               </button>
+              <button
+                onClick={runDemoLead}
+                disabled={demoBusy}
+                title="Kjør lead-intake ende-til-ende → fyller Approval Center"
+                className="flex h-[42px] items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-400/10 px-3 text-sm font-medium text-violet-300 transition-colors hover:bg-violet-400/20 disabled:opacity-50"
+              >
+                {demoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radio className="h-4 w-4" />} Demo-lead
+              </button>
             </div>
           </div>
         </Panel>
+
+        {demoMsg && (
+          <div className="rounded-xl border border-violet-400/25 bg-violet-400/[0.06] px-4 py-2 text-sm text-violet-200">{demoMsg}</div>
+        )}
 
         {/* ── 2. AGENT SWARM + CHAIN ── */}
         <Panel className="p-4">

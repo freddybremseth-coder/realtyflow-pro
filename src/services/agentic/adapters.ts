@@ -148,15 +148,18 @@ export function makeBuyerProfileStore(
 ) {
   return {
     findExisting: async (idempotencyKey: string) => {
-      const { data } = await supabase.from("agentic_buyer_profile_links").select("profile_id, version, status").eq("idempotency_key", idempotencyKey).maybeSingle();
-      return data ? { id: String(data.profile_id), version: Number(data.version) || 1, status: String(data.status) } : null;
+      const { data } = await supabase.from("agentic_buyer_profiles").select("id, version, status").eq("idempotency_key", idempotencyKey).maybeSingle();
+      return data ? { id: String(data.id), version: Number(data.version) || 1, status: String(data.status) } : null;
     },
     saveProfile: async (input: SaveBuyerProfileInput) => {
+      // Prod: injiser LI-native create for system-of-record. Ellers: agentic-tabell.
       if (opts?.createViaLeadIntelligence) return opts.createViaLeadIntelligence(input);
-      const { data, error } = await supabase.from("buyer_profiles").insert({
-        brand_id: input.brandId ?? null, display_name: input.name ?? null,
+      const { data, error } = await supabase.from("agentic_buyer_profiles").insert({
+        idempotency_key: input.idempotencyKey, brand_id: input.brandId ?? null, display_name: input.name ?? null,
         budget_max_eur: input.budgetMaxEur ?? null, budget_min_eur: input.budgetMinEur ?? null,
-        approval_status: input.status, created_at: new Date().toISOString(),
+        areas: input.areas, property_type: input.propertyType ?? null, bedrooms_min: input.bedroomsMin ?? null,
+        must_haves: input.mustHaves, exclusions: input.exclusions, confidence: input.confidence ?? null,
+        provenance: input.provenance, status: input.status, version: 1, created_at: new Date().toISOString(),
       }).select("id").single();
       if (error) throw new Error(`saveProfile failed: ${error.message}`);
       return { id: String(data.id), version: 1, status: input.status };
