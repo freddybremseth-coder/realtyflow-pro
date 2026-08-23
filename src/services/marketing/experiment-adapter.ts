@@ -1,21 +1,28 @@
 /**
- * Phase 6 — Experiment Engine-adapter (bak DI, byggetrygg).
+ * Phase 6 — Experiment Engine-adapter (bak DI, byggetrygg) + Hardening 1.1.
  *
  * Persisterer mot EKSISTERENDE public.social_growth_experiments — ikke et
- * parallelt system. Varianter + metrics + genome lever i evidence-jsonb;
- * status/result/*_value bruker tabellens egne kolonner. Når en test kårer en
- * vinner, lukkes sløyfen: vinnerens genome upsertes som marketing_content og
- * en experiment_completed-hendelse registreres, slik at refreshLearningRules
- * teller den beviste vinneren neste gang.
+ * parallelt system. Varianter + metrics + genome lever i evidence-jsonb.
+ *
+ * Hardening: (3) needs_more_data holder status "running" (stopper ikke en test
+ * som trenger mer data); (4) en klar vinner mates til Learning som eget
+ * EVIDENCE-signal (marketing_experiment_evidence) — ikke som syntetisk content
+ * som dobbelttelller revenue; (5) feil i tilbakeføringen svelges ikke: logges
+ * med experimentId, eksponeres som fedToLearning:false og publiseres som
+ * observability-hendelse; (6) start valideres og låses (fingeravtrykk).
  */
 
+import { insertRevenueEvent, type RevenueEventsSupabaseLike } from "@/lib/revenue/events";
 import {
   evaluateExperiment,
-  experimentToLearningObservation,
+  experimentEvidence,
+  structuralFingerprint,
+  validateExperimentDefinition,
   type ExperimentDefinition,
   type ExperimentResult,
 } from "@/lib/marketing/experiment";
-import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
+import type { ExperimentEvidence } from "@/lib/marketing/learning";
+import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 export interface CreateExperimentInput {
   brandId: string;
@@ -25,6 +32,10 @@ export interface CreateExperimentInput {
   controlVariantId?: string;
   minimumSampleSize?: number;
   minLift?: number;
+  equalExposure?: boolean;
+  autoLearnMinEvidence?: ExperimentDefinition["autoLearnMinEvidence"];
+  primaryVariable?: ExperimentDefinition["primaryVariable"];
+  minRuntimeHours?: number;
   platform?: string;
 }
 
@@ -38,6 +49,12 @@ function defFromRow(row: any): ExperimentDefinition {
     controlVariantId: ev.controlVariantId,
     minimumSampleSize: row.minimum_sample_size ?? 5,
     minLift: ev.minLift,
+    equalExposure: ev.equalExposure,
+    autoLearnMinEvidence: ev.autoLearnMinEvidence,
+    primaryVariable: ev.primaryVariable,
+    minRuntimeHours: ev.minRuntimeHours,
+    startedAt: row.started_at ?? null,
+    scope: row.brand_id,
   };
 }
 
@@ -56,6 +73,10 @@ export async function createExperiment(supabase: MarketingSupabaseLike, input: C
         successMetric: input.successMetric ?? "business_value",
         controlVariantId: input.controlVariantId,
         minLift: input.minLift,
+        equalExposure: input.equalExposure,
+        autoLearnMinEvidence: input.autoLearnMinEvidence,
+        primaryVariable: input.primaryVariable,
+        minRuntimeHours: input.minRuntimeHours,
         variants: input.variants,
       },
     })
@@ -65,65 +86,134 @@ export async function createExperiment(supabase: MarketingSupabaseLike, input: C
   return { id: String(data.id) };
 }
 
+/** Start en test: valider guardrails, lås designet (fingeravtrykk), sett running. */
 export async function startExperiment(supabase: MarketingSupabaseLike, id: string): Promise<void> {
+  const { data: row, error: selErr } = await supabase.from("social_growth_experiments").select("*").eq("id", id).single();
+  if (selErr || !row) throw new Error(`startExperiment: fant ikke eksperiment ${id}`);
+  const def = defFromRow(row);
+  const v = validateExperimentDefinition(def);
+  if (!v.ok) throw new Error(`Guardrail-brudd, kan ikke starte: ${v.violations.join(" ")}`);
+
   const { error } = await supabase
     .from("social_growth_experiments")
-    .update({ status: "running", started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      status: "running",
+      started_at: new Date().toISOString(),
+      evidence: { ...(row.evidence ?? {}), designFingerprint: structuralFingerprint(def), warnings: v.warnings },
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id);
   if (error) throw new Error(`startExperiment failed: ${error.message}`);
 }
 
+async function logLearningFailure(supabase: MarketingSupabaseLike, id: string, brandId: string, err: unknown): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[experiment ${id}] læringssignal feilet: ${message}`);
+  try {
+    await insertRevenueEvent(supabase as RevenueEventsSupabaseLike, {
+      eventType: "note",
+      actorType: "system",
+      brandId,
+      title: "Experiment learning-feedback feilet",
+      metadata: { observability: true, experiment_id: id, correlation_id: `experiment:${id}`, error: message },
+    });
+  } catch {
+    /* observability best-effort — original feil er allerede logget */
+  }
+}
+
 /**
- * Evaluér en løpende test og skriv resultatet tilbake. Ved klar vinner lukkes
- * lærings-sløyfen (upsert genome som content + experiment_completed-hendelse).
+ * Evaluér en løpende test og skriv resultatet tilbake.
+ *  - needs_more_data → behold status "running" (ikke stopp testen).
+ *  - won/inconclusive → "evaluated" + evaluated_at.
+ *  - klar vinner (>= reliable) → eget evidence-signal til Learning (idempotent,
+ *    ingen revenue-dobbelttelling).
  */
 export async function evaluateAndPersist(
   supabase: MarketingSupabaseLike,
   id: string,
-): Promise<{ result: ExperimentResult; fedToLearning: boolean }> {
+  now: Date | string = new Date(),
+): Promise<{ result: ExperimentResult; fedToLearning: boolean; error?: string; invalidated?: boolean }> {
   const { data: row, error: selErr } = await supabase.from("social_growth_experiments").select("*").eq("id", id).single();
   if (selErr || !row) throw new Error(`evaluateAndPersist: fant ikke eksperiment ${id}`);
 
   const def = defFromRow(row);
-  const result = evaluateExperiment(def);
-  const brandId = row.brand_id as string;
 
+  // Guardrail (punkt 6): designet skal ikke ha endret seg etter start.
+  const lockedFp = row.evidence?.designFingerprint as string | undefined;
+  if (lockedFp && structuralFingerprint(def) !== lockedFp) {
+    await supabase.from("social_growth_experiments").update({
+      status: "cancelled",
+      result: "inconclusive",
+      evidence: { ...(row.evidence ?? {}), invalidated: "design endret etter start" },
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    throw new Error(`evaluateAndPersist: testdesign endret etter start — testen er invalidert (${id}).`);
+  }
+
+  const result = evaluateExperiment(def, now);
+  const brandId = row.brand_id as string;
+  const isFinal = result.outcome !== "needs_more_data";
   const winner = result.variants.find((v) => v.isWinner);
+
   const { error: updErr } = await supabase
     .from("social_growth_experiments")
     .update({
-      status: "evaluated",
+      status: isFinal ? "evaluated" : "running",
       result: result.outcome,
-      baseline_value: result.variants.find((v) => v.isControl)?.metricValue ?? null,
-      result_value: winner?.metricValue ?? null,
+      baseline_value: result.variants.find((v) => v.isControl)?.metricPerObservation ?? null,
+      result_value: winner?.metricPerObservation ?? null,
       evidence: { ...(row.evidence ?? {}), result },
-      evaluated_at: new Date().toISOString(),
+      evaluated_at: isFinal ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
   if (updErr) throw new Error(`evaluateAndPersist update failed: ${updErr.message}`);
 
-  // Tilbakeføring til Learning: kun ved klar vinner med genome.
-  const obs = experimentToLearningObservation(def, result);
+  // Tilbakeføring til Learning: eget evidence-signal, kun ved klar vinner (>= reliable).
+  const ev = experimentEvidence(def, result);
   let fedToLearning = false;
-  if (obs) {
-    const store = makeMarketingStore(supabase);
+  let error: string | undefined;
+  if (ev) {
     try {
-      await store.upsertContent(String(obs.contentId ?? result.winnerVariantId), brandId, obs.genome);
-      await store.recordEvent({
-        eventType: "experiment_completed",
-        brandId,
-        contentId: obs.contentId ?? result.winnerVariantId,
-        channel: obs.genome.channel,
-        genome: obs.genome,
-        metrics: obs.metrics,
-        correlationId: `experiment:${id}`,
-        metadata: { experimentId: id, finding: result.finding, winnerLift: result.winnerLift },
-      });
+      const { error: evErr } = await supabase.from("marketing_experiment_evidence").upsert(
+        {
+          experiment_id: id,
+          brand_id: brandId,
+          scope: ev.scope,
+          source: "experiment",
+          dimension: ev.dimension,
+          tested_value: ev.value,
+          success_metric: result.successMetric,
+          control_value: winner ? result.variants.find((v) => v.isControl)?.metricPerObservation ?? null : null,
+          variant_value: winner?.metricPerObservation ?? null,
+          normalized_lift: ev.normalizedLift,
+          evidence_level: ev.evidence,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "experiment_id" },
+      );
+      if (evErr) throw new Error(evErr.message);
       fedToLearning = true;
-    } catch {
-      /* læringssignal feiler stille; resultatet er lagret */
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      await logLearningFailure(supabase, id, brandId, e);
     }
   }
-  return { result, fedToLearning };
+  return { result, fedToLearning, error };
+}
+
+/** Last eksperiment-evidens for å slå den inn i Learning (recommendForGeneration). */
+export async function loadExperimentEvidence(supabase: MarketingSupabaseLike, opts: { scope?: string } = {}): Promise<ExperimentEvidence[]> {
+  let q = supabase.from("marketing_experiment_evidence").select("*");
+  if (opts.scope) q = q.eq("scope", opts.scope);
+  const { data } = await q;
+  return (data ?? []).map((r: any) => ({
+    scope: r.scope,
+    dimension: r.dimension,
+    value: r.tested_value,
+    normalizedLift: typeof r.normalized_lift === "number" ? r.normalized_lift : Number(r.normalized_lift) || 0,
+    evidence: r.evidence_level,
+    experimentId: String(r.experiment_id),
+  }));
 }

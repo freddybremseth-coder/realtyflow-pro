@@ -76,11 +76,19 @@ export function qualifiedLeadRate(m: ContentMetrics): number {
   return Number(((n(m.qualifiedLeads) / views) * 1000).toFixed(2));
 }
 
+export const EVIDENCE_LEVELS = ["insufficient", "directional", "promising", "reliable", "strong"] as const;
+export type EvidenceLevel = (typeof EVIDENCE_LEVELS)[number];
+
+/** Ordinal rangering av evidensnivå — for terskler («minst reliable»). */
+export function evidenceRank(level: EvidenceLevel): number {
+  return EVIDENCE_LEVELS.indexOf(level);
+}
+
 /**
  * Nok observasjoner til å stole på et funn? (fra brukerens råd: ikke
  * optimaliser for tidlig). Returnerer tillitsnivå basert på utvalgsstørrelse.
  */
-export function evidenceLevel(sample: number): "insufficient" | "directional" | "promising" | "reliable" | "strong" {
+export function evidenceLevel(sample: number): EvidenceLevel {
   if (sample < 5) return "insufficient";
   if (sample < 10) return "directional";
   if (sample < 25) return "promising";

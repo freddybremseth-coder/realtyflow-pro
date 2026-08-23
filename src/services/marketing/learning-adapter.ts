@@ -10,12 +10,14 @@
 
 import { combineMetrics } from "@/lib/marketing/analytics";
 import {
+  applyExperimentEvidence,
   deriveLearningRules,
   recommendGenome,
   type LearningObservation,
   type LearningRule,
   type GenomeRecommendation,
 } from "@/lib/marketing/learning";
+import { loadExperimentEvidence } from "@/services/marketing/experiment-adapter";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
 import { attributeAll } from "@/services/marketing/attribution-adapter";
@@ -135,8 +137,16 @@ export async function loadLearningRules(supabase: MarketingSupabaseLike, opts: {
   return (data ?? []).map(rowToRule);
 }
 
-/** Det content-agentene kaller FØR generering. */
+/**
+ * Det content-agentene kaller FØR generering. Slår eksperiment-bevis inn i
+ * de observasjonelle reglene (kontrollerte vinnere foretrekkes, uten å
+ * dobbelttelle revenue), og returnerer anbefaling.
+ */
 export async function recommendForGeneration(supabase: MarketingSupabaseLike, opts: { scope?: string } = {}): Promise<GenomeRecommendation> {
-  const rules = await loadLearningRules(supabase, opts);
-  return recommendGenome(rules);
+  const [rules, evidence] = await Promise.all([
+    loadLearningRules(supabase, opts),
+    loadExperimentEvidence(supabase, opts).catch(() => []),
+  ]);
+  const merged = applyExperimentEvidence(rules, evidence);
+  return recommendGenome(merged);
 }
