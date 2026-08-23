@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dispatchGeneratedAsset, planMarketingRun, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
-import { createMarketingRun, type ContentBrief, type GeneratedAsset, type GuardState, type MarketingRunState } from "@/lib/marketing/autonomous";
+import { createMarketingRun, parseBrandContext, type ContentBrief, type GeneratedAsset, type GuardState, type MarketingRunState } from "@/lib/marketing/autonomous";
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 function makeFake(state: any) {
@@ -49,6 +49,24 @@ test("copilot: publisering blir utkast som krever godkjenning, aldri publisert",
   assert.ok(approvalReq);
   const pub = fake.calls.upserts.find((u: any) => u.table === "marketing_publications");
   assert.equal(pub.o.onConflict, "idempotency_key");
+});
+
+test("FAIL-CLOSED: copilot-publisering uten approval-tjeneste blir paused, ikke stille draft", async () => {
+  const fake = makeFake({});
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const res = await dispatchGeneratedAsset(deps(fake), { asset, brief, run }); // ingen requestApproval
+  assert.equal(res.mode, "manual-review");
+  assert.equal(res.state, "paused");
+  assert.equal(res.error, "APPROVAL_SERVICE_UNAVAILABLE");
+});
+
+test("Brand Brain: forbudt påstand tvinger godkjenning selv på guarded+preapproved", async () => {
+  const fake = makeFake({});
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen", forbiddenClaims: ["garantert avkastning"] });
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
+  const bad: GeneratedAsset = { ...asset, body: "Kjøp nå — garantert avkastning på villaen." };
+  const res = await dispatchGeneratedAsset(deps(fake), { asset: bad, brief, run, brand, preapprovedFormat: true });
+  assert.notEqual(res.mode, "live");
 });
 
 test("novelty-gate: nesten-identisk asset regenereres (ingen publikasjon)", async () => {

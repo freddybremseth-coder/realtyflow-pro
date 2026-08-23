@@ -12,6 +12,7 @@
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import {
   buildMarketingPlan,
+  checkClaims,
   contentNoveltyScore,
   contentQualityGate,
   createMarketingRun,
@@ -19,6 +20,7 @@ import {
   evaluateGuards,
   publicationIdempotencyKey,
   resolveMarketingAutonomy,
+  type BrandContext,
   type ContentBrief,
   type ContentHistoryItem,
   type DirectorInput,
@@ -50,8 +52,16 @@ export interface OrchestratorDeps {
   guardConfig?: GuardConfig;
   loadGuardState: () => Promise<GuardState>;
   publisher?: ChannelPublisher;
-  /** Opprett godkjenningsforespørsel når publisering krever menneske. Returner approvalId. */
-  requestApproval?: (input: { publicationId: string; contentId: string; channel: string; reason: string }) => Promise<string>;
+  /**
+   * Opprett godkjenningsforespørsel når publisering krever menneske. Returner
+   * approvalId. FAIL-CLOSED: er denne ikke konfigurert for en kundevendt
+   * manual-review/human-required-handling, blir publikasjonen paused med
+   * APPROVAL_SERVICE_UNAVAILABLE — ikke et stille draft.
+   */
+  requestApproval?: (input: {
+    publicationId: string; contentId: string; channel: string; reason: string;
+    risk?: "low" | "medium" | "high" | "critical"; decisionMode?: string; confidence?: number; estimatedOpportunityEur?: number;
+  }) => Promise<string>;
   now?: () => Date;
 }
 
@@ -102,6 +112,8 @@ export interface DispatchResult {
   qualityScore: number | null;
   published: boolean;
   approvalId: string | null;
+  /** Satt ved fail-closed-tilstander, f.eks. APPROVAL_SERVICE_UNAVAILABLE. */
+  error?: string;
   trace: ActionTraceEntry[];
 }
 
@@ -112,7 +124,7 @@ export interface DispatchResult {
  */
 export async function dispatchGeneratedAsset(
   deps: OrchestratorDeps,
-  args: { asset: GeneratedAsset; brief: ContentBrief; run: MarketingRunState; history?: ContentHistoryItem[]; publicationId?: string; brandTerms?: string[]; preapprovedFormat?: boolean },
+  args: { asset: GeneratedAsset; brief: ContentBrief; run: MarketingRunState; history?: ContentHistoryItem[]; publicationId?: string; brandTerms?: string[]; preapprovedFormat?: boolean; brand?: BrandContext },
 ): Promise<DispatchResult> {
   const { asset, brief, run } = args;
   const publicationId = args.publicationId ?? `pub_${asset.contentId}_${asset.channel}`;
@@ -135,6 +147,14 @@ export async function dispatchGeneratedAsset(
   let mode = decision.mode;
   // Sensitive fakta uten kilde kan aldri gå live.
   if (quality.requiresApproval && mode === "live") mode = "manual-review";
+  // Brand Brain: forbudte påstander kan aldri gå live (fail-safe).
+  if (args.brand) {
+    const claim = checkClaims([asset.headline, asset.body, asset.cta].filter(Boolean).join(" "), args.brand);
+    if (!claim.ok) {
+      if (mode === "live") mode = "manual-review";
+      trace.push({ step: "brand", actor: "quality", summary: `forbudt påstand: ${claim.forbiddenHits.join(", ")} → godkjenning` });
+    }
+  }
   trace.push({ step: "policy", actor: "policy", summary: `${mode} (policy ${decision.policyMode}, risk ${decision.risk})`, mode });
 
   // 4) Runaway-guards (kun relevant hvis vi faktisk skal publisere).
@@ -142,6 +162,7 @@ export async function dispatchGeneratedAsset(
   let state: PublicationState = "draft";
   let published = false;
   let approvalId: string | null = null;
+  let error: string | undefined;
 
   if (mode === "live") {
     const verdict = evaluateGuards(deps.guardConfig ?? DEFAULT_GUARD_CONFIG, guardState, { kind: "publish", channel: asset.channel, brandId: run.brandId, campaignId: brief.campaignId });
@@ -156,18 +177,27 @@ export async function dispatchGeneratedAsset(
       state = "paused";
     }
   } else if (mode === "manual-review" || mode === "human-required") {
-    state = "draft";
-    if (deps.requestApproval) {
-      approvalId = await deps.requestApproval({ publicationId, contentId: asset.contentId, channel: asset.channel, reason: decision.reason });
+    // FAIL-CLOSED: kundevendt handling UTEN approval-tjeneste blir ikke et stille
+    // draft — den pauses eksplisitt med APPROVAL_SERVICE_UNAVAILABLE.
+    if (!deps.requestApproval) {
+      state = "paused";
+      error = "APPROVAL_SERVICE_UNAVAILABLE";
+      trace.push({ step: "approval", actor: "policy", summary: "APPROVAL_SERVICE_UNAVAILABLE — publisering blokkert (fail-closed)", mode });
+    } else {
+      approvalId = await deps.requestApproval({
+        publicationId, contentId: asset.contentId, channel: asset.channel, reason: decision.reason,
+        risk: decision.risk, decisionMode: mode, confidence: quality.score / 100,
+      });
+      state = "draft";
+      trace.push({ step: "approval", actor: "policy", summary: `utkast i godkjenningskø (${approvalId})` });
     }
-    trace.push({ step: "approval", actor: "policy", summary: `utkast venter på godkjenning${approvalId ? ` (${approvalId})` : ""}` });
   } else if (mode === "blocked") {
     state = "paused";
   }
 
   // 5) Persistér publikasjon (idempotent på idempotency_key).
   const idempotencyKey = publicationIdempotencyKey(run.marketingRunId, publicationId);
-  const { error } = await deps.supabase.from("marketing_publications").upsert(
+  const { error: persistErr } = await deps.supabase.from("marketing_publications").upsert(
     {
       publication_id: publicationId,
       idempotency_key: idempotencyKey,
@@ -183,7 +213,7 @@ export async function dispatchGeneratedAsset(
     },
     { onConflict: "idempotency_key" },
   );
-  if (error) throw new Error(`dispatchGeneratedAsset persist failed: ${error.message}`);
+  if (persistErr) throw new Error(`dispatchGeneratedAsset persist failed: ${persistErr.message}`);
 
-  return { publicationId, state, mode, qualityScore: quality.score, published, approvalId, trace };
+  return { publicationId, state, mode, qualityScore: quality.score, published, approvalId, error, trace };
 }
