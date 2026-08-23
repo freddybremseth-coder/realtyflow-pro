@@ -19,4 +19,5 @@ export * from "./tool-registry";
 export * from "./run-store";
 export * from "./approval-gateway";
 export * from "./executor";
+export * from "./command-center";
 export * from "./event-bus";

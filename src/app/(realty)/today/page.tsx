@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AgenticCommandSummary } from "@/components/agentic/agentic-command-summary";
 import {
   AlertTriangle,
   ArrowRight,
@@ -260,6 +261,8 @@ export default function RevenueTodayPage() {
           </Button>
         </div>
       </header>
+
+      <AgenticCommandSummary />
 
       {error && (
         <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
