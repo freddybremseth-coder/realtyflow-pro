@@ -4,6 +4,7 @@ import "./globals.css";
 import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
+import { JarvisOverlay } from "@/components/agentic/jarvis-overlay";
 
 export const metadata: Metadata = {
   title: "RealtyFlow Pro",
@@ -59,6 +60,7 @@ export default function RootLayout({
               primaryColor="#8b5cf6"
               placeholder="F.eks. villa med basseng i Altea..."
             />
+            <JarvisOverlay />
           </>
         )}
       </body>

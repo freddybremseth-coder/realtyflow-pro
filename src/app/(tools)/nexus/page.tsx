@@ -250,10 +250,24 @@ export default function NexusCockpitPage() {
   const [stageFilter, setStageFilter] = useState<"all" | DealStage>("all");
   const [query, setQuery] = useState("");
   const [tokenCost, setTokenCost] = useState(38.42);
+  const [liveAgentCount, setLiveAgentCount] = useState<number | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
 
   const activeAgents = agents.filter((a) => a.status !== "idle").length;
   const pipelineValue = properties.reduce((s, p) => s + p.priceNok, 0);
+  const agentTotal = liveAgentCount ?? agents.length;
+
+  // Live agent-data fra orchestrator (faller tilbake til lokal demo-telemetri).
+  useEffect(() => {
+    fetch("/api/agents")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && Array.isArray(d.agents)) setLiveAgentCount(d.agents.length);
+      })
+      .catch(() => {});
+  }, []);
+
+  const openJarvis = () => window.dispatchEvent(new Event("jarvis:open"));
 
   /* live tanke-/tool-feed + telemetri */
   useEffect(() => {
@@ -341,6 +355,19 @@ export default function NexusCockpitPage() {
       `}</style>
 
       <div className="mx-auto max-w-[1400px] space-y-4 p-4 md:p-6">
+        {/* ── OS-VINDU-CHROME ── */}
+        <div className="flex items-center gap-2 rounded-t-xl border border-white/10 bg-black/40 px-4 py-2">
+          <span className="flex gap-1.5">
+            <span className="h-3 w-3 rounded-full bg-rose-400/70" />
+            <span className="h-3 w-3 rounded-full bg-amber-400/70" />
+            <span className="h-3 w-3 rounded-full bg-emerald-400/70" />
+          </span>
+          <span className="font-mono text-[11px] uppercase tracking-widest text-slate-500">RealtyFlow OS · Dealflow Cockpit</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> live
+          </span>
+        </div>
+
         {/* ── 1. TOP BAR / HEADER COCKPIT ── */}
         <Panel className="p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -362,7 +389,7 @@ export default function NexusCockpitPage() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <HeaderStat icon={CircleDollarSign} label="Pipeline" value={mnok(pipelineValue)} tone="#34d399" />
               <HeaderStat icon={Building2} label="Eiendommer" value={`${properties.length} aktive`} tone="#22d3ee" />
-              <HeaderStat icon={Bot} label="Agenter" value={`${activeAgents}/${agents.length} online`} tone="#a78bfa" />
+              <HeaderStat icon={Bot} label="Agenter" value={`${activeAgents}/${agentTotal} online`} tone="#a78bfa" />
               <HeaderStat icon={Gauge} label="Token-kost" value={`$${tokenCost.toFixed(2)}`} tone="#fbbf24" mono />
             </div>
 
@@ -379,6 +406,12 @@ export default function NexusCockpitPage() {
                   <Command className="h-3 w-3" />K
                 </span>
               </div>
+              <button
+                onClick={openJarvis}
+                className="flex h-[42px] items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20"
+              >
+                <Sparkles className="h-4 w-4" /> Jarvis
+              </button>
             </div>
           </div>
         </Panel>
