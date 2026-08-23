@@ -18,4 +18,5 @@ export * from "./policy-engine";
 export * from "./tool-registry";
 export * from "./run-store";
 export * from "./approval-gateway";
+export * from "./executor";
 export * from "./event-bus";

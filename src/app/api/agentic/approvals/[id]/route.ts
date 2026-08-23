@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { resolveApproval } from "@/lib/agentic/approval-gateway";
+import { executeApproval } from "@/lib/agentic/executor";
 import { makeApprovalGatewayStore, makeGatewayPublishEvent } from "@/services/agentic/adapters";
+import { buildExecutorDeps } from "@/services/agentic/executor-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -31,5 +33,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     { id: params.id, decision: body.decision, resolvedBy: ctx?.email ?? "unknown" },
   );
   if (!res.ok) return NextResponse.json(res, { status: res.error === "NOT_FOUND" ? 404 : 400 });
+
+  // Godkjent → utfør handlingen (executor, dry-run som default). Feilet
+  // utførelse lar elementet stå approved for retry — approval reverseres ikke.
+  if (res.status === "approved" && !res.alreadyResolved) {
+    const execution = await executeApproval(buildExecutorDeps(supabase), { id: params.id, executedBy: ctx?.email ?? "system" });
+    return NextResponse.json({ ...res, execution });
+  }
   return NextResponse.json(res);
 }

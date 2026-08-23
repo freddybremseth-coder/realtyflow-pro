@@ -16,6 +16,7 @@ import { insertRevenueEvent, type RevenueEventInput, type RevenueEventsSupabaseL
 import type { AgentRun, AgentTraceStep, RunOutcome, RunStatus } from "@/lib/agentic/schemas";
 import type { AgentRunStore } from "@/lib/agentic/run-store";
 import type { ApprovalGatewayStore, ApprovalItem, GatewayOutcomeEvent } from "@/lib/agentic/approval-gateway";
+import type { DraftRef, ExecutorStore } from "@/lib/agentic/executor";
 import type { FindPropertiesInput, PropertyCandidate } from "@/services/tools/property/find-properties";
 import type { CreateDraftInput } from "@/services/tools/communications/create-draft";
 import type { RequestApprovalInput } from "@/services/tools/crm/request-approval";
@@ -188,6 +189,32 @@ export function makeApprovalGatewayStore(supabase: SupabaseLike): ApprovalGatewa
     },
     markResolved: async (id, status, resolvedBy, at) => {
       await supabase.from("agentic_approvals").update({ status, resolved_by: resolvedBy, resolved_at: at, updated_at: new Date().toISOString() }).eq("id", id);
+    },
+  };
+}
+
+/** Executor-lager: leser godkjent approval + utkast, markerer executed. */
+export function makeExecutorStore(supabase: SupabaseLike): ExecutorStore {
+  const rowToItem = (r: any): ApprovalItem => ({
+    id: String(r.id), runId: r.run_id ?? null, correlationId: r.correlation_id ?? null,
+    title: r.title, gatedActionClass: r.gated_action_class, subjectType: r.subject_type,
+    subjectRef: r.subject_ref ?? null, customerRef: r.customer_ref ?? null, draftId: r.draft_id ?? null,
+    reason: r.reason ?? null, risk: r.risk ?? null, decisionMode: r.decision_mode ?? null,
+    confidence: num(r.confidence), estimatedOpportunityEur: num(r.estimated_opportunity_eur),
+    status: r.status, createdAt: r.created_at ?? null,
+  });
+  return {
+    get: async (id) => {
+      const { data } = await supabase.from("agentic_approvals").select("*").eq("id", id).maybeSingle();
+      return data ? rowToItem(data) : null;
+    },
+    getDraft: async (draftId): Promise<DraftRef | null> => {
+      const { data } = await supabase.from("agentic_drafts").select("*").eq("id", draftId).maybeSingle();
+      if (!data) return null;
+      return { id: String(data.id), contactRef: data.contact_ref ?? null, channel: data.channel ?? null, subject: data.subject ?? null, body: data.body, brandId: null };
+    },
+    markExecuted: async (id, at, detail, executedBy) => {
+      await supabase.from("agentic_approvals").update({ status: "executed", executed_at: at, executed_by: executedBy, execution_detail: detail, updated_at: new Date().toISOString() }).eq("id", id);
     },
   };
 }
