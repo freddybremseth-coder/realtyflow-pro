@@ -8,3 +8,4 @@
 export * from "./genome";
 export * from "./value-score";
 export * from "./events";
+export * from "./analytics";
