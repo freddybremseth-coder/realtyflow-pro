@@ -10,3 +10,4 @@ export * from "./value-score";
 export * from "./events";
 export * from "./analytics";
 export * from "./attribution";
+export * from "./learning";
