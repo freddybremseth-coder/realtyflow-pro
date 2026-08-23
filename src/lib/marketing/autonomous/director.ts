@@ -1,0 +1,78 @@
+/**
+ * Phase 7 — Marketing Director. Styrer MÅL, skriver ikke alt selv.
+ * Tar inn mål/merke/pipeline/inventory/learning/eksperiment-bevis/kapasitet/
+ * budsjett og produserer en maskinlesbar MarketingPlan. Learning leses FØR
+ * generering, men systemet eksplorerer også (70/20/10) så det ikke blir monotont.
+ */
+
+import type { GenomeRecommendation } from "../learning";
+import {
+  DirectorInputSchema,
+  type DirectorInput,
+  type ExplorationMix,
+  type MarketingPlan,
+} from "./schemas";
+
+/** Fordel n innhold på exploit/adjacent/experiment etter mix (summerer til n). */
+export function allocateExploration(n: number, mix: ExplorationMix): { exploit: number; adjacent: number; experiment: number } {
+  const total = mix.exploit + mix.adjacent + mix.experiment || 1;
+  const exploit = Math.round((n * mix.exploit) / total);
+  const experiment = Math.round((n * mix.experiment) / total);
+  const adjacent = Math.max(0, n - exploit - experiment);
+  return { exploit, adjacent, experiment };
+}
+
+export interface BuildPlanOptions {
+  marketingRunId: string;
+  correlationId: string;
+  recommendation?: GenomeRecommendation;
+  explorationMix?: Partial<ExplorationMix>;
+}
+
+/**
+ * Bygg en MarketingPlan. exploit-buckets bruker learning-anbefalte dimensjoner;
+ * adjacent utforsker naboer; experiment reserveres for kontrollerte tester.
+ */
+export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptions): MarketingPlan {
+  const input = DirectorInputSchema.parse(rawInput);
+  const mix: ExplorationMix = { exploit: 0.7, adjacent: 0.2, experiment: 0.1, ...opts.explorationMix };
+  const capacity = input.publishingCapacityPerWeek;
+  const production = allocateExploration(capacity, mix);
+
+  const rec = opts.recommendation;
+  const favoredDimensions: Record<string, string> = {};
+  const notes: string[] = [];
+  if (rec) {
+    for (const [dim, v] of Object.entries(rec.favor)) {
+      if (v) {
+        favoredDimensions[dim] = v.value;
+        notes.push(`${v.experimentBacked ? "🧪" : "📈"} favor ${dim}=${v.value} (${v.evidence}, ${v.lift}×)`);
+      }
+    }
+    notes.push(...rec.notes.slice(0, 3));
+  }
+  const avoidedDimensions = (rec?.avoid ?? []).map((a) => ({ dimension: a.dimension, value: a.value }));
+
+  // Reserver eksperiment-kapasitet for uavklarte dimensjoner (adjacent utforsker).
+  const plannedExperiments = production.experiment > 0 && input.goals.length > 0
+    ? [{ hypothesis: `Test ny vinkel mot dagens vinner for ${input.goals[0].kind}`, primaryVariable: "hookType" }]
+    : [];
+
+  const focus = input.inventoryFocus.length ? input.inventoryFocus : input.pipelineGaps;
+
+  return {
+    marketingRunId: opts.marketingRunId,
+    correlationId: opts.correlationId,
+    brandId: input.brandId,
+    goals: input.goals,
+    focus,
+    channels: input.channels,
+    explorationMix: mix,
+    production,
+    favoredDimensions,
+    avoidedDimensions,
+    plannedExperiments,
+    budget: input.budget,
+    notes,
+  };
+}

@@ -12,3 +12,4 @@ export * from "./analytics";
 export * from "./attribution";
 export * from "./learning";
 export * from "./experiment";
+export * from "./autonomous";
