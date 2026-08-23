@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, FileCheck2, FileText, ListChecks, Loader2, Mail, RefreshCw, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AgenticApprovalQueue } from "@/components/agentic/agentic-approval-queue";
 
 type ApprovalType = "buyer_profile" | "shortlist" | "presentation" | "message_draft";
 type Filter = "all" | "ready" | "blocked" | ApprovalType;
@@ -127,6 +128,9 @@ export default function ApprovalCenterPage() {
 
       {error && <div className="flex gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} />{error}</div>}
       {data?.warnings?.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100"><strong>Datavarsler:</strong> {data.warnings.join(" · ")}</div> : null}
+
+      <AgenticApprovalQueue />
+
 
       {data && <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {summaryCards.map(({ label, value, icon: Icon }) => <article key={label} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Icon size={19} className="text-emerald-300" /><p className="mt-3 text-[11px] uppercase tracking-wide text-slate-500">{label}</p><strong className="mt-1 block text-2xl text-white">{value}</strong></article>)}

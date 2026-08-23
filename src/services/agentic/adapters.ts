@@ -15,6 +15,7 @@
 import { insertRevenueEvent, type RevenueEventInput, type RevenueEventsSupabaseLike } from "@/lib/revenue/events";
 import type { AgentRun, AgentTraceStep, RunOutcome, RunStatus } from "@/lib/agentic/schemas";
 import type { AgentRunStore } from "@/lib/agentic/run-store";
+import type { ApprovalGatewayStore, ApprovalItem, GatewayOutcomeEvent } from "@/lib/agentic/approval-gateway";
 import type { FindPropertiesInput, PropertyCandidate } from "@/services/tools/property/find-properties";
 import type { CreateDraftInput } from "@/services/tools/communications/create-draft";
 import type { RequestApprovalInput } from "@/services/tools/crm/request-approval";
@@ -160,6 +161,42 @@ export function makeBuyerProfileStore(
       if (error) throw new Error(`saveProfile failed: ${error.message}`);
       return { id: String(data.id), version: 1, status: input.status };
     },
+  };
+}
+
+/** Approval Gateway-lager mot agentic_approvals (den ene godkjenningskøen). */
+export function makeApprovalGatewayStore(supabase: SupabaseLike): ApprovalGatewayStore {
+  const rowToItem = (r: any): ApprovalItem => ({
+    id: String(r.id), runId: r.run_id ?? null, correlationId: r.correlation_id ?? null,
+    title: r.title, gatedActionClass: r.gated_action_class, subjectType: r.subject_type,
+    subjectRef: r.subject_ref ?? null, customerRef: r.customer_ref ?? null, draftId: r.draft_id ?? null,
+    reason: r.reason ?? null, risk: r.risk ?? null, decisionMode: r.decision_mode ?? null,
+    confidence: num(r.confidence), estimatedOpportunityEur: num(r.estimated_opportunity_eur),
+    status: r.status, createdAt: r.created_at ?? null,
+  });
+  return {
+    listPending: async () => {
+      const { data } = await supabase.from("agentic_approvals").select("*").eq("status", "pending").order("created_at", { ascending: true });
+      return (data ?? []).map(rowToItem);
+    },
+    get: async (id) => {
+      const { data } = await supabase.from("agentic_approvals").select("*").eq("id", id).maybeSingle();
+      return data ? rowToItem(data) : null;
+    },
+    markResolved: async (id, status, resolvedBy, at) => {
+      await supabase.from("agentic_approvals").update({ status, resolved_by: resolvedBy, resolved_at: at, updated_at: new Date().toISOString() }).eq("id", id);
+    },
+  };
+}
+
+/** Gateway-utfall → revenue_events (actor human, bevarer subjekt + outcome). */
+export function makeGatewayPublishEvent(supabase: RevenueEventsSupabaseLike) {
+  return async (e: GatewayOutcomeEvent): Promise<void> => {
+    await insertRevenueEvent(supabase, {
+      eventType: e.outcome === "rejected" ? "note" : "automation_executed",
+      title: e.title, actorType: "human", revenueImpactEur: e.revenueImpactEur ?? null,
+      metadata: { run_id: e.runId, agentic_outcome: e.outcome, subject_type: e.subjectType, subject_ref: e.subjectRef },
+    } as RevenueEventInput);
   };
 }
 
