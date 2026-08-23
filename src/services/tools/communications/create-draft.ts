@@ -10,7 +10,8 @@ import { z } from "zod";
 import { defineTool, type ToolContext } from "@/lib/agentic/tool-registry";
 
 export const createDraftInput = z.object({
-  correlationId: z.string().min(1),
+  correlationId: z.string().min(1), // sporing
+  idempotencyKey: z.string().min(1), // operasjons-scoped dedupe (punkt 4)
   contactRef: z.string().optional(),
   channel: z.enum(["email", "whatsapp", "sms"]).default("email"),
   subject: z.string().optional(),
@@ -25,21 +26,22 @@ export interface DraftRecord {
 }
 
 export interface CreateDraftDeps {
-  findExisting: (correlationId: string) => Promise<{ id: string } | null>;
+  findExisting: (idempotencyKey: string) => Promise<{ id: string } | null>;
   saveDraft: (input: CreateDraftInput, ctx: ToolContext) => Promise<{ id: string }>;
 }
 
 export function buildCreateDraftTool(deps: CreateDraftDeps) {
   return defineTool<CreateDraftInput, DraftRecord>({
     name: "create_draft",
-    description: "Lager utkast til kundekommunikasjon (sender ikke). Idempotent på correlationId.",
+    description: "Lager utkast til kundekommunikasjon (sender ikke). Idempotent på idempotencyKey.",
     input: createDraftInput,
-    permission: "AUTHENTICATED",
+    // Krever skrivetilgang til kommunikasjon (RBAC).
+    permission: "communications.write",
     // Selve utkastet er en intern handling; SENDING (send_personal) gates separat.
     actionClass: "draft",
     risk: { reversibility: "reversible", channel: "internal", involvesPersonalData: true },
     handler: async (input, ctx) => {
-      const existing = await deps.findExisting(input.correlationId);
+      const existing = await deps.findExisting(input.idempotencyKey);
       if (existing) return { id: existing.id, created: false };
       const saved = await deps.saveDraft(input, ctx);
       return { id: saved.id, created: true };

@@ -137,13 +137,28 @@ export interface AgentTraceStep {
 }
 
 export interface AgentRun {
-  id: string;
+  id: string; // runId — egen persistent identitet
   agentId: string;
   goal: string;
   status: RunStatus;
+  /** Eksplisitt, durabelt utfall (punkt 5) — skal ikke forsvinne i adapterlaget. */
+  outcome?: RunOutcome;
   correlationId?: string;
+  /** Stabil dedupe/idempotency-nøkkel for hele intaket (punkt 3). */
+  idempotencyKey?: string;
   startedAt: string;
   finishedAt?: string;
   steps: AgentTraceStep[];
   decision?: AutonomyDecision;
 }
+
+/** Unifisert approval-subjekt (punkt 6): kan referere eksisterende RealtyFlow-
+ * approvals i stedet for å lage en parallell verden. */
+export const APPROVAL_SUBJECT_TYPES = [
+  "buyer_profile",
+  "shortlist",
+  "presentation",
+  "message_draft",
+  "generic_agent_action",
+] as const;
+export type ApprovalSubjectType = (typeof APPROVAL_SUBJECT_TYPES)[number];

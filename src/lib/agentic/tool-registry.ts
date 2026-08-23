@@ -7,14 +7,17 @@
  */
 
 import { z } from "zod";
-import type { AccessPermission } from "@/lib/access-control";
+import { hasPermission, type AccessPermission, type AccessRole } from "@/lib/access-control";
 import type { ActionClass, ActionContext, AutonomyDecision } from "./schemas";
 import { decideAutonomy } from "./policy-engine";
 
 export interface ToolContext {
   userId?: string;
-  role?: string;
+  /** RBAC-rolle — obligatorisk for authorization-gaten (Hardening 1.1, punkt 1). */
+  role?: AccessRole;
   correlationId?: string;
+  /** Operasjons-scoped idempotency-nøkkel for muterende verktøy (punkt 4). */
+  idempotencyKey?: string;
   /** Overstyr/utfyll autonomi-signaler for denne kjøringen. */
   action?: Partial<ActionContext>;
 }
@@ -90,6 +93,15 @@ export class ToolRegistry {
   async run<I, O>(name: string, rawInput: unknown, ctx: ToolContext = {}): Promise<ToolResult<O>> {
     const tool = this.tools.get(name) as ToolDefinition<I, O> | undefined;
     if (!tool) return this.audit(name, ctx, { ok: false, error: `Ukjent verktøy «${name}».` });
+
+    // AUTHORIZATION-GATE (punkt 1): kontrolleres FØR input/policy/autonomi.
+    // En rolle uten required permission når aldri handleren.
+    if (!ctx.role) {
+      return this.audit(name, ctx, { ok: false, error: "AUTHORIZATION_REQUIRED: ingen rolle i konteksten." });
+    }
+    if (tool.permission !== "AUTHENTICATED" && !hasPermission(ctx.role, tool.permission)) {
+      return this.audit(name, ctx, { ok: false, error: `FORBIDDEN: rollen «${ctx.role}» mangler «${tool.permission}» for «${name}».` });
+    }
 
     const parsed = tool.input.safeParse(rawInput);
     if (!parsed.success) {

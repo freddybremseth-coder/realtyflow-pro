@@ -86,7 +86,7 @@ export function buildFindPropertiesTool(deps: FindPropertiesDeps) {
     name: "find_properties",
     description: "Read-only søk: deterministiske hard filters, deretter valgfri AI-rangering av gjenværende kandidater.",
     input: findPropertiesInput,
-    permission: "AUTHENTICATED",
+    permission: "customers.read",
     actionClass: "match",
     risk: { reversibility: "reversible", channel: "internal" },
     handler: async (input, ctx) => {
