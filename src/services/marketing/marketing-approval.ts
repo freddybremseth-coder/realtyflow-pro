@@ -6,6 +6,7 @@
 
 import { operationIdempotencyKey } from "@/lib/agentic";
 import { makeApprovalStore, type SupabaseLike } from "@/services/agentic/adapters";
+import type { RequestApprovalInput } from "@/services/tools/crm/request-approval";
 
 export interface MarketingApprovalRequest {
   publicationId: string;
@@ -13,8 +14,8 @@ export interface MarketingApprovalRequest {
   channel: string;
   reason: string;
   gatedActionClass?: string;
-  risk?: "low" | "medium" | "high" | "critical";
-  decisionMode?: "live" | "draft-first" | "manual-review" | "human-required";
+  risk?: string;
+  decisionMode?: string;
   confidence?: number;
   estimatedOpportunityEur?: number;
 }
@@ -38,8 +39,8 @@ export function makeMarketingApprovalRequester(supabase: SupabaseLike, opts: { r
       subjectType: "generic_agent_action",
       subjectRef: input.publicationId,
       reason: input.reason,
-      risk: input.risk,
-      decisionMode: input.decisionMode,
+      risk: input.risk as RequestApprovalInput["risk"],
+      decisionMode: input.decisionMode as RequestApprovalInput["decisionMode"],
       confidence: input.confidence,
       estimatedOpportunityEur: input.estimatedOpportunityEur,
     });

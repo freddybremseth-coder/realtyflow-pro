@@ -127,7 +127,7 @@ export const GeneratedAssetSchema = z.object({
   /** Kilde/provenance for sensitive fakta (pris/skatt/jus/marked). Uten kilde → approval. */
   factSources: z.array(z.object({ claim: z.string(), source: z.string() })).default([]),
   /** Genererings-metadata (modell, kostnad). */
-  generator: z.object({ model: z.string().optional(), costEur: z.number().min(0).default(0) }).default({ costEur: 0 }),
+  generator: z.object({ model: z.string().optional(), costEur: z.number().min(0).optional() }).default({}),
 });
 export type GeneratedAsset = z.infer<typeof GeneratedAssetSchema>;
 

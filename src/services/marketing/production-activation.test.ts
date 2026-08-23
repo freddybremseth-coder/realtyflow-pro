@@ -11,7 +11,6 @@ import {
   type CreativeRequest,
 } from "@/lib/marketing/autonomous";
 import { makeCreativeGenerator } from "@/services/marketing/creative-generator";
-import { makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 const g = (over: Partial<ContentGenome>): ContentGenome => ({ brandId: "b1", channel: "instagram", format: "reel", ...over });
@@ -79,28 +78,4 @@ test("leadFormToInquiry bærer attribusjon og bygger melding for intake", () => 
   assert.equal(inq.brandId, "b1");
 });
 
-// ── Meta publisher (idempotent) ─────────────────────────────────────────────
-function fakeSupabaseWith(existingState?: string) {
-  const api: any = {
-    select: () => api, eq: () => api,
-    maybeSingle: () => Promise.resolve({ data: existingState ? { state: existingState } : null, error: null }),
-  };
-  return { from: () => api } as any;
-}
-
-test("MetaPublisher publiserer via graph DI og returnerer externalId", async () => {
-  let called: any = null;
-  const pub = makeMetaPublisher(fakeSupabaseWith(), { graphPost: async (p, b) => { called = { p, b }; return { id: "ig_999" }; }, igUserId: "IG1" });
-  const res = await pub.publish({ contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram", genome: g({}), body: "Hei", cta: "Book", factSources: [], generator: {} }, { idempotencyKey: "idk1" });
-  assert.equal(res.state, "published");
-  assert.equal(res.externalId, "ig_999");
-  assert.match(called.p, /\/IG1\/media/);
-});
-
-test("MetaPublisher er idempotent: allerede publisert → ingen ny posting", async () => {
-  let graphCalled = false;
-  const pub = makeMetaPublisher(fakeSupabaseWith("published"), { graphPost: async () => { graphCalled = true; return { id: "x" }; }, igUserId: "IG1" });
-  const res = await pub.publish({ contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram", genome: g({}), body: "Hei", factSources: [], generator: {} }, { idempotencyKey: "idk1" });
-  assert.equal(res.state, "published");
-  assert.equal(graphCalled, false); // ingen dobbel-posting ved retry
-});
+// (MetaPublisher-tester ligger i campaign-production.test.ts med full DB-fake.)

@@ -43,8 +43,18 @@ export interface ActionTraceEntry {
 }
 
 /** Ekte kanal-publisering — DI-søm. Ikke brukt på copilot (kun godkjente/live). */
+export interface PublishContext {
+  scheduledFor?: string | null;
+  idempotencyKey: string;
+  publicationId?: string;
+  contentId?: string;
+  campaignId?: string;
+  marketingRunId?: string;
+  correlationId?: string;
+  channel?: string;
+}
 export interface ChannelPublisher {
-  publish(asset: GeneratedAsset, opts: { scheduledFor?: string | null; idempotencyKey: string }): Promise<{ state: PublicationState; externalId?: string }>;
+  publish(asset: GeneratedAsset, opts: PublishContext): Promise<{ state: PublicationState; externalId?: string; dryRun?: boolean }>;
 }
 
 export interface OrchestratorDeps {

@@ -44,11 +44,15 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
   const text = textOf(asset);
   const sourcedClaims = new Set(asset.factSources.map((f) => f.claim.toLowerCase()));
 
-  // Sensitive fakta uten kilde.
+  // Sensitive fakta uten kilde. Ordgrense-matching for alfabetiske termer, så
+  // «kr» ikke treffer inne i «bærekraftige» og «lov» ikke i «lovende».
   const sensitiveClaimsWithoutSource: string[] = [];
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hits = (haystack: string, term: string) =>
+    /^[a-zæøå ]+$/i.test(term) ? new RegExp(`(^|[^a-zæøå0-9])${escape(term)}([^a-zæøå0-9]|$)`, "i").test(haystack) : haystack.includes(term);
   for (const term of SENSITIVE_FACT_TERMS) {
-    if (text.includes(term)) {
-      const covered = Array.from(sourcedClaims).some((c) => c.includes(term));
+    if (hits(text, term)) {
+      const covered = Array.from(sourcedClaims).some((c) => hits(c, term));
       if (!covered) sensitiveClaimsWithoutSource.push(term);
     }
   }

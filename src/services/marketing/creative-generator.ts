@@ -36,6 +36,25 @@ export function makeCreativeGenerator(generateText: GenerateText, opts: { model?
   };
 }
 
+/**
+ * Dry-run-generator (default når ANTHROPIC_API_KEY mangler). Bygger et asset fra
+ * briefen uten LLM — merket som dry-run i provenance. Ikke mock i live-path;
+ * brukes kun når live-credentials mangler.
+ */
+export function makeDryRunCreativeGenerator(): CreativeGenerator {
+  return {
+    async generate(req: CreativeRequest): Promise<CreativeResult> {
+      const b = req.brief;
+      const output = {
+        headline: `${req.brand.brandName}: ${b.angle}`,
+        body: `[DRY-RUN utkast] ${b.angle}. ${req.brand.valueProposition}`.trim(),
+        cta: req.brand.preferredCta || "Book visning",
+      };
+      return assembleAsset(req, output, { model: "dry-run", costEur: 0 });
+    },
+  };
+}
+
 /** Persistér asset + full provenance (forklarbarhet: hvor kom påstanden fra). */
 export async function persistAsset(supabase: MarketingSupabaseLike, result: CreativeResult): Promise<void> {
   const { asset, provenance } = result;
