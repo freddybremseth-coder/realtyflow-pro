@@ -67,11 +67,13 @@ export function normalizeYoutube(raw: Raw): ContentMetrics {
 }
 
 export function normalizeWebsite(raw: Raw): ContentMetrics {
+  // NB: form_submissions telles IKKE som canonical `leads` her — det eies av
+  // CRM/attribution (Phase 4), ellers dobbelttelles samme konvertering. Skjema-
+  // innsending fanges som et touchpoint (touch_type='form_submit'), mens den
+  // kanoniske leaden kommer fra revenue_events/CRM.
   return {
     views: pick(raw, ["pageviews", "page_views", "sessions", "views"]),
     clicks: pick(raw, ["cta_clicks", "ctaClicks", "clicks"]),
-    // Skjemainnsendinger på nettsiden er reelle leads.
-    leads: pick(raw, ["form_submissions", "formSubmissions", "leads"]),
   };
 }
 
@@ -108,12 +110,40 @@ const METRIC_KEYS: (keyof ContentMetrics)[] = [
   "leads", "qualifiedLeads", "viewings", "offers", "sales", "commissionEur",
 ];
 
-/** Flett flere metrics-deler (plattform + attribution) ved å summere feltene. */
+/** Flett KOMPLEMENTÆRE observed-kilder (f.eks. to plattformer) ved å summere.
+ *  Bruk combineMetrics når du blander observed + canonical for å unngå
+ *  dobbelttelling. */
 export function mergeMetrics(...parts: Array<Partial<ContentMetrics> | null | undefined>): ContentMetrics {
   const out = {} as ContentMetrics;
   for (const key of METRIC_KEYS) {
     const sum = parts.reduce((s, p) => s + num(p?.[key]), 0);
     if (sum !== 0) out[key] = sum;
+  }
+  return out;
+}
+
+/** Metric ownership (fra Phase 4-regelen): observed eies av plattform/nettside;
+ *  canonical business outcomes eies av CRM/attribution. */
+export const OBSERVED_METRIC_KEYS: (keyof ContentMetrics)[] = ["views", "engagedViews", "saves", "shares", "clicks"];
+export const CANONICAL_METRIC_KEYS: (keyof ContentMetrics)[] = ["leads", "qualifiedLeads", "viewings", "offers", "sales", "commissionEur"];
+
+/**
+ * Kombiner observed (plattform/nettside, summeres) med canonical business
+ * outcomes (CRM/attribution, VINNER — summeres aldri med observed). Hindrer at
+ * f.eks. nettside-skjema og CRM-lead teller som to leads.
+ */
+export function combineMetrics(args: {
+  observed?: Array<Partial<ContentMetrics> | null | undefined>;
+  canonical?: Partial<ContentMetrics> | null;
+}): ContentMetrics {
+  const out = {} as ContentMetrics;
+  for (const key of OBSERVED_METRIC_KEYS) {
+    const sum = (args.observed ?? []).reduce((s, p) => s + num(p?.[key]), 0);
+    if (sum !== 0) out[key] = sum;
+  }
+  for (const key of CANONICAL_METRIC_KEYS) {
+    const v = num(args.canonical?.[key]);
+    if (v !== 0) out[key] = v;
   }
   return out;
 }

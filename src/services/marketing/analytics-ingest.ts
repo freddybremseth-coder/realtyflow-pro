@@ -6,7 +6,7 @@
  * Bak DI (byggetrygg generisk klient).
  */
 
-import { mergeMetrics, normalizeChannelMetrics } from "@/lib/marketing/analytics";
+import { combineMetrics, normalizeChannelMetrics } from "@/lib/marketing/analytics";
 import type { ContentGenome, MarketingChannel } from "@/lib/marketing/genome";
 import type { MarketingEventType } from "@/lib/marketing/events";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
@@ -27,7 +27,9 @@ export interface IngestChannelMetricsInput {
 
 export async function ingestChannelMetrics(supabase: MarketingSupabaseLike, input: IngestChannelMetricsInput) {
   const platform = normalizeChannelMetrics(input.channel, input.rawMetrics);
-  const metrics = mergeMetrics(platform, input.businessMetrics ?? undefined);
+  // Ownership: plattform-metrics er observed; attribution-metrics er canonical
+  // (vinner ved overlap) — hindrer dobbelttelling.
+  const metrics = combineMetrics({ observed: [platform], canonical: input.businessMetrics ?? undefined });
   const store = makeMarketingStore(supabase);
   return store.recordEvent({
     eventType: input.eventType ?? "content_viewed",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeMetrics, normalizeChannelMetrics, normalizeInstagram, normalizeWebsite, normalizeYoutube } from "@/lib/marketing/analytics";
+import { combineMetrics, mergeMetrics, normalizeChannelMetrics, normalizeInstagram, normalizeWebsite, normalizeYoutube } from "@/lib/marketing/analytics";
 import { businessValueScore } from "@/lib/marketing/value-score";
 
 test("instagram: saved→saves, website_clicks→clicks, plays→views", () => {
@@ -18,11 +18,21 @@ test("youtube: views + engagedViews + cardClicks→clicks", () => {
   assert.equal(m.clicks, 60);
 });
 
-test("website: form_submissions→leads", () => {
+test("website: form_submissions blir IKKE canonical leads (eies av CRM)", () => {
   const m = normalizeWebsite({ pageviews: 900, cta_clicks: 40, form_submissions: 7 });
   assert.equal(m.views, 900);
   assert.equal(m.clicks, 40);
-  assert.equal(m.leads, 7);
+  assert.equal(m.leads, undefined); // ingen dobbelttelling — CRM eier leads
+});
+
+test("combineMetrics: canonical CRM-leads vinner, ikke summert med nettside-skjema", () => {
+  const website = { views: 900, clicks: 40 };
+  const canonical = { leads: 3, sales: 1, commissionEur: 12000 };
+  const c = combineMetrics({ observed: [website], canonical });
+  assert.equal(c.views, 900);
+  assert.equal(c.leads, 3); // ikke 3 + (nettside-skjema) = 6
+  assert.equal(c.sales, 1);
+  assert.equal(c.commissionEur, 12000);
 });
 
 test("dispatcher velger riktig kanal; ukjent → generic", () => {
