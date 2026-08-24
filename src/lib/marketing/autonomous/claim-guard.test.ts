@@ -10,11 +10,13 @@ import {
 } from "@/lib/marketing/autonomous";
 import type { GeneratedAsset } from "@/lib/marketing/autonomous";
 
-// Captionen som eksponerte gapet: kvalitativ/komparativ utfallspåstand uten tall.
+// Captionen som eksponerte det første gapet: kvalitativ/komparativ utfallspåstand uten tall.
 const ENERGY_CLAIM =
   "Disse boligene bidrar til lavere energikostnader og gir deg norsk oppfølging. Book gratis boligsamtale.";
 const CLEAN_QUALITATIVE =
   "Drømmer du om et hjem i solen? Energieffektive boliger på Costa Blanca med norsk oppfølging hele veien. Book gratis boligsamtale.";
+const CANARY_ABSOLUTE_TREND =
+  "Forestill deg sol året rundt. Flere nordmenn ser i dag mot Costa Blanca. Ingen skjulte overraskelser, ingen språkbarrierer.";
 
 function assetWith(body: string, extra: Partial<GeneratedAsset> = {}): GeneratedAsset {
   return {
@@ -39,12 +41,32 @@ test("findOutcomeClaims: fanger «lavere energikostnader» (kvalitativ, ingen ta
   assert.deepEqual(findOutcomeClaims("Energieffektive boliger med norsk oppfølging."), []);
 });
 
+test("findOutcomeClaims: fanger trend- og absolutte canary-påstander", () => {
+  assert.deepEqual(findOutcomeClaims(CANARY_ABSOLUTE_TREND), [
+    "more Norwegians looking to Costa Blanca",
+    "sun year-round",
+    "no hidden surprises",
+    "no language barriers",
+  ]);
+});
+
 test("unsupportedOutcomeClaims: factSources=[] → udekket; matchende kilde → dekket", () => {
   assert.deepEqual(unsupportedOutcomeClaims(ENERGY_CLAIM, []), ["lavere energikostnader"]);
   const sourced = unsupportedOutcomeClaims(ENERGY_CLAIM, [
     { claim: "lavere energikostnader dokumentert i energisertifikat (A)", source: "energisertifikat" },
   ]);
   assert.deepEqual(sourced, []);
+});
+
+test("unsupportedOutcomeClaims: trendpåstand krever uavhengig trendkilde", () => {
+  const caption = "Flere nordmenn ser i dag mot Costa Blanca.";
+  assert.deepEqual(unsupportedOutcomeClaims(caption, []), ["more Norwegians looking to Costa Blanca"]);
+  assert.deepEqual(
+    unsupportedOutcomeClaims(caption, [
+      { claim: "Flere nordmenn ser mot Costa Blanca ifølge dokumentert markedsanalyse", source: "market-report" },
+    ]),
+    [],
+  );
 });
 
 test("findOwnershipClaims: «våre boliger» treffer, formidler-formulering treffer ikke", () => {
@@ -60,7 +82,7 @@ test("brandSupportsOwnership: default (rådgiver) = false; ownsInventory=true = 
   assert.equal(brandSupportsOwnership(developer), true);
 });
 
-// ── Quality-gate: utfallspåstand ─────────────────────────────────────────
+// ── Quality-gate: utfall/trend/absoluttpåstander ──────────────────────────
 test("gate: generert «lavere energikostnader» uten kilde → claimsVerified=false, score<100, CLAIM_NOT_VERIFIED", () => {
   const r = contentQualityGate(assetWith(ENERGY_CLAIM));
   assert.equal(r.checks.claimsVerified, false);
@@ -80,10 +102,28 @@ test("gate: samme påstand MED uavhengig factSource → claimsVerified=true (til
   assert.ok(!r.reasons.some((x) => x.startsWith("CLAIM_NOT_VERIFIED")));
 });
 
+test("gate: AI-canary med sol/trend/ingen-overraskelser/språkbarrierer → blokkbar og score<100", () => {
+  const r = contentQualityGate(assetWith(CANARY_ABSOLUTE_TREND));
+  assert.equal(r.checks.claimsVerified, false);
+  assert.deepEqual(r.unsupportedOutcomeClaims, [
+    "more Norwegians looking to Costa Blanca",
+    "sun year-round",
+    "no hidden surprises",
+    "no language barriers",
+  ]);
+  assert.ok(r.score < 100, `score var ${r.score}`);
+  assert.ok(r.reasons.some((x) => x.startsWith("CLAIM_NOT_VERIFIED")));
+});
+
 test("gate: «energieffektive boliger» (trygg posisjonering) → claimsVerified=true", () => {
   const r = contentQualityGate(assetWith(CLEAN_QUALITATIVE));
   assert.equal(r.checks.claimsVerified, true);
   assert.equal(r.checks.roleConsistent, true);
+});
+
+test("gate: trygg klimaspråk uten absolutt løfte passerer claim-gaten", () => {
+  const r = contentQualityGate(assetWith("Drømmer du om et hjem i solen på Costa Blanca? Vi hjelper deg gjennom kjøpsprosessen. Book gratis boligsamtale."));
+  assert.equal(r.checks.claimsVerified, true);
 });
 
 test("gate: «lavere energikostnader» støttet KUN av Brand Brain → fortsatt blokkert", () => {
