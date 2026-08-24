@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { OWNED_GROWTH_BRAND_IDS, growthBrandDefinition, isPilotChannel } from "@/lib/marketing/brand-registry";
+import type { MarketingChannel } from "@/lib/marketing/genome";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,9 @@ type ReadinessRow = {
   accountName: string | null;
   connected: boolean;
   brandBrainReady: boolean;
+  planned: boolean;
   pilotReady: boolean;
+  pilotBlockReason: string | null;
   published: number;
   measuredEligible: number;
   quarantined: number;
@@ -21,6 +24,17 @@ type ReadinessRow = {
   liveLearning: boolean;
   status: "LIVE_LEARNING" | "PILOT_READY" | "BRAND_BRAIN_READY" | "CONNECTED" | "NOT_READY";
 };
+
+function blocker(params: { connected: boolean; brandBrainReady: boolean; planned: boolean; pilotReady: boolean; platform: string | null }) {
+  if (params.pilotReady) return null;
+  if (!params.connected) return "Konto er ikke koblet.";
+  if (!params.brandBrainReady) return "Brand Brain mangler.";
+  if (!params.planned) return "Kanalen er koblet, men er ikke del av Growth OS-utvidelsesplanen.";
+  if (params.platform === "youtube" || params.platform === "linkedin") {
+    return "Kanal koblet og planlagt, men brand-scopet write-governance + approval-publisher er ikke pilotklar ennå.";
+  }
+  return "Kanalen er ikke godkjent som Growth OS-pilot ennå.";
+}
 
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
@@ -51,7 +65,9 @@ export async function GET(request: NextRequest) {
     const actionableRules = (rules ?? []).filter((r: any) => String(r.scope) === brandId && ["favor", "avoid"].includes(String(r.verdict))).length;
     const connected = true;
     const brandBrainReady = Boolean(brandContext);
+    const planned = Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
     const pilotReady = connected && brandBrainReady && isPilotChannel(brandId, platform);
+    const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform });
     const liveLearning = pilotReady && eligible >= 10 && actionableRules > 0;
 
     return {
@@ -62,7 +78,9 @@ export async function GET(request: NextRequest) {
       accountName: channel.display_name ?? null,
       connected,
       brandBrainReady,
+      planned,
       pilotReady,
+      pilotBlockReason,
       published,
       measuredEligible: eligible,
       quarantined,
@@ -76,15 +94,21 @@ export async function GET(request: NextRequest) {
     if (rows.some((r) => r.brandId === brandId)) continue;
     const context = contextByBrand.get(brandId);
     const definition = growthBrandDefinition(brandId);
+    const connected = false;
+    const brandBrainReady = Boolean(context);
+    const planned = Boolean(definition?.plannedChannels.length);
+    const pilotReady = false;
     rows.push({
       brandId,
       brandName: (context as any)?.brand_name ?? definition?.name ?? brandId,
       platform: null,
       accountId: null,
       accountName: null,
-      connected: false,
-      brandBrainReady: Boolean(context),
-      pilotReady: false,
+      connected,
+      brandBrainReady,
+      planned,
+      pilotReady,
+      pilotBlockReason: blocker({ connected, brandBrainReady, planned, pilotReady, platform: null }),
       published: 0,
       measuredEligible: 0,
       quarantined: 0,
