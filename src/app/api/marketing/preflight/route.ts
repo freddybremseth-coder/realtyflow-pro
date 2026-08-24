@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { preflightLiveCampaign, type PreflightInput } from "@/services/marketing/preflight-live-campaign";
+import {
+  deriveSpecificLocationFromDescription,
+  deriveSpecificLocationFromTitle,
+  isBroadInventoryRegion,
+} from "@/services/marketing/inventory-property-adapter";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +52,47 @@ export async function POST(request: NextRequest) {
       propertyId: body.propertyId,
     },
   );
+
+  // Fail closed for live Inventory-grounded property posts when the selected row
+  // only knows a broad region. Concrete town/area is part of the customer-facing
+  // property fact set and must be resolved before draft/hash/approval.
+  if (
+    body.mode === "live" &&
+    body.aiMode &&
+    body.useInventoryProperty &&
+    result.inventoryProperty?.id
+  ) {
+    const { data: property } = await supabase
+      .from("properties")
+      .select("id, ref, location, title, title_no, description, description_no")
+      .eq("id", result.inventoryProperty.id)
+      .maybeSingle();
+
+    if (property) {
+      const rawLocation = String(property.location ?? "").trim();
+      const derivedLocation = isBroadInventoryRegion(rawLocation)
+        ? deriveSpecificLocationFromTitle(property.title_no || property.title)
+          || deriveSpecificLocationFromDescription(property.description_no || property.description)
+        : rawLocation;
+
+      const locationOk = !!derivedLocation && !isBroadInventoryRegion(derivedLocation);
+      result.checks.push({
+        name: "property_location",
+        critical: true,
+        status: locationOk ? "ok" : "fail",
+        detail: locationOk
+          ? `konkret sted verifisert: ${derivedLocation}`
+          : `INVENTORY_PROPERTY_LOCATION_TOO_BROAD: ${rawLocation || "mangler"} — konkret by/område må være verifisert før live property-post`,
+      });
+
+      if (!locationOk) {
+        result.criticalFailures.push(
+          `property_location: konkret by/område mangler for ${property.ref ?? property.id}`,
+        );
+        result.status = "NOT_READY";
+      }
+    }
+  }
 
   return NextResponse.json(result);
 }
