@@ -70,11 +70,16 @@ const OWNERSHIP_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "our villas", re: /\bour\s+villas?\b/i },
   { label: "our apartments", re: /\bour\s+apartments?\b/i },
   { label: "our developments", re: /\bour\s+developments?\b/i },
+  { label: "our projects", re: /\bour\s+(?:residential\s+|new[- ]?build\s+)?projects?\b/i },
+  { label: "our complexes", re: /\bour\s+(?:residential\s+)?complex(?:es)?\b/i },
   { label: "våre boliger", re: /(?:^|[^a-zæøå])vår[et]?\s+bolig(?:er|en|ene)?(?![a-zæøå])/i },
   { label: "våre villaer", re: /(?:^|[^a-zæøå])vår[et]?\s+villa(?:er|en|ene)?(?![a-zæøå])/i },
   { label: "våre eiendommer", re: /(?:^|[^a-zæøå])vår[et]?\s+eiendom(?:mer|men|mene)?(?![a-zæøå])/i },
   { label: "våre leiligheter", re: /(?:^|[^a-zæøå])vår[et]?\s+leilighet(?:er|en|ene)?(?![a-zæøå])/i },
   { label: "våre prosjekter", re: /(?:^|[^a-zæøå])vår[et]?\s+prosjekt(?:er|et|ene)?(?![a-zæøå])/i },
+  { label: "våre boligprosjekter", re: /(?:^|[^a-zæøå])vår[et]?\s+(?:nybygg)?boligprosjekt(?:er|et|ene)?(?![a-zæøå])/i },
+  { label: "våre boligkomplekser", re: /(?:^|[^a-zæøå])vår[et]?\s+boligkompleks(?:er|et|ene)?(?![a-zæøå])/i },
+  { label: "våre komplekser", re: /(?:^|[^a-zæøå])vår[et]?\s+kompleks(?:er|et|ene)?(?![a-zæøå])/i },
 ];
 
 export function findOwnershipClaims(text: string | null | undefined): string[] {
