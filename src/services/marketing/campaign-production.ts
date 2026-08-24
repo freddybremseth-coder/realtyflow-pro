@@ -43,10 +43,25 @@ function normalizedCta(value: string | null | undefined): string {
     .trim();
 }
 
+function hasSemanticBookingCta(value: string): boolean {
+  const n = normalizedCta(value);
+  if (!n) return false;
+  const hasBookingVerb = /\b(book|bestill|avtal|kontakt|ta kontakt)\b/.test(n);
+  const hasConversation = /\b(boligsamtale|samtale|rådgivning|visning)\b/.test(n);
+  const hasFree = /\b(gratis|uforpliktende)\b/.test(n);
+  return hasBookingVerb && hasConversation && hasFree;
+}
+
 /**
  * Creative Generator may naturally end body-copy with the same CTA that is also
- * stored in the dedicated `cta` field. Remove that trailing paragraph BEFORE
- * persist/hash/approval so preview and Meta payload are identical and deduped.
+ * stored in the dedicated `cta` field. Canonicalize BEFORE persist/hash/approval.
+ *
+ * Strategy:
+ * 1) exact/near-exact trailing CTA paragraph -> remove that paragraph, keep cta field.
+ * 2) natural closing sentence already contains the same booking intent
+ *    (e.g. "book en gratis boligsamtale med oss i dag") -> keep the natural body
+ *    and remove the dedicated cta field. This prevents duplicate customer-facing
+ *    CTA even when wording is not text-identical.
  */
 function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   const cta = String(creative.asset.cta ?? "").trim();
@@ -59,17 +74,36 @@ function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   let last = paragraphs.length - 1;
   while (last >= 0 && !paragraphs[last].trim()) last -= 1;
   if (last < 0) return creative;
-  const lastNorm = normalizedCta(paragraphs[last]);
-  if (!lastNorm.includes(target) || paragraphs[last].trim().length > 220) return creative;
 
-  paragraphs.splice(last, 1);
-  return {
-    ...creative,
-    asset: {
-      ...creative.asset,
-      body: paragraphs.join("\n\n").trim(),
-    },
-  };
+  const lastParagraph = paragraphs[last].trim();
+  const lastNorm = normalizedCta(lastParagraph);
+
+  // Exact/near-exact duplicate as its own short paragraph.
+  if (lastNorm.includes(target) && lastParagraph.length <= 220) {
+    paragraphs.splice(last, 1);
+    return {
+      ...creative,
+      asset: {
+        ...creative.asset,
+        body: paragraphs.join("\n\n").trim(),
+      },
+    };
+  }
+
+  // Semantic duplicate: body already ends with a natural booking CTA. Keep the
+  // richer sentence and suppress the mechanical dedicated CTA line.
+  const tail = body.slice(-420);
+  if (hasSemanticBookingCta(cta) && hasSemanticBookingCta(tail)) {
+    return {
+      ...creative,
+      asset: {
+        ...creative.asset,
+        cta: undefined,
+      },
+    };
+  }
+
+  return creative;
 }
 
 export interface CreateCampaignDraftInput {
@@ -134,8 +168,6 @@ export async function createCampaignDraft(
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
 
-  // Property-driven AI resolves inventory BEFORE planning/generation. This is the
-  // authoritative source for media + facts + propertyIds. Legacy remains untouched.
   const inventoryProperty = !input.legacyPublicationId && input.useInventoryProperty
     ? await resolveInventoryMarketingProperty(supabase, { brandId: input.brandId, propertyId: input.propertyId ?? null })
     : null;
@@ -213,8 +245,6 @@ export async function createCampaignDraft(
         sourceId = candidate.contentId;
         reuseMode = "reuse_exact";
       } else if (inventoryProperty) {
-        // Property-driven mode: force fresh AI copy grounded in inventory. Do NOT
-        // let Content Resolver substitute unrelated existing content.
         creative = await generator.generate({
           brief,
           brand,
@@ -273,7 +303,6 @@ export async function createCampaignDraft(
       continue;
     }
 
-    // Canonicalize customer-facing payload BEFORE persistence/hash/approval.
     creative = dedupeCreativeCta(creative);
     await persistAsset(supabase, creative).catch(() => undefined);
 
