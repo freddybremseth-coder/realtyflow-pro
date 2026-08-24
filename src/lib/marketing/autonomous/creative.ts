@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.2";
+export const CREATIVE_PROMPT_VERSION = "cg-1.3";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -73,6 +73,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     `Sensitive tall (pris, skatt, rente, markedsstatistikk) MÅ ha kilde. Uten kilde: ikke oppgi tallet.`,
     `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
     `Hvis en factSource bare oppgir en energimerking (for eksempel «Energimerking: B»), gjengi KUN selve energimerkingen. Ikke utled eller skriv at boligen derfor er «moderne», «energieffektiv», har «lavt energiforbruk», «lavere kostnader» eller lignende med mindre akkurat den egenskapen også står eksplisitt i en factSource.`,
+    `Leverandør-/Inventory-beskrivelser kan inneholde markedsføringsspråk. Ikke gjør subjektive superlativer, rangeringer eller popularitetsord til nye fakta. Ikke omskriv «et av de beste områdene» til «et av de mest populære områdene», «mest attraktive», «mest ettertraktede», «best beliggende» eller lignende uten en egen uavhengig factSource. Foretrekk nøkterne formuleringer om sted, boligtype, utsikt, fasiliteter og dokumenterte egenskaper.`,
     `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
     `Unngå absolutte ord som «alltid», «aldri», «ingen», «garantert» når de beskriver et resultat, marked, klima eller tjenesteløfte. Absolutter er bare tillatt når de er eksplisitt støttet av en verifiserbar factSource.`,
     (req.brand as { ownsInventory?: boolean }).ownsInventory
