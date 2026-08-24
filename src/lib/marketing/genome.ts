@@ -38,6 +38,9 @@ export type ContentGoal = (typeof CONTENT_GOALS)[number];
 /** Fritekst-slug: trimmet, lowercase, mellomrom→_. For area/topic/audience osv. */
 export const slug = z.string().trim().min(1).max(80).transform((v) => v.toLowerCase().replace(/\s+/g, "_"));
 
+/** Hashtag uten #, lowercase, deduplisert. */
+const tagSlug = z.string().trim().min(1).max(80).transform((v) => v.replace(/^#+/, "").toLowerCase());
+
 export const ContentGenomeSchema = z.object({
   brandId: z.string().trim().min(1),
   channel: z.enum(MARKETING_CHANNELS),
@@ -56,6 +59,8 @@ export const ContentGenomeSchema = z.object({
   priceBand: slug.optional(),
   creativeStyle: slug.optional(),
   campaign: slug.optional(),
+  /** Faktiske hashtags som ble publisert. Learning Engine lærer per enkelt tag. */
+  tags: z.array(tagSlug).max(30).transform((values) => Array.from(new Set(values))).optional(),
   // Koblinger + proveniens
   propertyId: z.string().trim().optional(),
   agentVersion: z.string().trim().optional(),
@@ -70,7 +75,8 @@ export function parseGenome(input: unknown): { ok: true; genome: ContentGenome }
 }
 
 /** Stabil signatur av de læringsbærende dimensjonene — grupperingsnøkkel for
- *  «hvilken kombinasjon virker». F.eks. instagram|reel|price_first|villa|no|finestrat */
+ *  «hvilken kombinasjon virker». Tags analyseres separat per tag og inngår ikke
+ *  i signaturen, ellers ville små variasjoner i hashtag-sett fragmentert data. */
 export function genomeSignature(g: ContentGenome): string {
   return [g.channel, g.format, g.hookType ?? "?", g.propertyType ?? "?", g.language ?? "?", g.area ?? "?"].join("|");
 }
