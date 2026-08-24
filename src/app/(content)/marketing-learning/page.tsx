@@ -16,7 +16,13 @@ type Status = {
   brandId: string;
   channel: string;
   publishedCount: number;
+  maturePublishedCount: number;
+  immaturePublishedCount: number;
+  maturityHours: number;
+  measuredCount: number;
   observations: number;
+  quarantinedCount: number;
+  quarantineReasons: Record<string, number>;
   learningThreshold: number;
   learningActive: boolean;
   remainingUntilLearning: number;
@@ -61,7 +67,7 @@ export default function MarketingLearningPage() {
         body: JSON.stringify({ brandId: "zeneco" }),
       });
       setStatus(result.status);
-      setSyncMessage(`Synkronisert ${result.sync?.synced ?? 0} poster · ${result.sync?.observations ?? 0} målte observasjoner.`);
+      setSyncMessage(`Synkronisert ${result.sync?.synced ?? 0} poster · ${result.status?.observations ?? 0} learning-eligible observasjoner.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -75,8 +81,14 @@ export default function MarketingLearningPage() {
     return out;
   }, [status]);
 
+  const quarantineSummary = useMemo(() => {
+    return Object.entries(status?.quarantineReasons ?? {})
+      .map(([reason, count]) => `${reason}: ${count}`)
+      .join(" · ");
+  }, [status]);
+
   const dims = [
-    ["tags", "Hashtags / tags"],
+    ["tag", "Hashtags / tags"],
     ["area", "Steder"],
     ["propertyType", "Boligtyper"],
     ["priceBand", "Prisnivå"],
@@ -85,11 +97,11 @@ export default function MarketingLearningPage() {
   ] as const;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 26 }}>Marketing Growth OS — Learning</h1>
-          <p style={{ margin: "6px 0 0", color: "#6b7280" }}>Zen Eco Homes · Instagram · metrics → genome → læringsregler</p>
+          <p style={{ margin: "6px 0 0", color: "#6b7280" }}>Zen Eco Homes · Instagram · metrics → datakvalitet → genome → læringsregler</p>
         </div>
         <button onClick={sync} disabled={busy} style={{ border: 0, borderRadius: 9, padding: "10px 14px", fontWeight: 700, background: "#111827", color: "white", cursor: busy ? "wait" : "pointer" }}>
           {busy ? "Synkroniserer…" : "Sync Instagram metrics now"}
@@ -99,20 +111,40 @@ export default function MarketingLearningPage() {
       {error && <div style={{ marginTop: 14, padding: 12, borderRadius: 9, background: "#fef2f2", color: "#b91c1c" }}>⛔ {error}</div>}
       {syncMessage && <div style={{ marginTop: 14, padding: 12, borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>✅ {syncMessage}</div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginTop: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginTop: 18 }}>
         <div style={box}><div style={label}>Publiserte poster</div><div style={value}>{status?.publishedCount ?? "—"}</div></div>
-        <div style={box}><div style={label}>Målte poster</div><div style={value}>{status?.observations ?? "—"}</div></div>
-        <div style={box}><div style={label}>Learning threshold</div><div style={value}>{status?.learningThreshold ?? 10}</div></div>
+        <div style={box}>
+          <div style={label}>24t modne</div>
+          <div style={value}>{status?.maturePublishedCount ?? "—"}</div>
+          {status && <div style={{ fontSize: 12, color: "#6b7280" }}>{status.immaturePublishedCount} venter på {status.maturityHours}t</div>}
+        </div>
+        <div style={box}><div style={label}>Målte totalt</div><div style={value}>{status?.measuredCount ?? "—"}</div></div>
+        <div style={box}>
+          <div style={label}>Learning-eligible</div>
+          <div style={value}>{status?.observations ?? "—"}</div>
+          {status && <div style={{ fontSize: 12, color: "#6b7280" }}>av {status.learningThreshold} nødvendig</div>}
+        </div>
+        <div style={box}>
+          <div style={label}>Karantene</div>
+          <div style={{ ...value, color: status?.quarantinedCount ? "#dc2626" : "#16a34a" }}>{status?.quarantinedCount ?? "—"}</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>måles, men lærer ikke</div>
+        </div>
         <div style={box}>
           <div style={label}>Learning Engine</div>
           <div style={{ ...value, color: status?.learningActive ? "#16a34a" : "#d97706" }}>{status?.learningActive ? "ACTIVE" : "COLLECTING"}</div>
-          {!status?.learningActive && status && <div style={{ fontSize: 12, color: "#6b7280" }}>{status.remainingUntilLearning} målte poster igjen</div>}
+          {!status?.learningActive && status && <div style={{ fontSize: 12, color: "#6b7280" }}>{status.remainingUntilLearning} gyldige observasjoner igjen</div>}
         </div>
       </div>
 
       <div style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
-        Siste metrics-snapshot: {status?.lastSnapshotAt ? new Date(status.lastSnapshotAt).toLocaleString() : "ingen ennå"}. Læring aktiveres først når terskelen er nådd; før det brukes ingen tynne signaler til å styre generering.
+        Siste metrics-snapshot: {status?.lastSnapshotAt ? new Date(status.lastSnapshotAt).toLocaleString() : "ingen ennå"}. Metrics hentes først etter {status?.maturityHours ?? 24} timer, og bare learning-eligible snapshots teller mot terskelen.
       </div>
+
+      {!!status?.quarantinedCount && (
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 9, background: "#fff7ed", color: "#9a3412", fontSize: 13 }}>
+          Datakvalitetskarantene: {quarantineSummary || "ukjent årsak"}. Historiske poster beholdes for audit og metrics, men får ikke påvirke Learning Engine.
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 14, marginTop: 20 }}>
         {dims.map(([dim, title]) => {
@@ -125,10 +157,11 @@ export default function MarketingLearningPage() {
                   {rules.slice(0, 10).map((r) => (
                     <div key={`${r.dimension}:${r.value}`} style={{ borderTop: "1px solid #f3f4f6", paddingTop: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <b>{dim === "tags" ? `#${r.value}` : r.value}</b>
+                        <b>{dim === "tag" ? `#${r.value}` : r.value}</b>
                         <span style={{ color: r.verdict === "favor" ? "#16a34a" : r.verdict === "avoid" ? "#dc2626" : "#6b7280", fontWeight: 700 }}>{r.lift?.toFixed?.(2) ?? r.lift}×</span>
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>sample {r.sample} · {r.evidence} · {r.verdict}</div>
+                      {r.finding && <div style={{ fontSize: 12, color: "#374151", marginTop: 3 }}>{r.finding}</div>}
                     </div>
                   ))}
                 </div>
