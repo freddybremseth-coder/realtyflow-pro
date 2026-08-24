@@ -28,17 +28,22 @@ export async function submitLeadForm(
   const occurredAt = inquiry.receivedAt;
   const contactId = submission.contact.email ?? submission.contact.phone ?? submission.visitorId ?? inquiry.externalId;
 
-  // 1) Attribution: form_submit bærer content/campaign; lead_created bærer kontakt.
+  // 1) Attribution: brand er eksplisitt tenancy boundary; form_submit bærer
+  // content/campaign, lead_created bærer samme kontakt. Ingen cross-brand gjetting.
   let touchpointsRecorded = 0;
   try {
     await recordTouchpoint(supabase, {
-      touchType: "form_submit", occurredAt, contentId: submission.contentId, campaignId: submission.campaignId,
-      channel: submission.channel ?? null, visitorId: submission.visitorId ?? null, contactId,
-      metadata: { publicationId: submission.publicationId ?? null, formId: submission.formId },
+      brandId: submission.brandId,
+      touchType: "form_submit", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
+      campaignId: submission.campaignId, channel: submission.channel ?? null,
+      visitorId: submission.visitorId ?? null, contactId,
+      metadata: { formId: submission.formId },
     });
     await recordTouchpoint(supabase, {
-      touchType: "lead_created", occurredAt, contentId: submission.contentId, campaignId: submission.campaignId,
-      channel: submission.channel ?? null, visitorId: submission.visitorId ?? null, contactId,
+      brandId: submission.brandId,
+      touchType: "lead_created", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
+      campaignId: submission.campaignId, channel: submission.channel ?? null,
+      visitorId: submission.visitorId ?? null, contactId,
       metadata: { source: "marketing_lead_form" },
     });
     touchpointsRecorded = 2;
