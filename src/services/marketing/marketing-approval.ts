@@ -8,6 +8,40 @@ import { operationIdempotencyKey } from "@/lib/agentic";
 import { makeApprovalStore, type SupabaseLike } from "@/services/agentic/adapters";
 import type { RequestApprovalInput } from "@/services/tools/crm/request-approval";
 
+/**
+ * Phase 7.1I — agent-run-BRO. agentic_approvals.run_id har FK → agent_runs.id,
+ * men en Marketing Growth OS-run lever i marketing_runs. Vi lager derfor ÉN
+ * kanonisk agent_runs-konvolutt per marketing-run FØR noen approval kan opprettes.
+ *
+ * agent_runs.id er text → vi bruker BEVISST samme ID (agentRunId = marketingRunId):
+ * broen og marketing-runen deler ID og correlation. marketing_publications peker
+ * fortsatt til marketing_runs; agentic_approvals peker til agent_runs (broen).
+ * Idempotent (onConflict id). Fail closed hvis persisteringen feiler.
+ */
+export async function ensureMarketingAgentRun(
+  supabase: SupabaseLike,
+  args: { marketingRunId: string; correlationId: string; now?: string | Date },
+): Promise<{ agentRunId: string }> {
+  const agentRunId = args.marketingRunId;
+  const nowIso = new Date(args.now ?? new Date()).toISOString();
+  const { error } = await supabase.from("agent_runs").upsert(
+    {
+      id: agentRunId,
+      agent_id: "marketing-growth-os",
+      goal: "campaign/publish approval orchestration",
+      status: "running",
+      correlation_id: args.correlationId,
+      idempotency_key: operationIdempotencyKey(args.marketingRunId, "agent-run-bridge"),
+      decision: { marketing_run_id: args.marketingRunId, bridge: "marketing-growth-os" },
+      started_at: nowIso,
+      updated_at: nowIso,
+    },
+    { onConflict: "id" },
+  );
+  if (error) throw new Error(`AGENT_RUN_BRIDGE_FAILED: ${error.message}`);
+  return { agentRunId };
+}
+
 export interface MarketingApprovalRequest {
   publicationId: string;
   contentId: string;

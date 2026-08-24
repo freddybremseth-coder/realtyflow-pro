@@ -21,7 +21,7 @@ import {
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from "@/services/marketing/creative-generator";
-import { makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
+import { ensureMarketingAgentRun, makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
 import { makeGraphApi, makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
 import { runApprovedPublication } from "@/services/marketing/publish-executor";
 import { resolveMarketingContent, type ResolverSourceMap } from "@/services/marketing/content-resolver-adapter";
@@ -125,6 +125,10 @@ export async function createCampaignDraft(
     directorInput as any,
     { level: "copilot" },
   );
+
+  // Agent-run-BRO: sikre ÉN agent_runs-konvolutt (id == run-ID) FØR approval —
+  // agentic_approvals.run_id har FK → agent_runs.id. Fail closed (ingen catch).
+  await ensureMarketingAgentRun(supabase as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId });
 
   const orchestratorDeps: OrchestratorDeps = {
     supabase,

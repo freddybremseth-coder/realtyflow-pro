@@ -14,21 +14,29 @@ import { approvedAssetHash, type GeneratedAsset } from "@/lib/marketing/autonomo
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 /** Kapabel in-memory Supabase-fake (select/insert/update/upsert + filtre). */
-function makeDb(opts: { fk?: boolean; failRunPersist?: boolean } = {}) {
+function makeDb(opts: { fk?: boolean; failRunPersist?: boolean; failBridge?: boolean } = {}) {
   const tables: Record<string, any[]> = {};
   const tbl = (n: string) => (tables[n] ??= []);
-  // FK-simulering: en publikasjon MÅ referere en eksisterende marketing_runs-rad.
-  const fkViolation = (name: string, r: any) =>
-    opts.fk && name === "marketing_publications" && r?.marketing_run_id &&
-    !(tables["marketing_runs"] ?? []).some((x) => x.marketing_run_id === r.marketing_run_id);
+  // FK-simulering: publikasjon → marketing_runs, OG approval → agent_runs (broen).
+  const fkViolation = (name: string, r: any) => {
+    if (!opts.fk) return false;
+    if (name === "marketing_publications" && r?.marketing_run_id) {
+      return !(tables["marketing_runs"] ?? []).some((x) => x.marketing_run_id === r.marketing_run_id);
+    }
+    if (name === "agentic_approvals" && r?.run_id) {
+      return !(tables["agent_runs"] ?? []).some((x) => x.id === r.run_id);
+    }
+    return false;
+  };
   function make(name: string) {
     const q: any = { op: null, payload: null, conflict: null, filters: [] };
     const match = (r: any) => q.filters.every(([c, v]: [string, unknown]) => r[c] === v);
     const fkError = () => {
       const rows = Array.isArray(q.payload) ? q.payload : [q.payload];
       const bad = rows.find((r: any) => fkViolation(name, r));
-      if (bad) return { data: null, error: { message: `insert or update on table "marketing_publications" violates foreign key constraint (marketing_run_id=${bad.marketing_run_id})`, code: "23503" } };
+      if (bad) return { data: null, error: { message: `insert or update on table "${name}" violates foreign key constraint`, code: "23503" } };
       if (opts.failRunPersist && name === "marketing_runs") return { data: null, error: { message: "simulated marketing_runs persist failure", code: "XX000" } };
+      if (opts.failBridge && name === "agent_runs") return { data: null, error: { message: "simulated agent_runs bridge persist failure", code: "XX000" } };
       return null;
     };
     const applyInsert = () => {
@@ -203,10 +211,49 @@ test("PRODUKSJONS-INTEGRITET (FK): én kanonisk run; publikasjon-FK == returnert
   // campaign/content-IDer bærer samme kanoniske run-ID.
   assert.ok(draft.campaignId.includes(canonical), "campaignId skal inneholde run-ID");
   assert.ok(draft.results[0].contentId.includes(canonical), "contentId skal inneholde run-ID");
-  // requestApproval fikk samme kanoniske correlation-ID.
-  assert.equal(db.tables["agentic_approvals"][0].correlation_id, draft.correlationId);
+  // Agent-run-BRO: nøyaktig én, id == run-ID.
+  assert.equal(db.tables["agent_runs"].length, 1);
+  assert.equal(db.tables["agent_runs"][0].id, canonical);
+  assert.equal(db.tables["agent_runs"][0].agent_id, "marketing-growth-os");
+  // approval.run_id refererer en EKSISTERENDE agent_runs-rad (ellers ville FK-en kastet).
+  const appr = db.tables["agentic_approvals"][0];
+  assert.equal(appr.run_id, canonical);
+  assert.ok(db.tables["agent_runs"].some((r: any) => r.id === appr.run_id));
+  // Correlation-ID identisk på tvers av marketing_run, agent_run og approval.
+  assert.equal(db.tables["marketing_runs"][0].correlation_id, draft.correlationId);
+  assert.equal(db.tables["agent_runs"][0].correlation_id, draft.correlationId);
+  assert.equal(appr.correlation_id, draft.correlationId);
   // Legacy-stien produserer fortsatt riktig kilde.
   assert.equal(draft.results[0].source, "legacy_content_publication");
+});
+
+test("agent-run-bro: persist-feil → INGEN approval (fail closed)", async () => {
+  const db = makeDb({ failBridge: true });
+  seedBrand(db);
+  db.tables["content_publications"] = [{ id: "pub1", brand_id: "b1", status: "scheduled", description: "Villa. Book visning.", ai_image_url: "https://x/i.jpg", scheduled_platforms: ["instagram"] }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+  await assert.rejects(
+    () => createCampaignDraft(db, { brandId: "b1", channel: "instagram", legacyPublicationId: "pub1", publishingAccountId: "IG1", goal: { kind: "leads", target: 5 }, masterIdea: "canary" }),
+    /AGENT_RUN_BRIDGE_FAILED/,
+  );
+  assert.ok(!db.tables["agentic_approvals"] || db.tables["agentic_approvals"].length === 0);
+  assert.ok(!db.tables["marketing_publications"] || db.tables["marketing_publications"].length === 0);
+});
+
+test("agent-run-bro: idempotent — gjentatt ensure gir ingen duplikat", async () => {
+  const { ensureMarketingAgentRun } = await import("@/services/marketing/marketing-approval");
+  const db = makeDb();
+  await ensureMarketingAgentRun(db, { marketingRunId: "mrun_x", correlationId: "rf_x" });
+  await ensureMarketingAgentRun(db, { marketingRunId: "mrun_x", correlationId: "rf_x" });
+  assert.equal(db.tables["agent_runs"].length, 1);
+  assert.equal(db.tables["agent_runs"][0].id, "mrun_x");
+});
+
+test("FK-fake avviser approval UTEN bro (beviser at broen faktisk kreves)", async () => {
+  const { makeMarketingApprovalRequester } = await import("@/services/marketing/marketing-approval");
+  const db = makeDb({ fk: true }); // ingen agent_runs seedet → ingen bro
+  const requester = makeMarketingApprovalRequester(db, { runId: "mrun_nobridge", correlationId: "rf_x" });
+  await assert.rejects(() => requester({ publicationId: "pub1", contentId: "c1", channel: "instagram", reason: "x" }), /foreign key/i);
 });
 
 test("run-persistering feiler → INGEN publikasjon (fail closed, FK-en bevares)", async () => {
