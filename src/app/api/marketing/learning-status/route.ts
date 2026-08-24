@@ -22,7 +22,7 @@ function nextMetricsCronAt(nowMs: number): Date {
 async function readStatus(brandId = "zeneco") {
   const supabase = supabaseAdmin();
 
-  const [{ data: snapshots }, { data: rules }, { data: published }] = await Promise.all([
+  const [{ data: snapshots }, { data: rules }, { data: published }, { data: touchpoints }] = await Promise.all([
     supabase
       .from("marketing_events")
       .select("content_id, occurred_at, metadata")
@@ -43,6 +43,11 @@ async function readStatus(brandId = "zeneco") {
       .eq("brand_id", brandId)
       .eq("channel", "instagram")
       .eq("state", "published"),
+    supabase
+      .from("marketing_touchpoints")
+      .select("contact_id, content_id, touch_type, commission_eur, occurred_at")
+      .eq("brand_id", brandId)
+      .eq("channel", "instagram"),
   ]);
 
   const snapshotRows = snapshots ?? [];
@@ -81,6 +86,32 @@ async function readStatus(brandId = "zeneco") {
       .filter(Boolean),
   ).size;
 
+  const businessRows = touchpoints ?? [];
+  const distinctContacts = (touchType: string) => new Set(
+    businessRows
+      .filter((r: any) => r.touch_type === touchType)
+      .map((r: any) => String(r.contact_id ?? ""))
+      .filter(Boolean),
+  ).size;
+  const saleRows = businessRows.filter((r: any) => r.touch_type === "sale");
+  const commissionEur = saleRows.reduce((sum: number, row: any) => {
+    const n = Number(row.commission_eur);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+  const businessFunnel = {
+    leads: distinctContacts("lead_created"),
+    qualified: distinctContacts("qualified"),
+    viewings: distinctContacts("viewing"),
+    offers: distinctContacts("offer"),
+    sales: saleRows.length,
+    commissionEur,
+    lastBusinessTouchAt: businessRows
+      .map((r: any) => r.occurred_at)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null,
+  };
+
   const learningThreshold = 10;
 
   return {
@@ -109,6 +140,7 @@ async function readStatus(brandId = "zeneco") {
       acc[reason] = (acc[reason] || 0) + 1;
       return acc;
     }, {}),
+    businessFunnel,
     rules: rules ?? [],
   };
 }
