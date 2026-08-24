@@ -76,6 +76,7 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   const supabase = deps.supabase;
   const checks: PreflightCheck[] = [];
   const add = (name: string, critical: boolean, status: CheckStatus, detail: string) => checks.push({ name, critical, status, detail });
+  const liveMode = input.mode === "live";
 
   // 1) Kill switch må være PÅ (ellers publiserer ingenting).
   add("kill_switch", true, deps.env.autopilotEnabled ? "ok" : "fail", deps.env.autopilotEnabled ? "MARKETING_AUTOPILOT_ENABLED på" : "Kill switch AV — ingen publisering mulig");
@@ -137,19 +138,25 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
     add("publishing_account", true, "fail", e instanceof Error ? e.message : "konto kunne ikke resolves");
   }
 
-  // 7) Media: public HTTPS-URL. Kritisk for IG KUN i item-modus; i AI-modus
-  // legges bilde til i campaign-draft (eller dry-run) → non-kritisk her.
+  // 7) Media: public HTTPS-URL. Instagram krever alltid media for ekte live-post,
+  // også i AI-modus. Dry-run kan fortsatt generere caption uten media.
   const mediaUrl = input.mediaUrl ?? itemMediaUrl;
   const igNeedsMedia = input.channel === "instagram";
   const mediaOk = isHttps(mediaUrl);
-  add("media_url", igNeedsMedia && hasItem, mediaOk ? "ok" : (igNeedsMedia && hasItem ? "fail" : "warn"),
-    mediaOk ? `media OK (${mediaUrl})` : (mediaUrl ? "MEDIA_ASSET_INVALID: ikke public HTTPS-URL" : hasItem ? "MEDIA_ASSET_MISSING: ingen media-URL" : "AI-modus: bilde legges til i campaign-draft (eller dry-run)"));
+  const mediaCritical = igNeedsMedia && (hasItem || liveMode);
+  add("media_url", mediaCritical, mediaOk ? "ok" : (mediaCritical ? "fail" : "warn"),
+    mediaOk
+      ? `media OK (${mediaUrl})`
+      : mediaUrl
+        ? "MEDIA_ASSET_INVALID: ikke public HTTPS-URL"
+        : mediaCritical
+          ? "MEDIA_ASSET_MISSING: live Instagram krever public HTTPS image/video URL"
+          : "AI dry-run: media kan utelates");
 
   // 8) Approval-tjeneste koblet (fail closed hvis ikke).
   add("approval_service", true, deps.approvalConfigured ? "ok" : "fail", deps.approvalConfigured ? "General Approval Gateway koblet" : "APPROVAL_SERVICE_UNAVAILABLE");
 
   // 9) Meta-credentials. I live-modus KRITISK (ekte post); i dry_run kun warn.
-  const liveMode = input.mode === "live";
   const metaReady = deps.env.metaLive && !!deps.env.metaToken && (!!deps.env.igUserId || !!deps.env.pageId);
   add("meta_credentials", liveMode, metaReady ? "ok" : (liveMode ? "fail" : "warn"),
     metaReady ? "MARKETING_META_LIVE + token + konto satt"
@@ -174,7 +181,7 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   const criticalFailures = checks.filter((c) => c.critical && c.status === "fail").map((c) => `${c.name}: ${c.detail}`);
   return {
     status: criticalFailures.length === 0 ? "READY_FOR_LIVE" : "NOT_READY",
-    mode: input.mode === "live" ? "live" : "dry_run",
+    mode: liveMode ? "live" : "dry_run",
     checks,
     criticalFailures,
     assetHash,
