@@ -14,7 +14,7 @@ export interface GrowthBrandDefinition {
   kind: "real_estate" | "food_agriculture" | "saas" | "personal" | "creator_media";
   /** Channels that can currently use the controlled Growth OS pilot path. */
   pilotChannels: MarketingChannel[];
-  /** Connected channels can exist without being pilot-ready. */
+  /** Connected/planned channels that are not necessarily pilot-ready yet. */
   plannedChannels: MarketingChannel[];
   contentPillars?: readonly string[];
   notes?: string;
@@ -28,8 +28,9 @@ export interface GrowthBrandDefinition {
  *   one of his owned brands and must never inherit autonomous Growth OS rules.
  * - Legacy/internal identifiers such as `neuralbeat` are intentionally NOT
  *   canonical brand IDs. Re-Master Freddy is `remasterfreddy`.
- * - A channel being connected does not make it pilot-ready. YouTube remains
- *   planned-only until write governance is brand-scoped and approval-gated.
+ * - A channel being connected does not make it pilot-ready. YouTube and
+ *   LinkedIn remain planned-only until write governance is brand-scoped and
+ *   approval-gated through the Growth OS publication lifecycle.
  */
 export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
   {
@@ -71,13 +72,13 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     name: "Freddy Bremseth",
     kind: "personal",
     pilotChannels: [],
-    plannedChannels: ["youtube"],
+    plannedChannels: ["linkedin", "youtube"],
     contentPillars: [
       "author_and_books",
       "spain_and_property_advisory",
       "analysis_knowledge_and_entrepreneurship",
     ],
-    notes: "One primary content pillar per post/video. YouTube connected but not yet Growth OS pilot-ready.",
+    notes: "One primary content pillar per post/video. LinkedIn and YouTube are connected/planned but not yet Growth OS pilot-ready.",
   },
   {
     id: "remasterfreddy",
