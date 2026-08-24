@@ -40,6 +40,29 @@ test("normal eiendoms-caption → PUBLISHABLE", () => {
   assert.equal(r.result, "PUBLISHABLE");
 });
 
+test("REGRESJON: uverifisert lenke i bio/profil blokkeres deterministisk", () => {
+  for (const s of [
+    "Book en gratis boligsamtale med oss i dag – lenk finner du i profilen vår.",
+    "Book i dag — lenke i bio.",
+    "Klikk på lenken i profilen for mer informasjon.",
+    "Link in bio for details.",
+    "Click the link in our profile for more information.",
+  ]) {
+    const r = contentPublishabilityGate(s);
+    assert.equal(r.publishable, false, `slapp gjennom: ${s}`);
+    assert.equal(r.result, "NOT_PUBLISHABLE_UNVERIFIED_LINK_CLAIM");
+  }
+});
+
+test("vanlig CTA uten bio-påstand forblir PUBLISHABLE", () => {
+  for (const s of [
+    "Book en gratis boligsamtale med oss i dag.",
+    "Kontakt oss for mer informasjon om boligen.",
+  ]) {
+    assert.equal(contentPublishabilityGate(s).publishable, true, `blokkerte feilaktig: ${s}`);
+  }
+});
+
 // ── FALSKE POSITIVE: korte markører må ikke treffe inne i vanlige ord ────────
 test("legitime ord med 'llm' som delstreng forblir PUBLISHABLE", () => {
   for (const s of [
