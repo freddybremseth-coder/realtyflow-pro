@@ -2,32 +2,26 @@
  * Phase 7.1B (hardened) — MetaPublisher for Instagram + Facebook.
  *
  * Modellerer Meta-plattformenes VIRKELIGE publiseringslivssyklus:
- *   Instagram: /media (container) → [poll status for video/reel] → /media_publish
+ *   Instagram: /media (container) → poll status → /media_publish
  *              → verifisert media-ID. `posted` settes FØRST etter media_publish.
  *   Facebook:  /feed (tekst/lenke) eller /photos (bilde), single-step.
  *
  * Ekstern idempotens via attempt-ledger (state machine):
  *   reserved → container_created → processing → publishing → posted
  *   (feil → failed; uavklart publish → manual_review).
- * På retry gjenopptas fra state — aldri ny container/post blindt; uavklart
- * publish avstemmes (reconcile) før ev. PUBLISH_UNCONFIRMED. Vi stoler IKKE på
- * en Graph-idempotency-parameter; ledgeren + reconciliation er mekanismen.
- * Uten live-credentials: dry-run (default). På COPILOT nås dette kun ETTER
- * godkjenning.
+ * På retry gjenopptas fra state — aldri ny container/post blindt.
  */
 
 import type { ChannelPublisher, PublishContext } from "@/services/marketing/autonomous-orchestrator";
 import type { GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
-/** DI-søm mot Meta Graph API — hver plattformoperasjon som egen metode. */
 export interface MetaGraph {
   createIgContainer(igUserId: string, p: { imageUrl?: string; videoUrl?: string; caption?: string; mediaType?: string; altText?: string }): Promise<{ id: string }>;
-  getContainerStatus(containerId: string): Promise<{ status: string }>; // FINISHED | IN_PROGRESS | ERROR
+  getContainerStatus(containerId: string): Promise<{ status: string }>;
   publishIgMedia(igUserId: string, creationId: string): Promise<{ id: string }>;
   createFbPost(pageId: string, p: { message: string; link?: string }): Promise<{ id: string }>;
   createFbPhoto(pageId: string, p: { url: string; caption?: string }): Promise<{ id: string }>;
-  /** Avstem et uavklart publish (finn allerede-publisert media for nøkkelen). */
   reconcile?(idempotencyKey: string): Promise<{ externalId: string } | null>;
 }
 
@@ -48,6 +42,8 @@ function caption(asset: GeneratedAsset): string {
   return [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n\n");
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
   const supabase = cfg.supabase;
   const live = !!cfg.live && metaCredentialsPresent(cfg);
@@ -61,11 +57,21 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     await supabase.from("marketing_publish_attempts").upsert({ idempotency_key: key, ...base, ...patch, updated_at: nowIso() }, { onConflict: "idempotency_key" });
   };
 
+  async function waitForContainerReady(graph: MetaGraph, containerId: string, attempts = 6): Promise<"FINISHED" | "PROCESSING"> {
+    for (let i = 0; i < attempts; i += 1) {
+      const st = await graph.getContainerStatus(containerId);
+      if (st.status === "ERROR") throw new Error("IG_CONTAINER_ERROR: media-container feilet prosessering");
+      if (st.status === "FINISHED") return "FINISHED";
+      if (i < attempts - 1) await sleep(1200);
+    }
+    return "PROCESSING";
+  }
+
   async function publishInstagram(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     const media = asset.media ?? {};
     if (!media.imageUrl && !media.videoUrl) throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
 
-    // Uavklart publish fra forrige forsøk → avstem, ikke re-publiser.
+    // Uavklart publish fra forrige forsøk → avstem, ikke re-publiser blindt.
     if (attempt?.status === "publishing") {
       const found = graph.reconcile ? await graph.reconcile(key) : null;
       if (found?.externalId) {
@@ -82,31 +88,30 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       await writeAttempt(key, base, { status: "reserved" });
       const c = await graph.createIgContainer(target, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset), mediaType: media.mediaType, altText: media.altText });
       containerId = c.id;
-      await writeAttempt(key, base, { status: "container_created", container_id: containerId });
+      await writeAttempt(key, base, { status: "container_created", container_id: containerId, error: null });
     }
 
-    // Video/Reel må være ferdig prosessert før publisering.
-    const isVideo = media.mediaType === "video" || media.mediaType === "reel" || (!media.imageUrl && !!media.videoUrl);
-    if (isVideo) {
-      const st = await graph.getContainerStatus(containerId);
-      if (st.status === "ERROR") {
-        await writeAttempt(key, base, { status: "failed", error: "container ERROR" });
-        throw new Error("IG_CONTAINER_ERROR: media-container feilet prosessering");
-      }
-      if (st.status !== "FINISHED") {
-        await writeAttempt(key, base, { status: "processing" });
-        throw new Error("IG_CONTAINER_PROCESSING: container ikke ferdig prosessert — prøv igjen (gjenopptar fra container)");
-      }
+    // Meta kan prosessere OGSÅ bilde-containere asynkront. Derfor må alle IG-
+    // containere være FINISHED før media_publish. Dette lukker sporadiske 400-feil
+    // der et bilde ble forsøkt publisert umiddelbart etter /media.
+    let ready: "FINISHED" | "PROCESSING";
+    try {
+      ready = await waitForContainerReady(graph, containerId);
+    } catch (err) {
+      await writeAttempt(key, base, { status: "failed", container_id: containerId, error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+    if (ready !== "FINISHED") {
+      await writeAttempt(key, base, { status: "processing", container_id: containerId, error: null });
+      throw new Error("IG_CONTAINER_PROCESSING: container ikke ferdig prosessert — prøv igjen (gjenopptar fra samme container)");
     }
 
-    // Publiser containeren.
-    await writeAttempt(key, base, { status: "publishing", container_id: containerId });
+    await writeAttempt(key, base, { status: "publishing", container_id: containerId, error: null });
     try {
       const pub = await graph.publishIgMedia(target, containerId);
-      await writeAttempt(key, base, { status: "posted", external_id: pub.id, external_media_id: pub.id });
+      await writeAttempt(key, base, { status: "posted", external_id: pub.id, external_media_id: pub.id, error: null });
       return { state: "published", externalId: pub.id };
     } catch (err) {
-      // La status stå "publishing" så neste retry avstemmer (unngår dobbel-post).
       await writeAttempt(key, base, { error: err instanceof Error ? err.message : String(err) });
       throw err;
     }
@@ -120,7 +125,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
         return { state: "published", externalId: found.externalId };
       }
       await writeAttempt(key, base, { status: "manual_review" });
-      throw new Error("PUBLISH_UNCONFIRMED: publish uavklart, avstemming fant ingen post — manuell sjekk kreves.");
+      throw new Error("PUBLISH_UNCONFIRMED: forsøket er uavklart, avstemming fant ingen post — manuell sjekk kreves.");
     }
     const media = asset.media ?? {};
     await writeAttempt(key, base, { status: "publishing" });
@@ -146,7 +151,6 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       };
       const attempt = await loadAttempt(key);
 
-      // Allerede publisert → idempotent retur, ingen ny post.
       if (attempt?.status === "posted" && (attempt.external_media_id || attempt.external_id)) {
         return { state: "published", externalId: String(attempt.external_media_id ?? attempt.external_id), dryRun: !!attempt.dry_run };
       }
@@ -154,7 +158,6 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
         throw new Error("PUBLISH_UNCONFIRMED: forsøket er flagget for manuell gjennomgang.");
       }
 
-      // Dry-run (default uten live-credentials): fullfør sløyfen uten ekte posting.
       if (!live) {
         const externalId = `dryrun:${key}`;
         await writeAttempt(key, base, { status: "posted", external_id: externalId, external_media_id: externalId, dry_run: true, created_at: nowIso() });
@@ -162,7 +165,6 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       }
 
       const graph = cfg.graph!;
-      // Eksplisitt konto (P0): fra PublishContext, ellers cfg-fallback. Aldri «velg selv».
       const target = opts.accountId ?? (asset.channel === "facebook" ? cfg.pageId : cfg.igUserId);
       if (!target) throw new Error(`ACCOUNT_NOT_FOUND: mangler eksplisitt ${asset.channel === "facebook" ? "Facebook-side" : "Instagram-konto"}`);
       return asset.channel === "facebook"
@@ -172,7 +174,6 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
   };
 }
 
-/** Ekte Graph API-klient (fetch). Bygges av composition root når credentials finnes. */
 export function makeGraphApi(token: string, apiVersion = "v21.0"): MetaGraph {
   const base = `https://graph.facebook.com/${apiVersion}`;
   const post = async (path: string, body: Record<string, unknown>) => {
