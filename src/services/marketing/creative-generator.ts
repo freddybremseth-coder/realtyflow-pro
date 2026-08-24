@@ -16,15 +16,48 @@ import {
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 /** DI-søm for tekstgenerering — standard: RealtyFlows askClaude. */
-export type GenerateText = (prompt: string, opts?: { systemPrompt?: string; temperature?: number; maxTokens?: number; responseMimeType?: "application/json"; model?: "haiku" | "sonnet" }) => Promise<string>;
+export type GenerateText = (prompt: string, opts?: {
+  systemPrompt?: string; temperature?: number; maxTokens?: number;
+  responseMimeType?: "application/json"; model?: "haiku" | "sonnet";
+  responseSchema?: Record<string, unknown>; validateResponse?: (text: string) => boolean; fallbackOnInvalidResponse?: boolean;
+}) => Promise<string>;
 
 /** Strengt output-schema. Modellen MÅ returnere gyldig JSON med publishable=true. */
 const CreativeOutputSchema = z.object({
-  headline: z.string().optional(),
+  headline: z.string().nullable().optional(),
   body: z.string().min(1),
-  cta: z.string().optional(),
+  cta: z.string().nullable().optional(),
   publishable: z.boolean(),
 });
+
+/**
+ * JSON Schema for provider-native structured output (Anthropic output_config /
+ * Gemini responseSchema). headline/cta nullable (Anthropic strict-modus liker
+ * ikke rene optional-felt); body + publishable påkrevd.
+ */
+export const CREATIVE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: ["string", "null"] },
+    body: { type: "string" },
+    cta: { type: ["string", "null"] },
+    publishable: { type: "boolean" },
+  },
+  required: ["body", "publishable"],
+  additionalProperties: false,
+} as const;
+
+/** validateResponse for provider-laget: sant kun hvis teksten er gyldig CreativeOutput. */
+export function validateCreativeOutput(text: string): boolean {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return false;
+  try {
+    const parsed = JSON.parse(match[0]);
+    return CreativeOutputSchema.safeParse(parsed).success;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Streng parsing — INGEN raw-text fallback. Et ikke-JSON / ufullstendig svar blir
@@ -45,14 +78,20 @@ function strictParse(text: string): { headline?: string; body: string; cta?: str
   // Siste forsvar: intern/meta-tekst er aldri publiserbart.
   const gate = contentPublishabilityGate([r.data.headline, r.data.body, r.data.cta].filter(Boolean).join("\n"));
   if (!gate.publishable) throw new Error(`CREATIVE_OUTPUT_INVALID: ${gate.result} (${gate.reason})`);
-  return { headline: r.data.headline, body: r.data.body, cta: r.data.cta };
+  return { headline: r.data.headline ?? undefined, body: r.data.body, cta: r.data.cta ?? undefined };
 }
 
 export function makeCreativeGenerator(generateText: GenerateText, opts: { model?: "haiku" | "sonnet"; costPerCallEur?: number } = {}): CreativeGenerator {
   return {
     async generate(req: CreativeRequest): Promise<CreativeResult> {
       const { system, user } = buildCreativePrompt(req);
-      const raw = await generateText(user, { systemPrompt: system, responseMimeType: "application/json", temperature: 0.7, model: opts.model ?? "sonnet" });
+      // Native structured output (Anthropic output_config / Gemini responseSchema)
+      // + provider-validering (validateResponse). strictParse er siste port.
+      const raw = await generateText(user, {
+        systemPrompt: system, responseMimeType: "application/json", temperature: 0.7, model: opts.model ?? "sonnet",
+        responseSchema: CREATIVE_JSON_SCHEMA as unknown as Record<string, unknown>,
+        validateResponse: validateCreativeOutput, fallbackOnInvalidResponse: true,
+      });
       const output = strictParse(raw); // kaster CREATIVE_OUTPUT_INVALID ved feil — aldri raw fallback
       return assembleAsset(req, output, { model: opts.model ?? "sonnet", costEur: opts.costPerCallEur ?? 0 });
     },

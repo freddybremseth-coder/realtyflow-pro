@@ -122,6 +122,31 @@ async function askOpenAI(
  *
  * Falls back transparently when credits run out or API errors occur.
  */
+/**
+ * Bygg Anthropic messages.create-params. Når responseMimeType='application/json'
+ * og et schema er oppgitt, brukes Anthropic Structured Outputs
+ * (output_config.format.type='json_schema') så modellen tvinges til gyldig JSON —
+ * ikke prosa. Ren funksjon (testbar uten live-klient).
+ */
+export function buildAnthropicMessageParams(
+  model: string,
+  prompt: string,
+  options?: { temperature?: number; maxTokens?: number; systemPrompt?: string; responseMimeType?: 'application/json'; responseSchema?: unknown },
+): Record<string, unknown> {
+  const supportsTemperature = model.startsWith('claude-haiku-4-5');
+  const params: Record<string, unknown> = {
+    model,
+    max_tokens: options?.maxTokens ?? 1000,
+    ...(supportsTemperature ? { temperature: options?.temperature ?? 0.7 } : {}),
+    ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
+    messages: [{ role: 'user', content: prompt }],
+  };
+  if (options?.responseMimeType === 'application/json' && options?.responseSchema) {
+    params.output_config = { format: { type: 'json_schema', schema: options.responseSchema } };
+  }
+  return params;
+}
+
 export async function askClaude(
   prompt: string,
   options?: {
@@ -129,7 +154,7 @@ export async function askClaude(
     maxTokens?: number;
     systemPrompt?: string;
     responseMimeType?: 'application/json';
-    responseSchema?: ResponseSchema;
+    responseSchema?: ResponseSchema | Record<string, unknown>;
     validateResponse?: (text: string) => boolean;
     fallbackOnInvalidResponse?: boolean;
     model?: 'haiku' | 'sonnet';
@@ -157,21 +182,13 @@ export async function askClaude(
     const model = options?.model === 'sonnet'
       ? 'claude-sonnet-5'
       : 'claude-haiku-4-5-20251001';
-    // temperature er avviklet for Sonnet 5 (og nyere modeller) — send den kun
-    // for modeller som fortsatt støtter den, ellers gir API-et 400.
-    const supportsTemperature = model.startsWith('claude-haiku-4-5');
+    // temperature-håndtering (Sonnet 5 støtter den ikke) ligger i buildAnthropicMessageParams.
     const maxAttempts = 4;
     let lastErr: any = null;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
         const claude = getClient();
-        const response = await claude.messages.create({
-          model,
-          max_tokens: options?.maxTokens ?? 1000,
-          ...(supportsTemperature ? { temperature: options?.temperature ?? 0.7 } : {}),
-          ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        });
+        const response = await claude.messages.create(buildAnthropicMessageParams(model, prompt, options) as any);
         const textBlock = response.content.find((b) => b.type === 'text');
         const accepted = acceptGeneratedText(
           'Anthropic',
@@ -229,7 +246,7 @@ export async function askClaude(
   if (process.env.GEMINI_API_KEY) {
     try {
       console.log('[AI Fallback] Using Gemini');
-      const text = await askGemini(prompt, options);
+      const text = await askGemini(prompt, options as any);
       const accepted = acceptGeneratedText('Gemini', text, !!process.env.OPENAI_API_KEY);
       if (accepted !== null) return accepted;
     } catch (err: any) {
@@ -241,7 +258,7 @@ export async function askClaude(
   if (process.env.OPENAI_API_KEY) {
     try {
       console.log('[AI Fallback] Using OpenAI');
-      const text = await askOpenAI(prompt, options);
+      const text = await askOpenAI(prompt, options as any);
       const accepted = acceptGeneratedText('OpenAI', text, false);
       if (accepted !== null) return accepted;
     } catch (err: any) {

@@ -10,7 +10,7 @@ import {
   type ContentBrief,
   type CreativeRequest,
 } from "@/lib/marketing/autonomous";
-import { makeCreativeGenerator } from "@/services/marketing/creative-generator";
+import { makeCreativeGenerator, validateCreativeOutput } from "@/services/marketing/creative-generator";
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 const g = (over: Partial<ContentGenome>): ContentGenome => ({ brandId: "b1", channel: "instagram", format: "reel", ...over });
@@ -75,6 +75,24 @@ test("publishable=false fra modellen → CREATIVE_OUTPUT_INVALID", async () => {
 test("gyldig JSON men meta-tekst i body → CREATIVE_OUTPUT_INVALID (publishability)", async () => {
   const gen = makeCreativeGenerator(async () => JSON.stringify({ body: "Jeg genererer denne posten via Marketing Agent.", publishable: true }));
   await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
+});
+
+test("manglende body → CREATIVE_OUTPUT_INVALID", async () => {
+  const gen = makeCreativeGenerator(async () => JSON.stringify({ headline: "Villa", publishable: true }));
+  await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
+});
+
+test("headline/cta null (nullable) med gyldig body → parses", async () => {
+  const gen = makeCreativeGenerator(async () => JSON.stringify({ headline: null, body: "Moderne villa i Calpe med havutsikt. Book visning.", cta: null, publishable: true }));
+  const res = await gen.generate({ brief, brand });
+  assert.match(res.asset.body ?? "", /Calpe/);
+});
+
+test("validateCreativeOutput: gyldig CreativeOutput → true; prosa/manglende body → false", () => {
+  assert.equal(validateCreativeOutput(JSON.stringify({ body: "Fin villa i Calpe.", publishable: true })), true);
+  assert.equal(validateCreativeOutput("Jeg setter opp Marketing Agent for å skrive posten."), false);
+  assert.equal(validateCreativeOutput(JSON.stringify({ publishable: true })), false); // mangler body
+  assert.equal(validateCreativeOutput('{ "body": "x", '), false); // malformed
 });
 
 // ── Lead form ───────────────────────────────────────────────────────────────
