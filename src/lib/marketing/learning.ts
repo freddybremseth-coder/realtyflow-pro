@@ -7,8 +7,6 @@
  * EVIDENCELEVEL basert på utvalgsstørrelse. Content-agentene henter reglene
  * FØR de genererer (recommendGenome), så systemet dobler ned på det som
  * faktisk konverterer — ikke på vanity-metrics.
- *
- * Ren logikk (DI/byggetrygg). Persistens ligger i adapteret.
  */
 
 import type { ContentGenome } from "./genome";
@@ -19,21 +17,13 @@ import {
   type ContentMetrics,
 } from "./value-score";
 
-/** Én observasjon = ett innhold med sin genome + canonical business-metrics. */
 export interface LearningObservation {
   genome: ContentGenome;
-  /** Canonical outcomes (fra attribution), ikke observed vanity-metrics. */
   metrics: ContentMetrics;
   contentId?: string | null;
-  /** Kilde: observasjonell content vs eksperiment-bevis (default observational). */
   source?: "observational" | "experiment";
 }
 
-/**
- * Genome-dimensjonene vi lærer på. Marginal analyse per dimensjon er mer
- * handlingsrettet enn full signatur ("hook=price_first løfter 2.1×" > "hele
- * kombinasjonen X løfter"). Rekkefølge = prioritet i anbefalinger.
- */
 export const LEARNING_DIMENSIONS = [
   "channel",
   "format",
@@ -48,13 +38,14 @@ export const LEARNING_DIMENSIONS = [
   "audience",
   "creativeStyle",
   "language",
+  /** Each published hashtag is evaluated individually. */
+  "tag",
 ] as const;
 export type LearningDimension = (typeof LEARNING_DIMENSIONS)[number];
 
 export type LearningVerdict = "favor" | "avoid" | "neutral";
 
 export interface LearningRule {
-  /** Stabil nøkkel: scope|dimension|value — idempotent upsert. */
   ruleKey: string;
   scope: string;
   dimension: LearningDimension;
@@ -66,22 +57,14 @@ export interface LearningRule {
   totalQualified: number;
   totalSales: number;
   totalCommissionEur: number;
-  /** avgBusinessValue for gruppen / baseline (1.0 = som snittet). */
   lift: number;
   evidence: ReturnType<typeof evidenceLevel>;
   verdict: LearningVerdict;
   finding: string;
-  /** Bekreftet av en kontrollert A/B-test (høyere troverdighet enn observasjonell). */
   experimentBacked?: boolean;
-  /** Normalisert løft fra eksperimentet (per-observasjon), hvis testet. */
   experimentLift?: number;
 }
 
-/**
- * Eksperiment-bevis om én dimensjon-verdi — matet fra Experiment Engine.
- * IKKE revenue-metrics (unngår dobbelttelling); kun en troverdighets-oppgradering
- * + normalisert løft for den testede dimensjonen.
- */
 export interface ExperimentEvidence {
   scope: string;
   dimension: LearningDimension;
@@ -93,14 +76,22 @@ export interface ExperimentEvidence {
 
 const n = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-/** Verdien av en genome-dimensjon (string), eller undefined. Delt med Experiment Engine. */
+/** Scalar genome dimensions used by the Experiment Engine. `tag` is multi-value
+ * and therefore intentionally returns undefined here; controlled hashtag tests
+ * should pass explicit experiment evidence instead of pretending one tag is the
+ * whole genome value. */
 export function genomeDimensionValue(g: ContentGenome, dim: LearningDimension): string | undefined {
+  if (dim === "tag") return undefined;
   const v = (g as unknown as Record<string, unknown>)[dim];
   return typeof v === "string" && v.trim() ? v : undefined;
 }
-const dimValue = genomeDimensionValue;
 
-/** Baseline = snitt business value per observasjon (samme populasjon reglene måles mot). */
+function dimensionValues(g: ContentGenome, dim: LearningDimension): string[] {
+  if (dim === "tag") return Array.isArray(g.tags) ? Array.from(new Set(g.tags.filter(Boolean))) : [];
+  const value = genomeDimensionValue(g, dim);
+  return value ? [value] : [];
+}
+
 export function baselineBusinessValue(obs: LearningObservation[]): number {
   if (obs.length === 0) return 0;
   const sum = obs.reduce((a, o) => a + businessValueScore(o.metrics), 0);
@@ -109,18 +100,11 @@ export function baselineBusinessValue(obs: LearningObservation[]): number {
 
 export interface DeriveOptions {
   scope?: string;
-  /** Minste utvalg for at en regel skal få verdict favor/avoid (ikke overtilpass). */
   minSample?: number;
   favorLift?: number;
   avoidLift?: number;
 }
 
-/**
- * Utled læringsregler: for hver genome-dimensjon, grupper observasjoner på
- * verdi og mål lift mot baseline. Regler under minSample forblir "neutral"
- * (retningsgivende men ikke handlingsutløsende) — brukerens råd: ikke
- * optimalisér for tidlig.
- */
 export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOptions = {}): LearningRule[] {
   const scope = opts.scope ?? "global";
   const minSample = opts.minSample ?? 5;
@@ -132,9 +116,9 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
   for (const dimension of LEARNING_DIMENSIONS) {
     const groups = new Map<string, LearningObservation[]>();
     for (const o of obs) {
-      const val = dimValue(o.genome, dimension);
-      if (!val) continue;
-      (groups.get(val) ?? groups.set(val, []).get(val)!).push(o);
+      for (const value of dimensionValues(o.genome, dimension)) {
+        (groups.get(value) ?? groups.set(value, []).get(value)!).push(o);
+      }
     }
     for (const [value, group] of groups) {
       const sample = group.length;
@@ -167,7 +151,6 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
       });
     }
   }
-  // Sterkest evidens + høyest lift først.
   const evidenceRank: Record<string, number> = { insufficient: 0, directional: 1, promising: 2, reliable: 3, strong: 4 };
   return rules.sort((a, b) => evidenceRank[b.evidence] - evidenceRank[a.evidence] || b.lift - a.lift);
 }
@@ -182,20 +165,13 @@ function buildFinding(
   sales: number,
 ): string {
   const dir = lift >= 1 ? `${lift.toFixed(2)}× baseline` : `${lift.toFixed(2)}× (under baseline)`;
-  const base = `${dimension}=${value}: ${dir} forretningsverdi over ${sample} innhold (${evidence}${sales ? `, ${sales} salg` : ""})`;
+  const label = dimension === "tag" ? `#${value}` : `${dimension}=${value}`;
+  const base = `${label}: ${dir} forretningsverdi over ${sample} innhold (${evidence}${sales ? `, ${sales} salg` : ""})`;
   if (verdict === "favor") return `✅ Doble ned — ${base}`;
   if (verdict === "avoid") return `⛔ Nedprioritér — ${base}`;
   return `◽ Følg med — ${base}`;
 }
 
-/**
- * Slå eksperiment-bevis inn i regelsettet. Eksperiment-bevis oppgraderer
- * TROVERDIGHET (verdict + experimentBacked-flagg + normalisert løft) for en
- * dimensjon-verdi, men rører ALDRI revenue-totaler — så samme underliggende
- * performance telles aldri to ganger. En kontrollert vinner (reliable+) kan løfte
- * en regel til "favor" selv om den observasjonelle samplen er tynn; en klar taper
- * kan sette "avoid". Returnerer et nytt regelsett.
- */
 export function applyExperimentEvidence(
   rules: LearningRule[],
   evidence: ExperimentEvidence[],
@@ -208,7 +184,6 @@ export function applyExperimentEvidence(
     const ruleKey = `${ev.scope}|${ev.dimension}|${ev.value}`;
     let rule = byKey.get(ruleKey);
     if (!rule) {
-      // Ingen observasjonell regel ennå — opprett en ren eksperiment-regel (uten revenue-totaler).
       rule = {
         ruleKey, scope: ev.scope, dimension: ev.dimension, value: ev.value,
         sample: 0, avgBusinessValue: 0, avgQualifiedLeadRate: 0,
@@ -219,7 +194,6 @@ export function applyExperimentEvidence(
     }
     rule.experimentBacked = true;
     rule.experimentLift = ev.normalizedLift;
-    // Troverdighets-oppgradering basert på det kontrollerte løftet.
     if (ev.normalizedLift >= favorLift) rule.verdict = "favor";
     else if (ev.normalizedLift <= avoidLift) rule.verdict = "avoid";
     rule.finding = `🧪 Eksperiment (${ev.evidence}): ${ev.dimension}=${ev.value} ${ev.normalizedLift.toFixed(2)}× kontroll (per observasjon) — exp ${ev.experimentId}`;
@@ -233,11 +207,6 @@ export interface GenomeRecommendation {
   notes: string[];
 }
 
-/**
- * Det content-agentene kaller FØR generering: gitt læringsreglene (evt. filtrert
- * på kanal), returnér beste verdi per dimensjon + hva som bør unngås. Kun
- * regler med handlingsutløsende verdict teller — ingen gjetting på tynt grunnlag.
- */
 export function recommendGenome(
   rules: LearningRule[],
   filter?: { dimensions?: LearningDimension[] },
@@ -249,7 +218,6 @@ export function recommendGenome(
 
   for (const dim of dims) {
     const inDim = rules.filter((r) => r.dimension === dim);
-    // Eksperiment-bekreftede regler foretrekkes foran rent observasjonelle.
     const favored = inDim
       .filter((r) => r.verdict === "favor")
       .sort((a, b) => Number(!!b.experimentBacked) - Number(!!a.experimentBacked) || b.lift - a.lift)[0];
