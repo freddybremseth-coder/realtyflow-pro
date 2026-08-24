@@ -56,26 +56,26 @@ function sumObserved(rows: ObservedMetricRow[]): ContentMetrics {
 
 export async function refreshLearningRules(
   supabase: MarketingSupabaseLike,
-  opts: { scope?: string; brandId?: string; model?: AttributionModel } = {},
+  opts: { brandId: string; scope?: string; model?: AttributionModel },
 ): Promise<{ rulesWritten: number; observations: number }> {
-  const scope = opts.scope ?? opts.brandId ?? "global";
+  if (!opts.brandId?.trim()) throw new Error("LEARNING_BRAND_REQUIRED: brandId mangler");
+  const scope = opts.scope ?? opts.brandId;
 
-  // 1) Genomes per content.
-  let contentQuery = supabase.from("marketing_content").select("content_id, brand_id, genome");
-  if (opts.brandId) contentQuery = contentQuery.eq("brand_id", opts.brandId);
-  const { data: contentRows } = await contentQuery;
+  // 1) Genomes per content — always brand-scoped.
+  const { data: contentRows } = await supabase
+    .from("marketing_content")
+    .select("content_id, brand_id, genome")
+    .eq("brand_id", opts.brandId);
   const genomes = new Map<string, ContentGenome>();
   for (const r of contentRows ?? []) {
     if (r.content_id && r.genome) genomes.set(String(r.content_id), r.genome as ContentGenome);
   }
 
-  // 2) Observed metrics per content (marketing_events).
-  // Canonical metrics snapshots may be quarantined via metadata.learning_eligible=false
-  // when historical content has a known data-quality conflict. We still retain the
-  // event for measurement/audit, but exclude its channel metrics from learning.
-  let evQuery = supabase.from("marketing_events").select("content_id, metrics, event_type, metadata");
-  if (opts.brandId) evQuery = evQuery.eq("brand_id", opts.brandId);
-  const { data: evRows } = await evQuery;
+  // 2) Observed metrics per content — always brand-scoped.
+  const { data: evRows } = await supabase
+    .from("marketing_events")
+    .select("content_id, metrics, event_type, metadata")
+    .eq("brand_id", opts.brandId);
   const observedByContent = new Map<string, ObservedMetricRow[]>();
   for (const r of evRows ?? []) {
     if (!r.content_id) continue;
@@ -87,10 +87,10 @@ export async function refreshLearningRules(
     });
   }
 
-  // 3) Canonical outcomes per content (attribution — source-of-truth for business).
+  // 3) Canonical outcomes per content — brand-isolated attribution.
   const canonical = await attributeAll(supabase, { model: opts.model ?? "last_touch", brandId: opts.brandId });
 
-  // 4) Par sammen til observasjoner. combineMetrics: canonical vinner (ingen dobbelttelling).
+  // 4) Par sammen til observasjoner. combineMetrics: canonical vinner.
   const observations: LearningObservation[] = [];
   for (const [contentId, genome] of genomes) {
     const observed = sumObserved(observedByContent.get(contentId) ?? []);
@@ -158,8 +158,7 @@ export async function loadLearningRules(supabase: MarketingSupabaseLike, opts: {
 
 /**
  * Det content-agentene kaller FØR generering. Slår eksperiment-bevis inn i
- * de observasjonelle reglene (kontrollerte vinnere foretrekkes, uten å
- * dobbelttelle revenue), og returnerer anbefaling.
+ * de observasjonelle reglene, uten å dobbelttelle revenue.
  */
 export async function recommendForGeneration(supabase: MarketingSupabaseLike, opts: { scope?: string } = {}): Promise<GenomeRecommendation> {
   const [rules, evidence] = await Promise.all([
