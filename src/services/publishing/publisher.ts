@@ -13,6 +13,7 @@ import {
   sanitizeToken,
   TokenError,
 } from "./facebook-token-helper";
+import { contentPublishabilityGate } from "@/lib/marketing/autonomous/publishability";
 
 export interface PublishResult {
   platform: string;
@@ -472,6 +473,20 @@ export async function executePublishForDraft(
 }> {
   const { draftId, platforms, content, brandId, imageUrl, socialChannelIds } = params;
   const supabase = getSupabase();
+
+  // PUBLISHABILITY GATE (P0, defense in depth). Intern agent-/meta-tekst,
+  // placeholders eller tomt innhold sendes ALDRI til en kanal. Denne stien
+  // publiserte tidligere en intern tekst («Jeg setter opp Marketing Agent …»)
+  // til Instagram. Fail closed FØR ethvert Graph-kall — alle plattformer.
+  const pubCheck = contentPublishabilityGate(content);
+  if (!pubCheck.publishable) {
+    const reason = `PUBLISHABILITY_FAILED: ${pubCheck.result} — ${pubCheck.reason}`;
+    await supabase
+      .from("content_publications")
+      .update({ status: "failed", updated_at: new Date().toISOString(), publish_attempts: 1, last_publish_error: reason })
+      .eq("id", draftId);
+    return { results: platforms.map((platform) => ({ platform, success: false, error: reason })), anySuccess: false };
+  }
 
   // Upload base64 image once for all platforms.
   let publicImageUrl: string | undefined;
