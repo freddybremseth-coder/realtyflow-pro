@@ -33,8 +33,8 @@ export interface PublishExecutorConfig {
   supabase: MarketingSupabaseLike;
   publisher: ChannelPublisher;
   now?: () => Date;
-  /** P0: resolve eksplisitt konto for (brand, kanal). Fail-closed hvis satt og finner ingen. */
-  resolveAccount?: (args: { brandId: string; channel: string }) => Promise<{ accountId: string }>;
+  /** P0: resolve eksplisitt konto for (brand, service, kanal). Fail-closed hvis satt og finner ingen/tvetydig. */
+  resolveAccount?: (args: { brandId: string; channel: string; service?: string | null; publishingAccountId?: string | null }) => Promise<{ accountId: string }>;
 }
 
 export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): ActionExecutor {
@@ -58,12 +58,13 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     const quality = contentQualityGate(asset);
     if (quality.requiresApproval) throw new Error(`FACT_NOT_VERIFIED: ${quality.sensitiveClaimsWithoutSource.join(", ")}`);
 
-    // P0: resolve eksplisitt konto. Må matche kontoen godkjenningen ble bundet til.
+    // P0: re-resolve destinasjon. Endret siden godkjenning → APPROVED_ASSET_CHANGED.
+    // BRAND_MISMATCH/ACCOUNT_AMBIGUOUS/ACCOUNT_SCOPE_MISMATCH kastes av resolveren.
     let accountId: string | undefined = pub.account_id ?? undefined;
     if (cfg.resolveAccount) {
       if (!pub.brand_id) throw new Error("BRAND_UNRESOLVED: publikasjon mangler brand_id");
-      const acc = await cfg.resolveAccount({ brandId: pub.brand_id, channel: asset.channel });
-      if (pub.account_id && pub.account_id !== acc.accountId) throw new Error(`BRAND_MISMATCH: konto endret siden godkjenning (${pub.account_id} → ${acc.accountId})`);
+      const acc = await cfg.resolveAccount({ brandId: pub.brand_id, channel: asset.channel, service: pub.service ?? null, publishingAccountId: pub.account_id ?? null });
+      if (pub.account_id && pub.account_id !== acc.accountId) throw new Error(`APPROVED_ASSET_CHANGED: publishing-konto endret siden godkjenning (${pub.account_id} → ${acc.accountId}) — krever ny godkjenning.`);
       accountId = acc.accountId;
     }
 

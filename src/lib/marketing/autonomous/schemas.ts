@@ -92,6 +92,12 @@ export const CampaignPlanSchema = z.object({
   goal: CommercialGoalSchema,
   focus: z.string().optional(),
   channels: z.array(z.enum(MARKETING_CHANNELS)),
+  /** Tjeneste/produkt (førsteklasses routing/lærings-dimensjon). */
+  service: z.string().optional(),
+  market: z.string().optional(),
+  language: z.string().optional(),
+  /** Menneske-valgt publiseringskonto (external_id) — vinner over auto-routing. */
+  publishingAccountId: z.string().optional(),
   /** Master-idé som skal atomiseres til flere kanal-innhold. */
   masterIdea: z.string().min(1),
 });
@@ -109,6 +115,9 @@ export const ContentBriefSchema = z.object({
   genome: ContentGenomeSchema,
   angle: z.string().min(1),
   goal: CommercialGoalSchema,
+  /** Tjeneste + eksplisitt destinasjon settes tidlig (ikke i publisher). */
+  service: z.string().optional(),
+  publishingAccountId: z.string().optional(),
   /** Skal briefen også lage et konverteringslag (landing/lead-form)? */
   wantsLeadCapture: z.boolean().default(false),
   learningNotes: z.array(z.string()).default([]),
@@ -146,6 +155,9 @@ export const PublicationPlanSchema = z.object({
   channel: z.enum(MARKETING_CHANNELS),
   state: z.enum(PUBLICATION_STATES),
   scheduledFor: z.string().nullable().default(null),
+  /** Eksplisitt destinasjon avgjort før publisering (ikke i siste sekund). */
+  service: z.string().nullable().default(null),
+  publishingAccountId: z.string().nullable().default(null),
   /** Idempotens per publisering — ingen dobbel-posting ved retry. */
   idempotencyKey: z.string().min(1),
   approvalId: z.string().nullable().default(null),

@@ -49,6 +49,12 @@ export interface CreateCampaignDraftInput {
   goal: CommercialGoal;
   masterIdea: string;
   focus?: string;
+  /** Førsteklasses routing/lærings-dimensjon. */
+  service?: string;
+  market?: string;
+  language?: string;
+  /** Menneske-valgt konto (external_id) — vinner over auto-routing. */
+  publishingAccountId?: string;
   publishingCapacityPerWeek?: number;
 }
 
@@ -151,8 +157,15 @@ export async function createCampaignDraft(
 
     const d = await dispatchGeneratedAsset(orchestratorDeps, { asset: creative.asset, brief, run, brand, history: [] });
 
-    // 2) Bind godkjenningen til konto + innhold (asset-hash) på publikasjonen.
-    const account = await resolvePublishingAccount(supabase, { brandId: input.brandId, channel: brief.channel }).catch(() => null);
+    // 2) Resolve EKSPLISITT destinasjon (brand→service→market/language→kanal→konto).
+    //    Tvetydighet/feil brand/scope kastes av resolveren og bobler opp (fail-closed).
+    const account = await resolvePublishingAccount(supabase, {
+      brandId: input.brandId, channel: brief.channel, service: input.service ?? null,
+      market: input.market ?? null, language: input.language ?? brief.genome.language ?? null,
+      publishingAccountId: input.publishingAccountId ?? null,
+    }).catch(() => null);
+
+    // 3) Bind godkjenningen til konto + innhold (asset-hash). accountId er del av hashen.
     const hash = approvedAssetHash({
       sourceContentId: sourceId ?? creative.asset.contentId,
       finalCopy: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
@@ -162,6 +175,7 @@ export async function createCampaignDraft(
     });
     await supabase.from("marketing_publications").update({
       brand_id: input.brandId, account_id: account?.accountId ?? null,
+      service: input.service ?? null, publishing_account_id: account?.accountId ?? null,
       source_type: sourceType, source_id: sourceId, reuse_mode: reuseMode, asset_hash: hash,
     }).eq("publication_id", d.publicationId).then(undefined, () => undefined);
 

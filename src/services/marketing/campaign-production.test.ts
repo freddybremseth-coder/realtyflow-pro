@@ -279,10 +279,10 @@ test("executor: endret asset etter godkjenning → ASSET_MODIFIED (fail-closed)"
   assert.match(res.error ?? "", /ASSET_MODIFIED/);
 });
 
-test("executor: konto endret siden godkjenning → BRAND_MISMATCH", async () => {
+test("executor: konto endret siden godkjenning → APPROVED_ASSET_CHANGED", async () => {
   const db = makeDb(); seedPublishable(db);
   const publisher: any = { publish: async () => ({ state: "published", externalId: "x" }) };
   const res = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG_OTHER" }) });
   assert.equal(res.ok, false);
-  assert.match(res.error ?? "", /BRAND_MISMATCH/);
+  assert.match(res.error ?? "", /APPROVED_ASSET_CHANGED/);
 });
