@@ -37,6 +37,7 @@ export interface InventoryMarketingProperty {
 
 const isHttps = (value: unknown): value is string => typeof value === "string" && /^https:\/\//i.test(value);
 const BROAD_REGION_ONLY = /^(?:costa\s+blanca(?:\s+(?:north|south))?(?:\s*-\s*inland)?|costa\s+calida(?:\s*-\s*inland)?|alicante(?:\s+province)?|murcia(?:\s+region)?)$/i;
+const GENERIC_PLACE_ONLY = /^(?:stranden|strand|sjøen|sjø|havet|hav|kysten|kyst|golfbanen|golfbane|golf|beach|sea|coast|golf\s*course|playa|mar|costa|campo\s+de\s+golf)$/i;
 
 export function isBroadInventoryRegion(value: string | null | undefined): boolean {
   const v = String(value ?? "").trim();
@@ -58,7 +59,7 @@ function cleanPlace(value: string | null | undefined): string | null {
     .replace(/\s*\([^)]*(?:provins|province|provincia)[^)]*\)\s*$/i, "")
     .replace(/[,.!?:;]+$/g, "")
     .trim();
-  if (!hit || hit.length < 3 || hit.length > 70 || isBroadInventoryRegion(hit)) return null;
+  if (!hit || hit.length < 3 || hit.length > 70 || isBroadInventoryRegion(hit) || GENERIC_PLACE_ONLY.test(hit)) return null;
   return hit;
 }
 
@@ -66,14 +67,16 @@ function cleanPlace(value: string | null | undefined): string | null {
  * Highest-confidence source after a structured concrete location: the property title.
  * Titles such as "villaer ... ved Polop" describe the subject property, while a
  * description may mention nearby towns ("10 km fra Benidorm ... Altea").
+ * Feed titles are frequently ALL CAPS, so matching is case-insensitive. Generic
+ * nouns such as "på stranden" are rejected by cleanPlace().
  */
 export function deriveSpecificLocationFromTitle(value: unknown): string | null {
   const title = decodeDescription(value).slice(0, 260);
   if (!title) return null;
   const patterns = [
-    /\b(?:ved|i|på)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$)/,
-    /\b(?:in|at)\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$)/,
-    /\b(?:en)\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$)/,
+    /\b(?:ved|i|på)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$|\s+(?:nær|bare)\b)/i,
+    /\b(?:in|at)\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$|\s+(?:near|close)\b)/i,
+    /\b(?:en)\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,2})(?=\s*\(|[,;:!]|$|\s+(?:cerca|junto)\b)/i,
   ];
   for (const pattern of patterns) {
     const hit = cleanPlace(title.match(pattern)?.[1]);
