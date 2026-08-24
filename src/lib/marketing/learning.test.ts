@@ -59,15 +59,25 @@ test("hashtags below five observations stay neutral and insufficient", () => {
   assert.equal(tag.verdict, "neutral");
 });
 
-test("hashtags become actionable only after evidence threshold", () => {
+test("hashtags stay neutral at five observations despite directional evidence", () => {
   const data: LearningObservation[] = [];
-  for (let i = 0; i < 5; i++) data.push(obs({ tags: ["costablanca", "boligdrøm"] }, { sales: 1, qualifiedLeads: 2 }));
+  for (let i = 0; i < 5; i++) data.push(obs({ tags: ["costablanca"] }, { sales: 1, qualifiedLeads: 2 }));
   for (let i = 0; i < 5; i++) data.push(obs({ tags: ["generic"] }, {}));
   const rules = deriveLearningRules(data, { scope: "b1" });
   const costa = rules.find((r) => r.dimension === "tag" && r.value === "costablanca")!;
-  const dream = rules.find((r) => r.dimension === "tag" && r.value === "boligdrøm")!;
   assert.equal(costa.sample, 5);
   assert.notEqual(costa.evidence, "insufficient");
+  assert.equal(costa.verdict, "neutral");
+});
+
+test("hashtags become actionable at ten observations", () => {
+  const data: LearningObservation[] = [];
+  for (let i = 0; i < 10; i++) data.push(obs({ tags: ["costablanca", "boligdrøm"] }, { sales: 1, qualifiedLeads: 2 }));
+  for (let i = 0; i < 10; i++) data.push(obs({ tags: ["generic"] }, {}));
+  const rules = deriveLearningRules(data, { scope: "b1" });
+  const costa = rules.find((r) => r.dimension === "tag" && r.value === "costablanca")!;
+  const dream = rules.find((r) => r.dimension === "tag" && r.value === "boligdrøm")!;
+  assert.equal(costa.sample, 10);
   assert.equal(costa.verdict, "favor");
   assert.equal(dream.verdict, "favor");
 });
