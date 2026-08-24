@@ -201,7 +201,9 @@ async function mirrorRevenueEventToMarketingTouchpoint(
   event: Record<string, any>,
 ): Promise<void> {
   const eventType = event?.event_type as RevenueEventType;
-  const touchType = REVENUE_TO_TOUCH[eventType];
+  const publicLeadRepeat = eventType === "contact_updated" && clean(event?.source_system) === "public_leads";
+  const touchType: "lead_created" | "form_submit" | "viewing" | "offer" | "sale" | undefined =
+    REVENUE_TO_TOUCH[eventType] ?? (publicLeadRepeat ? "form_submit" : undefined);
   const brandId = clean(event?.brand_id);
   const contactId = clean(event?.contact_id);
   if (!touchType || !brandId || !contactId) return;
