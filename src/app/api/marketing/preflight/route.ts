@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     },
     {
       brandId: body.brandId, channel: body.channel, contentHubItemId: body.contentHubItemId,
+      mode: body.mode === "live" ? "live" : "dry_run",
       service: body.service, market: body.market, language: body.language,
       publishingAccountId: body.publishingAccountId, mediaUrl: body.mediaUrl, cta: body.cta,
     },

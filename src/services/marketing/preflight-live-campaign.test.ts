@@ -91,8 +91,22 @@ test("approval-tjeneste ikke koblet → NOT_READY (fail closed)", async () => {
   assert.ok(r.criticalFailures.some((f) => f.startsWith("approval_service")));
 });
 
-test("Meta ikke live → warn, men fortsatt READY (dry-run canary er gyldig)", async () => {
-  const r = await preflightLiveCampaign(deps(greenTables(), { metaLive: false }), input());
+test("dry_run: Meta ikke live → warn, men fortsatt READY (canary er gyldig)", async () => {
+  const r = await preflightLiveCampaign(deps(greenTables(), { metaLive: false }), input({ mode: "dry_run" }));
   assert.equal(r.status, "READY_FOR_LIVE");
+  assert.equal(r.mode, "dry_run");
   assert.ok(r.checks.some((c) => c.name === "meta_credentials" && c.status === "warn"));
+});
+
+test("live: Meta ikke live → NOT_READY (meta_credentials kritisk)", async () => {
+  const r = await preflightLiveCampaign(deps(greenTables(), { metaLive: false }), input({ mode: "live" }));
+  assert.equal(r.status, "NOT_READY");
+  assert.equal(r.mode, "live");
+  assert.ok(r.criticalFailures.some((f) => f.includes("META_CREDENTIALS_MISSING")));
+});
+
+test("live: alle creds satt → READY_FOR_LIVE (meta_credentials kritisk grønn)", async () => {
+  const r = await preflightLiveCampaign(deps(greenTables()), input({ mode: "live" }));
+  assert.equal(r.status, "READY_FOR_LIVE");
+  assert.ok(r.checks.some((c) => c.name === "meta_credentials" && c.critical && c.status === "ok"));
 });

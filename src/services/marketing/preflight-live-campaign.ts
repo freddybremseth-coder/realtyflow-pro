@@ -19,6 +19,11 @@ export interface PreflightInput {
   brandId: string;
   service?: string;
   channel: string;
+  /**
+   * "live" = første ekte post: Meta-credentials blir KRITISK. "dry_run" (default)
+   * = canary uten ekte posting, Meta-creds er kun warn.
+   */
+  mode?: "dry_run" | "live";
   market?: string;
   language?: string;
   /** Menneske-valgt konto (external_id). */
@@ -56,6 +61,7 @@ export interface PreflightCheck {
 
 export interface PreflightResult {
   status: "READY_FOR_LIVE" | "NOT_READY";
+  mode: "dry_run" | "live";
   checks: PreflightCheck[];
   criticalFailures: string[];
   assetHash?: string;
@@ -119,9 +125,13 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   // 8) Approval-tjeneste koblet (fail closed hvis ikke).
   add("approval_service", true, deps.approvalConfigured ? "ok" : "fail", deps.approvalConfigured ? "General Approval Gateway koblet" : "APPROVAL_SERVICE_UNAVAILABLE");
 
-  // 9) Meta-credentials (live) — ellers dry-run (warn, ikke kritisk).
+  // 9) Meta-credentials. I live-modus KRITISK (ekte post); i dry_run kun warn.
+  const liveMode = input.mode === "live";
   const metaReady = deps.env.metaLive && !!deps.env.metaToken && (!!deps.env.igUserId || !!deps.env.pageId);
-  add("meta_credentials", false, metaReady ? "ok" : "warn", metaReady ? "MARKETING_META_LIVE + token + konto satt" : "ikke live — kjører dry-run (sett MARKETING_META_LIVE + META_ACCESS_TOKEN + konto for ekte post)");
+  add("meta_credentials", liveMode, metaReady ? "ok" : (liveMode ? "fail" : "warn"),
+    metaReady ? "MARKETING_META_LIVE + token + konto satt"
+      : liveMode ? "META_CREDENTIALS_MISSING: live-modus krever MARKETING_META_LIVE + META_ACCESS_TOKEN + konto"
+        : "ikke live — kjører dry-run (sett MARKETING_META_LIVE + META_ACCESS_TOKEN + konto for ekte post)");
 
   // 10) Asset-integritet: approved_asset_hash er beregnbar (bindes til konto+innhold+media).
   const canHash = !!account && mediaOk && !!brand;
@@ -140,6 +150,7 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   const criticalFailures = checks.filter((c) => c.critical && c.status === "fail").map((c) => `${c.name}: ${c.detail}`);
   return {
     status: criticalFailures.length === 0 ? "READY_FOR_LIVE" : "NOT_READY",
+    mode: input.mode === "live" ? "live" : "dry_run",
     checks,
     criticalFailures,
     assetHash,
