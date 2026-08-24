@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.1";
+export const CREATIVE_PROMPT_VERSION = "cg-1.2";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -45,9 +45,6 @@ export interface CreativeGenerator {
   generate(req: CreativeRequest): Promise<CreativeResult>;
 }
 
-// Disse beskriver TONEN/STILEN til den ferdige captionen — ikke et
-// produksjonsmanus. `body` er ALLTID kundevendt tekst klar for Meta; et
-// eventuelt reel-/video-manus hører hjemme i "productionScript", aldri i body.
 const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
   reel: "Reel-caption: kort, energisk caption som følger videoen (IKKE scene-for-scene-manus). Eventuelt manus legges i productionScript.",
   short: "Short-caption: kort, fengende caption som følger klippet. Eventuelt manus legges i productionScript.",
@@ -59,11 +56,6 @@ const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
   email: "E-post: personlig åpning, én verdi, tydelig neste steg.",
 };
 
-/**
- * Bygg brand-aware, channel-native prompt. Ren funksjon (testbar). Legger inn
- * learning-anbefalinger, tillatte/forbudte påstander, verifiserbare fakta og
- * krav om at sensitive/absolutte/trendpåstander MÅ ha kilde.
- */
 export function buildCreativePrompt(req: CreativeRequest): { system: string; user: string } {
   const { brief, brand } = req;
   const spec = CHANNEL_SPECS[brief.channel as MarketingChannel];
@@ -80,6 +72,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     brand.forbiddenClaims.length && `FORBUDTE påstander (bruk aldri): ${brand.forbiddenClaims.join("; ")}.`,
     `Sensitive tall (pris, skatt, rente, markedsstatistikk) MÅ ha kilde. Uten kilde: ikke oppgi tallet.`,
     `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
+    `Hvis en factSource bare oppgir en energimerking (for eksempel «Energimerking: B»), gjengi KUN selve energimerkingen. Ikke utled eller skriv at boligen derfor er «moderne», «energieffektiv», har «lavt energiforbruk», «lavere kostnader» eller lignende med mindre akkurat den egenskapen også står eksplisitt i en factSource.`,
     `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
     `Unngå absolutte ord som «alltid», «aldri», «ingen», «garantert» når de beskriver et resultat, marked, klima eller tjenesteløfte. Absolutter er bare tillatt når de er eksplisitt støttet av en verifiserbar factSource.`,
     (req.brand as { ownsInventory?: boolean }).ownsInventory
@@ -106,7 +99,6 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
   return { system, user };
 }
 
-/** Sett sammen et GeneratedAsset + provenance fra modell-output. Ren funksjon. */
 export function assembleAsset(
   req: CreativeRequest,
   output: { headline?: string; body?: string; cta?: string },
