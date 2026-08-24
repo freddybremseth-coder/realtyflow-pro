@@ -39,3 +39,39 @@ test("normal eiendoms-caption → PUBLISHABLE", () => {
   assert.equal(r.publishable, true);
   assert.equal(r.result, "PUBLISHABLE");
 });
+
+// ── FALSKE POSITIVE: korte markører må ikke treffe inne i vanlige ord ────────
+test("legitime ord med 'llm' som delstreng forblir PUBLISHABLE", () => {
+  for (const s of [
+    "Nyd fullmånen over Middelhavet fra terrassen.",
+    "Villmark og natur rett utenfor døren.",
+    "Fullmåne i kveld — magisk stemning på kysten.",
+  ]) {
+    const r = contentPublishabilityGate(s);
+    assert.equal(r.publishable, true, `blokkerte feilaktig: ${s} (${r.result} ${r.matched ?? ""})`);
+  }
+});
+
+test("profesjonell matlaging og annen vanlig kundevendt copy → PUBLISHABLE", () => {
+  for (const s of [
+    "Profesjonell matlaging på det nye kjøkkenet.",
+    "Et promptende salg venter ikke — men denne villaen er verdt å vente på.",
+    "Awesome poster-vegg i stuen? Her er det plass til alt.",
+  ]) {
+    assert.equal(contentPublishabilityGate(s).publishable, true, `blokkerte feilaktig: ${s}`);
+  }
+});
+
+// ── EKTE meta-fraser skal fortsatt blokkeres ────────────────────────────────
+test("ekte agent-/LLM-fraser forblir blokkert", () => {
+  for (const s of [
+    "LLM workflow for content generation.",
+    "Dette er en AI agent som lager innhold.",
+    "Marketing Agent genererer denne posten.",
+    "As an AI, here is your caption.",
+  ]) {
+    const r = contentPublishabilityGate(s);
+    assert.equal(r.publishable, false, `slapp gjennom: ${s}`);
+    assert.ok(r.result.startsWith("NOT_PUBLISHABLE"));
+  }
+});

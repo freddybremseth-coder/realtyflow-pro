@@ -45,22 +45,37 @@ const INTERNAL_OPENERS: RegExp[] = [
   /^\s*(as\s+requested|as\s+an\s+ai|as\s+a\s+language\s+model)\b/i,
 ];
 
-/** Placeholder-/utfyllingsmarkører. */
-const PLACEHOLDER_MARKERS = ["lorem ipsum", "todo", "tbd", "placeholder", "insert ", "xxxx", "{{", "}}"];
+/** Placeholder-ord (ordgrense-matchet) + literaler (trygge som substring). */
+const PLACEHOLDER_WORDS = ["lorem ipsum", "todo", "tbd", "placeholder", "insert"];
+const PLACEHOLDER_LITERALS = ["{{", "}}", "xxxx"];
+
+/**
+ * Ordgrense-matcher en markør, unicode-bevisst (æøå teller som bokstaver). Slik
+ * treffer «llm» aldri inne i «fullmåne»/«villmark», og «prompt» ikke i «promptly».
+ * Bruker negative lookaround i stedet for \b (som er ASCII-only og feiler på æøå).
+ */
+function boundedMarker(marker: string): RegExp {
+  const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![a-zA-ZæøåÆØÅ0-9])${esc}(?![a-zA-ZæøåÆØÅ0-9])`, "i");
+}
+const META_MARKER_RES = META_MARKERS.map((m) => ({ marker: m, re: boundedMarker(m) }));
+const PLACEHOLDER_WORD_RES = PLACEHOLDER_WORDS.map((m) => ({ marker: m, re: boundedMarker(m) }));
 
 export function contentPublishabilityGate(text: string | null | undefined): PublishabilityCheck {
   const raw = (text ?? "").trim();
   if (raw.length === 0) return { result: "NOT_PUBLISHABLE_EMPTY", publishable: false, reason: "Tom tekst." };
   const lower = raw.toLowerCase();
 
-  // Placeholder / ufullstendig.
-  const ph = PLACEHOLDER_MARKERS.find((p) => lower.includes(p));
-  if (ph) return { result: "NOT_PUBLISHABLE_PLACEHOLDER", publishable: false, reason: `Placeholder-tekst («${ph}»).`, matched: ph };
+  // Placeholder / ufullstendig (ordgrense for ord, substring kun for literaler).
+  const phLit = PLACEHOLDER_LITERALS.find((p) => lower.includes(p));
+  if (phLit) return { result: "NOT_PUBLISHABLE_PLACEHOLDER", publishable: false, reason: `Placeholder-tekst («${phLit}»).`, matched: phLit };
+  const phWord = PLACEHOLDER_WORD_RES.find((p) => p.re.test(raw));
+  if (phWord) return { result: "NOT_PUBLISHABLE_PLACEHOLDER", publishable: false, reason: `Placeholder-tekst («${phWord.marker}»).`, matched: phWord.marker };
   if (/^\s*[\[<]/.test(raw)) return { result: "NOT_PUBLISHABLE_PLACEHOLDER", publishable: false, reason: "Ser ut som template/placeholder." };
 
-  // Meta-tekst om selve apparatet.
-  const meta = META_MARKERS.find((m) => lower.includes(m));
-  if (meta) return { result: "NOT_PUBLISHABLE_META_TEXT", publishable: false, reason: `Intern/meta-tekst om produksjonsapparatet («${meta}»).`, matched: meta };
+  // Meta-tekst om selve apparatet — ordgrense-matchet (ingen substring-falske positive).
+  const meta = META_MARKER_RES.find((m) => m.re.test(raw));
+  if (meta) return { result: "NOT_PUBLISHABLE_META_TEXT", publishable: false, reason: `Intern/meta-tekst om produksjonsapparatet («${meta.marker}»).`, matched: meta.marker };
 
   // Strukturell: teksten beskriver arbeidsprosessen i stedet for innholdet.
   const opener = INTERNAL_OPENERS.find((re) => re.test(raw));
