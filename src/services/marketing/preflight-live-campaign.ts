@@ -10,7 +10,7 @@
  * asset-integrity.
  */
 
-import { approvedAssetHash } from "@/lib/marketing/autonomous";
+import { approvedAssetHash, contentPublishabilityGate } from "@/lib/marketing/autonomous";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { resolvePublishingAccount, type ResolvedAccount } from "@/services/marketing/account-resolver";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
@@ -99,9 +99,22 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   } else if (input.contentHubItemId.startsWith("media_asset:")) {
     const { data } = await supabase.from("media_assets").select("id, public_url, brand_id, status, is_favorite, exported_to_content_hub_at").eq("id", rawId).maybeSingle();
     if (data) { itemFound = true; itemMediaUrl = data.public_url ?? null; humanApproved = !!data.is_favorite || !!data.exported_to_content_hub_at; }
+  } else if (input.contentHubItemId.startsWith("content_publication:")) {
+    // LEGACY Content Hub (produksjons-realitet). Body = description, media = ai_image_url.
+    const { data } = await supabase.from("content_publications").select("*").eq("id", rawId).maybeSingle();
+    if (data) {
+      itemFound = true;
+      itemText = String(data.description ?? data.content ?? data.body ?? data.caption ?? "");
+      itemMediaUrl = data.ai_image_url ?? data.image_url ?? (Array.isArray(data.media_urls) ? data.media_urls[0] : null) ?? null;
+      humanApproved = ["published", "approved", "scheduled", "review"].includes(String(data.status));
+    }
   }
   add("content_hub_item", true, itemFound ? "ok" : "fail", itemFound ? `fant «${input.contentHubItemId}»` : `CONTENT_ITEM_NOT_FOUND «${input.contentHubItemId}»`);
-  add("human_approved", true, humanApproved ? "ok" : "fail", humanApproved ? "menneske-godkjent/eid" : "innholdet er ikke godkjent (test skal bruke godkjent Content Hub-item)");
+  add("human_approved", true, humanApproved ? "ok" : "fail", humanApproved ? "menneske-godkjent/tiltrodd status" : "innholdet er ikke i en tiltrodd/godkjent status");
+
+  // 5b) PUBLISHABILITY på selve itemet (kritisk) — fanger intern/meta-tekst før canary.
+  const pubItem = contentPublishabilityGate(itemText);
+  add("content_publishable", true, pubItem.publishable ? "ok" : "fail", pubItem.publishable ? "innhold er publishable" : `${pubItem.result} — ${pubItem.reason}`);
 
   // 6) Eksplisitt publiseringskonto (routing + isolasjon). Aldri tvetydig.
   let account: ResolvedAccount | undefined;

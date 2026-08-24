@@ -104,6 +104,49 @@ test("FIXTURE: hele kjeden plan → approval → published (dry-run)", async () 
   assert.ok(db.tables["revenue_events"].some((e: any) => e.event_type === "automation_executed"));
 });
 
+test("CANARY: legacy content_publication brukes som kilde (ingen AI), source=legacy", async () => {
+  const db = makeDb();
+  seedBrand(db);
+  db.tables["content_publications"] = [{
+    id: "pub1", brand_id: "b1", status: "published",
+    description: "Eksklusiv nybygd villa i Calpe med havutsikt. Book en visning i dag.",
+    ai_image_url: "https://cdn/zen/calpe.jpg", scheduled_platforms: ["instagram"],
+    created_at: "2026-07-28T00:00:00Z", updated_at: "2026-08-01T00:00:00Z",
+  }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, display_name: "Zen IG", metadata: {} }];
+
+  const draft = await createCampaignDraft(db, {
+    brandId: "b1", masterIdea: "n/a", goal: { kind: "qualified_leads", target: 10, horizonDays: 30 },
+    legacyPublicationId: "pub1", channel: "instagram", publishingAccountId: "IG1",
+  });
+
+  assert.equal(draft.results.length, 1); // kun instagram
+  assert.equal(draft.results[0].source, "legacy_content_publication");
+  assert.equal(draft.results[0].state, "draft");
+  assert.equal(draft.results[0].mode, "manual-review");
+  assert.ok(draft.results[0].approvalId);
+
+  const pub = db.tables["marketing_publications"][0];
+  assert.equal(pub.source_type, "legacy_content_publication");
+  assert.equal(pub.source_id, "content_publication:pub1");
+  assert.equal(pub.account_id, "IG1");
+  assert.ok(pub.asset_hash);
+  const asset = db.tables["marketing_assets"][0];
+  assert.match(asset.body, /Calpe/);
+  assert.equal(asset.media.imageUrl, "https://cdn/zen/calpe.jpg");
+});
+
+test("CANARY fail-closed: legacy-rad med meta-tekst avvises (rejected, ingen approval)", async () => {
+  const db = makeDb();
+  seedBrand(db);
+  db.tables["content_publications"] = [{ id: "bad", brand_id: "b1", status: "published", description: "Jeg setter opp Marketing Agent til å generere denne posten.", ai_image_url: "https://x/i.jpg", scheduled_platforms: ["instagram"] }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+  const draft = await createCampaignDraft(db, { brandId: "b1", masterIdea: "n/a", goal: { kind: "leads", target: 5, horizonDays: 30 }, legacyPublicationId: "bad", channel: "instagram", publishingAccountId: "IG1" });
+  assert.equal(draft.results[0].state, "rejected");
+  assert.match(draft.results[0].error ?? "", /NOT_PUBLISHABLE/);
+  assert.ok(!db.tables["agentic_approvals"] || db.tables["agentic_approvals"].length === 0);
+});
+
 test("duplicate retry: gjentatt run av samme approval publiserer ikke på nytt", async () => {
   const db = makeDb();
   seedBrand(db);

@@ -25,7 +25,15 @@ export async function POST(request: NextRequest) {
       masterIdea: body.masterIdea,
       goal: { kind: body.goal.kind, target: body.goal.target ?? 10, horizonDays: body.goal.horizonDays ?? 30 },
       focus: body.focus,
+      service: body.service,
+      market: body.market,
+      language: body.language,
+      publishingAccountId: body.publishingAccountId,
       publishingCapacityPerWeek: body.publishingCapacityPerWeek,
+      // CANARY: eksplisitt legacy content_publications-rad (ingen AI-generering).
+      legacyPublicationId: body.legacyPublicationId,
+      channel: body.channel,
+      mediaUrl: body.mediaUrl,
     });
     return NextResponse.json(res);
   } catch (err) {

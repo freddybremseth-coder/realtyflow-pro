@@ -14,12 +14,13 @@
 
 import type { ContentFormat, ContentGenome, ContentGoal, MarketingChannel } from "../genome";
 
-export const CONTENT_SOURCES = ["content_hub_approved", "studio_reusable", "ad_creative", "property_media", "generated"] as const;
+export const CONTENT_SOURCES = ["content_hub_approved", "legacy_content_publication", "studio_reusable", "ad_creative", "property_media", "generated"] as const;
 export type ContentSource = (typeof CONTENT_SOURCES)[number];
 
-/** Kilde-prioritet: godkjent Content Hub > gjenbrukbart studio/ad-asset > property-media > generér nytt. */
+/** Kilde-prioritet: godkjent Content Hub / legacy publisert innhold > studio/ad > property-media > generér nytt. */
 export const SOURCE_PRIORITY: Record<ContentSource, number> = {
   content_hub_approved: 5,
+  legacy_content_publication: 5,
   studio_reusable: 4,
   ad_creative: 3,
   property_media: 2,

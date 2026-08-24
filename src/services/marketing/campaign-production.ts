@@ -28,6 +28,7 @@ import { makeMarketingApprovalRequester } from "@/services/marketing/marketing-a
 import { makeGraphApi, makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
 import { runApprovedPublication } from "@/services/marketing/publish-executor";
 import { resolveMarketingContent, type ResolverSourceMap } from "@/services/marketing/content-resolver-adapter";
+import { loadLegacyPublicationCandidate } from "@/services/marketing/legacy-content-adapter";
 import { resolvePublishingAccount } from "@/services/marketing/account-resolver";
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
@@ -55,6 +56,14 @@ export interface CreateCampaignDraftInput {
   /** Menneske-valgt konto (external_id) — vinner over auto-routing. */
   publishingAccountId?: string;
   publishingCapacityPerWeek?: number;
+  /**
+   * CANARY: bruk ÉN eksplisitt legacy content_publications-rad som kilde (ingen
+   * AI-generering, ingen fuzzy). Kjører kun på oppgitt kanal (default instagram).
+   */
+  legacyPublicationId?: string;
+  channel?: "instagram" | "facebook";
+  /** Public HTTPS media-URL (canary) hvis legacy-raden mangler ai_image_url. */
+  mediaUrl?: string;
 }
 
 export interface CampaignDraftResult {
@@ -99,6 +108,8 @@ export async function createCampaignDraft(
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
 
+  // Canary bruker kun oppgitt kanal (default instagram); ellers Meta-standard.
+  const channels: MarketingChannel[] = input.legacyPublicationId ? [(input.channel ?? "instagram")] : META_CHANNELS;
   const run = createMarketingRun({ brandId: input.brandId, level: "copilot" });
   const orchestratorDeps: OrchestratorDeps = {
     supabase,
@@ -110,7 +121,7 @@ export async function createCampaignDraft(
   const recommendation = await recommendForGeneration(supabase, { scope: input.brandId }).catch(() => undefined);
   const directorInput = {
     brandId: input.brandId, brandName: brand.brandName, goals: [input.goal],
-    channels: META_CHANNELS, pipelineGaps: [], inventoryFocus: input.focus ? [input.focus] : [],
+    channels, pipelineGaps: [], inventoryFocus: input.focus ? [input.focus] : [],
     activeCampaignIds: [], budget: {}, publishingCapacityPerWeek: input.publishingCapacityPerWeek ?? 4,
   };
   const plan = buildMarketingPlan(directorInput as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId, recommendation });
@@ -126,7 +137,7 @@ export async function createCampaignDraft(
   };
   const campaign: CampaignPlan = {
     campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit",
-    goal: input.goal, focus: input.focus, channels: META_CHANNELS, masterIdea: input.masterIdea,
+    goal: input.goal, focus: input.focus, channels, masterIdea: input.masterIdea,
   };
   const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [] });
 
@@ -140,25 +151,33 @@ export async function createCampaignDraft(
   // dispatch (publishability → quality → policy → lås hash → persist publikasjon
   // → approval SIST). Approval opprettes aldri før hele payloaden er låst.
   for (const brief of briefs) {
-    // 1) RESOLVE FØR GENERERING: bruk eksisterende (publishable) innhold hvis egnet.
-    const decision = await resolveMarketingContent(supabase, { brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format }, sources).catch(() => null);
-
     let creative: CreativeResult;
     let sourceType = "generated";
     let sourceId: string | null = null;
     let reuseMode: string | null = null;
     try {
-      if (decision && decision.decision !== "generate" && decision.chosen) {
-        creative = assetFromCandidate(brief, brand, decision.chosen);
-        sourceType = decision.chosen.source;
-        sourceId = decision.chosen.contentId;
-        reuseMode = decision.chosen.reuseMode;
+      if (input.legacyPublicationId) {
+        // CANARY: eksplisitt legacy content_publications-rad (ingen AI, ingen fuzzy).
+        const candidate = await loadLegacyPublicationCandidate(supabase, { publicationId: input.legacyPublicationId, brandId: input.brandId, channel: brief.channel, mediaUrl: input.mediaUrl });
+        creative = assetFromCandidate(brief, brand, candidate);
+        sourceType = "legacy_content_publication";
+        sourceId = candidate.contentId;
+        reuseMode = "reuse_exact";
       } else {
-        creative = await generator.generate({ brief, brand, recommendation }); // kaster CREATIVE_OUTPUT_INVALID ved ugyldig AI-svar
+        // 1) RESOLVE FØR GENERERING: bruk eksisterende (publishable) innhold hvis egnet.
+        const decision = await resolveMarketingContent(supabase, { brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format }, sources).catch(() => null);
+        if (decision && decision.decision !== "generate" && decision.chosen) {
+          creative = assetFromCandidate(brief, brand, decision.chosen);
+          sourceType = decision.chosen.source;
+          sourceId = decision.chosen.contentId;
+          reuseMode = decision.chosen.reuseMode;
+        } else {
+          creative = await generator.generate({ brief, brand, recommendation }); // kaster CREATIVE_OUTPUT_INVALID ved ugyldig AI-svar
+        }
       }
     } catch (err) {
-      // Ugyldig kreativt output blir ALDRI et asset/approval. Regenerering/manuell.
-      results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: "-", state: "rejected", mode: "n/a", qualityScore: null, approvalId: null, error: err instanceof Error ? err.message : "CREATIVE_OUTPUT_INVALID", source: "generated" });
+      // Ugyldig kreativt output / legacy-avvisning blir ALDRI et asset/approval (fail closed).
+      results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: "-", state: "rejected", mode: "n/a", qualityScore: null, approvalId: null, error: err instanceof Error ? err.message : "CREATIVE_OUTPUT_INVALID", source: sourceType });
       continue;
     }
     await persistAsset(supabase, creative).catch(() => undefined);
