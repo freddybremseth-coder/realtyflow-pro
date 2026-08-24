@@ -1,32 +1,15 @@
 /**
  * Phase 7.1L — kvalitativ/komparativ påstandsverifisering for AI-generert copy.
- *
- * AI-generert kundecopy skal ikke kunne gjøre målbare, komparative, absolutte
- * eller markeds-/trendpåstander uten uavhengig provenance. Brand Brain kan
- * støtte trygg posisjonering, men er ikke bevis for konkrete utfall/trender.
- *
- * To separate porter:
- *  1) OUTCOME/COMPARATIVE/ABSOLUTE/TREND claims → krever uavhengig factSource.
- *     Uten dekning → CLAIM_NOT_VERIFIED.
- *  2) OWNERSHIP/role claims («våre boliger») → kun tillatt hvis Brand Context
- *     eksplisitt støtter eier-/utbygger-rolle. Ellers → BRAND_ROLE_MISMATCH.
  */
-
 import type { BrandContext } from "./brand-brain";
 
-/**
- * Påstander som lover et konkret utfall, beskriver en ekstern trend eller bruker
- * absolutt språk som kan oppfattes som garanti. Disse krever uavhengig kilde.
- */
 const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
-  // ── Energi/strøm/forbruk ──────────────────────────────────────────────
   { label: "lower energy costs", re: /lower(?:s|ed|ing)?\s+energy\s+costs?/i },
   { label: "lavere energikostnader", re: /laver[et]\s+energikostnad(?:er)?/i },
   { label: "lavere strømregning", re: /laver[et]\s+strøm(?:regning(?:er)?|utgifter|kostnad(?:er)?)/i },
   { label: "lower electricity bills", re: /lower\s+electricity\s+bills?/i },
   { label: "reduced consumption", re: /reduce[ds]?\s+(?:energy\s+)?consumption/i },
   { label: "redusert energiforbruk", re: /(?:redusert|laver[et])\s+(?:energi)?forbruk/i },
-  // ── Kostnader generelt ────────────────────────────────────────────────
   { label: "reduced costs", re: /reduce[ds]?\s+(?:running\s+|operating\s+|maintenance\s+)?costs?/i },
   { label: "lower running costs", re: /lower\s+(?:running|operating)\s+costs?/i },
   { label: "lavere kostnader", re: /laver[et]\s+(?:drifts?|vedlikeholds?)?kostnad(?:er)?/i },
@@ -34,11 +17,9 @@ const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "lavere vedlikehold", re: /laver[et]\s+vedlikehold/i },
   { label: "lower tax", re: /lower\s+tax(?:es)?/i },
   { label: "lavere skatt", re: /laver[et]\s+skatt/i },
-  // ── Sparing/penger ────────────────────────────────────────────────────
   { label: "save money", re: /sav(?:e|es|ing|ings)\s+money/i },
   { label: "sparer penger", re: /spar(?:er|e|t)\s+penger/i },
   { label: "guaranteed savings", re: /guarantee[ds]?\s+savings?/i },
-  // ── Avkastning/investering/verdi ──────────────────────────────────────
   { label: "higher return", re: /higher\s+returns?/i },
   { label: "higher ROI", re: /higher\s+roi|better\s+roi/i },
   { label: "høyere avkastning", re: /høyere\s+avkastning/i },
@@ -54,29 +35,24 @@ const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "høyere leieinntekt", re: /høyere\s+leieinntekt(?:er)?/i },
   { label: "faster sale", re: /faster\s+sale|sells?\s+faster/i },
   { label: "raskere salg", re: /raskere\s+salg|selges?\s+raskere/i },
-  // ── Markeds-/trendpåstander ───────────────────────────────────────────
   { label: "more Norwegians looking to Costa Blanca", re: /(?:flere|stadig\s+flere)\s+nordmenn[^.!?]{0,80}(?:ser|vender|flytter|søker)[^.!?]{0,50}(?:mot|til)\s+Costa\s+Blanca/i },
   { label: "more buyers looking to Costa Blanca", re: /more\s+(?:Norwegians|buyers|people)[^.!?]{0,80}(?:looking|moving|turning)[^.!?]{0,50}(?:to|toward(?:s)?)\s+Costa\s+Blanca/i },
-  // ── Absolutte klima-/servicepåstander ─────────────────────────────────
+  { label: "sought-after area", re: /(?:ettertraktet(?:e)?|svært\s+ettertraktet(?:e)?)\s+(?:bolig)?områd(?:e|er|ene)?/i },
+  { label: "most popular area", re: /(?:mest\s+populær(?:e|t)?|most\s+popular)\s+(?:bolig)?områd(?:e|er|ene)?/i },
+  { label: "most attractive area", re: /(?:mest\s+attraktiv(?:e|t)?|most\s+attractive)\s+(?:bolig)?områd(?:e|er|ene)?/i },
+  { label: "prestigious area", re: /(?:prestisjefylt(?:e)?|prestigious)\s+(?:bolig)?områd(?:e|er|ene)?/i },
   { label: "sun year-round", re: /(?:sol\s+(?:året\s+rundt|hele\s+året|året\s+gjennom)|year[-\s]?round\s+sun(?:shine)?|sun(?:shine)?\s+all\s+year)/i },
   { label: "no hidden surprises", re: /(?:ingen\s+skjulte\s+overraskelser|no\s+hidden\s+surprises?|no\s+surprises?)/i },
   { label: "no language barriers", re: /(?:ingen\s+språkbarrierer|uten\s+språkbarrierer|no\s+language\s+barriers?)/i },
-  // ── Generelle garanti-ord (sterk risiko) ──────────────────────────────
   { label: "guaranteed", re: /\bguaranteed\b/i },
   { label: "garantert", re: /\bgarantert?e?\b/i },
 ];
 
-/** Finn verifikasjonskrevende påstander i teksten (labels). */
 export function findOutcomeClaims(text: string | null | undefined): string[] {
   const t = text ?? "";
   return OUTCOME_CLAIM_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
 }
 
-/**
- * Påstander i captionen som IKKE er dekket av en uavhengig factSource.
- * En påstand regnes som dekket hvis minst én factSource-claim treffer SAMME
- * markør. Brand Brain-positionering er bevisst IKKE en gyldig kilde her.
- */
 export function unsupportedOutcomeClaims(
   caption: string | null | undefined,
   factSources: Array<{ claim: string; source: string }> = [],
@@ -88,11 +64,6 @@ export function unsupportedOutcomeClaims(
   return present.filter((m) => !sourcedLabels.has(m.label)).map((m) => m.label);
 }
 
-/**
- * Eierskaps-/rollepåstander: «våre boliger/villaer/eiendommer», «our homes» osv.
- * Impliserer at merket eier/utvikler boligene. Norsk å/ø er ikke \w, så vi
- * bruker eksplisitte grenser i stedet for \b rundt norske ord.
- */
 const OWNERSHIP_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "our homes", re: /\bour\s+homes?\b/i },
   { label: "our properties", re: /\bour\s+propert(?:y|ies)\b/i },
@@ -106,7 +77,6 @@ const OWNERSHIP_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "våre prosjekter", re: /(?:^|[^a-zæøå])vår[et]?\s+prosjekt(?:er|et|ene)?(?![a-zæøå])/i },
 ];
 
-/** Finn eierskaps-/rollepåstander i teksten (labels). */
 export function findOwnershipClaims(text: string | null | undefined): string[] {
   const t = text ?? "";
   return OWNERSHIP_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
@@ -117,11 +87,6 @@ const OWNERSHIP_TOKENS = [
   "we build", "we develop", "we own", "eiendomsutvikler", "boligutvikler",
 ];
 
-/**
- * Støtter Brand Context eksplisitt eier-/utbygger-rolle? Fail-closed: en
- * mangler default betyr rådgiver/formidler (ikke eier). Kan settes eksplisitt
- * via `ownsInventory=true` eller ved eierskaps-token i services/allowedClaims.
- */
 export function brandSupportsOwnership(brand?: Pick<BrandContext, "allowedClaims" | "services"> & { ownsInventory?: boolean }): boolean {
   if (!brand) return false;
   if (brand.ownsInventory === true) return true;
