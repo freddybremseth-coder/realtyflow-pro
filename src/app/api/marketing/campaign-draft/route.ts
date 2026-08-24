@@ -30,16 +30,16 @@ export async function POST(request: NextRequest) {
       language: body.language,
       publishingAccountId: body.publishingAccountId,
       publishingCapacityPerWeek: body.publishingCapacityPerWeek,
-      // CANARY: eksplisitt legacy content_publications-rad (ingen AI-generering).
       legacyPublicationId: body.legacyPublicationId,
       channel: body.channel,
       mediaUrl: body.mediaUrl,
+      useInventoryProperty: body.useInventoryProperty,
+      propertyId: body.propertyId,
     });
     return NextResponse.json(res);
   } catch (err) {
     const message = err instanceof Error ? err.message : "campaign-draft feilet";
-    // Fail-closed-tilstander (manglende brand/approval) er 409, ikke 500.
-    const status = message.startsWith("MISSING_") || message.includes("APPROVAL_SERVICE_UNAVAILABLE") ? 409 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const failClosed = message.startsWith("MISSING_") || message.startsWith("INVENTORY_") || message.includes("APPROVAL_SERVICE_UNAVAILABLE");
+    return NextResponse.json({ error: message }, { status: failClosed ? 409 : 500 });
   }
 }
