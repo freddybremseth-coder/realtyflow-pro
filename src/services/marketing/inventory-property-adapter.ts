@@ -261,18 +261,21 @@ export async function resolveInventoryMarketingProperty(
     if (!candidate?.property_id) continue;
     const property = await loadProperty(supabase, String(candidate.property_id));
     if (!property) continue;
+    // Live auto-selection is fail-closed on location quality: broad region-only
+    // rows are skipped, not selected and rejected afterwards.
+    if (property.locationSpecificity !== "specific") continue;
     const wasRecent = recent.has(property.id);
     const visibilityScore = Number(candidate.score) || 0;
     const score = visibilityScore
       + (candidate.manual_override === true ? 30 : 0)
       + (property.featured ? 20 : 0)
       + Math.min(property.gallery.length, 30)
-      + (property.locationSpecificity === "specific" ? 15 : 0);
+      + 15;
     candidates.push({ property, score, recent: wasRecent });
   }
 
   if (!candidates.length) {
-    throw new Error(`INVENTORY_PROPERTY_NOT_FOUND: ingen tilgjengelig ${args.brandId}-bolig med public HTTPS-bilde`);
+    throw new Error(`INVENTORY_PROPERTY_NOT_FOUND: ingen tilgjengelig ${args.brandId}-bolig med public HTTPS-bilde og verifisert konkret sted`);
   }
 
   const fresh = candidates.filter((c) => !c.recent);
@@ -281,6 +284,6 @@ export async function resolveInventoryMarketingProperty(
   const chosen = pool[0];
   return {
     ...chosen.property,
-    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=${chosen.property.locationSpecificity}`,
+    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=specific`,
   };
 }
