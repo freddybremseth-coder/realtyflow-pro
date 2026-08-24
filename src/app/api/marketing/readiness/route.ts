@@ -4,7 +4,7 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
 
-const OWNED_BRANDS = ["zeneco", "pinosoecolife", "donaanna", "chatgenius", "freddyb"] as const;
+const OWNED_BRANDS = ["zeneco", "pinosoecolife", "donaanna", "chatgenius", "freddyb", "remasterfreddy"] as const;
 const META_PILOT_CHANNELS = new Set(["instagram", "facebook"]);
 
 export async function GET(request: NextRequest) {
