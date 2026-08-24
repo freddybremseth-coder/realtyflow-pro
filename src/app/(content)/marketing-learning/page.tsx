@@ -20,6 +20,8 @@ type Status = {
   immaturePublishedCount: number;
   maturityHours: number;
   nextMaturesAt: string | null;
+  nextMetricsCronAt: string | null;
+  eligibleByNextCronCount: number;
   measuredCount: number;
   observations: number;
   quarantinedCount: number;
@@ -118,6 +120,11 @@ export default function MarketingLearningPage() {
           <div style={label}>24t modne</div>
           <div style={value}>{status?.maturePublishedCount ?? "—"}</div>
           {status && <div style={{ fontSize: 12, color: "#6b7280" }}>{status.immaturePublishedCount} venter på {status.maturityHours}t</div>}
+        </div>
+        <div style={box}>
+          <div style={label}>Neste metrics-cron</div>
+          <div style={value}>{status?.eligibleByNextCronCount ?? "—"}</div>
+          {status?.nextMetricsCronAt && <div style={{ fontSize: 12, color: "#6b7280" }}>modne kandidater · {new Date(status.nextMetricsCronAt).toLocaleString()}</div>}
         </div>
         <div style={box}><div style={label}>Målte totalt</div><div style={value}>{status?.measuredCount ?? "—"}</div></div>
         <div style={box}>
