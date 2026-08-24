@@ -175,6 +175,69 @@ export function isRevenueEventsTableMissing(message?: string | null) {
   return /revenue_events|schema cache|does not exist|relation/i.test(String(message || ""));
 }
 
+const REVENUE_TO_TOUCH: Partial<Record<RevenueEventType, "lead_created" | "viewing" | "offer" | "sale">> = {
+  lead_created: "lead_created",
+  viewing_completed: "viewing",
+  offer_made: "offer",
+  deal_won: "sale",
+};
+
+/**
+ * Fail-soft bridge from canonical Revenue OS outcomes to Marketing attribution.
+ * Revenue remains source-of-truth. We only mirror unambiguous funnel outcomes,
+ * and only when brand + canonical contact identity are present.
+ */
+async function mirrorRevenueEventToMarketingTouchpoint(
+  supabase: RevenueEventsSupabaseLike,
+  event: Record<string, any>,
+): Promise<void> {
+  const eventType = event?.event_type as RevenueEventType;
+  const touchType = REVENUE_TO_TOUCH[eventType];
+  const brandId = clean(event?.brand_id);
+  const contactId = clean(event?.contact_id);
+  if (!touchType || !brandId || !contactId) return;
+
+  // Reuse the latest known marketing attribution context for this canonical
+  // contact within the same brand. Never cross brand boundaries.
+  const { data: prior } = await supabase
+    .from("marketing_touchpoints")
+    .select("content_id, publication_id, campaign_id, creative_variant_id, visitor_id, channel, occurred_at")
+    .eq("brand_id", brandId)
+    .eq("contact_id", contactId)
+    .order("occurred_at", { ascending: false })
+    .limit(20);
+  const context = (prior ?? []).find((row: any) => row?.content_id);
+  if (!context?.content_id) return;
+
+  const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  const explicitCommission = eventType === "deal_won" ? numberOrNull((metadata as any).commission_eur) : null;
+  const revenueEventId = clean(event?.id) || clean(event?.dedupe_key) || `${eventType}:${event?.occurred_at}`;
+  const dedupeKey = `revenue|${brandId}|${revenueEventId}|${touchType}`;
+
+  const { error } = await supabase.from("marketing_touchpoints").upsert({
+    dedupe_key: dedupeKey,
+    brand_id: brandId,
+    content_id: context.content_id,
+    publication_id: context.publication_id ?? null,
+    campaign_id: context.campaign_id ?? null,
+    creative_variant_id: context.creative_variant_id ?? null,
+    visitor_id: context.visitor_id ?? null,
+    contact_id: contactId,
+    channel: context.channel ?? null,
+    touch_type: touchType,
+    occurred_at: event?.occurred_at ?? new Date().toISOString(),
+    confidence: "exact",
+    commission_eur: explicitCommission,
+    metadata: {
+      source: "revenue_events",
+      revenue_event_id: clean(event?.id),
+      revenue_event_type: eventType,
+      revenue_source_system: clean(event?.source_system),
+    },
+  }, { onConflict: "dedupe_key", ignoreDuplicates: true });
+  if (error) throw new Error(`MARKETING_REVENUE_BRIDGE_FAILED: ${error.message}`);
+}
+
 export async function insertRevenueEvent(
   supabase: RevenueEventsSupabaseLike,
   input: RevenueEventInput,
@@ -188,7 +251,10 @@ export async function insertRevenueEvent(
       .select("*")
       .single();
 
-    if (!error) return { ok: true, event: data || null, duplicate: false };
+    if (!error) {
+      await mirrorRevenueEventToMarketingTouchpoint(supabase, data || payload).catch(() => undefined);
+      return { ok: true, event: data || null, duplicate: false };
+    }
 
     if (error.code === "23505" && payload.dedupe_key) {
       const existing = await supabase
@@ -197,6 +263,7 @@ export async function insertRevenueEvent(
         .eq("dedupe_key", payload.dedupe_key)
         .maybeSingle();
       if (!existing.error && existing.data) {
+        await mirrorRevenueEventToMarketingTouchpoint(supabase, existing.data).catch(() => undefined);
         return { ok: true, event: existing.data, duplicate: true };
       }
     }
