@@ -18,7 +18,7 @@ async function readStatus(brandId = "zeneco") {
   const [{ data: snapshots }, { data: rules }, { data: published }] = await Promise.all([
     supabase
       .from("marketing_events")
-      .select("content_id, occurred_at")
+      .select("content_id, occurred_at, metadata")
       .eq("brand_id", brandId)
       .eq("channel", "instagram")
       .eq("event_type", "metrics_snapshot"),
@@ -26,10 +26,10 @@ async function readStatus(brandId = "zeneco") {
       .from("marketing_learning_rules")
       .select("dimension, value, sample, lift, evidence, verdict, finding, updated_at")
       .eq("scope", brandId)
-      .in("dimension", ["tags", "area", "propertyType", "priceBand", "hookType", "ctaType"])
+      .in("dimension", ["tag", "tags", "area", "propertyType", "priceBand", "hookType", "ctaType"])
       .order("sample", { ascending: false })
       .order("lift", { ascending: false })
-      .limit(50),
+      .limit(80),
     supabase
       .from("marketing_publications")
       .select("publication_id, content_id, updated_at")
@@ -38,23 +38,49 @@ async function readStatus(brandId = "zeneco") {
       .eq("state", "published"),
   ]);
 
-  const observations = new Set((snapshots ?? []).map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
+  const snapshotRows = snapshots ?? [];
+  const eligibleRows = snapshotRows.filter((r: any) => r?.metadata?.learning_eligible !== false);
+  const quarantinedRows = snapshotRows.filter((r: any) => r?.metadata?.learning_eligible === false);
+
+  const measuredCount = new Set(snapshotRows.map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
+  const observations = new Set(eligibleRows.map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
+  const quarantinedCount = new Set(quarantinedRows.map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
   const publishedCount = new Set((published ?? []).map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
+
+  const maturityHours = 24;
+  const matureBefore = Date.now() - maturityHours * 3_600_000;
+  const maturePublishedCount = new Set(
+    (published ?? [])
+      .filter((r) => r.updated_at && new Date(r.updated_at).getTime() <= matureBefore)
+      .map((r) => String(r.content_id ?? ""))
+      .filter(Boolean),
+  ).size;
+  const immaturePublishedCount = Math.max(0, publishedCount - maturePublishedCount);
   const learningThreshold = 10;
 
   return {
     brandId,
     channel: "instagram",
     publishedCount,
+    maturePublishedCount,
+    immaturePublishedCount,
+    maturityHours,
+    measuredCount,
     observations,
+    quarantinedCount,
     learningThreshold,
     learningActive: observations >= learningThreshold,
     remainingUntilLearning: Math.max(0, learningThreshold - observations),
-    lastSnapshotAt: (snapshots ?? [])
+    lastSnapshotAt: snapshotRows
       .map((r) => r.occurred_at)
       .filter(Boolean)
       .sort()
       .at(-1) ?? null,
+    quarantineReasons: quarantinedRows.reduce((acc: Record<string, number>, row: any) => {
+      const reason = String(row?.metadata?.data_quality_reason || "unknown");
+      acc[reason] = (acc[reason] || 0) + 1;
+      return acc;
+    }, {}),
     rules: rules ?? [],
   };
 }
@@ -81,6 +107,7 @@ export async function POST(request: NextRequest) {
       brandId,
       days: 30,
       limit: 100,
+      minAgeHours: 24,
       learningMinObservations: 10,
     });
     return NextResponse.json({ ok: true, sync, status: await readStatus(brandId) });
