@@ -93,7 +93,7 @@ export async function planMarketingRun(
   deps: OrchestratorDeps,
   input: DirectorInput,
   opts: { level?: MarketingRunState["level"] } = {},
-): Promise<{ run: MarketingRunState; plan: ReturnType<typeof buildMarketingPlan>; trace: ActionTraceEntry[] }> {
+): Promise<{ run: MarketingRunState; plan: ReturnType<typeof buildMarketingPlan>; recommendation: Awaited<ReturnType<typeof recommendForGeneration>> | undefined; trace: ActionTraceEntry[] }> {
   const run = createMarketingRun({ brandId: input.brandId, level: opts.level ?? "copilot", now: deps.now?.() });
   const recommendation = await recommendForGeneration(deps.supabase, { scope: input.brandId }).catch(() => undefined);
   const plan = buildMarketingPlan(input, { marketingRunId: run.marketingRunId, correlationId: run.correlationId, recommendation });
@@ -118,7 +118,7 @@ export async function planMarketingRun(
     { onConflict: "marketing_run_id" },
   );
   if (error) throw new Error(`planMarketingRun persist failed: ${error.message}`);
-  return { run, plan, trace };
+  return { run, plan, recommendation, trace };
 }
 
 export interface DispatchResult {

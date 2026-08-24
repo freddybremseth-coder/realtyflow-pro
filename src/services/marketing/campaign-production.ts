@@ -14,15 +14,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
 import {
   atomizeCampaign,
-  buildMarketingPlan,
-  createMarketingRun,
   type CampaignPlan,
   type CommercialGoal,
   type CreativeResult,
 } from "@/lib/marketing/autonomous";
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
-import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from "@/services/marketing/creative-generator";
 import { makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
 import { makeGraphApi, makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
@@ -114,24 +111,28 @@ export async function createCampaignDraft(
 
   // Canary bruker kun oppgitt kanal (default instagram); ellers Meta-standard.
   const channels: MarketingChannel[] = input.legacyPublicationId ? [(input.channel ?? "instagram")] : META_CHANNELS;
-  const run = createMarketingRun({ brandId: input.brandId, level: "copilot" });
+  const directorInput = {
+    brandId: input.brandId, brandName: brand.brandName, goals: [input.goal],
+    channels, pipelineGaps: [], inventoryFocus: input.focus ? [input.focus] : [],
+    activeCampaignIds: [], budget: {}, publishingCapacityPerWeek: input.publishingCapacityPerWeek ?? 4,
+  };
+
+  // ÉN kanonisk run: planMarketingRun EIER run-opprettelse + persistering. Fail
+  // CLOSED — hvis marketing_runs-persisteringen feiler, opprettes ingen publikasjon
+  // (ellers brytes FK marketing_publications.marketing_run_id → marketing_runs).
+  const { run, plan, recommendation } = await planMarketingRun(
+    { supabase, loadGuardState: guardStateLoader() },
+    directorInput as any,
+    { level: "copilot" },
+  );
+
   const orchestratorDeps: OrchestratorDeps = {
     supabase,
     loadGuardState: guardStateLoader(),
     requestApproval: makeMarketingApprovalRequester(supabase as any, { runId: run.marketingRunId, correlationId: run.correlationId }),
   };
 
-  // Plan (persisterer run, leser learning).
-  const recommendation = await recommendForGeneration(supabase, { scope: input.brandId }).catch(() => undefined);
-  const directorInput = {
-    brandId: input.brandId, brandName: brand.brandName, goals: [input.goal],
-    channels, pipelineGaps: [], inventoryFocus: input.focus ? [input.focus] : [],
-    activeCampaignIds: [], budget: {}, publishingCapacityPerWeek: input.publishingCapacityPerWeek ?? 4,
-  };
-  const plan = buildMarketingPlan(directorInput as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId, recommendation });
-  await planMarketingRun(orchestratorDeps, directorInput as any, { level: "copilot" }).catch(() => undefined);
-
-  // Kampanje + atomisering til Meta-kanaler.
+  // Kampanje + atomisering til Meta-kanaler (samme kanoniske run-ID overalt).
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
   const baseGenome: ContentGenome = {

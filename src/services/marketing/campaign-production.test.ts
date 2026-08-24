@@ -14,12 +14,23 @@ import { approvedAssetHash, type GeneratedAsset } from "@/lib/marketing/autonomo
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 /** Kapabel in-memory Supabase-fake (select/insert/update/upsert + filtre). */
-function makeDb() {
+function makeDb(opts: { fk?: boolean; failRunPersist?: boolean } = {}) {
   const tables: Record<string, any[]> = {};
   const tbl = (n: string) => (tables[n] ??= []);
+  // FK-simulering: en publikasjon MÅ referere en eksisterende marketing_runs-rad.
+  const fkViolation = (name: string, r: any) =>
+    opts.fk && name === "marketing_publications" && r?.marketing_run_id &&
+    !(tables["marketing_runs"] ?? []).some((x) => x.marketing_run_id === r.marketing_run_id);
   function make(name: string) {
     const q: any = { op: null, payload: null, conflict: null, filters: [] };
     const match = (r: any) => q.filters.every(([c, v]: [string, unknown]) => r[c] === v);
+    const fkError = () => {
+      const rows = Array.isArray(q.payload) ? q.payload : [q.payload];
+      const bad = rows.find((r: any) => fkViolation(name, r));
+      if (bad) return { data: null, error: { message: `insert or update on table "marketing_publications" violates foreign key constraint (marketing_run_id=${bad.marketing_run_id})`, code: "23503" } };
+      if (opts.failRunPersist && name === "marketing_runs") return { data: null, error: { message: "simulated marketing_runs persist failure", code: "XX000" } };
+      return null;
+    };
     const applyInsert = () => {
       const rows = Array.isArray(q.payload) ? q.payload : [q.payload];
       const ins = rows.map((r: any) => ({ id: r.id ?? `id_${tbl(name).length + 1}`, ...r }));
@@ -37,6 +48,7 @@ function makeDb() {
     };
     const applyUpdate = () => { const hit: any[] = []; for (const r of tbl(name)) if (match(r)) { Object.assign(r, q.payload); hit.push(r); } return hit; };
     const terminal = () => {
+      const fe = fkError(); if (fe) return fe;
       if (q.op === "insert") { applyInsert(); return { data: null, error: null }; }
       if (q.op === "update") { const rows = applyUpdate(); return { data: rows, error: null }; }
       if (q.op === "upsert") { applyUpsert(); return { data: null, error: null }; }
@@ -44,6 +56,7 @@ function makeDb() {
     };
     const readSingle = () => ({ data: tbl(name).find(match) ?? null, error: null });
     const writeSingle = () => {
+      const fe = fkError(); if (fe) return fe;
       if (q.op === "insert") return { data: applyInsert()[0], error: null };
       if (q.op === "upsert") { applyUpsert(); return readSingle(); }
       return readSingle();
@@ -168,6 +181,44 @@ test("REGRESJON dobbel-post: scheduled legacy → snapshot → archived → publ
   const exec = await runApprovedPublicationProd(db, { approvalId, executedBy: "freddy@extrade.es" });
   assert.equal(exec.ok, true);
   assert.equal(exec.executed, true);
+});
+
+test("PRODUKSJONS-INTEGRITET (FK): én kanonisk run; publikasjon-FK == returnert run", async () => {
+  delete process.env.MARKETING_META_LIVE;
+  const db = makeDb({ fk: true }); // publikasjon MÅ referere en persistert marketing_runs-rad
+  seedBrand(db);
+  db.tables["content_publications"] = [{ id: "pub1", brand_id: "b1", status: "scheduled", scheduled_at: "2026-09-02T00:00:00Z", description: "Luksusvilla i Benissa med havutsikt. Book en visning i dag.", ai_image_url: "https://x/i.jpg", scheduled_platforms: ["instagram"], created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-10T00:00:00Z" }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+
+  const draft = await createCampaignDraft(db, { brandId: "b1", channel: "instagram", legacyPublicationId: "pub1", publishingAccountId: "IG1", goal: { kind: "qualified_leads", target: 10 }, masterIdea: "canary" });
+
+  // Nøyaktig ÉN marketing_runs-rad (ingen dobbel run B).
+  assert.equal(db.tables["marketing_runs"].length, 1);
+  const canonical = db.tables["marketing_runs"][0].marketing_run_id;
+  // Returnert run == den persisterte == FK-en i publikasjonen (ellers ville FK-en kastet over).
+  assert.equal(draft.marketingRunId, canonical);
+  const pub = db.tables["marketing_publications"][0];
+  assert.ok(pub, "publikasjon skal finnes");
+  assert.equal(pub.marketing_run_id, canonical);
+  // campaign/content-IDer bærer samme kanoniske run-ID.
+  assert.ok(draft.campaignId.includes(canonical), "campaignId skal inneholde run-ID");
+  assert.ok(draft.results[0].contentId.includes(canonical), "contentId skal inneholde run-ID");
+  // requestApproval fikk samme kanoniske correlation-ID.
+  assert.equal(db.tables["agentic_approvals"][0].correlation_id, draft.correlationId);
+  // Legacy-stien produserer fortsatt riktig kilde.
+  assert.equal(draft.results[0].source, "legacy_content_publication");
+});
+
+test("run-persistering feiler → INGEN publikasjon (fail closed, FK-en bevares)", async () => {
+  const db = makeDb({ failRunPersist: true });
+  seedBrand(db);
+  db.tables["content_publications"] = [{ id: "pub1", brand_id: "b1", status: "scheduled", description: "Villa. Book visning.", ai_image_url: "https://x/i.jpg", scheduled_platforms: ["instagram"] }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+  await assert.rejects(
+    () => createCampaignDraft(db, { brandId: "b1", channel: "instagram", legacyPublicationId: "pub1", publishingAccountId: "IG1", goal: { kind: "leads", target: 5 }, masterIdea: "canary" }),
+    /planMarketingRun persist failed/,
+  );
+  assert.ok(!db.tables["marketing_publications"] || db.tables["marketing_publications"].length === 0);
 });
 
 test("removeLegacyScheduledRow: 0 rader (ikke scheduled) → feiler fail-closed", async () => {
