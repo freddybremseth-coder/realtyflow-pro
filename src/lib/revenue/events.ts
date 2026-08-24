@@ -176,6 +176,26 @@ const REVENUE_TO_TOUCH: Partial<Record<RevenueEventType, "lead_created" | "viewi
   deal_won: "sale",
 };
 
+async function resolveContactUtmContext(
+  supabase: RevenueEventsSupabaseLike,
+  contactId: string,
+  brandId: string,
+): Promise<Record<string, unknown> | null> {
+  const { data: contact } = await supabase
+    .from("contacts")
+    .select("interactions")
+    .eq("id", contactId)
+    .maybeSingle();
+  const interactions = Array.isArray(contact?.interactions) ? contact.interactions : [];
+  for (const interaction of interactions) {
+    if (clean(interaction?.brand_id) !== brandId) continue;
+    const metadata = interaction?.metadata && typeof interaction.metadata === "object" ? interaction.metadata : {};
+    const utmContent = clean((metadata as any).utm_content);
+    if (utmContent) return metadata as Record<string, unknown>;
+  }
+  return null;
+}
+
 async function mirrorRevenueEventToMarketingTouchpoint(
   supabase: RevenueEventsSupabaseLike,
   event: Record<string, any>,
@@ -186,7 +206,11 @@ async function mirrorRevenueEventToMarketingTouchpoint(
   const contactId = clean(event?.contact_id);
   if (!touchType || !brandId || !contactId) return;
 
-  const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  const eventMetadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+  const contactUtm = clean((eventMetadata as any).utm_content)
+    ? null
+    : await resolveContactUtmContext(supabase, contactId, brandId).catch(() => null);
+  const metadata = { ...(contactUtm ?? {}), ...eventMetadata } as Record<string, unknown>;
   const utmContent = clean((metadata as any).utm_content) || clean((metadata as any).content_id);
 
   let context: any = null;
