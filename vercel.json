@@ -53,6 +53,10 @@
       "schedule": "0 19 * * *"
     },
     {
+      "path": "/api/cron/marketing-growth-metrics",
+      "schedule": "30 19 * * *"
+    },
+    {
       "path": "/api/cron/trending-tags",
       "schedule": "0 13 * * 1"
     },
