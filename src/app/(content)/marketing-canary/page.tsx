@@ -1,15 +1,6 @@
 "use client";
 
-/**
- * Phase 7.1J — Marketing Growth OS: Canary Control (Legacy + AI Generated).
- *
- * Minimalt admin-panel oppå EKSISTERENDE endepunkter (ingen ny arkitektur).
- * Auth via eksisterende admin-session-cookie (ingen admin-key i klienten).
- * Mode-velger: Legacy Content (default) | AI Generated.
- * COPILOT beholdes: hvert steg krever bevisst klikk. Ingen auto-publish, ingen
- * scheduling, ingen fuzzy. AI-generert innhold kan ALDRI være sin egen fakta-kilde.
- */
-
+/** Marketing Growth OS: Canary Control (Legacy + Inventory-grounded AI). */
 import { useState } from "react";
 
 const CANARY = {
@@ -21,14 +12,21 @@ const CANARY = {
 };
 
 const AI_PREFILL =
-  "Lag et engasjerende Instagram-innlegg for Zen Eco Homes om hvorfor kjøpere bør vurdere moderne, energieffektive boliger på Costa Blanca. Vekt tillit, norsk veiledning og kvalitet. Ikke finn opp priser, boligspesifikasjoner, garantier, statistikk eller påstander som ikke er støttet av kilder.";
+  "Lag et profesjonelt, selgende Instagram-innlegg om den konkrete RealtyFlow Inventory-boligen systemet velger. Bruk kun verifiserte fakta fra Inventory, fremhev de viktigste kvalitetene og avslutt med en tydelig CTA for Zen Eco Homes. Ikke finn opp egenskaper, priser, avstander, garantier eller statistikk.";
 
 type Check = { name: string; critical: boolean; status: "ok" | "warn" | "fail"; detail: string };
-type Preflight = { status: "READY_FOR_LIVE" | "NOT_READY"; mode?: string; checks: Check[]; criticalFailures: string[] };
+type Preflight = {
+  status: "READY_FOR_LIVE" | "NOT_READY";
+  mode?: string;
+  checks: Check[];
+  criticalFailures: string[];
+  inventoryProperty?: { id: string; ref: string | null; title: string; imageUrl: string; factSourceCount: number };
+};
 type DraftResult = {
   contentId: string; channel: string; publicationId: string; state: string; mode: string;
   source?: string; caption?: string; imageUrl?: string | null; brandId?: string; accountId?: string | null; assetHash?: string;
   qualityScore?: number | null; approvalId: string | null; error?: string; factSources?: Array<{ claim: string; source: string }>;
+  propertyId?: string | null; propertyRef?: string | null; propertyTitle?: string | null;
 };
 type Draft = { marketingRunId: string; correlationId: string; campaignId: string; results: DraftResult[] };
 type Mode = "legacy" | "ai";
@@ -39,12 +37,11 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; statu
   return { ok: res.ok, status: res.status, data };
 }
 const dot = (s: string) => (s === "ok" ? "#16a34a" : s === "warn" ? "#d97706" : "#dc2626");
-// Klient-side fakta-signal: tall/valuta/spesifikke boligfakta i caption.
 const FACT_SIGNAL = /(€|\bkr\b|\bm²\b|\bkvm\b|\d[\d.\s]{2,}|\bsoverom\b|\bbad\b|\bgaranti\b|\bavkastning\b|\bprosent\b|%)/i;
 
 export default function CanaryControlPage() {
   const [mode, setMode] = useState<Mode>("legacy");
-  const [ai, setAi] = useState({ masterIdea: AI_PREFILL, focus: "", service: "", market: "", language: "no", mediaUrl: "" });
+  const [ai, setAi] = useState({ masterIdea: AI_PREFILL, focus: "", service: "", market: "", language: "no" });
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
@@ -60,9 +57,7 @@ export default function CanaryControlPage() {
 
   const sourceOk = isAi ? result?.source === "generated" : result?.source === "legacy_content_publication";
   const draftOk = result?.state === "draft";
-  // HARD fakta-blokk: generert + tom factSources + caption med faktapåstand → blokker approval.
   const factBlocked = !!result && result.source === "generated" && (result.factSources?.length ?? 0) === 0 && FACT_SIGNAL.test(result.caption ?? "");
-  // Step 3 gjelder kun legacy; i AI-modus er den N/A (og fjernes aldri via endpoint).
   const legacyStepDone = isAi ? true : legacyRemoved;
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -73,8 +68,12 @@ export default function CanaryControlPage() {
 
   const doPreflight = () => run("preflight", async () => {
     reset();
-    const body: any = { mode: "live", brandId: CANARY.brandId, channel: CANARY.channel, publishingAccountId: CANARY.publishingAccountId, service: ai.service || undefined, market: ai.market || undefined, language: ai.language || undefined };
-    if (isAi) { body.aiMode = true; if (ai.mediaUrl) body.mediaUrl = ai.mediaUrl; }
+    const body: any = {
+      mode: "live", brandId: CANARY.brandId, channel: CANARY.channel,
+      publishingAccountId: CANARY.publishingAccountId,
+      service: ai.service || undefined, market: ai.market || undefined, language: ai.language || undefined,
+    };
+    if (isAi) { body.aiMode = true; body.useInventoryProperty = true; }
     else body.contentHubItemId = `content_publication:${CANARY.legacyPublicationId}`;
     const r = await post<Preflight>("/api/marketing/preflight", body);
     if (!r.ok) throw new Error((r.data as any)?.error || `preflight feilet (${r.status})`);
@@ -82,13 +81,21 @@ export default function CanaryControlPage() {
   });
 
   const doDraft = () => run("draft", async () => {
-    const body: any = { brandId: CANARY.brandId, channel: CANARY.channel, publishingAccountId: CANARY.publishingAccountId, goal: { kind: "qualified_leads", target: 10 } };
+    const body: any = {
+      brandId: CANARY.brandId, channel: CANARY.channel,
+      publishingAccountId: CANARY.publishingAccountId,
+      goal: { kind: "qualified_leads", target: 10 },
+    };
     if (isAi) {
-      body.masterIdea = ai.masterIdea; body.focus = ai.focus || undefined; body.service = ai.service || undefined;
-      body.market = ai.market || undefined; body.language = ai.language || undefined; if (ai.mediaUrl) body.mediaUrl = ai.mediaUrl;
-      // Ingen legacyPublicationId i AI-modus.
+      body.masterIdea = ai.masterIdea;
+      body.focus = ai.focus || undefined;
+      body.service = ai.service || undefined;
+      body.market = ai.market || undefined;
+      body.language = ai.language || undefined;
+      body.useInventoryProperty = true;
     } else {
-      body.masterIdea = "canary"; body.legacyPublicationId = CANARY.legacyPublicationId;
+      body.masterIdea = "canary";
+      body.legacyPublicationId = CANARY.legacyPublicationId;
     }
     const r = await post<Draft>("/api/marketing/campaign-draft", body);
     if (!r.ok) throw new Error((r.data as any)?.error || `campaign-draft feilet (${r.status})`);
@@ -98,6 +105,8 @@ export default function CanaryControlPage() {
     if (res0.state !== "draft") throw new Error(`Draft blokkert: ${res0.error ?? res0.state}`);
     const expected = isAi ? "generated" : "legacy_content_publication";
     if (res0.source !== expected) throw new Error(`STOPP: source ble «${res0.source ?? "ukjent"}», forventet «${expected}».`);
+    if (isAi && !res0.propertyId) throw new Error("STOPP: AI property-mode mangler RealtyFlow propertyId.");
+    if (isAi && !res0.imageUrl) throw new Error("STOPP: valgt RealtyFlow-bolig mangler bilde.");
   });
 
   const doRemoveLegacy = () => run("legacy", async () => {
@@ -127,7 +136,6 @@ export default function CanaryControlPage() {
     <div style={{ maxWidth: 860, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ fontSize: 22, fontWeight: 700 }}>Marketing Growth OS — Canary Control</h1>
 
-      {/* Mode selector */}
       <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
         {(["legacy", "ai"] as Mode[]).map((m) => (
           <button key={m} onClick={() => { setMode(m); reset(); }} style={{ ...tab, ...(mode === m ? tabActive : {}) }}>
@@ -137,13 +145,16 @@ export default function CanaryControlPage() {
       </div>
       <p style={{ color: "#555", fontSize: 14 }}>
         Brand <b>{CANARY.brandId}</b> · kanal <b>{CANARY.channel}</b> · konto <b>@{CANARY.accountName}</b> ({CANARY.publishingAccountId}).
-        {isAi ? " AI-modus: innhold genereres (uten fuzzy, uten self-source på fakta)." : ` Legacy: content_publication ${CANARY.legacyPublicationId}.`} COPILOT.
+        {isAi ? " AI-modus: RealtyFlow Inventory velger boligen, bildet og de verifiserte faktaene. AI skriver kun kundevendt copy om denne boligen." : ` Legacy: content_publication ${CANARY.legacyPublicationId}.`} COPILOT.
       </p>
       {err && <div style={{ background: "#fef2f2", color: "#b91c1c", padding: 12, borderRadius: 8, margin: "12px 0", fontSize: 14 }}>⛔ {err}</div>}
 
       {isAi && (
         <section style={box}>
           <h2 style={h2}>AI-input</h2>
+          <div style={{ background: "#eff6ff", color: "#1e40af", padding: 10, borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
+            🏠 Bolig + bilder + fakta hentes automatisk fra <b>RealtyFlow Inventory</b>. Ingen mediaUrl skal limes inn manuelt.
+          </div>
           <label style={lbl}>masterIdea</label>
           <textarea value={ai.masterIdea} onChange={(e) => setAi({ ...ai, masterIdea: e.target.value })} rows={4} style={ta} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -151,18 +162,22 @@ export default function CanaryControlPage() {
             <Field k="service (valgfri)" v={ai.service} on={(v) => setAi({ ...ai, service: v })} />
             <Field k="market (valgfri)" v={ai.market} on={(v) => setAi({ ...ai, market: v })} />
             <Field k="language" v={ai.language} on={(v) => setAi({ ...ai, language: v })} />
-            <Field k="mediaUrl (valgfri, kreves for live IG)" v={ai.mediaUrl} on={(v) => setAi({ ...ai, mediaUrl: v })} wide />
           </div>
         </section>
       )}
 
-      {/* 1. Preflight */}
       <section style={box}>
         <h2 style={h2}>1. Run Live Preflight</h2>
         <button style={btn(true)} disabled={busy === "preflight"} onClick={doPreflight}>{busy === "preflight" ? "Kjører…" : "Run Live Preflight"}</button>
         {preflight && (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontWeight: 700, color: readyForLive ? "#16a34a" : "#dc2626" }}>{preflight.status}</div>
+            {preflight.inventoryProperty && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: 10, borderRadius: 8, marginTop: 8, fontSize: 13 }}>
+                <b>Valgt RealtyFlow-bolig:</b> {preflight.inventoryProperty.ref ?? "—"} · {preflight.inventoryProperty.title}<br />
+                <span>{preflight.inventoryProperty.factSourceCount} verifiserte fakta · bilde klart</span>
+              </div>
+            )}
             <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
               {preflight.checks.map((c) => (
                 <li key={c.name} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, padding: "2px 0" }}>
@@ -176,14 +191,16 @@ export default function CanaryControlPage() {
         )}
       </section>
 
-      {/* 2. Draft */}
       <section style={box}>
-        <h2 style={h2}>2. {isAi ? "Generate Canary Draft (AI)" : "Create Canary Draft (Legacy)"}</h2>
+        <h2 style={h2}>2. {isAi ? "Generate Inventory-grounded Draft (AI)" : "Create Canary Draft (Legacy)"}</h2>
         <button style={btn(readyForLive)} disabled={!readyForLive || busy === "draft"} onClick={doDraft}>{busy === "draft" ? "Lager…" : "Create Draft"}</button>
         {!readyForLive && <span style={hint}>Deaktivert til preflight er READY_FOR_LIVE.</span>}
         {result && (
           <div style={{ marginTop: 12, fontSize: 14 }}>
             <Row k="source" v={result.source} good={sourceOk} />
+            {isAi && <Row k="property_id" v={result.propertyId} good={!!result.propertyId} />}
+            {isAi && <Row k="property_ref" v={result.propertyRef} />}
+            {isAi && <Row k="property_title" v={result.propertyTitle} />}
             <Row k="mode" v={result.mode} good={result.mode === "manual-review"} />
             <Row k="state" v={result.state} good={draftOk} />
             <Row k="quality_score" v={String(result.qualityScore ?? "—")} />
@@ -198,24 +215,23 @@ export default function CanaryControlPage() {
             <pre style={pre}>{(result.factSources?.length ?? 0) ? JSON.stringify(result.factSources, null, 2) : "[] (ingen)"}</pre>
             <div style={{ marginTop: 8 }}><b>FINAL INSTAGRAM CAPTION</b></div>
             <pre style={pre}>{result.caption}</pre>
-            {result.imageUrl && <img src={result.imageUrl} alt="preview" style={{ maxWidth: 320, borderRadius: 8, marginTop: 8 }} />}
+            {result.imageUrl && <img src={result.imageUrl} alt="Valgt RealtyFlow-bolig" style={{ maxWidth: 420, borderRadius: 8, marginTop: 8 }} />}
             {factBlocked && (
               <div style={{ background: "#fef2f2", color: "#b91c1c", padding: 12, borderRadius: 8, marginTop: 10, fontWeight: 600 }}>
-                ⛔ BLOKKERER GODKJENNING: AI-generert innhold har faktapåstand/tall uten uavhengig kilde (factSources tom). Regenerér uten uverifiserte fakta, eller legg til kilde.
+                ⛔ BLOKKERER GODKJENNING: AI-generert innhold har faktapåstand/tall uten uavhengig kilde.
               </div>
             )}
           </div>
         )}
       </section>
 
-      {/* 3. Legacy scheduler removal — N/A i AI-modus */}
       <section style={box}>
         <h2 style={h2}>3. Remove from legacy scheduler</h2>
         {isAi ? (
-          <div style={{ color: "#6b7280", fontWeight: 600 }}>NOT_APPLICABLE — AI-modus har ingen legacy-scheduler-rad.</div>
+          <div style={{ color: "#6b7280", fontWeight: 600 }}>NOT_APPLICABLE — Inventory-grounded AI har ingen legacy-scheduler-rad.</div>
         ) : (
           <>
-            <p style={hint}>Hindrer dobbel-post (legacy cron ville ellers postet samme innhold).</p>
+            <p style={hint}>Hindrer dobbel-post.</p>
             <button style={btn(!!draft && sourceOk && !legacyRemoved)} disabled={!draft || !sourceOk || legacyRemoved || busy === "legacy"} onClick={doRemoveLegacy}>
               {busy === "legacy" ? "…" : "Remove from legacy scheduler"}
             </button>
@@ -224,10 +240,9 @@ export default function CanaryControlPage() {
         )}
       </section>
 
-      {/* 4. Approval */}
       <section style={box}>
         <h2 style={h2}>4. Approval</h2>
-        <p style={hint}>Verifiser eksakt caption, bilde, konto og factSources (over) før du godkjenner.</p>
+        <p style={hint}>Verifiser eksakt bolig, caption, bilde, konto og factSources før du godkjenner.</p>
         <button style={btn(legacyStepDone && draftOk && sourceOk && !factBlocked && !approved)} disabled={!legacyStepDone || !draftOk || !sourceOk || factBlocked || approved || busy === "approve"} onClick={doApprove}>
           {busy === "approve" ? "…" : "Approve in Growth OS Gateway"}
         </button>
@@ -235,7 +250,6 @@ export default function CanaryControlPage() {
         {approved && <span style={ok}>✅ Godkjent</span>}
       </section>
 
-      {/* 5. Publish */}
       <section style={box}>
         <h2 style={h2}>5. Publish</h2>
         <button style={btn(publishEnabled)} disabled={!publishEnabled || busy === "publish"} onClick={doPublish}>
