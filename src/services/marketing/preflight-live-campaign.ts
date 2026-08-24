@@ -28,11 +28,13 @@ export interface PreflightInput {
   language?: string;
   /** Menneske-valgt konto (external_id). */
   publishingAccountId?: string;
-  /** "social_post:<id>" eller "media_asset:<id>". */
-  contentHubItemId: string;
+  /** "social_post:<id>", "media_asset:<id>" eller "content_publication:<id>". Utelates i AI-modus. */
+  contentHubItemId?: string;
   /** Public HTTPS media-URL (kan overstyre/utfylle asset-ens egen). */
   mediaUrl?: string;
   cta?: string;
+  /** AI-modus: ingen forhåndsvalgt item — innhold genereres i campaign-draft. */
+  aiMode?: boolean;
 }
 
 export interface PreflightEnv {
@@ -85,36 +87,43 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   // 3) Service (routing-dimensjon).
   add("service", false, input.service ? "ok" : "warn", input.service ? `service «${input.service}»` : "ingen service angitt (kan gi tvetydig routing ved flere kontoer)");
 
-  // 4) Content Hub-org-mapping (nødvendig for å slå opp Content Hub-innhold).
-  const isSocialPost = input.contentHubItemId.startsWith("social_post:");
-  add("content_hub_org", isSocialPost, brand?.contentHubOrgId ? "ok" : (isSocialPost ? "fail" : "warn"),
-    brand?.contentHubOrgId ? `content_hub_org_id «${brand.contentHubOrgId}»` : "brand_context.content_hub_org_id mangler");
+  // AI-modus: intet forhåndsvalgt item — innhold genereres i campaign-draft, som
+  // kjører publishability/quality/fakta-gate. Item-checkene her er N/A.
+  const hasItem = !!input.contentHubItemId && !input.aiMode;
+  const isSocialPost = hasItem && input.contentHubItemId!.startsWith("social_post:");
+  let itemMediaUrl: string | null = null;
+  let itemText = "";
 
-  // 5) Content Hub-item finnes + er godkjent/menneske-eid.
-  const rawId = input.contentHubItemId.split(":")[1];
-  let itemText = ""; let itemMediaUrl: string | null = null; let humanApproved = false; let itemFound = false;
-  if (isSocialPost) {
-    const { data } = await supabase.from("social_posts").select("id, content, status, organization_id").eq("id", rawId).maybeSingle();
-    if (data) { itemFound = true; itemText = data.content ?? ""; humanApproved = data.status === "approved"; }
-  } else if (input.contentHubItemId.startsWith("media_asset:")) {
-    const { data } = await supabase.from("media_assets").select("id, public_url, brand_id, status, is_favorite, exported_to_content_hub_at").eq("id", rawId).maybeSingle();
-    if (data) { itemFound = true; itemMediaUrl = data.public_url ?? null; humanApproved = !!data.is_favorite || !!data.exported_to_content_hub_at; }
-  } else if (input.contentHubItemId.startsWith("content_publication:")) {
-    // LEGACY Content Hub (produksjons-realitet). Body = description, media = ai_image_url.
-    const { data } = await supabase.from("content_publications").select("*").eq("id", rawId).maybeSingle();
-    if (data) {
-      itemFound = true;
-      itemText = String(data.description ?? data.content ?? data.body ?? data.caption ?? "");
-      itemMediaUrl = data.ai_image_url ?? data.image_url ?? (Array.isArray(data.media_urls) ? data.media_urls[0] : null) ?? null;
-      humanApproved = ["published", "approved", "scheduled", "review"].includes(String(data.status));
+  if (hasItem) {
+    // 4) Content Hub-org-mapping (nødvendig for å slå opp Content Hub-innhold).
+    add("content_hub_org", isSocialPost, brand?.contentHubOrgId ? "ok" : (isSocialPost ? "fail" : "warn"),
+      brand?.contentHubOrgId ? `content_hub_org_id «${brand.contentHubOrgId}»` : "brand_context.content_hub_org_id mangler");
+
+    // 5) Content Hub-item finnes + er godkjent/menneske-eid.
+    const rawId = input.contentHubItemId!.split(":")[1];
+    let humanApproved = false; let itemFound = false;
+    if (isSocialPost) {
+      const { data } = await supabase.from("social_posts").select("id, content, status, organization_id").eq("id", rawId).maybeSingle();
+      if (data) { itemFound = true; itemText = data.content ?? ""; humanApproved = data.status === "approved"; }
+    } else if (input.contentHubItemId!.startsWith("media_asset:")) {
+      const { data } = await supabase.from("media_assets").select("id, public_url, brand_id, status, is_favorite, exported_to_content_hub_at").eq("id", rawId).maybeSingle();
+      if (data) { itemFound = true; itemMediaUrl = data.public_url ?? null; humanApproved = !!data.is_favorite || !!data.exported_to_content_hub_at; }
+    } else if (input.contentHubItemId!.startsWith("content_publication:")) {
+      const { data } = await supabase.from("content_publications").select("*").eq("id", rawId).maybeSingle();
+      if (data) {
+        itemFound = true;
+        itemText = String(data.description ?? data.content ?? data.body ?? data.caption ?? "");
+        itemMediaUrl = data.ai_image_url ?? data.image_url ?? (Array.isArray(data.media_urls) ? data.media_urls[0] : null) ?? null;
+        humanApproved = ["published", "approved", "scheduled", "review"].includes(String(data.status));
+      }
     }
+    add("content_hub_item", true, itemFound ? "ok" : "fail", itemFound ? `fant «${input.contentHubItemId}»` : `CONTENT_ITEM_NOT_FOUND «${input.contentHubItemId}»`);
+    add("human_approved", true, humanApproved ? "ok" : "fail", humanApproved ? "menneske-godkjent/tiltrodd status" : "innholdet er ikke i en tiltrodd/godkjent status");
+    const pubItem = contentPublishabilityGate(itemText);
+    add("content_publishable", true, pubItem.publishable ? "ok" : "fail", pubItem.publishable ? "innhold er publishable" : `${pubItem.result} — ${pubItem.reason}`);
+  } else {
+    add("content_source", false, "warn", "AI-modus: innhold genereres i campaign-draft (publishability/quality/fakta-gate kjøres der).");
   }
-  add("content_hub_item", true, itemFound ? "ok" : "fail", itemFound ? `fant «${input.contentHubItemId}»` : `CONTENT_ITEM_NOT_FOUND «${input.contentHubItemId}»`);
-  add("human_approved", true, humanApproved ? "ok" : "fail", humanApproved ? "menneske-godkjent/tiltrodd status" : "innholdet er ikke i en tiltrodd/godkjent status");
-
-  // 5b) PUBLISHABILITY på selve itemet (kritisk) — fanger intern/meta-tekst før canary.
-  const pubItem = contentPublishabilityGate(itemText);
-  add("content_publishable", true, pubItem.publishable ? "ok" : "fail", pubItem.publishable ? "innhold er publishable" : `${pubItem.result} — ${pubItem.reason}`);
 
   // 6) Eksplisitt publiseringskonto (routing + isolasjon). Aldri tvetydig.
   let account: ResolvedAccount | undefined;
@@ -128,12 +137,13 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
     add("publishing_account", true, "fail", e instanceof Error ? e.message : "konto kunne ikke resolves");
   }
 
-  // 7) Media: public HTTPS-URL (Instagram krever media; Facebook kan være tekst).
+  // 7) Media: public HTTPS-URL. Kritisk for IG KUN i item-modus; i AI-modus
+  // legges bilde til i campaign-draft (eller dry-run) → non-kritisk her.
   const mediaUrl = input.mediaUrl ?? itemMediaUrl;
   const igNeedsMedia = input.channel === "instagram";
   const mediaOk = isHttps(mediaUrl);
-  add("media_url", igNeedsMedia, mediaOk ? "ok" : (igNeedsMedia ? "fail" : "warn"),
-    mediaOk ? `media OK (${mediaUrl})` : (mediaUrl ? "MEDIA_ASSET_INVALID: ikke public HTTPS-URL" : "MEDIA_ASSET_MISSING: ingen media-URL"));
+  add("media_url", igNeedsMedia && hasItem, mediaOk ? "ok" : (igNeedsMedia && hasItem ? "fail" : "warn"),
+    mediaOk ? `media OK (${mediaUrl})` : (mediaUrl ? "MEDIA_ASSET_INVALID: ikke public HTTPS-URL" : hasItem ? "MEDIA_ASSET_MISSING: ingen media-URL" : "AI-modus: bilde legges til i campaign-draft (eller dry-run)"));
 
   // 8) Approval-tjeneste koblet (fail closed hvis ikke).
   add("approval_service", true, deps.approvalConfigured ? "ok" : "fail", deps.approvalConfigured ? "General Approval Gateway koblet" : "APPROVAL_SERVICE_UNAVAILABLE");
@@ -146,19 +156,20 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
       : liveMode ? "META_CREDENTIALS_MISSING: live-modus krever MARKETING_META_LIVE + META_ACCESS_TOKEN + konto"
         : "ikke live — kjører dry-run (sett MARKETING_META_LIVE + META_ACCESS_TOKEN + konto for ekte post)");
 
-  // 10) Asset-integritet: approved_asset_hash er beregnbar (bindes til konto+innhold+media).
-  const canHash = !!account && mediaOk && !!brand;
+  // 10) Asset-integritet: approved_asset_hash. Kritisk KUN i item-modus (der
+  // innholdet finnes nå). I AI-modus beregnes hashen i campaign-draft.
+  const canHash = hasItem && !!account && mediaOk && !!brand;
   let assetHash: string | undefined;
   if (canHash) {
     assetHash = approvedAssetHash({
-      sourceContentId: input.contentHubItemId,
+      sourceContentId: input.contentHubItemId!,
       finalCopy: itemText,
       finalMedia: JSON.stringify({ imageUrl: mediaUrl }),
       brandId: input.brandId, accountId: account!.accountId, channel: input.channel,
       propertyIds: [], cta: input.cta ?? brand!.preferredCta ?? "", factSources: [],
     });
   }
-  add("asset_hash", true, canHash ? "ok" : "fail", canHash ? `hash ${assetHash}` : "kan ikke beregne hash (mangler konto/media/brand)");
+  add("asset_hash", hasItem, canHash ? "ok" : (hasItem ? "fail" : "warn"), canHash ? `hash ${assetHash}` : hasItem ? "kan ikke beregne hash (mangler konto/media/brand)" : "AI-modus: hash beregnes i campaign-draft");
 
   const criticalFailures = checks.filter((c) => c.critical && c.status === "fail").map((c) => `${c.name}: ${c.detail}`);
   return {

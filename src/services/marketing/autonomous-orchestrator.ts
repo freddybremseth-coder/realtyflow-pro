@@ -189,6 +189,19 @@ export async function dispatchGeneratedAsset(
   const quality = contentQualityGate(asset, { brandTerms: args.brandTerms, duplicateFree: true });
   trace.push({ step: "quality", actor: "quality", summary: `score ${quality.score}${quality.requiresApproval ? " (sensitive → approval)" : ""}` });
 
+  // 3b) HARD BLOCK (P0): AI-GENERERT innhold kan ALDRI være sin egen fakta-kilde.
+  // Faktapåstander/tall (pris/kvm/soverom/statistikk …) uten uavhengig factSources
+  // → BLOKKERT FØR approval (krever regenerering eller kilder). Legacy/menneske-
+  // forfattet self-source (sourceType != generated + factSources satt) passerer.
+  // Kvalitetsgaten er IKKE svekket — dette er en ekstra, strengere port.
+  const isGenerated = (args.sourceType ?? "generated") === "generated";
+  if (isGenerated && quality.requiresApproval) {
+    const reason = `FACT_NOT_VERIFIED: AI-generert innhold med uverifiserte fakta (${quality.sensitiveClaimsWithoutSource.join(", ")}) — krever kilder eller regenerering før godkjenning.`;
+    trace.push({ step: "fact-gate", actor: "quality", summary: reason });
+    await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
+    return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: reason, trace };
+  }
+
   // 4) Policy Engine + nivå-tak.
   const action = publishActionFor(asset.channel);
   const decision = resolveMarketingAutonomy(action, run.level, { channel: asset.channel, confidence: quality.score / 100, dataQuality: quality.score / 100, preapprovedFormat: args.preapprovedFormat });

@@ -19,8 +19,9 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const body = (await request.json().catch(() => ({}))) as Partial<PreflightInput>;
-  if (!body.brandId || !body.channel || !body.contentHubItemId) {
-    return NextResponse.json({ error: "brandId, channel og contentHubItemId er påkrevd" }, { status: 400 });
+  // AI-modus: contentHubItemId er valgfritt (innhold genereres i campaign-draft).
+  if (!body.brandId || !body.channel || (!body.contentHubItemId && !body.aiMode)) {
+    return NextResponse.json({ error: "brandId, channel og (contentHubItemId eller aiMode) er påkrevd" }, { status: 400 });
   }
 
   const result = await preflightLiveCampaign(
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
       },
     },
     {
-      brandId: body.brandId, channel: body.channel, contentHubItemId: body.contentHubItemId,
+      brandId: body.brandId, channel: body.channel, contentHubItemId: body.contentHubItemId, aiMode: body.aiMode,
       mode: body.mode === "live" ? "live" : "dry_run",
       service: body.service, market: body.market, language: body.language,
       publishingAccountId: body.publishingAccountId, mediaUrl: body.mediaUrl, cta: body.cta,

@@ -275,6 +275,40 @@ test("removeLegacyScheduledRow: 0 rader (ikke scheduled) → feiler fail-closed"
   await assert.rejects(() => removeLegacyScheduledRow(db, "pub1"), /LEGACY_ROW_NOT_SCHEDULED/);
 });
 
+test("AI-modus: ingen legacyPublicationId → source=generated, kvalitativ post når manual-review", async () => {
+  delete process.env.ANTHROPIC_API_KEY; delete process.env.MARKETING_META_LIVE; // dry-run generator
+  const db = makeDb();
+  seedBrand(db);
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+  const draft = await createCampaignDraft(db, {
+    brandId: "b1", channel: "instagram", goal: { kind: "qualified_leads", target: 10 },
+    masterIdea: "Hvorfor kjøpe energieffektive hjem på Costa Blanca: trygghet og norsk veiledning", mediaUrl: "https://x/i.jpg",
+  });
+  assert.equal(draft.results.length, 1); // kun instagram (ikke begge Meta-kanaler)
+  assert.equal(draft.results[0].source, "generated");
+  assert.equal(draft.results[0].state, "draft");
+  assert.equal(draft.results[0].mode, "manual-review");
+  assert.ok(draft.results[0].approvalId);
+  // AI-modus rører ALDRI legacy content_publications.
+  assert.ok(!db.tables["content_publications"] || db.tables["content_publications"].length === 0);
+});
+
+test("AI-modus HARD BLOCK: uverifisert pristall → BLOKKERT før approval (ingen approval)", async () => {
+  delete process.env.ANTHROPIC_API_KEY;
+  const db = makeDb();
+  seedBrand(db);
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+  const draft = await createCampaignDraft(db, {
+    brandId: "b1", channel: "instagram", goal: { kind: "leads", target: 5 },
+    masterIdea: "Eksklusiv villa til pris €2 450 000 med 4 soverom", mediaUrl: "https://x/i.jpg",
+  });
+  assert.equal(draft.results[0].source, "generated");
+  assert.equal(draft.results[0].state, "paused"); // hard block
+  assert.match(draft.results[0].error ?? "", /FACT_NOT_VERIFIED/);
+  assert.equal(draft.results[0].approvalId, null);
+  assert.ok(!db.tables["agentic_approvals"] || db.tables["agentic_approvals"].length === 0);
+});
+
 test("CANARY fail-closed: legacy-rad med meta-tekst avvises (rejected, ingen approval)", async () => {
   const db = makeDb();
   seedBrand(db);

@@ -71,6 +71,7 @@ export interface CampaignDraftResult {
     contentId: string; channel: string; publicationId: string; state: string; mode: string;
     qualityScore: number | null; approvalId: string | null; error?: string; source?: string;
     caption?: string; imageUrl?: string | null; brandId?: string; accountId?: string | null; assetHash?: string;
+    factSources?: Array<{ claim: string; source: string }>;
   }>;
   trace: unknown[];
 }
@@ -109,8 +110,8 @@ export async function createCampaignDraft(
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
 
-  // Canary bruker kun oppgitt kanal (default instagram); ellers Meta-standard.
-  const channels: MarketingChannel[] = input.legacyPublicationId ? [(input.channel ?? "instagram")] : META_CHANNELS;
+  // Canary (legacy ELLER AI) bruker kun oppgitt kanal; ellers full Meta-standard.
+  const channels: MarketingChannel[] = input.channel ? [input.channel] : (input.legacyPublicationId ? ["instagram"] : META_CHANNELS);
   const directorInput = {
     brandId: input.brandId, brandName: brand.brandName, goals: [input.goal],
     channels, pipelineGaps: [], inventoryFocus: input.focus ? [input.focus] : [],
@@ -182,6 +183,10 @@ export async function createCampaignDraft(
           reuseMode = decision.chosen.reuseMode;
         } else {
           creative = await generator.generate({ brief, brand, recommendation }); // kaster CREATIVE_OUTPUT_INVALID ved ugyldig AI-svar
+          // AI-generert har ikke eget bilde; fest evt. menneske-oppgitt media (kreves for live IG).
+          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) {
+            creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
+          }
         }
       }
     } catch (err) {
@@ -210,6 +215,7 @@ export async function createCampaignDraft(
       qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType,
       caption: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
       imageUrl: creative.asset.media?.imageUrl ?? null, brandId: input.brandId, accountId: account?.accountId ?? null, assetHash: d.assetHash,
+      factSources: creative.asset.factSources ?? [],
     });
     trace.push(...d.trace);
   }

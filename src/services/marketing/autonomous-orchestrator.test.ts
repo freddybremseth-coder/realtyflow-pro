@@ -78,12 +78,33 @@ test("novelty-gate: nesten-identisk asset regenereres (ingen publikasjon)", asyn
   assert.ok(!fake.calls.upserts.some((u: any) => u.table === "marketing_publications"));
 });
 
-test("sensitive fakta uten kilde tvinger godkjenning selv på guarded", async () => {
+test("sensitive fakta uten kilde (AI-generert) → BLOKKERT før approval (ingen approval)", async () => {
   const fake = makeFake({});
   const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
   const sensitive: GeneratedAsset = { ...asset, body: "Villa til pris 500000, garantert avkastning." };
-  const res = await dispatchGeneratedAsset(deps(fake), { asset: sensitive, brief, run, preapprovedFormat: true });
-  assert.notEqual(res.mode, "live");
+  const res = await dispatchGeneratedAsset(deps(fake), { asset: sensitive, brief, run, preapprovedFormat: true, sourceType: "generated" });
+  assert.equal(res.state, "paused");
+  assert.equal(res.mode, "blocked");
+  assert.match(res.error ?? "", /FACT_NOT_VERIFIED/);
+  assert.equal(res.approvalId, null);
+});
+
+test("legacy self-source (factSources satt) → sensitive fakta blokkeres IKKE (passerer til approval)", async () => {
+  const fake = makeFake({});
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const legacy: GeneratedAsset = { ...asset, body: "Villa til pris 500000 i Calpe.", factSources: [{ claim: "Villa til pris 500000 i Calpe.", source: "legacy (menneske-forfattet)" }] };
+  const res = await dispatchGeneratedAsset(deps(fake, { requestApproval: async () => "appr1" }), { asset: legacy, brief, run, sourceType: "legacy_content_publication" });
+  assert.notEqual(res.state, "paused");
+  assert.equal(res.approvalId, "appr1");
+});
+
+test("generert innhold MED uavhengige factSources → sensitive fakta passerer (uavhengig kilde tillatt)", async () => {
+  const fake = makeFake({});
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const sourced: GeneratedAsset = { ...asset, body: "Villa til pris 500000 i Calpe.", factSources: [{ claim: "pris 500000", source: "eiendomsdatabase/prospekt" }] };
+  const res = await dispatchGeneratedAsset(deps(fake, { requestApproval: async () => "appr1" }), { asset: sourced, brief, run, sourceType: "generated" });
+  assert.notEqual(res.state, "paused");
+  assert.equal(res.approvalId, "appr1");
 });
 
 test("guarded + preapproved + publisher → publisert, guard-sjekk kjørt", async () => {
