@@ -105,6 +105,20 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     await supabase.from("marketing_publications").update({ state: res.state, updated_at: at }).eq("publication_id", publicationId);
     await supabase.from("marketing_assets").update({ approved_at: at, updated_at: at }).eq("creative_variant_id", asset.creativeVariantId);
 
+    // Lukk run-livssyklusen: agent_runs.status→completed, marketing_runs.stage→done.
+    // BEST-EFFORT (aldri kaste) — posten er allerede ute, og executeApproval markerer
+    // executed FØRST etter at vi returnerer. En throw her ville hindret markExecuted
+    // → retry → dobbel-post. En feilet lukking er kun en kosmetisk DB-inkonsistens.
+    const runId = pub.marketing_run_id ?? item.runId ?? null;
+    if (runId) {
+      try {
+        await supabase.from("agent_runs").update({ status: "completed", outcome: "executed", finished_at: at, updated_at: at }).eq("id", runId);
+        await supabase.from("marketing_runs").update({ stage: "done", updated_at: at }).eq("marketing_run_id", runId);
+      } catch (e) {
+        console.error(`[publish-executor] run-livssyklus-lukking feilet (ikke-kritisk, post er publisert): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     return { detail: `${res.dryRun ? "DRY-RUN: " : ""}publisert ${asset.channel} (${res.externalId})` };
   };
 }

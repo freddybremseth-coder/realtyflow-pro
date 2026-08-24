@@ -472,6 +472,31 @@ test("executor: intern/meta-tekst → PUBLISHABILITY_FAILED, NULL Meta-kall", as
   assert.equal(metaCalls, 0); // ingen Meta-call ved publishability-feil
 });
 
+test("run-livssyklus: vellykket publish lukker agent_runs (completed) + marketing_runs (done)", async () => {
+  const db = makeDb(); seedPublishable(db);
+  db.tables["marketing_runs"] = [{ marketing_run_id: "mr1", stage: "plan" }];
+  db.tables["agent_runs"] = [{ id: "mr1", status: "running" }];
+  const publisher: any = { publish: async () => ({ state: "published", externalId: "ext1" }) };
+  const exec = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG1" }) });
+  assert.equal(exec.executed, true);
+  assert.equal(db.tables["agent_runs"][0].status, "completed");
+  assert.equal(db.tables["agent_runs"][0].outcome, "executed");
+  assert.ok(db.tables["agent_runs"][0].finished_at);
+  assert.equal(db.tables["marketing_runs"][0].stage, "done");
+});
+
+test("run-livssyklus best-effort: lukking som kaster hindrer IKKE publish/executed (ingen dobbel-post)", async () => {
+  const db = makeDb(); seedPublishable(db);
+  db.tables["marketing_runs"] = [{ marketing_run_id: "mr1", stage: "plan" }];
+  db.tables["agent_runs"] = [{ id: "mr1", status: "running" }];
+  const origFrom = db.from;
+  db.from = (name: string) => (name === "agent_runs" ? { update: () => ({ eq: () => { throw new Error("boom close"); } }) } : origFrom(name));
+  const publisher: any = { publish: async () => ({ state: "published", externalId: "ext1" }) };
+  const exec = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG1" }) });
+  assert.equal(exec.ok, true);
+  assert.equal(exec.executed, true); // posten publisert selv om livssyklus-lukkingen kastet
+});
+
 test("executor: konto endret siden godkjenning → APPROVED_ASSET_CHANGED", async () => {
   const db = makeDb(); seedPublishable(db);
   const publisher: any = { publish: async () => ({ state: "published", externalId: "x" }) };
