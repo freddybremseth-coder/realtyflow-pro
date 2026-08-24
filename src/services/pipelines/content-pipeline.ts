@@ -202,11 +202,12 @@ Returner KUN gyldig JSON:
                 }
               }
             } catch {
-              console.warn('[ContentPipeline] Could not parse AI JSON, using raw output');
-              if (input.generateDescription) {
-                generatedDescription = result.output;
-                output.generatedDescription = generatedDescription;
-              }
+              // CONTENT_GENERATION_INVALID: ALDRI bruk rå modell-output som
+              // beskrivelse/body i produksjon. Det var slik intern agent-tekst
+              // («Jeg setter opp Marketing Agent …») ble en publisert caption.
+              // La generatedDescription være undefined → faller tilbake til
+              // menneske-oppgitt input.description/title, aldri rå AI-tekst.
+              console.warn('[ContentPipeline] CONTENT_GENERATION_INVALID: AI-svar var ikke gyldig JSON — forkaster rå output (bruker ikke som body).');
             }
           }
 

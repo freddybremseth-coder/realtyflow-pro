@@ -1,6 +1,7 @@
 import { uploadVideo, isConfigured as isYouTubeConfigured } from './youtube-client';
 import type { YouTubeVideoMetadata } from '@/lib/types';
 import { Readable } from 'stream';
+import { contentPublishabilityGate } from '@/lib/marketing/autonomous/publishability';
 
 // ─── Interfaces ─────────────────────────────────────────────────────
 
@@ -467,6 +468,15 @@ export async function publishToMultiplePlatforms(
   input: MultiPlatformPublishInput
 ): Promise<PublishResult[]> {
   const results: PublishResult[] = [];
+
+  // PUBLISHABILITY GATE (P0, defense in depth). Denne stien (content-pipeline)
+  // publiserte tidligere intern agent-tekst til Instagram. Intern/meta-tekst,
+  // placeholder eller tomt → aldri en post. Fail closed FØR ethvert Graph-kall.
+  const pubCheck = contentPublishabilityGate(input.content);
+  if (!pubCheck.publishable) {
+    const error = `PUBLISHABILITY_FAILED: ${pubCheck.result} — ${pubCheck.reason}`;
+    return input.platforms.map((platform) => ({ platform, success: false, error }));
+  }
 
   const promises = input.platforms.map(async (platform) => {
     switch (platform) {

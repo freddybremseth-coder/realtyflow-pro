@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { assertPublishableForStatus } from "@/services/publishing/publishability-guard";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,6 +47,17 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabase();
     if (!supabase) {
       return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+    }
+
+    // STATUS-OVERGANGS-GUARD (P0): en rad kan ikke gå til "scheduled" hvis body
+    // ikke er publishable (intern/meta-tekst, placeholder eller tom). Fail closed.
+    const { data: draftRow } = await supabase.from("content_publications").select("*").eq("id", draft_id).maybeSingle();
+    if (draftRow) {
+      const draftBody = draftRow.description ?? draftRow.content ?? draftRow.body ?? draftRow.ai_description ?? "";
+      const guard = assertPublishableForStatus({ content: draftBody, targetStatus: "scheduled", platform: platforms[0] });
+      if (!guard.ok) {
+        return NextResponse.json({ error: `Kan ikke planlegge: ${guard.reason}`, code: "PUBLISHABILITY_FAILED" }, { status: 422 });
+      }
     }
 
     const updateData: Record<string, unknown> = {
