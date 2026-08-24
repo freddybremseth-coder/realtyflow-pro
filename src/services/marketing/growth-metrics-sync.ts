@@ -22,6 +22,8 @@ export interface GrowthMetricsSyncOptions {
   days?: number;
   limit?: number;
   accessToken?: string;
+  /** Do not sync/learn from posts until they have had time to accumulate stable engagement. */
+  minAgeHours?: number;
   /** Do not derive learning rules before this many distinct measured posts. */
   learningMinObservations?: number;
 }
@@ -197,8 +199,11 @@ export async function syncGrowthInstagramMetrics(
 
   const days = Math.max(1, Math.min(options.days ?? 30, 90));
   const limit = Math.max(1, Math.min(options.limit ?? 100, 250));
+  const minAgeHours = Math.max(0, Math.min(options.minAgeHours ?? 24, 168));
   const learningMin = Math.max(5, options.learningMinObservations ?? 10);
-  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const now = Date.now();
+  const since = new Date(now - days * 86_400_000).toISOString();
+  const matureBefore = new Date(now - minAgeHours * 3_600_000).toISOString();
 
   let query = supabase
     .from("marketing_publications")
@@ -206,6 +211,7 @@ export async function syncGrowthInstagramMetrics(
     .eq("state", "published")
     .eq("channel", "instagram")
     .gte("updated_at", since)
+    .lte("updated_at", matureBefore)
     .order("updated_at", { ascending: false })
     .limit(limit);
   if (brandId) query = query.eq("brand_id", brandId);
