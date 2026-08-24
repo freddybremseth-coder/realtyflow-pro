@@ -105,7 +105,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
 export function assembleAsset(
   req: CreativeRequest,
   output: { headline?: string; body?: string; cta?: string },
-  meta: { model?: string; costPerCallEur?: number; now?: string },
+  meta: { model?: string; costEur?: number; now?: string },
 ): CreativeResult {
   const now = meta.now ?? new Date().toISOString();
   const genome: ContentGenome = req.brief.genome;
@@ -121,7 +121,7 @@ export function assembleAsset(
       body: output.body,
       cta: output.cta ?? req.brand.preferredCta,
       factSources: req.facts ?? [],
-      generator: { model: meta.model, costEur: meta.costPerCallEur ?? 0 },
+      generator: { model: meta.model, costEur: meta.costEur ?? 0 },
     },
     provenance: {
       generatedBy: "creative-generator",
