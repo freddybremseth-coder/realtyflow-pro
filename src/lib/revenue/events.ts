@@ -2,6 +2,7 @@ export const REVENUE_EVENT_TYPES = [
   "lead_created",
   "contact_created",
   "contact_updated",
+  "qualified",
   "work_item_created",
   "email_received",
   "email_analyzed",
@@ -88,6 +89,7 @@ export const REVENUE_EVENT_LABELS: Record<RevenueEventType, string> = {
   lead_created: "Lead opprettet",
   contact_created: "Kontakt opprettet",
   contact_updated: "Kontakt oppdatert",
+  qualified: "Lead kvalifisert",
   work_item_created: "Oppgave opprettet",
   email_received: "E-post mottatt",
   email_analyzed: "E-post analysert",
@@ -169,8 +171,9 @@ export function isRevenueEventsTableMissing(message?: string | null) {
   return /revenue_events|schema cache|does not exist|relation/i.test(String(message || ""));
 }
 
-const REVENUE_TO_TOUCH: Partial<Record<RevenueEventType, "lead_created" | "viewing" | "offer" | "sale">> = {
+const REVENUE_TO_TOUCH: Partial<Record<RevenueEventType, "lead_created" | "qualified" | "viewing" | "offer" | "sale">> = {
   lead_created: "lead_created",
+  qualified: "qualified",
   viewing_completed: "viewing",
   offer_made: "offer",
   deal_won: "sale",
@@ -202,7 +205,7 @@ async function mirrorRevenueEventToMarketingTouchpoint(
 ): Promise<void> {
   const eventType = event?.event_type as RevenueEventType;
   const publicLeadRepeat = eventType === "contact_updated" && clean(event?.source_system) === "public_leads";
-  const touchType: "lead_created" | "form_submit" | "viewing" | "offer" | "sale" | undefined =
+  const touchType: "lead_created" | "form_submit" | "qualified" | "viewing" | "offer" | "sale" | undefined =
     REVENUE_TO_TOUCH[eventType] ?? (publicLeadRepeat ? "form_submit" : undefined);
   const brandId = clean(event?.brand_id);
   const contactId = clean(event?.contact_id);
