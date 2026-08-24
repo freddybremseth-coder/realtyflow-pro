@@ -4,7 +4,7 @@
  * Bridges LIVE Growth OS publications to observed channel metrics:
  *   marketing_publications + marketing_publish_attempts
  *     -> Instagram Insights
- *     -> marketing_content (genome backfill)
+ *     -> marketing_content (genome backfill/enrichment)
  *     -> ONE canonical metrics_snapshot per content/channel
  *     -> Learning Engine (only after enough distinct observations)
  *
@@ -43,18 +43,66 @@ function propertyIdFromSource(sourceId: unknown): string | null {
   return value.startsWith("property:") ? value.slice("property:".length) : null;
 }
 
+function slug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9æøåáéíóúüñà-ÿ]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+function claimValue(facts: Array<{ claim?: unknown }> | null | undefined, prefix: string): string | null {
+  const row = (facts ?? []).find((f) => String(f?.claim ?? "").toLowerCase().startsWith(prefix.toLowerCase()));
+  if (!row) return null;
+  const raw = String(row.claim ?? "");
+  const value = raw.slice(raw.indexOf(":") + 1).trim();
+  return value || null;
+}
+
+function priceBandFromClaim(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const n = Number(value.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  if (n < 300_000) return "under_300k";
+  if (n < 500_000) return "300k_500k";
+  if (n < 750_000) return "500k_750k";
+  if (n < 1_000_000) return "750k_1m";
+  return "1m_plus";
+}
+
 async function latestAssetGenome(
   supabase: MarketingSupabaseLike,
   contentId: string,
+  sourceId: string | null,
 ): Promise<ContentGenome | null> {
   const { data } = await supabase
     .from("marketing_assets")
-    .select("genome, updated_at")
+    .select("genome, fact_sources, property_ids, updated_at")
     .eq("content_id", contentId)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return (data?.genome ?? null) as ContentGenome | null;
+  if (!data?.genome) return null;
+
+  const base = data.genome as ContentGenome;
+  const facts = Array.isArray(data.fact_sources) ? data.fact_sources : [];
+  const place = claimValue(facts, "Sted:");
+  const propertyType = claimValue(facts, "Boligtype:");
+  const price = claimValue(facts, "Pris:");
+  const propertyId =
+    (Array.isArray(data.property_ids) && data.property_ids[0] ? String(data.property_ids[0]) : null)
+    || propertyIdFromSource(sourceId);
+
+  // Enrich from the exact grounded facts that were locked into the published
+  // asset. This avoids learning from guessed/derived marketing prose.
+  return {
+    ...base,
+    ...(place ? { area: slug(place) } : {}),
+    ...(propertyType ? { propertyType: slug(propertyType) } : {}),
+    ...(priceBandFromClaim(price) ? { priceBand: priceBandFromClaim(price) } : {}),
+    ...(propertyId ? { propertyId } : {}),
+  };
 }
 
 async function postedAttempt(
@@ -92,8 +140,6 @@ async function replaceCanonicalSnapshot(
     observed: Record<string, number>;
   },
 ) {
-  // Cumulative insights: remove ONLY the previous canonical snapshot for this
-  // content/channel. Never delete click/lead/attribution events.
   const { error: deleteError } = await supabase
     .from("marketing_events")
     .delete()
@@ -168,6 +214,7 @@ export async function syncGrowthInstagramMetrics(
     const publicationId = String(pub.publication_id ?? "");
     const contentId = String(pub.content_id ?? "");
     const currentBrand = String(pub.brand_id ?? "");
+    const sourceId = pub.source_id ? String(pub.source_id) : null;
     if (!publicationId || !contentId || !currentBrand) {
       result.skipped++;
       continue;
@@ -176,20 +223,16 @@ export async function syncGrowthInstagramMetrics(
     try {
       const [attempt, genome] = await Promise.all([
         postedAttempt(supabase, publicationId),
-        latestAssetGenome(supabase, contentId),
+        latestAssetGenome(supabase, contentId, sourceId),
       ]);
       if (!attempt || !genome) {
         result.skipped++;
         continue;
       }
 
-      // Backfill the canonical genome table used by Learning Engine.
       await store.upsertContent(contentId, currentBrand, genome);
 
       const engagement = await fetchInstagramMediaEngagement(attempt.mediaId, accessToken);
-      // Only map metrics with the same semantic meaning as ContentMetrics.
-      // Reach/likes/comments/totalInteractions remain metadata until the value
-      // model has explicit dimensions for them. Never pretend reach = views.
       const metrics: ContentMetrics = {
         views: engagement.views,
         saves: engagement.saves,
@@ -202,7 +245,7 @@ export async function syncGrowthInstagramMetrics(
         genome,
         publicationId,
         externalMediaId: attempt.mediaId,
-        sourceId: pub.source_id ? String(pub.source_id) : null,
+        sourceId,
         metrics,
         raw: engagement.raw,
         observed: {
@@ -225,8 +268,6 @@ export async function syncGrowthInstagramMetrics(
     }
   }
 
-  // Count distinct canonical observations after replacement. Learning stays off
-  // until the pilot has enough measured posts to avoid optimizing on noise.
   let observationQuery = supabase
     .from("marketing_events")
     .select("content_id")
@@ -238,15 +279,10 @@ export async function syncGrowthInstagramMetrics(
     (observationRows ?? []).map((row: any) => String(row.content_id ?? "")).filter(Boolean),
   ).size;
 
-  if (result.observations >= learningMin) {
-    // During pilot, refresh per brand only. If no explicit brand is supplied,
-    // do not create global cross-brand rules accidentally.
-    const learningBrand = brandId;
-    if (learningBrand) {
-      const refreshed = await refreshLearningRules(supabase, { brandId: learningBrand, scope: learningBrand });
-      result.learningRefreshed = true;
-      result.rulesWritten = refreshed.rulesWritten;
-    }
+  if (result.observations >= learningMin && brandId) {
+    const refreshed = await refreshLearningRules(supabase, { brandId, scope: brandId });
+    result.learningRefreshed = true;
+    result.rulesWritten = refreshed.rulesWritten;
   }
 
   return result;
