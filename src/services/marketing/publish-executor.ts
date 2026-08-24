@@ -2,14 +2,15 @@
  * Phase 7.1B — publisering som Agentic Executor-handling. Kjører KUN godkjente
  * approvals gjennom eksisterende executeApproval-mønster, slik at approval og
  * execution forblir SEPARATE audit-hendelser. Fail-closed: publiserer ikke hvis
- * publikasjon/asset mangler, provenance mangler, eller sensitive fakta er
- * uverifiserte (FACT_NOT_VERIFIED).
+ * publikasjon/asset mangler, provenance mangler, eller innholdet bryter dagens
+ * publishability/quality/claim/role/format-gater.
  */
 
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import { executeApproval, type ActionExecutor, type ExecuteResult, type ExecutorDeps } from "@/lib/agentic/executor";
 import { makeExecutorStore } from "@/services/agentic/adapters";
 import { approvedAssetHash, contentPublishabilityGate, contentQualityGate, type GeneratedAsset } from "@/lib/marketing/autonomous";
+import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import type { ChannelPublisher } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
@@ -60,9 +61,39 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     const pub2 = contentPublishabilityGate(caption);
     if (!pub2.publishable) throw new Error(`PUBLISHABILITY_FAILED: ${pub2.result} — ${pub2.reason}`);
 
-    // Fail-closed: sensitive fakta uten kilde publiseres aldri (selv etter approval).
-    const quality = contentQualityGate(asset);
-    if (quality.requiresApproval) throw new Error(`FACT_NOT_VERIFIED: ${quality.sensitiveClaimsWithoutSource.join(", ")}`);
+    // STALE-APPROVAL DEFENSE: re-kjør dagens autoritative quality/claim-gater
+    // rett før Meta-kallet. En approval opprettet før en sikkerhetsoppdatering
+    // skal aldri kunne omgå nye regler bare fordi status senere ble "approved".
+    const isGenerated = (pub.source_type ?? "generated") === "generated";
+    const brand = pub.brand_id
+      ? await loadBrandContext(supabase, pub.brand_id).catch(() => null)
+      : null;
+    const quality = contentQualityGate(asset, {
+      generated: isGenerated,
+      brand: brand ?? undefined,
+      duplicateFree: true,
+    });
+
+    // Sensitive fakta uten kilde publiseres aldri (selv etter approval).
+    if (quality.requiresApproval) {
+      throw new Error(`FACT_NOT_VERIFIED: ${quality.sensitiveClaimsWithoutSource.join(", ")}`);
+    }
+
+    // AI-genererte utfalls-, trend- eller absolutte påstander uten uavhengig
+    // provenance publiseres aldri — også når approvalen er eldre enn regelen.
+    if (isGenerated && quality.unsupportedOutcomeClaims.length) {
+      throw new Error(`CLAIM_NOT_VERIFIED: ${quality.unsupportedOutcomeClaims.join(", ")}`);
+    }
+
+    // Eierskaps-/rollepåstander må fortsatt stemme med dagens Brand Brain.
+    if (isGenerated && quality.roleViolations.length) {
+      throw new Error(`BRAND_ROLE_MISMATCH: ${quality.roleViolations.join(", ")}`);
+    }
+
+    // Produksjonsmanus/HOOK/SCENE osv. kan aldri bli selve Meta-captionen.
+    if (!quality.checks.formatClean) {
+      throw new Error("CHANNEL_FORMAT_MISMATCH: captionen bryter channel-format-kontrakten");
+    }
 
     // P0: re-resolve destinasjon. Endret siden godkjenning → APPROVED_ASSET_CHANGED.
     // BRAND_MISMATCH/ACCOUNT_AMBIGUOUS/ACCOUNT_SCOPE_MISMATCH kastes av resolveren.
