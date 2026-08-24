@@ -13,6 +13,7 @@ import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import {
   approvedAssetHash,
   buildMarketingPlan,
+  channelFormatFitness,
   checkClaims,
   contentNoveltyScore,
   contentPublishabilityGate,
@@ -200,6 +201,16 @@ export async function dispatchGeneratedAsset(
     trace.push({ step: "fact-gate", actor: "quality", summary: reason });
     await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
     return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: reason, trace };
+  }
+
+  // 3c) CHANNEL-FORMAT-FITNESS (P0): en Meta-caption skal ALDRI inneholde
+  // produksjonsanvisninger (reel-manus/HOOK/SCENE/Tekst-overlay …). Uansett
+  // format — for reel kan manus ligge i eget felt, men captionen må være ren.
+  const fitness = channelFormatFitness(caption);
+  if (!fitness.ok) {
+    trace.push({ step: "format-gate", actor: "quality", summary: fitness.reason });
+    await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
+    return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: fitness.reason, trace };
   }
 
   // 4) Policy Engine + nivå-tak.

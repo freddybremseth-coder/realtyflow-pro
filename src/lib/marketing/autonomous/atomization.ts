@@ -4,7 +4,7 @@
  * eget content_id og eget (kanal-tilpasset) Content Genome.
  */
 
-import type { ContentGenome } from "../genome";
+import type { ContentFormat, ContentGenome, MarketingChannel } from "../genome";
 import { adaptGenomeToChannel } from "./channel";
 import { ContentBriefSchema, type CampaignPlan, type ContentBrief } from "./schemas";
 
@@ -16,6 +16,11 @@ export interface AtomizeOptions {
   /** Kanaler der innholdet skal ha et konverteringslag (landing/lead-form). */
   leadCaptureChannels?: string[];
   learningNotes?: string[];
+  /**
+   * Faktisk format diktert av media (f.eks. statisk bilde → "post"). Vinner over
+   * kanalens default. Kan være per-kanal-funksjon eller ett fast format for alle.
+   */
+  formatOverride?: ContentFormat | ((channel: MarketingChannel) => ContentFormat | undefined);
 }
 
 /**
@@ -30,7 +35,8 @@ export function atomizeCampaign(campaign: CampaignPlan, opts: AtomizeOptions): C
   campaign.channels.forEach((channel, i) => {
     const contentId = opts.makeContentId(i, channel);
     if (i === 0) masterContentId = contentId;
-    const genome = adaptGenomeToChannel({ ...opts.baseGenome, brandId: campaign.brandId }, channel);
+    const fmt = typeof opts.formatOverride === "function" ? opts.formatOverride(channel) : opts.formatOverride;
+    const genome = adaptGenomeToChannel({ ...opts.baseGenome, brandId: campaign.brandId }, channel, fmt);
     const angle = opts.angleFor ? opts.angleFor(channel, campaign.masterIdea) : `${campaign.masterIdea} — ${channel}`;
     briefs.push(
       ContentBriefSchema.parse({

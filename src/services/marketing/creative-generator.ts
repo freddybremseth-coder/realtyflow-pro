@@ -9,6 +9,7 @@ import {
   assembleAsset,
   buildCreativePrompt,
   contentPublishabilityGate,
+  findProductionDirection,
   type CreativeGenerator,
   type CreativeRequest,
   type CreativeResult,
@@ -28,6 +29,9 @@ const CreativeOutputSchema = z.object({
   body: z.string().min(1),
   cta: z.string().nullable().optional(),
   publishable: z.boolean(),
+  // Valgfritt reel-/video-manus. Holdes UTENFOR captionen (body) — dette er
+  // stedet et produksjonsmanus hører hjemme, aldri i den publiserte teksten.
+  productionScript: z.string().nullable().optional(),
 });
 
 /**
@@ -42,6 +46,7 @@ export const CREATIVE_JSON_SCHEMA = {
     body: { type: "string" },
     cta: { type: ["string", "null"] },
     publishable: { type: "boolean" },
+    productionScript: { type: ["string", "null"] },
   },
   required: ["body", "publishable"],
   additionalProperties: false,
@@ -76,8 +81,12 @@ function strictParse(text: string): { headline?: string; body: string; cta?: str
   if (!r.success) throw new Error(`CREATIVE_OUTPUT_INVALID: schema-brudd (${r.error.issues.map((i) => i.path.join(".")).join(", ")}).`);
   if (r.data.publishable !== true) throw new Error("CREATIVE_OUTPUT_INVALID: publishable !== true.");
   // Siste forsvar: intern/meta-tekst er aldri publiserbart.
-  const gate = contentPublishabilityGate([r.data.headline, r.data.body, r.data.cta].filter(Boolean).join("\n"));
+  const caption = [r.data.headline, r.data.body, r.data.cta].filter(Boolean).join("\n");
+  const gate = contentPublishabilityGate(caption);
   if (!gate.publishable) throw new Error(`CREATIVE_OUTPUT_INVALID: ${gate.result} (${gate.reason})`);
+  // Captionen skal aldri være et produksjonsmanus — reel-manus hører til productionScript.
+  const markers = findProductionDirection(caption);
+  if (markers.length) throw new Error(`CREATIVE_OUTPUT_INVALID: CHANNEL_FORMAT_MISMATCH i caption (${markers.join(", ")}).`);
   return { headline: r.data.headline ?? undefined, body: r.data.body, cta: r.data.cta ?? undefined };
 }
 

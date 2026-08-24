@@ -5,6 +5,7 @@
  */
 
 import type { GeneratedAsset } from "./schemas";
+import { findProductionDirection } from "./channel-format";
 
 /** Emner som krever verifiserbar kilde/provenance før publisering. */
 export const SENSITIVE_FACT_TERMS = [
@@ -20,6 +21,8 @@ export interface QualityChecks {
   genomeCompleteness: number; // 0..1
   attributionReady: boolean;
   duplicateFree: boolean;
+  /** Captionen er ren kundevendt tekst (ingen produksjonsanvisninger). */
+  formatClean: boolean;
 }
 
 export interface QualityResult {
@@ -62,6 +65,8 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
   const present = requiredDims.filter((d) => g[d] != null).length;
   const genomeCompleteness = present / requiredDims.length;
 
+  // Captionen (den faktiske Meta-payloaden) skal være ren kundevendt tekst.
+  const productionMarkers = findProductionDirection([asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"));
   const brandFit = !opts.brandTerms?.length || opts.brandTerms.some((t) => text.includes(t.toLowerCase()));
   const checks: QualityChecks = {
     brandFit,
@@ -71,9 +76,10 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
     genomeCompleteness,
     attributionReady: !!asset.contentId,
     duplicateFree: opts.duplicateFree ?? true,
+    formatClean: productionMarkers.length === 0,
   };
 
-  const weights = { brandFit: 15, hasCta: 15, channelFit: 15, languageQuality: 15, genomeCompleteness: 15, attributionReady: 15, duplicateFree: 10 };
+  const weights = { brandFit: 15, hasCta: 15, channelFit: 10, languageQuality: 10, genomeCompleteness: 10, attributionReady: 15, duplicateFree: 10, formatClean: 15 };
   const score = Math.round(
     (checks.brandFit ? weights.brandFit : 0) +
       (checks.hasCta ? weights.hasCta : 0) +
@@ -81,11 +87,13 @@ export function contentQualityGate(asset: GeneratedAsset, opts: QualityOptions =
       (checks.languageQuality ? weights.languageQuality : 0) +
       checks.genomeCompleteness * weights.genomeCompleteness +
       (checks.attributionReady ? weights.attributionReady : 0) +
-      (checks.duplicateFree ? weights.duplicateFree : 0),
+      (checks.duplicateFree ? weights.duplicateFree : 0) +
+      (checks.formatClean ? weights.formatClean : 0),
   );
 
   const reasons: string[] = [];
   if (sensitiveClaimsWithoutSource.length) reasons.push(`Sensitive fakta uten kilde: ${sensitiveClaimsWithoutSource.join(", ")} → krever godkjenning.`);
+  if (!checks.formatClean) reasons.push(`CHANNEL_FORMAT_MISMATCH: captionen inneholder produksjonsanvisninger (${productionMarkers.join(", ")}).`);
   if (!checks.hasCta) reasons.push("Mangler CTA — ingen konverteringsvei.");
   if (!checks.channelFit) reasons.push("Genome-kanal matcher ikke asset-kanal.");
   if (genomeCompleteness < 1) reasons.push("Ufullstendig content genome (svekker læring).");

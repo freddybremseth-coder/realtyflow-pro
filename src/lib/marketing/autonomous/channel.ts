@@ -23,8 +23,13 @@ export const CHANNEL_SPECS: Record<MarketingChannel, ChannelSpec> = {
   email: { focus: ["relationship", "nurture", "conversion"], defaultFormat: "email", primaryMetrics: ["clicks", "leads"], adaptationNote: "Personlig, nurture-sekvens, tydelig neste steg." },
 };
 
-/** Tilpass et master-genome til en kanal (setter format + kanal, beholder læringsdimensjoner). */
-export function adaptGenomeToChannel(base: ContentGenome, channel: MarketingChannel): ContentGenome {
+/**
+ * Tilpass et master-genome til en kanal (setter format + kanal, beholder
+ * læringsdimensjoner). `formatOverride` vinner over kanalens default — brukes
+ * når faktisk media dikterer format (statisk bilde → post, ikke reel). Formatet
+ * skal ALDRI antas til reel bare fordi kanal=instagram.
+ */
+export function adaptGenomeToChannel(base: ContentGenome, channel: MarketingChannel, formatOverride?: ContentFormat): ContentGenome {
   const spec = CHANNEL_SPECS[channel];
-  return { ...base, channel, format: spec.defaultFormat };
+  return { ...base, channel, format: formatOverride ?? spec.defaultFormat };
 }

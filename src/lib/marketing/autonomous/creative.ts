@@ -45,13 +45,16 @@ export interface CreativeGenerator {
   generate(req: CreativeRequest): Promise<CreativeResult>;
 }
 
+// Disse beskriver TONEN/STILEN til den ferdige captionen — ikke et
+// produksjonsmanus. `body` er ALLTID kundevendt tekst klar for Meta; et
+// eventuelt reel-/video-manus hører hjemme i "productionScript", aldri i body.
 const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
-  reel: "Reel-manus: hook i første 2 sek, 3–5 korte scener, tekst-overlay, CTA til slutt.",
-  short: "Short-manus: rask hook, vertikalt, loop-vennlig, én tydelig idé.",
-  video: "YouTube long-form-manus: tittel + thumbnail-idé, retention-struktur, søkeintensjon, CTA.",
+  reel: "Reel-caption: kort, energisk caption som følger videoen (IKKE scene-for-scene-manus). Eventuelt manus legges i productionScript.",
+  short: "Short-caption: kort, fengende caption som følger klippet. Eventuelt manus legges i productionScript.",
+  video: "Video-caption: beskrivelse/caption til videoen med tydelig CTA. Eventuelt manus/struktur legges i productionScript.",
   article: "Nettartikkel: SEO-tittel, meta-beskrivelse, seksjoner, interne lenker, avsluttende CTA.",
-  carousel: "Karusell: 5–7 slides, én idé per slide, siste slide = CTA.",
-  post: "Post: fortellende åpning, verdi, tydelig CTA.",
+  carousel: "Karusell-caption: én ferdig caption til posten (slide-tekstene ligger på bildene, ikke i captionen).",
+  post: "Post: fortellende åpning, verdi, tydelig CTA — ferdig caption.",
   landing_page: "Landingsside-copy: hero, verdiforslag, bevis, skjema-CTA.",
   email: "E-post: personlig åpning, én verdi, tydelig neste steg.",
 };
@@ -88,7 +91,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     avoided && `Unngå: ${avoided}.`,
     req.facts?.length && `Verifiserbare fakta du kan bruke:\n${req.facts.map((f) => `- ${f.claim} (kilde: ${f.source})`).join("\n")}`,
     `Skriv KUN den ferdige, kundevendte posten — aldri prosessbeskrivelse («Jeg setter opp…», «Here is your post…», «As an AI…»).`,
-    `Returner KUN gyldig JSON: { "headline": string, "body": string, "cta": string, "publishable": boolean }. Sett publishable=true kun hvis "body" er en ekte, ferdig caption klar til å publiseres.`,
+    `"body" er den ferdige captionen som publiseres direkte på Meta. Den skal ALDRI inneholde produksjonsanvisninger: ingen «HOOK», «SCENE», «Bilde:», «Tekst-overlay:», «CTA-SCENE», «Voiceover:», «Shot 1», «Klipp:», «B-roll» eller «Caption:»-etiketter. Skriv ekte kundevendt tekst, ikke et manus.`,
+    `Trenger du et reel-/video-manus, legg HELE manuset i feltet "productionScript" — aldri i "body".`,
+    `Returner KUN gyldig JSON: { "headline": string, "body": string, "cta": string, "publishable": boolean, "productionScript"?: string }. Sett publishable=true kun hvis "body" er en ekte, ferdig caption (ikke et manus) klar til å publiseres.`,
   ].filter(Boolean).join("\n");
 
   return { system, user };

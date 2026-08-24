@@ -14,6 +14,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
 import {
   atomizeCampaign,
+  routeContentFormat,
   type CampaignPlan,
   type CommercialGoal,
   type CreativeResult,
@@ -140,8 +141,12 @@ export async function createCampaignDraft(
   // Kampanje + atomisering til Meta-kanaler (samme kanoniske run-ID overalt).
   const campaignId = `camp_${run.marketingRunId}`;
   const fav = plan.favoredDimensions;
+  // Format dikteres av FAKTISK media, ikke av kanalen. Statisk bilde → "post",
+  // video → "reel", carousel → "carousel". Aldri reel bare fordi kanal=instagram.
+  // Uten kjent media faller vi til "post" (ren caption), aldri reel-manus.
+  const routedFormat = routeContentFormat(input.mediaUrl) ?? "post";
   const baseGenome: ContentGenome = {
-    brandId: input.brandId, channel: "instagram", format: "reel",
+    brandId: input.brandId, channel: "instagram", format: routedFormat,
     hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
     goal: mapGoal(input.goal.kind), area: input.focus?.toLowerCase().replace(/\s+/g, "_"),
   };
@@ -149,7 +154,7 @@ export async function createCampaignDraft(
     campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit",
     goal: input.goal, focus: input.focus, channels, masterIdea: input.masterIdea,
   };
-  const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [] });
+  const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [], formatOverride: routedFormat });
 
   // Content Resolver-kilder + konto (best-effort på draft-tid; executor er hard fail-closed).
   const sources: ResolverSourceMap = { organizationId: brand.contentHubOrgId ?? null, adCampaignIds: brand.adCampaignIds ?? null };
