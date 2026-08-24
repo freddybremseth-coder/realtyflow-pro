@@ -16,6 +16,8 @@ export interface InventoryMarketingProperty {
   title: string;
   description: string;
   location: string;
+  /** specific = town/area is present; region = only broad Costa bucket is known. */
+  locationSpecificity: "specific" | "region";
   price: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -25,13 +27,21 @@ export interface InventoryMarketingProperty {
   energyRating: string | null;
   pool: boolean | null;
   garage: boolean | null;
+  featured: boolean;
   primaryImage: string;
   gallery: string[];
   source: string | null;
   factSources: Array<{ claim: string; source: string }>;
+  selectionReason?: string;
 }
 
 const isHttps = (value: unknown): value is string => typeof value === "string" && /^https:\/\//i.test(value);
+const BROAD_REGION_ONLY = /^(?:costa\s+blanca(?:\s+(?:north|south))?(?:\s*-\s*inland)?|costa\s+calida(?:\s*-\s*inland)?|alicante(?:\s+province)?|murcia(?:\s+region)?)$/i;
+
+export function isBroadInventoryRegion(value: string | null | undefined): boolean {
+  const v = String(value ?? "").trim();
+  return !v || BROAD_REGION_ONLY.test(v);
+}
 
 function firstHttps(...values: unknown[]): string | null {
   for (const value of values) {
@@ -56,7 +66,11 @@ function propertyFacts(row: any): Array<{ claim: string; source: string }> {
   const add = (claim: string | null) => { if (claim) facts.push({ claim, source }); };
   add(row.ref ? `Referanse: ${row.ref}` : null);
   add((row.title_no || row.title) ? `Tittel: ${row.title_no || row.title}` : null);
-  add(row.location ? `Lokasjon: ${row.location}` : null);
+  if (row.location) {
+    // A broad region is valid provenance, but must not be presented to the model
+    // as if it were the precise town/municipality.
+    add(`${isBroadInventoryRegion(row.location) ? "Region" : "Sted"}: ${row.location}`);
+  }
   const price = asNumber(row.price);
   add(price != null && price > 0 ? `Pris: €${price}` : null);
   const bedrooms = asNumber(row.bedrooms);
@@ -82,12 +96,14 @@ function toResolved(row: any): InventoryMarketingProperty | null {
     ...(Array.isArray(row.images) ? row.images : []),
     ...(Array.isArray(row.gallery) ? row.gallery : []),
   ].filter(isHttps).filter((u, i, a) => u !== primaryImage && a.indexOf(u) === i);
+  const location = String(row.location || "").trim();
   return {
     id: String(row.id),
     ref: row.ref ? String(row.ref) : null,
     title: String(row.title_no || row.title || "Eiendom"),
     description: String(row.description_no || row.description || ""),
-    location: String(row.location || ""),
+    location,
+    locationSpecificity: isBroadInventoryRegion(location) ? "region" : "specific",
     price: asNumber(row.price),
     bedrooms: asNumber(row.bedrooms),
     bathrooms: asNumber(row.bathrooms),
@@ -97,6 +113,7 @@ function toResolved(row: any): InventoryMarketingProperty | null {
     energyRating: row.energy_rating ? String(row.energy_rating) : null,
     pool: typeof row.pool === "boolean" ? row.pool : null,
     garage: typeof row.garage === "boolean" ? row.garage : null,
+    featured: row.featured === true,
     primaryImage,
     gallery,
     source: row.source ? String(row.source) : null,
@@ -109,11 +126,26 @@ async function loadProperty(supabase: MarketingSupabaseLike, propertyId: string)
   return data ? toResolved(data) : null;
 }
 
+async function recentlyPublishedPropertyIds(supabase: MarketingSupabaseLike, brandId: string): Promise<Set<string>> {
+  const { data } = await supabase.from("marketing_publications")
+    .select("source_id, updated_at")
+    .eq("brand_id", brandId)
+    .eq("state", "published")
+    .order("updated_at", { ascending: false })
+    .limit(100);
+  const ids = new Set<string>();
+  for (const row of (data ?? []) as any[]) {
+    const sourceId = String(row?.source_id ?? "");
+    if (sourceId.startsWith("property:")) ids.add(sourceId.slice("property:".length));
+  }
+  return ids;
+}
+
 /**
  * Resolve one marketable property for a brand.
  * - explicit propertyId: must be visible for the brand (fail closed)
- * - automatic: walks the brand-visibility ranking and picks the first AVAILABLE
- *   property with a public HTTPS image.
+ * - automatic: prefer not-recently-published, featured, strong image galleries,
+ *   specific location data and high brand-visibility score.
  */
 export async function resolveInventoryMarketingProperty(
   supabase: MarketingSupabaseLike,
@@ -129,7 +161,7 @@ export async function resolveInventoryMarketingProperty(
     if (!visibility) throw new Error(`INVENTORY_PROPERTY_NOT_VISIBLE: ${args.propertyId} er ikke synlig for ${args.brandId}`);
     const property = await loadProperty(supabase, args.propertyId);
     if (!property) throw new Error(`INVENTORY_PROPERTY_NOT_MARKETABLE: ${args.propertyId} mangler tilgjengelig status eller public HTTPS-bilde`);
-    return property;
+    return { ...property, selectionReason: "explicit_property" };
   }
 
   const { data: visibleRows, error } = await supabase.from("property_brand_visibility")
@@ -139,13 +171,38 @@ export async function resolveInventoryMarketingProperty(
     .order("manual_override", { ascending: false })
     .order("score", { ascending: false })
     .order("updated_at", { ascending: false })
-    .limit(50);
+    .limit(80);
   if (error) throw new Error(`INVENTORY_VISIBILITY_LOOKUP_FAILED: ${error.message}`);
+
+  const recent = await recentlyPublishedPropertyIds(supabase, args.brandId).catch(() => new Set<string>());
+  const candidates: Array<{ property: InventoryMarketingProperty; score: number; recent: boolean }> = [];
 
   for (const candidate of (visibleRows ?? []) as any[]) {
     if (!candidate?.property_id) continue;
     const property = await loadProperty(supabase, String(candidate.property_id));
-    if (property) return property;
+    if (!property) continue;
+    const wasRecent = recent.has(property.id);
+    const visibilityScore = Number(candidate.score) || 0;
+    const score = visibilityScore
+      + (candidate.manual_override === true ? 30 : 0)
+      + (property.featured ? 20 : 0)
+      + Math.min(property.gallery.length, 30)
+      + (property.locationSpecificity === "specific" ? 15 : 0);
+    candidates.push({ property, score, recent: wasRecent });
   }
-  throw new Error(`INVENTORY_PROPERTY_NOT_FOUND: ingen tilgjengelig ${args.brandId}-bolig med public HTTPS-bilde`);
+
+  if (!candidates.length) {
+    throw new Error(`INVENTORY_PROPERTY_NOT_FOUND: ingen tilgjengelig ${args.brandId}-bolig med public HTTPS-bilde`);
+  }
+
+  // Rotation: do not repeat a previously published property while another eligible
+  // candidate exists. If the pool has been exhausted, fall back to best candidate.
+  const fresh = candidates.filter((c) => !c.recent);
+  const pool = fresh.length ? fresh : candidates;
+  pool.sort((a, b) => b.score - a.score);
+  const chosen = pool[0];
+  return {
+    ...chosen.property,
+    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=${chosen.property.locationSpecificity}`,
+  };
 }
