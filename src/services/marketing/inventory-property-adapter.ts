@@ -35,6 +35,8 @@ export interface InventoryMarketingProperty {
   selectionReason?: string;
 }
 
+const AUTO_VISIBILITY_LIMIT = 400;
+const PROPERTY_BATCH_SIZE = 100;
 const isHttps = (value: unknown): value is string => typeof value === "string" && /^https:\/\//i.test(value);
 const BROAD_REGION_ONLY = /^(?:costa\s+blanca(?:\s+(?:north|south))?(?:\s*-\s*inland)?|costa\s+calida(?:\s*-\s*inland)?|alicante(?:\s+province)?|murcia(?:\s+region)?)$/i;
 const GENERIC_PLACE_ONLY = /^(?:stranden|strand|sjøen|sjø|havet|hav|kysten|kyst|golfbanen|golfbane|golf|beach|sea|coast|golf\s*course|playa|mar|costa|campo\s+de\s+golf)$/i;
@@ -63,13 +65,6 @@ function cleanPlace(value: string | null | undefined): string | null {
   return hit;
 }
 
-/**
- * Highest-confidence source after a structured concrete location: the property title.
- * Titles such as "villaer ... ved Polop" describe the subject property, while a
- * description may mention nearby towns ("10 km fra Benidorm ... Altea").
- * Feed titles are frequently ALL CAPS, so matching is case-insensitive. Generic
- * nouns such as "på stranden" are rejected by cleanPlace().
- */
 export function deriveSpecificLocationFromTitle(value: unknown): string | null {
   const title = decodeDescription(value).slice(0, 260);
   if (!title) return null;
@@ -85,11 +80,6 @@ export function deriveSpecificLocationFromTitle(value: unknown): string | null {
   return null;
 }
 
-/**
- * Conservative extraction from trusted Inventory description.
- * Only true subject-location constructs are accepted. Nearby/distance language
- * such as "10 km fra", "near", "cerca de" is intentionally excluded.
- */
 export function deriveSpecificLocationFromDescription(value: unknown): string | null {
   const text = decodeDescription(value).slice(0, 900);
   if (!text) return null;
@@ -126,13 +116,9 @@ function asNumber(value: unknown): number | null {
 function resolvedLocation(row: any): { location: string; specificity: "specific" | "region"; derivedTown: string | null } {
   const raw = String(row.location || "").trim();
   if (!isBroadInventoryRegion(raw)) return { location: raw, specificity: "specific", derivedTown: null };
-
-  // Priority matters: title describes the property itself; description may include
-  // nearby towns/distance references. Only fall back to subject-location phrases.
   const titleTown = deriveSpecificLocationFromTitle(row.title_no || row.title);
   const descriptionTown = titleTown ? null : deriveSpecificLocationFromDescription(row.description_no || row.description);
   const town = titleTown ?? descriptionTown;
-
   if (town) {
     return {
       location: raw ? `${town}, ${raw}` : town,
@@ -149,11 +135,9 @@ function propertyFacts(row: any): Array<{ claim: string; source: string }> {
   const add = (claim: string | null) => { if (claim) facts.push({ claim, source }); };
   add(row.ref ? `Referanse: ${row.ref}` : null);
   add((row.title_no || row.title) ? `Tittel: ${row.title_no || row.title}` : null);
-
   const loc = resolvedLocation(row);
   if (loc.derivedTown) add(`Sted: ${loc.derivedTown}`);
   if (row.location) add(`${isBroadInventoryRegion(row.location) ? "Region" : "Sted"}: ${row.location}`);
-
   const price = asNumber(row.price);
   add(price != null && price > 0 ? `Pris: €${price}` : null);
   const bedrooms = asNumber(row.bedrooms);
@@ -209,6 +193,33 @@ async function loadProperty(supabase: MarketingSupabaseLike, propertyId: string)
   return data ? toResolved(data) : null;
 }
 
+async function loadPropertiesBatched(
+  supabase: MarketingSupabaseLike,
+  propertyIds: string[],
+): Promise<Map<string, InventoryMarketingProperty>> {
+  const unique = Array.from(new Set(propertyIds.filter(Boolean)));
+  const batches: string[][] = [];
+  for (let i = 0; i < unique.length; i += PROPERTY_BATCH_SIZE) batches.push(unique.slice(i, i + PROPERTY_BATCH_SIZE));
+
+  const results = await Promise.all(
+    batches.map(async (ids) => {
+      const { data, error } = await supabase.from("properties")
+        .select("*")
+        .in("id", ids)
+        .eq("status", "TILGJENGELIG");
+      if (error) throw new Error(`INVENTORY_PROPERTY_BATCH_LOOKUP_FAILED: ${error.message}`);
+      return (data ?? []) as any[];
+    }),
+  );
+
+  const map = new Map<string, InventoryMarketingProperty>();
+  for (const row of results.flat()) {
+    const property = toResolved(row);
+    if (property) map.set(property.id, property);
+  }
+  return map;
+}
+
 async function recentlyPublishedPropertyIds(supabase: MarketingSupabaseLike, brandId: string): Promise<Set<string>> {
   const { data } = await supabase.from("marketing_publications")
     .select("source_id, updated_at")
@@ -254,18 +265,20 @@ export async function resolveInventoryMarketingProperty(
     .order("manual_override", { ascending: false })
     .order("score", { ascending: false })
     .order("updated_at", { ascending: false })
-    .limit(80);
+    .limit(AUTO_VISIBILITY_LIMIT);
   if (error) throw new Error(`INVENTORY_VISIBILITY_LOOKUP_FAILED: ${error.message}`);
 
+  const rankedVisible = ((visibleRows ?? []) as any[]).filter((row) => row?.property_id);
+  const propertyMap = await loadPropertiesBatched(
+    supabase,
+    rankedVisible.map((row) => String(row.property_id)),
+  );
   const recent = await recentlyPublishedPropertyIds(supabase, args.brandId).catch(() => new Set<string>());
   const candidates: Array<{ property: InventoryMarketingProperty; score: number; recent: boolean }> = [];
 
-  for (const candidate of (visibleRows ?? []) as any[]) {
-    if (!candidate?.property_id) continue;
-    const property = await loadProperty(supabase, String(candidate.property_id));
+  for (const candidate of rankedVisible) {
+    const property = propertyMap.get(String(candidate.property_id));
     if (!property) continue;
-    // Live auto-selection is fail-closed on location quality: broad region-only
-    // rows are skipped, not selected and rejected afterwards.
     if (property.locationSpecificity !== "specific") continue;
     const wasRecent = recent.has(property.id);
     const visibilityScore = Number(candidate.score) || 0;
@@ -287,6 +300,6 @@ export async function resolveInventoryMarketingProperty(
   const chosen = pool[0];
   return {
     ...chosen.property,
-    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=specific`,
+    selectionReason: `${chosen.recent ? "rotation_pool_exhausted" : "not_recently_published"}; score=${chosen.score}; featured=${chosen.property.featured}; gallery=${chosen.property.gallery.length}; location=specific; candidate_pool=${candidates.length}; visibility_scanned=${rankedVisible.length}`,
   };
 }
