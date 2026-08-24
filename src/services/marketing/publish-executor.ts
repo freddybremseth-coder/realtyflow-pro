@@ -9,7 +9,7 @@
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import { executeApproval, type ActionExecutor, type ExecuteResult, type ExecutorDeps } from "@/lib/agentic/executor";
 import { makeExecutorStore } from "@/services/agentic/adapters";
-import { contentQualityGate, type GeneratedAsset } from "@/lib/marketing/autonomous";
+import { approvedAssetHash, contentQualityGate, type GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { ChannelPublisher } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
@@ -29,7 +29,15 @@ function rowToAsset(row: any): GeneratedAsset {
   };
 }
 
-export function makeMarketingPublishExecutor(cfg: { supabase: MarketingSupabaseLike; publisher: ChannelPublisher; now?: () => Date }): ActionExecutor {
+export interface PublishExecutorConfig {
+  supabase: MarketingSupabaseLike;
+  publisher: ChannelPublisher;
+  now?: () => Date;
+  /** P0: resolve eksplisitt konto for (brand, kanal). Fail-closed hvis satt og finner ingen. */
+  resolveAccount?: (args: { brandId: string; channel: string }) => Promise<{ accountId: string }>;
+}
+
+export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): ActionExecutor {
   const supabase = cfg.supabase;
   return async (item) => {
     const publicationId = item.subjectRef;
@@ -50,6 +58,31 @@ export function makeMarketingPublishExecutor(cfg: { supabase: MarketingSupabaseL
     const quality = contentQualityGate(asset);
     if (quality.requiresApproval) throw new Error(`FACT_NOT_VERIFIED: ${quality.sensitiveClaimsWithoutSource.join(", ")}`);
 
+    // P0: resolve eksplisitt konto. Må matche kontoen godkjenningen ble bundet til.
+    let accountId: string | undefined = pub.account_id ?? undefined;
+    if (cfg.resolveAccount) {
+      if (!pub.brand_id) throw new Error("BRAND_UNRESOLVED: publikasjon mangler brand_id");
+      const acc = await cfg.resolveAccount({ brandId: pub.brand_id, channel: asset.channel });
+      if (pub.account_id && pub.account_id !== acc.accountId) throw new Error(`BRAND_MISMATCH: konto endret siden godkjenning (${pub.account_id} → ${acc.accountId})`);
+      accountId = acc.accountId;
+    }
+
+    // Asset-integritet: godkjent innhold er bundet til en hash. Endres noe → ASSET_MODIFIED.
+    if (pub.asset_hash) {
+      const recomputed = approvedAssetHash({
+        sourceContentId: pub.source_id ?? asset.contentId,
+        finalCopy: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"),
+        finalMedia: JSON.stringify(asset.media ?? {}),
+        brandId: pub.brand_id ?? "",
+        accountId: accountId ?? "",
+        channel: asset.channel,
+        propertyIds: (assetRow.provenance?.propertyIds as string[]) ?? [],
+        cta: asset.cta ?? "",
+        factSources: asset.factSources ?? [],
+      });
+      if (recomputed !== pub.asset_hash) throw new Error("ASSET_MODIFIED: innhold/konto endret etter godkjenning — publiserer ikke.");
+    }
+
     const res = await cfg.publisher.publish(asset, {
       idempotencyKey: pub.idempotency_key,
       publicationId,
@@ -58,6 +91,7 @@ export function makeMarketingPublishExecutor(cfg: { supabase: MarketingSupabaseL
       marketingRunId: pub.marketing_run_id,
       correlationId: item.correlationId ?? undefined,
       channel: asset.channel,
+      accountId,
     });
 
     const at = (cfg.now?.() ?? new Date()).toISOString();
@@ -74,7 +108,7 @@ export function makeMarketingPublishExecutor(cfg: { supabase: MarketingSupabaseL
  */
 export async function runApprovedPublication(
   supabase: MarketingSupabaseLike,
-  args: { approvalId: string; executedBy: string; publisher: ChannelPublisher; now?: () => Date },
+  args: { approvalId: string; executedBy: string; publisher: ChannelPublisher; now?: () => Date; resolveAccount?: PublishExecutorConfig["resolveAccount"] },
 ): Promise<ExecuteResult> {
   const deps: ExecutorDeps = {
     store: makeExecutorStore(supabase as any),
@@ -90,6 +124,6 @@ export async function runApprovedPublication(
     },
     now: args.now,
   };
-  const exec = makeMarketingPublishExecutor({ supabase, publisher: args.publisher, now: args.now });
+  const exec = makeMarketingPublishExecutor({ supabase, publisher: args.publisher, now: args.now, resolveAccount: args.resolveAccount });
   return executeApproval(deps, { id: args.approvalId, executedBy: args.executedBy, executors: { publish_social: exec, publish_article: exec } });
 }

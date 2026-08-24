@@ -9,7 +9,7 @@ delete process.env.META_ACCESS_TOKEN;
 import { createCampaignDraft, runApprovedPublicationProd } from "@/services/marketing/campaign-production";
 import { runApprovedPublication as runApproved } from "@/services/marketing/publish-executor";
 import { makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
-import type { GeneratedAsset } from "@/lib/marketing/autonomous";
+import { approvedAssetHash, type GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { ContentGenome } from "@/lib/marketing/genome";
 
 /** Kapabel in-memory Supabase-fake (select/insert/update/upsert + filtre). */
@@ -252,7 +252,37 @@ test("duplikat-invokasjon lager aldri duplikat ekstern post", async () => {
   assert.equal(calls.publishIg, 1); // ingen ny publish
 });
 
-// runApproved fra publish-executor er samme funksjon (import-sjekk).
-test("runApprovedPublication er eksportert fra publish-executor", () => {
-  assert.equal(typeof runApproved, "function");
+// ── P0: executor resolver eksplisitt konto + verifiserer asset-hash ──────────
+function seedPublishable(db: any, over: any = {}) {
+  const media = { imageUrl: "https://x/i.jpg", mediaType: "image" };
+  const asset = { creative_variant_id: "v1", content_id: "c1", campaign_id: "camp1", channel: "instagram", genome: { brandId: "b1", channel: "instagram", format: "image", hookType: "price_first", ctaType: "book_viewing", goal: "lead_generation" }, headline: "H", body: over.body ?? "B", cta: "Book", media, fact_sources: [], provenance: { propertyIds: [] } };
+  const hash = approvedAssetHash({ sourceContentId: "c1", finalCopy: "H\nB\nBook", finalMedia: JSON.stringify(media), brandId: "b1", accountId: "IG1", channel: "instagram", propertyIds: [], cta: "Book", factSources: [] });
+  db.tables["agentic_approvals"] = [{ id: "appr1", status: "approved", gated_action_class: "publish_social", subject_ref: "pub1", subject_type: "generic_agent_action", title: "t" }];
+  db.tables["marketing_publications"] = [{ publication_id: "pub1", content_id: "c1", campaign_id: "camp1", marketing_run_id: "mr1", idempotency_key: "idk1", brand_id: "b1", account_id: "IG1", source_id: "c1", asset_hash: hash, state: "draft" }];
+  db.tables["marketing_assets"] = [asset];
+}
+
+test("executor: eksplisitt konto sendes til publisher + hash matcher → publisert", async () => {
+  const db = makeDb(); seedPublishable(db);
+  let gotAccount: string | undefined;
+  const publisher: any = { publish: async (_a: any, o: any) => { gotAccount = o.accountId; return { state: "published", externalId: "ext1" }; } };
+  const res = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG1" }) });
+  assert.equal(res.executed, true);
+  assert.equal(gotAccount, "IG1"); // publisher fikk eksplisitt konto, valgte ikke selv
+});
+
+test("executor: endret asset etter godkjenning → ASSET_MODIFIED (fail-closed)", async () => {
+  const db = makeDb(); seedPublishable(db, { body: "MODIFISERT etter godkjenning" });
+  const publisher: any = { publish: async () => ({ state: "published", externalId: "x" }) };
+  const res = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG1" }) });
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /ASSET_MODIFIED/);
+});
+
+test("executor: konto endret siden godkjenning → BRAND_MISMATCH", async () => {
+  const db = makeDb(); seedPublishable(db);
+  const publisher: any = { publish: async () => ({ state: "published", externalId: "x" }) };
+  const res = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG_OTHER" }) });
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /BRAND_MISMATCH/);
 });

@@ -26,6 +26,8 @@ export async function loadBrandContext(supabase: MarketingSupabaseLike, brandId:
     locations: data.locations ?? [],
     urls: data.urls ?? [],
     contact: data.contact ?? {},
+    contentHubOrgId: data.content_hub_org_id ?? undefined,
+    adCampaignIds: data.ad_campaign_ids ?? [],
   });
 }
 

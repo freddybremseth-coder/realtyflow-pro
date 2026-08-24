@@ -61,7 +61,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     await supabase.from("marketing_publish_attempts").upsert({ idempotency_key: key, ...base, ...patch, updated_at: nowIso() }, { onConflict: "idempotency_key" });
   };
 
-  async function publishInstagram(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph): Promise<{ state: any; externalId?: string }> {
+  async function publishInstagram(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     const media = asset.media ?? {};
     if (!media.imageUrl && !media.videoUrl) throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig image/video URL — publiserer ikke bare caption");
 
@@ -80,7 +80,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     let containerId: string | undefined = attempt?.container_id;
     if (!containerId) {
       await writeAttempt(key, base, { status: "reserved" });
-      const c = await graph.createIgContainer(cfg.igUserId!, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset), mediaType: media.mediaType, altText: media.altText });
+      const c = await graph.createIgContainer(target, { imageUrl: media.imageUrl, videoUrl: media.videoUrl, caption: caption(asset), mediaType: media.mediaType, altText: media.altText });
       containerId = c.id;
       await writeAttempt(key, base, { status: "container_created", container_id: containerId });
     }
@@ -102,7 +102,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     // Publiser containeren.
     await writeAttempt(key, base, { status: "publishing", container_id: containerId });
     try {
-      const pub = await graph.publishIgMedia(cfg.igUserId!, containerId);
+      const pub = await graph.publishIgMedia(target, containerId);
       await writeAttempt(key, base, { status: "posted", external_id: pub.id, external_media_id: pub.id });
       return { state: "published", externalId: pub.id };
     } catch (err) {
@@ -112,7 +112,7 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     }
   }
 
-  async function publishFacebook(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph): Promise<{ state: any; externalId?: string }> {
+  async function publishFacebook(asset: GeneratedAsset, key: string, base: Record<string, unknown>, attempt: any, graph: MetaGraph, target: string): Promise<{ state: any; externalId?: string }> {
     if (attempt?.status === "publishing") {
       const found = graph.reconcile ? await graph.reconcile(key) : null;
       if (found?.externalId) {
@@ -126,8 +126,8 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
     await writeAttempt(key, base, { status: "publishing" });
     try {
       const id = media.imageUrl
-        ? (await graph.createFbPhoto(cfg.pageId!, { url: media.imageUrl, caption: caption(asset) })).id
-        : (await graph.createFbPost(cfg.pageId!, { message: caption(asset), link: media.linkUrl })).id;
+        ? (await graph.createFbPhoto(target, { url: media.imageUrl, caption: caption(asset) })).id
+        : (await graph.createFbPost(target, { message: caption(asset), link: media.linkUrl })).id;
       await writeAttempt(key, base, { status: "posted", external_id: id, external_media_id: id });
       return { state: "published", externalId: id };
     } catch (err) {
@@ -162,9 +162,12 @@ export function makeMetaPublisher(cfg: MetaPublisherConfig): ChannelPublisher {
       }
 
       const graph = cfg.graph!;
+      // Eksplisitt konto (P0): fra PublishContext, ellers cfg-fallback. Aldri «velg selv».
+      const target = opts.accountId ?? (asset.channel === "facebook" ? cfg.pageId : cfg.igUserId);
+      if (!target) throw new Error(`ACCOUNT_NOT_FOUND: mangler eksplisitt ${asset.channel === "facebook" ? "Facebook-side" : "Instagram-konto"}`);
       return asset.channel === "facebook"
-        ? publishFacebook(asset, key, base, attempt, graph)
-        : publishInstagram(asset, key, base, attempt, graph);
+        ? publishFacebook(asset, key, base, attempt, graph, target)
+        : publishInstagram(asset, key, base, attempt, graph, target);
     },
   };
 }

@@ -19,3 +19,5 @@ export * from "./strategy";
 export * from "./brand-brain";
 export * from "./creative";
 export * from "./lead-form";
+export * from "./content-resolver";
+export * from "./asset-integrity";

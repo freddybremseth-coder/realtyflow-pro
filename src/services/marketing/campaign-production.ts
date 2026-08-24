@@ -13,11 +13,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
 import {
+  approvedAssetHash,
   atomizeCampaign,
   buildMarketingPlan,
   createMarketingRun,
   type CampaignPlan,
   type CommercialGoal,
+  type CreativeResult,
 } from "@/lib/marketing/autonomous";
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
@@ -26,6 +28,8 @@ import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from
 import { makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
 import { makeGraphApi, makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
 import { runApprovedPublication } from "@/services/marketing/publish-executor";
+import { resolveMarketingContent, type ResolverSourceMap } from "@/services/marketing/content-resolver-adapter";
+import { resolvePublishingAccount } from "@/services/marketing/account-resolver";
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
@@ -52,7 +56,7 @@ export interface CampaignDraftResult {
   marketingRunId: string;
   correlationId: string;
   campaignId: string;
-  results: Array<{ contentId: string; channel: string; publicationId: string; state: string; mode: string; qualityScore: number | null; approvalId: string | null; error?: string }>;
+  results: Array<{ contentId: string; channel: string; publicationId: string; state: string; mode: string; qualityScore: number | null; approvalId: string | null; error?: string; source?: string }>;
   trace: unknown[];
 }
 
@@ -121,25 +125,77 @@ export async function createCampaignDraft(
   };
   const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [] });
 
-  // Generér + persistér assets, dispatch gjennom portene (novelty→quality→policy→guards→approval).
+  // Content Resolver-kilder + konto (best-effort på draft-tid; executor er hard fail-closed).
+  const sources: ResolverSourceMap = { organizationId: brand.contentHubOrgId ?? null, adCampaignIds: brand.adCampaignIds ?? null };
+
   const generator = makeConfiguredCreativeGenerator();
   const results: CampaignDraftResult["results"] = [];
   const trace: unknown[] = [];
   for (const brief of briefs) {
-    const creative = await generator.generate({ brief, brand, recommendation });
+    // 1) RESOLVE FØR GENERERING: bruk eksisterende innhold hvis egnet.
+    const decision = await resolveMarketingContent(supabase, { brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format }, sources).catch(() => null);
+
+    let creative: CreativeResult;
+    let sourceType = "generated";
+    let sourceId: string | null = null;
+    let reuseMode: string | null = null;
+    if (decision && decision.decision !== "generate" && decision.chosen) {
+      creative = assetFromCandidate(brief, brand, decision.chosen);
+      sourceType = decision.chosen.source;
+      sourceId = decision.chosen.contentId;
+      reuseMode = decision.chosen.reuseMode;
+    } else {
+      creative = await generator.generate({ brief, brand, recommendation });
+    }
     await persistAsset(supabase, creative).catch(() => undefined);
+
     const d = await dispatchGeneratedAsset(orchestratorDeps, { asset: creative.asset, brief, run, brand, history: [] });
-    results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode, qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error });
+
+    // 2) Bind godkjenningen til konto + innhold (asset-hash) på publikasjonen.
+    const account = await resolvePublishingAccount(supabase, { brandId: input.brandId, channel: brief.channel }).catch(() => null);
+    const hash = approvedAssetHash({
+      sourceContentId: sourceId ?? creative.asset.contentId,
+      finalCopy: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
+      finalMedia: JSON.stringify(creative.asset.media ?? {}),
+      brandId: input.brandId, accountId: account?.accountId ?? "", channel: brief.channel,
+      propertyIds: creative.provenance.propertyIds ?? [], cta: creative.asset.cta ?? "", factSources: creative.asset.factSources ?? [],
+    });
+    await supabase.from("marketing_publications").update({
+      brand_id: input.brandId, account_id: account?.accountId ?? null,
+      source_type: sourceType, source_id: sourceId, reuse_mode: reuseMode, asset_hash: hash,
+    }).eq("publication_id", d.publicationId).then(undefined, () => undefined);
+
+    results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode, qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType });
     trace.push(...d.trace);
   }
 
   return { marketingRunId: run.marketingRunId, correlationId: run.correlationId, campaignId, results, trace };
 }
 
+/** Bygg et GeneratedAsset + provenance fra et gjenbrukt/adaptert kandidat-asset. */
+function assetFromCandidate(brief: any, brand: any, chosen: any): CreativeResult {
+  return {
+    asset: {
+      contentId: brief.contentId, creativeVariantId: `${brief.contentId}_v1`, campaignId: brief.campaignId,
+      channel: brief.channel, genome: brief.genome,
+      headline: undefined, body: chosen.text ?? "", cta: brand.preferredCta,
+      media: chosen.media ?? undefined, factSources: chosen.factSources ?? [], generator: {},
+    },
+    provenance: {
+      generatedBy: "content-resolver", model: chosen.source, promptVersion: "resolver-1.0",
+      learningRulesUsed: [], factSources: chosen.factSources ?? [], propertyIds: chosen.propertyIds ?? [],
+      createdAt: new Date().toISOString(), approvedBy: null, approvedAt: null,
+    },
+  };
+}
+
 /** Steg 6: kjør en godkjent publisering gjennom Agentic Executor (separat audit-hendelse). */
 export async function runApprovedPublicationProd(supabase: MarketingSupabaseLike, args: { approvalId: string; executedBy: string }) {
   const publisher = makeConfiguredMetaPublisher(supabase);
-  return runApprovedPublication(supabase, { approvalId: args.approvalId, executedBy: args.executedBy, publisher });
+  // Live: hard fail-closed konto-resolusjon (eksplisitt konto, P0). Dry-run: hopp over.
+  const live = process.env.MARKETING_META_LIVE === "true";
+  const resolveAccount = live ? (a: { brandId: string; channel: string }) => resolvePublishingAccount(supabase, a) : undefined;
+  return runApprovedPublication(supabase, { approvalId: args.approvalId, executedBy: args.executedBy, publisher, resolveAccount });
 }
 
 /** Server-side service-role klient (samme mønster som øvrige API-ruter). */

@@ -22,6 +22,9 @@ export const BrandContextSchema = z.object({
   locations: z.array(z.string()).default([]),
   urls: z.array(z.string()).default([]),
   contact: z.object({ email: z.string().optional(), phone: z.string().optional(), website: z.string().optional() }).default({}),
+  /** Eksplisitt mapping til eksisterende systemer (aldri fuzzy-match på tvers av brands). */
+  contentHubOrgId: z.string().optional(),
+  adCampaignIds: z.array(z.string()).default([]),
 });
 export type BrandContext = z.infer<typeof BrandContextSchema>;
 

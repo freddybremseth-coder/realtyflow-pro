@@ -52,6 +52,8 @@ export interface PublishContext {
   marketingRunId?: string;
   correlationId?: string;
   channel?: string;
+  /** Eksplisitt konto (external_id) — publisher velger aldri selv (P0). */
+  accountId?: string;
 }
 export interface ChannelPublisher {
   publish(asset: GeneratedAsset, opts: PublishContext): Promise<{ state: PublicationState; externalId?: string; dryRun?: boolean }>;
@@ -212,6 +214,7 @@ export async function dispatchGeneratedAsset(
       publication_id: publicationId,
       idempotency_key: idempotencyKey,
       marketing_run_id: run.marketingRunId,
+      brand_id: run.brandId,
       campaign_id: brief.campaignId,
       content_id: asset.contentId,
       channel: asset.channel,
