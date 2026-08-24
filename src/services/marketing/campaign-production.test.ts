@@ -177,10 +177,11 @@ test("REGRESJON dobbel-post: scheduled legacy → snapshot → archived → publ
   const approvalId = draft.results[0].approvalId!;
   assert.ok(approvalId);
 
-  // 2) Ta legacy ut av scheduleren (nøyaktig 1 rad).
+  // 2) Ta legacy ut av scheduleren (nøyaktig 1 rad). status → 'failed' (gyldig CHECK-verdi).
   const removed = await removeLegacyScheduledRow(db, "pub1");
-  assert.equal(removed.archived, true);
-  assert.equal(db.tables["content_publications"][0].status, "archived");
+  assert.equal(removed.removed, true);
+  assert.equal(db.tables["content_publications"][0].status, "failed");
+  assert.equal(db.tables["content_publications"][0].scheduled_at, null);
   // legacy cron (status='scheduled') finner ikke originalraden lenger → ingen dobbel-post.
   assert.equal(db.tables["content_publications"].filter((r: any) => r.status === "scheduled").length, 0);
 

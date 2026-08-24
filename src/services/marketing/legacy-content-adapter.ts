@@ -94,19 +94,23 @@ function buildCandidate(row: any, channel: string, mediaUrl: string | undefined,
 
 /**
  * Ta en legacy content_publications-rad ut av legacy-scheduleren (dobbel-post-
- * vern). Endrer KUN status scheduled→archived + nuller scheduled_at. Feiler hvis
- * ikke nøyaktig 1 rad ble endret (0 = ikke scheduled/finnes ikke; >1 = uventet).
+ * vern). Endrer KUN status scheduled→failed + nuller scheduled_at.
+ *
+ * Bruker 'failed' fordi content_publications.status har en DB CHECK-constraint
+ * (draft/processing/published/scheduled/failed) — 'archived' er ikke gyldig.
+ * Cron-en henter kun status='scheduled', så 'failed' fjerner raden fra køen.
+ * Feiler hvis ikke NØYAKTIG 1 rad endres (0 = ikke scheduled/finnes ikke; >1 = uventet).
  */
-export async function removeLegacyScheduledRow(supabase: MarketingSupabaseLike, publicationId: string): Promise<{ archived: true; id: string }> {
+export async function removeLegacyScheduledRow(supabase: MarketingSupabaseLike, publicationId: string): Promise<{ removed: true; id: string }> {
   const { data, error } = await supabase
     .from("content_publications")
-    .update({ status: "archived", scheduled_at: null, updated_at: new Date().toISOString(), last_publish_error: "Konsumert av Growth OS canary — ute av legacy-scheduler" })
+    .update({ status: "failed", scheduled_at: null, updated_at: new Date().toISOString(), last_publish_error: "Konsumert av Growth OS canary — ute av legacy-scheduler" })
     .eq("id", publicationId)
     .eq("status", "scheduled")
     .select("id");
-  if (error) throw new Error(`LEGACY_ARCHIVE_FAILED: ${error.message}`);
+  if (error) throw new Error(`LEGACY_REMOVE_FAILED: ${error.message}`);
   const rows = data ?? [];
   if (rows.length === 0) throw new Error("LEGACY_ROW_NOT_SCHEDULED: raden finnes ikke eller er ikke i status 'scheduled'.");
   if (rows.length > 1) throw new Error(`LEGACY_MULTIPLE_ROWS: ${rows.length} rader endret — avbrutt.`);
-  return { archived: true, id: String(rows[0].id) };
+  return { removed: true, id: String(rows[0].id) };
 }

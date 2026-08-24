@@ -1,6 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadLegacyPublicationCandidate } from "@/services/marketing/legacy-content-adapter";
+import { loadLegacyPublicationCandidate, removeLegacyScheduledRow } from "@/services/marketing/legacy-content-adapter";
+
+/** Fake som håndhever content_publications.status CHECK (draft/processing/published/scheduled/failed). */
+function checkDb(seed: any[]) {
+  const rows = seed.map((r) => ({ ...r }));
+  const ALLOWED = ["draft", "processing", "published", "scheduled", "failed"];
+  function from() {
+    const filters: Array<[string, any]> = [];
+    let payload: any = null;
+    const match = (r: any) => filters.every(([c, v]) => r[c] === v);
+    const api: any = {
+      select: () => api,
+      eq: (c: string, v: any) => { filters.push([c, v]); return api; },
+      update: (p: any) => { payload = p; return api; },
+      maybeSingle: () => Promise.resolve({ data: rows.find(match) ?? null, error: null }),
+      then: (res: any, rej: any) => {
+        if (payload?.status && !ALLOWED.includes(payload.status)) {
+          return Promise.resolve({ data: null, error: { message: `new row violates check constraint "content_publications_status_check" (status=${payload.status})`, code: "23514" } }).then(res, rej);
+        }
+        const hit: any[] = [];
+        for (const r of rows) if (match(r)) { Object.assign(r, payload); hit.push(r); }
+        return Promise.resolve({ data: hit, error: null }).then(res, rej);
+      },
+    };
+    return api;
+  }
+  return { from, rows } as any;
+}
+
+test("removeLegacyScheduledRow bruker gyldig CHECK-status 'failed' (ikke 'archived')", async () => {
+  const db = checkDb([{ id: "pub1", status: "scheduled", scheduled_at: "2026-09-02T00:00:00Z" }]);
+  const r = await removeLegacyScheduledRow(db, "pub1");
+  assert.equal(r.removed, true);
+  assert.equal(db.rows[0].status, "failed"); // gyldig CHECK-verdi
+  assert.equal(db.rows[0].scheduled_at, null);
+});
+
+test("ugyldig status ('archived') avvises av CHECK-constraint (bevis på at faken håndhever den)", async () => {
+  const db = checkDb([{ id: "pub1", status: "scheduled" }]);
+  const { error } = await db.from().update({ status: "archived" }).eq("id", "pub1").select("id");
+  assert.ok(error);
+  assert.match(error.message, /check constraint/i);
+  assert.equal(db.rows[0].status, "scheduled"); // uendret — ble aldri satt til ugyldig verdi
+});
+
+test("removeLegacyScheduledRow: 0 rader (ikke scheduled) → fail-closed", async () => {
+  const db = checkDb([{ id: "pub1", status: "draft" }]);
+  await assert.rejects(() => removeLegacyScheduledRow(db, "pub1"), /LEGACY_ROW_NOT_SCHEDULED/);
+});
 
 function db(row: any) {
   const api: any = {
