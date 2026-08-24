@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.4";
+export const CREATIVE_PROMPT_VERSION = "cg-1.5";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -74,6 +74,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
     `Hvis en factSource bare oppgir en energimerking (for eksempel «Energimerking: B»), gjengi KUN selve energimerkingen. Ikke utled eller skriv at boligen derfor er «moderne», «energieffektiv», har «lavt energiforbruk», «lavere kostnader» eller lignende med mindre akkurat den egenskapen også står eksplisitt i en factSource.`,
     `Leverandør-/Inventory-beskrivelser kan inneholde markedsføringsspråk. Ikke gjør subjektive superlativer, rangeringer eller popularitetsord til nye fakta. Ikke omskriv «et av de beste områdene» til «et av de mest populære områdene», «mest attraktive», «mest ettertraktede», «best beliggende» eller lignende uten en egen uavhengig factSource. Foretrekk nøkterne formuleringer om sted, boligtype, utsikt, fasiliteter og dokumenterte egenskaper.`,
+    `Bevar geografiske factSources semantisk nøyaktig. «Region: Costa Blanca South» betyr at boligen ligger i den sørlige delen av Costa Blanca / Costa Blanca South — ALDRI «sør for Costa Blanca». Ikke bruk uverifiserte geografiske aliaser som «solkysten» når factSources sier Costa Blanca; det kan forveksles med Costa del Sol. Tilsvarende gjelder North/Inland: omskriv aldri en region til en annen geografisk relasjon.`,
     `En factSource kan være avkortet eller ende med «...». ALDRI fullfør, gjett eller rekonstruer den manglende delen. Bruk bare ordene og fakta som faktisk er synlige i factSource. Hvis en setning stopper midt i et stedsnavn, avstand, fasilitet eller annen påstand, utelat den delen helt.`,
     `Skriv aldri «lenke i bio», «link i bio», «se bio», «klikk på lenken i profilen» eller tilsvarende med mindre en eksplisitt verifisert factSource/channel-fact sier at en slik lenke finnes og peker til riktig destinasjon. Uten slik kilde: bruk CTA som «Book en gratis boligsamtale» eller «Kontakt oss».`,
     `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
