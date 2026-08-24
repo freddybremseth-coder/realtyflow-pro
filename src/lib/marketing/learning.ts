@@ -105,6 +105,16 @@ export interface DeriveOptions {
   avoidLift?: number;
 }
 
+/**
+ * Hashtags are noisier than most scalar genome dimensions and may co-occur with
+ * several other tags. Require at least 10 observations before a tag can become
+ * actionable, even though other dimensions keep the default five-observation
+ * floor. This prevents early hashtag overfitting and stuffing.
+ */
+function actionableMinSample(dimension: LearningDimension, defaultMinSample: number): number {
+  return dimension === "tag" ? Math.max(10, defaultMinSample) : defaultMinSample;
+}
+
 export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOptions = {}): LearningRule[] {
   const scope = opts.scope ?? "global";
   const minSample = opts.minSample ?? 5;
@@ -130,7 +140,7 @@ export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOpti
       const totalCommission = group.reduce((a, o) => a + n(o.metrics.commissionEur), 0);
       const lift = baseline > 0 ? Number((avgBv / baseline).toFixed(2)) : 0;
       const evidence = evidenceLevel(sample);
-      const enough = sample >= minSample && evidence !== "insufficient";
+      const enough = sample >= actionableMinSample(dimension, minSample) && evidence !== "insufficient";
       const verdict: LearningVerdict = !enough ? "neutral" : lift >= favorLift ? "favor" : lift <= avoidLift ? "avoid" : "neutral";
       rules.push({
         ruleKey: `${scope}|${dimension}|${value}`,
