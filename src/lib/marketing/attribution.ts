@@ -50,6 +50,8 @@ export type AttributionConfidence = "exact" | "strong" | "probable" | "unknown";
 
 export interface MarketingTouchpoint {
   touchpointId?: string;
+  /** Required tenancy boundary. Never infer a brand later from content text. */
+  brandId: string;
   contentId?: string | null;
   publicationId?: string | null;
   campaignId?: string | null;
@@ -64,11 +66,13 @@ export interface MarketingTouchpoint {
   metadata?: Record<string, unknown>;
 }
 
-/** Stabil dedupe-nøkkel (idempotens): samme hendelse skal aldri attribueres to ganger. */
+/** Stabil dedupe-nøkkel (idempotens): samme hendelse skal aldri attribueres to ganger.
+ * Brand er del av nøkkelen slik at identiske kontakt/content-identiteter i to brands
+ * aldri kolliderer i attribution-ledgeren. */
 export function touchpointDedupeKey(t: MarketingTouchpoint): string {
   const who = t.contactId || t.visitorId || "anon";
   const minute = (t.occurredAt || "").slice(0, 16); // minutt-oppløsning
-  return `${who}|${t.touchType}|${t.contentId ?? "-"}|${minute}`;
+  return `${t.brandId}|${who}|${t.touchType}|${t.contentId ?? "-"}|${minute}`;
 }
 
 /** Confidence for en resolvert touch: exact = utm_content/publication + identitet. */
