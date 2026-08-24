@@ -150,3 +150,84 @@ test("planMarketingRun persisterer run og starter på copilot", async () => {
   const r = fake.calls.upserts.find((u: any) => u.table === "marketing_runs");
   assert.equal(r.o.onConflict, "marketing_run_id");
 });
+
+// ── P1 Hardening: kvalitativ/komparativ påstandsverifisering ────────────────
+test("CLAIM_NOT_VERIFIED: generert utfallspåstand uten kilde → BLOKKERT før approval (ingen approval)", async () => {
+  const fake = makeFake({});
+  let approvalCalled = false;
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
+  const claimful: GeneratedAsset = { ...asset, body: "Disse boligene bidrar til lavere energikostnader.", factSources: [] };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { requestApproval: async () => { approvalCalled = true; return "appr1"; } }),
+    { asset: claimful, brief, run, preapprovedFormat: true, sourceType: "generated" },
+  );
+  assert.equal(res.state, "paused");
+  assert.equal(res.mode, "blocked");
+  assert.match(res.error ?? "", /CLAIM_NOT_VERIFIED/);
+  assert.equal(res.approvalId, null);
+  assert.equal(approvalCalled, false, "approval skal ALDRI opprettes for CLAIM_NOT_VERIFIED");
+});
+
+test("CLAIM verified: samme påstand MED uavhengig factSource → passerer til approval", async () => {
+  const fake = makeFake({});
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const sourced: GeneratedAsset = {
+    ...asset,
+    body: "Disse boligene bidrar til lavere energikostnader.",
+    factSources: [{ claim: "lavere energikostnader dokumentert i energisertifikat (A)", source: "energisertifikat" }],
+  };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { requestApproval: async () => "appr1" }),
+    { asset: sourced, brief, run, sourceType: "generated" },
+  );
+  assert.notEqual(res.state, "paused");
+  assert.equal(res.approvalId, "appr1");
+});
+
+test("BRAND_ROLE_MISMATCH: «våre boliger» med rådgiver-brand → BLOKKERT før approval", async () => {
+  const fake = makeFake({});
+  let approvalCalled = false;
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
+  const owned: GeneratedAsset = { ...asset, body: "Utforsk våre boliger på Costa Blanca.", factSources: [] };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { requestApproval: async () => { approvalCalled = true; return "appr1"; } }),
+    { asset: owned, brief, run, brand, preapprovedFormat: true, sourceType: "generated" },
+  );
+  assert.equal(res.state, "paused");
+  assert.equal(res.mode, "blocked");
+  assert.match(res.error ?? "", /BRAND_ROLE_MISMATCH/);
+  assert.equal(res.approvalId, null);
+  assert.equal(approvalCalled, false);
+});
+
+test("formidler-formulering: «boligene vi hjelper deg å finne» → ikke blokkert", async () => {
+  const fake = makeFake({});
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const ok: GeneratedAsset = { ...asset, body: "Se boligene vi hjelper deg å finne på Costa Blanca.", factSources: [] };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { requestApproval: async () => "appr1" }),
+    { asset: ok, brief, run, brand, sourceType: "generated" },
+  );
+  assert.notEqual(res.state, "paused");
+  assert.equal(res.approvalId, "appr1");
+});
+
+test("ren kvalitativ Zen Eco Homes-caption → manual-review (ingen blokk)", async () => {
+  const fake = makeFake({});
+  const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
+  const clean: GeneratedAsset = {
+    ...asset,
+    body: "Energieffektive boliger på Costa Blanca med norsk oppfølging hele veien.",
+    factSources: [],
+  };
+  const res = await dispatchGeneratedAsset(
+    deps(fake, { requestApproval: async () => "appr1" }),
+    { asset: clean, brief, run, brand, sourceType: "generated" },
+  );
+  assert.equal(res.mode, "manual-review");
+  assert.equal(res.state, "draft");
+  assert.equal(res.approvalId, "appr1");
+});

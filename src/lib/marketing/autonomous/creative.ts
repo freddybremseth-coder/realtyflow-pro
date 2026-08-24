@@ -79,6 +79,10 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     brand.allowedClaims.length && `Tillatte påstander: ${brand.allowedClaims.join("; ")}.`,
     brand.forbiddenClaims.length && `FORBUDTE påstander (bruk aldri): ${brand.forbiddenClaims.join("; ")}.`,
     `Sensitive tall (pris, skatt, rente, markedsstatistikk) MÅ ha kilde. Uten kilde: ikke oppgi tallet.`,
+    `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
+    (req.brand as { ownsInventory?: boolean }).ownsInventory
+      ? `${brand.brandName} eier/utvikler boligene og kan omtale dem som «våre boliger».`
+      : `${brand.brandName} er rådgiver/formidler — IKKE eier/utvikler. Skriv aldri «våre boliger/villaer/eiendommer». Bruk «boligene vi formidler», «boligene vi hjelper deg å finne» eller «eiendommene vi presenterer».`,
   ].filter(Boolean).join("\n");
 
   const user = [

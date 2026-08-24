@@ -23,3 +23,4 @@ export * from "./content-resolver";
 export * from "./asset-integrity";
 export * from "./publishability";
 export * from "./channel-format";
+export * from "./claim-guard";

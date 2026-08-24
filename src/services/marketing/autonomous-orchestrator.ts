@@ -186,8 +186,9 @@ export async function dispatchGeneratedAsset(
     return { publicationId, state: "paused", mode: "n/a", qualityScore: null, published: false, approvalId: null, error: pubCheck.result, trace };
   }
 
-  // 3) Quality-gate.
-  const quality = contentQualityGate(asset, { brandTerms: args.brandTerms, duplicateFree: true });
+  // 3) Quality-gate. AI-generert innhold får de strengere utfalls-/rollegatene.
+  const isGenerated = (args.sourceType ?? "generated") === "generated";
+  const quality = contentQualityGate(asset, { brandTerms: args.brandTerms, duplicateFree: true, brand: args.brand, generated: isGenerated });
   trace.push({ step: "quality", actor: "quality", summary: `score ${quality.score}${quality.requiresApproval ? " (sensitive → approval)" : ""}` });
 
   // 3b) HARD BLOCK (P0): AI-GENERERT innhold kan ALDRI være sin egen fakta-kilde.
@@ -195,7 +196,6 @@ export async function dispatchGeneratedAsset(
   // → BLOKKERT FØR approval (krever regenerering eller kilder). Legacy/menneske-
   // forfattet self-source (sourceType != generated + factSources satt) passerer.
   // Kvalitetsgaten er IKKE svekket — dette er en ekstra, strengere port.
-  const isGenerated = (args.sourceType ?? "generated") === "generated";
   if (isGenerated && quality.requiresApproval) {
     const reason = `FACT_NOT_VERIFIED: AI-generert innhold med uverifiserte fakta (${quality.sensitiveClaimsWithoutSource.join(", ")}) — krever kilder eller regenerering før godkjenning.`;
     trace.push({ step: "fact-gate", actor: "quality", summary: reason });
@@ -203,7 +203,27 @@ export async function dispatchGeneratedAsset(
     return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: reason, trace };
   }
 
-  // 3c) CHANNEL-FORMAT-FITNESS (P0): en Meta-caption skal ALDRI inneholde
+  // 3c) CLAIM-VERIFICATION (P1): målbare/komparative utfallspåstander («lavere
+  // energikostnader», «høyere avkastning», «garantert …») krever UAVHENGIG
+  // factSource. Brand Brain-positionering teller ikke som kilde. Udekket → blokk.
+  if (isGenerated && quality.unsupportedOutcomeClaims.length) {
+    const reason = `CLAIM_NOT_VERIFIED: AI-generert utfallspåstand uten uavhengig kilde (${quality.unsupportedOutcomeClaims.join(", ")}) — krever provenance eller omskriving før godkjenning.`;
+    trace.push({ step: "claim-gate", actor: "quality", summary: reason });
+    await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
+    return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: reason, trace };
+  }
+
+  // 3d) BRAND-ROLE (P1): eierskaps-/rollepåstand («våre boliger») krever at
+  // Brand Brain eksplisitt støtter eier-/utbyggerrolle. Zen Eco Homes er
+  // rådgiver/formidler → skal si «boligene vi formidler», ikke «våre boliger».
+  if (isGenerated && quality.roleViolations.length) {
+    const reason = `BRAND_ROLE_MISMATCH: AI-generert eierskapspåstand (${quality.roleViolations.join(", ")}) uten støtte i Brand Brain — omskriv til formidler-/rådgiverrolle før godkjenning.`;
+    trace.push({ step: "role-gate", actor: "quality", summary: reason });
+    await persist({ state: "paused", asset_hash: null, quality_score: quality.score, autonomy_mode: "blocked", approval_id: null });
+    return { publicationId, state: "paused", mode: "blocked", qualityScore: quality.score, published: false, approvalId: null, error: reason, trace };
+  }
+
+  // 3e) CHANNEL-FORMAT-FITNESS (P0): en Meta-caption skal ALDRI inneholde
   // produksjonsanvisninger (reel-manus/HOOK/SCENE/Tekst-overlay …). Uansett
   // format — for reel kan manus ligge i eget felt, men captionen må være ren.
   const fitness = channelFormatFitness(caption);
