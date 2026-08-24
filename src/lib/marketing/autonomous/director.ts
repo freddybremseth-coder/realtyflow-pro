@@ -13,12 +13,24 @@ import {
   type MarketingPlan,
 } from "./schemas";
 
-/** Fordel n innhold på exploit/adjacent/experiment etter mix (summerer til n). */
+/**
+ * Fordel n innhold på exploit/adjacent/experiment etter mix (summerer til n).
+ * Når ukekapasiteten er minst 5, reserveres minst én adjacent og én experiment
+ * slik at avrunding aldri kollapser utforskningen til ren exploit.
+ */
 export function allocateExploration(n: number, mix: ExplorationMix): { exploit: number; adjacent: number; experiment: number } {
+  if (n <= 0) return { exploit: 0, adjacent: 0, experiment: 0 };
   const total = mix.exploit + mix.adjacent + mix.experiment || 1;
-  const exploit = Math.round((n * mix.exploit) / total);
-  const experiment = Math.round((n * mix.experiment) / total);
-  const adjacent = Math.max(0, n - exploit - experiment);
+  let exploit = Math.round((n * mix.exploit) / total);
+  let experiment = Math.round((n * mix.experiment) / total);
+  let adjacent = Math.max(0, n - exploit - experiment);
+
+  if (n >= 5) {
+    experiment = Math.max(1, experiment);
+    adjacent = Math.max(1, adjacent);
+    exploit = Math.max(0, n - adjacent - experiment);
+  }
+
   return { exploit, adjacent, experiment };
 }
 
