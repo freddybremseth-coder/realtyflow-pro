@@ -43,6 +43,34 @@ export function isBroadInventoryRegion(value: string | null | undefined): boolea
   return !v || BROAD_REGION_ONLY.test(v);
 }
 
+function decodeDescription(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&#13;|&#10;|&nbsp;/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Conservative extraction from the trusted Inventory description. We only accept
+ * explicit linguistic location patterns; no geocoding, guessing or model inference.
+ */
+export function deriveSpecificLocationFromDescription(value: unknown): string | null {
+  const text = decodeDescription(value).slice(0, 900);
+  if (!text) return null;
+  const patterns = [
+    /\b(?:landsbyen|byen|området|urbanisasjonen)\s+([A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÆØÅÁÉÍÓÚÜÑ][A-Za-zÆØÅæøåÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=\s+(?:er|ligger|har|tilbyr|kombinerer)\b|[,.;])/i,
+    /\b(?:located|situated)\s+in\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=\s+(?:is|offers|on|near)\b|[,.;])/i,
+    /\b(?:ubicad[oa]|situad[oa])\s+en\s+([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñÀ-ÿ'’.-]*){0,3})(?=\s+(?:es|ofrece|cerca|junto)\b|[,.;])/i,
+  ];
+  for (const pattern of patterns) {
+    const hit = text.match(pattern)?.[1]?.trim();
+    if (hit && hit.length >= 3 && hit.length <= 70 && !isBroadInventoryRegion(hit)) return hit;
+  }
+  return null;
+}
+
 function firstHttps(...values: unknown[]): string | null {
   for (const value of values) {
     if (isHttps(value)) return value;
@@ -60,17 +88,31 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function resolvedLocation(row: any): { location: string; specificity: "specific" | "region"; derivedTown: string | null } {
+  const raw = String(row.location || "").trim();
+  if (!isBroadInventoryRegion(raw)) return { location: raw, specificity: "specific", derivedTown: null };
+  const town = deriveSpecificLocationFromDescription(row.description_no || row.description);
+  if (town) {
+    return {
+      location: raw ? `${town}, ${raw}` : town,
+      specificity: "specific",
+      derivedTown: town,
+    };
+  }
+  return { location: raw, specificity: "region", derivedTown: null };
+}
+
 function propertyFacts(row: any): Array<{ claim: string; source: string }> {
   const source = `RealtyFlow Inventory property:${row.id}${row.ref ? ` ref:${row.ref}` : ""}`;
   const facts: Array<{ claim: string; source: string }> = [];
   const add = (claim: string | null) => { if (claim) facts.push({ claim, source }); };
   add(row.ref ? `Referanse: ${row.ref}` : null);
   add((row.title_no || row.title) ? `Tittel: ${row.title_no || row.title}` : null);
-  if (row.location) {
-    // A broad region is valid provenance, but must not be presented to the model
-    // as if it were the precise town/municipality.
-    add(`${isBroadInventoryRegion(row.location) ? "Region" : "Sted"}: ${row.location}`);
-  }
+
+  const loc = resolvedLocation(row);
+  if (loc.derivedTown) add(`Sted: ${loc.derivedTown}`);
+  if (row.location) add(`${isBroadInventoryRegion(row.location) ? "Region" : "Sted"}: ${row.location}`);
+
   const price = asNumber(row.price);
   add(price != null && price > 0 ? `Pris: €${price}` : null);
   const bedrooms = asNumber(row.bedrooms);
@@ -96,14 +138,14 @@ function toResolved(row: any): InventoryMarketingProperty | null {
     ...(Array.isArray(row.images) ? row.images : []),
     ...(Array.isArray(row.gallery) ? row.gallery : []),
   ].filter(isHttps).filter((u, i, a) => u !== primaryImage && a.indexOf(u) === i);
-  const location = String(row.location || "").trim();
+  const loc = resolvedLocation(row);
   return {
     id: String(row.id),
     ref: row.ref ? String(row.ref) : null,
     title: String(row.title_no || row.title || "Eiendom"),
     description: String(row.description_no || row.description || ""),
-    location,
-    locationSpecificity: isBroadInventoryRegion(location) ? "region" : "specific",
+    location: loc.location,
+    locationSpecificity: loc.specificity,
     price: asNumber(row.price),
     bedrooms: asNumber(row.bedrooms),
     bathrooms: asNumber(row.bathrooms),
@@ -195,8 +237,6 @@ export async function resolveInventoryMarketingProperty(
     throw new Error(`INVENTORY_PROPERTY_NOT_FOUND: ingen tilgjengelig ${args.brandId}-bolig med public HTTPS-bilde`);
   }
 
-  // Rotation: do not repeat a previously published property while another eligible
-  // candidate exists. If the pool has been exhausted, fall back to best candidate.
   const fresh = candidates.filter((c) => !c.recent);
   const pool = fresh.length ? fresh : candidates;
   pool.sort((a, b) => b.score - a.score);
