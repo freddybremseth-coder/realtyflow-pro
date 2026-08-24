@@ -12,7 +12,7 @@ import {
   type MarketingTouchpoint,
 } from "@/lib/marketing/attribution";
 
-const tp = (over: Partial<MarketingTouchpoint>): MarketingTouchpoint => ({ touchType: "click", occurredAt: "2026-06-01T10:00:00Z", ...over });
+const tp = (over: Partial<MarketingTouchpoint>): MarketingTouchpoint => ({ brandId: "zeneco", touchType: "click", occurredAt: "2026-06-01T10:00:00Z", ...over });
 
 test("UTM: utm_content bærer content_id", () => {
   const utm = buildContentUtm({ channel: "instagram", contentId: "ig_483", campaign: "finestrat" });
@@ -30,7 +30,15 @@ test("confidence: exact når content + identitet finnes", () => {
 test("idempotens: identisk hendelse gir samme dedupe-nøkkel", () => {
   const a = tp({ contactId: "c1", touchType: "sale", contentId: "ig_1", occurredAt: "2026-09-01T12:00:30Z" });
   const b = tp({ contactId: "c1", touchType: "sale", contentId: "ig_1", occurredAt: "2026-09-01T12:00:59Z" });
-  assert.equal(touchpointDedupeKey(a), touchpointDedupeKey(b)); // minutt-oppløsning → samme
+  assert.equal(touchpointDedupeKey(a), touchpointDedupeKey(b));
+});
+
+test("samme kontakt/content i to brands får ulik dedupe-nøkkel", () => {
+  const base = { contactId: "c1", touchType: "lead_created" as const, contentId: "ig_1", occurredAt: "2026-09-01T12:00:30Z" };
+  assert.notEqual(
+    touchpointDedupeKey(tp({ ...base, brandId: "zeneco" })),
+    touchpointDedupeKey(tp({ ...base, brandId: "soleada" })),
+  );
 });
 
 test("exact UTM lead: content-touch + lead_created → 1 lead", () => {
@@ -92,7 +100,7 @@ test("ingen dobbelttelling: form_submit + lead_created = 1 lead", () => {
     tp({ touchType: "lead_created" }),
   ] };
   const m = rollupContentOutcomes([j], "last_touch").get("web_1")!;
-  assert.equal(m.leads, 1); // ikke 2
+  assert.equal(m.leads, 1);
 });
 
 test("canonicalMetricsForContent: mates til combineMetrics", () => {
