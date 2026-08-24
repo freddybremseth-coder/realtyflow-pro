@@ -10,7 +10,9 @@ type Row = {
   accountName: string | null;
   connected: boolean;
   brandBrainReady: boolean;
+  planned: boolean;
   pilotReady: boolean;
+  pilotBlockReason: string | null;
   published: number;
   measuredEligible: number;
   quarantined: number;
@@ -53,7 +55,7 @@ export default function MarketingReadinessPage() {
   useEffect(() => { void load(); }, []);
 
   return (
-    <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 25 }}>Marketing Expansion Readiness</h1>
@@ -65,19 +67,21 @@ export default function MarketingReadinessPage() {
       {error && <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c" }}>⛔ {error}</div>}
 
       <div style={{ marginTop: 18, overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980, background: "white" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180, background: "white" }}>
           <thead>
             <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-              {["Brand", "Kanal", "Konto", "Status", "Publisert", "Eligible", "Karantene", "Actionable rules"].map((h) => <th key={h} style={{ padding: 11, fontSize: 12, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}
+              {["Brand", "Kanal", "Konto", "Status", "Plan", "Hvorfor ikke pilotklar?", "Publisert", "Eligible", "Karantene", "Actionable rules"].map((h) => <th key={h} style={{ padding: 11, fontSize: 12, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {(data?.rows ?? []).map((row) => (
-              <tr key={`${row.brandId}:${row.platform ?? "none"}`}>
+              <tr key={`${row.brandId}:${row.platform ?? "none"}:${row.accountId ?? "none"}`}>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}><b>{row.brandName}</b><div style={{ fontSize: 11, color: "#94a3b8" }}>{row.brandId}</div></td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.platform ?? "—"}</td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.accountName ?? "—"}<div style={{ fontSize: 10, color: "#94a3b8" }}>{row.accountId ?? ""}</div></td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}><span style={statusStyle(row.status)}>{row.status}</span></td>
+                <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.planned ? "Ja" : "Nei"}</td>
+                <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9", minWidth: 260, fontSize: 12, color: row.pilotReady ? "#166534" : "#64748b" }}>{row.pilotReady ? "Pilotklar" : row.pilotBlockReason ?? "—"}</td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.published}</td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.measuredEligible}</td>
                 <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.quarantined}</td>
@@ -89,7 +93,7 @@ export default function MarketingReadinessPage() {
       </div>
 
       <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "#f8fafc", color: "#475569", fontSize: 13 }}>
-        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. PILOT_READY krever også Brand Brain og støttet Meta-kanal. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og minst én actionable learning-regel. Alle publiseringer forblir COPILOT/manual-review.
+        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. BRAND_BRAIN_READY betyr at brandets identitet/claims er definert, men kanalen kan fortsatt være blokkert fra pilot. PILOT_READY krever eksplisitt kanalstøtte i Growth OS-registry. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og minst én actionable learning-regel. Alle publiseringer forblir COPILOT/manual-review.
       </div>
     </div>
   );
