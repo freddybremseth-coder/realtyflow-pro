@@ -48,7 +48,8 @@ async function readStatus(brandId = "zeneco") {
   const publishedCount = new Set((published ?? []).map((r) => String(r.content_id ?? "")).filter(Boolean)).size;
 
   const maturityHours = 24;
-  const matureBefore = Date.now() - maturityHours * 3_600_000;
+  const maturityMs = maturityHours * 3_600_000;
+  const matureBefore = Date.now() - maturityMs;
   const maturePublishedCount = new Set(
     (published ?? [])
       .filter((r) => r.updated_at && new Date(r.updated_at).getTime() <= matureBefore)
@@ -56,6 +57,12 @@ async function readStatus(brandId = "zeneco") {
       .filter(Boolean),
   ).size;
   const immaturePublishedCount = Math.max(0, publishedCount - maturePublishedCount);
+  const nextMaturesAt = (published ?? [])
+    .map((r) => r.updated_at ? new Date(r.updated_at).getTime() : NaN)
+    .filter((t) => Number.isFinite(t) && t > matureBefore)
+    .sort((a, b) => a - b)
+    .map((t) => new Date(t + maturityMs).toISOString())
+    .at(0) ?? null;
   const learningThreshold = 10;
 
   return {
@@ -65,6 +72,7 @@ async function readStatus(brandId = "zeneco") {
     maturePublishedCount,
     immaturePublishedCount,
     maturityHours,
+    nextMaturesAt,
     measuredCount,
     observations,
     quarantinedCount,
