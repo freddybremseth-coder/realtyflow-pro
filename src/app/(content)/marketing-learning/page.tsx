@@ -30,6 +30,15 @@ type Status = {
   learningActive: boolean;
   remainingUntilLearning: number;
   lastSnapshotAt: string | null;
+  businessFunnel: {
+    leads: number;
+    qualified: number;
+    viewings: number;
+    offers: number;
+    sales: number;
+    commissionEur: number;
+    lastBusinessTouchAt: string | null;
+  };
   rules: Rule[];
 };
 
@@ -99,12 +108,14 @@ export default function MarketingLearningPage() {
     ["ctaType", "CTA"],
   ] as const;
 
+  const funnel = status?.businessFunnel;
+
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 26 }}>Marketing Growth OS — Learning</h1>
-          <p style={{ margin: "6px 0 0", color: "#6b7280" }}>Zen Eco Homes · Instagram · metrics → datakvalitet → genome → læringsregler</p>
+          <p style={{ margin: "6px 0 0", color: "#6b7280" }}>Zen Eco Homes · Instagram · metrics → datakvalitet → revenue attribution → genome → læringsregler</p>
         </div>
         <button onClick={sync} disabled={busy} style={{ border: 0, borderRadius: 9, padding: "10px 14px", fontWeight: 700, background: "#111827", color: "white", cursor: busy ? "wait" : "pointer" }}>
           {busy ? "Synkroniserer…" : "Sync Instagram metrics now"}
@@ -143,6 +154,30 @@ export default function MarketingLearningPage() {
           {!status?.learningActive && status && <div style={{ fontSize: 12, color: "#6b7280" }}>{status.remainingUntilLearning} gyldige observasjoner igjen</div>}
         </div>
       </div>
+
+      <section style={{ ...box, marginTop: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ fontSize: 18, margin: 0 }}>Canonical business attribution</h2>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 3 }}>Kun brand-scopede Instagram-touchpoints fra Revenue OS. Ingen engagement-proxyer.</div>
+          </div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Siste business-touch: {funnel?.lastBusinessTouchAt ? new Date(funnel.lastBusinessTouchAt).toLocaleString() : "ingen ennå"}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 10, marginTop: 14 }}>
+          <div style={box}><div style={label}>Leads</div><div style={value}>{funnel?.leads ?? 0}</div></div>
+          <div style={box}><div style={label}>Qualified</div><div style={value}>{funnel?.qualified ?? 0}</div></div>
+          <div style={box}><div style={label}>Viewings</div><div style={value}>{funnel?.viewings ?? 0}</div></div>
+          <div style={box}><div style={label}>Offers</div><div style={value}>{funnel?.offers ?? 0}</div></div>
+          <div style={box}><div style={label}>Sales</div><div style={value}>{funnel?.sales ?? 0}</div></div>
+          <div style={box}>
+            <div style={label}>Commission</div>
+            <div style={value}>€{Math.round(funnel?.commissionEur ?? 0).toLocaleString("en-US")}</div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>kun eksplisitt registrert provisjon</div>
+          </div>
+        </div>
+      </section>
 
       <div style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
         Siste metrics-snapshot: {status?.lastSnapshotAt ? new Date(status.lastSnapshotAt).toLocaleString() : "ingen ennå"}. Metrics hentes først etter {status?.maturityHours ?? 24} timer, og bare learning-eligible snapshots teller mot terskelen.
