@@ -26,12 +26,24 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function sumObserved(rows: Array<{ metrics?: ContentMetrics | null }>): ContentMetrics {
+interface ObservedMetricRow {
+  metrics?: ContentMetrics | null;
+  eventType?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+function learningEligible(row: ObservedMetricRow): boolean {
+  if (row.eventType !== "metrics_snapshot") return true;
+  return row.metadata?.learning_eligible !== false;
+}
+
+function sumObserved(rows: ObservedMetricRow[]): ContentMetrics {
   const acc: ContentMetrics = {};
   const add = (k: keyof ContentMetrics, v: unknown) => {
     (acc as Record<string, number>)[k] = num(acc[k]) + num(v);
   };
   for (const r of rows) {
+    if (!learningEligible(r)) continue;
     const m = r.metrics ?? {};
     add("views", m.views);
     add("engagedViews", m.engagedViews);
@@ -58,14 +70,21 @@ export async function refreshLearningRules(
   }
 
   // 2) Observed metrics per content (marketing_events).
-  let evQuery = supabase.from("marketing_events").select("content_id, metrics");
+  // Canonical metrics snapshots may be quarantined via metadata.learning_eligible=false
+  // when historical content has a known data-quality conflict. We still retain the
+  // event for measurement/audit, but exclude its channel metrics from learning.
+  let evQuery = supabase.from("marketing_events").select("content_id, metrics, event_type, metadata");
   if (opts.brandId) evQuery = evQuery.eq("brand_id", opts.brandId);
   const { data: evRows } = await evQuery;
-  const observedByContent = new Map<string, Array<{ metrics?: ContentMetrics | null }>>();
+  const observedByContent = new Map<string, ObservedMetricRow[]>();
   for (const r of evRows ?? []) {
     if (!r.content_id) continue;
     const key = String(r.content_id);
-    (observedByContent.get(key) ?? observedByContent.set(key, []).get(key)!).push({ metrics: r.metrics ?? null });
+    (observedByContent.get(key) ?? observedByContent.set(key, []).get(key)!).push({
+      metrics: r.metrics ?? null,
+      eventType: r.event_type ? String(r.event_type) : null,
+      metadata: r.metadata && typeof r.metadata === "object" ? r.metadata as Record<string, unknown> : null,
+    });
   }
 
   // 3) Canonical outcomes per content (attribution — source-of-truth for business).
