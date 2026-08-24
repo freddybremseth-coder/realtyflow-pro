@@ -12,6 +12,13 @@ function supabaseAdmin() {
   return createClient(url, key);
 }
 
+function nextMetricsCronAt(nowMs: number): Date {
+  const now = new Date(nowMs);
+  let cron = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 19, 30, 0));
+  if (cron.getTime() <= nowMs) cron = new Date(cron.getTime() + 86_400_000);
+  return cron;
+}
+
 async function readStatus(brandId = "zeneco") {
   const supabase = supabaseAdmin();
 
@@ -49,7 +56,8 @@ async function readStatus(brandId = "zeneco") {
 
   const maturityHours = 24;
   const maturityMs = maturityHours * 3_600_000;
-  const matureBefore = Date.now() - maturityMs;
+  const nowMs = Date.now();
+  const matureBefore = nowMs - maturityMs;
   const maturePublishedCount = new Set(
     (published ?? [])
       .filter((r) => r.updated_at && new Date(r.updated_at).getTime() <= matureBefore)
@@ -63,6 +71,16 @@ async function readStatus(brandId = "zeneco") {
     .sort((a, b) => a - b)
     .map((t) => new Date(t + maturityMs).toISOString())
     .at(0) ?? null;
+
+  const nextCron = nextMetricsCronAt(nowMs);
+  const matureByNextCronBefore = nextCron.getTime() - maturityMs;
+  const eligibleByNextCronCount = new Set(
+    (published ?? [])
+      .filter((r) => r.updated_at && new Date(r.updated_at).getTime() <= matureByNextCronBefore)
+      .map((r) => String(r.content_id ?? ""))
+      .filter(Boolean),
+  ).size;
+
   const learningThreshold = 10;
 
   return {
@@ -73,6 +91,8 @@ async function readStatus(brandId = "zeneco") {
     immaturePublishedCount,
     maturityHours,
     nextMaturesAt,
+    nextMetricsCronAt: nextCron.toISOString(),
+    eligibleByNextCronCount,
     measuredCount,
     observations,
     quarantinedCount,
