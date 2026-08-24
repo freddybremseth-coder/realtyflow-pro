@@ -68,6 +68,7 @@ export async function persistAsset(supabase: MarketingSupabaseLike, result: Crea
       headline: asset.headline ?? null,
       body: asset.body ?? null,
       cta: asset.cta ?? null,
+      media: asset.media ?? null,
       fact_sources: asset.factSources,
       generated_by: provenance.generatedBy,
       model: provenance.model ?? null,

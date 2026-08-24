@@ -23,6 +23,7 @@ function rowToAsset(row: any): GeneratedAsset {
     headline: row.headline ?? undefined,
     body: row.body ?? undefined,
     cta: row.cta ?? undefined,
+    media: row.media ?? undefined,
     factSources: row.fact_sources ?? [],
     generator: {},
   };

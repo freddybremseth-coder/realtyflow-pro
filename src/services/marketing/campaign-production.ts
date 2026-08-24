@@ -24,7 +24,7 @@ import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { makeCreativeGenerator, makeDryRunCreativeGenerator, persistAsset } from "@/services/marketing/creative-generator";
 import { makeMarketingApprovalRequester } from "@/services/marketing/marketing-approval";
-import { makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
+import { makeGraphApi, makeMetaPublisher, metaCredentialsPresent } from "@/services/marketing/publishers/meta-publisher";
 import { runApprovedPublication } from "@/services/marketing/publish-executor";
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
@@ -69,20 +69,9 @@ export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike): Ch
   const igUserId = process.env.META_IG_USER_ID;
   const pageId = process.env.META_PAGE_ID;
   const token = process.env.META_ACCESS_TOKEN;
-  const graphPost = token
-    ? async (path: string, body: Record<string, unknown>) => {
-        const res = await fetch(`https://graph.facebook.com/v21.0${path}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, access_token: token }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
-        if (!res.ok || !json.id) throw new Error(`Meta Graph feilet: ${json.error?.message ?? res.status}`);
-        return { id: json.id };
-      }
-    : undefined;
-  const live = process.env.MARKETING_META_LIVE === "true" && metaCredentialsPresent({ graphPost, igUserId, pageId });
-  return makeMetaPublisher({ supabase, graphPost, igUserId, pageId, live });
+  const graph = token ? makeGraphApi(token) : undefined;
+  const live = process.env.MARKETING_META_LIVE === "true" && metaCredentialsPresent({ graph, igUserId, pageId });
+  return makeMetaPublisher({ supabase, graph, igUserId, pageId, live });
 }
 
 function guardStateLoader() {

@@ -148,44 +148,108 @@ test("FACT_NOT_VERIFIED: sensitive fakta uten kilde blokkeres ved execution", as
   assert.match(exec.error ?? "", /FACT_NOT_VERIFIED/);
 });
 
-// ── MetaPublisher ekstern idempotens ────────────────────────────────────────
-const metaAsset: GeneratedAsset = { contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram", genome: g({}), body: "Hei", cta: "Book", factSources: [], generator: {} };
+// ── MetaPublisher: virkelig IG/FB-livssyklus + ekstern idempotens ────────────
+const igImage: GeneratedAsset = { contentId: "c1", creativeVariantId: "v1", campaignId: "camp1", channel: "instagram", genome: g({}), body: "Hei", cta: "Book", media: { imageUrl: "https://x/i.jpg", mediaType: "image" }, factSources: [], generator: {} };
+const igReel: GeneratedAsset = { ...igImage, media: { videoUrl: "https://x/v.mp4", mediaType: "reel" } };
+const igNoMedia: GeneratedAsset = { ...igImage, media: undefined };
+const fbText: GeneratedAsset = { ...igImage, channel: "facebook", media: undefined };
+const fbImage: GeneratedAsset = { ...igImage, channel: "facebook", media: { imageUrl: "https://x/i.jpg" } };
 
-test("MetaPublisher live: publiserer via Graph og logger attempt", async () => {
-  const db = makeDb();
-  let calls = 0;
-  const pub = makeMetaPublisher({ supabase: db, live: true, igUserId: "IG1", graphPost: async () => { calls++; return { id: "ig_1" }; } });
-  const res = await pub.publish(metaAsset, { idempotencyKey: "k1" });
-  assert.equal(res.externalId, "ig_1");
-  assert.equal(calls, 1);
+function fakeGraph(over: any = {}) {
+  const calls: any = { createIgContainer: 0, getStatus: 0, publishIg: 0, fbPost: 0, fbPhoto: 0 };
+  const statuses: string[] = over.statuses ?? ["FINISHED"];
+  const g2: any = {
+    createIgContainer: async () => { calls.createIgContainer++; return { id: `container_${calls.createIgContainer}` }; },
+    getContainerStatus: async () => { calls.getStatus++; return { status: statuses.length > 1 ? statuses.shift()! : statuses[0] }; },
+    publishIgMedia: async () => { calls.publishIg++; if (over.publishThrows) throw new Error("timeout-publish"); return { id: "ig_media_1" }; },
+    createFbPost: async () => { calls.fbPost++; return { id: "fb_post_1" }; },
+    createFbPhoto: async () => { calls.fbPhoto++; return { id: "fb_photo_1" }; },
+    reconcile: over.reconcile,
+  };
+  return { g: g2, calls };
+}
+const igPub = (db: any, graph: any) => makeMetaPublisher({ supabase: db, live: true, igUserId: "IG1", graph });
+const fbPub = (db: any, graph: any) => makeMetaPublisher({ supabase: db, live: true, pageId: "PAGE1", graph });
+
+test("IG image: container → media_publish (posted først etter publish)", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const res = await igPub(db, graph).publish(igImage, { idempotencyKey: "k1" });
+  assert.equal(res.externalId, "ig_media_1");
+  assert.equal(calls.createIgContainer, 1);
+  assert.equal(calls.getStatus, 0); // bilde: ingen polling
+  assert.equal(calls.publishIg, 1);
   assert.equal(db.tables["marketing_publish_attempts"][0].status, "posted");
 });
 
-test("MetaPublisher timeout + retry: avstemmer, poster ikke dobbelt", async () => {
-  const db = makeDb();
-  let calls = 0;
-  const pub = makeMetaPublisher({ supabase: db, live: true, igUserId: "IG1", graphPost: async () => { calls++; throw new Error("timeout"); }, reconcile: async () => ({ externalId: "ig_recovered" }) });
-  await assert.rejects(() => pub.publish(metaAsset, { idempotencyKey: "k2" }), /timeout/);
-  // attempt står "posting"; retry avstemmer i stedet for å re-poste.
-  const res = await pub.publish(metaAsset, { idempotencyKey: "k2" });
+test("IG Reel: processing → FINISHED → publish (gjenopptar, ingen ny container)", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph({ statuses: ["IN_PROGRESS", "FINISHED"] });
+  const pub = igPub(db, graph);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k2" }), /IG_CONTAINER_PROCESSING/);
+  const res = await pub.publish(igReel, { idempotencyKey: "k2" });
+  assert.equal(res.externalId, "ig_media_1");
+  assert.equal(calls.createIgContainer, 1); // ingen ny container ved retry
+  assert.equal(calls.publishIg, 1);
+});
+
+test("container created + gjentatt processing: retry gjenopptar, ingen ny container", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph({ statuses: ["IN_PROGRESS"] });
+  const pub = igPub(db, graph);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k3" }), /PROCESSING/);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k3" }), /PROCESSING/);
+  assert.equal(calls.createIgContainer, 1);
+});
+
+test("publish timeout → reconcile finner posten (ingen re-publish)", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph({ publishThrows: true, reconcile: async () => ({ externalId: "ig_recovered" }) });
+  const pub = igPub(db, graph);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k4" }), /timeout-publish/);
+  const res = await pub.publish(igReel, { idempotencyKey: "k4" });
   assert.equal(res.externalId, "ig_recovered");
-  assert.equal(calls, 1); // Graph ble ALDRI kalt på nytt
+  assert.equal(calls.publishIg, 1); // aldri re-publisert
 });
 
-test("MetaPublisher timeout uten reconcile → PUBLISH_UNCONFIRMED (fail-closed)", async () => {
-  const db = makeDb();
-  const pub = makeMetaPublisher({ supabase: db, live: true, igUserId: "IG1", graphPost: async () => { throw new Error("timeout"); } });
-  await assert.rejects(() => pub.publish(metaAsset, { idempotencyKey: "k3" }), /timeout/);
-  await assert.rejects(() => pub.publish(metaAsset, { idempotencyKey: "k3" }), /PUBLISH_UNCONFIRMED/);
+test("publish timeout uten reconcile → manual_review + PUBLISH_UNCONFIRMED", async () => {
+  const db = makeDb(); const { g: graph } = fakeGraph({ publishThrows: true });
+  const pub = igPub(db, graph);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k5" }), /timeout-publish/);
+  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k5" }), /PUBLISH_UNCONFIRMED/);
+  assert.equal(db.tables["marketing_publish_attempts"].find((a: any) => a.idempotency_key === "k5").status, "manual_review");
 });
 
-test("MetaPublisher uten credentials → dry-run (default)", async () => {
-  const db = makeDb();
-  let calls = 0;
-  const pub = makeMetaPublisher({ supabase: db, live: false, graphPost: async () => { calls++; return { id: "x" }; } });
-  const res = await pub.publish(metaAsset, { idempotencyKey: "k4" });
+test("FB tekst-post via /feed", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const res = await fbPub(db, graph).publish(fbText, { idempotencyKey: "k6" });
+  assert.equal(res.externalId, "fb_post_1");
+  assert.equal(calls.fbPost, 1);
+});
+
+test("FB bilde-post via /photos", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const res = await fbPub(db, graph).publish(fbImage, { idempotencyKey: "k7" });
+  assert.equal(res.externalId, "fb_photo_1");
+  assert.equal(calls.fbPhoto, 1);
+});
+
+test("Instagram uten media → MEDIA_ASSET_MISSING (fail-closed)", async () => {
+  const db = makeDb(); const { g: graph } = fakeGraph();
+  await assert.rejects(() => igPub(db, graph).publish(igNoMedia, { idempotencyKey: "k8" }), /MEDIA_ASSET_MISSING/);
+});
+
+test("uten credentials → dry-run (default), ingen Graph-kall", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const res = await makeMetaPublisher({ supabase: db, live: false, graph }).publish(igImage, { idempotencyKey: "k9" });
   assert.equal(res.dryRun, true);
-  assert.equal(calls, 0);
+  assert.equal(calls.createIgContainer, 0);
+});
+
+test("duplikat-invokasjon lager aldri duplikat ekstern post", async () => {
+  const db = makeDb(); const { g: graph, calls } = fakeGraph();
+  const pub = igPub(db, graph);
+  await pub.publish(igImage, { idempotencyKey: "k10" });
+  const res2 = await pub.publish(igImage, { idempotencyKey: "k10" });
+  assert.equal(res2.externalId, "ig_media_1");
+  assert.equal(calls.createIgContainer, 1); // ingen ny container
+  assert.equal(calls.publishIg, 1); // ingen ny publish
 });
 
 // runApproved fra publish-executor er samme funksjon (import-sjekk).

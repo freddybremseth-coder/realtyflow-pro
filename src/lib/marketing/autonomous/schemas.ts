@@ -126,6 +126,14 @@ export const GeneratedAssetSchema = z.object({
   cta: z.string().optional(),
   /** Kilde/provenance for sensitive fakta (pris/skatt/jus/marked). Uten kilde → approval. */
   factSources: z.array(z.object({ claim: z.string(), source: z.string() })).default([]),
+  /** Publiseringsmedia. Instagram krever gyldig image/video URL (fail closed uten). */
+  media: z.object({
+    imageUrl: z.string().optional(),
+    videoUrl: z.string().optional(),
+    linkUrl: z.string().optional(),
+    mediaType: z.enum(["image", "video", "reel"]).optional(),
+    altText: z.string().optional(),
+  }).optional(),
   /** Genererings-metadata (modell, kostnad). */
   generator: z.object({ model: z.string().optional(), costEur: z.number().min(0).optional() }).default({}),
 });
