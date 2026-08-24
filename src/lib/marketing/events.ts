@@ -17,6 +17,8 @@ export const MARKETING_EVENT_TYPES = [
   "content_published",
   "content_viewed",
   "content_clicked",
+  /** Canonical cumulative channel snapshot. Exactly one current row per content/channel. */
+  "metrics_snapshot",
   "lead_attributed",
   "qualified_lead",
   "experiment_started",
