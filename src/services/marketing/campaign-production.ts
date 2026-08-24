@@ -70,7 +70,11 @@ export interface CampaignDraftResult {
   marketingRunId: string;
   correlationId: string;
   campaignId: string;
-  results: Array<{ contentId: string; channel: string; publicationId: string; state: string; mode: string; qualityScore: number | null; approvalId: string | null; error?: string; source?: string }>;
+  results: Array<{
+    contentId: string; channel: string; publicationId: string; state: string; mode: string;
+    qualityScore: number | null; approvalId: string | null; error?: string; source?: string;
+    caption?: string; imageUrl?: string | null; brandId?: string; accountId?: string | null; assetHash?: string;
+  }>;
   trace: unknown[];
 }
 
@@ -196,7 +200,12 @@ export async function createCampaignDraft(
       service: input.service ?? null, sourceType, sourceId, reuseMode, propertyIds: creative.provenance.propertyIds ?? [],
     });
 
-    results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode, qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType });
+    results.push({
+      contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode,
+      qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType,
+      caption: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
+      imageUrl: creative.asset.media?.imageUrl ?? null, brandId: input.brandId, accountId: account?.accountId ?? null, assetHash: d.assetHash,
+    });
     trace.push(...d.trace);
   }
 

@@ -7,6 +7,7 @@ delete process.env.MARKETING_META_LIVE;
 delete process.env.META_ACCESS_TOKEN;
 
 import { createCampaignDraft, runApprovedPublicationProd } from "@/services/marketing/campaign-production";
+import { removeLegacyScheduledRow } from "@/services/marketing/legacy-content-adapter";
 import { runApprovedPublication as runApproved } from "@/services/marketing/publish-executor";
 import { makeMetaPublisher } from "@/services/marketing/publishers/meta-publisher";
 import { approvedAssetHash, type GeneratedAsset } from "@/lib/marketing/autonomous";
@@ -34,10 +35,10 @@ function makeDb() {
         else arr.push({ id: r.id ?? `id_${arr.length + 1}`, ...r });
       }
     };
-    const applyUpdate = () => { for (const r of tbl(name)) if (match(r)) Object.assign(r, q.payload); };
+    const applyUpdate = () => { const hit: any[] = []; for (const r of tbl(name)) if (match(r)) { Object.assign(r, q.payload); hit.push(r); } return hit; };
     const terminal = () => {
       if (q.op === "insert") { applyInsert(); return { data: null, error: null }; }
-      if (q.op === "update") { applyUpdate(); return { data: null, error: null }; }
+      if (q.op === "update") { const rows = applyUpdate(); return { data: rows, error: null }; }
       if (q.op === "upsert") { applyUpsert(); return { data: null, error: null }; }
       return { data: tbl(name).filter(match), error: null };
     };
@@ -134,6 +135,45 @@ test("CANARY: legacy content_publication brukes som kilde (ingen AI), source=leg
   const asset = db.tables["marketing_assets"][0];
   assert.match(asset.body, /Calpe/);
   assert.equal(asset.media.imageUrl, "https://cdn/zen/calpe.jpg");
+});
+
+test("REGRESJON dobbel-post: scheduled legacy → snapshot → archived → publish; cron finner ikke originalen", async () => {
+  delete process.env.MARKETING_META_LIVE; // dry-run publisering
+  const db = makeDb();
+  seedBrand(db);
+  db.tables["content_publications"] = [{
+    id: "pub1", brand_id: "b1", status: "scheduled", scheduled_at: "2026-09-02T09:00:00Z",
+    description: "Luksusvilla i Benissa Costa med havutsikt, 4 soverom og 5 bad. Pris €2 450 000. Book en visning i dag.",
+    ai_image_url: "https://cdn/benissa.jpg", scheduled_platforms: ["instagram"],
+    created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-10T00:00:00Z",
+  }];
+  db.tables["social_channels"] = [{ brand_id: "b1", platform: "instagram", external_id: "IG1", is_active: true, metadata: {} }];
+
+  // 1) Growth OS snapshot (leser legacy MENS status=scheduled → tiltrodd).
+  const draft = await createCampaignDraft(db, { brandId: "b1", channel: "instagram", legacyPublicationId: "pub1", publishingAccountId: "IG1", goal: { kind: "qualified_leads", target: 10 }, masterIdea: "canary" });
+  assert.equal(draft.results[0].source, "legacy_content_publication");
+  assert.equal(draft.results[0].state, "draft"); // ikke rejected (pris er menneske-forfattet → ikke FACT_NOT_VERIFIED)
+  const approvalId = draft.results[0].approvalId!;
+  assert.ok(approvalId);
+
+  // 2) Ta legacy ut av scheduleren (nøyaktig 1 rad).
+  const removed = await removeLegacyScheduledRow(db, "pub1");
+  assert.equal(removed.archived, true);
+  assert.equal(db.tables["content_publications"][0].status, "archived");
+  // legacy cron (status='scheduled') finner ikke originalraden lenger → ingen dobbel-post.
+  assert.equal(db.tables["content_publications"].filter((r: any) => r.status === "scheduled").length, 0);
+
+  // 3) Godkjenn + Growth OS-publiser fra snapshot (dry-run).
+  db.tables["agentic_approvals"].find((a: any) => a.id === approvalId).status = "approved";
+  const exec = await runApprovedPublicationProd(db, { approvalId, executedBy: "freddy@extrade.es" });
+  assert.equal(exec.ok, true);
+  assert.equal(exec.executed, true);
+});
+
+test("removeLegacyScheduledRow: 0 rader (ikke scheduled) → feiler fail-closed", async () => {
+  const db = makeDb();
+  db.tables["content_publications"] = [{ id: "pub1", brand_id: "b1", status: "draft" }];
+  await assert.rejects(() => removeLegacyScheduledRow(db, "pub1"), /LEGACY_ROW_NOT_SCHEDULED/);
 });
 
 test("CANARY fail-closed: legacy-rad med meta-tekst avvises (rejected, ingen approval)", async () => {

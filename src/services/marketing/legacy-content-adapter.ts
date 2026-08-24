@@ -68,18 +68,45 @@ export async function loadLegacyPublicationCandidate(
     throw new Error("MEDIA_ASSET_MISSING: Instagram krever gyldig public HTTPS media-URL (ai_image_url mangler).");
   }
 
+  return buildCandidate(row, input.channel, mediaUrl, body);
+}
+
+function buildCandidate(row: any, channel: string, mediaUrl: string | undefined, body: string): ContentCandidate {
   const humanApproved = ["published", "approved"].includes(String(row.status));
   return {
     source: "legacy_content_publication",
     contentId: `content_publication:${row.id}`,
     brandId: row.brand_id,
-    channels: [input.channel],
+    channels: [channel],
     text: body,
     media: mediaUrl ? { imageUrl: mediaUrl, mediaType: "image" } : null,
     status: String(row.status),
     humanApproved,
+    // Menneske-forfattet, tiltrodd legacy-innhold er sin egen fakta-kilde: tall
+    // (pris osv.) er ikke AI-hallusinasjon, og mennesket godkjenner captionen i
+    // Approval Gateway. Hindrer falsk FACT_NOT_VERIFIED på legitime priser.
+    factSources: body ? [{ claim: body, source: `legacy_content_publication:${row.id} (menneske-forfattet)` }] : [],
     propertyIds: [],
     createdAt: row.created_at ?? null,
     factCheckedAt: row.updated_at ?? row.created_at ?? null,
   };
+}
+
+/**
+ * Ta en legacy content_publications-rad ut av legacy-scheduleren (dobbel-post-
+ * vern). Endrer KUN status scheduled→archived + nuller scheduled_at. Feiler hvis
+ * ikke nøyaktig 1 rad ble endret (0 = ikke scheduled/finnes ikke; >1 = uventet).
+ */
+export async function removeLegacyScheduledRow(supabase: MarketingSupabaseLike, publicationId: string): Promise<{ archived: true; id: string }> {
+  const { data, error } = await supabase
+    .from("content_publications")
+    .update({ status: "archived", scheduled_at: null, updated_at: new Date().toISOString(), last_publish_error: "Konsumert av Growth OS canary — ute av legacy-scheduler" })
+    .eq("id", publicationId)
+    .eq("status", "scheduled")
+    .select("id");
+  if (error) throw new Error(`LEGACY_ARCHIVE_FAILED: ${error.message}`);
+  const rows = data ?? [];
+  if (rows.length === 0) throw new Error("LEGACY_ROW_NOT_SCHEDULED: raden finnes ikke eller er ikke i status 'scheduled'.");
+  if (rows.length > 1) throw new Error(`LEGACY_MULTIPLE_ROWS: ${rows.length} rader endret — avbrutt.`);
+  return { archived: true, id: String(rows[0].id) };
 }

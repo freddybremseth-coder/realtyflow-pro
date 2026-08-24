@@ -128,6 +128,8 @@ export interface DispatchResult {
   qualityScore: number | null;
   published: boolean;
   approvalId: string | null;
+  /** Låst approved_asset_hash (samme som executor re-verifiserer). */
+  assetHash?: string;
   /** Satt ved fail-closed-tilstander, f.eks. APPROVAL_SERVICE_UNAVAILABLE. */
   error?: string;
   trace: ActionTraceEntry[];
@@ -249,5 +251,5 @@ export async function dispatchGeneratedAsset(
     await persist({ state, asset_hash: assetHash, quality_score: quality.score, autonomy_mode: mode, approval_id: null });
   }
 
-  return { publicationId, state, mode, qualityScore: quality.score, published, approvalId, error, trace };
+  return { publicationId, state, mode, qualityScore: quality.score, published, approvalId, assetHash, error, trace };
 }
