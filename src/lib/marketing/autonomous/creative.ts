@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.5";
+export const CREATIVE_PROMPT_VERSION = "cg-1.6";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -71,8 +71,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     brand.allowedClaims.length && `Tillatte påstander: ${brand.allowedClaims.join("; ")}.`,
     brand.forbiddenClaims.length && `FORBUDTE påstander (bruk aldri): ${brand.forbiddenClaims.join("; ")}.`,
     `Sensitive tall (pris, skatt, rente, markedsstatistikk) MÅ ha kilde. Uten kilde: ikke oppgi tallet.`,
-    `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
+    `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller nøktern, kildebasert posisjonering med dokumentert boligtype, sted, fasiliteter og norsk oppfølging — uten å love et konkret økonomisk utfall.`,
     `Hvis en factSource bare oppgir en energimerking (for eksempel «Energimerking: B»), gjengi KUN selve energimerkingen. Ikke utled eller skriv at boligen derfor er «moderne», «energieffektiv», har «lavt energiforbruk», «lavere kostnader» eller lignende med mindre akkurat den egenskapen også står eksplisitt i en factSource.`,
+    `Kvalitative boligord som «moderne», «luksuriøs/luksus», «eksklusiv» og «energieffektiv» er property-claims og krever eksplisitt støtte i en factSource for akkurat den boligen. Ikke utled slike ord fra nybyggstatus, høy pris, område, energimerke, bilder, designinntrykk eller generisk Brand Brain-språk. Hvis kilden ikke sier egenskapen, bruk nøytrale fakta i stedet.`,
     `Leverandør-/Inventory-beskrivelser kan inneholde markedsføringsspråk. Ikke gjør subjektive superlativer, rangeringer eller popularitetsord til nye fakta. Ikke omskriv «et av de beste områdene» til «et av de mest populære områdene», «mest attraktive», «mest ettertraktede», «best beliggende» eller lignende uten en egen uavhengig factSource. Foretrekk nøkterne formuleringer om sted, boligtype, utsikt, fasiliteter og dokumenterte egenskaper.`,
     `Bevar geografiske factSources semantisk nøyaktig. «Region: Costa Blanca South» betyr at boligen ligger i den sørlige delen av Costa Blanca / Costa Blanca South — ALDRI «sør for Costa Blanca». Ikke bruk uverifiserte geografiske aliaser som «solkysten» når factSources sier Costa Blanca; det kan forveksles med Costa del Sol. Tilsvarende gjelder North/Inland: omskriv aldri en region til en annen geografisk relasjon.`,
     `En factSource kan være avkortet eller ende med «...». ALDRI fullfør, gjett eller rekonstruer den manglende delen. Bruk bare ordene og fakta som faktisk er synlige i factSource. Hvis en setning stopper midt i et stedsnavn, avstand, fasilitet eller annen påstand, utelat den delen helt.`,
@@ -93,7 +94,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     favored && `Bruk det som funker (learning): ${favored}.`,
     avoided && `Unngå: ${avoided}.`,
     req.facts?.length && `Verifiserbare fakta du kan bruke:\n${req.facts.map((f) => `- ${f.claim} (kilde: ${f.source})`).join("\n")}`,
-    `Hvis ingen verifiserbare fakta er oppgitt, hold teksten på Brand Brain-nivå: rådgivning, moderne/energieffektive boliger, Costa Blanca, kvalitet, trygghet og CTA. Ikke finn opp trender, garantier, besparelser eller absolutte løfter.`,
+    `Hvis ingen verifiserbare fakta er oppgitt, hold teksten på Brand Brain-nivå: rådgivning, kjøpsprosess, Costa Blanca, trygghet og CTA. Ikke tilskriv en konkret bolig egenskaper som «moderne», «luksuriøs», «eksklusiv» eller «energieffektiv», og ikke finn opp trender, garantier, besparelser eller absolutte løfter.`,
     `Skriv KUN den ferdige, kundevendte posten — aldri prosessbeskrivelse («Jeg setter opp…», «Here is your post…», «As an AI…»).`,
     `"body" er den ferdige captionen som publiseres direkte på Meta. Den skal ALDRI inneholde produksjonsanvisninger: ingen «HOOK», «SCENE», «Bilde:», «Tekst-overlay:», «CTA-SCENE», «Voiceover:», «Shot 1», «Klipp:», «B-roll» eller «Caption:»-etiketter. Skriv ekte kundevendt tekst, ikke et manus.`,
     `Trenger du et reel-/video-manus, legg HELE manuset i feltet "productionScript" — aldri i "body".`,
