@@ -20,7 +20,6 @@ test("baseline = snitt business value per observasjon", () => {
 });
 
 test("favor: høy-lift dimensjon med nok evidens", () => {
-  // price_first-hook selger; question-hook gjør ikke.
   const data: LearningObservation[] = [];
   for (let i = 0; i < 6; i++) data.push(obs({ hookType: "price_first" }, { sales: 1, qualifiedLeads: 3, views: 1000 }));
   for (let i = 0; i < 6; i++) data.push(obs({ hookType: "question" }, { views: 5000 }));
@@ -49,6 +48,35 @@ test("neutral: for lite utvalg gir ikke handling (ingen overtilpasning)", () => 
   assert.equal(price.evidence, "insufficient");
 });
 
+test("hashtags below five observations stay neutral and insufficient", () => {
+  const data: LearningObservation[] = [];
+  for (let i = 0; i < 4; i++) data.push(obs({ tags: ["costablanca"] }, { sales: 1 }));
+  for (let i = 0; i < 6; i++) data.push(obs({ tags: ["finestrat"] }, {}));
+  const rules = deriveLearningRules(data, { scope: "b1" });
+  const tag = rules.find((r) => r.dimension === "tag" && r.value === "costablanca")!;
+  assert.equal(tag.sample, 4);
+  assert.equal(tag.evidence, "insufficient");
+  assert.equal(tag.verdict, "neutral");
+});
+
+test("hashtags become actionable only after evidence threshold", () => {
+  const data: LearningObservation[] = [];
+  for (let i = 0; i < 5; i++) data.push(obs({ tags: ["costablanca", "boligdrøm"] }, { sales: 1, qualifiedLeads: 2 }));
+  for (let i = 0; i < 5; i++) data.push(obs({ tags: ["generic"] }, {}));
+  const rules = deriveLearningRules(data, { scope: "b1" });
+  const costa = rules.find((r) => r.dimension === "tag" && r.value === "costablanca")!;
+  const dream = rules.find((r) => r.dimension === "tag" && r.value === "boligdrøm")!;
+  assert.equal(costa.sample, 5);
+  assert.notEqual(costa.evidence, "insufficient");
+  assert.equal(costa.verdict, "favor");
+  assert.equal(dream.verdict, "favor");
+});
+
+test("empty tag arrays do not create tag rules", () => {
+  const rules = deriveLearningRules([obs({ tags: [] }, { sales: 1 })], { scope: "b1" });
+  assert.equal(rules.some((r) => r.dimension === "tag"), false);
+});
+
 test("ruleKey er stabil og idempotent: scope|dimension|value", () => {
   const rules = deriveLearningRules([obs({ hookType: "price_first" }, {})], { scope: "b1" });
   const r = rules.find((x) => x.dimension === "hookType")!;
@@ -72,11 +100,10 @@ test("tomt datasett gir trygg anbefaling, ingen krasj", () => {
 });
 
 test("applyExperimentEvidence: oppgraderer verdict uten å røre revenue-totaler", () => {
-  // Tynn observasjonell regel (neutral), men eksperiment beviser price_first.
   const data = [obs({ hookType: "price_first" }, { leads: 2, sales: 1 }), obs({ hookType: "price_first" }, { leads: 1 })];
   const rules = deriveLearningRules(data, { scope: "b1" });
   const before = rules.find((r) => r.dimension === "hookType" && r.value === "price_first")!;
-  assert.equal(before.verdict, "neutral"); // for lite observasjonelt utvalg
+  assert.equal(before.verdict, "neutral");
   const revenueBefore = before.totalSales;
 
   const ev: ExperimentEvidence[] = [{ scope: "b1", dimension: "hookType", value: "price_first", normalizedLift: 2.4, evidence: "reliable", experimentId: "e1" }];
@@ -85,7 +112,7 @@ test("applyExperimentEvidence: oppgraderer verdict uten å røre revenue-totaler
   assert.equal(after.verdict, "favor");
   assert.equal(after.experimentBacked, true);
   assert.equal(after.experimentLift, 2.4);
-  assert.equal(after.totalSales, revenueBefore); // revenue IKKE dobbelttalt
+  assert.equal(after.totalSales, revenueBefore);
 });
 
 test("applyExperimentEvidence: kan opprette ren eksperiment-regel uten revenue", () => {
