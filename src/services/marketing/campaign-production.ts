@@ -35,6 +35,43 @@ function mapGoal(kind: CommercialGoal["kind"]): ContentGoal {
   }
 }
 
+function normalizedCta(value: string | null | undefined): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9æøå]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Creative Generator may naturally end body-copy with the same CTA that is also
+ * stored in the dedicated `cta` field. Remove that trailing paragraph BEFORE
+ * persist/hash/approval so preview and Meta payload are identical and deduped.
+ */
+function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
+  const cta = String(creative.asset.cta ?? "").trim();
+  const body = String(creative.asset.body ?? "");
+  if (!cta || !body) return creative;
+  const target = normalizedCta(cta);
+  if (!target) return creative;
+
+  const paragraphs = body.split(/\n\s*\n/);
+  let last = paragraphs.length - 1;
+  while (last >= 0 && !paragraphs[last].trim()) last -= 1;
+  if (last < 0) return creative;
+  const lastNorm = normalizedCta(paragraphs[last]);
+  if (!lastNorm.includes(target) || paragraphs[last].trim().length > 220) return creative;
+
+  paragraphs.splice(last, 1);
+  return {
+    ...creative,
+    asset: {
+      ...creative.asset,
+      body: paragraphs.join("\n\n").trim(),
+    },
+  };
+}
+
 export interface CreateCampaignDraftInput {
   brandId: string;
   goal: CommercialGoal;
@@ -64,6 +101,7 @@ export interface CampaignDraftResult {
     caption?: string; imageUrl?: string | null; brandId?: string; accountId?: string | null; assetHash?: string;
     factSources?: Array<{ claim: string; source: string }>;
     propertyId?: string | null; propertyRef?: string | null; propertyTitle?: string | null;
+    propertyLocation?: string | null; selectionReason?: string | null;
   }>;
   trace: unknown[];
 }
@@ -103,8 +141,13 @@ export async function createCampaignDraft(
     : null;
   const effectiveMediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl;
   const effectiveFocus = input.focus || inventoryProperty?.location || undefined;
+  const locationInstruction = inventoryProperty
+    ? inventoryProperty.locationSpecificity === "specific"
+      ? `KONKRET STED: ${inventoryProperty.location}. Bruk konkret by/område (f.eks. Finestrat/Sierra Cortina) i copy når relevant; bruk ikke bare den brede Costa-regionen som stedsnavn.`
+      : `KUN REGION ER VERIFISERT: ${inventoryProperty.location || "ukjent"}. Ikke presenter denne brede regionen som om den var konkret by/sted, og ikke finn på kommune.`
+    : "";
   const effectiveMasterIdea = inventoryProperty
-    ? `${input.masterIdea}\n\nMARKEDSFØR DENNE KONKRETE REALTYFLOW-BOLIGEN: ${inventoryProperty.title}${inventoryProperty.ref ? ` (ref ${inventoryProperty.ref})` : ""}. Bruk bare oppgitte Inventory-fakta; ikke finn på egenskaper.`
+    ? `${input.masterIdea}\n\nMARKEDSFØR DENNE KONKRETE REALTYFLOW-BOLIGEN: ${inventoryProperty.title}${inventoryProperty.ref ? ` (ref ${inventoryProperty.ref})` : ""}. ${locationInstruction} Bruk bare oppgitte Inventory-fakta; ikke finn på egenskaper.`
     : input.masterIdea;
 
   const channels: MarketingChannel[] = input.channel ? [input.channel] : (input.legacyPublicationId ? ["instagram"] : META_CHANNELS);
@@ -224,10 +267,14 @@ export async function createCampaignDraft(
         propertyId: inventoryProperty?.id ?? null,
         propertyRef: inventoryProperty?.ref ?? null,
         propertyTitle: inventoryProperty?.title ?? null,
+        propertyLocation: inventoryProperty?.location ?? null,
+        selectionReason: inventoryProperty?.selectionReason ?? null,
       });
       continue;
     }
 
+    // Canonicalize customer-facing payload BEFORE persistence/hash/approval.
+    creative = dedupeCreativeCta(creative);
     await persistAsset(supabase, creative).catch(() => undefined);
 
     const account = await resolvePublishingAccount(supabase, {
@@ -272,6 +319,8 @@ export async function createCampaignDraft(
       propertyId: inventoryProperty?.id ?? null,
       propertyRef: inventoryProperty?.ref ?? null,
       propertyTitle: inventoryProperty?.title ?? null,
+      propertyLocation: inventoryProperty?.location ?? null,
+      selectionReason: inventoryProperty?.selectionReason ?? null,
     });
     trace.push(...d.trace);
   }
