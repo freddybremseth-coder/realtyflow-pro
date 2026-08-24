@@ -1,40 +1,25 @@
-/**
- * Phase 7.1E — First Live Campaign Canary (preflight).
- *
- * Verifiserer ALLE produksjonsforutsetninger for ÉN valgt Content Hub-item, uten
- * å publisere noe. Ingen Meta-call skjer her — preflight har ingen publisher-
- * avhengighet. Returnerer READY_FOR_LIVE kun hvis alle KRITISKE checks er grønne;
- * ellers NOT_READY (fail closed) med eksplisitt årsak per check. COPILOT uendret.
- *
- * Bygger ikke nye moduler — gjenbruker brand-brain, account-resolver og
- * asset-integrity.
- */
-
+/** Phase 7.1E — First Live Campaign Canary preflight. */
 import { approvedAssetHash, contentPublishabilityGate } from "@/lib/marketing/autonomous";
 import { loadBrandContext } from "@/services/marketing/brand-brain-adapter";
 import { resolvePublishingAccount, type ResolvedAccount } from "@/services/marketing/account-resolver";
+import { resolveInventoryMarketingProperty, type InventoryMarketingProperty } from "@/services/marketing/inventory-property-adapter";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 export interface PreflightInput {
   brandId: string;
   service?: string;
   channel: string;
-  /**
-   * "live" = første ekte post: Meta-credentials blir KRITISK. "dry_run" (default)
-   * = canary uten ekte posting, Meta-creds er kun warn.
-   */
   mode?: "dry_run" | "live";
   market?: string;
   language?: string;
-  /** Menneske-valgt konto (external_id). */
   publishingAccountId?: string;
-  /** "social_post:<id>", "media_asset:<id>" eller "content_publication:<id>". Utelates i AI-modus. */
   contentHubItemId?: string;
-  /** Public HTTPS media-URL (kan overstyre/utfylle asset-ens egen). */
   mediaUrl?: string;
   cta?: string;
-  /** AI-modus: ingen forhåndsvalgt item — innhold genereres i campaign-draft. */
   aiMode?: boolean;
+  /** Property-driven AI uses RealtyFlow Inventory as source of media + facts. */
+  useInventoryProperty?: boolean;
+  propertyId?: string;
 }
 
 export interface PreflightEnv {
@@ -49,17 +34,11 @@ export interface PreflightEnv {
 export interface PreflightDeps {
   supabase: MarketingSupabaseLike;
   env: PreflightEnv;
-  /** Er General Approval Gateway koblet (agentic_approvals skrivbar)? */
   approvalConfigured: boolean;
 }
 
 export type CheckStatus = "ok" | "warn" | "fail";
-export interface PreflightCheck {
-  name: string;
-  critical: boolean;
-  status: CheckStatus;
-  detail: string;
-}
+export interface PreflightCheck { name: string; critical: boolean; status: CheckStatus; detail: string; }
 
 export interface PreflightResult {
   status: "READY_FOR_LIVE" | "NOT_READY";
@@ -68,6 +47,7 @@ export interface PreflightResult {
   criticalFailures: string[];
   assetHash?: string;
   account?: ResolvedAccount;
+  inventoryProperty?: { id: string; ref: string | null; title: string; imageUrl: string; factSourceCount: number };
 }
 
 const isHttps = (u?: string | null) => typeof u === "string" && /^https:\/\//i.test(u);
@@ -78,29 +58,20 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
   const add = (name: string, critical: boolean, status: CheckStatus, detail: string) => checks.push({ name, critical, status, detail });
   const liveMode = input.mode === "live";
 
-  // 1) Kill switch må være PÅ (ellers publiserer ingenting).
   add("kill_switch", true, deps.env.autopilotEnabled ? "ok" : "fail", deps.env.autopilotEnabled ? "MARKETING_AUTOPILOT_ENABLED på" : "Kill switch AV — ingen publisering mulig");
 
-  // 2) Brand context.
   const brand = await loadBrandContext(supabase, input.brandId).catch(() => null);
   add("brand_context", true, brand ? "ok" : "fail", brand ? `brand «${brand.brandName}»` : `MISSING_BRAND_CONTEXT for «${input.brandId}»`);
 
-  // 3) Service (routing-dimensjon).
   add("service", false, input.service ? "ok" : "warn", input.service ? `service «${input.service}»` : "ingen service angitt (kan gi tvetydig routing ved flere kontoer)");
 
-  // AI-modus: intet forhåndsvalgt item — innhold genereres i campaign-draft, som
-  // kjører publishability/quality/fakta-gate. Item-checkene her er N/A.
   const hasItem = !!input.contentHubItemId && !input.aiMode;
   const isSocialPost = hasItem && input.contentHubItemId!.startsWith("social_post:");
   let itemMediaUrl: string | null = null;
   let itemText = "";
 
   if (hasItem) {
-    // 4) Content Hub-org-mapping (nødvendig for å slå opp Content Hub-innhold).
-    add("content_hub_org", isSocialPost, brand?.contentHubOrgId ? "ok" : (isSocialPost ? "fail" : "warn"),
-      brand?.contentHubOrgId ? `content_hub_org_id «${brand.contentHubOrgId}»` : "brand_context.content_hub_org_id mangler");
-
-    // 5) Content Hub-item finnes + er godkjent/menneske-eid.
+    add("content_hub_org", isSocialPost, brand?.contentHubOrgId ? "ok" : (isSocialPost ? "fail" : "warn"), brand?.contentHubOrgId ? `content_hub_org_id «${brand.contentHubOrgId}»` : "brand_context.content_hub_org_id mangler");
     const rawId = input.contentHubItemId!.split(":")[1];
     let humanApproved = false; let itemFound = false;
     if (isSocialPost) {
@@ -122,11 +93,23 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
     add("human_approved", true, humanApproved ? "ok" : "fail", humanApproved ? "menneske-godkjent/tiltrodd status" : "innholdet er ikke i en tiltrodd/godkjent status");
     const pubItem = contentPublishabilityGate(itemText);
     add("content_publishable", true, pubItem.publishable ? "ok" : "fail", pubItem.publishable ? "innhold er publishable" : `${pubItem.result} — ${pubItem.reason}`);
-  } else {
-    add("content_source", false, "warn", "AI-modus: innhold genereres i campaign-draft (publishability/quality/fakta-gate kjøres der).");
   }
 
-  // 6) Eksplisitt publiseringskonto (routing + isolasjon). Aldri tvetydig.
+  // Property-driven AI: the authoritative content source is RealtyFlow Inventory.
+  let inventoryProperty: InventoryMarketingProperty | null = null;
+  if (input.aiMode && input.useInventoryProperty) {
+    try {
+      inventoryProperty = await resolveInventoryMarketingProperty(supabase, { brandId: input.brandId, propertyId: input.propertyId ?? null });
+      add("inventory_property", true, "ok", `ref ${inventoryProperty.ref ?? "—"} · ${inventoryProperty.title} · ${inventoryProperty.factSources.length} verifiserte fakta`);
+      add("content_source", true, "ok", `RealtyFlow Inventory property:${inventoryProperty.id}`);
+    } catch (e) {
+      add("inventory_property", true, "fail", e instanceof Error ? e.message : "Inventory-resolusjon feilet");
+      add("content_source", true, "fail", "AI property-mode krever en synlig, tilgjengelig RealtyFlow-bolig");
+    }
+  } else if (!hasItem) {
+    add("content_source", false, "warn", "AI-modus uten Inventory-property: innhold genereres i campaign-draft.");
+  }
+
   let account: ResolvedAccount | undefined;
   try {
     account = await resolvePublishingAccount(supabase, {
@@ -138,33 +121,27 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
     add("publishing_account", true, "fail", e instanceof Error ? e.message : "konto kunne ikke resolves");
   }
 
-  // 7) Media: public HTTPS-URL. Instagram krever alltid media for ekte live-post,
-  // også i AI-modus. Dry-run kan fortsatt generere caption uten media.
-  const mediaUrl = input.mediaUrl ?? itemMediaUrl;
+  const mediaUrl = inventoryProperty?.primaryImage ?? input.mediaUrl ?? itemMediaUrl;
   const igNeedsMedia = input.channel === "instagram";
   const mediaOk = isHttps(mediaUrl);
   const mediaCritical = igNeedsMedia && (hasItem || liveMode);
   add("media_url", mediaCritical, mediaOk ? "ok" : (mediaCritical ? "fail" : "warn"),
     mediaOk
-      ? `media OK (${mediaUrl})`
+      ? `media OK (${mediaUrl})${inventoryProperty ? " · hentet fra RealtyFlow Inventory" : ""}`
       : mediaUrl
         ? "MEDIA_ASSET_INVALID: ikke public HTTPS-URL"
         : mediaCritical
           ? "MEDIA_ASSET_MISSING: live Instagram krever public HTTPS image/video URL"
           : "AI dry-run: media kan utelates");
 
-  // 8) Approval-tjeneste koblet (fail closed hvis ikke).
   add("approval_service", true, deps.approvalConfigured ? "ok" : "fail", deps.approvalConfigured ? "General Approval Gateway koblet" : "APPROVAL_SERVICE_UNAVAILABLE");
 
-  // 9) Meta-credentials. I live-modus KRITISK (ekte post); i dry_run kun warn.
   const metaReady = deps.env.metaLive && !!deps.env.metaToken && (!!deps.env.igUserId || !!deps.env.pageId);
   add("meta_credentials", liveMode, metaReady ? "ok" : (liveMode ? "fail" : "warn"),
     metaReady ? "MARKETING_META_LIVE + token + konto satt"
       : liveMode ? "META_CREDENTIALS_MISSING: live-modus krever MARKETING_META_LIVE + META_ACCESS_TOKEN + konto"
-        : "ikke live — kjører dry-run (sett MARKETING_META_LIVE + META_ACCESS_TOKEN + konto for ekte post)");
+        : "ikke live — kjører dry-run");
 
-  // 10) Asset-integritet: approved_asset_hash. Kritisk KUN i item-modus (der
-  // innholdet finnes nå). I AI-modus beregnes hashen i campaign-draft.
   const canHash = hasItem && !!account && mediaOk && !!brand;
   let assetHash: string | undefined;
   if (canHash) {
@@ -172,11 +149,15 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
       sourceContentId: input.contentHubItemId!,
       finalCopy: itemText,
       finalMedia: JSON.stringify({ imageUrl: mediaUrl }),
-      brandId: input.brandId, accountId: account!.accountId, channel: input.channel,
-      propertyIds: [], cta: input.cta ?? brand!.preferredCta ?? "", factSources: [],
+      brandId: input.brandId,
+      accountId: account!.accountId,
+      channel: input.channel,
+      propertyIds: [],
+      cta: input.cta ?? brand!.preferredCta ?? "",
+      factSources: [],
     });
   }
-  add("asset_hash", hasItem, canHash ? "ok" : (hasItem ? "fail" : "warn"), canHash ? `hash ${assetHash}` : hasItem ? "kan ikke beregne hash (mangler konto/media/brand)" : "AI-modus: hash beregnes i campaign-draft");
+  add("asset_hash", hasItem, canHash ? "ok" : (hasItem ? "fail" : "warn"), canHash ? `hash ${assetHash}` : hasItem ? "kan ikke beregne hash" : "AI-modus: hash beregnes etter Inventory-grounded generation");
 
   const criticalFailures = checks.filter((c) => c.critical && c.status === "fail").map((c) => `${c.name}: ${c.detail}`);
   return {
@@ -186,5 +167,12 @@ export async function preflightLiveCampaign(deps: PreflightDeps, input: Prefligh
     criticalFailures,
     assetHash,
     account,
+    inventoryProperty: inventoryProperty ? {
+      id: inventoryProperty.id,
+      ref: inventoryProperty.ref,
+      title: inventoryProperty.title,
+      imageUrl: inventoryProperty.primaryImage,
+      factSourceCount: inventoryProperty.factSources.length,
+    } : undefined,
   };
 }
