@@ -3,15 +3,10 @@ import { OAuth2Client } from "google-auth-library";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 
-const BRAND_IDS = ["remasterfreddy", "neuralbeat"];
+const REMASTER_BRAND_ID = "remasterfreddy";
 
 async function getVerifiedClient() {
-  const channelLists = await Promise.all(
-    BRAND_IDS.map((brandId) => getChannelsByBrand(brandId, "youtube")),
-  );
-  const channels = channelLists.flat().filter(
-    (channel, index, all) => all.findIndex((item) => item.id === channel.id) === index,
-  );
+  const channels = await getChannelsByBrand(REMASTER_BRAND_ID, "youtube");
 
   if (channels.length === 0) {
     throw new Error("Re-Master Freddy har ingen aktiv YouTube-kanaltilkobling.");
