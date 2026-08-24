@@ -14,6 +14,7 @@
 import { fetchInstagramMediaEngagement } from "@/services/integrations/instagram-insights";
 import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { refreshLearningRules } from "@/services/marketing/learning-adapter";
+import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/services/marketing/inventory-property-adapter";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
 
@@ -38,6 +39,14 @@ export interface GrowthMetricsSyncResult {
   learningRefreshed: boolean;
   rulesWritten: number;
   failures: Array<{ publicationId: string; reason: string }>;
+}
+
+interface AssetGenomeResult {
+  genome: ContentGenome;
+  learningEligible: boolean;
+  dataQualityReason: string | null;
+  assetLocation: string | null;
+  verifiedLocation: string | null;
 }
 
 function propertyIdFromSource(sourceId: unknown): string | null {
@@ -84,11 +93,32 @@ function priceBandFromClaim(value: string | null): string | undefined {
   return "1m_plus";
 }
 
+function firstStructuredPlace(value: string | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || isBroadInventoryRegion(raw)) return null;
+  return raw.split(",")[0]?.trim() || null;
+}
+
+async function verifiedSubjectLocation(
+  supabase: MarketingSupabaseLike,
+  propertyId: string | null,
+): Promise<string | null> {
+  if (!propertyId) return null;
+  const { data } = await supabase
+    .from("properties")
+    .select("title, title_no, location")
+    .eq("id", propertyId)
+    .maybeSingle();
+  if (!data) return null;
+  return deriveSpecificLocationFromTitle(data.title_no || data.title)
+    || firstStructuredPlace(data.location);
+}
+
 async function latestAssetGenome(
   supabase: MarketingSupabaseLike,
   contentId: string,
   sourceId: string | null,
-): Promise<ContentGenome | null> {
+): Promise<AssetGenomeResult | null> {
   const { data } = await supabase
     .from("marketing_assets")
     .select("genome, fact_sources, property_ids, headline, body, cta, updated_at")
@@ -108,16 +138,32 @@ async function latestAssetGenome(
     || propertyIdFromSource(sourceId);
   const caption = [data.headline, data.body, data.cta].filter(Boolean).join("\n");
   const tags = extractPublishedTags(caption);
+  const currentLocation = await verifiedSubjectLocation(supabase, propertyId);
 
-  // Enrich from the exact grounded facts + exact published caption that were
-  // locked into the asset. No guessed property attributes or suggested tags.
-  return {
+  // Historical approved/published assets remain immutable. If today's trusted
+  // Inventory subject-location disagrees with the historical asset's Sted fact,
+  // retain measurement for audit but quarantine it from observational learning.
+  const locationConflict = !!(
+    place
+    && currentLocation
+    && slug(place) !== slug(currentLocation)
+  );
+
+  const genome: ContentGenome = {
     ...base,
     ...(place ? { area: slug(place) } : {}),
     ...(propertyType ? { propertyType: slug(propertyType) } : {}),
     ...(priceBandFromClaim(price) ? { priceBand: priceBandFromClaim(price) } : {}),
     ...(propertyId ? { propertyId } : {}),
     ...(tags.length ? { tags } : {}),
+  };
+
+  return {
+    genome,
+    learningEligible: !locationConflict,
+    dataQualityReason: locationConflict ? "historical_asset_location_conflict" : null,
+    assetLocation: place,
+    verifiedLocation: currentLocation,
   };
 }
 
@@ -154,6 +200,10 @@ async function replaceCanonicalSnapshot(
     metrics: ContentMetrics;
     raw: Record<string, unknown>;
     observed: Record<string, number>;
+    learningEligible: boolean;
+    dataQualityReason: string | null;
+    assetLocation: string | null;
+    verifiedLocation: string | null;
   },
 ) {
   const { error: deleteError } = await supabase
@@ -183,6 +233,10 @@ async function replaceCanonicalSnapshot(
       source_id: input.sourceId,
       property_id: propertyIdFromSource(input.sourceId),
       tags: input.genome.tags ?? [],
+      learning_eligible: input.learningEligible,
+      data_quality_reason: input.dataQualityReason,
+      asset_location: input.assetLocation,
+      verified_subject_location: input.verifiedLocation,
       observed: input.observed,
       raw: input.raw,
     },
@@ -242,16 +296,16 @@ export async function syncGrowthInstagramMetrics(
     }
 
     try {
-      const [attempt, genome] = await Promise.all([
+      const [attempt, assetGenome] = await Promise.all([
         postedAttempt(supabase, publicationId),
         latestAssetGenome(supabase, contentId, sourceId),
       ]);
-      if (!attempt || !genome) {
+      if (!attempt || !assetGenome) {
         result.skipped++;
         continue;
       }
 
-      await store.upsertContent(contentId, currentBrand, genome);
+      await store.upsertContent(contentId, currentBrand, assetGenome.genome);
 
       const engagement = await fetchInstagramMediaEngagement(attempt.mediaId, accessToken);
       const metrics: ContentMetrics = {
@@ -263,11 +317,15 @@ export async function syncGrowthInstagramMetrics(
         brandId: currentBrand,
         contentId,
         correlationId: attempt.correlationId,
-        genome,
+        genome: assetGenome.genome,
         publicationId,
         externalMediaId: attempt.mediaId,
         sourceId,
         metrics,
+        learningEligible: assetGenome.learningEligible,
+        dataQualityReason: assetGenome.dataQualityReason,
+        assetLocation: assetGenome.assetLocation,
+        verifiedLocation: assetGenome.verifiedLocation,
         raw: engagement.raw,
         observed: {
           views: engagement.views,
@@ -291,13 +349,16 @@ export async function syncGrowthInstagramMetrics(
 
   let observationQuery = supabase
     .from("marketing_events")
-    .select("content_id")
+    .select("content_id, metadata")
     .eq("event_type", "metrics_snapshot")
     .eq("channel", "instagram");
   if (brandId) observationQuery = observationQuery.eq("brand_id", brandId);
   const { data: observationRows } = await observationQuery;
   result.observations = new Set(
-    (observationRows ?? []).map((row: any) => String(row.content_id ?? "")).filter(Boolean),
+    (observationRows ?? [])
+      .filter((row: any) => row?.metadata?.learning_eligible !== false)
+      .map((row: any) => String(row.content_id ?? ""))
+      .filter(Boolean),
   ).size;
 
   if (result.observations >= learningMin && brandId) {
