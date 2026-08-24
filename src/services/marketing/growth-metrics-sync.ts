@@ -15,6 +15,7 @@ import { fetchInstagramMediaEngagement } from "@/services/integrations/instagram
 import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { refreshLearningRules } from "@/services/marketing/learning-adapter";
 import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/services/marketing/inventory-property-adapter";
+import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
 
@@ -45,6 +46,8 @@ interface AssetGenomeResult {
   genome: ContentGenome;
   learningEligible: boolean;
   dataQualityReason: string | null;
+  dataQualityReasons: string[];
+  unsupportedClaims: string[];
   assetLocation: string | null;
   verifiedLocation: string | null;
 }
@@ -72,6 +75,32 @@ export function extractPublishedTags(text: string): string[] {
       .map((tag) => tag.slice(1).trim().toLowerCase())
       .filter(Boolean),
   )).slice(0, 30);
+}
+
+/** Pure historical data-quality decision used before an old published asset is
+ * allowed to contribute observational learning. Measurement/audit is retained. */
+export function historicalAssetLearningQuality(input: {
+  caption: string;
+  facts: Array<{ claim: string; source: string }>;
+  assetLocation: string | null;
+  verifiedLocation: string | null;
+}) {
+  const locationConflict = !!(
+    input.assetLocation
+    && input.verifiedLocation
+    && slug(input.assetLocation) !== slug(input.verifiedLocation)
+  );
+  const unsupportedClaims = unsupportedOutcomeClaims(input.caption, input.facts);
+  const dataQualityReasons = [
+    ...(locationConflict ? ["historical_asset_location_conflict"] : []),
+    ...(unsupportedClaims.length ? ["historical_asset_unsupported_claim"] : []),
+  ];
+  return {
+    learningEligible: dataQualityReasons.length === 0,
+    dataQualityReason: dataQualityReasons[0] ?? null,
+    dataQualityReasons,
+    unsupportedClaims,
+  };
 }
 
 function claimValue(facts: Array<{ claim?: unknown }> | null | undefined, prefix: string): string | null {
@@ -130,6 +159,10 @@ async function latestAssetGenome(
 
   const base = data.genome as ContentGenome;
   const facts = Array.isArray(data.fact_sources) ? data.fact_sources : [];
+  const normalizedFacts = facts.map((f: any) => ({
+    claim: String(f?.claim ?? ""),
+    source: String(f?.source ?? ""),
+  }));
   const place = claimValue(facts, "Sted:");
   const propertyType = claimValue(facts, "Boligtype:");
   const price = claimValue(facts, "Pris:");
@@ -139,15 +172,12 @@ async function latestAssetGenome(
   const caption = [data.headline, data.body, data.cta].filter(Boolean).join("\n");
   const tags = extractPublishedTags(caption);
   const currentLocation = await verifiedSubjectLocation(supabase, propertyId);
-
-  // Historical approved/published assets remain immutable. If today's trusted
-  // Inventory subject-location disagrees with the historical asset's Sted fact,
-  // retain measurement for audit but quarantine it from observational learning.
-  const locationConflict = !!(
-    place
-    && currentLocation
-    && slug(place) !== slug(currentLocation)
-  );
+  const quality = historicalAssetLearningQuality({
+    caption,
+    facts: normalizedFacts,
+    assetLocation: place,
+    verifiedLocation: currentLocation,
+  });
 
   const genome: ContentGenome = {
     ...base,
@@ -160,8 +190,7 @@ async function latestAssetGenome(
 
   return {
     genome,
-    learningEligible: !locationConflict,
-    dataQualityReason: locationConflict ? "historical_asset_location_conflict" : null,
+    ...quality,
     assetLocation: place,
     verifiedLocation: currentLocation,
   };
@@ -202,6 +231,8 @@ async function replaceCanonicalSnapshot(
     observed: Record<string, number>;
     learningEligible: boolean;
     dataQualityReason: string | null;
+    dataQualityReasons: string[];
+    unsupportedClaims: string[];
     assetLocation: string | null;
     verifiedLocation: string | null;
   },
@@ -235,6 +266,8 @@ async function replaceCanonicalSnapshot(
       tags: input.genome.tags ?? [],
       learning_eligible: input.learningEligible,
       data_quality_reason: input.dataQualityReason,
+      data_quality_reasons: input.dataQualityReasons,
+      unsupported_claims: input.unsupportedClaims,
       asset_location: input.assetLocation,
       verified_subject_location: input.verifiedLocation,
       observed: input.observed,
@@ -324,6 +357,8 @@ export async function syncGrowthInstagramMetrics(
         metrics,
         learningEligible: assetGenome.learningEligible,
         dataQualityReason: assetGenome.dataQualityReason,
+        dataQualityReasons: assetGenome.dataQualityReasons,
+        unsupportedClaims: assetGenome.unsupportedClaims,
         assetLocation: assetGenome.assetLocation,
         verifiedLocation: assetGenome.verifiedLocation,
         raw: engagement.raw,
