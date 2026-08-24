@@ -18,6 +18,7 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 function rowToTouch(r: any): MarketingTouchpoint {
   return {
     touchpointId: r.id ? String(r.id) : undefined,
+    brandId: String(r.brand_id),
     contentId: r.content_id ?? null,
     publicationId: r.publication_id ?? null,
     campaignId: r.campaign_id ?? null,
@@ -35,10 +36,12 @@ function rowToTouch(r: any): MarketingTouchpoint {
 
 /** Idempotent touch-fangst: dedupe_key + unique constraint hindrer dobbel-attribusjon. */
 export async function recordTouchpoint(supabase: MarketingSupabaseLike, t: MarketingTouchpoint): Promise<{ deduped: boolean }> {
+  if (!t.brandId?.trim()) throw new Error("ATTRIBUTION_BRAND_REQUIRED: brandId mangler");
   const dedupe_key = touchpointDedupeKey(t);
   const { error } = await supabase.from("marketing_touchpoints").upsert(
     {
       dedupe_key,
+      brand_id: t.brandId,
       content_id: t.contentId ?? null,
       publication_id: t.publicationId ?? null,
       campaign_id: t.campaignId ?? null,
@@ -58,10 +61,12 @@ export async function recordTouchpoint(supabase: MarketingSupabaseLike, t: Marke
   return { deduped: true };
 }
 
-async function loadJourneys(supabase: MarketingSupabaseLike, opts?: { brandId?: string }): Promise<Journey[]> {
+async function loadJourneys(supabase: MarketingSupabaseLike, opts: { brandId: string }): Promise<Journey[]> {
+  if (!opts.brandId?.trim()) throw new Error("ATTRIBUTION_BRAND_REQUIRED: brandId mangler");
   const { data } = await supabase
     .from("marketing_touchpoints")
     .select("*")
+    .eq("brand_id", opts.brandId)
     .order("occurred_at", { ascending: true })
     .limit(10000);
   const byContact = new Map<string, MarketingTouchpoint[]>();
@@ -74,12 +79,12 @@ async function loadJourneys(supabase: MarketingSupabaseLike, opts?: { brandId?: 
   return Array.from(byContact.values()).map((touches) => ({ touches }));
 }
 
-export async function attributeContent(supabase: MarketingSupabaseLike, contentId: string, opts?: { brandId?: string; model?: AttributionModel }) {
+export async function attributeContent(supabase: MarketingSupabaseLike, contentId: string, opts: { brandId: string; model?: AttributionModel }) {
   const journeys = await loadJourneys(supabase, opts);
-  return canonicalMetricsForContent(journeys, contentId, opts?.model ?? "last_touch");
+  return canonicalMetricsForContent(journeys, contentId, opts.model ?? "last_touch");
 }
 
-export async function attributeAll(supabase: MarketingSupabaseLike, opts?: { brandId?: string; model?: AttributionModel }) {
+export async function attributeAll(supabase: MarketingSupabaseLike, opts: { brandId: string; model?: AttributionModel }) {
   const journeys = await loadJourneys(supabase, opts);
-  return rollupContentOutcomes(journeys, opts?.model ?? "last_touch");
+  return rollupContentOutcomes(journeys, opts.model ?? "last_touch");
 }
