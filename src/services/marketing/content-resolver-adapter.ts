@@ -10,6 +10,7 @@
  */
 
 import {
+  contentPublishabilityGate,
   resolveContent,
   type ContentCandidate,
   type ResolveDecision,
@@ -35,7 +36,15 @@ async function searchContentHub(supabase: MarketingSupabaseLike, input: Resolver
     .eq("platform", input.channel)
     .in("status", ["approved", "review", "draft"])
     .limit(50);
-  return (data ?? []).map((r: any) => ({
+  return (data ?? [])
+    // P0: aldri gjenbruk intern/meta-tekst eller innhold merket ikke-publishable.
+    // (En intern agent-tekst hadde status=approved og ble publisert — dette stopper det.)
+    .filter((r: any) => {
+      const kind = r.content_kind ?? r.metadata?.content_kind;
+      if (kind && kind !== "publishable") return false;
+      return contentPublishabilityGate(r.content ?? "").publishable;
+    })
+    .map((r: any) => ({
     source: r.status === "approved" ? "content_hub_approved" : "studio_reusable",
     contentId: `social_post:${r.id}`,
     brandId: input.brandId, // brand-scopet spørring garanterer riktig brand

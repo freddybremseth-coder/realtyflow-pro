@@ -279,6 +279,17 @@ test("executor: endret asset etter godkjenning → ASSET_MODIFIED (fail-closed)"
   assert.match(res.error ?? "", /ASSET_MODIFIED/);
 });
 
+test("executor: intern/meta-tekst → PUBLISHABILITY_FAILED, NULL Meta-kall", async () => {
+  const db = makeDb();
+  seedPublishable(db, { body: "Jeg setter opp Marketing Agent til å generere denne posten." });
+  let metaCalls = 0;
+  const publisher: any = { publish: async () => { metaCalls++; return { state: "published", externalId: "x" }; } };
+  const res = await runApproved(db, { approvalId: "appr1", executedBy: "x", publisher, resolveAccount: async () => ({ accountId: "IG1" }) });
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /PUBLISHABILITY_FAILED/);
+  assert.equal(metaCalls, 0); // ingen Meta-call ved publishability-feil
+});
+
 test("executor: konto endret siden godkjenning → APPROVED_ASSET_CHANGED", async () => {
   const db = makeDb(); seedPublishable(db);
   const publisher: any = { publish: async () => ({ state: "published", externalId: "x" }) };

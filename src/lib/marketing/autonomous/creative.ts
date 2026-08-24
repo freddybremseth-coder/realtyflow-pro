@@ -87,7 +87,8 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     favored && `Bruk det som funker (learning): ${favored}.`,
     avoided && `Unngå: ${avoided}.`,
     req.facts?.length && `Verifiserbare fakta du kan bruke:\n${req.facts.map((f) => `- ${f.claim} (kilde: ${f.source})`).join("\n")}`,
-    `Returner JSON: { "headline": string, "body": string, "cta": string }.`,
+    `Skriv KUN den ferdige, kundevendte posten — aldri prosessbeskrivelse («Jeg setter opp…», «Here is your post…», «As an AI…»).`,
+    `Returner KUN gyldig JSON: { "headline": string, "body": string, "cta": string, "publishable": boolean }. Sett publishable=true kun hvis "body" er en ekte, ferdig caption klar til å publiseres.`,
   ].filter(Boolean).join("\n");
 
   return { system, user };

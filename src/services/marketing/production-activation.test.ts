@@ -50,11 +50,31 @@ test("assembleAsset lagrer provenance (learning-regler, promptversjon)", () => {
 
 // ── Creative generator (DI) ─────────────────────────────────────────────────
 test("creative generator bruker DI-generering og returnerer typed asset", async () => {
-  const gen = makeCreativeGenerator(async () => JSON.stringify({ headline: "Villa i Finestrat", body: "Bærekraftig hjem", cta: "Book visning" }));
+  const gen = makeCreativeGenerator(async () => JSON.stringify({ headline: "Villa i Finestrat", body: "Moderne bærekraftig hjem med havutsikt.", cta: "Book visning", publishable: true }));
   const res = await gen.generate({ brief, brand });
   assert.equal(res.asset.headline, "Villa i Finestrat");
   assert.equal(res.asset.cta, "Book visning");
   assert.equal(res.provenance.generatedBy, "creative-generator");
+});
+
+test("REGRESJON: rå ikke-JSON AI-svar → CREATIVE_OUTPUT_INVALID (ingen raw fallback)", async () => {
+  const gen = makeCreativeGenerator(async () => "Jeg setter opp Marketing Agent til å generere denne posten.");
+  await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
+});
+
+test("malformed JSON fra Claude → CREATIVE_OUTPUT_INVALID (ingen fallback til body)", async () => {
+  const gen = makeCreativeGenerator(async () => '{ "body": "Villa", '); // avkuttet JSON
+  await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
+});
+
+test("publishable=false fra modellen → CREATIVE_OUTPUT_INVALID", async () => {
+  const gen = makeCreativeGenerator(async () => JSON.stringify({ body: "utkast", publishable: false }));
+  await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
+});
+
+test("gyldig JSON men meta-tekst i body → CREATIVE_OUTPUT_INVALID (publishability)", async () => {
+  const gen = makeCreativeGenerator(async () => JSON.stringify({ body: "Jeg genererer denne posten via Marketing Agent.", publishable: true }));
+  await assert.rejects(() => gen.generate({ brief, brand }), /CREATIVE_OUTPUT_INVALID/);
 });
 
 // ── Lead form ───────────────────────────────────────────────────────────────

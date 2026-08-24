@@ -13,7 +13,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
 import {
-  approvedAssetHash,
   atomizeCampaign,
   buildMarketingPlan,
   createMarketingRun,
@@ -137,47 +136,46 @@ export async function createCampaignDraft(
   const generator = makeConfiguredCreativeGenerator();
   const results: CampaignDraftResult["results"] = [];
   const trace: unknown[] = [];
+  // Riktig rekkefølge (P0): resolve/generér → persist asset → resolve konto →
+  // dispatch (publishability → quality → policy → lås hash → persist publikasjon
+  // → approval SIST). Approval opprettes aldri før hele payloaden er låst.
   for (const brief of briefs) {
-    // 1) RESOLVE FØR GENERERING: bruk eksisterende innhold hvis egnet.
+    // 1) RESOLVE FØR GENERERING: bruk eksisterende (publishable) innhold hvis egnet.
     const decision = await resolveMarketingContent(supabase, { brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format }, sources).catch(() => null);
 
     let creative: CreativeResult;
     let sourceType = "generated";
     let sourceId: string | null = null;
     let reuseMode: string | null = null;
-    if (decision && decision.decision !== "generate" && decision.chosen) {
-      creative = assetFromCandidate(brief, brand, decision.chosen);
-      sourceType = decision.chosen.source;
-      sourceId = decision.chosen.contentId;
-      reuseMode = decision.chosen.reuseMode;
-    } else {
-      creative = await generator.generate({ brief, brand, recommendation });
+    try {
+      if (decision && decision.decision !== "generate" && decision.chosen) {
+        creative = assetFromCandidate(brief, brand, decision.chosen);
+        sourceType = decision.chosen.source;
+        sourceId = decision.chosen.contentId;
+        reuseMode = decision.chosen.reuseMode;
+      } else {
+        creative = await generator.generate({ brief, brand, recommendation }); // kaster CREATIVE_OUTPUT_INVALID ved ugyldig AI-svar
+      }
+    } catch (err) {
+      // Ugyldig kreativt output blir ALDRI et asset/approval. Regenerering/manuell.
+      results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: "-", state: "rejected", mode: "n/a", qualityScore: null, approvalId: null, error: err instanceof Error ? err.message : "CREATIVE_OUTPUT_INVALID", source: "generated" });
+      continue;
     }
     await persistAsset(supabase, creative).catch(() => undefined);
 
-    const d = await dispatchGeneratedAsset(orchestratorDeps, { asset: creative.asset, brief, run, brand, history: [] });
-
-    // 2) Resolve EKSPLISITT destinasjon (brand→service→market/language→kanal→konto).
-    //    Tvetydighet/feil brand/scope kastes av resolveren og bobler opp (fail-closed).
+    // 2) Resolve EKSPLISITT destinasjon FØR dispatch (fail-closed bobler opp fra resolveren).
     const account = await resolvePublishingAccount(supabase, {
       brandId: input.brandId, channel: brief.channel, service: input.service ?? null,
       market: input.market ?? null, language: input.language ?? brief.genome.language ?? null,
       publishingAccountId: input.publishingAccountId ?? null,
     }).catch(() => null);
 
-    // 3) Bind godkjenningen til konto + innhold (asset-hash). accountId er del av hashen.
-    const hash = approvedAssetHash({
-      sourceContentId: sourceId ?? creative.asset.contentId,
-      finalCopy: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
-      finalMedia: JSON.stringify(creative.asset.media ?? {}),
-      brandId: input.brandId, accountId: account?.accountId ?? "", channel: brief.channel,
-      propertyIds: creative.provenance.propertyIds ?? [], cta: creative.asset.cta ?? "", factSources: creative.asset.factSources ?? [],
+    // 3) Dispatch låser publishability/quality/hash/publikasjon og oppretter approval SIST.
+    const d = await dispatchGeneratedAsset(orchestratorDeps, {
+      asset: creative.asset, brief, run, brand, history: [],
+      account: account ? { accountId: account.accountId } : null,
+      service: input.service ?? null, sourceType, sourceId, reuseMode, propertyIds: creative.provenance.propertyIds ?? [],
     });
-    await supabase.from("marketing_publications").update({
-      brand_id: input.brandId, account_id: account?.accountId ?? null,
-      service: input.service ?? null, publishing_account_id: account?.accountId ?? null,
-      source_type: sourceType, source_id: sourceId, reuse_mode: reuseMode, asset_hash: hash,
-    }).eq("publication_id", d.publicationId).then(undefined, () => undefined);
 
     results.push({ contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode, qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType });
     trace.push(...d.trace);

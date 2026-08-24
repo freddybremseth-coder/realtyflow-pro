@@ -21,3 +21,4 @@ export * from "./creative";
 export * from "./lead-form";
 export * from "./content-resolver";
 export * from "./asset-integrity";
+export * from "./publishability";

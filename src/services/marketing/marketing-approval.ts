@@ -18,6 +18,10 @@ export interface MarketingApprovalRequest {
   decisionMode?: string;
   confidence?: number;
   estimatedOpportunityEur?: number;
+  /** Eksakt caption som sendes til Meta — vises i kortet, må matche hashet payload. */
+  caption?: string;
+  accountId?: string;
+  service?: string;
 }
 
 /**
@@ -30,6 +34,18 @@ export function makeMarketingApprovalRequester(supabase: SupabaseLike, opts: { r
     const idempotencyKey = operationIdempotencyKey(opts.runId, `approve-publish:${input.publicationId}`);
     const existing = await store.findExisting(idempotencyKey);
     if (existing) return existing.id;
+    // Approval-kortet skal vise EKSAKT det som publiseres (samme payload som hashen).
+    const cardReason = input.caption
+      ? [
+          `FINAL ${input.channel.toUpperCase()} CAPTION`,
+          "-----------------------",
+          input.caption,
+          "",
+          input.accountId ? `Konto: ${input.accountId}` : null,
+          input.service ? `Service: ${input.service}` : null,
+          `— ${input.reason}`,
+        ].filter(Boolean).join("\n")
+      : input.reason;
     const res = await store.saveApproval({
       correlationId: opts.correlationId,
       idempotencyKey,
@@ -38,7 +54,7 @@ export function makeMarketingApprovalRequester(supabase: SupabaseLike, opts: { r
       gatedActionClass: input.gatedActionClass ?? "publish_social",
       subjectType: "generic_agent_action",
       subjectRef: input.publicationId,
-      reason: input.reason,
+      reason: cardReason,
       risk: input.risk as RequestApprovalInput["risk"],
       decisionMode: input.decisionMode as RequestApprovalInput["decisionMode"],
       confidence: input.confidence,

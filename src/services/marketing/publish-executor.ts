@@ -9,7 +9,7 @@
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import { executeApproval, type ActionExecutor, type ExecuteResult, type ExecutorDeps } from "@/lib/agentic/executor";
 import { makeExecutorStore } from "@/services/agentic/adapters";
-import { approvedAssetHash, contentQualityGate, type GeneratedAsset } from "@/lib/marketing/autonomous";
+import { approvedAssetHash, contentPublishabilityGate, contentQualityGate, type GeneratedAsset } from "@/lib/marketing/autonomous";
 import type { ChannelPublisher } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
@@ -54,7 +54,13 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
 
     const asset = rowToAsset(assetRow);
 
-    // Fail-closed: sensitive fakta uten kilde publiseres aldri (selv etter godkjenning).
+    // Defense in depth: intern/meta-tekst publiseres ALDRI, selv om den kom seg
+    // gjennom approval. Kjøres FØR ev. Meta-call → null Meta-kall ved feil.
+    const caption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+    const pub2 = contentPublishabilityGate(caption);
+    if (!pub2.publishable) throw new Error(`PUBLISHABILITY_FAILED: ${pub2.result} — ${pub2.reason}`);
+
+    // Fail-closed: sensitive fakta uten kilde publiseres aldri (selv etter approval).
     const quality = contentQualityGate(asset);
     if (quality.requiresApproval) throw new Error(`FACT_NOT_VERIFIED: ${quality.sensitiveClaimsWithoutSource.join(", ")}`);
 

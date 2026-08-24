@@ -4,9 +4,11 @@
  * Alt er DRAFT. Persistering av asset + provenance skjer i marketing_assets.
  */
 
+import { z } from "zod";
 import {
   assembleAsset,
   buildCreativePrompt,
+  contentPublishabilityGate,
   type CreativeGenerator,
   type CreativeRequest,
   type CreativeResult,
@@ -16,13 +18,34 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 /** DI-søm for tekstgenerering — standard: RealtyFlows askClaude. */
 export type GenerateText = (prompt: string, opts?: { systemPrompt?: string; temperature?: number; maxTokens?: number; responseMimeType?: "application/json"; model?: "haiku" | "sonnet" }) => Promise<string>;
 
-function safeParseJson(text: string): { headline?: string; body?: string; cta?: string } {
+/** Strengt output-schema. Modellen MÅ returnere gyldig JSON med publishable=true. */
+const CreativeOutputSchema = z.object({
+  headline: z.string().optional(),
+  body: z.string().min(1),
+  cta: z.string().optional(),
+  publishable: z.boolean(),
+});
+
+/**
+ * Streng parsing — INGEN raw-text fallback. Et ikke-JSON / ufullstendig svar blir
+ * ALDRI et publiserbart asset (det var slik intern agent-tekst havnet på Instagram).
+ */
+function strictParse(text: string): { headline?: string; body: string; cta?: string } {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("CREATIVE_OUTPUT_INVALID: modellen returnerte ikke JSON.");
+  let parsed: unknown;
   try {
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : { body: text.trim() };
+    parsed = JSON.parse(match[0]);
   } catch {
-    return { body: text.trim() };
+    throw new Error("CREATIVE_OUTPUT_INVALID: ugyldig JSON fra modellen.");
   }
+  const r = CreativeOutputSchema.safeParse(parsed);
+  if (!r.success) throw new Error(`CREATIVE_OUTPUT_INVALID: schema-brudd (${r.error.issues.map((i) => i.path.join(".")).join(", ")}).`);
+  if (r.data.publishable !== true) throw new Error("CREATIVE_OUTPUT_INVALID: publishable !== true.");
+  // Siste forsvar: intern/meta-tekst er aldri publiserbart.
+  const gate = contentPublishabilityGate([r.data.headline, r.data.body, r.data.cta].filter(Boolean).join("\n"));
+  if (!gate.publishable) throw new Error(`CREATIVE_OUTPUT_INVALID: ${gate.result} (${gate.reason})`);
+  return { headline: r.data.headline, body: r.data.body, cta: r.data.cta };
 }
 
 export function makeCreativeGenerator(generateText: GenerateText, opts: { model?: "haiku" | "sonnet"; costPerCallEur?: number } = {}): CreativeGenerator {
@@ -30,7 +53,7 @@ export function makeCreativeGenerator(generateText: GenerateText, opts: { model?
     async generate(req: CreativeRequest): Promise<CreativeResult> {
       const { system, user } = buildCreativePrompt(req);
       const raw = await generateText(user, { systemPrompt: system, responseMimeType: "application/json", temperature: 0.7, model: opts.model ?? "sonnet" });
-      const output = safeParseJson(raw);
+      const output = strictParse(raw); // kaster CREATIVE_OUTPUT_INVALID ved feil — aldri raw fallback
       return assembleAsset(req, output, { model: opts.model ?? "sonnet", costEur: opts.costPerCallEur ?? 0 });
     },
   };
@@ -44,10 +67,12 @@ export function makeCreativeGenerator(generateText: GenerateText, opts: { model?
 export function makeDryRunCreativeGenerator(): CreativeGenerator {
   return {
     async generate(req: CreativeRequest): Promise<CreativeResult> {
-      const b = req.brief;
+      // Publiserbar dry-run-caption (ingen placeholder-/meta-markører) — merket
+      // dry-run via provenance.model, ikke i selve teksten.
+      const area = req.brief.genome.area ?? req.brand.locations[0] ?? "";
       const output = {
-        headline: `${req.brand.brandName}: ${b.angle}`,
-        body: `[DRY-RUN utkast] ${b.angle}. ${req.brand.valueProposition}`.trim(),
+        headline: req.brand.brandName,
+        body: `${req.brand.valueProposition || "Din nye bolig venter"}${area ? ` i ${area}` : ""}. ${req.brief.angle.replace(/\s*—.*$/, "")}.`.trim(),
         cta: req.brand.preferredCta || "Book visning",
       };
       return assembleAsset(req, output, { model: "dry-run", costEur: 0 });

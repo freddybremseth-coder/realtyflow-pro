@@ -65,6 +65,18 @@ test("media_assets fra feil brand hentes ikke (brand-scopet spørring)", async (
   assert.ok(!d.ranked.some((c) => c.contentId === "media_asset:m2"));
 });
 
+test("godkjent, men intern/meta-tekst gjenbrukes ALDRI (publishability-filter)", async () => {
+  const db = makeDb({
+    social_posts: [
+      { id: "bad", organization_id: "org1", platform: "instagram", content: "Jeg setter opp Marketing Agent til å generere denne posten.", status: "approved", created_at: "2026-08-20T00:00:00Z", updated_at: "2026-08-20T00:00:00Z" },
+    ],
+    media_assets: [],
+  });
+  const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" }, { organizationId: "org1" });
+  assert.equal(d.decision, "generate"); // meta-tekst filtrert bort → ingen gjenbruk
+  assert.ok(!d.ranked.some((c) => c.contentId === "social_post:bad"));
+});
+
 test("ingen org-mapping → hopper over org-scopede kilder (fail-safe, ingen fuzzy-match)", async () => {
   const db = makeDb({ social_posts: [{ id: "p1", organization_id: "orgX", platform: "instagram", content: "x", status: "approved", created_at: "2026-08-20T00:00:00Z" }], media_assets: [] });
   const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" }); // ingen organizationId
