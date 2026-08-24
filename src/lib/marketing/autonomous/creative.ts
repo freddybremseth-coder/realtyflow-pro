@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.0";
+export const CREATIVE_PROMPT_VERSION = "cg-1.1";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -62,7 +62,7 @@ const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
 /**
  * Bygg brand-aware, channel-native prompt. Ren funksjon (testbar). Legger inn
  * learning-anbefalinger, tillatte/forbudte påstander, verifiserbare fakta og
- * krav om at sensitive tall MÅ ha kilde.
+ * krav om at sensitive/absolutte/trendpåstander MÅ ha kilde.
  */
 export function buildCreativePrompt(req: CreativeRequest): { system: string; user: string } {
   const { brief, brand } = req;
@@ -80,6 +80,8 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     brand.forbiddenClaims.length && `FORBUDTE påstander (bruk aldri): ${brand.forbiddenClaims.join("; ")}.`,
     `Sensitive tall (pris, skatt, rente, markedsstatistikk) MÅ ha kilde. Uten kilde: ikke oppgi tallet.`,
     `Målbare/komparative utfallspåstander (lavere energikostnader, lavere kostnader, høyere avkastning, bedre investering, økt verdi, sparer penger, «garantert» noe) er FORBUDT uten en oppgitt, uavhengig kilde. Bruk heller trygg posisjonering (energieffektive nybygg, moderne boliger, norsk oppfølging) uten å love et konkret økonomisk utfall.`,
+    `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
+    `Unngå absolutte ord som «alltid», «aldri», «ingen», «garantert» når de beskriver et resultat, marked, klima eller tjenesteløfte. Absolutter er bare tillatt når de er eksplisitt støttet av en verifiserbar factSource.`,
     (req.brand as { ownsInventory?: boolean }).ownsInventory
       ? `${brand.brandName} eier/utvikler boligene og kan omtale dem som «våre boliger».`
       : `${brand.brandName} er rådgiver/formidler — IKKE eier/utvikler. Skriv aldri «våre boliger/villaer/eiendommer». Bruk «boligene vi formidler», «boligene vi hjelper deg å finne» eller «eiendommene vi presenterer».`,
@@ -94,6 +96,7 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     favored && `Bruk det som funker (learning): ${favored}.`,
     avoided && `Unngå: ${avoided}.`,
     req.facts?.length && `Verifiserbare fakta du kan bruke:\n${req.facts.map((f) => `- ${f.claim} (kilde: ${f.source})`).join("\n")}`,
+    `Hvis ingen verifiserbare fakta er oppgitt, hold teksten på Brand Brain-nivå: rådgivning, moderne/energieffektive boliger, Costa Blanca, kvalitet, trygghet og CTA. Ikke finn opp trender, garantier, besparelser eller absolutte løfter.`,
     `Skriv KUN den ferdige, kundevendte posten — aldri prosessbeskrivelse («Jeg setter opp…», «Here is your post…», «As an AI…»).`,
     `"body" er den ferdige captionen som publiseres direkte på Meta. Den skal ALDRI inneholde produksjonsanvisninger: ingen «HOOK», «SCENE», «Bilde:», «Tekst-overlay:», «CTA-SCENE», «Voiceover:», «Shot 1», «Klipp:», «B-roll» eller «Caption:»-etiketter. Skriv ekte kundevendt tekst, ikke et manus.`,
     `Trenger du et reel-/video-manus, legg HELE manuset i feltet "productionScript" — aldri i "body".`,
