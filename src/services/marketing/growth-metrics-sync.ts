@@ -57,20 +57,24 @@ async function latestAssetGenome(
   return (data?.genome ?? null) as ContentGenome | null;
 }
 
-async function externalMediaId(
+async function postedAttempt(
   supabase: MarketingSupabaseLike,
   publicationId: string,
-): Promise<string | null> {
+): Promise<{ mediaId: string; correlationId: string | null } | null> {
   const { data } = await supabase
     .from("marketing_publish_attempts")
-    .select("external_media_id, external_id, status, updated_at")
+    .select("external_media_id, external_id, correlation_id, status, updated_at")
     .eq("publication_id", publicationId)
     .eq("status", "posted")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   const value = data?.external_media_id ?? data?.external_id;
-  return value ? String(value) : null;
+  if (!value) return null;
+  return {
+    mediaId: String(value),
+    correlationId: data?.correlation_id ? String(data.correlation_id) : null,
+  };
 }
 
 async function replaceCanonicalSnapshot(
@@ -137,7 +141,7 @@ export async function syncGrowthInstagramMetrics(
 
   let query = supabase
     .from("marketing_publications")
-    .select("publication_id, content_id, brand_id, channel, state, source_id, correlation_id, updated_at")
+    .select("publication_id, content_id, brand_id, channel, state, source_id, updated_at")
     .eq("state", "published")
     .eq("channel", "instagram")
     .gte("updated_at", since)
@@ -170,11 +174,11 @@ export async function syncGrowthInstagramMetrics(
     }
 
     try {
-      const [mediaId, genome] = await Promise.all([
-        externalMediaId(supabase, publicationId),
+      const [attempt, genome] = await Promise.all([
+        postedAttempt(supabase, publicationId),
         latestAssetGenome(supabase, contentId),
       ]);
-      if (!mediaId || !genome) {
+      if (!attempt || !genome) {
         result.skipped++;
         continue;
       }
@@ -182,7 +186,7 @@ export async function syncGrowthInstagramMetrics(
       // Backfill the canonical genome table used by Learning Engine.
       await store.upsertContent(contentId, currentBrand, genome);
 
-      const engagement = await fetchInstagramMediaEngagement(mediaId, accessToken);
+      const engagement = await fetchInstagramMediaEngagement(attempt.mediaId, accessToken);
       // Only map metrics with the same semantic meaning as ContentMetrics.
       // Reach/likes/comments/totalInteractions remain metadata until the value
       // model has explicit dimensions for them. Never pretend reach = views.
@@ -194,10 +198,10 @@ export async function syncGrowthInstagramMetrics(
       await replaceCanonicalSnapshot(supabase, {
         brandId: currentBrand,
         contentId,
-        correlationId: pub.correlation_id ? String(pub.correlation_id) : null,
+        correlationId: attempt.correlationId,
         genome,
         publicationId,
-        externalMediaId: mediaId,
+        externalMediaId: attempt.mediaId,
         sourceId: pub.source_id ? String(pub.source_id) : null,
         metrics,
         raw: engagement.raw,
