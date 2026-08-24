@@ -4,6 +4,7 @@ export type InstagramMediaEngagement = {
   shares: number;
   saves: number;
   reach: number;
+  /** Legacy compatibility only. Meta's modern Insights model is views-centric. */
   impressions: number;
   views: number;
   totalInteractions: number;
@@ -38,8 +39,8 @@ async function graphJson(url: URL, fetcher: typeof fetch) {
 
 /**
  * Fetches public counters and private Insights for one Instagram Business
- * media object. Unsupported metrics are retried individually so one renamed
- * or media-type-specific metric cannot discard the complete snapshot.
+ * media object. Uses the current views-centric metric set. Unsupported metrics
+ * are retried independently because availability still varies by media type.
  */
 export async function fetchInstagramMediaEngagement(
   mediaId: string,
@@ -55,7 +56,10 @@ export async function fetchInstagramMediaEngagement(
   mediaUrl.searchParams.set("access_token", accessToken);
   const media = await graphJson(mediaUrl, fetcher);
 
-  const requestedMetrics = ["reach", "impressions", "views", "plays", "saved", "shares", "total_interactions"];
+  // `impressions` / `plays` were retired from the modern media-insights set.
+  // Use `views` as Meta's canonical exposure metric; keep impressions=0 only
+  // for legacy callers that still expose that field in their local schema.
+  const requestedMetrics = ["reach", "views", "saved", "shares", "total_interactions"];
   const insightsUrl = new URL(`${base}/${encodeURIComponent(mediaId)}/insights`);
   insightsUrl.searchParams.set("metric", requestedMetrics.join(","));
   insightsUrl.searchParams.set("access_token", accessToken);
@@ -66,7 +70,7 @@ export async function fetchInstagramMediaEngagement(
     metrics = Array.isArray(insights?.data) ? insights.data : [];
   } catch {
     // Meta varies metric availability by media type and API version. Fetch
-    // metrics independently so valid data survives one unsupported metric.
+    // metrics independently so one unsupported metric cannot discard the rest.
     const settled = await Promise.allSettled(
       requestedMetrics.map(async (metric) => {
         const url = new URL(`${base}/${encodeURIComponent(mediaId)}/insights`);
@@ -79,7 +83,7 @@ export async function fetchInstagramMediaEngagement(
     metrics = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   }
 
-  const views = Math.max(metricValue(metrics, "views"), metricValue(metrics, "plays"));
+  const views = metricValue(metrics, "views");
   const likes = asCount(media.like_count);
   const comments = asCount(media.comments_count);
   const shares = metricValue(metrics, "shares");
@@ -91,7 +95,7 @@ export async function fetchInstagramMediaEngagement(
     shares,
     saves,
     reach: metricValue(metrics, "reach"),
-    impressions: metricValue(metrics, "impressions"),
+    impressions: 0,
     views,
     totalInteractions: metricValue(metrics, "total_interactions") || likes + comments + shares + saves,
     raw: { media, insights: metrics },
