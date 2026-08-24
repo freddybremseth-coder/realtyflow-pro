@@ -19,6 +19,7 @@ type Status = {
   maturePublishedCount: number;
   immaturePublishedCount: number;
   maturityHours: number;
+  nextMaturesAt: string | null;
   measuredCount: number;
   observations: number;
   quarantinedCount: number;
@@ -138,6 +139,7 @@ export default function MarketingLearningPage() {
 
       <div style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
         Siste metrics-snapshot: {status?.lastSnapshotAt ? new Date(status.lastSnapshotAt).toLocaleString() : "ingen ennå"}. Metrics hentes først etter {status?.maturityHours ?? 24} timer, og bare learning-eligible snapshots teller mot terskelen.
+        {status?.nextMaturesAt ? ` Første neste post blir 24t-moden ${new Date(status.nextMaturesAt).toLocaleString()}.` : ""}
       </div>
 
       {!!status?.quarantinedCount && (
