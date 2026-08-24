@@ -15,6 +15,7 @@ export const PUBLISHABILITY_RESULTS = [
   "NOT_PUBLISHABLE_PLACEHOLDER",
   "NOT_PUBLISHABLE_META_TEXT",
   "NOT_PUBLISHABLE_INTERNAL_INSTRUCTION",
+  "NOT_PUBLISHABLE_UNVERIFIED_LINK_CLAIM",
 ] as const;
 export type PublishabilityResult = (typeof PUBLISHABILITY_RESULTS)[number];
 
@@ -50,6 +51,18 @@ const PLACEHOLDER_WORDS = ["lorem ipsum", "todo", "tbd", "placeholder", "insert"
 const PLACEHOLDER_LITERALS = ["{{", "}}", "xxxx"];
 
 /**
+ * Kanalpåstand om at en klikkbar bio-/profil-lenke finnes. Inntil channel metadata
+ * eksplisitt bærer en verifisert URL, blokkeres disse formuleringene fail-closed.
+ */
+const UNVERIFIED_LINK_CLAIMS: RegExp[] = [
+  /(?:lenk(?:e|en)?|link)\s+(?:finner\s+du\s+)?(?:i|på)\s+(?:bio(?:en)?|profil(?:en)?)/i,
+  /(?:se|sjekk|trykk|klikk)\s+(?:på\s+)?(?:lenk(?:e|en)?|link)\s+(?:i|på)\s+(?:bio(?:en)?|profil(?:en)?)/i,
+  /\blink\s+in\s+(?:our\s+)?bio\b/i,
+  /\blink\s+(?:is\s+)?in\s+(?:our\s+)?profile\b/i,
+  /\bclick\s+(?:the\s+)?link\s+in\s+(?:our\s+)?(?:bio|profile)\b/i,
+];
+
+/**
  * Ordgrense-matcher en markør, unicode-bevisst (æøå teller som bokstaver). Slik
  * treffer «llm» aldri inne i «fullmåne»/«villmark», og «prompt» ikke i «promptly».
  * Bruker negative lookaround i stedet for \b (som er ASCII-only og feiler på æøå).
@@ -80,6 +93,18 @@ export function contentPublishabilityGate(text: string | null | undefined): Publ
   // Strukturell: teksten beskriver arbeidsprosessen i stedet for innholdet.
   const opener = INTERNAL_OPENERS.find((re) => re.test(raw));
   if (opener) return { result: "NOT_PUBLISHABLE_INTERNAL_INSTRUCTION", publishable: false, reason: "Teksten beskriver arbeidsprosessen (intern instruksjon), ikke kundevendt innhold.", matched: opener.source };
+
+  // Fail closed: teksten påstår at bio-/profil-lenke finnes uten at gaten har
+  // eksplisitt verifisert channel metadata å støtte seg på.
+  const linkClaim = UNVERIFIED_LINK_CLAIMS.find((re) => re.test(raw));
+  if (linkClaim) {
+    return {
+      result: "NOT_PUBLISHABLE_UNVERIFIED_LINK_CLAIM",
+      publishable: false,
+      reason: "Teksten henviser til lenke i bio/profil uten verifisert kanal-lenke.",
+      matched: linkClaim.source,
+    };
+  }
 
   return { result: "PUBLISHABLE", publishable: true, reason: "OK." };
 }
