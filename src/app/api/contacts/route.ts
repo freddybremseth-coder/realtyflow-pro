@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
+import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
 import { getContactsSupabase } from './supabase-client';
 
 async function requireContactsAccess(request: NextRequest) {
@@ -173,10 +174,38 @@ export async function PATCH(request: NextRequest) {
   const supabase = getContactsSupabase();
   if (!supabase) return missingDatabaseResponse();
   const { id, ...rawUpdates } = await request.json();
+  const { data: previous } = await supabase
+    .from('contacts')
+    .select('id,pipeline_status,brand_id,brand')
+    .eq('id', id)
+    .maybeSingle();
   const updates = normalizeIncomingContact(rawUpdates);
   updates.updated_at = new Date().toISOString();
   const { data, error } = await updateContactWithFallbacks(supabase, id, updates);
   if (error) return NextResponse.json({ error: error.message, updates }, { status: 500 });
+
+  const previousStatus = normalizeStatus(previous?.pipeline_status);
+  const nextStatus = normalizeStatus(data?.pipeline_status || updates.pipeline_status);
+  if (previousStatus !== 'QUALIFIED' && nextStatus === 'QUALIFIED') {
+    const brandId = String(data?.brand_id || data?.brand || previous?.brand_id || previous?.brand || '').trim();
+    if (brandId) {
+      await insertRevenueEvent(supabase, {
+        eventType: 'qualified',
+        title: 'Lead kvalifisert i CRM',
+        contactId: String(data?.id || id),
+        brandId,
+        sourceSystem: 'crm_pipeline',
+        sourceType: 'pipeline_status',
+        sourceId: String(data?.id || id),
+        actorType: 'human',
+        occurredAt: new Date().toISOString(),
+        dedupeKey: buildRevenueEventDedupeKey(['crm-qualified', brandId, String(data?.id || id)]),
+        metadata: { previous_status: previousStatus, next_status: nextStatus },
+        createdBy: 'api/contacts',
+      }).catch(() => undefined);
+    }
+  }
+
   return NextResponse.json({ contact: normalizeContactForClient(data) });
 }
 
