@@ -52,6 +52,17 @@ function slug(value: string): string {
     .slice(0, 80);
 }
 
+/** Extract the hashtags that were actually present in the approved/published
+ * caption. This learns from real output, not from a separate suggested-tag list. */
+export function extractPublishedTags(text: string): string[] {
+  const matches = text.match(/#[\p{L}\p{N}_]+/gu) ?? [];
+  return Array.from(new Set(
+    matches
+      .map((tag) => tag.slice(1).trim().toLowerCase())
+      .filter(Boolean),
+  )).slice(0, 30);
+}
+
 function claimValue(facts: Array<{ claim?: unknown }> | null | undefined, prefix: string): string | null {
   const row = (facts ?? []).find((f) => String(f?.claim ?? "").toLowerCase().startsWith(prefix.toLowerCase()));
   if (!row) return null;
@@ -78,7 +89,7 @@ async function latestAssetGenome(
 ): Promise<ContentGenome | null> {
   const { data } = await supabase
     .from("marketing_assets")
-    .select("genome, fact_sources, property_ids, updated_at")
+    .select("genome, fact_sources, property_ids, headline, body, cta, updated_at")
     .eq("content_id", contentId)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -93,15 +104,18 @@ async function latestAssetGenome(
   const propertyId =
     (Array.isArray(data.property_ids) && data.property_ids[0] ? String(data.property_ids[0]) : null)
     || propertyIdFromSource(sourceId);
+  const caption = [data.headline, data.body, data.cta].filter(Boolean).join("\n");
+  const tags = extractPublishedTags(caption);
 
-  // Enrich from the exact grounded facts that were locked into the published
-  // asset. This avoids learning from guessed/derived marketing prose.
+  // Enrich from the exact grounded facts + exact published caption that were
+  // locked into the asset. No guessed property attributes or suggested tags.
   return {
     ...base,
     ...(place ? { area: slug(place) } : {}),
     ...(propertyType ? { propertyType: slug(propertyType) } : {}),
     ...(priceBandFromClaim(price) ? { priceBand: priceBandFromClaim(price) } : {}),
     ...(propertyId ? { propertyId } : {}),
+    ...(tags.length ? { tags } : {}),
   };
 }
 
@@ -166,6 +180,7 @@ async function replaceCanonicalSnapshot(
       external_media_id: input.externalMediaId,
       source_id: input.sourceId,
       property_id: propertyIdFromSource(input.sourceId),
+      tags: input.genome.tags ?? [],
       observed: input.observed,
       raw: input.raw,
     },
