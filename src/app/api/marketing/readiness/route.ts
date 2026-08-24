@@ -7,6 +7,23 @@ export const dynamic = "force-dynamic";
 const OWNED_BRANDS = ["zeneco", "pinosoecolife", "donaanna", "chatgenius", "freddyb", "remasterfreddy"] as const;
 const META_PILOT_CHANNELS = new Set(["instagram", "facebook"]);
 
+type ReadinessRow = {
+  brandId: string;
+  brandName: string;
+  platform: string | null;
+  accountId: string | null;
+  accountName: string | null;
+  connected: boolean;
+  brandBrainReady: boolean;
+  pilotReady: boolean;
+  published: number;
+  measuredEligible: number;
+  quarantined: number;
+  actionableRules: number;
+  liveLearning: boolean;
+  status: "LIVE_LEARNING" | "PILOT_READY" | "BRAND_BRAIN_READY" | "CONNECTED" | "NOT_READY";
+};
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -23,7 +40,7 @@ export async function GET(request: NextRequest) {
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
-  const rows = (channels ?? []).map((channel: any) => {
+  const rows: ReadinessRow[] = (channels ?? []).map((channel: any): ReadinessRow => {
     const brandId = String(channel.brand_id);
     const platform = String(channel.platform);
     const brandContext = contextByBrand.get(brandId);
@@ -42,7 +59,7 @@ export async function GET(request: NextRequest) {
       brandName: (brandContext as any)?.brand_name ?? brandId,
       platform,
       accountId: String(channel.external_id),
-      accountName: channel.display_name,
+      accountName: channel.display_name ?? null,
       connected,
       brandBrainReady,
       pilotReady,
@@ -56,7 +73,7 @@ export async function GET(request: NextRequest) {
   });
 
   for (const brandId of OWNED_BRANDS) {
-    if (rows.some((r: any) => r.brandId === brandId)) continue;
+    if (rows.some((r) => r.brandId === brandId)) continue;
     const context = contextByBrand.get(brandId);
     rows.push({
       brandId,
@@ -76,6 +93,6 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  rows.sort((a: any, b: any) => `${a.brandName}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.platform ?? ""}`));
+  rows.sort((a, b) => `${a.brandName}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.platform ?? ""}`));
   return NextResponse.json({ generatedAt: new Date().toISOString(), rows });
 }
