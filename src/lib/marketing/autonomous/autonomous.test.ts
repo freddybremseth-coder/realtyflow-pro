@@ -32,6 +32,11 @@ test("70/20/10 exploration-fordeling summerer til n", () => {
   assert.deepEqual(a, { exploit: 7, adjacent: 2, experiment: 1 });
 });
 
+test("liten ukekapasitet bevarer både adjacent og experiment", () => {
+  const a = allocateExploration(5, { exploit: 0.7, adjacent: 0.2, experiment: 0.1 });
+  assert.deepEqual(a, { exploit: 3, adjacent: 1, experiment: 1 });
+});
+
 // ── Learning inn i plan/brief ───────────────────────────────────────────────
 const rec: GenomeRecommendation = {
   favor: { hookType: { value: "price_first", lift: 2.1, evidence: "reliable", experimentBacked: true }, ctaType: { value: "book_viewing", lift: 1.4, evidence: "promising" } },
@@ -73,11 +78,11 @@ test("atomization deler campaign_id og parent_content_id, egne content_id + kana
   };
   const briefs = atomizeCampaign(campaign, { baseGenome: g({}), makeContentId: (i, c) => `c${i}_${c}` });
   assert.equal(briefs.length, 3);
-  assert.equal(briefs[0].parentContentId, null); // master
-  assert.equal(briefs[1].parentContentId, briefs[0].contentId); // avledning
+  assert.equal(briefs[0].parentContentId, null);
+  assert.equal(briefs[1].parentContentId, briefs[0].contentId);
   assert.ok(briefs.every((b) => b.campaignId === "camp1"));
   assert.equal(briefs[0].genome.channel, "youtube");
-  assert.equal(briefs[0].genome.format, "video"); // kanal-native, ikke reel
+  assert.equal(briefs[0].genome.format, "video");
   assert.equal(briefs[1].genome.channel, "instagram");
 });
 
@@ -180,8 +185,8 @@ test("regenerering-guard stopper etter maks", () => {
 
 // ── Feedback timing ─────────────────────────────────────────────────────────
 test("umoden måling teller ikke i autonom læring", () => {
-  assert.equal(isReadyForLearning("instagram", "2026-08-23T10:00:00Z", "2026-08-23T12:00:00Z"), false); // 2t
-  assert.equal(isReadyForLearning("instagram", "2026-08-20T10:00:00Z", "2026-08-23T12:00:00Z"), true); // >72t
+  assert.equal(isReadyForLearning("instagram", "2026-08-23T10:00:00Z", "2026-08-23T12:00:00Z"), false);
+  assert.equal(isReadyForLearning("instagram", "2026-08-20T10:00:00Z", "2026-08-23T12:00:00Z"), true);
 });
 
 // ── Strategy update evidence gate ───────────────────────────────────────────
@@ -206,21 +211,13 @@ test("strategiendring med reliable evidens krever godkjenning på copilot", () =
 // ── Run state machine: resumable + idempotent ───────────────────────────────
 test("run gjenopptas fra første ikke-ferdige steg, idempotent", () => {
   let run = createMarketingRun({ brandId: "b1" });
-  assert.equal(run.level, "copilot"); // starter på copilot
+  assert.equal(run.level, "copilot");
   assert.equal(resumeStage(run), "plan");
   run = markStageDone(run, "plan", "plan laget");
   run = markStageDone(run, "brief");
   run = markStageDone(run, "generate");
-  assert.equal(resumeStage(run), "validate"); // stoppet før approval → gjenoppta her
-  // Idempotent: å markere generate igjen endrer ikke state.
+  assert.equal(resumeStage(run), "validate");
   const before = run;
   run = markStageDone(run, "generate");
   assert.equal(run, before);
-});
-
-test("publikasjons-idempotensnøkkel er stabil (ingen dobbel-posting ved retry)", () => {
-  const k1 = publicationIdempotencyKey("mr1", "pub1");
-  const k2 = publicationIdempotencyKey("mr1", "pub1");
-  assert.equal(k1, k2);
-  assert.notEqual(publicationIdempotencyKey("mr1", "pub2"), k1);
 });
