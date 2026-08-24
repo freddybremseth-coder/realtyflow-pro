@@ -1,14 +1,13 @@
 /**
  * Phase 7.1L — kvalitativ/komparativ påstandsverifisering for AI-generert copy.
  *
- * Gapet: en generert caption sa «de bidrar til lavere energikostnader» med
- * source=generated og factSources=[]. Det er en MÅLBAR/komparativ utfallspåstand
- * og skal ALDRI passere uten uavhengig provenance — selv om den ikke inneholder
- * eksplisitte tall.
+ * AI-generert kundecopy skal ikke kunne gjøre målbare, komparative, absolutte
+ * eller markeds-/trendpåstander uten uavhengig provenance. Brand Brain kan
+ * støtte trygg posisjonering, men er ikke bevis for konkrete utfall/trender.
  *
  * To separate porter:
- *  1) OUTCOME/COMPARATIVE claims → krever uavhengig factSource (Brand Brain
- *     positionering teller IKKE som kilde). Uten dekning → CLAIM_NOT_VERIFIED.
+ *  1) OUTCOME/COMPARATIVE/ABSOLUTE/TREND claims → krever uavhengig factSource.
+ *     Uten dekning → CLAIM_NOT_VERIFIED.
  *  2) OWNERSHIP/role claims («våre boliger») → kun tillatt hvis Brand Context
  *     eksplisitt støtter eier-/utbygger-rolle. Ellers → BRAND_ROLE_MISMATCH.
  */
@@ -16,8 +15,8 @@
 import type { BrandContext } from "./brand-brain";
 
 /**
- * Målbare/komparative utfallspåstander (engelsk + norsk). Disse lover et
- * konkret økonomisk/ytelsesmessig utfall og krever uavhengig kilde.
+ * Påstander som lover et konkret utfall, beskriver en ekstern trend eller bruker
+ * absolutt språk som kan oppfattes som garanti. Disse krever uavhengig kilde.
  */
 const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   // ── Energi/strøm/forbruk ──────────────────────────────────────────────
@@ -55,21 +54,28 @@ const OUTCOME_CLAIM_MARKERS: Array<{ label: string; re: RegExp }> = [
   { label: "høyere leieinntekt", re: /høyere\s+leieinntekt(?:er)?/i },
   { label: "faster sale", re: /faster\s+sale|sells?\s+faster/i },
   { label: "raskere salg", re: /raskere\s+salg|selges?\s+raskere/i },
+  // ── Markeds-/trendpåstander ───────────────────────────────────────────
+  { label: "more Norwegians looking to Costa Blanca", re: /(?:flere|stadig\s+flere)\s+nordmenn[^.!?]{0,80}(?:ser|vender|flytter|søker)[^.!?]{0,50}(?:mot|til)\s+Costa\s+Blanca/i },
+  { label: "more buyers looking to Costa Blanca", re: /more\s+(?:Norwegians|buyers|people)[^.!?]{0,80}(?:looking|moving|turning)[^.!?]{0,50}(?:to|toward(?:s)?)\s+Costa\s+Blanca/i },
+  // ── Absolutte klima-/servicepåstander ─────────────────────────────────
+  { label: "sun year-round", re: /(?:sol\s+(?:året\s+rundt|hele\s+året|året\s+gjennom)|year[-\s]?round\s+sun(?:shine)?|sun(?:shine)?\s+all\s+year)/i },
+  { label: "no hidden surprises", re: /(?:ingen\s+skjulte\s+overraskelser|no\s+hidden\s+surprises?|no\s+surprises?)/i },
+  { label: "no language barriers", re: /(?:ingen\s+språkbarrierer|uten\s+språkbarrierer|no\s+language\s+barriers?)/i },
   // ── Generelle garanti-ord (sterk risiko) ──────────────────────────────
   { label: "guaranteed", re: /\bguaranteed\b/i },
   { label: "garantert", re: /\bgarantert?e?\b/i },
 ];
 
-/** Finn målbare/komparative utfallspåstander i teksten (labels). */
+/** Finn verifikasjonskrevende påstander i teksten (labels). */
 export function findOutcomeClaims(text: string | null | undefined): string[] {
   const t = text ?? "";
   return OUTCOME_CLAIM_MARKERS.filter((m) => m.re.test(t)).map((m) => m.label);
 }
 
 /**
- * Utfallspåstander i captionen som IKKE er dekket av en uavhengig factSource.
+ * Påstander i captionen som IKKE er dekket av en uavhengig factSource.
  * En påstand regnes som dekket hvis minst én factSource-claim treffer SAMME
- * utfallsmarkør. Brand Brain-positionering er bevisst IKKE en gyldig kilde her.
+ * markør. Brand Brain-positionering er bevisst IKKE en gyldig kilde her.
  */
 export function unsupportedOutcomeClaims(
   caption: string | null | undefined,
