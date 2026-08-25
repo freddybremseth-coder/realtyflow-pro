@@ -10,7 +10,10 @@
 
 export interface ContentMetrics {
   views?: number | null;
+  impressions?: number | null;
   engagedViews?: number | null;
+  reactions?: number | null;
+  comments?: number | null;
   saves?: number | null;
   shares?: number | null;
   clicks?: number | null;
@@ -24,7 +27,10 @@ export interface ContentMetrics {
 
 export interface ValueWeights {
   views: number;
+  impressions: number;
   engagedViews: number;
+  reactions: number;
+  comments: number;
   saves: number;
   shares: number;
   clicks: number;
@@ -39,7 +45,10 @@ export interface ValueWeights {
 
 export const DEFAULT_WEIGHTS: ValueWeights = {
   views: 0.01,
+  impressions: 0.005,
   engagedViews: 0.03,
+  reactions: 0.2,
+  comments: 0.5,
   saves: 1,
   shares: 2,
   clicks: 3,
@@ -56,7 +65,10 @@ const n = (v: number | null | undefined) => (typeof v === "number" && Number.isF
 export function businessValueScore(m: ContentMetrics, weights: ValueWeights = DEFAULT_WEIGHTS): number {
   const score =
     n(m.views) * weights.views +
+    n(m.impressions) * weights.impressions +
     n(m.engagedViews) * weights.engagedViews +
+    n(m.reactions) * weights.reactions +
+    n(m.comments) * weights.comments +
     n(m.saves) * weights.saves +
     n(m.shares) * weights.shares +
     n(m.clicks) * weights.clicks +
@@ -69,11 +81,11 @@ export function businessValueScore(m: ContentMetrics, weights: ValueWeights = DE
   return Math.round(score);
 }
 
-/** Kvalifisert-lead-rate — kjernemetrikk for læring (per 1000 visninger). */
+/** Kvalifisert-lead-rate — kjernemetrikk for læring (per 1000 eksponeringer). */
 export function qualifiedLeadRate(m: ContentMetrics): number {
-  const views = n(m.views);
-  if (views <= 0) return 0;
-  return Number(((n(m.qualifiedLeads) / views) * 1000).toFixed(2));
+  const exposure = Math.max(n(m.views), n(m.impressions));
+  if (exposure <= 0) return 0;
+  return Number(((n(m.qualifiedLeads) / exposure) * 1000).toFixed(2));
 }
 
 export const EVIDENCE_LEVELS = ["insufficient", "directional", "promising", "reliable", "strong"] as const;
