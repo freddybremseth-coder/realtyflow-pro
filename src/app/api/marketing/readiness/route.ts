@@ -127,5 +127,36 @@ export async function GET(request: NextRequest) {
   }
 
   rows.sort((a, b) => `${a.brandName}|${a.platform ?? ""}`.localeCompare(`${b.brandName}|${b.platform ?? ""}`));
-  return NextResponse.json({ generatedAt: new Date().toISOString(), rows });
+
+  const controlScope = channelLearningScope("zeneco", "instagram");
+  const controlEvents = (events ?? []).filter((e: any) => String(e.brand_id) === "zeneco" && String(e.channel) === "instagram");
+  const controlEligible = new Set(
+    controlEvents
+      .filter((e: any) => e?.metadata?.learning_eligible !== false)
+      .map((e: any) => String(e.content_id || ""))
+      .filter(Boolean),
+  ).size;
+  const controlActionableRules = (rules ?? []).filter(
+    (r: any) => String(r.scope) === controlScope && ["favor", "avoid"].includes(String(r.verdict)),
+  ).length;
+  const controlValidated = controlEligible >= 10 && controlActionableRules > 0;
+  const controlGate = {
+    status: controlValidated ? "RUN_NEXT_CANARY" : "WAIT",
+    controlBrandId: "zeneco",
+    controlChannel: "instagram",
+    learningScope: controlScope,
+    eligibleObservations: controlEligible,
+    requiredObservations: 10,
+    actionableRules: controlActionableRules,
+    nextRecommendedCanary: controlValidated
+      ? { brandId: "zeneco", channel: "facebook", path: "/marketing-canary-facebook" }
+      : null,
+    reason: controlEligible < 10
+      ? `WAIT_FOR_10_ELIGIBLE_INSTAGRAM_OBSERVATIONS (${controlEligible}/10)`
+      : controlActionableRules === 0
+        ? "WAIT_FOR_CHANNEL_LEARNING_RULES"
+        : "RUN_ZENECO_FACEBOOK_CANARY",
+  };
+
+  return NextResponse.json({ generatedAt: new Date().toISOString(), controlGate, rows });
 }
