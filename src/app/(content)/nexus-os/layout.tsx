@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 const LINKS = [
   { href: "/nexus-os", label: "Command Center" },
   { href: "/nexus-os/director", label: "Portfolio Director" },
+  { href: "/nexus-os/autonomy", label: "24/7 Autonomy" },
   { href: "/nexus-os/account-launch", label: "Account Launch" },
   { href: "/connections", label: "Channel Connections" },
   { href: "/social-automation", label: "Social Growth" },
