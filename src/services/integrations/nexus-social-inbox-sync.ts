@@ -84,7 +84,7 @@ export async function runReadOnlySocialInboxSync(input: { source: "cron" | "manu
               brand_id: channel.brand_id,
               social_channel_id: channel.id,
               platform: channel.platform,
-              conversation_type: "comment",
+              conversation_type: "comment_thread",
               external_conversation_id: comment.id,
               external_post_id: String(postId),
               participant_external_id: isOutbound ? null : comment.authorExternalId,
