@@ -7,9 +7,20 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 export const dynamic = "force-dynamic";
 
 const SUCCESS_AUTOMATION_STATUSES = new Set(["success", "ok", "completed", "drafted"]);
+const SCHEDULED_AUTOMATIONS = [
+  { action: "email_ingest", runtimeKey: "cron:/api/cron/email-ingest", label: "E-postinnhenting", expectedMinutes: 15, freshnessMinutes: 40, href: "/nexus-os/communications" },
+  { action: "email_auto_draft", runtimeKey: "cron:/api/cron/email-auto-draft", label: "E-post AI auto-draft", expectedMinutes: 15, freshnessMinutes: 40, href: "/nexus-os/communications" },
+] as const;
 
 function sourceError(sourceErrors: Array<{ source: string; message: string; href: string }>, source: string, error: { message?: string } | null | undefined, href: string) {
   if (error?.message) sourceErrors.push({ source, message: error.message, href });
+}
+
+function ageMinutes(value: string | null | undefined, nowMs: number) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  return Math.max(0, Math.floor((nowMs - time) / 60_000));
 }
 
 export async function GET(request: NextRequest) {
@@ -19,7 +30,8 @@ export async function GET(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const nowMs = Date.now();
+  const since24h = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
   const [approvalsR, recsR, experimentsR, automationR, runtimeR, channelsR] = await Promise.all([
     supabase.from("agentic_approvals").select("id,title,risk,estimated_opportunity_eur,status,created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(100),
     supabase.from("book_growth_recommendations").select("status"),
@@ -77,6 +89,30 @@ export async function GET(request: NextRequest) {
   const socialAutoReplyLive = Boolean((runtimeByKey.get("feature:social_auto_reply_live") as any)?.enabled);
   const highRiskEnabled = runtime.filter((row: any) => row.enabled && ["high", "critical"].includes(String(row.risk_level || "").toLowerCase()));
 
+  const scheduledAutomation = SCHEDULED_AUTOMATIONS.map((job) => {
+    const runtimeControl: any = runtimeByKey.get(job.runtimeKey);
+    const enabled = Boolean(runtimeControl?.enabled);
+    const lastRun: any = automationLogs.find((row: any) => row.action === job.action) ?? null;
+    const lastRunAt = lastRun?.created_at ?? null;
+    const age = ageMinutes(lastRunAt, nowMs);
+    const stale = enabled && (age === null || age > job.freshnessMinutes);
+    return {
+      action: job.action,
+      label: job.label,
+      href: job.href,
+      runtimeKey: job.runtimeKey,
+      enabled,
+      expectedMinutes: job.expectedMinutes,
+      freshnessMinutes: job.freshnessMinutes,
+      lastRunAt,
+      lastStatus: lastRun?.status ?? null,
+      ageMinutes: age,
+      stale,
+    };
+  });
+  const scheduledAutomationEnabled = scheduledAutomation.filter((job) => job.enabled);
+  const scheduledAutomationStale = scheduledAutomationEnabled.filter((job) => job.stale);
+
   const tokenByChannel = new Map((tokenR.data ?? []).map((row: any) => [String(row.social_channel_id), row]));
   const socialChannels = channelsR.error ? [] : (channelsR.data ?? []);
   const socialReadiness = socialChannels.map((channel: any) => {
@@ -110,6 +146,9 @@ export async function GET(request: NextRequest) {
     automationRuns24h: automationLogs.length,
     automationFailures24h: automationFailures.length,
     automationPartial24h: automationPartial.length,
+    scheduledAutomationEnabled: scheduledAutomationEnabled.length,
+    scheduledAutomationHealthy: scheduledAutomationEnabled.filter((job) => !job.stale).length,
+    scheduledAutomationStale: scheduledAutomationStale.length,
     runtimeEnabled: runtime.filter((row: any) => row.enabled).length,
     runtimeHighRiskEnabled: highRiskEnabled.length,
     socialChannels: socialReadiness.length,
@@ -126,6 +165,13 @@ export async function GET(request: NextRequest) {
     approvalOpportunityEur: summary.approvalOpportunityEur,
     automationFailures24h: summary.automationFailures24h,
     automationPartial24h: summary.automationPartial24h,
+    scheduledAutomationStale: scheduledAutomationStale.map((job) => ({
+      action: job.action,
+      label: job.label,
+      lastRunAt: job.lastRunAt,
+      expectedMinutes: job.expectedMinutes,
+      href: job.href,
+    })),
     socialSyncEnabled,
     socialLastSyncAt: lastSocialSync?.created_at ?? null,
     socialLastSyncStatus: lastSocialSync?.status ?? null,
@@ -142,7 +188,7 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date(nowMs).toISOString(),
     sourceState: {
       healthy: sourceErrors.length === 0,
       errors: sourceErrors,
@@ -166,6 +212,7 @@ export async function GET(request: NextRequest) {
       } : null,
     },
     automation: {
+      scheduled: scheduledAutomation,
       failures: automationFailures.slice(0, 20),
       partial: automationPartial.slice(0, 20),
     },
