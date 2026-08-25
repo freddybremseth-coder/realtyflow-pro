@@ -4,15 +4,16 @@ import { canSeeNavHref, type AccessRole } from "@/lib/access-control";
 export type NavigationItem = { label: string; href: string; icon: string };
 export type NavigationSectionId =
   | "workspace"
+  | "os"
   | "customers"
   | "care"
   | "revenue"
-  | "reports"
   | "properties"
-  | "content"
   | "marketing"
+  | "content"
+  | "reports"
   | "business"
-  | "system";
+  | "admin";
 
 export interface NavigationSection {
   id: NavigationSectionId;
@@ -31,9 +32,9 @@ const REVENUE_READ_PAGES = new Set([
   "/continuous-improvement",
 ]);
 
-// Grouped by JOB, not by module: every group answers "what am I trying to
-// do right now?", holds at most ~8 visible choices, and rarely-used
-// reports live in their own group instead of drowning the daily tools.
+// Navigation is grouped by the job the user wants to do. OS/automation is
+// intentionally near the top: Nexus, social automation and Book Growth are
+// operating surfaces, not hidden admin utilities.
 const GROUPS: Array<{
   id: NavigationSectionId;
   label: string;
@@ -44,12 +45,21 @@ const GROUPS: Array<{
     id: "workspace",
     label: "Hjem",
     icon: "PanelsTopLeft",
+    hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"],
+  },
+  {
+    id: "os",
+    label: "OS & automatisering",
+    icon: "Boxes",
     hrefs: [
-      "/",
-      "/today",
-      "/internal-alerts",
-      "/approvals",
-      "/communications",
+      "/os",
+      "/nexus",
+      "/social-automation",
+      "/book-growth",
+      "/automation",
+      "/agents",
+      "/automation/nurture",
+      "/email",
     ],
   },
   {
@@ -81,7 +91,7 @@ const GROUPS: Array<{
   },
   {
     id: "revenue",
-    label: "Økonomi",
+    label: "Økonomi & closing",
     icon: "Handshake",
     hrefs: [
       "/revenue-command",
@@ -95,8 +105,47 @@ const GROUPS: Array<{
     ],
   },
   {
+    id: "properties",
+    label: "Eiendom",
+    icon: "Building2",
+    hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"],
+  },
+  {
+    id: "marketing",
+    label: "Vekst & markedsføring",
+    icon: "Megaphone",
+    hrefs: [
+      "/growth-hub",
+      "/marketing-readiness",
+      "/ad-campaigns",
+      "/analytics",
+      "/reports",
+      "/attribution",
+      "/marketing-tasks",
+      "/reach",
+    ],
+  },
+  {
+    id: "content",
+    label: "Innhold & publishing",
+    icon: "Clapperboard",
+    hrefs: [
+      "/content-studio",
+      "/media-studio",
+      "/posts",
+      "/ai-personal-brand",
+      "/content-hub",
+      "/image-studio",
+      "/website-cms",
+      "/publishing",
+      "/publishing/forfatterstudio",
+      "/youtube-studio",
+      "/neural-beat",
+    ],
+  },
+  {
     id: "reports",
-    label: "Rapporter & rutiner",
+    label: "Ledelse & rapporter",
     icon: "ClipboardList",
     hrefs: [
       "/executive-briefing",
@@ -104,147 +153,32 @@ const GROUPS: Array<{
       "/operating-review",
       "/weekly-management-review",
       "/continuous-improvement",
-      "/attribution",
       "/team-workload",
       "/revenue-data-health",
-    ],
-  },
-  {
-    id: "properties",
-    label: "Eiendom",
-    icon: "Building2",
-    hrefs: [
-      "/inventory",
-      "/scanner",
-      "/tomtebase",
-      "/areas",
-      "/valuation",
-      "/document-hub",
-    ],
-  },
-  {
-    id: "content",
-    label: "Innhold & medier",
-    icon: "Clapperboard",
-    hrefs: [
-      "/media-studio",
-      "/content-studio",
-      "/ai-personal-brand",
-      "/content-hub",
-      "/image-studio",
-      "/website-cms",
-      "/youtube-studio",
-      "/neural-beat",
-      "/publishing",
-      "/publishing/forfatterstudio",
-    ],
-  },
-  {
-    id: "marketing",
-    label: "Markedsføring",
-    icon: "Megaphone",
-    hrefs: [
-      "/ad-campaigns",
-      "/growth-hub",
-      "/reach",
-      "/marketing-tasks",
-      "/analytics",
-      "/reports",
     ],
   },
   {
     id: "business",
     label: "Forretningsområder",
     icon: "Briefcase",
-    hrefs: [
-      "/platform",
-      "/demosites",
-      "/saas",
-      "/revenue-engine",
-      "/mondeo",
-      "/dona-anna",
-    ],
+    hrefs: ["/platform", "/demosites", "/saas", "/revenue-engine", "/mondeo", "/dona-anna"],
   },
   {
-    id: "system",
-    label: "Automatisering & admin",
+    id: "admin",
+    label: "Admin & system",
     icon: "Settings",
-    hrefs: [
-      "/automation",
-      "/automation/nurture",
-      "/agents",
-      "/nexus",
-      "/email",
-      "/access-control",
-      "/audit-log",
-      "/brands",
-      "/business-hub",
-      "/data-health",
-      "/settings",
-    ],
+    hrefs: ["/access-control", "/audit-log", "/brands", "/business-hub", "/data-health", "/settings"],
   },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: [
-    "/today",
-    "/customers",
-    "/execution",
-    "/revenue-command",
-    "/internal-alerts",
-    "/approvals",
-  ],
-  SALES: [
-    "/today",
-    "/customers",
-    "/execution",
-    "/lead-intelligence",
-    "/communications",
-    "/recovery",
-  ],
-  CLOSING: [
-    "/today",
-    "/closing",
-    "/closing-pack",
-    "/execution",
-    "/customers",
-    "/approvals",
-  ],
-  FINANCE: [
-    "/billing",
-    "/dona-anna",
-    "/revenue-command",
-    "/monthly-close",
-    "/commissions",
-    "/forecast",
-    "/goals",
-    "/internal-alerts",
-  ],
-  MARKETING: [
-    "/attribution",
-    "/ad-campaigns",
-    "/ai-personal-brand",
-    "/analytics",
-    "/communications",
-    "/goals",
-    "/executive-briefing",
-  ],
-  KEYHOLDING: [
-    "/care",
-    "/care/customers",
-    "/care/reports",
-    "/care/invoices",
-    "/care/keys",
-    "/communications",
-  ],
-  VIEWER: [
-    "/revenue-command",
-    "/today",
-    "/customers",
-    "/executive-briefing",
-    "/monthly-close",
-    "/forecast",
-  ],
+  OWNER: ["/os", "/nexus", "/social-automation", "/book-growth", "/today", "/customers"],
+  SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
+  CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
+  FINANCE: ["/billing", "/dona-anna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
+  MARKETING: ["/social-automation", "/growth-hub", "/marketing-readiness", "/analytics", "/ad-campaigns", "/content-studio"],
+  KEYHOLDING: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/communications"],
+  VIEWER: ["/revenue-command", "/today", "/customers", "/executive-briefing", "/monthly-close", "/forecast"],
 };
 
 function sourceItems() {
@@ -274,10 +208,7 @@ export function isNavigationPathActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function activeNavigationSection(
-  pathname: string,
-  sections: NavigationSection[],
-): NavigationSectionId | null {
+export function activeNavigationSection(pathname: string, sections: NavigationSection[]): NavigationSectionId | null {
   return sections.find((section) => section.items.some((item) => isNavigationPathActive(pathname, item.href)))?.id || null;
 }
 
@@ -287,18 +218,12 @@ export function filterNavigationSections(sections: NavigationSection[], query: s
   return sections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) =>
-        `${item.label} ${item.href}`.toLocaleLowerCase("nb-NO").includes(normalized),
-      ),
+      items: section.items.filter((item) => `${item.label} ${item.href}`.toLocaleLowerCase("nb-NO").includes(normalized)),
     }))
     .filter((section) => section.items.length > 0);
 }
 
-export function normalizeNavigationFavorites(
-  value: unknown,
-  availableHrefs: string[],
-  limit = NAVIGATION_FAVORITES_LIMIT,
-) {
+export function normalizeNavigationFavorites(value: unknown, availableHrefs: string[], limit = NAVIGATION_FAVORITES_LIMIT) {
   const available = new Set(availableHrefs);
   const rows = Array.isArray(value) ? value : [];
   const result: string[] = [];
@@ -311,28 +236,16 @@ export function normalizeNavigationFavorites(
   return result;
 }
 
-export function toggleNavigationFavorite(
-  favorites: string[],
-  href: string,
-  availableHrefs: string[],
-) {
+export function toggleNavigationFavorite(favorites: string[], href: string, availableHrefs: string[]) {
   const current = normalizeNavigationFavorites(favorites, availableHrefs);
   if (current.includes(href)) return current.filter((item) => item !== href);
   return normalizeNavigationFavorites([href, ...current], availableHrefs);
 }
 
-export function quickNavigationItems(
-  role: AccessRole,
-  sections: NavigationSection[],
-  favorites: string[],
-  limit = NAVIGATION_FAVORITES_LIMIT,
-) {
+export function quickNavigationItems(role: AccessRole, sections: NavigationSection[], favorites: string[], limit = NAVIGATION_FAVORITES_LIMIT) {
   const items = sections.flatMap((section) => section.items);
   const itemByHref = new Map(items.map((item) => [item.href, item]));
-  const orderedHrefs = [
-    ...normalizeNavigationFavorites(favorites, [...itemByHref.keys()], limit),
-    ...ROLE_QUICK_LINKS[role],
-  ];
+  const orderedHrefs = [...normalizeNavigationFavorites(favorites, [...itemByHref.keys()], limit), ...ROLE_QUICK_LINKS[role]];
   const result: NavigationItem[] = [];
   for (const href of orderedHrefs) {
     const item = itemByHref.get(href);
