@@ -74,6 +74,8 @@ jobs:
         run: npm run test:continuous-improvement
       - name: Navigation Information Architecture tests
         run: npm run test:navigation
+      - name: Nexus Social scheduler and canonical contract tests
+        run: npx tsx --test src/middleware.test.ts src/services/integrations/nexus-social-inbox-sync.contract.test.ts
       - name: DemoSites Signature design tests
         run: npm run test:demosites-design
       - name: Ad Campaign Generator planner tests
