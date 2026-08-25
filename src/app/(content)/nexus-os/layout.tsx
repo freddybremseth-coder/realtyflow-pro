@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AgentFleetStrip } from "@/components/nexus/agent-fleet-strip";
 import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
@@ -42,6 +43,7 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
         </nav>
       </div>
     </div>
+    <AgentFleetStrip />
     <div className="border-b border-slate-800 bg-slate-950/95 py-3"><NexusAttentionStrip /></div>
     <div className="bg-slate-50 text-slate-950">{children}</div>
   </div>;
