@@ -45,10 +45,10 @@ function propertyIdFromSource(sourceId: string | null): string | null {
   return sourceId?.startsWith("property:") ? sourceId.slice("property:".length) : null;
 }
 
-function latestBy<T extends Record<string, any>>(rows: T[], key: keyof T): Map<string, T> {
-  const map = new Map<string, T>();
+function latestBy(rows: any[], key: string): Map<string, any> {
+  const map = new Map<string, any>();
   for (const row of rows) {
-    const id = String(row[key] ?? "");
+    const id = String(row?.[key] ?? "");
     if (id && !map.has(id)) map.set(id, row);
   }
   return map;
@@ -74,14 +74,14 @@ export async function auditPublishedMarketingIntegrity(
     .limit(limit);
   if (pubError) throw new Error(`PUBLICATION_INTEGRITY_PUBLICATIONS_FAILED: ${pubError.message}`);
 
-  const pubs = publications ?? [];
-  const publicationIds = pubs.map((r: any) => String(r.publication_id ?? "")).filter(Boolean);
-  const contentIds = pubs.map((r: any) => String(r.content_id ?? "")).filter(Boolean);
+  const pubs: any[] = publications ?? [];
+  const publicationIds = pubs.map((r) => String(r?.publication_id ?? "")).filter(Boolean);
+  const contentIds = pubs.map((r) => String(r?.content_id ?? "")).filter(Boolean);
   if (!publicationIds.length || !contentIds.length) {
     return { brandId, channel, checked: 0, healthy: 0, unhealthy: 0, issuesByCode: {}, items: [] };
   }
 
-  const [{ data: attempts }, { data: assets }, { data: contents }] = await Promise.all([
+  const [attemptResult, assetResult, contentResult] = await Promise.all([
     supabase
       .from("marketing_publish_attempts")
       .select("publication_id, status, external_media_id, external_id, updated_at")
@@ -99,22 +99,27 @@ export async function auditPublishedMarketingIntegrity(
       .order("updated_at", { ascending: false }),
   ]);
 
-  const postedAttempts = latestBy(
-    (attempts ?? []).filter((r: any) => String(r.status) === "posted"),
-    "publication_id",
-  );
-  const latestAssets = latestBy(assets ?? [], "content_id");
-  const latestContents = latestBy(contents ?? [], "content_id");
+  if (attemptResult.error) throw new Error(`PUBLICATION_INTEGRITY_ATTEMPTS_FAILED: ${attemptResult.error.message}`);
+  if (assetResult.error) throw new Error(`PUBLICATION_INTEGRITY_ASSETS_FAILED: ${assetResult.error.message}`);
+  if (contentResult.error) throw new Error(`PUBLICATION_INTEGRITY_CONTENT_FAILED: ${contentResult.error.message}`);
 
-  const items: PublicationIntegrityItem[] = pubs.map((pub: any) => {
-    const publicationId = String(pub.publication_id ?? "");
-    const contentId = String(pub.content_id ?? "");
-    const sourceId = pub.source_id ? String(pub.source_id) : null;
+  const attempts: any[] = attemptResult.data ?? [];
+  const assets: any[] = assetResult.data ?? [];
+  const contents: any[] = contentResult.data ?? [];
+
+  const postedAttempts = latestBy(attempts.filter((r) => String(r?.status ?? "") === "posted"), "publication_id");
+  const latestAssets = latestBy(assets, "content_id");
+  const latestContents = latestBy(contents, "content_id");
+
+  const items: PublicationIntegrityItem[] = pubs.map((pub) => {
+    const publicationId = String(pub?.publication_id ?? "");
+    const contentId = String(pub?.content_id ?? "");
+    const sourceId = pub?.source_id ? String(pub.source_id) : null;
     const issues: PublicationIntegrityIssue[] = [];
     const add = (code: PublicationIntegrityCode, detail: string) => issues.push({ publicationId, contentId, code, detail });
 
     const attempt = postedAttempts.get(publicationId);
-    const externalId = attempt ? String(attempt.external_media_id ?? attempt.external_id ?? "").trim() || null : null;
+    const externalId = attempt ? String(attempt?.external_media_id ?? attempt?.external_id ?? "").trim() || null : null;
     if (!attempt) add("MISSING_POSTED_ATTEMPT", "Publikasjonen mangler posted publish-attempt.");
     else if (!externalId) add("MISSING_EXTERNAL_ID", "Posted attempt mangler ekstern kanal-ID.");
 
@@ -124,16 +129,16 @@ export async function auditPublishedMarketingIntegrity(
     if (!content) add("MISSING_CANONICAL_CONTENT", "marketing_content mangler canonical genome.");
 
     if (content) {
-      if (String(content.brand_id ?? "") !== brandId) add("CONTENT_BRAND_MISMATCH", `marketing_content.brand_id=${String(content.brand_id ?? "")}`);
-      if (String(content.channel ?? "") !== channel) add("CONTENT_CHANNEL_MISMATCH", `marketing_content.channel=${String(content.channel ?? "")}`);
-      if (String(content.genome?.brandId ?? "") !== brandId) add("GENOME_BRAND_MISMATCH", `genome.brandId=${String(content.genome?.brandId ?? "")}`);
-      if (String(content.genome?.channel ?? "") !== channel) add("GENOME_CHANNEL_MISMATCH", `genome.channel=${String(content.genome?.channel ?? "")}`);
+      if (String(content?.brand_id ?? "") !== brandId) add("CONTENT_BRAND_MISMATCH", `marketing_content.brand_id=${String(content?.brand_id ?? "")}`);
+      if (String(content?.channel ?? "") !== channel) add("CONTENT_CHANNEL_MISMATCH", `marketing_content.channel=${String(content?.channel ?? "")}`);
+      if (String(content?.genome?.brandId ?? "") !== brandId) add("GENOME_BRAND_MISMATCH", `genome.brandId=${String(content?.genome?.brandId ?? "")}`);
+      if (String(content?.genome?.channel ?? "") !== channel) add("GENOME_CHANNEL_MISMATCH", `genome.channel=${String(content?.genome?.channel ?? "")}`);
     }
 
     const propertyId = propertyIdFromSource(sourceId);
     if (propertyId && asset) {
-      const facts = Array.isArray(asset.fact_sources) ? asset.fact_sources : [];
-      const propertyIds = Array.isArray(asset.property_ids) ? asset.property_ids.map(String) : [];
+      const facts = Array.isArray(asset?.fact_sources) ? asset.fact_sources : [];
+      const propertyIds = Array.isArray(asset?.property_ids) ? asset.property_ids.map(String) : [];
       if (facts.length === 0) add("PROPERTY_FACTS_MISSING", "Property-grounded publikasjon mangler fact_sources.");
       if (propertyIds.length === 0) add("PROPERTY_ID_MISSING", "Property-grounded publikasjon mangler property_ids.");
       else if (!propertyIds.includes(propertyId)) add("PROPERTY_SOURCE_MISMATCH", `source property=${propertyId}, asset property_ids=${propertyIds.join(",")}`);
