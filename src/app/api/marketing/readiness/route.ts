@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { OWNED_GROWTH_BRAND_IDS, growthBrandDefinition, isPilotChannel } from "@/lib/marketing/brand-registry";
+import { OWNED_GROWTH_BRAND_IDS, OWNED_GROWTH_BRANDS, growthBrandDefinition, isPilotChannel } from "@/lib/marketing/brand-registry";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import type { MarketingChannel } from "@/lib/marketing/genome";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -44,12 +45,18 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const brandIds = [...OWNED_GROWTH_BRAND_IDS];
+  const ruleScopes = Array.from(new Set([
+    ...brandIds,
+    ...OWNED_GROWTH_BRANDS.flatMap((brand) =>
+      brand.plannedChannels.map((channel) => channelLearningScope(brand.id, channel)),
+    ),
+  ]));
   const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }] = await Promise.all([
     supabase.from("brand_context").select("brand_id, brand_name").in("brand_id", brandIds),
     supabase.from("social_channels").select("brand_id, platform, external_id, display_name, is_active").in("brand_id", brandIds).eq("is_active", true),
     supabase.from("marketing_publications").select("brand_id, channel, state").in("brand_id", brandIds).eq("state", "published"),
     supabase.from("marketing_events").select("brand_id, channel, content_id, metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot"),
-    supabase.from("marketing_learning_rules").select("scope, dimension, verdict").in("scope", brandIds),
+    supabase.from("marketing_learning_rules").select("scope, dimension, verdict").in("scope", ruleScopes),
   ]);
 
   const contextByBrand = new Map((contexts ?? []).map((row: any) => [String(row.brand_id), row]));
@@ -62,7 +69,8 @@ export async function GET(request: NextRequest) {
     const channelEvents = (events ?? []).filter((e: any) => String(e.brand_id) === brandId && String(e.channel) === platform);
     const eligible = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible !== false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
     const quarantined = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible === false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
-    const actionableRules = (rules ?? []).filter((r: any) => String(r.scope) === brandId && ["favor", "avoid"].includes(String(r.verdict))).length;
+    const scope = channelLearningScope(brandId, platform);
+    const actionableRules = (rules ?? []).filter((r: any) => String(r.scope) === scope && ["favor", "avoid"].includes(String(r.verdict))).length;
     const connected = true;
     const brandBrainReady = Boolean(brandContext);
     const planned = Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
