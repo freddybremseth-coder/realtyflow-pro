@@ -4,8 +4,6 @@
     { "path": "/api/neural-beat/thumbnail-ab", "schedule": "0 11 * * *" },
     { "path": "/api/neural-beat/shorts-followup", "schedule": "0 15 * * *" },
     { "path": "/api/neural-beat/weekly-mix", "schedule": "0 10 * * 6" },
-    { "path": "/api/cron/email-ingest", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/email-auto-draft", "schedule": "5,20,35,50 * * * *" },
     { "path": "/api/cron/communications-learning", "schedule": "20 21 * * *" },
     { "path": "/api/cron/market-data", "schedule": "0 14 * * *" },
     { "path": "/api/cron/weekly-report", "schedule": "0 21 * * 1" },
