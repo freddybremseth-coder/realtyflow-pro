@@ -1,0 +1,1 @@
+export const NEXUS_ADVISOR_MAIL_FEEDBACK_IMPLEMENTED = true;
