@@ -12,6 +12,9 @@ type Status = {
     bookPending: number;
     automationFailures24h: number;
     automationPartial24h: number;
+    scheduledAutomationEnabled: number;
+    scheduledAutomationHealthy: number;
+    scheduledAutomationStale: number;
     instagramConnected: number;
     instagramCommentReadReady: number;
     socialSyncEnabled: boolean;
@@ -71,6 +74,7 @@ export function NexusAttentionStrip() {
       {error ? <span className="font-semibold text-rose-300">Status utilgjengelig: {error}</span> : <>
         <span className={high ? "font-black text-rose-300" : "font-semibold text-emerald-300"}>{high} high priority</span>
         <span className="text-slate-400">Approvals <b className="text-slate-200">{summary?.approvalsPending ?? "—"}</b></span>
+        <Link href="/automation" className={summary?.scheduledAutomationStale ? "font-bold text-rose-300" : "text-slate-400 hover:text-slate-200"}>Scheduler <b>{summary?.scheduledAutomationHealthy ?? "—"}/{summary?.scheduledAutomationEnabled ?? "—"}</b> ferske</Link>
         <span className="text-slate-400">Automation-feil 24t <b className="text-slate-200">{summary?.automationFailures24h ?? "—"}</b></span>
         <span className="text-slate-400">Book review <b className="text-slate-200">{summary?.bookPending ?? "—"}</b></span>
         <span className="text-slate-400">IG comment-read <b className="text-slate-200">{summary?.instagramCommentReadReady ?? "—"}/{summary?.instagramConnected ?? "—"}</b></span>
