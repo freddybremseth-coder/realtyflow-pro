@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { evaluateMetaCapabilities, isMetaCommunicationReady } from "@/lib/oauth/meta-capabilities";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -33,17 +34,14 @@ export async function GET(request: NextRequest) {
   const readiness=(channelsR.data??[]).map((channel:any)=>{
     const token:any=tokenByChannel.get(String(channel.id));
     const scopes:string[]=Array.isArray(token?.scopes)?token.scopes.map(String):[];
-    const publish=channel.platform==="instagram" ? scopes.some(s=>/content_publish/i.test(s)) : scopes.some(s=>/manage_posts/i.test(s));
-    const readEngagement=scopes.some(s=>/read.*engagement|read.*user.*content/i.test(s));
-    const directMessages=scopes.some(s=>/messag/i.test(s)&&!/whatsapp/i.test(s));
-    const commentReply=scopes.some(s=>/manage.*engagement|manage.*comment|comment.*manage/i.test(s));
+    const capabilities=evaluateMetaCapabilities(String(channel.platform),scopes);
     return {
       channelId:channel.id,
       brandId:channel.brand_id,
       platform:channel.platform,
       displayName:channel.display_name,
-      capabilities:{publish,readEngagement,directMessages,commentReply},
-      needsCommunicationReconnect:!directMessages||!commentReply,
+      capabilities,
+      needsCommunicationReconnect:!isMetaCommunicationReady(String(channel.platform),scopes),
       scopes,
     };
   });
