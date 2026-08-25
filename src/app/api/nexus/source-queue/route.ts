@@ -108,7 +108,29 @@ export async function POST(request: NextRequest) {
     });
 
     await supabase.from("marketing_source_queue").update({ status: "drafted", last_planned_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", source.id);
-    return NextResponse.json({ ok: true, sourceQueueId, channel: requestedChannel, campaign: result, note: "Campaign draft opprettet. Dette er ikke det samme som publisert; approval/publisher lifecycle gjelder fortsatt." });
+
+    const primary = result.results.find((row) => row.approvalId) ?? result.results[0] ?? null;
+    const approvalId = primary?.approvalId ?? null;
+    const publicationId = primary?.publicationId && primary.publicationId !== "-" ? primary.publicationId : null;
+    const approvalHref = approvalId ? `/approvals#agentic-approval-${approvalId}` : "/approvals";
+
+    return NextResponse.json({
+      ok: true,
+      sourceQueueId,
+      channel: requestedChannel,
+      campaign: result,
+      workflow: {
+        state: approvalId ? "awaiting_approval" : "draft_created",
+        approvalId,
+        publicationId,
+        approvalHref,
+        campaignId: result.campaignId,
+        marketingRunId: result.marketingRunId,
+      },
+      note: approvalId
+        ? "Kampanjestart opprettet og venter på godkjenning. Dette er ikke publisert ennå."
+        : "Kampanjedraft opprettet. Ingen konkret approval-ID ble returnert; åpne Kontroll for status."
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: message }, { status: message.startsWith("MISSING_") || message.includes("APPROVAL") ? 409 : 500 });
