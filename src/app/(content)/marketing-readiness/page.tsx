@@ -21,7 +21,19 @@ type Row = {
   status: string;
 };
 
-type Payload = { generatedAt: string; rows: Row[] };
+type ControlGate = {
+  status: "WAIT" | "RUN_NEXT_CANARY";
+  controlBrandId: string;
+  controlChannel: string;
+  learningScope: string;
+  eligibleObservations: number;
+  requiredObservations: number;
+  actionableRules: number;
+  nextRecommendedCanary: { brandId: string; channel: string; path: string } | null;
+  reason: string;
+};
+
+type Payload = { generatedAt: string; controlGate: ControlGate; rows: Row[] };
 
 const CANARY_ROUTES: Record<string, string> = {
   "zeneco:instagram": "/marketing-canary",
@@ -62,6 +74,9 @@ export default function MarketingReadinessPage() {
 
   useEffect(() => { void load(); }, []);
 
+  const gate = data?.controlGate;
+  const runCanary = gate?.status === "RUN_NEXT_CANARY" && gate.nextRecommendedCanary;
+
   return (
     <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -73,6 +88,22 @@ export default function MarketingReadinessPage() {
       </div>
 
       {error && <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c" }}>⛔ {error}</div>}
+
+      {gate && <section style={{ marginTop: 18, padding: 16, borderRadius: 12, border: `1px solid ${runCanary ? "#86efac" : "#fde68a"}`, background: runCanary ? "#f0fdf4" : "#fffbeb" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: runCanary ? "#166534" : "#92400e" }}>CANARY RECOMMENDATION</div>
+            <div style={{ fontSize: 20, fontWeight: 900, marginTop: 3 }}>{runCanary ? "RUN NEXT CANARY" : "WAIT"}</div>
+            <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
+              Control: {gate.learningScope} · eligible {gate.eligibleObservations}/{gate.requiredObservations} · actionable rules {gate.actionableRules}
+            </div>
+            <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>{gate.reason}</div>
+          </div>
+          {runCanary && <a href={gate.nextRecommendedCanary!.path} style={{ display: "inline-block", padding: "10px 14px", borderRadius: 9, background: "#166534", color: "white", fontWeight: 800, textDecoration: "none" }}>
+            Åpne {gate.nextRecommendedCanary!.brandId} {gate.nextRecommendedCanary!.channel} Canary →
+          </a>}
+        </div>
+      </section>}
 
       <div style={{ marginTop: 18, overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1260, background: "white" }}>
@@ -107,7 +138,7 @@ export default function MarketingReadinessPage() {
       </div>
 
       <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "#f8fafc", color: "#475569", fontSize: 13 }}>
-        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. BRAND_BRAIN_READY betyr at brandets identitet/claims er definert, men kanalen kan fortsatt være blokkert fra pilot. PILOT_READY krever eksplisitt kanalstøtte i Growth OS-registry. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og minst én actionable learning-regel. Alle publiseringer forblir COPILOT/manual-review.
+        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. BRAND_BRAIN_READY betyr at brandets identitet/claims er definert, men kanalen kan fortsatt være blokkert fra pilot. PILOT_READY krever eksplisitt kanalstøtte i Growth OS-registry. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og minst én actionable learning-regel i samme brand × kanal-scope. Canary Recommendation utfører ingenting; den sier bare når neste kontrollerte canary bør kjøres. Alle publiseringer forblir COPILOT/manual-review.
       </div>
     </div>
   );
