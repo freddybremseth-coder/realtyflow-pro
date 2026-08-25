@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { growthBrandDefinition } from "@/lib/marketing/brand-registry";
+import { growthBrandDefinition, isPilotChannel } from "@/lib/marketing/brand-registry";
 import { createCampaignDraft, getServiceSupabase, type CreateCampaignDraftInput } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const body = (await request.json().catch(() => ({}))) as Partial<PillarDraftInput>;
-  if (!body.brandId || !body.masterIdea || !body.goal?.kind || !body.contentPillar) {
-    return NextResponse.json({ error: "brandId, masterIdea, goal.kind og contentPillar er påkrevd" }, { status: 400 });
+  if (!body.brandId || !body.masterIdea || !body.goal?.kind || !body.contentPillar || !body.channel) {
+    return NextResponse.json({ error: "brandId, channel, masterIdea, goal.kind og contentPillar er påkrevd" }, { status: 400 });
   }
 
   const definition = growthBrandDefinition(body.brandId);
@@ -28,6 +28,13 @@ export async function POST(request: NextRequest) {
       brandId: body.brandId,
       contentPillar: body.contentPillar,
       allowedPillars,
+    }, { status: 409 });
+  }
+  if (!isPilotChannel(body.brandId, body.channel)) {
+    return NextResponse.json({
+      error: "CHANNEL_NOT_PILOT_READY",
+      brandId: body.brandId,
+      channel: body.channel,
     }, { status: 409 });
   }
 
@@ -76,6 +83,22 @@ export async function POST(request: NextRequest) {
           .update({ genome: { ...(content.genome ?? {}), contentPillar: body.contentPillar } })
           .eq("id", content.id);
       }
+
+      await supabase.from("marketing_events").insert({
+        event_type: "content_pillar_assignment",
+        brand_id: body.brandId,
+        content_id: contentId,
+        channel: body.channel,
+        genome: { contentPillar: body.contentPillar },
+        correlation_id: result.correlationId,
+        occurred_at: new Date().toISOString(),
+        metadata: {
+          source: "manual_canary_selection",
+          content_pillar: body.contentPillar,
+          approval_mode: "manual-review",
+          marketing_run_id: result.marketingRunId,
+        },
+      });
     }
 
     return NextResponse.json({ ...result, contentPillar: body.contentPillar });
