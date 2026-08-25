@@ -14,7 +14,7 @@ import {
   type CreativeRequest,
   type CreativeResult,
 } from "@/lib/marketing/autonomous";
-import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 /** DI-søm for tekstgenerering — standard: RealtyFlows askClaude. */
 export type GenerateText = (prompt: string, opts?: {
@@ -128,7 +128,11 @@ export function makeDryRunCreativeGenerator(): CreativeGenerator {
   };
 }
 
-/** Persistér asset + full provenance (forklarbarhet: hvor kom påstanden fra). */
+/**
+ * Persistér asset + full provenance (forklarbarhet: hvor kom påstanden fra),
+ * og opprett canonical marketing_content samtidig. Da er genome tilgjengelig
+ * for novelty/audit/learning fra draft-tidspunktet — ikke først etter metrics.
+ */
 export async function persistAsset(supabase: MarketingSupabaseLike, result: CreativeResult): Promise<void> {
   const { asset, provenance } = result;
   const { error } = await supabase.from("marketing_assets").upsert(
@@ -154,4 +158,8 @@ export async function persistAsset(supabase: MarketingSupabaseLike, result: Crea
     { onConflict: "creative_variant_id" },
   );
   if (error) throw new Error(`persistAsset failed: ${error.message}`);
+
+  const brandId = String(asset.genome.brandId ?? "").trim();
+  if (!brandId) throw new Error("persistAsset failed: genome.brandId mangler");
+  await makeMarketingStore(supabase).upsertContent(asset.contentId, brandId, asset.genome);
 }
