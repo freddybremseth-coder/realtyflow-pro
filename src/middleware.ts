@@ -65,6 +65,8 @@ const NEXUS_SCHEDULER_PATHS = new Set([
   "/api/cron/email-ingest",
   "/api/cron/email-auto-draft",
   "/api/cron/social-inbox-sync",
+  "/api/cron/engagement-tracker",
+  "/api/cron/marketing-growth-metrics",
 ]);
 
 const ROLE_HOME: Record<AccessRole, string> = {
@@ -199,12 +201,6 @@ function shouldLookupCustomDomain(host: string) {
   return host.includes(".");
 }
 
-/**
- * Customer-owned domains are attached to the same Vercel project. The Host
- * header is looked up against demo_site_orders.custom_domain and rewritten to
- * the matching site_slug. This keeps the customer's URL in the address bar;
- * it is normal multi-tenant routing, not masking or iframe cloaking.
- */
 async function customDomainSiteRewrite(request: NextRequest): Promise<NextResponse | null> {
   if (request.nextUrl.pathname !== "/") return null;
   const host = (request.headers.get("host") || "").toLowerCase().split(":")[0];
