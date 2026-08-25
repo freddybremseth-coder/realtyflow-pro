@@ -17,6 +17,7 @@ export interface SubmitLeadFormResult {
   inquiryExternalId: string;
   touchpointsRecorded: number;
   canonicalContactId: string | null;
+  creativeVariantId: string | null;
   intake: unknown;
 }
 
@@ -72,6 +73,25 @@ async function resolveCanonicalContactId(
   return data?.id ? String(data.id) : null;
 }
 
+async function resolveCreativeVariantId(
+  supabase: MarketingSupabaseLike & SupabaseLike,
+  submission: LeadFormSubmission,
+): Promise<string | null> {
+  if (!submission.creativeVariantId && !submission.creativeTrackingCode) return null;
+
+  let query = supabase
+    .from("ad_creatives")
+    .select("id,campaign_id,tracking_code")
+    .eq("campaign_id", submission.campaignId);
+
+  if (submission.creativeVariantId) query = query.eq("id", submission.creativeVariantId);
+  else query = query.eq("tracking_code", submission.creativeTrackingCode!);
+
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
 export async function submitLeadForm(
   supabase: MarketingSupabaseLike & SupabaseLike,
   submission: LeadFormSubmission,
@@ -88,23 +108,36 @@ export async function submitLeadForm(
     // fortsatt bevare pre-CRM-reisen, men vi later aldri som e-post er contact UUID.
   }
 
+  let creativeVariantId: string | null = null;
+  try {
+    creativeVariantId = await resolveCreativeVariantId(supabase, submission);
+  } catch {
+    // Creative attribution is optional evidence. An invalid or stale tracking code
+    // must never block the lead itself or be accepted without campaign verification.
+  }
+
   // Attribution: brand er eksplisitt tenancy boundary; canonical contact UUID
   // brukes når tilgjengelig. Uten canonical identity beholdes visitorId.
   let touchpointsRecorded = 0;
   try {
+    const sharedMetadata = {
+      identity: canonicalContactId ? "canonical_contact" : "visitor_only",
+      creativeTrackingCode: submission.creativeTrackingCode ?? null,
+      creativeResolved: Boolean(creativeVariantId),
+    };
     await recordTouchpoint(supabase, {
       brandId: submission.brandId,
       touchType: "form_submit", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
-      campaignId: submission.campaignId, channel: submission.channel ?? null,
+      campaignId: submission.campaignId, creativeVariantId, channel: submission.channel ?? null,
       visitorId: submission.visitorId ?? null, contactId: canonicalContactId,
-      metadata: { formId: submission.formId, identity: canonicalContactId ? "canonical_contact" : "visitor_only" },
+      metadata: { ...sharedMetadata, formId: submission.formId },
     });
     await recordTouchpoint(supabase, {
       brandId: submission.brandId,
       touchType: "lead_created", occurredAt, contentId: submission.contentId, publicationId: submission.publicationId ?? null,
-      campaignId: submission.campaignId, channel: submission.channel ?? null,
+      campaignId: submission.campaignId, creativeVariantId, channel: submission.channel ?? null,
       visitorId: submission.visitorId ?? null, contactId: canonicalContactId,
-      metadata: { source: "marketing_lead_form", identity: canonicalContactId ? "canonical_contact" : "visitor_only" },
+      metadata: { ...sharedMetadata, source: "marketing_lead_form" },
     });
     touchpointsRecorded = 2;
   } catch {
@@ -112,5 +145,5 @@ export async function submitLeadForm(
   }
 
   const intake = await runLeadIntakeProduction(supabase, inquiry, role);
-  return { inquiryExternalId: inquiry.externalId, touchpointsRecorded, canonicalContactId, intake };
+  return { inquiryExternalId: inquiry.externalId, touchpointsRecorded, canonicalContactId, creativeVariantId, intake };
 }
