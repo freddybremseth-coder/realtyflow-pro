@@ -4,25 +4,18 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { OWNED_GROWTH_BRANDS } from "@/lib/marketing/brand-registry";
 
-type ReadinessRow = {
-  brandId: string;
-  brandName: string;
-  platform: string | null;
-  connected: boolean;
-  pilotReady: boolean;
-  liveLearning: boolean;
-  pilotBlockReason: string | null;
-  published: number;
-  measuredEligible: number;
-  evaluatedRules: number;
-  actionableRules: number;
-};
-
+type ReadinessRow = { brandId: string; brandName: string; platform: string | null; connected: boolean; pilotReady: boolean; liveLearning: boolean; pilotBlockReason: string | null; published: number; measuredEligible: number; evaluatedRules: number; actionableRules: number };
 type MarketingPayload = { controlGate?: { status?: string; reason?: string }; rows?: ReadinessRow[] };
 type BookPayload = { summary?: { totalBooks?: number; pendingRecommendations?: number; approvedRecommendations?: number; appliedRecommendations?: number; booksWithEconomicData?: number; asinLinkedBooks?: number } };
 type ApprovalPayload = { summary?: Record<string, number>; items?: unknown[] };
 type AgentPayload = { agents?: unknown[]; providers?: unknown[] };
-
+type PortfolioBrand = {
+  brand_id: string; website: string; status: string; autonomy_mode: string; planned_channels: string[]; conversion_goals: string[]; primary_ctas: string[];
+  sourceSummary: { total: number; ready: number; blocked: number; drafted: number; byType: Record<string, number>; byStatus: Record<string, number> };
+  publications30d: { total: number; published: number; scheduled: number; draft: number; byState: Record<string, number> };
+  learning: { rules: number; actionable: number };
+};
+type PortfolioPayload = { summary?: { brands?: number; activeBrands?: number; setupBrands?: number; sources?: number; readySources?: number; blockedSources?: number; publications30d?: number; published30d?: number; learningRules?: number; connectedChannels?: number }; brands?: PortfolioBrand[] };
 type SourceState<T> = { data: T | null; error: string | null };
 
 function countApprovals(data: ApprovalPayload | null) {
@@ -40,6 +33,7 @@ export default function NexusOsPage() {
   const [books, setBooks] = useState<SourceState<BookPayload>>({ data: null, error: null });
   const [approvals, setApprovals] = useState<SourceState<ApprovalPayload>>({ data: null, error: null });
   const [agents, setAgents] = useState<SourceState<AgentPayload>>({ data: null, error: null });
+  const [portfolio, setPortfolio] = useState<SourceState<PortfolioPayload>>({ data: null, error: null });
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -54,18 +48,20 @@ export default function NexusOsPage() {
         return { data: null, error: e instanceof Error ? e.message : String(e) };
       }
     };
-    const [m, b, a, ag] = await Promise.all([
+    const [m, b, a, ag, p] = await Promise.all([
       fetchOne<MarketingPayload>("/api/marketing/readiness"),
       fetchOne<BookPayload>("/api/book-growth/overview"),
       fetchOne<ApprovalPayload>("/api/approvals"),
       fetchOne<AgentPayload>("/api/agents"),
+      fetchOne<PortfolioPayload>("/api/nexus/portfolio"),
     ]);
-    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setLoading(false);
+    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setPortfolio(p); setLoading(false);
   };
 
   useEffect(() => { void load(); }, []);
 
   const readinessRows = marketing.data?.rows ?? [];
+  const portfolioByBrand = useMemo(() => new Map((portfolio.data?.brands ?? []).map((b) => [b.brand_id, b])), [portfolio.data]);
   const attention = useMemo(() => {
     const rows: Array<{ level: "high" | "medium" | "info"; title: string; text: string; href: string }> = [];
     const approvalCount = countApprovals(approvals.data);
@@ -73,28 +69,32 @@ export default function NexusOsPage() {
     if (marketing.data?.controlGate?.status === "WAIT") rows.push({ level: "medium", title: "Social learning gate venter", text: marketing.data.controlGate.reason || "Instagram-kontrollkanalen trenger mer data før neste canary.", href: "/social-automation" });
     const pendingBooks = Number(books.data?.summary?.pendingRecommendations ?? 0);
     if (pendingBooks > 0) rows.push({ level: "medium", title: `${pendingBooks} Book Growth-forslag venter`, text: "Forslag er ikke applied før eksplisitt godkjenning og apply.", href: "/book-growth" });
-    for (const src of [marketing, books, approvals, agents]) if (src.error) rows.push({ level: "high", title: "Datakilde feiler", text: src.error, href: "/data-health" });
+    const blockedSources = Number(portfolio.data?.summary?.blockedSources ?? 0);
+    if (blockedSources > 0) rows.push({ level: "medium", title: `${blockedSources} markedsføringskilder er blokkert`, text: "Nexus har kilder som krever tilkobling/synkronisering før de kan brukes i kampanjeproduksjon.", href: "/social-automation" });
+    for (const src of [marketing, books, approvals, agents, portfolio]) if (src.error) rows.push({ level: "high", title: "Datakilde feiler", text: src.error, href: "/data-health" });
     if (!rows.length) rows.push({ level: "info", title: "Ingen kritiske varsler", text: "Nexus har ingen åpne høyrisiko-signaler fra de tilknyttede kontrollflatene.", href: "/today" });
     return rows;
-  }, [marketing, books, approvals, agents]);
+  }, [marketing, books, approvals, agents, portfolio]);
 
   return <div className="mx-auto max-w-[1600px] space-y-6 p-6">
     <header className="rounded-3xl border border-cyan-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-7 text-white shadow-2xl">
       <div className="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Nexus OS · Master Control Layer</div>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-        <div><h1 className="text-4xl font-black tracking-tight">Nexus OS</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Overordnet kontrollsenter for hele RealtyFlow: brands, publisering, annonser, AI-agenter, approvals, måling og læring. Underliggende moduler utfører arbeidet; Nexus viser hva som kjører, hva som er blokkert og hva som bør gjøres først.</p></div>
+        <div><h1 className="text-4xl font-black tracking-tight">Nexus OS</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Overordnet kontrollsenter for hele RealtyFlow: brands, kilder, publisering, annonser, AI-agenter, approvals, måling og læring. Underliggende moduler utfører arbeidet; Nexus viser hva som kjører, hva som er blokkert og hva som bør gjøres først.</p></div>
         <button onClick={load} disabled={loading} className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-60">{loading ? "Oppdaterer…" : "Oppdater Nexus"}</button>
       </div>
     </header>
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Link href="/social-automation" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">SOCIAL GROWTH</div><div className="mt-2 text-3xl font-black">{readinessRows.filter(r => r.connected).length}</div><div className="text-sm text-slate-500">tilkoblede brand-kanaler</div></Link>
-      <Link href="/book-growth" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">BOOK GROWTH</div><div className="mt-2 text-3xl font-black">{books.data?.summary?.totalBooks ?? "—"}</div><div className="text-sm text-slate-500">publiserte katalogtitler</div></Link>
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <Link href="/social-automation" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">CONNECTED</div><div className="mt-2 text-3xl font-black">{portfolio.data?.summary?.connectedChannels ?? readinessRows.filter(r => r.connected).length}</div><div className="text-sm text-slate-500">brand-kanaler</div></Link>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">SOURCES</div><div className="mt-2 text-3xl font-black">{portfolio.data?.summary?.sources ?? "—"}</div><div className="text-sm text-slate-500">verifiserte kilder</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">READY</div><div className="mt-2 text-3xl font-black">{portfolio.data?.summary?.readySources ?? "—"}</div><div className="text-sm text-slate-500">kampanjeklare kilder</div></div>
+      <Link href="/book-growth" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">BOOKS</div><div className="mt-2 text-3xl font-black">{books.data?.summary?.totalBooks ?? "—"}</div><div className="text-sm text-slate-500">publiserte titler</div></Link>
       <Link href="/approvals" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">APPROVALS</div><div className="mt-2 text-3xl font-black">{approvals.data ? countApprovals(approvals.data) : "—"}</div><div className="text-sm text-slate-500">venter kontroll</div></Link>
-      <Link href="/agents" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">AI AGENTS</div><div className="mt-2 text-3xl font-black">{agents.data?.agents?.length ?? "—"}</div><div className="text-sm text-slate-500">registrerte capabilities</div></Link>
+      <Link href="/agents" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-bold text-slate-500">AI AGENTS</div><div className="mt-2 text-3xl font-black">{agents.data?.agents?.length ?? "—"}</div><div className="text-sm text-slate-500">capabilities</div></Link>
     </section>
 
-    <section className="grid gap-5 xl:grid-cols-[1.05fr_1.95fr]">
+    <section className="grid gap-5 xl:grid-cols-[1fr_2fr]">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-xs font-black uppercase tracking-wider text-slate-400">Attention queue</div><h2 className="mt-1 text-xl font-black">Hva krever oppmerksomhet nå?</h2>
         <div className="mt-4 space-y-3">{attention.map((x, i) => <Link key={`${x.title}-${i}`} href={x.href} className={`block rounded-xl border p-4 ${x.level === "high" ? "border-rose-200 bg-rose-50" : x.level === "medium" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}><div className="font-black text-slate-900">{x.title}</div><div className="mt-1 text-sm text-slate-600">{x.text}</div></Link>)}</div>
@@ -107,26 +107,23 @@ export default function NexusOsPage() {
           const connected = rows.filter(r => r.connected).length;
           const live = rows.some(r => r.liveLearning);
           const blockers = rows.filter(r => r.pilotBlockReason).map(r => `${r.platform ?? "kanal"}: ${r.pilotBlockReason}`);
+          const p = portfolioByBrand.get(brand.id);
           return <div key={brand.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between gap-2"><div><div className="font-black text-slate-900">{brand.name}</div><a href={brand.website} target="_blank" rel="noreferrer" className="text-xs font-bold text-cyan-700">{brand.website.replace(/^https?:\/\//, "")}</a></div><StatusPill good={live || connected > 0} label={live ? "Live learning" : connected ? `${connected} connected` : "Connect"} /></div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-white p-2"><div className="text-lg font-black">{p?.sourceSummary.total ?? 0}</div><div className="text-[10px] text-slate-500">sources</div></div><div className="rounded-lg bg-white p-2"><div className="text-lg font-black text-emerald-700">{p?.sourceSummary.ready ?? 0}</div><div className="text-[10px] text-slate-500">ready</div></div><div className="rounded-lg bg-white p-2"><div className="text-lg font-black">{p?.learning.rules ?? 0}</div><div className="text-[10px] text-slate-500">rules</div></div></div>
             <div className="mt-3 text-xs text-slate-500">Plan: {brand.plannedChannels.join(" · ")}</div>
-            <div className="mt-2 text-xs text-slate-600">{brand.contentPillars?.slice(0, 3).join(" · ")}</div>
-            {blockers.length > 0 && <div className="mt-3 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">{blockers.slice(0, 2).join(" | ")}</div>}
+            <div className="mt-2 text-xs text-slate-600">{Object.entries(p?.sourceSummary.byType ?? {}).map(([k,v]) => `${k}:${v}`).join(" · ") || brand.contentPillars?.slice(0, 3).join(" · ")}</div>
+            {p && <div className="mt-2 text-[11px] text-slate-500">30d: {p.publications30d.published} published · {p.publications30d.draft} draft · {p.learning.actionable} actionable learning</div>}
+            {(p?.sourceSummary.blocked ?? 0) > 0 && <div className="mt-3 rounded-lg bg-rose-50 p-2 text-[11px] text-rose-800">{p?.sourceSummary.blocked} source(s) blocked</div>}
+            {blockers.length > 0 && <div className="mt-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">{blockers.slice(0, 2).join(" | ")}</div>}
           </div>;
         })}</div>
       </div>
     </section>
 
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-xs font-black uppercase tracking-wider text-slate-400">Autonomous growth lifecycle</div><h2 className="mt-1 text-xl font-black">Én læringssløyfe for alle brands</h2>
-      <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">{[
-        ["1", "Source", "Bøker, eiendommer, sanger, produkter, demosider"],
-        ["2", "Create", "Tekst, bilder, video, ads og CTA-varianter"],
-        ["3", "Approve", "Claims, brand, budsjett og publisering"],
-        ["4", "Publish", "SoMe, nettside, email og ads"],
-        ["5", "Measure", "Views, clicks, leads, sales og kost"],
-        ["6", "Learn", "Favor / avoid / timing / creative / CTA"],
-      ].map(([n,t,x]) => <div key={n} className="rounded-xl border border-slate-200 p-4"><div className="text-xs font-black text-cyan-700">{n}</div><div className="mt-1 font-black">{t}</div><div className="mt-2 text-xs leading-5 text-slate-500">{x}</div></div>)}</div>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-400">Autonomous growth lifecycle</div><h2 className="mt-1 text-xl font-black">Én læringssløyfe for alle brands</h2></div><Link href="/social-automation" className="text-sm font-black text-cyan-700">Åpne Growth operations →</Link></div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">{[["1", "Source", "Bøker, eiendommer, sanger, produkter, demosider"],["2", "Create", "Tekst, bilder, video, ads og CTA-varianter"],["3", "Approve", "Claims, brand, budsjett og publisering"],["4", "Publish", "SoMe, nettside, email og ads"],["5", "Measure", "Views, clicks, leads, sales og kost"],["6", "Learn", "Favor / avoid / timing / creative / CTA"]].map(([n,t,x]) => <div key={n} className="rounded-xl border border-slate-200 p-4"><div className="text-xs font-black text-cyan-700">{n}</div><div className="mt-1 font-black">{t}</div><div className="mt-2 text-xs leading-5 text-slate-500">{x}</div></div>)}</div>
     </section>
 
     <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
