@@ -48,3 +48,41 @@ test('classifies useful real-estate content features and requires pattern sample
   }));
   assert.ok(buildFeatureInsights(posts).some((insight) => insight.value === 'reel'));
 });
+
+test('autopilot posts expose hook CTA caption price and timing dimensions', () => {
+  const features = classifyContentFeatures({
+    id: 'p1',
+    brand_id: 'zeneco',
+    title: 'Villa i Finestrat',
+    description: 'Drømmer du om havutsikt? Pris €495.000. Kontakt oss for visning.',
+    published_at: '2026-08-24T20:20:00Z',
+    content_features: {
+      source: 'marketing_publish_executor_backfill',
+      genome: { hookType: 'question', ctaType: 'book_viewing', goal: 'lead_generation', format: 'reel' },
+    },
+  });
+  assert.equal(features.source, 'autopilot');
+  assert.equal(features.area, 'finestrat');
+  assert.equal(features.hook_type, 'question');
+  assert.equal(features.cta_type, 'book_viewing');
+  assert.equal(features.goal, 'lead_generation');
+  assert.equal(features.format, 'reel');
+  assert.equal(features.caption_length, 'short');
+  assert.equal(features.price_bucket, '400k_750k');
+  assert.equal(features.publish_hour_utc, '20');
+  assert.equal(features.daypart_utc, 'evening');
+});
+
+test('small feature groups stay directional rather than becoming reliable winners', () => {
+  const posts = Array.from({ length: 5 }, (_, index) => ({
+    id: `p${index}`, brand: 'zeneco', title: 'x', platform: 'instagram', publishedAt: null,
+    views: 500, reach: 500, impressions: 500, likes: 5, comments: 0, shares: 1, saves: 1,
+    interactions: 7, leads: 0, engagementRate: 0.014, shareRate: 0.002, saveRate: 0.002, leadRate: 0,
+    score: 30, confidence: 'medium' as const, comparisonWindow: '24h',
+    features: { hook_type: index < 2 ? 'question' : 'price', source: 'autopilot' },
+  }));
+  const insight = buildFeatureInsights(posts).find((item) => item.dimension === 'hook_type' && item.value === 'question');
+  assert.ok(insight);
+  assert.equal(insight?.sampleSize, 2);
+  assert.equal(insight?.confidence, 'directional');
+});
