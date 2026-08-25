@@ -19,6 +19,8 @@ export const REVENUE_EVENT_TYPES = [
   "viewing_scheduled",
   "viewing_completed",
   "offer_made",
+  "property_interested",
+  "property_not_for_me",
   "deal_won",
   "deal_lost",
   "commission_invoiced",
@@ -81,243 +83,65 @@ export interface RevenueEventInsertResult {
   error?: string;
 }
 
-export interface RevenueEventsSupabaseLike {
-  from(table: string): any;
+const FALLBACK_SOURCE_SYSTEM = "realtyflow";
+
+export function buildRevenueEventDedupeKey(parts: Array<string | number | null | undefined>) {
+  return parts
+    .filter((part) => part !== null && part !== undefined && String(part).trim() !== "")
+    .map((part) => String(part).trim().toLowerCase())
+    .join(":");
 }
 
-export const REVENUE_EVENT_LABELS: Record<RevenueEventType, string> = {
-  lead_created: "Lead opprettet",
-  contact_created: "Kontakt opprettet",
-  contact_updated: "Kontakt oppdatert",
-  qualified: "Lead kvalifisert",
-  work_item_created: "Oppgave opprettet",
-  email_received: "E-post mottatt",
-  email_analyzed: "E-post analysert",
-  profile_created: "Kjøperprofil opprettet",
-  profile_approved: "Kjøperprofil godkjent",
-  shortlist_created: "Shortlist opprettet",
-  presentation_created: "Presentasjon opprettet",
-  draft_created: "Utkast opprettet",
-  message_approved: "Melding godkjent",
-  message_sent: "Melding sendt",
-  followup_scheduled: "Oppfølging planlagt",
-  followup_completed: "Oppfølging fullført",
-  meeting_booked: "Møte booket",
-  viewing_scheduled: "Visning planlagt",
-  viewing_completed: "Visning fullført",
-  offer_made: "Bud/tilbud gitt",
-  deal_won: "Salg vunnet",
-  deal_lost: "Salg tapt",
-  commission_invoiced: "Provisjon fakturert",
-  commission_paid: "Provisjon betalt",
-  nurture_step_sent: "Nurture-steg sendt",
-  automation_recommended: "Automasjon anbefalte handling",
-  automation_executed: "Automasjon utførte handling",
-  data_quality_fixed: "Datakvalitet rettet",
-  note: "Notat",
-};
+export function normalizeRevenueEventInput(input: RevenueEventInput): RevenueEventPayload {
+  const occurredAt = input.occurredAt instanceof Date
+    ? input.occurredAt.toISOString()
+    : input.occurredAt || new Date().toISOString();
 
-function clean(value: unknown) {
-  const output = String(value || "").trim();
-  return output || null;
-}
-
-function iso(value: string | Date | null | undefined) {
-  if (!value) return new Date().toISOString();
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-}
-
-function numberOrNull(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export function isRevenueEventType(value: unknown): value is RevenueEventType {
-  return REVENUE_EVENT_TYPES.includes(value as RevenueEventType);
-}
-
-export function isRevenueActorType(value: unknown): value is RevenueActorType {
-  return REVENUE_ACTOR_TYPES.includes(value as RevenueActorType);
-}
-
-export function normalizeRevenueEvent(input: RevenueEventInput): RevenueEventPayload {
-  if (!isRevenueEventType(input.eventType)) throw new Error(`Unsupported revenue event type: ${String(input.eventType)}`);
-  const actorType = input.actorType && isRevenueActorType(input.actorType) ? input.actorType : "system";
-  const confidence = numberOrNull(input.confidenceScore);
-  const revenueImpact = numberOrNull(input.revenueImpactEur);
   return {
     event_type: input.eventType,
-    title: clean(input.title) || REVENUE_EVENT_LABELS[input.eventType],
-    description: clean(input.description),
-    contact_id: clean(input.contactId),
-    brand_id: clean(input.brandId),
-    source_system: clean(input.sourceSystem) || "manual",
-    source_type: clean(input.sourceType),
-    source_id: clean(input.sourceId),
-    actor_type: actorType,
-    actor_id: clean(input.actorId),
-    confidence_score: confidence === null ? null : Math.max(0, Math.min(100, Math.round(confidence))),
-    revenue_impact_eur: revenueImpact,
-    occurred_at: iso(input.occurredAt),
-    dedupe_key: clean(input.dedupeKey),
-    metadata: input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata) ? input.metadata : {},
-    created_by: clean(input.createdBy),
+    title: input.title?.trim() || input.eventType.replaceAll("_", " "),
+    description: input.description?.trim() || null,
+    contact_id: input.contactId?.trim() || null,
+    brand_id: input.brandId?.trim() || null,
+    source_system: input.sourceSystem?.trim() || FALLBACK_SOURCE_SYSTEM,
+    source_type: input.sourceType?.trim() || null,
+    source_id: input.sourceId?.trim() || null,
+    actor_type: input.actorType || "system",
+    actor_id: input.actorId?.trim() || null,
+    confidence_score: input.confidenceScore ?? null,
+    revenue_impact_eur: input.revenueImpactEur ?? null,
+    occurred_at: occurredAt,
+    dedupe_key: input.dedupeKey?.trim() || null,
+    metadata: input.metadata || {},
+    created_by: input.createdBy?.trim() || null,
   };
 }
 
-export function isRevenueEventsTableMissing(message?: string | null) {
-  return /revenue_events|schema cache|does not exist|relation/i.test(String(message || ""));
-}
-
-const REVENUE_TO_TOUCH: Partial<Record<RevenueEventType, "lead_created" | "qualified" | "viewing" | "offer" | "sale">> = {
-  lead_created: "lead_created",
-  qualified: "qualified",
-  viewing_completed: "viewing",
-  offer_made: "offer",
-  deal_won: "sale",
-};
-
-async function resolveContactUtmContext(
-  supabase: RevenueEventsSupabaseLike,
-  contactId: string,
-  brandId: string,
-): Promise<Record<string, unknown> | null> {
-  const { data: contact } = await supabase
-    .from("contacts")
-    .select("interactions")
-    .eq("id", contactId)
-    .maybeSingle();
-  const interactions = Array.isArray(contact?.interactions) ? contact.interactions : [];
-  for (const interaction of interactions) {
-    if (clean(interaction?.brand_id) !== brandId) continue;
-    const metadata = interaction?.metadata && typeof interaction.metadata === "object" ? interaction.metadata : {};
-    const utmContent = clean((metadata as any).utm_content);
-    if (utmContent) return metadata as Record<string, unknown>;
-  }
-  return null;
-}
-
-async function mirrorRevenueEventToMarketingTouchpoint(
-  supabase: RevenueEventsSupabaseLike,
-  event: Record<string, any>,
-): Promise<void> {
-  const eventType = event?.event_type as RevenueEventType;
-  const publicLeadRepeat = eventType === "contact_updated" && clean(event?.source_system) === "public_leads";
-  const touchType: "lead_created" | "form_submit" | "qualified" | "viewing" | "offer" | "sale" | undefined =
-    REVENUE_TO_TOUCH[eventType] ?? (publicLeadRepeat ? "form_submit" : undefined);
-  const brandId = clean(event?.brand_id);
-  const contactId = clean(event?.contact_id);
-  if (!touchType || !brandId || !contactId) return;
-
-  const eventMetadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
-  const contactUtm = clean((eventMetadata as any).utm_content)
-    ? null
-    : await resolveContactUtmContext(supabase, contactId, brandId).catch(() => null);
-  const metadata = { ...(contactUtm ?? {}), ...eventMetadata } as Record<string, unknown>;
-  const utmContent = clean((metadata as any).utm_content) || clean((metadata as any).content_id);
-
-  let context: any = null;
-  if (utmContent) {
-    const { data: verified } = await supabase
-      .from("marketing_content")
-      .select("content_id, brand_id")
-      .eq("content_id", utmContent)
-      .eq("brand_id", brandId)
-      .maybeSingle();
-    if (verified?.content_id) {
-      context = {
-        content_id: String(verified.content_id),
-        publication_id: clean((metadata as any).publication_id),
-        campaign_id: clean((metadata as any).utm_campaign) || clean((metadata as any).campaign_id),
-        creative_variant_id: null,
-        visitor_id: clean((metadata as any).visitor_id),
-        channel: clean((metadata as any).utm_source) || clean((metadata as any).channel),
-      };
-    }
-  }
-
-  if (!context) {
-    const { data: prior } = await supabase
-      .from("marketing_touchpoints")
-      .select("content_id, publication_id, campaign_id, creative_variant_id, visitor_id, channel, occurred_at")
-      .eq("brand_id", brandId)
-      .eq("contact_id", contactId)
-      .order("occurred_at", { ascending: false })
-      .limit(20);
-    context = (prior ?? []).find((row: any) => row?.content_id) ?? null;
-  }
-  if (!context?.content_id) return;
-
-  const explicitCommission = eventType === "deal_won" ? numberOrNull((metadata as any).commission_eur) : null;
-  const revenueEventId = clean(event?.id) || clean(event?.dedupe_key) || `${eventType}:${event?.occurred_at}`;
-  const dedupeKey = `revenue|${brandId}|${revenueEventId}|${touchType}`;
-
-  const { error } = await supabase.from("marketing_touchpoints").upsert({
-    dedupe_key: dedupeKey,
-    brand_id: brandId,
-    content_id: context.content_id,
-    publication_id: context.publication_id ?? null,
-    campaign_id: context.campaign_id ?? null,
-    creative_variant_id: context.creative_variant_id ?? null,
-    visitor_id: context.visitor_id ?? null,
-    contact_id: contactId,
-    channel: context.channel ?? null,
-    touch_type: touchType,
-    occurred_at: event?.occurred_at ?? new Date().toISOString(),
-    confidence: "exact",
-    commission_eur: explicitCommission,
-    metadata: {
-      source: "revenue_events",
-      revenue_event_id: clean(event?.id),
-      revenue_event_type: eventType,
-      revenue_source_system: clean(event?.source_system),
-      attribution_context: utmContent && context?.content_id === utmContent ? "verified_utm_content" : "prior_touchpoint",
-    },
-  }, { onConflict: "dedupe_key", ignoreDuplicates: true });
-  if (error) throw new Error(`MARKETING_REVENUE_BRIDGE_FAILED: ${error.message}`);
+function isMissingRevenueEventsTable(message?: string | null) {
+  const value = String(message || "").toLowerCase();
+  return value.includes("revenue_events") && (value.includes("does not exist") || value.includes("schema cache"));
 }
 
 export async function insertRevenueEvent(
-  supabase: RevenueEventsSupabaseLike,
+  supabase: { from: (table: string) => any },
   input: RevenueEventInput,
 ): Promise<RevenueEventInsertResult> {
-  const payload = normalizeRevenueEvent(input);
-  try {
-    const { data, error } = await supabase.from("revenue_events").insert(payload).select("*").single();
-    if (!error) {
-      await mirrorRevenueEventToMarketingTouchpoint(supabase, data || payload).catch(() => undefined);
-      return { ok: true, event: data || null, duplicate: false };
-    }
-    if (error.code === "23505" && payload.dedupe_key) {
-      const existing = await supabase.from("revenue_events").select("*").eq("dedupe_key", payload.dedupe_key).maybeSingle();
-      if (!existing.error && existing.data) {
-        await mirrorRevenueEventToMarketingTouchpoint(supabase, existing.data).catch(() => undefined);
-        return { ok: true, event: existing.data, duplicate: true };
-      }
-    }
-    return { ok: false, error: error.message || "Could not insert revenue event", tableNotReady: isRevenueEventsTableMissing(error.message) };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Could not insert revenue event" };
+  const payload = normalizeRevenueEventInput(input);
+  const { data, error } = await supabase
+    .from("revenue_events")
+    .insert(payload)
+    .select("*")
+    .maybeSingle();
+
+  if (!error) return { ok: true, event: data ?? null };
+
+  if (payload.dedupe_key && String(error.code || "") === "23505") {
+    return { ok: true, duplicate: true };
   }
-}
 
-export function buildRevenueEventDedupeKey(parts: Array<string | null | undefined>) {
-  const key = parts.map((part) => String(part || "").trim().toLowerCase()).filter(Boolean).join(":")
-    .replace(/[^a-z0-9:_-]+/g, "-").replace(/-+/g, "-").slice(0, 240);
-  return key || null;
-}
+  if (isMissingRevenueEventsTable(error.message)) {
+    return { ok: false, tableNotReady: true, error: error.message };
+  }
 
-export function summarizeRevenueEvents(events: Array<Record<string, any>>) {
-  const total = events.length;
-  const byType = events.reduce<Record<string, number>>((acc, event) => {
-    const type = String(event.event_type || "unknown");
-    acc[type] = (acc[type] || 0) + 1;
-    return acc;
-  }, {});
-  const revenueImpactEur = events.reduce((sum, event) => sum + (numberOrNull(event.revenue_impact_eur) || 0), 0);
-  const latestAt = events.map((event) => new Date(String(event.occurred_at || event.created_at || "")).getTime())
-    .filter(Number.isFinite).sort((a, b) => b - a)[0];
-  return { total, byType, revenueImpactEur, latestAt: latestAt ? new Date(latestAt).toISOString() : null };
+  return { ok: false, error: error.message || "Revenue event insert failed" };
 }
