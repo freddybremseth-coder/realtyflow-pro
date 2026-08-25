@@ -356,6 +356,7 @@ export function Sidebar() {
           )}
         </label>
       </div>
+
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {!user && <div className="px-3 py-4 text-xs text-slate-600">Laster tilgang…</div>}
 
