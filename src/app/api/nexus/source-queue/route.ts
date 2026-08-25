@@ -9,6 +9,7 @@ function goalFor(sourceType: string) {
   if (sourceType === "property") return "leads" as const;
   if (sourceType === "book") return "sales" as const;
   if (sourceType === "demo_site") return "leads" as const;
+  if (sourceType === "song") return "awareness" as const;
   return "awareness" as const;
 }
 
@@ -22,6 +23,9 @@ function masterIdea(source: any) {
   }
   if (source.source_type === "demo_site") {
     return `Promote the ChatGenius.pro demo site "${source.title}" as an example for a small business that needs an affordable professional website. CTA: view demo or request a website. Verify features/pricing before making claims.`;
+  }
+  if (source.source_type === "song") {
+    return `Promote the Re-Master Freddy song "${source.title}" using its verified song metadata and existing YouTube URL ${p.youtube_url || source.source_url || ""}. Goal: qualified YouTube views, subscribers and social follows. Use the existing artwork when available. Do not invent streaming numbers, chart positions, reviews or ownership claims.`;
   }
   if (source.brand_id === "donaanna") {
     return `Create Doña Anna content that sends relevant users to donaanna.com. Focus on olive oil, farm, harvest, origin, food use or Mediterranean agriculture. Avoid medical/health claims unless independently verified.`;
@@ -83,13 +87,21 @@ export async function POST(request: NextRequest) {
   if (!channelRows?.length) return NextResponse.json({ error: `CHANNEL_NOT_CONNECTED: ${source.brand_id}/${requestedChannel}` }, { status: 409 });
 
   try {
+    const mediaUrl = source.source_type === "book"
+      ? source.payload?.cover_image_url || undefined
+      : source.source_type === "property"
+        ? source.payload?.primary_image || undefined
+        : source.source_type === "song"
+          ? source.payload?.thumbnail_url || source.payload?.image_url || undefined
+          : undefined;
+
     const result = await createCampaignDraft(supabase, {
       brandId: String(source.brand_id),
       masterIdea: masterIdea(source),
       goal: { kind: goalFor(String(source.source_type)), target: 10, horizonDays: 30 },
       channel: requestedChannel as "instagram" | "facebook",
       language: source.payload?.language || undefined,
-      mediaUrl: source.source_type === "book" ? source.payload?.cover_image_url || undefined : source.source_type === "property" ? source.payload?.primary_image || undefined : undefined,
+      mediaUrl,
       useInventoryProperty: source.source_type === "property",
       propertyId: source.source_type === "property" ? String(source.source_id) : undefined,
       focus: source.source_type === "property" ? source.payload?.location || undefined : undefined,
