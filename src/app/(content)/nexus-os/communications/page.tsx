@@ -46,7 +46,7 @@ export default function NexusCommunicationsPage(){
 
   const brands=useMemo(()=>Array.from(new Set((data?.inbox||[]).map(x=>x.brand_id))).sort(),[data]);
   const rows=useMemo(()=>brand==="all"?(data?.inbox||[]):(data?.inbox||[]).filter(x=>x.brand_id===brand),[data,brand]);
-  const runtime=(key:string)=>data?.runtime.find((x:any)=>x.flag_key===key)?.enabled;
+  const runtime=(key:string)=>data?.runtime.find((x:any)=>x.control_key===key)?.enabled;
 
   return <div className="mx-auto max-w-[1500px] space-y-6 p-4 sm:p-6">
     <header className="rounded-3xl border border-cyan-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-xl">
@@ -71,9 +71,9 @@ export default function NexusCommunicationsPage(){
     </section>
 
     <section className="grid gap-3 lg:grid-cols-3">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Email ingest</div><div className={`mt-2 text-lg font-black ${runtime("email_ingest")?"text-emerald-700":"text-slate-500"}`}>{runtime("email_ingest")?"PÅ":"AV"}</div><Link href="/nexus-os/runtime" className="mt-3 inline-block text-sm font-bold text-cyan-700">Endre i Runtime Controls →</Link></div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Nurture LIVE</div><div className={`mt-2 text-lg font-black ${runtime("nurture_live")?"text-emerald-700":"text-slate-500"}`}>{runtime("nurture_live")?"PÅ":"AV / dry-run"}</div><div className="mt-2 text-sm text-slate-500">Dry-run siste 30d: {data?.summary?.nurture30d?.dryRun??0}</div></div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Routine auto-reply</div><div className={`mt-2 text-lg font-black ${runtime("routine_email_reply_live")?"text-emerald-700":"text-slate-500"}`}>{runtime("routine_email_reply_live")?"PÅ":"AV"}</div><div className="mt-2 text-sm text-slate-500">AI-analyse og draft kan brukes selv om sending er av.</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Email ingest</div><div className={`mt-2 text-lg font-black ${runtime("cron:/api/cron/email-ingest")?"text-emerald-700":"text-slate-500"}`}>{runtime("cron:/api/cron/email-ingest")?"PÅ":"AV"}</div><Link href="/nexus-os/runtime" className="mt-3 inline-block text-sm font-bold text-cyan-700">Endre i Runtime Controls →</Link></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Nurture LIVE</div><div className={`mt-2 text-lg font-black ${runtime("feature:nurture_live")?"text-emerald-700":"text-slate-500"}`}>{runtime("feature:nurture_live")?"PÅ":"AV / dry-run"}</div><div className="mt-2 text-sm text-slate-500">Dry-run siste 30d: {data?.summary?.nurture30d?.dryRun??0}</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="text-xs font-black uppercase text-slate-500">Routine auto-reply</div><div className={`mt-2 text-lg font-black ${runtime("feature:routine_email_reply_live")?"text-emerald-700":"text-slate-500"}`}>{runtime("feature:routine_email_reply_live")?"PÅ":"AV"}</div><div className="mt-2 text-sm text-slate-500">AI-analyse og draft kan brukes selv om sending er av.</div></div>
     </section>
 
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
