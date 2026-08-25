@@ -18,6 +18,14 @@ const styleSchema = z.enum([
 ]);
 const overlaySchema = z.enum(["none", "suggestions", "automatic"]);
 const ratioSchema = z.enum(["1:1", "4:5", "9:16", "16:9", "1.91:1"]);
+const growthGoalSchema = z.enum([
+  "unspecified",
+  "lead_generation",
+  "follower_growth",
+  "direct_sales",
+  "retargeting",
+  "awareness",
+]);
 
 const createCampaignSchema = z.object({
   brand_id: z.string().max(80).nullable().optional(),
@@ -29,6 +37,9 @@ const createCampaignSchema = z.object({
   audience_segments: z.array(z.string().trim().min(1).max(180)).max(30).default([]),
   brand_voice: z.string().max(1_000).nullable().optional(),
   funnel_stage: z.string().max(80).default("cold"),
+  growth_goal: growthGoalSchema.default("lead_generation"),
+  optimization_event: z.string().trim().max(80).nullable().optional(),
+  default_language: z.string().trim().max(32).nullable().optional(),
   offer: z.string().max(500).nullable().optional(),
   off_limits: z.string().max(2_000).nullable().optional(),
   total_creatives: z.number().int().min(5).max(50).default(50),
@@ -85,6 +96,9 @@ export async function POST(req: NextRequest) {
         audience_segments: parsed.audience_segments,
         brand_voice: parsed.brand_voice || null,
         funnel_stage: parsed.funnel_stage,
+        growth_goal: parsed.growth_goal,
+        optimization_event: parsed.optimization_event || null,
+        default_language: parsed.default_language || null,
         offer: parsed.offer || null,
         off_limits: parsed.off_limits || null,
         status: "draft",
@@ -100,6 +114,7 @@ export async function POST(req: NextRequest) {
         provider_strategy: {
           mode: provider,
           requestedTotal: total,
+          growthGoal: parsed.growth_goal,
           createdAt: new Date().toISOString(),
         },
       })
