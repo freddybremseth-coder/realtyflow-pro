@@ -19,6 +19,6 @@ export async function resolveBrandInstagramAccessToken(brandId: string): Promise
   return {
     accessToken,
     channelId: String(channel.id),
-    accountId: String(channel.externalId ?? ""),
+    accountId: String(channel.external_id ?? ""),
   };
 }
