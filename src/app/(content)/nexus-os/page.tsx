@@ -9,6 +9,10 @@ type MarketingPayload = { controlGate?: { status?: string; reason?: string }; ro
 type BookPayload = { summary?: { totalBooks?: number; pendingRecommendations?: number; approvedRecommendations?: number; appliedRecommendations?: number; booksWithEconomicData?: number; asinLinkedBooks?: number } };
 type ApprovalPayload = { summary?: Record<string, number>; items?: unknown[] };
 type AgentPayload = { agents?: unknown[]; providers?: unknown[] };
+type AttentionPayload = {
+  sourceState?: { healthy?: boolean; errors?: Array<{ source: string; message: string; href: string }> };
+  attention?: Array<{ id: string; severity: "high" | "medium" | "low"; score: number; title: string; detail: string; href: string; source: string }>;
+};
 type PortfolioBrand = {
   brand_id: string; website: string; status: string; autonomy_mode: string; planned_channels: string[]; conversion_goals: string[]; primary_ctas: string[];
   sourceSummary: { total: number; ready: number; blocked: number; drafted: number; byType: Record<string, number>; byStatus: Record<string, number> };
@@ -34,6 +38,7 @@ export default function NexusOsPage() {
   const [approvals, setApprovals] = useState<SourceState<ApprovalPayload>>({ data: null, error: null });
   const [agents, setAgents] = useState<SourceState<AgentPayload>>({ data: null, error: null });
   const [portfolio, setPortfolio] = useState<SourceState<PortfolioPayload>>({ data: null, error: null });
+  const [attentionSource, setAttentionSource] = useState<SourceState<AttentionPayload>>({ data: null, error: null });
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -48,39 +53,29 @@ export default function NexusOsPage() {
         return { data: null, error: e instanceof Error ? e.message : String(e) };
       }
     };
-    const [m, b, a, ag, p] = await Promise.all([
+    const [m, b, a, ag, p, os] = await Promise.all([
       fetchOne<MarketingPayload>("/api/marketing/readiness"),
       fetchOne<BookPayload>("/api/book-growth/overview"),
       fetchOne<ApprovalPayload>("/api/approvals"),
       fetchOne<AgentPayload>("/api/agents"),
       fetchOne<PortfolioPayload>("/api/nexus/portfolio"),
+      fetchOne<AttentionPayload>("/api/os/status"),
     ]);
-    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setPortfolio(p); setLoading(false);
+    setMarketing(m); setBooks(b); setApprovals(a); setAgents(ag); setPortfolio(p); setAttentionSource(os); setLoading(false);
   };
 
   useEffect(() => { void load(); }, []);
 
   const readinessRows = marketing.data?.rows ?? [];
   const portfolioByBrand = useMemo(() => new Map((portfolio.data?.brands ?? []).map((b) => [b.brand_id, b])), [portfolio.data]);
-  const attention = useMemo(() => {
-    const rows: Array<{ level: "high" | "medium" | "info"; title: string; text: string; href: string }> = [];
-    const approvalCount = countApprovals(approvals.data);
-    if (approvalCount > 0) rows.push({ level: "high", title: `${approvalCount} approvals venter`, text: "Handlinger som krever menneskelig kontroll bør gjennomgås først.", href: "/approvals" });
-    if (marketing.data?.controlGate?.status === "WAIT") rows.push({ level: "medium", title: "Social learning gate venter", text: marketing.data.controlGate.reason || "Instagram-kontrollkanalen trenger mer data før neste canary.", href: "/social-automation" });
-    const pendingBooks = Number(books.data?.summary?.pendingRecommendations ?? 0);
-    if (pendingBooks > 0) rows.push({ level: "medium", title: `${pendingBooks} Book Growth-forslag venter`, text: "Forslag er ikke applied før eksplisitt godkjenning og apply.", href: "/book-growth" });
-    const blockedSources = Number(portfolio.data?.summary?.blockedSources ?? 0);
-    if (blockedSources > 0) rows.push({ level: "medium", title: `${blockedSources} markedsføringskilder er blokkert`, text: "Nexus har kilder som krever tilkobling/synkronisering før de kan brukes i kampanjeproduksjon.", href: "/social-automation" });
-    for (const src of [marketing, books, approvals, agents, portfolio]) if (src.error) rows.push({ level: "high", title: "Datakilde feiler", text: src.error, href: "/data-health" });
-    if (!rows.length) rows.push({ level: "info", title: "Ingen kritiske varsler", text: "Nexus har ingen åpne høyrisiko-signaler fra de tilknyttede kontrollflatene.", href: "/today" });
-    return rows;
-  }, [marketing, books, approvals, agents, portfolio]);
+  const attention = attentionSource.data?.attention ?? [];
+  const secondarySourceErrors = [marketing, books, approvals, agents, portfolio].map((source) => source.error).filter((value): value is string => Boolean(value));
 
   return <div className="mx-auto max-w-[1600px] space-y-6 p-6">
     <header className="rounded-3xl border border-cyan-900/30 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-7 text-white shadow-2xl">
       <div className="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Nexus OS · Master Control Layer</div>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-        <div><h1 className="text-4xl font-black tracking-tight">Nexus OS</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Overordnet kontrollsenter for hele RealtyFlow: brands, kilder, publisering, annonser, AI-agenter, approvals, måling og læring. Underliggende moduler utfører arbeidet; Nexus viser hva som kjører, hva som er blokkert og hva som bør gjøres først.</p></div>
+        <div><h1 className="text-4xl font-black tracking-tight">Nexus OS</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Overordnet kontrollsenter for hele RealtyFlow: brands, kilder, publisering, annonser, AI-agenter, approvals, måling og læring. Underliggende moduler utfører arbeidet; canonical Attention Center bestemmer hva som bør gjøres først.</p></div>
         <button onClick={load} disabled={loading} className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-60">{loading ? "Oppdaterer…" : "Oppdater Nexus"}</button>
       </div>
     </header>
@@ -96,8 +91,9 @@ export default function NexusOsPage() {
 
     <section className="grid gap-5 xl:grid-cols-[1fr_2fr]">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-xs font-black uppercase tracking-wider text-slate-400">Attention queue</div><h2 className="mt-1 text-xl font-black">Hva krever oppmerksomhet nå?</h2>
-        <div className="mt-4 space-y-3">{attention.map((x, i) => <Link key={`${x.title}-${i}`} href={x.href} className={`block rounded-xl border p-4 ${x.level === "high" ? "border-rose-200 bg-rose-50" : x.level === "medium" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}><div className="font-black text-slate-900">{x.title}</div><div className="mt-1 text-sm text-slate-600">{x.text}</div></Link>)}</div>
+        <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-400">Canonical Attention</div><h2 className="mt-1 text-xl font-black">Hva krever oppmerksomhet nå?</h2></div><Link href="/os" className="text-xs font-black text-cyan-700">Åpne Attention Center →</Link></div>
+        {attentionSource.error ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900">Canonical Attention kan ikke leses: {attentionSource.error}</div> : <div className="mt-4 space-y-3">{attention.slice(0, 6).map((x) => <Link key={x.id} href={x.href} className={`block rounded-xl border p-4 ${x.severity === "high" ? "border-rose-200 bg-rose-50" : x.severity === "medium" ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-black uppercase tracking-wider text-slate-500">{x.source} · score {x.score}</div><div className="mt-1 font-black text-slate-900">{x.title}</div><div className="mt-1 text-sm text-slate-600">{x.detail}</div></div><span className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-black uppercase text-slate-600">{x.severity}</span></div></Link>)}{!loading && !attention.length && <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Ingen canonical Attention-items tilgjengelig.</div>}</div>}
+        {secondarySourceErrors.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><b>Andre Nexus-kilder:</b> {secondarySourceErrors.join(" · ")}. Disse vises separat og endrer ikke canonical prioriteringsrekkefølge.</div>}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
