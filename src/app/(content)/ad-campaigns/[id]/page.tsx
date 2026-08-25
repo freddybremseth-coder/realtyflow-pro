@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
+  BarChart3,
   CheckCircle2,
   FileText,
   Layers3,
@@ -212,6 +213,7 @@ export default function AdCampaignDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href={`/ad-campaigns/${id}/performance`}><Button variant="outline" className="gap-2"><BarChart3 className="h-4 w-4" />Creative Intelligence</Button></Link>
           <Link href="/ad-campaigns/new"><Button variant="outline">Ny kampanje</Button></Link>
           <Link href="/media-studio"><Button variant="outline" className="gap-2"><Library className="h-4 w-4" />Media Library</Button></Link>
         </div>
