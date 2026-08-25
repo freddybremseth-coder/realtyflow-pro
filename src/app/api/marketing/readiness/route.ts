@@ -7,6 +7,9 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
 
+const CONTROL_MATURITY_HOURS = 24;
+const CONTROL_REQUIRED_OBSERVATIONS = 10;
+
 type ReadinessRow = {
   brandId: string;
   brandName: string;
@@ -38,6 +41,37 @@ function blocker(params: { connected: boolean; brandBrainReady: boolean; planned
   return "Kanalen er ikke godkjent som Growth OS-pilot ennå.";
 }
 
+function nextDailyMetricsCronAfter(afterMs: number): number {
+  const after = new Date(afterMs);
+  let cron = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 19, 30, 0);
+  if (cron <= afterMs) cron += 86_400_000;
+  return cron;
+}
+
+function nextEvaluationAt(
+  published: Array<{ content_id?: unknown; updated_at?: unknown }>,
+  nowMs: number,
+  required = CONTROL_REQUIRED_OBSERVATIONS,
+): string | null {
+  let cronMs = nextDailyMetricsCronAfter(nowMs);
+  const maturityMs = CONTROL_MATURITY_HOURS * 3_600_000;
+  for (let i = 0; i < 8; i += 1) {
+    const matureBefore = cronMs - maturityMs;
+    const matureCount = new Set(
+      published
+        .filter((row) => {
+          const t = row.updated_at ? new Date(String(row.updated_at)).getTime() : NaN;
+          return Number.isFinite(t) && t <= matureBefore;
+        })
+        .map((row) => String(row.content_id ?? ""))
+        .filter(Boolean),
+    ).size;
+    if (matureCount >= required) return new Date(cronMs).toISOString();
+    cronMs += 86_400_000;
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -55,7 +89,7 @@ export async function GET(request: NextRequest) {
   const [{ data: contexts }, { data: channels }, { data: publications }, { data: events }, { data: rules }] = await Promise.all([
     supabase.from("brand_context").select("brand_id, brand_name").in("brand_id", brandIds),
     supabase.from("social_channels").select("brand_id, platform, external_id, display_name, is_active").in("brand_id", brandIds).eq("is_active", true),
-    supabase.from("marketing_publications").select("brand_id, channel, state").in("brand_id", brandIds).eq("state", "published"),
+    supabase.from("marketing_publications").select("brand_id, channel, state, content_id, updated_at").in("brand_id", brandIds).eq("state", "published"),
     supabase.from("marketing_events").select("brand_id, channel, content_id, metadata").in("brand_id", brandIds).eq("event_type", "metrics_snapshot"),
     supabase.from("marketing_learning_rules").select("scope, dimension, verdict").in("scope", ruleScopes),
   ]);
@@ -79,7 +113,7 @@ export async function GET(request: NextRequest) {
     const planned = Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
     const pilotReady = connected && brandBrainReady && isPilotChannel(brandId, platform);
     const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform });
-    const liveLearning = pilotReady && eligible >= 10 && evaluatedRules > 0;
+    const liveLearning = pilotReady && eligible >= CONTROL_REQUIRED_OBSERVATIONS && evaluatedRules > 0;
 
     return {
       brandId,
@@ -135,6 +169,7 @@ export async function GET(request: NextRequest) {
 
   const controlScope = channelLearningScope("zeneco", "instagram");
   const controlEvents = (events ?? []).filter((e: any) => String(e.brand_id) === "zeneco" && String(e.channel) === "instagram");
+  const controlPublished = (publications ?? []).filter((p: any) => String(p.brand_id) === "zeneco" && String(p.channel) === "instagram");
   const controlEligible = new Set(
     controlEvents
       .filter((e: any) => e?.metadata?.learning_eligible !== false)
@@ -144,21 +179,23 @@ export async function GET(request: NextRequest) {
   const controlRules = (rules ?? []).filter((r: any) => String(r.scope) === controlScope);
   const controlEvaluatedRules = controlRules.length;
   const controlActionableRules = controlRules.filter((r: any) => ["favor", "avoid"].includes(String(r.verdict))).length;
-  const controlValidated = controlEligible >= 10 && controlEvaluatedRules > 0;
+  const controlValidated = controlEligible >= CONTROL_REQUIRED_OBSERVATIONS && controlEvaluatedRules > 0;
   const controlGate = {
     status: controlValidated ? "RUN_NEXT_CANARY" : "WAIT",
     controlBrandId: "zeneco",
     controlChannel: "instagram",
     learningScope: controlScope,
     eligibleObservations: controlEligible,
-    requiredObservations: 10,
+    requiredObservations: CONTROL_REQUIRED_OBSERVATIONS,
+    maturityHours: CONTROL_MATURITY_HOURS,
     evaluatedRules: controlEvaluatedRules,
     actionableRules: controlActionableRules,
+    nextEvaluationAt: controlValidated ? null : nextEvaluationAt(controlPublished, Date.now()),
     nextRecommendedCanary: controlValidated
       ? { brandId: "zeneco", channel: "facebook", path: "/marketing-canary-facebook" }
       : null,
-    reason: controlEligible < 10
-      ? `WAIT_FOR_10_ELIGIBLE_INSTAGRAM_OBSERVATIONS (${controlEligible}/10)`
+    reason: controlEligible < CONTROL_REQUIRED_OBSERVATIONS
+      ? `WAIT_FOR_10_ELIGIBLE_INSTAGRAM_OBSERVATIONS (${controlEligible}/${CONTROL_REQUIRED_OBSERVATIONS})`
       : controlEvaluatedRules === 0
         ? "WAIT_FOR_CHANNEL_LEARNING_EVALUATION"
         : "RUN_ZENECO_FACEBOOK_CANARY",
