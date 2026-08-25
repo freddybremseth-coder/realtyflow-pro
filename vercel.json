@@ -17,6 +17,10 @@
       "schedule": "0 10 * * 6"
     },
     {
+      "path": "/api/cron/email-ingest",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/market-data",
       "schedule": "0 14 * * *"
     },
