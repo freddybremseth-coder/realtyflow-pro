@@ -65,12 +65,21 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
 
   const { data: existingDraft } = await supabase
     .from("email_drafts")
-    .select("id")
+    .select("id,ai_context")
     .eq("email_message_id", emailId)
     .eq("status", "draft")
     .order("created_at", { ascending:false })
     .limit(1)
     .maybeSingle();
+
+  const originalDraft = {
+    subject: result.draftReply.subject,
+    body_text: result.draftReply.body_text,
+    tone: result.draftReply.tone,
+    language: result.draftReply.language,
+    confidence: result.draftReply.confidence,
+    generated_at: new Date().toISOString(),
+  };
 
   const draftPayload = {
     email_message_id: emailId,
@@ -80,7 +89,13 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
     body_text: result.draftReply.body_text,
     body_html: result.draftReply.body_html || null,
     ai_model: "claude-sonnet-4",
-    ai_context: { analysis: result.analysis, context_match: result.contextMatch, properties_mentioned: result.draftReply.properties_mentioned },
+    ai_context: {
+      analysis: result.analysis,
+      context_match: result.contextMatch,
+      properties_mentioned: result.draftReply.properties_mentioned,
+      original_draft: existingDraft?.ai_context?.original_draft || originalDraft,
+      latest_ai_draft: originalDraft,
+    },
     ai_confidence: result.draftReply.confidence,
     tone: result.draftReply.tone,
     language: result.draftReply.language,
@@ -92,6 +107,20 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
     : supabase.from("email_drafts").insert(draftPayload).select().single();
   const { data: draft, error: draftError } = await draftQuery;
   if (draftError) throw new Error(`Draft save failed: ${draftError.message}`);
+
+  await supabase.from("nexus_communication_learning_observations").insert({
+    brand_id: email.brand_id,
+    email_message_id: emailId,
+    draft_id: draft.id,
+    event_type: "draft_created",
+    ai_confidence: result.draftReply.confidence,
+    original_subject: originalDraft.subject,
+    original_body: originalDraft.body_text,
+    final_subject: originalDraft.subject,
+    final_body: originalDraft.body_text,
+    edit_ratio: 0,
+    metadata: { tone: originalDraft.tone, language: originalDraft.language, intent: result.analysis.intent, urgency: result.analysis.urgency },
+  }).then(() => {}).then(undefined, () => {});
 
   return { emailId, brandId: email.brand_id, analysis: result.analysis, context_match: result.contextMatch, draft };
 }
