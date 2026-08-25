@@ -29,8 +29,10 @@ type ControlGate = {
   learningScope: string;
   eligibleObservations: number;
   requiredObservations: number;
+  maturityHours: number;
   evaluatedRules: number;
   actionableRules: number;
+  nextEvaluationAt: string | null;
   nextRecommendedCanary: { brandId: string; channel: string; path: string } | null;
   reason: string;
 };
@@ -54,6 +56,19 @@ const statusStyle = (status: string): React.CSSProperties => ({
   background: status === "LIVE_LEARNING" ? "#dcfce7" : status === "PILOT_READY" ? "#dbeafe" : status === "BRAND_BRAIN_READY" ? "#fef3c7" : "#f1f5f9",
   color: status === "LIVE_LEARNING" ? "#166534" : status === "PILOT_READY" ? "#1d4ed8" : status === "BRAND_BRAIN_READY" ? "#92400e" : "#475569",
 });
+
+function formatLocal(value: string | null | undefined) {
+  if (!value) return "—";
+  try {
+    return new Intl.DateTimeFormat("nb-NO", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Europe/Madrid",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
 
 export default function MarketingReadinessPage() {
   const [data, setData] = useState<Payload | null>(null);
@@ -99,6 +114,9 @@ export default function MarketingReadinessPage() {
             <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
               Control: {gate.learningScope} · eligible {gate.eligibleObservations}/{gate.requiredObservations} · evaluated rules {gate.evaluatedRules} · actionable {gate.actionableRules}
             </div>
+            {!runCanary && gate.nextEvaluationAt && <div style={{ marginTop: 5, color: "#92400e", fontSize: 13, fontWeight: 700 }}>
+              Neste relevante vurdering: {formatLocal(gate.nextEvaluationAt)} (Spania)
+            </div>}
             <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>{gate.reason}</div>
           </div>
           {runCanary && <a href={gate.nextRecommendedCanary!.path} style={{ display: "inline-block", padding: "10px 14px", borderRadius: 9, background: "#166534", color: "white", fontWeight: 800, textDecoration: "none" }}>
