@@ -30,10 +30,13 @@ test("owner navigation promotes Nexus OS as the master automation work area", ()
     ["/", "/today", "/internal-alerts", "/approvals", "/communications"],
   );
   assert.deepEqual(
-    sections.find((section) => section.id === "os")?.items.slice(0, 4).map((item) => item.href),
-    ["/nexus-os", "/connections", "/social-automation", "/book-growth"],
+    sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
+    ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy"],
   );
-  assert.equal(sections.find((section) => section.id === "customers")?.items.some((item) => item.href === "/nexus"), true);
+  assert.equal(sections.find((section) => section.id === "os")?.items.some((item) => item.href === "/connections"), true);
+  assert.equal(sections.find((section) => section.id === "os")?.items.some((item) => item.href === "/book-growth"), true);
+  assert.equal(sections.find((section) => section.id === "customers")?.items.some((item) => item.href === "/nexus"), false);
+  assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/social-automation"), true);
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/marketing-readiness"), true);
   assert.equal(sections.find((section) => section.id === "content")?.items.some((item) => item.href === "/posts"), true);
   assert.equal(sections.find((section) => section.id === "publishing")?.items.some((item) => item.href === "/publishing"), true);
@@ -56,21 +59,25 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
   assert.equal(activeNavigationSection("/book-growth/economics", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/director", sections), "os");
+  assert.equal(activeNavigationSection("/nexus-os/communications/social", sections), "os");
   assert.equal(activeNavigationSection("/connections", sections), "os");
-  assert.equal(activeNavigationSection("/nexus", sections), "customers");
   assert.equal(activeNavigationSection("/continuous-improvement", sections), "reports");
 });
 
-test("menu search finds OS surfaces by label", () => {
+test("menu search finds OS and growth surfaces by label", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const social = filterNavigationSections(sections, "Instagram");
   assert.equal(social.length, 1);
-  assert.equal(social[0]?.id, "os");
+  assert.equal(social[0]?.id, "marketing");
   assert.deepEqual(social[0]?.items.map((item) => item.href), ["/social-automation"]);
 
   const nexus = filterNavigationSections(sections, "Nexus OS");
   assert.equal(nexus.length, 1);
   assert.deepEqual(nexus[0]?.items.map((item) => item.href), ["/nexus-os"]);
+
+  const autonomy = filterNavigationSections(sections, "24/7 Autonomy");
+  assert.equal(autonomy.length, 1);
+  assert.deepEqual(autonomy[0]?.items.map((item) => item.href), ["/nexus-os/autonomy"]);
 
   const connections = filterNavigationSections(sections, "Connections");
   assert.equal(connections.length, 1);
@@ -87,10 +94,10 @@ test("favorites are limited, deduplicated and restricted to visible links", () =
   assert.equal(added[0], "/recovery");
 });
 
-test("owner quick links start with Nexus, Connections and growth OS surfaces", () => {
+test("owner quick links prioritize Nexus control surfaces", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const quick = quickNavigationItems("OWNER", sections, []);
-  assert.deepEqual(quick.map((item) => item.href), ["/nexus-os", "/connections", "/social-automation", "/book-growth", "/today", "/approvals"]);
+  assert.deepEqual(quick.map((item) => item.href), ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/connections", "/approvals"]);
 });
 
 test("keyholding role gets the Care workspace as its main menu area", () => {
