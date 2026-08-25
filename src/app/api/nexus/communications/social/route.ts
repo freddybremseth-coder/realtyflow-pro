@@ -69,10 +69,14 @@ export async function GET(request: NextRequest) {
         commentsFetched:Number(lastDetails.comments_fetched??0),
         conversationsUpserted:Number(lastDetails.conversations_upserted??0),
         messagesUpserted:Number(lastDetails.messages_upserted??0),
+        eligibleChannels:Number(lastDetails.eligible_channels??0),
+        skippedMissingToken:Number(lastDetails.skipped_missing_token??0),
+        skippedMissingCapability:Number(lastDetails.skipped_missing_capability??0),
+        channelErrors:Number(lastDetails.channel_errors??0),
         readOnly:Boolean(lastDetails.read_only),
       } : null,
       note: syncEnabled
-        ? "External read-only inbox sync er aktiv. Canonical 0 kan nå tolkes som 0 synkroniserte kommentarer for kanaler og poster som faktisk har nødvendig read-capability; kanaler som mangler scope er fortsatt ukjent/skipped."
+        ? "External read-only inbox sync er aktiv. Canonical 0 kan nå tolkes som 0 synkroniserte kommentarer for kanaler og poster som faktisk har nødvendig read-capability; skipped kanaler er fortsatt ukjent."
         : "0 samtaler betyr 0 canonical synkroniserte samtaler. Det betyr ikke at Meta-innboksen er tom før external inbox sync er aktiv og capability-verifisert.",
     },
     summary:{
