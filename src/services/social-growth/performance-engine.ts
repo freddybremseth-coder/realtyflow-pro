@@ -73,20 +73,69 @@ const count = (value: unknown) => {
 const rate = (numerator: number, denominator: number) => denominator > 0 ? numerator / denominator : null;
 const pct = (value: number | null) => value === null ? 0 : value * 100;
 
+function captionLengthBucket(text: string) {
+  const length = text.trim().length;
+  if (length < 300) return 'short';
+  if (length < 800) return 'medium';
+  return 'long';
+}
+
+function priceBucket(text: string) {
+  const matches = Array.from(text.matchAll(/(?:€|eur\s*)\s*([0-9][0-9.\s]*)/gi));
+  const raw = matches[0]?.[1];
+  if (!raw) return 'unspecified';
+  const value = Number(raw.replace(/[.\s]/g, ''));
+  if (!Number.isFinite(value) || value <= 0) return 'unspecified';
+  if (value < 400000) return 'under_400k';
+  if (value < 750000) return '400k_750k';
+  if (value < 1500000) return '750k_1_5m';
+  return 'over_1_5m';
+}
+
+function publishingTimeFeatures(publication: PublicationInput) {
+  const timestamp = publication.published_at || publication.created_at;
+  if (!timestamp) return { publish_hour_utc: 'unspecified', publish_day_utc: 'unspecified', daypart_utc: 'unspecified' };
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return { publish_hour_utc: 'unspecified', publish_day_utc: 'unspecified', daypart_utc: 'unspecified' };
+  const hour = date.getUTCHours();
+  const daypart = hour < 6 ? 'night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 22 ? 'evening' : 'night';
+  return {
+    publish_hour_utc: String(hour).padStart(2, '0'),
+    publish_day_utc: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getUTCDay()],
+    daypart_utc: daypart,
+  };
+}
+
 export function classifyContentFeatures(publication: PublicationInput) {
   const existing = publication.content_features || {};
+  const genome = existing.genome && typeof existing.genome === 'object' ? existing.genome as Record<string, unknown> : {};
   const text = `${publication.title || ''} ${publication.description || ''} ${(publication.tags || []).join(' ')}`.toLowerCase();
   const areas = ['altea', 'albir', 'benidorm', 'finestrat', 'villajoyosa', 'la nucia', 'polop', 'moraira', 'denia', 'pinoso', 'aspe', 'novelda'];
   const area = areas.find((candidate) => text.includes(candidate)) || 'unspecified';
-  const format = text.includes('reel') || publication.content_type?.includes('video') ? 'reel' :
-    text.includes('carousel') || text.includes('karusell') ? 'carousel' : 'post';
+  const format = String(genome.format || '').trim() || (text.includes('reel') || publication.content_type?.includes('video') ? 'reel' :
+    text.includes('carousel') || text.includes('karusell') ? 'carousel' : 'post');
   const language = /\b(the|your|villa|property|discover)\b/.test(text) ? 'en' :
     /\b(vivienda|casa|descubre|precio)\b/.test(text) ? 'es' : 'no';
-  const hookType = /\b(\d+|tre|fem)\s+(tips|feil|grunner|ting)\b/.test(text) ? 'list' :
-    text.includes('?') ? 'question' : /€|eur|pris|price|precio/.test(text) ? 'price' : 'statement';
-  const goal = publication.performance_goal || (/(kontakt|skriv|send|book|visning|dm)/.test(text) ? 'lead' : 'reach');
+  const hookType = String(genome.hookType || genome.hook_type || '').trim() || (/\b(\d+|tre|fem)\s+(tips|feil|grunner|ting)\b/.test(text) ? 'list' :
+    text.includes('?') ? 'question' : /€|eur|pris|price|precio/.test(text) ? 'price' : 'statement');
+  const ctaType = String(genome.ctaType || genome.cta_type || '').trim() || (/(book|visning)/.test(text) ? 'book_viewing' : /(send melding|dm|skriv)/.test(text) ? 'message' : /(kontakt|contact)/.test(text) ? 'contact' : 'unspecified');
+  const goal = publication.performance_goal || String(genome.goal || '').trim() || (/(kontakt|skriv|send|book|visning|dm)/.test(text) ? 'lead' : 'reach');
   const propertyType = /(tomt|plot|parcel)/.test(text) ? 'plot' : /(leilighet|apartment|apartamento)/.test(text) ? 'apartment' : /(villa|enebolig)/.test(text) ? 'villa' : 'unspecified';
-  return { area, format, language, hook_type: hookType, goal, property_type: propertyType, ...existing };
+  const source = String(existing.source || '').includes('marketing_publish_executor') ? 'autopilot' : 'legacy_or_manual';
+  return {
+    area,
+    format,
+    language,
+    hook_type: hookType,
+    cta_type: ctaType,
+    goal,
+    property_type: propertyType,
+    caption_length: captionLengthBucket(publication.description || ''),
+    price_bucket: priceBucket(text),
+    source,
+    ...publishingTimeFeatures(publication),
+    ...existing,
+  };
 }
 
 function rawCount(snapshot: SnapshotInput, key: string) {
@@ -177,7 +226,7 @@ export function buildFeatureInsights(posts: PostPerformance[]): FeatureInsight[]
   const comparablePosts = posts.filter((post) => post.comparisonWindow === comparisonWindow);
   if (comparablePosts.length < 5) return [];
   const overall = comparablePosts.reduce((sum, post) => sum + post.score, 0) / comparablePosts.length;
-  const dimensions = ['area', 'format', 'language', 'hook_type', 'goal', 'property_type'];
+  const dimensions = ['area', 'format', 'language', 'hook_type', 'cta_type', 'goal', 'property_type', 'caption_length', 'price_bucket', 'source', 'publish_day_utc', 'daypart_utc'];
   const groups = new Map<string, PostPerformance[]>();
   for (const post of comparablePosts) {
     for (const dimension of dimensions) {
@@ -202,7 +251,7 @@ export function buildFeatureInsights(posts: PostPerformance[]): FeatureInsight[]
       };
     })
     .sort((a, b) => b.liftPercent - a.liftPercent || b.sampleSize - a.sampleSize)
-    .slice(0, 8);
+    .slice(0, 12);
 }
 
 export type GrowthRecommendation = {
