@@ -59,9 +59,11 @@ export default function RootLayout({
               apiUrl="/api/nexus/victoria"
               title="Victoria · Nexus"
               subtitle="Live grensesnitt til Nexus Director"
-              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Jeg leser live status fra brands, kanaler, e-post, CRM, approvals, learning og autonomy policy før jeg svarer."
+              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Du kan skrive eller snakke fritt. Jeg leser live status fra brands, kanaler, e-post, CRM, approvals, learning og autonomy policy før jeg svarer."
               primaryColor="#0891b2"
-              placeholder="Spør hva Nexus gjør eller bør prioritere…"
+              placeholder="Skriv eller snakk fritt til Victoria…"
+              voiceAutoSend
+              voiceSilenceMs={9000}
             />
             <JarvisOverlay />
           </>
