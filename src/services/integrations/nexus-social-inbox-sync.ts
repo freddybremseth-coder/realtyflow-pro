@@ -131,11 +131,27 @@ export async function runReadOnlySocialInboxSync(input: { source: "cron" | "manu
     results.push({ channelId: channel.id, brandId: channel.brand_id, platform: channel.platform, fetched: channelFetched, upserted: channelUpserted });
   }
 
+  const skippedMissingToken = results.filter((r) => r.skipped === "missing_token").length;
+  const skippedMissingCapability = results.filter((r) => r.skipped === "missing_read_comments_capability").length;
+  const eligibleChannels = results.filter((r) => typeof r.fetched === "number").length;
+  const errorCount = results.filter((r) => Boolean(r.error)).length;
+
   await supabase.from("automation_logs").insert({
     action: "social_inbox_sync",
     agent_name: input.source === "cron" ? "nexus_social_inbox_sync_cron" : "nexus_social_inbox_sync_manual",
-    status: results.some((r) => r.error) ? "partial" : "success",
-    details: { source: input.source, comments_fetched: commentsFetched, conversations_upserted: conversationsUpserted, messages_upserted: messagesUpserted, runtime_control: "feature:social_inbox_sync", read_only: true },
+    status: errorCount > 0 ? "partial" : "success",
+    details: {
+      source: input.source,
+      comments_fetched: commentsFetched,
+      conversations_upserted: conversationsUpserted,
+      messages_upserted: messagesUpserted,
+      eligible_channels: eligibleChannels,
+      skipped_missing_token: skippedMissingToken,
+      skipped_missing_capability: skippedMissingCapability,
+      channel_errors: errorCount,
+      runtime_control: "feature:social_inbox_sync",
+      read_only: true,
+    },
   });
 
   return { success: true, readOnly: true, commentsFetched, conversationsUpserted, messagesUpserted, results };
