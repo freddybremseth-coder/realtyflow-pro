@@ -18,6 +18,13 @@ type CandidateInput = {
   evidence?: Record<string, unknown>;
 };
 
+type BookLookup = {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+};
+
 function normalizeAsin(value: unknown) {
   if (typeof value !== "string") return null;
   const v = value.trim().toUpperCase();
@@ -43,14 +50,20 @@ export async function POST(request: NextRequest) {
   const error = bySlugRes.error || byIdRes.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const bookBySlug = new Map((bySlugRes.data ?? []).map((b: any) => [String(b.slug), b]));
-  const bookById = new Map((byIdRes.data ?? []).map((b: any) => [String(b.id), b]));
+  const slugRows = (bySlugRes.data ?? []) as BookLookup[];
+  const idRows = (byIdRes.data ?? []) as BookLookup[];
+  const bookBySlug = new Map<string, BookLookup>(slugRows.map((b) => [String(b.slug), b]));
+  const bookById = new Map<string, BookLookup>(idRows.map((b) => [String(b.id), b]));
   const inserts: any[] = [];
   const rejected: any[] = [];
 
   for (const row of rows) {
     const asin = normalizeAsin(row.asin);
-    const book = row.bookId ? bookById.get(String(row.bookId)) : row.bookSlug ? bookBySlug.get(String(row.bookSlug)) : null;
+    const book: BookLookup | null | undefined = row.bookId
+      ? bookById.get(String(row.bookId))
+      : row.bookSlug
+        ? bookBySlug.get(String(row.bookSlug))
+        : null;
     if (!book || book.status !== "published" || !asin) {
       rejected.push({ bookId: row.bookId ?? null, bookSlug: row.bookSlug ?? null, asin: row.asin ?? null, reason: !book ? "book_not_found" : !asin ? "invalid_asin" : "book_not_published" });
       continue;
