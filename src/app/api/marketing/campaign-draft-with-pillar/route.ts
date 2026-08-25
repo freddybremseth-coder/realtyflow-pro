@@ -74,14 +74,14 @@ export async function POST(request: NextRequest) {
 
       const { data: content } = await supabase
         .from("marketing_content")
-        .select("id, genome")
+        .select("content_id, genome")
         .eq("content_id", contentId)
         .maybeSingle();
-      if (content?.id) {
+      if (content?.content_id) {
         await supabase
           .from("marketing_content")
           .update({ genome: { ...(content.genome ?? {}), contentPillar: body.contentPillar } })
-          .eq("id", content.id);
+          .eq("content_id", contentId);
       }
 
       await supabase.from("marketing_events").insert({
