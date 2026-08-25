@@ -17,6 +17,7 @@ export type OsAttentionInput = {
   approvalOpportunityEur: number;
   automationFailures24h: number;
   automationPartial24h: number;
+  scheduledAutomationStale: Array<{ action: string; label: string; lastRunAt: string | null; expectedMinutes: number; href: string }>;
   socialSyncEnabled: boolean;
   socialLastSyncAt: string | null;
   socialLastSyncStatus: string | null;
@@ -72,6 +73,22 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       title: `${input.automationPartial24h} delvise automasjonskjøringer siste 24 timer`,
       detail: "Kjøringene fullførte ikke helt rent. Se detaljene før du tolker subsystemet som grønt.",
       href: "/automation",
+      source: "Automation",
+    });
+  }
+
+  if (input.scheduledAutomationStale.length > 0) {
+    const labels = input.scheduledAutomationStale.map((job) => {
+      const age = ageMinutes(job.lastRunAt, now);
+      return `${job.label}: ${age === null ? "ingen logg" : `${age} min siden`}`;
+    });
+    items.push({
+      id: "automation:scheduler-stale",
+      severity: "high",
+      score: 93,
+      title: `${input.scheduledAutomationStale.length} aktiv scheduler-jobb${input.scheduledAutomationStale.length === 1 ? "" : "er"} mangler fersk kjøring`,
+      detail: `${labels.join(" · ")}. En aktiv Runtime/cron-konfigurasjon er ikke nok; Nexus krever fersk faktisk execution-logg.`,
+      href: input.scheduledAutomationStale[0]?.href || "/automation",
       source: "Automation",
     });
   }
