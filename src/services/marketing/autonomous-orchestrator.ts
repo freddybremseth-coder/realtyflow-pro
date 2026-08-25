@@ -10,6 +10,7 @@
  */
 
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import {
   approvedAssetHash,
   buildMarketingPlan,
@@ -96,11 +97,14 @@ export async function planMarketingRun(
   opts: { level?: MarketingRunState["level"] } = {},
 ): Promise<{ run: MarketingRunState; plan: ReturnType<typeof buildMarketingPlan>; recommendation: Awaited<ReturnType<typeof recommendForGeneration>> | undefined; trace: ActionTraceEntry[] }> {
   const run = createMarketingRun({ brandId: input.brandId, level: opts.level ?? "copilot", now: deps.now?.() });
-  const recommendation = await recommendForGeneration(deps.supabase, { scope: input.brandId }).catch(() => undefined);
+  const learningScope = input.channels?.length === 1
+    ? channelLearningScope(input.brandId, input.channels[0])
+    : input.brandId;
+  const recommendation = await recommendForGeneration(deps.supabase, { scope: learningScope }).catch(() => undefined);
   const plan = buildMarketingPlan(input, { marketingRunId: run.marketingRunId, correlationId: run.correlationId, recommendation });
 
   const trace: ActionTraceEntry[] = [
-    { step: "learning", actor: "learning", summary: `${Object.keys(plan.favoredDimensions).length} favored dims, ${plan.avoidedDimensions.length} avoided` },
+    { step: "learning", actor: "learning", summary: `${Object.keys(plan.favoredDimensions).length} favored dims, ${plan.avoidedDimensions.length} avoided`, detail: { scope: learningScope } },
     { step: "plan", actor: "director", summary: `plan laget (${plan.production.exploit}/${plan.production.adjacent}/${plan.production.experiment}), mål ${plan.goals[0]?.kind}` },
   ];
 
