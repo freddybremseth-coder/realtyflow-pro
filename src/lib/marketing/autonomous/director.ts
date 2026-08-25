@@ -41,9 +41,16 @@ export interface BuildPlanOptions {
   explorationMix?: Partial<ExplorationMix>;
 }
 
+function canInfluenceAutopilot(input: { evidence?: string; experimentBacked?: boolean }) {
+  if (input.experimentBacked) return ["promising", "reliable", "strong"].includes(String(input.evidence || ""));
+  return ["reliable", "strong"].includes(String(input.evidence || ""));
+}
+
 /**
  * Bygg en MarketingPlan. exploit-buckets bruker learning-anbefalte dimensjoner;
  * adjacent utforsker naboer; experiment reserveres for kontrollerte tester.
+ * Observational learning får bare påvirke exploit når evidensen er reliable/strong.
+ * Svakere funn beholdes som analyse/notes, men får ikke styre autopiloten.
  */
 export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptions): MarketingPlan {
   const input = DirectorInputSchema.parse(rawInput);
@@ -56,9 +63,12 @@ export function buildMarketingPlan(rawInput: DirectorInput, opts: BuildPlanOptio
   const notes: string[] = [];
   if (rec) {
     for (const [dim, v] of Object.entries(rec.favor)) {
-      if (v) {
+      if (!v) continue;
+      if (canInfluenceAutopilot(v)) {
         favoredDimensions[dim] = v.value;
         notes.push(`${v.experimentBacked ? "🧪" : "📈"} favor ${dim}=${v.value} (${v.evidence}, ${v.lift}×)`);
+      } else {
+        notes.push(`👀 observer ${dim}=${v.value} (${v.evidence}, ${v.lift}×) — ikke nok evidens til autopilot`);
       }
     }
     notes.push(...rec.notes.slice(0, 3));
