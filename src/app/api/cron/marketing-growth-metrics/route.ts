@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
+import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
     const limit = Number(process.env.MARKETING_METRICS_LIMIT || 100);
     const minAgeHours = Number(process.env.MARKETING_METRICS_MIN_AGE_HOURS || 24);
     const learningMinObservations = Number(process.env.MARKETING_LEARNING_MIN_OBSERVATIONS || 10);
+    const instagram = await resolveBrandInstagramAccessToken(brandId);
 
     const result = await syncGrowthInstagramMetrics(supabase as any, {
       brandId,
@@ -48,6 +50,7 @@ export async function GET(request: NextRequest) {
       limit,
       minAgeHours,
       learningMinObservations,
+      accessToken: instagram.accessToken,
     });
 
     return NextResponse.json({
@@ -58,6 +61,9 @@ export async function GET(request: NextRequest) {
         limit,
         minAgeHours,
         learningMinObservations,
+        instagramChannelId: instagram.channelId,
+        instagramAccountId: instagram.accountId,
+        tokenScope: "brand_channel",
       },
       ...result,
     });
