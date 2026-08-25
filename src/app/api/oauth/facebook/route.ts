@@ -2,36 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { buildRedirectUri, getMetaCredentials } from "@/lib/oauth/providers";
 import { createState } from "@/lib/oauth/state";
+import { META_COMMUNICATION_SCOPES, META_PUBLISHING_SCOPES } from "@/lib/oauth/meta-capabilities";
 import { normalizeBrandId } from "@/lib/realty/brand-rules";
-
-const BASE_SCOPES = [
-  "pages_show_list",
-  "pages_read_engagement",
-  "pages_manage_posts",
-  "pages_read_user_content",
-  "business_management",
-  "instagram_basic",
-  "instagram_manage_insights",
-  "instagram_content_publish",
-] as const;
-
-/**
- * Communication scopes are requested ONLY when capability=communications.
- * Meta may require App Review / Advanced Access / verified business before
- * these grants work for people outside app roles. Requesting a scope never
- * means the capability is available; Nexus verifies the granted scopes after
- * OAuth and keeps social reply runtime controls OFF until capability is real.
- */
-const COMMUNICATION_SCOPES = [
-  "pages_manage_engagement",
-  "pages_manage_metadata",
-  "pages_messaging",
-  "instagram_manage_comments",
-  "instagram_manage_messages",
-] as const;
 
 /**
  * GET /api/oauth/facebook?brand_id=<id>&return_to=<path>&capability=publishing|communications
+ *
+ * Communication scopes are requested only for capability=communications.
+ * Meta may still require App Review / Advanced Access / a verified business.
+ * Requested permission is never treated as granted capability; Nexus checks
+ * the saved OAuth scopes after callback/finalize and Runtime remains separate.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -59,8 +39,8 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = buildRedirectUri("facebook", req.nextUrl.origin);
   const scope = [
-    ...BASE_SCOPES,
-    ...(requestedCapability === "communications" ? COMMUNICATION_SCOPES : []),
+    ...META_PUBLISHING_SCOPES,
+    ...(requestedCapability === "communications" ? META_COMMUNICATION_SCOPES : []),
   ].join(",");
 
   const stateNonce = await createState({
