@@ -9,12 +9,19 @@ const BRAND = {
   publishingAccountId: "17841471907077327",
 };
 
+const PILLARS = [
+  { value: "product_demo", label: "Product demo" },
+  { value: "ai_workflows", label: "AI workflows" },
+  { value: "problem_solution", label: "Problem / solution" },
+  { value: "education", label: "Education" },
+] as const;
+
 const DEFAULT_IDEA = "Lag et profesjonelt Instagram-innlegg for ChatGenius.pro om praktisk bruk av AI i arbeid og virksomhet. Hold deg til Brand Brain. Ikke finn opp konkrete funksjoner, integrasjoner, priser, tidsbesparelser, lead-resultater eller salgsresultater som ikke er eksplisitt verifisert.";
 
 type Check = { name: string; critical: boolean; status: "ok" | "warn" | "fail"; detail: string };
 type Preflight = { status: "READY_FOR_LIVE" | "NOT_READY"; checks: Check[]; criticalFailures: string[] };
 type DraftResult = { contentId: string; publicationId: string; state: string; mode: string; caption?: string; imageUrl?: string | null; accountId?: string | null; qualityScore?: number | null; approvalId: string | null; error?: string };
-type Draft = { marketingRunId: string; correlationId: string; results: DraftResult[] };
+type Draft = { marketingRunId: string; correlationId: string; contentPillar?: string; results: DraftResult[] };
 
 async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: T }> {
   const res = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -24,6 +31,7 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; statu
 
 export default function ChatGeniusCanaryPage() {
   const [idea, setIdea] = useState(DEFAULT_IDEA);
+  const [contentPillar, setContentPillar] = useState<(typeof PILLARS)[number]["value"]>("ai_workflows");
   const [mediaUrl, setMediaUrl] = useState("");
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -53,9 +61,10 @@ export default function ChatGeniusCanaryPage() {
   });
 
   const createDraft = () => run("draft", async () => {
-    const r = await post<Draft>("/api/marketing/campaign-draft", {
+    const r = await post<Draft>("/api/marketing/campaign-draft-with-pillar", {
       brandId: BRAND.brandId, channel: BRAND.channel, publishingAccountId: BRAND.publishingAccountId,
-      language: "en", mediaUrl: mediaUrl.trim(), masterIdea: idea, goal: { kind: "qualified_leads", target: 1 },
+      language: "en", mediaUrl: mediaUrl.trim(), masterIdea: idea, contentPillar,
+      goal: { kind: "qualified_leads", target: 1 },
     });
     if (!r.ok) throw new Error((r.data as any)?.error || `Draft feilet (${r.status})`);
     setDraft(r.data);
@@ -91,7 +100,11 @@ export default function ChatGeniusCanaryPage() {
       </section>
 
       <section style={box}>
-        <label style={label}>Offentlig media-URL (HTTPS)</label>
+        <label style={label}>Content pillar</label>
+        <select value={contentPillar} onChange={(e) => setContentPillar(e.target.value as (typeof PILLARS)[number]["value"])} style={input}>
+          {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        <label style={{ ...label, marginTop: 12 }}>Offentlig media-URL (HTTPS)</label>
         <input value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://..." style={input} />
         <label style={{ ...label, marginTop: 12 }}>Master idea</label>
         <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={6} style={{ ...input, resize: "vertical" }} />
@@ -107,7 +120,7 @@ export default function ChatGeniusCanaryPage() {
         <h2 style={h2}>2. Generate Brand Brain draft</h2>
         <button style={button} disabled={!ready || busy === "draft"} onClick={createDraft}>{busy === "draft" ? "Lager…" : "Create draft"}</button>
         {result && <div style={{ marginTop: 12 }}>
-          <div>Mode: <b>{result.mode}</b> · Quality: <b>{result.qualityScore ?? "—"}</b></div>
+          <div>Mode: <b>{result.mode}</b> · Pillar: <b>{draft?.contentPillar ?? contentPillar}</b> · Quality: <b>{result.qualityScore ?? "—"}</b></div>
           <div style={{ marginTop: 8 }}><b>Caption</b></div>
           <pre style={pre}>{result.caption}</pre>
           {result.imageUrl && <img src={result.imageUrl} alt="ChatGenius canary" style={{ maxWidth: 480, width: "100%", borderRadius: 10 }} />}
