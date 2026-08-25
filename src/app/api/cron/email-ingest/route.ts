@@ -135,11 +135,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  await supabase.from("automation_logs").insert({
-    type: "email_ingest",
+  const { error: logError } = await supabase.from("automation_logs").insert({
+    action: "email_ingest",
+    agent_name: "nexus_email_ingest_cron",
     status: results.some((r) => r.error) ? "partial" : "success",
     details: { accounts: results.length, total_fetched: totalFetched, total_inserted: totalInserted, runtime_control: "cron:/api/cron/email-ingest" },
-  }).then(() => {}).then(undefined, () => {});
+  });
+  if (logError) console.error("[email-ingest] automation log failed", logError.message);
 
-  return NextResponse.json({ success: true, accounts: results.length, total_fetched: totalFetched, total_inserted: totalInserted, results });
+  return NextResponse.json({ success: true, accounts: results.length, total_fetched: totalFetched, total_inserted: totalInserted, results, logged: !logError });
 }
