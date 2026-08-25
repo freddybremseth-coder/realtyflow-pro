@@ -17,6 +17,7 @@ import {
   type LearningRule,
   type GenomeRecommendation,
 } from "@/lib/marketing/learning";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { loadExperimentEvidence } from "@/services/marketing/experiment-adapter";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
@@ -59,26 +60,31 @@ function sumObserved(rows: ObservedMetricRow[]): ContentMetrics {
 
 export async function refreshLearningRules(
   supabase: MarketingSupabaseLike,
-  opts: { brandId: string; scope?: string; model?: AttributionModel },
+  opts: { brandId: string; channel?: string; scope?: string; model?: AttributionModel },
 ): Promise<{ rulesWritten: number; observations: number }> {
   if (!opts.brandId?.trim()) throw new Error("LEARNING_BRAND_REQUIRED: brandId mangler");
-  const scope = opts.scope ?? opts.brandId;
+  const channel = opts.channel?.trim().toLowerCase() || null;
+  const scope = opts.scope ?? (channel ? channelLearningScope(opts.brandId, channel) : opts.brandId);
 
-  // 1) Genomes per content — always brand-scoped.
-  const { data: contentRows } = await supabase
+  // 1) Genomes per content — always brand-scoped, optionally channel-scoped.
+  let contentQuery = supabase
     .from("marketing_content")
-    .select("content_id, brand_id, genome")
+    .select("content_id, brand_id, channel, genome")
     .eq("brand_id", opts.brandId);
+  if (channel) contentQuery = contentQuery.eq("channel", channel);
+  const { data: contentRows } = await contentQuery;
   const genomes = new Map<string, ContentGenome>();
   for (const r of contentRows ?? []) {
     if (r.content_id && r.genome) genomes.set(String(r.content_id), r.genome as ContentGenome);
   }
 
-  // 2) Observed metrics per content — always brand-scoped.
-  const { data: evRows } = await supabase
+  // 2) Observed metrics per content — same brand/channel boundary as genomes.
+  let eventQuery = supabase
     .from("marketing_events")
-    .select("content_id, metrics, event_type, metadata")
+    .select("content_id, channel, metrics, event_type, metadata")
     .eq("brand_id", opts.brandId);
+  if (channel) eventQuery = eventQuery.eq("channel", channel);
+  const { data: evRows } = await eventQuery;
   const observedByContent = new Map<string, ObservedMetricRow[]>();
   for (const r of evRows ?? []) {
     if (!r.content_id) continue;
@@ -90,7 +96,9 @@ export async function refreshLearningRules(
     });
   }
 
-  // 3) Canonical outcomes per content — brand-isolated attribution.
+  // 3) Canonical outcomes per content — brand-isolated attribution. The content
+  // set above remains channel-scoped, so outcomes from another channel cannot
+  // create observations in this scope.
   const canonical = await attributeAll(supabase, { model: opts.model ?? "last_touch", brandId: opts.brandId });
 
   // 4) Par sammen til observasjoner. combineMetrics: canonical vinner.
@@ -105,7 +113,7 @@ export async function refreshLearningRules(
     observations.push({ genome, metrics, contentId });
   }
 
-  // 5) Utled + persistér idempotent.
+  // 5) Utled + persistér idempotent inside the explicit scope.
   const rules = deriveLearningRules(observations, { scope });
   if (rules.length > 0) {
     const rows = rules.map((r) => ({
