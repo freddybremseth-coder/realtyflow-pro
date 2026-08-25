@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { buildPaidCreativeUtm } from "@/lib/ads/creative-dna";
+import { aggregateCreativeDimension } from "@/lib/ads/creative-insights";
 import {
   addCreativeTouch,
   compareCreativeOutcomeSignal,
@@ -158,6 +159,9 @@ export async function GET(
   }
 
   const campaignEconomics = paidEconomics(paidRows as PaidRow[], campaignMetrics);
+  const dimension = (field: "hook_family" | "concept_group" | "creative_format" | "provider" | "language") =>
+    aggregateCreativeDimension(rows.map((row: any) => ({ dimensionValue: row[field], metrics: row.metrics, economics: row.economics })));
+
   const { count: unattributedTouchpoints } = await supabase
     .from("marketing_touchpoints")
     .select("id", { count: "exact", head: true })
@@ -173,6 +177,13 @@ export async function GET(
     attributedCreativeTouchpoints: touches.length,
     unattributedCampaignTouchpoints: unattributedTouchpoints ?? 0,
     paidMediaRows: paidRows.length,
+    insights: {
+      hookFamily: dimension("hook_family"),
+      concept: dimension("concept_group"),
+      format: dimension("creative_format"),
+      provider: dimension("provider"),
+      language: dimension("language"),
+    },
     note: campaignEconomics.state === "not_imported"
       ? "Paid-media spend has not been imported for these creatives. Missing spend is unknown, not zero; no economic winner is declared."
       : "Rows are ordered by downstream outcome signal. Economic comparisons are valid only where spend/currency state is comparable.",
