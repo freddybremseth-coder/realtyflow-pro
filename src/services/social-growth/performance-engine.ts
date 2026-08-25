@@ -132,9 +132,9 @@ export function classifyContentFeatures(publication: PublicationInput) {
     property_type: propertyType,
     caption_length: captionLengthBucket(publication.description || ''),
     price_bucket: priceBucket(text),
-    source,
     ...publishingTimeFeatures(publication),
     ...existing,
+    source,
   };
 }
 
