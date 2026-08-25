@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { GET as GETAutoPublish } from "./auto-publish/route";
+import { GET as GETEmailAutoDraft } from "./email-auto-draft/route";
 import { GET as GETEmailIngest } from "./email-ingest/route";
 import { GET as GETEngagementTracker } from "./engagement-tracker/route";
 import { GET as GETGrowthEngine } from "./growth-engine/route";
@@ -26,6 +27,7 @@ function cronRequest(path: string, authorization?: string) {
 
 const cronRoutes = [
   { path: "/api/cron/auto-publish", handler: GETAutoPublish },
+  { path: "/api/cron/email-auto-draft", handler: GETEmailAutoDraft },
   { path: "/api/cron/email-ingest", handler: GETEmailIngest },
   { path: "/api/cron/engagement-tracker", handler: GETEngagementTracker },
   { path: "/api/cron/growth-engine", handler: GETGrowthEngine },
