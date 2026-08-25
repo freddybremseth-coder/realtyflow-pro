@@ -3,12 +3,13 @@ import { headers } from "next/headers";
 import "./globals.css";
 import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
+import { MobileNexusBar } from "@/components/layout/mobile-nexus-bar";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
 import { JarvisOverlay } from "@/components/agentic/jarvis-overlay";
 
 export const metadata: Metadata = {
-  title: "RealtyFlow Pro",
-  description: "AI-Powered Real Estate & Content Super App",
+  title: "RealtyFlow Pro · Nexus OS",
+  description: "Nexus-controlled multi-brand growth, sales and automation operating system",
 };
 
 const AUTH_PATH_PREFIXES = ["/login", "/reset-password", "/account/password"];
@@ -49,16 +50,18 @@ export default function RootLayout({
         ) : (
           <>
             <Sidebar />
-            <main className="app-shell-main min-h-screen p-6 pt-16 lg:pt-6">
+            <main className="app-shell-main min-h-screen p-4 pb-24 pt-16 sm:p-6 sm:pb-24 sm:pt-16 lg:pb-6 lg:pt-6">
               {children}
             </main>
+            <MobileNexusBar />
             <ChatWidget
-              brandId="soleada"
-              title="Victoria AI"
-              subtitle="Eiendomsrådgiver"
-              welcomeMessage="Hei! Jeg er din AI-assistent. Jeg kan hjelpe deg med eiendommer i Spania, tomter, og mye mer. Hva leter du etter?"
-              primaryColor="#8b5cf6"
-              placeholder="F.eks. villa med basseng i Altea..."
+              brandId="freddyb"
+              apiUrl="/api/agents/command"
+              title="Victoria · Nexus"
+              subtitle="Director for RealtyFlow OS"
+              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Jeg kan prioritere arbeid, forklare hva systemet gjør, lage planer på tvers av brands og sende oppgaver til riktig agent og modul."
+              primaryColor="#0891b2"
+              placeholder="Be Nexus prioritere, analysere eller utføre…"
             />
             <JarvisOverlay />
           </>
