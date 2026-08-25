@@ -83,7 +83,7 @@ jobs:
       - name: Ad Campaign Generator planner tests
         run: npx tsx --test src/services/ads/campaign-planner.test.ts
       - name: Creative DNA attribution tests
-        run: npx tsx --test src/lib/ads/creative-dna.test.ts
+        run: npx tsx --test src/lib/ads/creative-dna.test.ts src/lib/ads/creative-performance.test.ts
       - name: Build
         id: next_build
         shell: bash
