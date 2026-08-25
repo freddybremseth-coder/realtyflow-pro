@@ -11,6 +11,7 @@ export type NavigationSectionId =
   | "properties"
   | "marketing"
   | "content"
+  | "publishing"
   | "reports"
   | "business"
   | "admin";
@@ -32,9 +33,6 @@ const REVENUE_READ_PAGES = new Set([
   "/continuous-improvement",
 ]);
 
-// Navigation is grouped by the job the user wants to do. OS/automation is
-// intentionally near the top: Nexus, social automation and Book Growth are
-// operating surfaces, not hidden admin utilities.
 const GROUPS: Array<{
   id: NavigationSectionId;
   label: string;
@@ -127,7 +125,7 @@ const GROUPS: Array<{
   },
   {
     id: "content",
-    label: "Innhold & publishing",
+    label: "Innhold & medier",
     icon: "Clapperboard",
     hrefs: [
       "/content-studio",
@@ -137,6 +135,13 @@ const GROUPS: Array<{
       "/content-hub",
       "/image-studio",
       "/website-cms",
+    ],
+  },
+  {
+    id: "publishing",
+    label: "Publishing & creator",
+    icon: "BookOpen",
+    hrefs: [
       "/publishing",
       "/publishing/forfatterstudio",
       "/youtube-studio",
