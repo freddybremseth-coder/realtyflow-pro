@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { BRANDS } from "@/lib/constants";
+import type { AdGrowthGoal } from "@/lib/ads/creative-dna";
 import {
   planAdCampaign,
   type AdCampaignStyle,
@@ -74,6 +75,14 @@ const FORMAT_OPTIONS: Array<{ id: AspectRatio; label: string; use: string }> = [
   { id: "1.91:1", label: "1.91:1", use: "Meta landscape" },
 ];
 
+const GROWTH_GOALS: Array<{ id: AdGrowthGoal; label: string; description: string }> = [
+  { id: "lead_generation", label: "Flere leads", description: "Optimaliser læringen mot kvalifiserte henvendelser, bookinger og videre salgssteg." },
+  { id: "follower_growth", label: "Flere følgere", description: "Bygg creative learning rundt profilbesøk, follows, saves, shares og engasjement." },
+  { id: "direct_sales", label: "Mer salg", description: "Prioriter creatives som kan knyttes til kjøp, inntekt og margin når økonomidata finnes." },
+  { id: "retargeting", label: "Retargeting", description: "Lag budskap for varme besøkende, engasjerte brukere og eksisterende leads." },
+  { id: "awareness", label: "Awareness", description: "Optimaliser for reach, views og attention uten å late som dette er direkte salg." },
+];
+
 export default function NewAdCampaignPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -88,6 +97,8 @@ export default function NewAdCampaignPage() {
   const [audienceSegments, setAudienceSegments] = useState("Premium consumers, Scandinavian buyers");
   const [brandVoice, setBrandVoice] = useState("");
   const [funnelStage, setFunnelStage] = useState("cold");
+  const [growthGoal, setGrowthGoal] = useState<AdGrowthGoal>("lead_generation");
+  const [defaultLanguage, setDefaultLanguage] = useState("");
   const [offer, setOffer] = useState("15% på første bestilling");
   const [targetTotal, setTargetTotal] = useState(50);
   const [aspectRatios, setAspectRatios] = useState<AspectRatio[]>(["1:1", "4:5", "9:16"]);
@@ -107,6 +118,7 @@ export default function NewAdCampaignPage() {
 
   const selectedBrand = BRANDS.find((brand) => brand.id === brandId);
   const selectedProvider = providers.find((provider) => provider.id === providerMode);
+  const selectedGrowthGoal = GROWTH_GOALS.find((goal) => goal.id === growthGoal);
 
   const previewPlan = useMemo(() => planAdCampaign({
     productName: productName || "produktet",
@@ -236,6 +248,9 @@ export default function NewAdCampaignPage() {
           audience_segments: audienceSegments.split(",").map((value) => value.trim()).filter(Boolean),
           brand_voice: brandVoice || null,
           funnel_stage: funnelStage,
+          growth_goal: growthGoal,
+          default_language: defaultLanguage.trim() || null,
+          optimization_event: null,
           offer: offer || null,
           total_creatives: targetTotal,
           aspect_ratios: aspectRatios,
@@ -268,11 +283,12 @@ export default function NewAdCampaignPage() {
             Ny annonsekampanje
           </h1>
           <p className="mt-1 text-sm text-gray-400">
-            10 profesjonelle annonsevinkler · Gemini, OpenArt og Flux Kontext Pro · separate tekst-overlays
+            10 profesjonelle annonsevinkler · Gemini, OpenArt og Flux Kontext Pro · Creative DNA og attribution
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">{targetTotal} annonser</Badge>
+          <Badge variant="outline">{selectedGrowthGoal?.label}</Badge>
           <Badge variant="outline">{previewPlan.concepts.length} konseptfamilier</Badge>
           <Badge variant="outline">est. ${previewPlan.estimatedCostUsd.toFixed(2)}</Badge>
         </div>
@@ -402,6 +418,19 @@ export default function NewAdCampaignPage() {
         <CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="h-4 w-4" />4. Kampanjestruktur</CardTitle></CardHeader>
         <CardContent className="space-y-5">
           <div>
+            <label className="mb-2 block text-xs text-gray-400">Hva skal denne batchen oppnå?</label>
+            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-5">
+              {GROWTH_GOALS.map((goal) => (
+                <button key={goal.id} type="button" onClick={() => setGrowthGoal(goal.id)} className={`rounded-lg border p-3 text-left transition ${growthGoal === goal.id ? "border-emerald-400 bg-emerald-400/10" : "border-gray-700 hover:border-gray-500"}`}>
+                  <p className="text-sm font-semibold">{goal.label}</p>
+                  <p className="mt-1 text-[11px] leading-4 text-gray-500">{goal.description}</p>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">Målet lagres i Creative DNA. Det endrer hva RealtyFlow skal lære av senere, men publiserer eller flytter annonsebudsjett ikke automatisk.</p>
+          </div>
+
+          <div>
             <label className="mb-2 block text-xs text-gray-400">Kampanjestil</label>
             <div className="grid gap-2 md:grid-cols-3">
               {CAMPAIGN_STYLES.map((style) => (
@@ -416,7 +445,7 @@ export default function NewAdCampaignPage() {
             <div>
               <label className="mb-2 block text-xs text-gray-400">Antall annonser</label>
               <div className="grid grid-cols-4 gap-2">
-                {[10, 20, 30, 50].map((count) => <button key={count} type="button" onClick={() => setTargetTotal(count)} className={`rounded-lg border p-3 ${targetTotal === count ? "border-amber-400 bg-amber-400/10" : "border-gray-700"}`}><strong>{count}</strong><span className="block text-[11px] text-gray-500">ads</span></button>)}
+                {[5, 10, 25, 50].map((count) => <button key={count} type="button" onClick={() => setTargetTotal(count)} className={`rounded-lg border p-3 ${targetTotal === count ? "border-amber-400 bg-amber-400/10" : "border-gray-700"}`}><strong>{count}</strong><span className="block text-[11px] text-gray-500">ads</span></button>)}
               </div>
             </div>
             <div>
@@ -432,7 +461,7 @@ export default function NewAdCampaignPage() {
           </div>
 
           <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
-            <p className="text-sm font-medium">10 konsepter × strukturerte varianter</p>
+            <p className="text-sm font-medium">{previewPlan.concepts.length} konsepter × strukturerte varianter</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {previewPlan.concepts.map((concept) => <div key={concept.id} className="rounded-md border border-gray-800 p-2"><p className="text-xs font-medium text-gray-200">{concept.angle}</p><p className="mt-1 line-clamp-2 text-[10px] text-gray-500">{concept.description}</p></div>)}
             </div>
@@ -443,9 +472,10 @@ export default function NewAdCampaignPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Type className="h-4 w-4" />5. Tekst og målgruppe</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <Field label="Markeder"><Input value={targetMarkets} onChange={(event) => setTargetMarkets(event.target.value)} placeholder="ES, NO" /></Field>
             <Field label="Funnel"><select value={funnelStage} onChange={(event) => setFunnelStage(event.target.value)} className="h-10 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-sm"><option value="cold">Cold prospecting</option><option value="warm">Warm retargeting</option></select></Field>
+            <Field label="Språk (valgfritt)"><Input value={defaultLanguage} onChange={(event) => setDefaultLanguage(event.target.value)} placeholder="nb-NO, en, es…" /></Field>
           </div>
           <Field label="Målgrupper"><Input value={audienceSegments} onChange={(event) => setAudienceSegments(event.target.value)} /></Field>
           <Field label="Brand voice"><Input value={brandVoice} onChange={(event) => setBrandVoice(event.target.value)} /></Field>
