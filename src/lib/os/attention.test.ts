@@ -10,6 +10,7 @@ function base(overrides: Partial<OsAttentionInput> = {}): OsAttentionInput {
     approvalOpportunityEur: 0,
     automationFailures24h: 0,
     automationPartial24h: 0,
+    scheduledAutomationStale: [],
     socialSyncEnabled: true,
     socialLastSyncAt: "2026-08-25T16:55:00.000Z",
     socialLastSyncStatus: "success",
@@ -46,6 +47,16 @@ test("high-risk approval remains separate from execution", () => {
   assert.ok(approval);
   assert.equal(approval.severity, "high");
   assert.match(approval.detail, /Approval betyr ikke utført handling/);
+});
+
+test("active scheduled automation without a fresh execution log is high priority", () => {
+  const items = buildOsAttention(base({ scheduledAutomationStale: [
+    { action: "email_ingest", label: "E-postinnhenting", lastRunAt: "2026-08-25T16:00:00.000Z", expectedMinutes: 15, href: "/nexus-os/communications" },
+  ] }), now);
+  const stale = items.find((item) => item.id === "automation:scheduler-stale");
+  assert.ok(stale);
+  assert.equal(stale.severity, "high");
+  assert.match(stale.detail, /fersk faktisk execution-logg/);
 });
 
 test("stale social sync is high priority when read-only sync is enabled", () => {
