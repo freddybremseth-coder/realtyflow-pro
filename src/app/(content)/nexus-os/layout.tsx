@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
+  { href: "/os", label: "Attention Center" },
   { href: "/nexus-os", label: "Command Center" },
   { href: "/nexus-os/focus", label: "Mitt fokus" },
   { href: "/nexus-os/director", label: "Portfolio Director" },
@@ -24,6 +26,7 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
         {LINKS.map((item) => <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-black text-slate-900 transition hover:border-cyan-400 hover:bg-cyan-50 hover:text-cyan-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
       </nav>
     </div>
+    <div className="mt-3"><NexusAttentionStrip /></div>
     {children}
   </div>;
 }
