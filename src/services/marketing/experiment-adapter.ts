@@ -22,6 +22,7 @@ import {
   type ExperimentResult,
 } from "@/lib/marketing/experiment";
 import type { ExperimentEvidence } from "@/lib/marketing/learning";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 export interface CreateExperimentInput {
@@ -39,8 +40,16 @@ export interface CreateExperimentInput {
   platform?: string;
 }
 
+function experimentScope(brandId: string, platform: unknown): string {
+  const channel = String(platform ?? "multi").trim().toLowerCase();
+  return channel && channel !== "multi"
+    ? channelLearningScope(brandId, channel)
+    : brandId;
+}
+
 function defFromRow(row: any): ExperimentDefinition {
   const ev = row.evidence ?? {};
+  const brandId = String(row.brand_id ?? "");
   return {
     experimentId: String(row.id),
     hypothesis: row.hypothesis,
@@ -54,7 +63,7 @@ function defFromRow(row: any): ExperimentDefinition {
     primaryVariable: ev.primaryVariable,
     minRuntimeHours: ev.minRuntimeHours,
     startedAt: row.started_at ?? null,
-    scope: row.brand_id,
+    scope: experimentScope(brandId, row.platform),
   };
 }
 
