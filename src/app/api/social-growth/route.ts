@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAdminApi } from '@/lib/api-admin';
 import { createServerClient } from '@/lib/supabase/server';
+import { rankFeatureInsights } from '@/services/social-growth/learning-ranking';
 import {
   buildGrowthRecommendations,
   buildFeatureInsights,
@@ -60,6 +61,7 @@ async function loadWorkspace(brandId?: string) {
   const posts = calculatePostPerformance(publications, snapshots, leads);
   const recommendations = buildGrowthRecommendations(posts);
   const patternInsights = buildFeatureInsights(posts);
+  const learningRanking = rankFeatureInsights(patternInsights, posts);
 
   const totals = posts.reduce((sum, post) => ({
     views: sum.views + post.views,
@@ -82,12 +84,14 @@ async function loadWorkspace(brandId?: string) {
     })),
     recommendations,
     patternInsights,
+    learningRanking,
     experiments: experimentRes.error ? [] : experimentRes.data || [],
     dataQuality: {
       publicationCount: publications.length,
       trackedPostCount: posts.filter((post) => post.reach > 0 || post.views > 0).length,
       attributedLeadCount: totals.leads,
       highConfidenceCount: posts.filter((post) => post.confidence === 'high').length,
+      autopilotEligiblePatternCount: learningRanking.filter((item) => item.autopilotEligible).length,
     },
   };
 }
