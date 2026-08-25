@@ -9,6 +9,13 @@ const CANARY = {
   publishingAccountId: "1118026341393565",
 };
 
+const PILLARS = [
+  { value: "rural_property", label: "Rural property" },
+  { value: "new_build", label: "New build" },
+  { value: "land_and_plot", label: "Land & plot" },
+  { value: "inland_lifestyle", label: "Inland lifestyle" },
+] as const;
+
 const AI_PREFILL =
   "Lag et profesjonelt, kanaltilpasset Facebook-innlegg om den konkrete RealtyFlow Inventory-boligen systemet velger for Pinoso EcoLife. Fokusér på landlig livsstil, plass, natur, tomt/nybygg og praktisk kjøpsveiledning når dette faktisk støttes av Inventory. Bruk kun verifiserte fakta. Facebook-teksten skal være fortellende og jordnær, men aldri finne på egenskaper, utsikt, tomtestørrelse, avstander, garantier, avkastning eller statistikk. Bruk konkret verifisert landsby/by når relevant.";
 
@@ -41,7 +48,7 @@ type DraftResult = {
   propertyLocation?: string | null;
   selectionReason?: string | null;
 };
-type Draft = { marketingRunId: string; correlationId: string; campaignId: string; results: DraftResult[] };
+type Draft = { marketingRunId: string; correlationId: string; campaignId: string; contentPillar?: string; results: DraftResult[] };
 
 async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: T }> {
   const res = await fetch(url, {
@@ -58,9 +65,11 @@ const box: React.CSSProperties = { border: "1px solid #e5e7eb", borderRadius: 12
 const pre: React.CSSProperties = { whiteSpace: "pre-wrap", background: "#f8fafc", padding: 12, borderRadius: 8, fontSize: 12, overflowX: "auto" };
 const btn = (enabled = true): React.CSSProperties => ({ border: 0, borderRadius: 9, padding: "10px 14px", fontWeight: 700, background: enabled ? "#111827" : "#d1d5db", color: "white", cursor: enabled ? "pointer" : "not-allowed" });
 const dot = (status: string) => status === "ok" ? "#16a34a" : status === "warn" ? "#d97706" : "#dc2626";
+const input: React.CSSProperties = { width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", boxSizing: "border-box" };
 
 export default function PinosoFacebookCanaryPage() {
   const [masterIdea, setMasterIdea] = useState(AI_PREFILL);
+  const [contentPillar, setContentPillar] = useState<(typeof PILLARS)[number]["value"]>("rural_property");
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [approved, setApproved] = useState(false);
@@ -99,11 +108,12 @@ export default function PinosoFacebookCanaryPage() {
   });
 
   const doDraft = () => run("draft", async () => {
-    const r = await post<Draft>("/api/marketing/campaign-draft", {
+    const r = await post<Draft>("/api/marketing/campaign-draft-with-pillar", {
       brandId: CANARY.brandId,
       channel: CANARY.channel,
       publishingAccountId: CANARY.publishingAccountId,
       masterIdea,
+      contentPillar,
       language: "no",
       goal: { kind: "qualified_leads", target: 10 },
       useInventoryProperty: true,
@@ -143,7 +153,11 @@ export default function PinosoFacebookCanaryPage() {
 
       <section style={box}>
         <h2 style={{ fontSize: 17, marginTop: 0 }}>Facebook-vinkel</h2>
-        <textarea value={masterIdea} onChange={(e) => setMasterIdea(e.target.value)} rows={6} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }} />
+        <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 5 }}>Content pillar</label>
+        <select value={contentPillar} onChange={(e) => setContentPillar(e.target.value as (typeof PILLARS)[number]["value"])} style={input}>
+          {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        <textarea value={masterIdea} onChange={(e) => setMasterIdea(e.target.value)} rows={6} style={{ ...input, marginTop: 12 }} />
       </section>
 
       <section style={box}>
@@ -162,6 +176,7 @@ export default function PinosoFacebookCanaryPage() {
         <h2 style={{ fontSize: 17, marginTop: 0 }}>2. Generate Inventory-grounded Draft</h2>
         <button style={btn(!!ready)} disabled={!ready || busy === "draft"} onClick={doDraft}>{busy === "draft" ? "Lager…" : "Create Pinoso Facebook Draft"}</button>
         {result && <div style={{ marginTop: 12, fontSize: 13 }}>
+          <div><b>pillar:</b> {draft?.contentPillar ?? contentPillar}</div>
           <div><b>property:</b> {result.propertyRef ?? result.propertyId}</div>
           <div><b>location:</b> {result.propertyLocation ?? "—"}</div>
           <div><b>selection:</b> {result.selectionReason ?? "—"}</div>
