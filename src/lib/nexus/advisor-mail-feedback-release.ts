@@ -1,0 +1,1 @@
+export const ADVISOR_MAIL_FEEDBACK_RELEASE = "v1";
