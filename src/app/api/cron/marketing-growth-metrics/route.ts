@@ -3,7 +3,7 @@ export const maxDuration = 120;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireCronApi } from "@/lib/api-cron";
+import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
 import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
@@ -16,7 +16,7 @@ function getSupabase() {
 }
 
 export async function GET(request: NextRequest) {
-  const unauthorized = requireCronApi(request);
+  const unauthorized = await requireNexusSchedulerApi(request);
   if (unauthorized) return unauthorized;
 
   const safeMode = await evaluateCronSafeMode("/api/cron/marketing-growth-metrics");
