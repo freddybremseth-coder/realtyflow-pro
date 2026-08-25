@@ -22,7 +22,7 @@ const REVENUE_READ_PAGES = new Set(["/internal-alerts", "/executive-briefing", "
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"] },
-  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/nexus-os/autonomy", "/nexus-os/account-launch", "/connections", "/social-automation", "/book-growth"] },
+  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/connections", "/social-automation", "/book-growth", "/nexus-os/account-launch"] },
   { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/nexus", "/recovery", "/after-sales", "/booking-admin", "/calendar"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
   { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
@@ -36,10 +36,10 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: ["/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/connections", "/approvals", "/communications"],
+  OWNER: ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/connections", "/approvals"],
   SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
   CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
-  FINANCE: ["/billing", "/dona-anna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
+  FINANCE: ["/billing", "/donaanna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
   MARKETING: ["/social-automation", "/growth-hub", "/marketing-readiness", "/analytics", "/ad-campaigns", "/content-studio"],
   KEYHOLDING: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/communications"],
   VIEWER: ["/revenue-command", "/today", "/customers", "/executive-briefing", "/monthly-close", "/forecast"],
