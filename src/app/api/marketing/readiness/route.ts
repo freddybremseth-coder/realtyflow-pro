@@ -21,6 +21,7 @@ type ReadinessRow = {
   published: number;
   measuredEligible: number;
   quarantined: number;
+  evaluatedRules: number;
   actionableRules: number;
   liveLearning: boolean;
   status: "LIVE_LEARNING" | "PILOT_READY" | "BRAND_BRAIN_READY" | "CONNECTED" | "NOT_READY";
@@ -70,13 +71,15 @@ export async function GET(request: NextRequest) {
     const eligible = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible !== false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
     const quarantined = new Set(channelEvents.filter((e: any) => e?.metadata?.learning_eligible === false).map((e: any) => String(e.content_id || "")).filter(Boolean)).size;
     const scope = channelLearningScope(brandId, platform);
-    const actionableRules = (rules ?? []).filter((r: any) => String(r.scope) === scope && ["favor", "avoid"].includes(String(r.verdict))).length;
+    const scopedRules = (rules ?? []).filter((r: any) => String(r.scope) === scope);
+    const evaluatedRules = scopedRules.length;
+    const actionableRules = scopedRules.filter((r: any) => ["favor", "avoid"].includes(String(r.verdict))).length;
     const connected = true;
     const brandBrainReady = Boolean(brandContext);
     const planned = Boolean(definition?.plannedChannels.includes(platform as MarketingChannel));
     const pilotReady = connected && brandBrainReady && isPilotChannel(brandId, platform);
     const pilotBlockReason = blocker({ connected, brandBrainReady, planned, pilotReady, platform });
-    const liveLearning = pilotReady && eligible >= 10 && actionableRules > 0;
+    const liveLearning = pilotReady && eligible >= 10 && evaluatedRules > 0;
 
     return {
       brandId,
@@ -92,6 +95,7 @@ export async function GET(request: NextRequest) {
       published,
       measuredEligible: eligible,
       quarantined,
+      evaluatedRules,
       actionableRules,
       liveLearning,
       status: liveLearning ? "LIVE_LEARNING" : pilotReady ? "PILOT_READY" : brandBrainReady ? "BRAND_BRAIN_READY" : "CONNECTED",
@@ -120,6 +124,7 @@ export async function GET(request: NextRequest) {
       published: 0,
       measuredEligible: 0,
       quarantined: 0,
+      evaluatedRules: 0,
       actionableRules: 0,
       liveLearning: false,
       status: context ? "BRAND_BRAIN_READY" : "NOT_READY",
@@ -136,10 +141,10 @@ export async function GET(request: NextRequest) {
       .map((e: any) => String(e.content_id || ""))
       .filter(Boolean),
   ).size;
-  const controlActionableRules = (rules ?? []).filter(
-    (r: any) => String(r.scope) === controlScope && ["favor", "avoid"].includes(String(r.verdict)),
-  ).length;
-  const controlValidated = controlEligible >= 10 && controlActionableRules > 0;
+  const controlRules = (rules ?? []).filter((r: any) => String(r.scope) === controlScope);
+  const controlEvaluatedRules = controlRules.length;
+  const controlActionableRules = controlRules.filter((r: any) => ["favor", "avoid"].includes(String(r.verdict))).length;
+  const controlValidated = controlEligible >= 10 && controlEvaluatedRules > 0;
   const controlGate = {
     status: controlValidated ? "RUN_NEXT_CANARY" : "WAIT",
     controlBrandId: "zeneco",
@@ -147,14 +152,15 @@ export async function GET(request: NextRequest) {
     learningScope: controlScope,
     eligibleObservations: controlEligible,
     requiredObservations: 10,
+    evaluatedRules: controlEvaluatedRules,
     actionableRules: controlActionableRules,
     nextRecommendedCanary: controlValidated
       ? { brandId: "zeneco", channel: "facebook", path: "/marketing-canary-facebook" }
       : null,
     reason: controlEligible < 10
       ? `WAIT_FOR_10_ELIGIBLE_INSTAGRAM_OBSERVATIONS (${controlEligible}/10)`
-      : controlActionableRules === 0
-        ? "WAIT_FOR_CHANNEL_LEARNING_RULES"
+      : controlEvaluatedRules === 0
+        ? "WAIT_FOR_CHANNEL_LEARNING_EVALUATION"
         : "RUN_ZENECO_FACEBOOK_CANARY",
   };
 
