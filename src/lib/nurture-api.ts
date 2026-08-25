@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import { isNurtureLiveEnabled } from "@/lib/nexus/runtime-controls";
 import { runNurtureCycle } from "@/services/growth/nurture-engine";
 
 export const LEAD_NURTURE_CRON_PATH = "/api/cron/lead-nurture";
@@ -29,10 +30,12 @@ export async function runLeadNurtureRequest(request: NextRequest) {
   }
 
   const searchParams = request.nextUrl.searchParams;
-  const liveEnv = String(process.env.NURTURE_LIVE || "").toLowerCase() === "true";
-  const liveQuery = searchParams.get("live") === "1";
+  const nexusLive = await isNurtureLiveEnabled();
+  // Manual test calls may always force dry-run. They may no longer bypass a
+  // disabled Nexus LIVE switch with ?live=1; operational enablement belongs
+  // in Nexus, not in a URL or Vercel setting.
   const forceDry = searchParams.get("dry") === "1";
-  const dryRun = forceDry || !(liveEnv || liveQuery);
+  const dryRun = forceDry || !nexusLive;
 
   const brandId = searchParams.get("brand") || undefined;
   const limit = Number(searchParams.get("limit") || 50) || 50;
@@ -47,6 +50,8 @@ export async function runLeadNurtureRequest(request: NextRequest) {
         type: "lead_nurture",
         status: result.failed > 0 ? "partial" : "success",
         details: {
+          runtime_control: "feature:nurture_live",
+          nexus_live: nexusLive,
           dryRun: result.dryRun,
           scanned: result.scanned,
           eligible: result.eligible,
@@ -58,7 +63,7 @@ export async function runLeadNurtureRequest(request: NextRequest) {
       .then(() => {})
       .then(undefined, () => {});
 
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({ success: true, nexusLive, ...result });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },
