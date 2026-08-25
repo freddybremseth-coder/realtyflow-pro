@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Bot, Check, Cpu, Loader2, X } from "lucide-react";
+import { Bot, Check, CheckCircle2, Cpu, Loader2, X } from "lucide-react";
 
 /* Agent-handlinger i den generelle Approval Gateway (agentic_approvals).
  * Montert i Approval Center slik at LI-approvals og generiske agent-handlinger
@@ -21,6 +22,13 @@ interface AgenticApproval {
   estimatedOpportunityEur?: number | null;
 }
 
+type ResolutionNotice = {
+  id: string;
+  decision: "approve" | "reject";
+  title: string;
+  executionOk: boolean | null;
+};
+
 const eur = (v?: number | null) => (v == null ? null : new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v));
 const riskColor = (r?: string | null) => (r === "critical" || r === "high" ? "#fb7185" : r === "medium" ? "#fbbf24" : "#34d399");
 
@@ -31,6 +39,7 @@ export function AgenticApprovalQueue() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolution, setResolution] = useState<ResolutionNotice | null>(null);
 
   const focusedId = useMemo(() => requestedApprovalId || null, [requestedApprovalId]);
 
@@ -58,21 +67,30 @@ export function AgenticApprovalQueue() {
   const resolve = useCallback(async (id: string, decision: "approve" | "reject") => {
     setBusyId(id);
     setError(null);
+    const item = items.find((candidate) => candidate.id === id);
     try {
       const res = await fetch(`/api/agentic/approvals/${id}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }),
       });
-      if (res.ok) setItems((prev) => prev.filter((i) => i.id !== id));
-      else { const d = await res.json().catch(() => ({})); setError(d.error || "Handling feilet"); }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const executionOk = decision === "approve"
+          ? typeof data?.execution?.ok === "boolean" ? data.execution.ok : null
+          : null;
+        setResolution({ id, decision, title: item?.title || "Agent-handling", executionOk });
+        setItems((prev) => prev.filter((i) => i.id !== id));
+      } else {
+        setError(data.error || "Handling feilet");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nettverksfeil");
     } finally {
       setBusyId(null);
     }
-  }, []);
+  }, [items]);
 
-  if (loading && items.length === 0) return null;
-  if (items.length === 0) return null;
+  if (loading && items.length === 0 && !resolution) return null;
+  if (items.length === 0 && !resolution) return null;
 
   return (
     <section className="rounded-2xl border border-violet-500/25 bg-violet-500/[0.06] p-5">
@@ -84,6 +102,27 @@ export function AgenticApprovalQueue() {
       </div>
 
       {error && <div className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-200">{error}</div>}
+
+      {resolution && (
+        <div className={`mb-4 rounded-xl border p-4 ${resolution.decision === "approve" ? "border-emerald-400/30 bg-emerald-400/10" : "border-rose-400/30 bg-rose-400/10"}`}>
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={20} className={resolution.decision === "approve" ? "mt-0.5 text-emerald-300" : "mt-0.5 text-rose-300"} />
+            <div className="min-w-0 flex-1">
+              <div className={`font-semibold ${resolution.decision === "approve" ? "text-emerald-200" : "text-rose-200"}`}>{resolution.decision === "approve" ? "Godkjent" : "Avvist"}: {resolution.title}</div>
+              <p className="mt-1 text-sm text-slate-300">
+                {resolution.decision === "reject"
+                  ? "Approvalen er avvist. Ingen publisering skal utføres fra denne approvalen."
+                  : resolution.executionOk === true
+                    ? "Approval og execution ble behandlet. Åpne Nexus Director for den faktiske publiseringsstatusen."
+                    : resolution.executionOk === false
+                      ? "Approvalen er godkjent, men execution rapporterte feil. Nexus Director viser den faktiske statusen og eventuell retry-behov."
+                      : "Approvalen er godkjent. Åpne Nexus Director for den faktiske execution-/publiseringsstatusen."}
+              </p>
+              <Link href="/nexus-os/director" className="mt-3 inline-flex rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-900">Tilbake til Nexus Director →</Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
         {items.map((a) => {
