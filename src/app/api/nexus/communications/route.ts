@@ -53,9 +53,9 @@ export async function GET(request: NextRequest) {
       .select("brand_id,focus_key,title,notes,intensity,status,success_definition,review_due_at")
       .eq("status", "active"),
     supabase
-      .from("nexus_runtime_flags")
-      .select("flag_key,enabled,risk_level,updated_at")
-      .in("flag_key", ["email_ingest", "nurture_live", "routine_email_reply_live"]),
+      .from("nexus_runtime_controls")
+      .select("control_key,enabled,risk_level,updated_at")
+      .in("control_key", ["cron:/api/cron/email-ingest", "feature:nurture_live", "feature:routine_email_reply_live"]),
   ]);
 
   const drafts = draftsR.data ?? [];
