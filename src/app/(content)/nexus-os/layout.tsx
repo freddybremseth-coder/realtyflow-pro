@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 const LINKS = [
   { href: "/nexus-os", label: "Command Center" },
+  { href: "/nexus-os/focus", label: "Mitt fokus" },
   { href: "/nexus-os/director", label: "Portfolio Director" },
   { href: "/nexus-os/runtime", label: "Runtime Controls" },
   { href: "/nexus-os/autonomy", label: "24/7 Autonomy" },
