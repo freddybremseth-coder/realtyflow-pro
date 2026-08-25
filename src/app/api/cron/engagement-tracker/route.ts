@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { listVideos, isConfigured as ytConfigured } from "@/services/integrations/youtube-client";
-import { requireCronApi } from "@/lib/api-cron";
+import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 import { fetchInstagramMediaEngagement } from "@/services/integrations/instagram-insights";
@@ -43,7 +43,7 @@ async function getCanonicalToken(brand: string, platform: "facebook" | "instagra
 
 export async function GET(request: NextRequest) {
   try {
-    const unauthorized = requireCronApi(request);
+    const unauthorized = await requireNexusSchedulerApi(request);
     if (unauthorized) return unauthorized;
 
     const safeMode = await evaluateCronSafeMode('/api/cron/engagement-tracker');
