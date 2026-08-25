@@ -31,14 +31,19 @@ test("middleware lets cron requests with supported credentials reach route handl
   }
 });
 
-test("middleware passes allowlisted Nexus scheduler social sync to route-level token verification", async () => {
-  const response = await middleware(
-    request("/api/cron/social-inbox-sync", { "x-nexus-scheduler": "opaque-scheduler-token" }),
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-middleware-next"), "1");
-  assert.equal(response.headers.get("location"), null);
+test("middleware passes allowlisted Nexus scheduler jobs to route-level token verification", async () => {
+  for (const path of [
+    "/api/cron/social-inbox-sync",
+    "/api/cron/engagement-tracker",
+    "/api/cron/marketing-growth-metrics",
+  ]) {
+    const response = await middleware(
+      request(path, { "x-nexus-scheduler": "opaque-scheduler-token" }),
+    );
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("x-middleware-next"), "1", path);
+    assert.equal(response.headers.get("location"), null, path);
+  }
 });
 
 test("middleware does not make Nexus social sync public without scheduler credentials", async () => {
