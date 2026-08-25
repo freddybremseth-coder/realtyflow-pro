@@ -320,7 +320,7 @@ export function Sidebar() {
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 text-sm font-bold text-white">RF</div>
         <div className={cn("min-w-0 animate-fade-in", collapsed && "lg:hidden")}>
           <h1 className="truncate text-base font-bold text-white">RealtyFlow Pro</h1>
-          <p className="truncate text-[10px] uppercase tracking-wider text-slate-500">Freddy Revenue OS</p>
+          <p className="truncate text-[10px] uppercase tracking-wider text-slate-500">RealtyFlow Operating System</p>
         </div>
         <button
           onClick={() => setCollapsed((value) => !value)}
@@ -356,7 +356,6 @@ export function Sidebar() {
           )}
         </label>
       </div>
-
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {!user && <div className="px-3 py-4 text-xs text-slate-600">Laster tilgang…</div>}
 
