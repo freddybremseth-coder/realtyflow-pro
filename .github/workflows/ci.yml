@@ -84,6 +84,8 @@ jobs:
         run: npx tsx --test src/services/ads/campaign-planner.test.ts
       - name: Creative DNA attribution tests
         run: npx tsx --test src/lib/ads/creative-dna.test.ts src/lib/ads/creative-performance.test.ts src/lib/ads/creative-variants.test.ts src/lib/ads/creative-insights.test.ts
+      - name: Instagram Growth learning tests
+        run: npx tsx --test src/services/social-growth/performance-engine.test.ts
       - name: Build
         id: next_build
         shell: bash
