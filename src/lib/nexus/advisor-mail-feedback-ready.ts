@@ -1,0 +1,1 @@
+export const ADVISOR_MAIL_PROPERTY_FEEDBACK_READY = true;
