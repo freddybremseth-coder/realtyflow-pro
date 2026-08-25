@@ -11,18 +11,20 @@ export async function GET(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const [channelsR, conversationsR, draftsR, eventsR, runtimeR] = await Promise.all([
+  const [channelsR, conversationsR, draftsR, eventsR, runtimeR, syncLogsR] = await Promise.all([
     supabase.from("social_channels").select("id,brand_id,platform,display_name,is_active").in("platform", ["instagram", "facebook"]).eq("is_active", true),
     supabase.from("nexus_social_conversations").select("id,brand_id,platform,status,priority,last_inbound_at,last_outbound_at,last_synced_at,created_at").order("updated_at", { ascending: false }).limit(500),
     supabase.from("nexus_social_reply_drafts").select("id,brand_id,platform,status,ai_confidence,created_at").order("created_at", { ascending: false }).limit(500),
     supabase.from("nexus_social_communication_events").select("id,brand_id,platform,event_type,outcome,occurred_at").gte("occurred_at", new Date(Date.now()-30*86_400_000).toISOString()).limit(2000),
     supabase.from("nexus_runtime_controls").select("control_key,enabled,risk_level,config,updated_at").in("control_key", ["feature:social_inbox_sync","feature:social_reply_draft","feature:social_auto_reply_live"]),
+    supabase.from("automation_logs").select("action,agent_name,status,details,created_at").eq("action","social_inbox_sync").order("created_at", { ascending:false }).limit(10),
   ]);
 
   if (channelsR.error) return NextResponse.json({ error: channelsR.error.message }, { status: 500 });
   if (conversationsR.error) return NextResponse.json({ error: conversationsR.error.message }, { status: 500 });
   if (draftsR.error) return NextResponse.json({ error: draftsR.error.message }, { status: 500 });
   if (eventsR.error) return NextResponse.json({ error: eventsR.error.message }, { status: 500 });
+  if (runtimeR.error) return NextResponse.json({ error: runtimeR.error.message }, { status: 500 });
 
   const channelIds=(channelsR.data??[]).map((x:any)=>x.id);
   const { data: tokenRows, error: tokenError } = channelIds.length
@@ -49,15 +51,33 @@ export async function GET(request: NextRequest) {
   const conversations:any[]=conversationsR.data??[];
   const drafts:any[]=draftsR.data??[];
   const events:any[]=eventsR.data??[];
+  const syncEnabled=Boolean((runtimeR.data??[]).find((x:any)=>x.control_key==="feature:social_inbox_sync")?.enabled);
+  const syncLogs:any[]=syncLogsR.error ? [] : (syncLogsR.data??[]);
+  const lastSync:any=syncLogs[0]??null;
+  const lastDetails:any=lastSync?.details && typeof lastSync.details==="object" ? lastSync.details : {};
+
   return NextResponse.json({
     generatedAt:new Date().toISOString(),
     sourceState: {
       canonicalTablesReady:true,
-      externalInboxSyncActive:Boolean((runtimeR.data??[]).find((x:any)=>x.control_key==="feature:social_inbox_sync")?.enabled),
-      note:"0 samtaler betyr 0 canonical synkroniserte samtaler. Det betyr ikke at Meta-innboksen er tom før external inbox sync er aktiv og capability-verifisert.",
+      externalInboxSyncActive:syncEnabled,
+      lastSync: lastSync ? {
+        status:lastSync.status,
+        agentName:lastSync.agent_name,
+        createdAt:lastSync.created_at,
+        source:lastDetails.source??null,
+        commentsFetched:Number(lastDetails.comments_fetched??0),
+        conversationsUpserted:Number(lastDetails.conversations_upserted??0),
+        messagesUpserted:Number(lastDetails.messages_upserted??0),
+        readOnly:Boolean(lastDetails.read_only),
+      } : null,
+      note: syncEnabled
+        ? "External read-only inbox sync er aktiv. Canonical 0 kan nå tolkes som 0 synkroniserte kommentarer for kanaler og poster som faktisk har nødvendig read-capability; kanaler som mangler scope er fortsatt ukjent/skipped."
+        : "0 samtaler betyr 0 canonical synkroniserte samtaler. Det betyr ikke at Meta-innboksen er tom før external inbox sync er aktiv og capability-verifisert.",
     },
     summary:{
       channels:readiness.length,
+      commentReadReady:readiness.filter((x:any)=>x.capabilities.readComments).length,
       communicationReady:readiness.filter((x:any)=>!x.needsCommunicationReconnect).length,
       conversations:conversations.length,
       openConversations:conversations.filter((x:any)=>["open","draft_ready","awaiting_approval"].includes(x.status)).length,
@@ -71,5 +91,6 @@ export async function GET(request: NextRequest) {
     conversations,
     recentDrafts:drafts.slice(0,100),
     events30d:events,
+    recentSyncs:syncLogs,
   });
 }
