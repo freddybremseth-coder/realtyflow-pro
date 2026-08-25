@@ -10,6 +10,7 @@
  * after the first controlled Facebook pilot publication exists.
  */
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/services/marketing/inventory-property-adapter";
 import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { refreshLearningRules } from "@/services/marketing/learning-adapter";
@@ -287,7 +288,11 @@ export async function syncGrowthFacebookMetrics(
   ).size;
 
   if (result.observations >= learningMin) {
-    const learning = await refreshLearningRules(supabase, { brandId });
+    const learning = await refreshLearningRules(supabase, {
+      brandId,
+      channel: "facebook",
+      scope: channelLearningScope(brandId, "facebook"),
+    });
     result.learningRefreshed = true;
     result.rulesWritten = learning.rulesWritten;
   }
