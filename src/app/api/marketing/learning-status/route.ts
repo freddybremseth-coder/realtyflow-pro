@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
+import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
 
 function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -170,14 +171,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const brandId = typeof body?.brandId === "string" && body.brandId.trim() ? body.brandId.trim() : "zeneco";
     const supabase = supabaseAdmin();
+    const instagram = await resolveBrandInstagramAccessToken(brandId);
     const sync = await syncGrowthInstagramMetrics(supabase as any, {
       brandId,
       days: 30,
       limit: 100,
       minAgeHours: 24,
       learningMinObservations: 10,
+      accessToken: instagram.accessToken,
     });
-    return NextResponse.json({ ok: true, sync, status: await readStatus(brandId) });
+    return NextResponse.json({
+      ok: true,
+      tokenScope: "brand_channel",
+      instagramChannelId: instagram.channelId,
+      instagramAccountId: instagram.accountId,
+      sync,
+      status: await readStatus(brandId),
+    });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
