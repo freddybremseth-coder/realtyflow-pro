@@ -67,6 +67,8 @@ export const LeadFormSubmissionSchema = z.object({
   brandId: z.string(),
   channel: z.string().optional(),
   publicationId: z.string().optional(),
+  creativeVariantId: z.string().uuid().optional(),
+  creativeTrackingCode: z.string().trim().max(120).optional(),
   answers: z.record(z.string(), z.string()).default({}),
   contact: z.object({ name: z.string().optional(), email: z.string().optional(), phone: z.string().optional() }).default({}),
   visitorId: z.string().optional(),
