@@ -8,6 +8,7 @@ import { GET as GETEngagementTracker } from "./engagement-tracker/route";
 import { GET as GETGrowthEngine } from "./growth-engine/route";
 import { GET as GETLeadNurture } from "./lead-nurture/route";
 import { GET as GETMarketData } from "./market-data/route";
+import { GET as GETMarketingGrowthMetrics } from "./marketing-growth-metrics/route";
 import { GET as GETPublishingAutopilot } from "./publishing-autopilot/route";
 import { GET as GETPublishingGrowthLoop } from "./publishing-growth-loop/route";
 import { GET as GETPublishingMarketWatch } from "./publishing-market-watch/route";
@@ -33,6 +34,7 @@ const cronRoutes = [
   { path: "/api/cron/growth-engine", handler: GETGrowthEngine },
   { path: "/api/cron/lead-nurture", handler: GETLeadNurture },
   { path: "/api/cron/market-data", handler: GETMarketData },
+  { path: "/api/cron/marketing-growth-metrics", handler: GETMarketingGrowthMetrics },
   { path: "/api/cron/publishing-autopilot", handler: GETPublishingAutopilot },
   { path: "/api/cron/publishing-growth-loop", handler: GETPublishingGrowthLoop },
   { path: "/api/cron/publishing-market-watch", handler: GETPublishingMarketWatch },
