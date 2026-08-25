@@ -3,30 +3,46 @@ import type { ReactNode } from "react";
 import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
-  { href: "/os", label: "Attention Center" },
-  { href: "/nexus-os", label: "Command Center" },
-  { href: "/nexus-os/focus", label: "Mitt fokus" },
-  { href: "/nexus-os/director", label: "Portfolio Director" },
+  { href: "/nexus-os", label: "Agentic OS" },
+  { href: "/agents", label: "Agent Fleet" },
+  { href: "/os", label: "Attention" },
+  { href: "/nexus-os/focus", label: "Owner Focus" },
+  { href: "/nexus-os/director", label: "Director" },
   { href: "/nexus-os/communications", label: "Communications" },
-  { href: "/nexus-os/communications/social", label: "Social Readiness" },
-  { href: "/nexus-os/communications/learning", label: "Communication Learning" },
-  { href: "/nexus-os/runtime", label: "Runtime Controls" },
-  { href: "/nexus-os/autonomy", label: "24/7 Autonomy" },
-  { href: "/nexus-os/account-launch", label: "Account Launch" },
-  { href: "/connections", label: "Channel Connections" },
-  { href: "/social-automation", label: "Social Growth" },
-  { href: "/book-growth", label: "Book Growth" },
+  { href: "/nexus-os/runtime", label: "Runtime" },
+  { href: "/nexus-os/autonomy", label: "Autonomy" },
   { href: "/approvals", label: "Approvals" },
+  { href: "/connections", label: "Connections" },
+  { href: "/social-automation", label: "Growth" },
+  { href: "/book-growth", label: "Books" },
 ];
 
 export default function NexusOsLayout({ children }: { children: ReactNode }) {
-  return <div className="text-slate-950">
-    <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6">
-      <nav aria-label="Nexus OS" className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-300 bg-white p-2 shadow-sm">
-        {LINKS.map((item) => <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-black text-slate-900 transition hover:border-cyan-400 hover:bg-cyan-50 hover:text-cyan-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
-      </nav>
+  return <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="border-b border-cyan-900/50 bg-[radial-gradient(circle_at_top_left,_rgba(6,182,212,0.16),_transparent_34%),linear-gradient(135deg,#020617,#0f172a_56%,#082f49)]">
+      <div className="mx-auto max-w-[1600px] px-4 pb-4 pt-5 sm:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,.8)]" />
+              Nexus // Agentic Operating System
+            </div>
+            <div className="mt-2 flex flex-wrap items-baseline gap-3">
+              <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">AI Mission Control</h1>
+              <span className="text-xs font-bold text-slate-400">multi-agent orchestration · runtime · learning · approvals</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/agents" className="rounded-xl border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20">Open Agent Fleet →</Link>
+            <Link href="/nexus-os/autonomy" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-xs font-black text-slate-200 transition hover:border-slate-400">Autonomy Policy</Link>
+          </div>
+        </div>
+        <nav aria-label="Nexus Agentic OS" className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {LINKS.map((item) => <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-black text-slate-200 transition hover:border-cyan-400 hover:bg-cyan-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
+        </nav>
+      </div>
     </div>
-    <div className="mt-3"><NexusAttentionStrip /></div>
-    {children}
+    <div className="border-b border-slate-800 bg-slate-950/95 py-3"><NexusAttentionStrip /></div>
+    <div className="bg-slate-50 text-slate-950">{children}</div>
   </div>;
 }
