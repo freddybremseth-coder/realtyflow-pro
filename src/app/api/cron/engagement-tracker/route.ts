@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
       .select("id, brand_id, facebook_post_id, instagram_post_id, linkedin_post_id, published_at, scheduled_platforms, source_social_post_id")
       .eq("status", "published")
       .gte("published_at", thirtyDaysAgo.toISOString())
+      .order("published_at", { ascending: false })
       .limit(30);
 
     if (!posts?.length) return NextResponse.json({ message: "No published posts to track", tracked: 0 });
