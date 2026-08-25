@@ -76,6 +76,8 @@ jobs:
         run: npm run test:navigation
       - name: Nexus Social scheduler and canonical contract tests
         run: npx tsx --test src/middleware.test.ts src/services/integrations/nexus-social-inbox-sync.contract.test.ts
+      - name: Nexus OS Attention Center tests
+        run: npx tsx --test src/lib/os/attention.test.ts
       - name: DemoSites Signature design tests
         run: npm run test:demosites-design
       - name: Ad Campaign Generator planner tests
