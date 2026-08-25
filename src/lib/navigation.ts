@@ -26,158 +26,40 @@ export interface NavigationSection {
 export const NAVIGATION_FAVORITES_LIMIT = 6;
 
 const REVENUE_READ_PAGES = new Set([
-  "/internal-alerts",
-  "/executive-briefing",
-  "/operating-review",
-  "/weekly-management-review",
-  "/continuous-improvement",
+  "/internal-alerts", "/executive-briefing", "/operating-review", "/weekly-management-review", "/continuous-improvement",
 ]);
 
-const GROUPS: Array<{
-  id: NavigationSectionId;
-  label: string;
-  icon: string;
-  hrefs: string[];
-}> = [
-  {
-    id: "workspace",
-    label: "Hjem",
-    icon: "PanelsTopLeft",
-    hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"],
-  },
+const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
+  { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"] },
   {
     id: "os",
-    label: "OS & automatisering",
+    label: "Nexus OS & automatisering",
     icon: "Boxes",
     hrefs: [
-      "/os",
-      "/nexus",
+      "/nexus-os",
       "/social-automation",
       "/book-growth",
       "/automation",
       "/agents",
+      "/os",
+      "/nexus",
       "/automation/nurture",
-      "/email",
     ],
   },
-  {
-    id: "customers",
-    label: "Kunder & salg",
-    icon: "Users",
-    hrefs: [
-      "/customers",
-      "/lead-intelligence",
-      "/execution",
-      "/recovery",
-      "/after-sales",
-      "/booking-admin",
-      "/calendar",
-    ],
-  },
-  {
-    id: "care",
-    label: "Keyholding Care",
-    icon: "KeyRound",
-    hrefs: [
-      "/care",
-      "/care/customers",
-      "/care/reports",
-      "/care/invoices",
-      "/care/keys",
-      "/service-revenue",
-    ],
-  },
-  {
-    id: "revenue",
-    label: "Økonomi & closing",
-    icon: "Handshake",
-    hrefs: [
-      "/revenue-command",
-      "/closing",
-      "/closing-pack",
-      "/commissions",
-      "/billing",
-      "/forecast",
-      "/monthly-close",
-      "/goals",
-    ],
-  },
-  {
-    id: "properties",
-    label: "Eiendom",
-    icon: "Building2",
-    hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"],
-  },
-  {
-    id: "marketing",
-    label: "Vekst & markedsføring",
-    icon: "Megaphone",
-    hrefs: [
-      "/growth-hub",
-      "/marketing-readiness",
-      "/ad-campaigns",
-      "/analytics",
-      "/reports",
-      "/attribution",
-      "/marketing-tasks",
-      "/reach",
-    ],
-  },
-  {
-    id: "content",
-    label: "Innhold & medier",
-    icon: "Clapperboard",
-    hrefs: [
-      "/content-studio",
-      "/media-studio",
-      "/posts",
-      "/ai-personal-brand",
-      "/content-hub",
-      "/image-studio",
-      "/website-cms",
-    ],
-  },
-  {
-    id: "publishing",
-    label: "Publishing & creator",
-    icon: "BookOpen",
-    hrefs: [
-      "/publishing",
-      "/publishing/forfatterstudio",
-      "/youtube-studio",
-      "/neural-beat",
-    ],
-  },
-  {
-    id: "reports",
-    label: "Ledelse & rapporter",
-    icon: "ClipboardList",
-    hrefs: [
-      "/executive-briefing",
-      "/business-overview",
-      "/operating-review",
-      "/weekly-management-review",
-      "/continuous-improvement",
-      "/team-workload",
-      "/revenue-data-health",
-    ],
-  },
-  {
-    id: "business",
-    label: "Forretningsområder",
-    icon: "Briefcase",
-    hrefs: ["/platform", "/demosites", "/saas", "/revenue-engine", "/mondeo", "/dona-anna"],
-  },
-  {
-    id: "admin",
-    label: "Admin & system",
-    icon: "Settings",
-    hrefs: ["/access-control", "/audit-log", "/brands", "/business-hub", "/data-health", "/settings"],
-  },
+  { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar"] },
+  { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
+  { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
+  { id: "properties", label: "Eiendom", icon: "Building2", hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"] },
+  { id: "marketing", label: "Vekst & markedsføring", icon: "Megaphone", hrefs: ["/growth-hub", "/marketing-readiness", "/ad-campaigns", "/analytics", "/reports", "/attribution", "/marketing-tasks", "/reach"] },
+  { id: "content", label: "Innhold & medier", icon: "Clapperboard", hrefs: ["/content-studio", "/media-studio", "/posts", "/ai-personal-brand", "/content-hub", "/image-studio", "/website-cms"] },
+  { id: "publishing", label: "Publishing & creator", icon: "BookOpen", hrefs: ["/publishing", "/publishing/forfatterstudio", "/youtube-studio", "/neural-beat"] },
+  { id: "reports", label: "Ledelse & rapporter", icon: "ClipboardList", hrefs: ["/executive-briefing", "/business-overview", "/operating-review", "/weekly-management-review", "/continuous-improvement", "/team-workload", "/revenue-data-health"] },
+  { id: "business", label: "Forretningsområder", icon: "Briefcase", hrefs: ["/platform", "/demosites", "/saas", "/revenue-engine", "/mondeo", "/dona-anna"] },
+  { id: "admin", label: "Admin & system", icon: "Settings", hrefs: ["/access-control", "/audit-log", "/brands", "/business-hub", "/data-health", "/settings"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: ["/os", "/nexus", "/social-automation", "/book-growth", "/today", "/customers"],
+  OWNER: ["/nexus-os", "/social-automation", "/book-growth", "/today", "/customers", "/approvals"],
   SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
   CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
   FINANCE: ["/billing", "/dona-anna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
@@ -201,10 +83,7 @@ export function buildVisibleNavigation(role: AccessRole, permissions: string[]):
     id: group.id,
     label: group.label,
     icon: group.icon,
-    items: group.hrefs
-      .map((href) => itemByHref.get(href))
-      .filter((item): item is NavigationItem => Boolean(item))
-      .filter((item) => canSeeItem(role, permissions, item.href)),
+    items: group.hrefs.map((href) => itemByHref.get(href)).filter((item): item is NavigationItem => Boolean(item)).filter((item) => canSeeItem(role, permissions, item.href)),
   })).filter((section) => section.items.length > 0);
 }
 
@@ -220,12 +99,7 @@ export function activeNavigationSection(pathname: string, sections: NavigationSe
 export function filterNavigationSections(sections: NavigationSection[], query: string) {
   const normalized = query.trim().toLocaleLowerCase("nb-NO");
   if (!normalized) return sections;
-  return sections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => `${item.label} ${item.href}`.toLocaleLowerCase("nb-NO").includes(normalized)),
-    }))
-    .filter((section) => section.items.length > 0);
+  return sections.map((section) => ({ ...section, items: section.items.filter((item) => `${item.label} ${item.href}`.toLocaleLowerCase("nb-NO").includes(normalized)) })).filter((section) => section.items.length > 0);
 }
 
 export function normalizeNavigationFavorites(value: unknown, availableHrefs: string[], limit = NAVIGATION_FAVORITES_LIMIT) {
