@@ -56,12 +56,12 @@ export default function RootLayout({
             <MobileNexusBar />
             <ChatWidget
               brandId="freddyb"
-              apiUrl="/api/agents/command"
+              apiUrl="/api/nexus/victoria"
               title="Victoria · Nexus"
-              subtitle="Director for RealtyFlow OS"
-              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Jeg kan prioritere arbeid, forklare hva systemet gjør, lage planer på tvers av brands og sende oppgaver til riktig agent og modul."
+              subtitle="Live grensesnitt til Nexus Director"
+              welcomeMessage="Hei. Jeg er Victoria, grensesnittet til Nexus OS. Jeg leser live status fra brands, kanaler, e-post, CRM, approvals, learning og autonomy policy før jeg svarer."
               primaryColor="#0891b2"
-              placeholder="Be Nexus prioritere, analysere eller utføre…"
+              placeholder="Spør hva Nexus gjør eller bør prioritere…"
             />
             <JarvisOverlay />
           </>
