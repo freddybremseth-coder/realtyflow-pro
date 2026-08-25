@@ -51,40 +51,40 @@ export function MobileNexusMenu() {
   },[sections,query,user?.role]);
 
   return <>
-    <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur lg:hidden">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-slate-700 bg-slate-950 px-3 shadow-lg lg:hidden">
       <Link href="/nexus-os" className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-400 text-sm font-black text-slate-950">N</div>
-        <div className="leading-tight"><div className="text-sm font-black text-white">Nexus OS</div><div className="text-[9px] uppercase tracking-[.18em] text-cyan-400">RealtyFlow Director</div></div>
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-300 text-sm font-black text-slate-950">N</div>
+        <div className="leading-tight"><div className="text-sm font-black text-white">Nexus OS</div><div className="text-[9px] font-bold uppercase tracking-[.18em] text-cyan-200">RealtyFlow Director</div></div>
       </Link>
-      <button onClick={()=>setOpen(true)} aria-label="Åpne Nexus-meny" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200"><Menu size={19}/></button>
+      <button onClick={()=>setOpen(true)} aria-label="Åpne Nexus-meny" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-600 bg-slate-900 text-white"><Menu size={19}/></button>
     </header>
 
-    {!open ? null : <div className="fixed inset-0 z-[80] bg-slate-950 lg:hidden">
-      <div className="flex h-14 items-center justify-between border-b border-slate-800 px-4">
-        <div><div className="text-sm font-black text-white">Nexus OS</div><div className="text-[10px] text-slate-500">Hele RealtyFlow fra én meny</div></div>
-        <button onClick={()=>setOpen(false)} aria-label="Lukk meny" className="rounded-xl border border-slate-700 p-2 text-slate-300"><X size={18}/></button>
+    {!open ? null : <div className="fixed inset-0 z-[80] bg-slate-950 text-white lg:hidden">
+      <div className="flex h-14 items-center justify-between border-b border-slate-700 px-4">
+        <div><div className="text-sm font-black text-white">Nexus OS</div><div className="text-[10px] font-medium text-slate-300">Hele RealtyFlow fra én meny</div></div>
+        <button onClick={()=>setOpen(false)} aria-label="Lukk meny" className="rounded-xl border border-slate-600 bg-slate-900 p-2 text-white"><X size={18}/></button>
       </div>
       <div className="h-[calc(100dvh-3.5rem)] overflow-y-auto pb-24">
-        <div className="border-b border-slate-800 p-4">
+        <div className="border-b border-slate-700 p-4">
           <div className="grid grid-cols-2 gap-2">
             {CORE.map(({href,label,Icon}) => {
               const active = pathname===href || (href!=="/nexus-os" && pathname.startsWith(`${href}/`));
-              return <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active?"border-cyan-500/40 bg-cyan-500/10 text-cyan-300":"border-slate-800 bg-slate-900 text-slate-300"}`}><Icon size={16}/>{label}</Link>;
+              return <Link key={href} href={href} className={`flex items-center gap-2 rounded-xl border px-3 py-3 text-sm font-bold ${active?"border-cyan-300 bg-cyan-300/15 text-cyan-100":"border-slate-700 bg-slate-900 text-slate-100"}`}><Icon size={16}/>{label}</Link>;
             })}
           </div>
         </div>
 
-        <div className="sticky top-0 z-10 bg-slate-950/95 p-4 backdrop-blur">
-          <label className="relative block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Søk i RealtyFlow …" className="w-full rounded-xl border border-slate-800 bg-slate-900 py-2.5 pl-10 pr-3 text-sm text-white outline-none focus:border-cyan-600"/></label>
+        <div className="sticky top-0 z-10 bg-slate-950 p-4">
+          <label className="relative block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Søk i RealtyFlow …" className="w-full rounded-xl border border-slate-600 bg-slate-900 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-slate-400 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"/></label>
         </div>
 
         <div className="space-y-5 px-4 pb-8">
           {filtered.map(section => <section key={section.id}>
-            <div className="mb-2 text-[10px] font-black uppercase tracking-[.18em] text-slate-500">{section.label}</div>
-            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
+            <div className="mb-2 text-[10px] font-black uppercase tracking-[.18em] text-slate-300">{section.label}</div>
+            <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
               {section.items.map((item,index) => {
                 const active = pathname===item.href || (item.href!=="/" && pathname.startsWith(`${item.href}/`));
-                return <Link key={item.href} href={item.href} className={`block px-4 py-3 text-sm ${index?"border-t border-slate-800":""} ${active?"bg-cyan-500/10 font-bold text-cyan-300":"text-slate-300"}`}>{item.label}</Link>;
+                return <Link key={item.href} href={item.href} className={`block px-4 py-3 text-sm font-medium ${index?"border-t border-slate-700":""} ${active?"bg-cyan-300/15 font-bold text-cyan-100":"text-slate-100 hover:bg-slate-800"}`}>{item.label}</Link>;
               })}
             </div>
           </section>)}
