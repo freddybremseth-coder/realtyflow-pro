@@ -46,7 +46,10 @@ function sumObserved(rows: ObservedMetricRow[]): ContentMetrics {
     if (!learningEligible(r)) continue;
     const m = r.metrics ?? {};
     add("views", m.views);
+    add("impressions", m.impressions);
     add("engagedViews", m.engagedViews);
+    add("reactions", m.reactions);
+    add("comments", m.comments);
     add("saves", m.saves);
     add("shares", m.shares);
     add("clicks", m.clicks);
