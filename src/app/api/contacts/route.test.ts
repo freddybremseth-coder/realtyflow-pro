@@ -65,6 +65,10 @@ function supabaseMock(result: { data?: unknown; error?: unknown } = { data: [], 
       calls.push({ method: "single", args: [] });
       return Promise.resolve(singleResult);
     },
+    maybeSingle() {
+      calls.push({ method: "maybeSingle", args: [] });
+      return Promise.resolve(singleResult);
+    },
     then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
       return Promise.resolve(result).then(resolve, reject);
     },
