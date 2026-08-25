@@ -23,21 +23,21 @@ const HIDDEN_LEGACY_HREFS = new Set(["/nexus"]);
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"] },
-  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy", "/connections", "/book-growth", "/nexus-os/account-launch"] },
-  { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar"] },
+  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy", "/connections", "/book-growth"] },
+  { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar", "/automation/nurture"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
   { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
   { id: "properties", label: "Eiendom", icon: "Building2", hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"] },
   { id: "marketing", label: "Vekst & markedsføring", icon: "Megaphone", hrefs: ["/growth-hub", "/social-automation", "/marketing-readiness", "/ad-campaigns", "/analytics", "/reports", "/attribution", "/reach"] },
   { id: "content", label: "Innhold & medier", icon: "Clapperboard", hrefs: ["/content-studio", "/media-studio", "/posts", "/ai-personal-brand", "/content-hub", "/image-studio", "/website-cms", "/email"] },
   { id: "publishing", label: "Publishing & creator", icon: "BookOpen", hrefs: ["/publishing", "/publishing/forfatterstudio", "/youtube-studio", "/remaster-freddy"] },
-  { id: "reports", label: "Ledelse & rapporter", icon: "ClipboardList", hrefs: ["/executive-briefing", "/business-overview", "/operating-review", "/weekly-management-review", "/continuous-improvement", "/team-workload", "/revenue-data-health", "/os"] },
-  { id: "business", label: "Forretningsområder", icon: "Briefcase", hrefs: ["/platform", "/demosites", "/saas", "/revenue-engine", "/mondeo", "/dona-anna", "/automation/nurture", "/marketing-tasks"] },
+  { id: "reports", label: "Ledelse & rapporter", icon: "ClipboardList", hrefs: ["/executive-briefing", "/business-overview", "/operating-review", "/weekly-management-review", "/continuous-improvement", "/team-workload", "/revenue-data-health"] },
+  { id: "business", label: "Forretningsområder", icon: "Briefcase", hrefs: ["/platform", "/demosites", "/saas", "/revenue-engine", "/mondeo", "/dona-anna", "/nexus-os/account-launch", "/marketing-tasks"] },
   { id: "admin", label: "Admin & system", icon: "Settings", hrefs: ["/access-control", "/audit-log", "/brands", "/business-hub", "/data-health", "/settings", "/automation", "/agents"] },
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/connections", "/approvals"],
+  OWNER: ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/connections", "/approvals"],
   SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
   CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
   FINANCE: ["/billing", "/donaanna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
