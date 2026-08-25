@@ -14,6 +14,7 @@
 import { fetchInstagramMediaEngagement } from "@/services/integrations/instagram-insights";
 import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { refreshLearningRules } from "@/services/marketing/learning-adapter";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/services/marketing/inventory-property-adapter";
 import { unsupportedOutcomeClaims } from "@/lib/marketing/autonomous/claim-guard";
 import type { ContentGenome } from "@/lib/marketing/genome";
@@ -397,7 +398,11 @@ export async function syncGrowthInstagramMetrics(
   ).size;
 
   if (result.observations >= learningMin && brandId) {
-    const refreshed = await refreshLearningRules(supabase, { brandId, scope: brandId });
+    const refreshed = await refreshLearningRules(supabase, {
+      brandId,
+      channel: "instagram",
+      scope: channelLearningScope(brandId, "instagram"),
+    });
     result.learningRefreshed = true;
     result.rulesWritten = refreshed.rulesWritten;
   }
