@@ -9,6 +9,7 @@ const MODULES = [
   { href: "/book-growth/catalog-quality", label: "Catalog Quality" },
   { href: "/book-growth/work-review", label: "Work & Translation" },
   { href: "/book-growth/edition-language", label: "Edition & Language" },
+  { href: "/book-growth/channel-metadata", label: "Channel Metadata" },
 ];
 
 export default function BookGrowthLayout({ children }: { children: ReactNode }) {
