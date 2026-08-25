@@ -136,7 +136,7 @@ export async function runReadOnlySocialInboxSync(input: { source: "cron" | "manu
     agent_name: input.source === "cron" ? "nexus_social_inbox_sync_cron" : "nexus_social_inbox_sync_manual",
     status: results.some((r) => r.error) ? "partial" : "success",
     details: { source: input.source, comments_fetched: commentsFetched, conversations_upserted: conversationsUpserted, messages_upserted: messagesUpserted, runtime_control: "feature:social_inbox_sync", read_only: true },
-  }).catch(() => undefined);
+  });
 
   return { success: true, readOnly: true, commentsFetched, conversationsUpserted, messagesUpserted, results };
 }
