@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, CheckSquare, Link2, Megaphone, Sparkles } from "lucide-react";
+import { Boxes, CheckSquare, Crosshair, Link2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/nexus-os", label: "Nexus", Icon: Boxes },
+  { href: "/nexus-os/focus", label: "Fokus", Icon: Crosshair },
   { href: "/nexus-os/director", label: "Director", Icon: Sparkles },
   { href: "/connections", label: "Koble", Icon: Link2 },
-  { href: "/social-automation", label: "Growth", Icon: Megaphone },
   { href: "/approvals", label: "Kontroll", Icon: CheckSquare },
 ] as const;
 
