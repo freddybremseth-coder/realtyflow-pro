@@ -8,6 +8,7 @@ const MODULES = [
   { href: "/book-growth/asins", label: "ASIN" },
   { href: "/book-growth/catalog-quality", label: "Catalog Quality" },
   { href: "/book-growth/work-review", label: "Work & Translation" },
+  { href: "/book-growth/edition-language", label: "Edition & Language" },
 ];
 
 export default function BookGrowthLayout({ children }: { children: ReactNode }) {
