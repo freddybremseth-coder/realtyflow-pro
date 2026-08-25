@@ -30,6 +30,16 @@ type Publication = {
   updated_at: string;
 };
 
+type OwnerFocus = {
+  id: string;
+  brand_id: string;
+  focus_key: string;
+  title: string;
+  notes: string | null;
+  intensity: number;
+  success_definition: string | null;
+};
+
 const DAY = 86_400_000;
 
 function daysSince(value: string | null | undefined) {
@@ -42,21 +52,41 @@ function channelKey(brand: string, platform: string) {
   return `${brand}:${platform}`;
 }
 
+function focusMatchesSource(focus: OwnerFocus, source: SourceRow) {
+  const haystack = [
+    source.source_type,
+    source.title,
+    source.source_id,
+    JSON.stringify(source.payload ?? {}),
+  ].join(" ").toLowerCase();
+  const tokens = `${focus.focus_key} ${focus.title}`
+    .toLowerCase()
+    .split(/[^a-z0-9æøå]+/i)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 3);
+  return tokens.some((token) => haystack.includes(token));
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const limit = Math.max(1, Math.min(20, Number(request.nextUrl.searchParams.get("limit") || 10)));
+  const limit = Math.max(1, Math.min(30, Number(request.nextUrl.searchParams.get("limit") || 10)));
 
-  const [{ data: sources, error: sourceError }, { data: channels }, { data: publications }, { data: plans }] = await Promise.all([
+  const [{ data: sources, error: sourceError }, { data: channels }, { data: publications }, { data: plans }, { data: focusRows }] = await Promise.all([
     supabase.from("marketing_source_queue").select("id,brand_id,source_type,source_id,source_url,title,priority,recommended_channels,payload,status,blocked_reason,last_planned_at,created_at").eq("status", "ready").limit(5000),
     supabase.from("social_channels").select("brand_id,platform,is_active").eq("is_active", true),
     supabase.from("marketing_publications").select("brand_id,source_type,source_id,channel,state,created_at,updated_at").order("created_at", { ascending: false }).limit(5000),
     supabase.from("marketing_brand_growth_plans").select("brand_id,status,planned_channels,autonomy_mode"),
+    supabase.from("nexus_owner_focus").select("id,brand_id,focus_key,title,notes,intensity,success_definition").eq("status", "active").order("intensity", { ascending: false }),
   ]);
   if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 500 });
+
+  const activeFocus = (focusRows ?? []) as OwnerFocus[];
+  const focusByBrand = new Map<string, OwnerFocus[]>();
+  for (const focus of activeFocus) focusByBrand.set(focus.brand_id, [...(focusByBrand.get(focus.brand_id) ?? []), focus]);
 
   const connected = new Set((channels ?? []).map((c: any) => channelKey(String(c.brand_id), String(c.platform))));
   const planByBrand = new Map((plans ?? []).map((p: any) => [String(p.brand_id), p]));
@@ -80,6 +110,9 @@ export async function GET(request: NextRequest) {
 
     let score = Number(source.priority ?? 50);
     const reasons: string[] = [];
+    const matchingFocus: OwnerFocus[] = [];
+    const brandFocus = focusByBrand.get(source.brand_id) ?? [];
+
     if (uniqueChannels.length === 0) {
       score -= 1000;
       reasons.push("ingen tilkoblet anbefalt kanal");
@@ -104,11 +137,26 @@ export async function GET(request: NextRequest) {
       score -= 25;
       reasons.push("nylig planlagt");
     }
-    if (source.payload?.cover_url || source.payload?.image_url || source.payload?.primary_image) {
+    if (source.payload?.cover_url || source.payload?.cover_image_url || source.payload?.image_url || source.payload?.primary_image) {
       score += 8;
       reasons.push("har visuelt asset");
     }
     if (plan?.status === "active") score += 5;
+
+    // Owner Focus is a deliberate priority override. Brand-level focus creates
+    // a strong boost; direct topic/source matches receive an additional boost.
+    // This changes ranking and work allocation, but never bypasses channel,
+    // autonomy, legal or approval gates.
+    for (const focus of brandFocus) {
+      const intensity = Math.max(1, Math.min(10, Number(focus.intensity) || 1));
+      score += intensity * 8;
+      reasons.push(`OWNER FOCUS: ${focus.title} (${intensity}/10)`);
+      if (focusMatchesSource(focus, source)) {
+        score += intensity * 12;
+        matchingFocus.push(focus);
+        reasons.push(`direkte match på flagget fokusområde: ${focus.focus_key}`);
+      }
+    }
 
     return {
       sourceId: source.id,
@@ -122,16 +170,21 @@ export async function GET(request: NextRequest) {
       lastPublishedAt: last?.updated_at ?? last?.created_at ?? null,
       lastPlannedAt: source.last_planned_at,
       reasons,
+      ownerFocus: matchingFocus.map((f) => ({ id: f.id, title: f.title, focusKey: f.focus_key, intensity: f.intensity, successDefinition: f.success_definition })),
+      ownerFocusedBrand: brandFocus.length > 0,
       eligible: uniqueChannels.length > 0 && score > 0,
     };
   }).filter((x) => x.eligible).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 
-  // Portfolio spread: max 2 selected sources per brand in the first pass.
+  // Normal portfolio spread is max 2 per brand. A brand explicitly flagged by
+  // the owner may consume up to 5 slots so Nexus can make an intensive pass.
+  const focusedBrands = new Set(activeFocus.map((f) => f.brand_id));
   const perBrand = new Map<string, number>();
   const selected: typeof scored = [];
   for (const row of scored) {
     const used = perBrand.get(row.brandId) ?? 0;
-    if (used >= 2) continue;
+    const brandCap = focusedBrands.has(row.brandId) ? 5 : 2;
+    if (used >= brandCap) continue;
     selected.push(row);
     perBrand.set(row.brandId, used + 1);
     if (selected.length >= limit) break;
@@ -142,15 +195,18 @@ export async function GET(request: NextRequest) {
     policy: {
       automaticPublishing: false,
       automaticApproval: false,
-      maxSelectedPerBrand: 2,
+      normalMaxSelectedPerBrand: 2,
+      ownerFocusedMaxSelectedPerBrand: 5,
       selectionLimit: limit,
-      note: "Director velger kilder. Campaign draft/approval er fortsatt en separat handling.",
+      note: "Owner Focus overstyrer prioritet og arbeidsmengde, men aldri sikkerhets-, kanal- eller approval-gates.",
     },
+    ownerFocus: activeFocus,
     summary: {
       readySources: (sources ?? []).length,
       eligibleSources: scored.length,
       selected: selected.length,
       brandsSelected: new Set(selected.map((x) => x.brandId)).size,
+      activeOwnerFocus: activeFocus.length,
     },
     selected,
   });
