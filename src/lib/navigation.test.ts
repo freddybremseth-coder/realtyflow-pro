@@ -19,7 +19,7 @@ test("navigation groups every existing sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation promotes Nexus OS as the master automation work area", () => {
+test("owner navigation promotes RealtyFlow Attention Center and Nexus OS as the master automation work area", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
@@ -31,10 +31,14 @@ test("owner navigation promotes Nexus OS as the master automation work area", ()
   );
   assert.deepEqual(
     sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
-    ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy"],
+    ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime"],
   );
+  assert.equal(sections.find((section) => section.id === "os")?.items.some((item) => item.href === "/nexus-os/autonomy"), true);
   assert.equal(sections.find((section) => section.id === "os")?.items.some((item) => item.href === "/connections"), true);
   assert.equal(sections.find((section) => section.id === "os")?.items.some((item) => item.href === "/book-growth"), true);
+  assert.equal(sections.find((section) => section.id === "customers")?.items.some((item) => item.href === "/automation/nurture"), true);
+  assert.equal(sections.find((section) => section.id === "business")?.items.some((item) => item.href === "/nexus-os/account-launch"), true);
+  assert.equal(sections.find((section) => section.id === "reports")?.items.some((item) => item.href === "/os"), false);
   assert.equal(sections.find((section) => section.id === "customers")?.items.some((item) => item.href === "/nexus"), false);
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/social-automation"), true);
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/marketing-readiness"), true);
@@ -58,9 +62,12 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/care/reports", sections), "care");
   assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
   assert.equal(activeNavigationSection("/book-growth/economics", sections), "os");
+  assert.equal(activeNavigationSection("/os", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/director", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/communications/social", sections), "os");
   assert.equal(activeNavigationSection("/connections", sections), "os");
+  assert.equal(activeNavigationSection("/automation/nurture", sections), "customers");
+  assert.equal(activeNavigationSection("/nexus-os/account-launch", sections), "business");
   assert.equal(activeNavigationSection("/continuous-improvement", sections), "reports");
 });
 
@@ -70,6 +77,10 @@ test("menu search finds OS and growth surfaces by label", () => {
   assert.equal(social.length, 1);
   assert.equal(social[0]?.id, "marketing");
   assert.deepEqual(social[0]?.items.map((item) => item.href), ["/social-automation"]);
+
+  const realtyflow = filterNavigationSections(sections, "RealtyFlow OS");
+  assert.equal(realtyflow.length, 1);
+  assert.deepEqual(realtyflow[0]?.items.map((item) => item.href), ["/os"]);
 
   const nexus = filterNavigationSections(sections, "Nexus OS");
   assert.equal(nexus.length, 1);
@@ -94,10 +105,10 @@ test("favorites are limited, deduplicated and restricted to visible links", () =
   assert.equal(added[0], "/recovery");
 });
 
-test("owner quick links prioritize Nexus control surfaces", () => {
+test("owner quick links prioritize Attention Center and Nexus control surfaces", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const quick = quickNavigationItems("OWNER", sections, []);
-  assert.deepEqual(quick.map((item) => item.href), ["/nexus-os", "/nexus-os/focus", "/nexus-os/communications", "/nexus-os/runtime", "/connections", "/approvals"]);
+  assert.deepEqual(quick.map((item) => item.href), ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/connections", "/approvals"]);
 });
 
 test("keyholding role gets the Care workspace as its main menu area", () => {
