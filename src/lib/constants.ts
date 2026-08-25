@@ -40,7 +40,10 @@ export const SIDEBAR_NAV = {
   ],
   automation: [
     { label: "Nexus OS", href: "/nexus-os", icon: "Boxes" },
-    { label: "Channel Connections", href: "/connections", icon: "Wifi" },
+    { label: "Nexus Runtime Controls", href: "/nexus-os/runtime", icon: "Gauge" },
+    { label: "Nexus 24/7 Autonomy", href: "/nexus-os/autonomy", icon: "ShieldCheck" },
+    { label: "Account Launch Center", href: "/nexus-os/account-launch", icon: "Rocket" },
+    { label: "Channel Connections", href: "/connections", icon: "Settings" },
     { label: "RealtyFlow OS status", href: "/os", icon: "PanelsTopLeft" },
     { label: "Dealflow Cockpit", href: "/nexus", icon: "Building2" },
     { label: "Automation Center", href: "/automation", icon: "Zap" },
