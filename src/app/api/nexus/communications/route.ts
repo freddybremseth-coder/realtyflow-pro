@@ -27,44 +27,17 @@ export async function GET(request: NextRequest) {
   const limit = Math.max(10, Math.min(200, Number(request.nextUrl.searchParams.get("limit") || 80)));
 
   const [emailsR, draftsR, configsR, nurtureR, focusR, runtimeR] = await Promise.all([
-    supabase
-      .from("email_messages")
-      .select("id,brand_id,from_address,from_name,subject,ai_summary,ai_intent,ai_urgency,ai_sentiment,ai_suggested_action,is_read,is_archived,has_draft_reply,replied_at,received_at,created_at")
-      .eq("direction", "inbound")
-      .eq("is_archived", false)
-      .order("received_at", { ascending: false })
-      .limit(limit),
-    supabase
-      .from("email_drafts")
-      .select("id,email_message_id,brand_id,subject,body_text,ai_confidence,status,created_at")
-      .order("created_at", { ascending: false })
-      .limit(500),
-    supabase
-      .from("brand_email_configs")
-      .select("brand_id,email_address,display_name,is_active,auto_fetch,fetch_interval_minutes,ai_auto_draft,last_fetched_at")
-      .eq("is_active", true),
-    supabase
-      .from("lead_nurture_events")
-      .select("brand_id,status,dry_run,created_at,sent_at,error")
-      .gte("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString())
-      .limit(2000),
-    supabase
-      .from("nexus_owner_focus")
-      .select("brand_id,focus_key,title,notes,intensity,status,success_definition,review_due_at")
-      .eq("status", "active"),
-    supabase
-      .from("nexus_runtime_controls")
-      .select("control_key,enabled,risk_level,updated_at")
-      .in("control_key", ["cron:/api/cron/email-ingest", "feature:nurture_live", "feature:routine_email_reply_live"]),
+    supabase.from("email_messages").select("id,brand_id,from_address,from_name,subject,ai_summary,ai_intent,ai_urgency,ai_sentiment,ai_suggested_action,is_read,is_archived,has_draft_reply,replied_at,received_at,created_at").eq("direction", "inbound").eq("is_archived", false).order("received_at", { ascending: false }).limit(limit),
+    supabase.from("email_drafts").select("id,email_message_id,brand_id,subject,body_text,ai_confidence,status,created_at").order("created_at", { ascending: false }).limit(500),
+    supabase.from("brand_email_configs").select("brand_id,email_address,display_name,is_active,auto_fetch,fetch_interval_minutes,ai_auto_draft,last_fetched_at,health_status,health_message,consecutive_failures,last_error_at,last_success_at,auto_fetch_paused_by_system").eq("is_active", true),
+    supabase.from("lead_nurture_events").select("brand_id,status,dry_run,created_at,sent_at,error").gte("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString()).limit(2000),
+    supabase.from("nexus_owner_focus").select("brand_id,focus_key,title,notes,intensity,status,success_definition,review_due_at").eq("status", "active"),
+    supabase.from("nexus_runtime_controls").select("control_key,enabled,risk_level,updated_at,config").in("control_key", ["cron:/api/cron/email-ingest", "cron:/api/cron/email-auto-draft", "feature:nurture_live", "feature:routine_email_reply_live"]),
   ]);
 
   const drafts = draftsR.data ?? [];
   const latestDraftByEmail = new Map<string, any>();
-  for (const draft of drafts as any[]) {
-    if (draft.email_message_id && !latestDraftByEmail.has(String(draft.email_message_id))) {
-      latestDraftByEmail.set(String(draft.email_message_id), draft);
-    }
-  }
+  for (const draft of drafts as any[]) if (draft.email_message_id && !latestDraftByEmail.has(String(draft.email_message_id))) latestDraftByEmail.set(String(draft.email_message_id), draft);
   const focusByBrand = new Map((focusR.data ?? []).map((f: any) => [String(f.brand_id), f]));
 
   const inbox = (emailsR.data ?? []).map((email: any) => {
@@ -85,24 +58,20 @@ export async function GET(request: NextRequest) {
       ageHours: hours == null ? null : Math.round(hours * 10) / 10,
       score: Math.round(score * 10) / 10,
       reasons,
-      draft: draft ? {
-        id: draft.id,
-        subject: draft.subject,
-        body_text: draft.body_text,
-        confidence: draft.ai_confidence,
-        status: draft.status,
-        created_at: draft.created_at,
-      } : null,
+      draft: draft ? { id: draft.id, subject: draft.subject, body_text: draft.body_text, confidence: draft.ai_confidence, status: draft.status, created_at: draft.created_at } : null,
       ownerFocus: focus || null,
     };
   }).sort((a: any, b: any) => b.score - a.score || String(b.received_at || "").localeCompare(String(a.received_at || "")));
 
   const configHealth = (configsR.data ?? []).map((row: any) => {
     const hours = ageHours(row.last_fetched_at);
+    const unhealthy = ["degraded", "paused"].includes(String(row.health_status || ""));
     return {
       ...row,
       lastFetchAgeHours: hours == null ? null : Math.round(hours * 10) / 10,
       stale: row.auto_fetch && (hours == null || hours > Math.max(1, Number(row.fetch_interval_minutes || 15) / 60 * 4)),
+      unhealthy,
+      needsReconnect: unhealthy || Boolean(row.auto_fetch_paused_by_system),
     };
   });
 
@@ -121,6 +90,8 @@ export async function GET(request: NextRequest) {
       withoutDraft: inbox.filter((x: any) => !x.has_draft_reply).length,
       unreplied24h: inbox.filter((x: any) => !x.replied_at && Number(x.ageHours || 0) > 24).length,
       staleEmailAccounts: configHealth.filter((x: any) => x.stale).length,
+      unhealthyEmailAccounts: configHealth.filter((x: any) => x.unhealthy).length,
+      pausedEmailAccounts: configHealth.filter((x: any) => x.health_status === "paused").length,
       nurture30d: nurtureSummary,
     },
     runtime: runtimeR.data ?? [],
