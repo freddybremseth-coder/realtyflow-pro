@@ -22,8 +22,8 @@ const REVENUE_READ_PAGES = new Set(["/internal-alerts", "/executive-briefing", "
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"] },
-  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/nexus-os", "/social-automation", "/book-growth", "/automation", "/agents", "/os", "/nexus", "/automation/nurture"] },
-  { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar"] },
+  { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/nexus-os", "/connections", "/social-automation", "/book-growth", "/automation", "/agents", "/os", "/automation/nurture"] },
+  { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar", "/nexus"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
   { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
   { id: "properties", label: "Eiendom", icon: "Building2", hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"] },
@@ -36,7 +36,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: ["/nexus-os", "/social-automation", "/book-growth", "/today", "/customers", "/approvals"],
+  OWNER: ["/nexus-os", "/connections", "/social-automation", "/book-growth", "/today", "/approvals"],
   SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
   CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
   FINANCE: ["/billing", "/dona-anna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
