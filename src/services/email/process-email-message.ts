@@ -2,6 +2,33 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { EmailAgent } from "@/services/agents/email-agent";
 import { BRANDS } from "@/lib/constants";
 
+function buildLearningContext(rows: any[]) {
+  const eligible = (rows || [])
+    .filter((row) => row?.status === "active")
+    .filter((row) => ["prefer", "avoid"].includes(String(row?.verdict || "").toLowerCase()))
+    .filter((row) => ["moderate", "strong"].includes(String(row?.evidence || "").toLowerCase()))
+    .filter((row) => Number(row?.sample || 0) >= 10)
+    .slice(0, 8);
+
+  if (!eligible.length) return { text: "", rules: [] as any[] };
+
+  const lines = eligible.map((row) => {
+    const verdict = String(row.verdict).toLowerCase() === "prefer" ? "FORETREKK" : "UNNGÅ";
+    const finding = String(row.finding || "").trim();
+    const metrics = [
+      `sample=${Number(row.sample || 0)}`,
+      row.reply_rate == null ? null : `reply=${Math.round(Number(row.reply_rate) * 100)}%`,
+      row.avg_edit_ratio == null ? null : `edit=${Math.round(Number(row.avg_edit_ratio) * 100)}%`,
+    ].filter(Boolean).join(", ");
+    return `- ${verdict} ${row.dimension}=${row.value}${finding ? `: ${finding}` : ""} (${metrics}; evidens=${row.evidence})`;
+  });
+
+  return {
+    text: `\nNEXUS KOMMUNIKASJONSLÆRING (evidensstyrt):\n${lines.join("\n")}\nBruk dette som en svak preferanse, ikke som en absolutt regel. Original e-post, fakta, brand-policy og sikkerhet har alltid høyere prioritet.`,
+    rules: eligible.map((row) => ({ id: row.id, dimension: row.dimension, value: row.value, verdict: row.verdict, evidence: row.evidence, sample: row.sample })),
+  };
+}
+
 export async function processEmailMessage(supabase: SupabaseClient, emailId: string) {
   const { data: email, error: emailError } = await supabase
     .from("email_messages")
@@ -11,13 +38,22 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
   if (emailError || !email) throw new Error("Email not found");
 
   const brand = BRANDS.find((b) => b.id === email.brand_id);
-  const { data: emailConfig } = await supabase
-    .from("brand_email_configs")
-    .select("signature, display_name, email_address")
-    .eq("brand_id", email.brand_id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+  const [{ data: emailConfig }, { data: learningRows }] = await Promise.all([
+    supabase
+      .from("brand_email_configs")
+      .select("signature, display_name, email_address")
+      .eq("brand_id", email.brand_id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("nexus_communication_learning_rules")
+      .select("id,brand_id,dimension,value,sample,avg_edit_ratio,reply_rate,evidence,verdict,finding,status")
+      .eq("brand_id", email.brand_id)
+      .eq("status", "active")
+      .order("sample", { ascending: false })
+      .limit(20),
+  ]);
 
   const [{ data: leads }, { data: customers }, { data: properties }] = await Promise.all([
     supabase.from("leads").select("id, first_name, last_name, email, phone, status, budget, notes").limit(100),
@@ -25,9 +61,10 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
     supabase.from("properties").select("id, ref, price, property_type, location, bedrooms, bathrooms, built_area, plot_size, pool, title_no, title_en, title_es, primary_image, gallery").limit(200),
   ]);
 
+  const learning = buildLearningContext(learningRows || []);
   const brandContext = brand
-    ? `Brand: ${brand.name}\nType: ${brand.type}\nTone: ${brand.tone || "professional"}\nMålgruppe: ${brand.target_audience || ""}\nSpesialiteter: ${brand.specialties?.join(", ") || ""}\nNettside: ${brand.website || ""}`
-    : "";
+    ? `Brand: ${brand.name}\nType: ${brand.type}\nTone: ${brand.tone || "professional"}\nMålgruppe: ${brand.target_audience || ""}\nSpesialiteter: ${brand.specialties?.join(", ") || ""}\nNettside: ${brand.website || ""}${learning.text}`
+    : learning.text;
 
   const agent = new EmailAgent(brandContext);
   const result = await agent.processEmail({
@@ -95,6 +132,10 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
       properties_mentioned: result.draftReply.properties_mentioned,
       original_draft: existingDraft?.ai_context?.original_draft || originalDraft,
       latest_ai_draft: originalDraft,
+      communication_learning: {
+        applied: learning.rules.length > 0,
+        rules: learning.rules,
+      },
     },
     ai_confidence: result.draftReply.confidence,
     tone: result.draftReply.tone,
@@ -119,8 +160,14 @@ export async function processEmailMessage(supabase: SupabaseClient, emailId: str
     final_subject: originalDraft.subject,
     final_body: originalDraft.body_text,
     edit_ratio: 0,
-    metadata: { tone: originalDraft.tone, language: originalDraft.language, intent: result.analysis.intent, urgency: result.analysis.urgency },
+    metadata: {
+      tone: originalDraft.tone,
+      language: originalDraft.language,
+      intent: result.analysis.intent,
+      urgency: result.analysis.urgency,
+      learning_rules_applied: learning.rules,
+    },
   }).then(() => {}).then(undefined, () => {});
 
-  return { emailId, brandId: email.brand_id, analysis: result.analysis, context_match: result.contextMatch, draft };
+  return { emailId, brandId: email.brand_id, analysis: result.analysis, context_match: result.contextMatch, draft, learningRulesApplied: learning.rules.length };
 }
