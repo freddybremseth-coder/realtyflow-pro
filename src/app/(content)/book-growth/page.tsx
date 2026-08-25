@@ -59,6 +59,7 @@ export default function BookGrowthPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState("all");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -74,6 +75,25 @@ export default function BookGrowthPage() {
     }
   };
 
+  const decide = async (recommendationId: string, decision: "approved" | "rejected") => {
+    setBusyId(recommendationId); setError(null);
+    try {
+      const res = await fetch("/api/book-growth/recommendation", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recommendationId, decision }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `Decision feilet (${res.status})`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   useEffect(() => { void load(); }, []);
 
   const pending = useMemo(() => (data?.recommendations ?? []).filter((r) => r.status === "pending" && (type === "all" || r.recommendation_type === type)), [data, type]);
@@ -85,7 +105,7 @@ export default function BookGrowthPage() {
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <div>
         <h1 style={{ margin: 0, fontSize: 27 }}>Book Growth OS</h1>
-        <p style={{ margin: "6px 0 0", color: "#64748b" }}>Amazon/KDP, SEO og direkte salg — analyse og forslag uten automatisk endring.</p>
+        <p style={{ margin: "6px 0 0", color: "#64748b" }}>Amazon/KDP, SEO og direkte salg — analyse, review og eksplisitt godkjenning.</p>
       </div>
       <button onClick={load} disabled={loading} style={{ border: 0, borderRadius: 9, padding: "9px 13px", background: "#0f172a", color: "white", fontWeight: 800 }}>{loading ? "Laster…" : "Oppdater"}</button>
     </div>
@@ -107,7 +127,7 @@ export default function BookGrowthPage() {
 
       <section style={{ marginTop: 18, padding: 14, borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
         <div style={{ fontWeight: 900 }}>Arbeidsregel</div>
-        <div style={{ marginTop: 5, color: "#475569", fontSize: 13 }}>AI analyserer og foreslår. Forslag står som <b>pending</b>. Ingen KDP-, Ads- eller kanalmetadata endres fra denne siden.</div>
+        <div style={{ marginTop: 5, color: "#475569", fontSize: 13 }}>AI analyserer og foreslår. <b>Godkjenn</b> endrer bare anbefalingens status til approved. Det utfører ikke KDP-, Ads-, Amazon- eller website-endringer. Apply blir en separat, eksplisitt kontrollert handling senere.</div>
       </section>
 
       <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -131,6 +151,10 @@ export default function BookGrowthPage() {
             <div><div style={{ fontSize: 11, fontWeight: 900, color: "#64748b" }}>PROPOSED</div><pre style={{ whiteSpace: "pre-wrap", fontSize: 12, margin: "5px 0 0", background: "#f0fdf4", padding: 10, borderRadius: 8 }}>{show(r.proposed_value)}</pre></div>
           </div>
           <details style={{ marginTop: 10 }}><summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800 }}>Evidence</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "#f8fafc", padding: 10, borderRadius: 8 }}>{show(r.evidence)}</pre></details>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <button disabled={busyId === r.id} onClick={() => void decide(r.id, "approved")} style={{ border: 0, borderRadius: 8, padding: "8px 12px", background: "#166534", color: "white", fontWeight: 800 }}>{busyId === r.id ? "Behandler…" : "Godkjenn forslag"}</button>
+            <button disabled={busyId === r.id} onClick={() => void decide(r.id, "rejected")} style={{ border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", background: "#fff", color: "#b91c1c", fontWeight: 800 }}>Avvis</button>
+          </div>
         </article>)}
         {!loading && pending.length === 0 && <div style={{ color: "#64748b", padding: 20 }}>Ingen pending forslag i dette filteret.</div>}
       </div>
