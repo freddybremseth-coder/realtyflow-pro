@@ -1,92 +1,27 @@
 {
   "crons": [
-    {
-      "path": "/api/neural-beat/cron",
-      "schedule": "0 20 * * *"
-    },
-    {
-      "path": "/api/neural-beat/thumbnail-ab",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/neural-beat/shorts-followup",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/neural-beat/weekly-mix",
-      "schedule": "0 10 * * 6"
-    },
-    {
-      "path": "/api/cron/email-ingest",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/market-data",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/weekly-report",
-      "schedule": "0 21 * * 1"
-    },
-    {
-      "path": "/api/cron/growth-engine",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/saas-scanner",
-      "schedule": "0 22 * * 1"
-    },
-    {
-      "path": "/api/cron/saas-entitlements",
-      "schedule": "30 6 * * *"
-    },
-    {
-      "path": "/api/cron/property-scanner",
-      "schedule": "0 18 * * 0"
-    },
-    {
-      "path": "/api/cron/property-marketing",
-      "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/cron/auto-publish",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron/engagement-tracker",
-      "schedule": "0 19 * * *"
-    },
-    {
-      "path": "/api/cron/marketing-growth-metrics",
-      "schedule": "30 19 * * *"
-    },
-    {
-      "path": "/api/cron/trending-tags",
-      "schedule": "0 13 * * 1"
-    },
-    {
-      "path": "/api/cron/storage-archive",
-      "schedule": "30 18 * * *"
-    },
-    {
-      "path": "/api/cron/publishing-autopilot",
-      "schedule": "45 17 * * *"
-    },
-    {
-      "path": "/api/cron/publishing-growth-loop",
-      "schedule": "15 17 * * *"
-    },
-    {
-      "path": "/api/cron/publishing-market-watch",
-      "schedule": "30 17 * * *"
-    },
-    {
-      "path": "/api/cron/lead-nurture",
-      "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/cron/demosites-followup",
-      "schedule": "0 8 * * *"
-    }
+    { "path": "/api/neural-beat/cron", "schedule": "0 20 * * *" },
+    { "path": "/api/neural-beat/thumbnail-ab", "schedule": "0 11 * * *" },
+    { "path": "/api/neural-beat/shorts-followup", "schedule": "0 15 * * *" },
+    { "path": "/api/neural-beat/weekly-mix", "schedule": "0 10 * * 6" },
+    { "path": "/api/cron/email-ingest", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/email-auto-draft", "schedule": "5,20,35,50 * * * *" },
+    { "path": "/api/cron/market-data", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/weekly-report", "schedule": "0 21 * * 1" },
+    { "path": "/api/cron/growth-engine", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/saas-scanner", "schedule": "0 22 * * 1" },
+    { "path": "/api/cron/saas-entitlements", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/property-scanner", "schedule": "0 18 * * 0" },
+    { "path": "/api/cron/property-marketing", "schedule": "0 16 * * *" },
+    { "path": "/api/cron/auto-publish", "schedule": "0 17 * * *" },
+    { "path": "/api/cron/engagement-tracker", "schedule": "0 19 * * *" },
+    { "path": "/api/cron/marketing-growth-metrics", "schedule": "30 19 * * *" },
+    { "path": "/api/cron/trending-tags", "schedule": "0 13 * * 1" },
+    { "path": "/api/cron/storage-archive", "schedule": "30 18 * * *" },
+    { "path": "/api/cron/publishing-autopilot", "schedule": "45 17 * * *" },
+    { "path": "/api/cron/publishing-growth-loop", "schedule": "15 17 * * *" },
+    { "path": "/api/cron/publishing-market-watch", "schedule": "30 17 * * *" },
+    { "path": "/api/cron/lead-nurture", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" }
   ]
 }
