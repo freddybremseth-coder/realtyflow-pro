@@ -31,6 +31,26 @@ test("middleware lets cron requests with supported credentials reach route handl
   }
 });
 
+test("middleware passes allowlisted Nexus scheduler social sync to route-level token verification", async () => {
+  const response = await middleware(
+    request("/api/cron/social-inbox-sync", { "x-nexus-scheduler": "opaque-scheduler-token" }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-middleware-next"), "1");
+  assert.equal(response.headers.get("location"), null);
+});
+
+test("middleware does not make Nexus social sync public without scheduler credentials", async () => {
+  const response = await middleware(request("/api/cron/social-inbox-sync"));
+
+  assert.equal(response.status, 307);
+  assert.equal(
+    response.headers.get("location"),
+    "https://realtyflow.test/login?next=%2Fapi%2Fcron%2Fsocial-inbox-sync",
+  );
+});
+
 test("middleware redirects cron requests without valid cron credentials", async () => {
   const response = await middleware(
     request("/api/cron/lead-nurture?dry=1", { "x-admin-authenticated": "true" }),
