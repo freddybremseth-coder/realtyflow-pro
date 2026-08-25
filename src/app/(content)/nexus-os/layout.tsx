@@ -6,6 +6,7 @@ const LINKS = [
   { href: "/nexus-os/focus", label: "Mitt fokus" },
   { href: "/nexus-os/director", label: "Portfolio Director" },
   { href: "/nexus-os/communications", label: "Communications" },
+  { href: "/nexus-os/communications/learning", label: "Communication Learning" },
   { href: "/nexus-os/runtime", label: "Runtime Controls" },
   { href: "/nexus-os/autonomy", label: "24/7 Autonomy" },
   { href: "/nexus-os/account-launch", label: "Account Launch" },
