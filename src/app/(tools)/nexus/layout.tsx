@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
   { href: "/os", label: "RealtyFlow OS" },
@@ -22,6 +23,7 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
         {LINKS.map((item) => <Link key={item.href} href={item.href} className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:text-cyan-200">{item.label}</Link>)}
       </div>
     </div>
+    <NexusAttentionStrip />
     {children}
   </div>;
 }
