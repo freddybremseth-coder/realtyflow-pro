@@ -19,6 +19,11 @@ function titleText(value: unknown) {
   return "";
 }
 
+function num(value: unknown) {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -26,18 +31,21 @@ export async function GET(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
-  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [titlesRes, seriesRes, recsRes, eventsRes, channelRes, worksRes, membersRes] = await Promise.all([
+  const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const since90Date = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+
+  const [titlesRes, seriesRes, recsRes, eventsRes, channelRes, worksRes, membersRes, metricsRes] = await Promise.all([
     supabase.from("book_titles").select("id,slug,title,series_id,series_number,language,amazon_url,cover_image_url,sample_pdf_path,status").order("title"),
     supabase.from("book_series").select("id,slug,title").order("sort_order"),
     supabase.from("book_growth_recommendations").select("id,book_id,series_id,channel,marketplace,recommendation_type,current_value,proposed_value,evidence,confidence,expected_impact,status,created_at").order("created_at", { ascending: false }).limit(250),
-    supabase.from("book_growth_events").select("book_id,book_slug,event_type,occurred_at").gte("occurred_at", since).limit(5000),
+    supabase.from("book_growth_events").select("book_id,book_slug,event_type,occurred_at").gte("occurred_at", since30).limit(5000),
     supabase.from("book_growth_channel_metadata").select("book_id,channel,marketplace,external_id,format,is_active,last_verified_at").eq("is_active", true),
     supabase.from("book_growth_works").select("id,series_id,work_key,canonical_title,canonical_series_number,status,metadata"),
     supabase.from("book_growth_work_members").select("work_id,book_id,relation_type,confidence,verified"),
+    supabase.from("book_growth_metrics").select("book_id,channel,marketplace,format,metric_date,impressions,clicks,orders,units,pages_read,royalties,ad_spend,ad_sales,ad_orders,currency,metrics,source").gte("metric_date", since90Date).limit(20000),
   ]);
 
-  const error = titlesRes.error || seriesRes.error || recsRes.error || eventsRes.error || channelRes.error || worksRes.error || membersRes.error;
+  const error = titlesRes.error || seriesRes.error || recsRes.error || eventsRes.error || channelRes.error || worksRes.error || membersRes.error || metricsRes.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const titles = titlesRes.data ?? [];
@@ -47,6 +55,7 @@ export async function GET(request: NextRequest) {
   const channels = channelRes.data ?? [];
   const works = worksRes.data ?? [];
   const members = membersRes.data ?? [];
+  const metrics = metricsRes.data ?? [];
 
   const titleById = new Map(titles.map((row: any) => [String(row.id), row]));
   const seriesById = new Map(series.map((row: any) => [String(row.id), row]));
@@ -68,6 +77,24 @@ export async function GET(request: NextRequest) {
     const counts = eventsByBook.get(key) ?? {};
     counts[row.event_type] = (counts[row.event_type] ?? 0) + 1;
     eventsByBook.set(key, counts);
+  }
+
+  const metricsByBook = new Map<string, { royalties: number; units: number; pagesRead: number; adSpend: number; adSales: number; orders: number; impressions: number; clicks: number; netEarnings: number; rows: number }>();
+  for (const row of metrics as any[]) {
+    if (!row.book_id) continue;
+    const key = String(row.book_id);
+    const agg = metricsByBook.get(key) ?? { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0 };
+    agg.royalties += num(row.royalties);
+    agg.units += num(row.units);
+    agg.pagesRead += num(row.pages_read);
+    agg.adSpend += num(row.ad_spend);
+    agg.adSales += num(row.ad_sales);
+    agg.orders += num(row.orders);
+    agg.impressions += num(row.impressions);
+    agg.clicks += num(row.clicks);
+    agg.netEarnings += num(row.metrics?.net_earnings);
+    agg.rows += 1;
+    metricsByBook.set(key, agg);
   }
 
   const pendingByBook = new Map<string, number>();
@@ -104,11 +131,16 @@ export async function GET(request: NextRequest) {
     const pendingCount = pendingByBook.get(String(book.id)) ?? 0;
     const member = memberByBookId.get(String(book.id));
     const work = member ? workById.get(String(member.work_id)) : null;
+    const economic = metricsByBook.get(String(book.id)) ?? { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0 };
 
     const intentScore = bookViews + sampleClicks * 4 + amazonClicks * 6 + directBuyClicks * 8;
     const readinessGap = (hasAsin ? 0 : 12) + (book.cover_image_url ? 0 : 5) + (book.sample_pdf_path ? 0 : 4) + (member ? 0 : 6);
     const recommendationSignal = Math.min(pendingCount * 2, 10);
-    const score = intentScore + readinessGap + recommendationSignal;
+    const revenueLeverage = Math.min(economic.royalties * 1.5, 40) + Math.min(economic.units * 1.5, 25) + Math.min(economic.pagesRead / 1000, 15);
+    const adWasteOpportunity = economic.adSpend > economic.royalties ? Math.min((economic.adSpend - economic.royalties) * 2, 30) : 0;
+    const demandNoSalesOpportunity = economic.royalties === 0 && amazonClicks > 0 ? Math.min(amazonClicks * 4, 20) : 0;
+    const economicScore = Math.round((revenueLeverage + adWasteOpportunity + demandNoSalesOpportunity) * 10) / 10;
+    const score = Math.round((intentScore + readinessGap + recommendationSignal + economicScore) * 10) / 10;
 
     return {
       bookId: book.id,
@@ -127,8 +159,9 @@ export async function GET(request: NextRequest) {
       hasAsin,
       pendingRecommendations: pendingCount,
       events30d: { bookViews, sampleClicks, amazonClicks, directBuyClicks },
+      economics90d: economic,
       score,
-      scoreComponents: { intentScore, readinessGap, recommendationSignal },
+      scoreComponents: { intentScore, readinessGap, recommendationSignal, economicScore, revenueLeverage, adWasteOpportunity, demandNoSalesOpportunity },
     };
   }).sort((a: any, b: any) => b.score - a.score || String(a.title).localeCompare(String(b.title)));
 
@@ -136,6 +169,8 @@ export async function GET(request: NextRequest) {
   const eventCounts = countBy(events, (row: any) => String(row.event_type));
   const pendingByType = countBy(pending, (row: any) => String(row.recommendation_type));
   const asinLinkedBooks = titles.filter((row: any) => (amazonByBook.get(String(row.id)) ?? []).some((m: any) => Boolean(m.external_id))).length;
+  const bookReportRows = metrics.filter((row: any) => row.source === "book_report");
+  const booksWithEconomicData = new Set(metrics.filter((row: any) => row.book_id).map((row: any) => String(row.book_id))).size;
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -157,6 +192,20 @@ export async function GET(request: NextRequest) {
       sampleClicks30d: eventCounts.sample_click ?? 0,
       directBuyClicks30d: eventCounts.direct_buy_click ?? 0,
       bookViews30d: eventCounts.book_view ?? 0,
+      economicMetricRows90d: metrics.length,
+      bookReportRows90d: bookReportRows.length,
+      booksWithEconomicData,
+      royalties90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.royalties), 0) * 100) / 100,
+      adSpend90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.ad_spend), 0) * 100) / 100,
+      units90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.units), 0) * 100) / 100,
+      pagesRead90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.pages_read), 0)),
+    },
+    sourceStatus: {
+      bookReport: {
+        ready: true,
+        rows90d: bookReportRows.length,
+        state: bookReportRows.length ? "data_available" : "awaiting_data",
+      },
     },
     pendingByType,
     priority: priority.slice(0, 50),
