@@ -6,6 +6,18 @@ export const dynamic = "force-dynamic";
 
 type RawRow = Record<string, unknown>;
 
+type ChannelMetadataRow = {
+  book_id: string | null;
+  channel: string | null;
+  marketplace: string | null;
+  external_id: string | null;
+  format: string | null;
+  language: string | null;
+  title: string | null;
+  subtitle: string | null;
+  product_url: string | null;
+};
+
 function n(value: unknown) {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -23,6 +35,31 @@ function normalizeChannel(distributor: string) {
   if (d.includes("apple")) return "apple_books";
   if (d.includes("barnes") || d.includes("noble")) return "barnes_noble";
   return d.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "book_report";
+}
+
+function normalizeFormat(value: unknown) {
+  const f = s(value).toLowerCase();
+  if (!f) return "";
+  if (f.includes("kindle") || f.includes("ebook") || f.includes("e-book") || f === "digital") return "ebook";
+  if (f.includes("paperback") || f.includes("softcover") || f.includes("soft cover")) return "paperback";
+  if (f.includes("hardcover") || f.includes("hardback") || f.includes("hard cover")) return "hardcover";
+  if (f.includes("audio")) return "audiobook";
+  return f.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function normalizeLanguage(value: unknown) {
+  const raw = s(value).toLowerCase();
+  if (!raw) return "";
+  if (["en", "eng", "english"].includes(raw)) return "en";
+  if (["no", "nb", "nn", "nor", "norwegian", "norsk"].includes(raw)) return "no";
+  if (["es", "spa", "spanish", "español", "espanol"].includes(raw)) return "es";
+  if (["de", "deu", "ger", "german", "deutsch"].includes(raw)) return "de";
+  return raw.slice(0, 12);
+}
+
+function differs(current: string | null | undefined, proposed: string) {
+  if (!proposed) return false;
+  return s(current).toLowerCase() !== proposed.toLowerCase();
 }
 
 export async function POST(request: NextRequest) {
@@ -44,20 +81,25 @@ export async function POST(request: NextRequest) {
   const { data: metadata, error: metadataError } = providerIds.length
     ? await supabase
         .from("book_growth_channel_metadata")
-        .select("book_id,channel,marketplace,external_id,format")
+        .select("book_id,channel,marketplace,external_id,format,language,title,subtitle,product_url")
         .in("external_id", providerIds)
     : { data: [], error: null };
   if (metadataError) return NextResponse.json({ error: metadataError.message }, { status: 500 });
 
+  const metadataRows = (metadata ?? []) as ChannelMetadataRow[];
   const externalMap = new Map<string, string>();
-  for (const row of metadata ?? []) {
-    if (row.external_id && row.book_id) externalMap.set(String(row.external_id), String(row.book_id));
+  const metadataMap = new Map<string, ChannelMetadataRow>();
+  for (const row of metadataRows) {
+    if (row.external_id && row.book_id) {
+      externalMap.set(String(row.external_id), String(row.book_id));
+      metadataMap.set(String(row.external_id), row);
+    }
   }
 
   const payload = rows.map((row) => {
     const providerId = s(row.book_id);
     const distributor = s(row.distributor) || "Book Report";
-    const format = s(row.format) || "ebook";
+    const format = normalizeFormat(row.format) || "ebook";
     const marketplace = s(row.marketplace) || "global";
     const metricDate = s(row.date) || s(body?.metricDate) || new Date().toISOString().slice(0, 10);
     const earnings = n(row.earnings);
@@ -73,7 +115,7 @@ export async function POST(request: NextRequest) {
       book_id: externalMap.get(providerId) ?? null,
       channel: normalizeChannel(distributor),
       marketplace,
-      format: format.toLowerCase(),
+      format,
       metric_date: metricDate,
       impressions,
       clicks,
@@ -91,7 +133,10 @@ export async function POST(request: NextRequest) {
       metrics: {
         source_book_id: providerId || null,
         book: s(row.book) || null,
+        edition: s(row.edition) || null,
+        product: s(row.product) || null,
         series: s(row.series) || null,
+        language: s(row.language) || null,
         distributor,
         net_earnings: netEarnings,
         raw: row,
@@ -113,12 +158,78 @@ export async function POST(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const metadataCandidates = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const providerId = s(row.book_id);
+    const bookId = externalMap.get(providerId);
+    const current = metadataMap.get(providerId);
+    if (!providerId || !bookId || !current) continue;
+
+    const distributor = s(row.distributor) || "Book Report";
+    const channel = normalizeChannel(distributor);
+    const marketplace = s(row.marketplace) || current.marketplace || "global";
+    const proposedFormat = normalizeFormat(row.format);
+    const proposedLanguage = normalizeLanguage(row.language);
+    const proposedTitle = s(row.book);
+    const proposedSubtitle = s(row.subtitle);
+    const proposedProductUrl = s(row.product_url);
+
+    const hasUsefulDifference =
+      differs(current.format, proposedFormat) ||
+      differs(current.language, proposedLanguage) ||
+      differs(current.title, proposedTitle) ||
+      differs(current.subtitle, proposedSubtitle) ||
+      differs(current.product_url, proposedProductUrl);
+
+    if (!hasUsefulDifference) continue;
+
+    const key = [bookId, channel, marketplace, providerId, "book_report"].join("|");
+    metadataCandidates.set(key, {
+      book_id: bookId,
+      channel,
+      marketplace,
+      external_id: providerId,
+      proposed_format: proposedFormat || null,
+      proposed_language: proposedLanguage || null,
+      proposed_title: proposedTitle || null,
+      proposed_subtitle: proposedSubtitle || null,
+      proposed_product_url: proposedProductUrl || null,
+      source: "book_report",
+      evidence: {
+        correlation_id: correlationId,
+        distributor,
+        edition: s(row.edition) || null,
+        product: s(row.product) || null,
+        raw_language: s(row.language) || null,
+        raw_format: s(row.format) || null,
+        source_book_id: providerId,
+      },
+      confidence: 0.98,
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  let metadataCandidateCount = 0;
+  if (metadataCandidates.size) {
+    const { data, error } = await supabase
+      .from("book_growth_channel_metadata_candidates")
+      .upsert([...metadataCandidates.values()], {
+        onConflict: "book_id,channel,marketplace,external_id,source",
+        ignoreDuplicates: false,
+      })
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    metadataCandidateCount = data?.length ?? metadataCandidates.size;
+  }
+
   return NextResponse.json({
     ok: true,
     imported: matched.length,
     unmatched: unmatched.length,
+    metadataCandidates: metadataCandidateCount,
     unmatchedProviderIds: [...new Set(unmatched.map((r) => String(r.metrics.source_book_id ?? "")).filter(Boolean))],
     correlationId,
-    note: "Kun rader med provider-ID som matcher kjent channel metadata blir skrevet til book_growth_metrics. Ukjente IDs må normaliseres før de kan påvirke prioritetsscore.",
+    note: "Kun rader med provider-ID som matcher kjent channel metadata blir skrevet til metrics. Book Report metadata blir separat lagret som pending channel-metadata-kandidater og påvirker ikke katalogen før eksplisitt approve/apply.",
   });
 }
