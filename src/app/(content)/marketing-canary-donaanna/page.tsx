@@ -9,6 +9,13 @@ const BRAND = {
   publishingAccountId: "17841435921404267",
 };
 
+const PILLARS = [
+  { value: "olive_oil", label: "Olive oil" },
+  { value: "farm_and_harvest", label: "Farm & harvest" },
+  { value: "food_and_use", label: "Food & use" },
+  { value: "origin_and_craft", label: "Origin & craft" },
+] as const;
+
 const DEFAULT_IDEA = "Lag et autentisk Instagram-innlegg for Doña Anna om oliven, olivenolje, gården eller historien bak produktet. Hold deg til Brand Brain og oppgitte fakta. Ikke gi medisinske råd eller påstander om helsevirkning, sykdom, kolesterol eller andre dokumenterte effekter uten eksplisitt verifisert kilde.";
 
 type Check = { name: string; critical: boolean; status: "ok" | "warn" | "fail"; detail: string };
@@ -18,7 +25,7 @@ type DraftResult = {
   caption?: string; imageUrl?: string | null; accountId?: string | null; qualityScore?: number | null;
   approvalId: string | null; error?: string; factSources?: Array<{ claim: string; source: string }>;
 };
-type Draft = { marketingRunId: string; correlationId: string; results: DraftResult[] };
+type Draft = { marketingRunId: string; correlationId: string; contentPillar?: string; results: DraftResult[] };
 
 async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: T }> {
   const res = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -28,6 +35,7 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; statu
 
 export default function DonaAnnaCanaryPage() {
   const [idea, setIdea] = useState(DEFAULT_IDEA);
+  const [contentPillar, setContentPillar] = useState<(typeof PILLARS)[number]["value"]>("farm_and_harvest");
   const [mediaUrl, setMediaUrl] = useState("");
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -62,13 +70,14 @@ export default function DonaAnnaCanaryPage() {
   });
 
   const createDraft = () => run("draft", async () => {
-    const r = await post<Draft>("/api/marketing/campaign-draft", {
+    const r = await post<Draft>("/api/marketing/campaign-draft-with-pillar", {
       brandId: BRAND.brandId,
       channel: BRAND.channel,
       publishingAccountId: BRAND.publishingAccountId,
       language: "no",
       mediaUrl: mediaUrl.trim(),
       masterIdea: idea,
+      contentPillar,
       goal: { kind: "awareness", target: 1 },
     });
     if (!r.ok) throw new Error((r.data as any)?.error || `Draft feilet (${r.status})`);
@@ -106,7 +115,11 @@ export default function DonaAnnaCanaryPage() {
       </section>
 
       <section style={box}>
-        <label style={label}>Offentlig bilde-URL (HTTPS)</label>
+        <label style={label}>Content pillar</label>
+        <select value={contentPillar} onChange={(e) => setContentPillar(e.target.value as (typeof PILLARS)[number]["value"])} style={input}>
+          {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        <label style={{ ...label, marginTop: 12 }}>Offentlig bilde-URL (HTTPS)</label>
         <input value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://...jpg" style={input} />
         <label style={{ ...label, marginTop: 12 }}>Master idea</label>
         <textarea value={idea} onChange={(e) => setIdea(e.target.value)} rows={6} style={{ ...input, resize: "vertical" }} />
@@ -122,7 +135,7 @@ export default function DonaAnnaCanaryPage() {
         <h2 style={h2}>2. Generate grounded Brand Brain draft</h2>
         <button style={button} disabled={!ready || busy === "draft"} onClick={createDraft}>{busy === "draft" ? "Lager…" : "Create draft"}</button>
         {result && <div style={{ marginTop: 12 }}>
-          <div>Mode: <b>{result.mode}</b> · Quality: <b>{result.qualityScore ?? "—"}</b></div>
+          <div>Mode: <b>{result.mode}</b> · Pillar: <b>{draft?.contentPillar ?? contentPillar}</b> · Quality: <b>{result.qualityScore ?? "—"}</b></div>
           <div style={{ marginTop: 8 }}><b>Caption</b></div>
           <pre style={pre}>{result.caption}</pre>
           {result.imageUrl && <img src={result.imageUrl} alt="Doña Anna canary" style={{ maxWidth: 480, width: "100%", borderRadius: 10 }} />}
