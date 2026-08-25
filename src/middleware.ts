@@ -61,6 +61,10 @@ const REMASTER_PROXY_PATHS = [
   "/api/youtube/status",
 ];
 const REMASTER_PROXY_PREFIXES = ["/api/neural-beat/jobs"];
+const NEXUS_SCHEDULER_PATHS = new Set([
+  "/api/cron/email-ingest",
+  "/api/cron/email-auto-draft",
+]);
 
 const ROLE_HOME: Record<AccessRole, string> = {
   OWNER: "/",
@@ -87,6 +91,11 @@ function hasValidCronCredential(request: NextRequest) {
   const headerSecret = request.headers.get("x-cron-secret")?.trim();
   const querySecret = request.nextUrl.searchParams.get("key")?.trim();
   return bearer === cronSecret || headerSecret === cronSecret || querySecret === cronSecret;
+}
+
+function hasNexusSchedulerCredential(request: NextRequest, pathname: string) {
+  if (!NEXUS_SCHEDULER_PATHS.has(pathname)) return false;
+  return Boolean(request.headers.get("x-nexus-scheduler")?.trim());
 }
 
 function safeLeadIntelligenceReturnPath(value: string | null) {
@@ -248,6 +257,7 @@ export async function middleware(request: NextRequest) {
 
   const isCronPath = pathname.startsWith("/api/cron") || pathname === "/api/neural-beat/cron" || pathname === "/api/neural-beat/thumbnail-ab" || pathname === "/api/neural-beat/shorts-followup" || pathname === "/api/neural-beat/weekly-mix";
   if (isCronPath && hasValidCronCredential(request)) return NextResponse.next({ request: { headers: requestHeaders } });
+  if (hasNexusSchedulerCredential(request, pathname)) return NextResponse.next({ request: { headers: requestHeaders } });
 
   const session = await verifyToken(request.cookies.get("realtyflow_admin")?.value);
   if (session) {
