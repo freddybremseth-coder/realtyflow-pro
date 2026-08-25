@@ -37,7 +37,7 @@ export function aggregateCreativeDimension(rows: CreativeInsightInput[]): Creati
     grouped.set(value, [...(grouped.get(value) || []), row]);
   }
 
-  return [...grouped.entries()].map(([value, group]) => {
+  return [...grouped.entries()].map(([value, group]): CreativeDimensionInsight => {
     const metrics = emptyCreativeMetrics();
     for (const row of group) {
       for (const key of Object.keys(metrics) as Array<keyof CreativeFunnelMetrics>) metrics[key] += Number(row.metrics[key] || 0);
@@ -50,12 +50,13 @@ export function aggregateCreativeDimension(rows: CreativeInsightInput[]): Creati
     const spend = rawComparable ? r2(economicRows.reduce((sum, row) => sum + Number(row.economics?.comparableRawSpend || 0), 0)) : null;
     const eurRows = group.filter((row) => row.economics?.spendEur != null);
     const spendEur = eurRows.length === group.length ? r2(eurRows.reduce((sum, row) => sum + Number(row.economics?.spendEur || 0), 0)) : null;
+    const status: CreativeDimensionInsight["status"] = (["moderate", "strong"] as CreativeEvidence[]).includes(evidence) ? "promising" : "observe";
     return {
       value,
       creatives: group.length,
       metrics,
       evidence,
-      status: (["moderate", "strong"] as CreativeEvidence[]).includes(evidence) ? "promising" : "observe",
+      status,
       economics: {
         comparable: rawComparable,
         spend,
