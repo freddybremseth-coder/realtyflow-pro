@@ -1,9 +1,11 @@
+import { isCronEnabled } from "@/lib/nexus/runtime-controls";
+
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
 type SafeModeResult = {
   skip: boolean;
   reason?: string;
-  mode: "off" | "manual" | "health";
+  mode: "off" | "manual" | "health" | "nexus";
 };
 
 function parseCsv(value?: string): string[] {
@@ -59,11 +61,22 @@ export async function evaluateCronSafeMode(pathname: string): Promise<SafeModeRe
     return { skip: false, mode: "off" };
   }
 
+  // Nexus is the operational control plane. Environment variables remain an
+  // emergency fallback, not the day-to-day way of starting/stopping jobs.
+  const nexus = await isCronEnabled(pathname);
+  if (!nexus.enabled) {
+    return {
+      skip: true,
+      mode: "nexus",
+      reason: nexus.reason || "Disabled in Nexus runtime controls",
+    };
+  }
+
   if (isTrue(process.env.CRON_SAFE_MODE)) {
     return {
       skip: true,
       mode: "manual",
-      reason: "CRON_SAFE_MODE is enabled",
+      reason: "CRON_SAFE_MODE emergency fallback is enabled",
     };
   }
 
