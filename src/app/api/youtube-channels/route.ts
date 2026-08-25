@@ -9,68 +9,68 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+/**
+ * Compatibility endpoint for the old Settings YouTube tab.
+ * Canonical YouTube connections now live in social_channels + oauth_tokens and
+ * are managed from Nexus → Channel Connections.
+ */
 export async function GET(req: NextRequest) {
   const adminError = await requireAdminApi(req, { channels: [] });
   if (adminError) return adminError;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ channels: [] });
+  if (!supabase) return NextResponse.json({ channels: [], canonicalSource: "social_channels" });
 
   const { data, error } = await supabase
-    .from("youtube_channels")
-    .select("*")
+    .from("social_channels")
+    .select("id,brand_id,external_id,display_name,is_active,created_at")
+    .eq("platform", "youtube")
+    .eq("is_active", true)
     .order("created_at");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ channels: data ?? [] });
+
+  const channels = (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.display_name,
+    handle: "",
+    channel_id: row.external_id,
+    api_key: "",
+    brand: row.brand_id,
+    content_types: [],
+    is_active: row.is_active !== false,
+    _source: "oauth",
+  }));
+
+  return NextResponse.json({
+    channels,
+    canonicalSource: "social_channels",
+    legacyWritesDisabled: true,
+    manageAt: "/connections",
+  });
+}
+
+function retiredWriteResponse() {
+  return NextResponse.json({
+    error: "LEGACY_YOUTUBE_CHANNEL_WRITE_RETIRED",
+    message: "YouTube-kanaler kobles nå via Nexus → Channel Connections. Manuell youtube_channels-konfigurasjon er pensjonert.",
+    manageAt: "/connections",
+  }, { status: 410 });
 }
 
 export async function POST(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
-
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
-  const body = await req.json();
-  const { data, error } = await supabase
-    .from("youtube_channels")
-    .insert(body)
-    .select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ channel: data[0] });
+  return retiredWriteResponse();
 }
 
 export async function DELETE(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
-
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  const { error } = await supabase.from("youtube_channels").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+  return retiredWriteResponse();
 }
 
 export async function PATCH(req: NextRequest) {
   const adminError = await requireAdminApi(req);
   if (adminError) return adminError;
-
-  const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
-
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  const body = await req.json();
-  const { data, error } = await supabase
-    .from("youtube_channels")
-    .update(body)
-    .eq("id", id)
-    .select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ channel: data[0] });
+  return retiredWriteResponse();
 }
