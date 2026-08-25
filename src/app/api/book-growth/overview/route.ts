@@ -24,6 +24,11 @@ function num(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeCurrency(value: unknown) {
+  const c = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return c || "UNKNOWN";
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -79,11 +84,32 @@ export async function GET(request: NextRequest) {
     eventsByBook.set(key, counts);
   }
 
-  const metricsByBook = new Map<string, { royalties: number; units: number; pagesRead: number; adSpend: number; adSales: number; orders: number; impressions: number; clicks: number; netEarnings: number; rows: number }>();
+  type EconomicAgg = {
+    royalties: number;
+    units: number;
+    pagesRead: number;
+    adSpend: number;
+    adSales: number;
+    orders: number;
+    impressions: number;
+    clicks: number;
+    netEarnings: number;
+    rows: number;
+    currencies: string[];
+    monetarySafe: boolean;
+  };
+
+  const metricsByBook = new Map<string, EconomicAgg>();
+  const currenciesByBook = new Map<string, Set<string>>();
   for (const row of metrics as any[]) {
     if (!row.book_id) continue;
     const key = String(row.book_id);
-    const agg = metricsByBook.get(key) ?? { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0 };
+    const currency = normalizeCurrency(row.currency);
+    const currencySet = currenciesByBook.get(key) ?? new Set<string>();
+    currencySet.add(currency);
+    currenciesByBook.set(key, currencySet);
+
+    const agg = metricsByBook.get(key) ?? { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0, currencies: [], monetarySafe: true };
     agg.royalties += num(row.royalties);
     agg.units += num(row.units);
     agg.pagesRead += num(row.pages_read);
@@ -95,6 +121,12 @@ export async function GET(request: NextRequest) {
     agg.netEarnings += num(row.metrics?.net_earnings);
     agg.rows += 1;
     metricsByBook.set(key, agg);
+  }
+
+  for (const [bookId, agg] of metricsByBook.entries()) {
+    const currencies = [...(currenciesByBook.get(bookId) ?? new Set<string>())].sort();
+    agg.currencies = currencies;
+    agg.monetarySafe = currencies.length <= 1;
   }
 
   const pendingByBook = new Map<string, number>();
@@ -116,6 +148,8 @@ export async function GET(request: NextRequest) {
     };
   });
 
+  const emptyEconomic: EconomicAgg = { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0, currencies: [], monetarySafe: true };
+
   const priority = titles.map((book: any) => {
     const byId = eventsByBook.get(String(book.id)) ?? {};
     const bySlug = eventsByBook.get(`slug:${book.slug}`) ?? {};
@@ -131,14 +165,14 @@ export async function GET(request: NextRequest) {
     const pendingCount = pendingByBook.get(String(book.id)) ?? 0;
     const member = memberByBookId.get(String(book.id));
     const work = member ? workById.get(String(member.work_id)) : null;
-    const economic = metricsByBook.get(String(book.id)) ?? { royalties: 0, units: 0, pagesRead: 0, adSpend: 0, adSales: 0, orders: 0, impressions: 0, clicks: 0, netEarnings: 0, rows: 0 };
+    const economic = metricsByBook.get(String(book.id)) ?? emptyEconomic;
 
     const intentScore = bookViews + sampleClicks * 4 + amazonClicks * 6 + directBuyClicks * 8;
     const readinessGap = (hasAsin ? 0 : 12) + (book.cover_image_url ? 0 : 5) + (book.sample_pdf_path ? 0 : 4) + (member ? 0 : 6);
     const recommendationSignal = Math.min(pendingCount * 2, 10);
-    const revenueLeverage = Math.min(economic.royalties * 1.5, 40) + Math.min(economic.units * 1.5, 25) + Math.min(economic.pagesRead / 1000, 15);
-    const adWasteOpportunity = economic.adSpend > economic.royalties ? Math.min((economic.adSpend - economic.royalties) * 2, 30) : 0;
-    const demandNoSalesOpportunity = economic.royalties === 0 && amazonClicks > 0 ? Math.min(amazonClicks * 4, 20) : 0;
+    const revenueLeverage = economic.monetarySafe ? Math.min(economic.royalties * 1.5, 40) + Math.min(economic.units * 1.5, 25) + Math.min(economic.pagesRead / 1000, 15) : Math.min(economic.units * 1.5, 25) + Math.min(economic.pagesRead / 1000, 15);
+    const adWasteOpportunity = economic.monetarySafe && economic.adSpend > economic.royalties ? Math.min((economic.adSpend - economic.royalties) * 2, 30) : 0;
+    const demandNoSalesOpportunity = economic.monetarySafe && economic.royalties === 0 && amazonClicks > 0 ? Math.min(amazonClicks * 4, 20) : 0;
     const economicScore = Math.round((revenueLeverage + adWasteOpportunity + demandNoSalesOpportunity) * 10) / 10;
     const score = Math.round((intentScore + readinessGap + recommendationSignal + economicScore) * 10) / 10;
 
@@ -172,6 +206,27 @@ export async function GET(request: NextRequest) {
   const bookReportRows = metrics.filter((row: any) => row.source === "book_report");
   const booksWithEconomicData = new Set(metrics.filter((row: any) => row.book_id).map((row: any) => String(row.book_id))).size;
 
+  const monetaryByCurrency: Record<string, { royalties: number; adSpend: number; adSales: number; netEarnings: number }> = {};
+  for (const row of metrics as any[]) {
+    const currency = normalizeCurrency(row.currency);
+    const agg = monetaryByCurrency[currency] ?? { royalties: 0, adSpend: 0, adSales: 0, netEarnings: 0 };
+    agg.royalties += num(row.royalties);
+    agg.adSpend += num(row.ad_spend);
+    agg.adSales += num(row.ad_sales);
+    agg.netEarnings += num(row.metrics?.net_earnings);
+    monetaryByCurrency[currency] = agg;
+  }
+  for (const agg of Object.values(monetaryByCurrency)) {
+    agg.royalties = Math.round(agg.royalties * 100) / 100;
+    agg.adSpend = Math.round(agg.adSpend * 100) / 100;
+    agg.adSales = Math.round(agg.adSales * 100) / 100;
+    agg.netEarnings = Math.round(agg.netEarnings * 100) / 100;
+  }
+  const currencies90d = Object.keys(monetaryByCurrency).sort();
+  const monetaryAggregationSafe = currencies90d.length <= 1;
+  const onlyCurrency = currencies90d.length === 1 ? currencies90d[0] : null;
+  const onlyMoney = onlyCurrency ? monetaryByCurrency[onlyCurrency] : null;
+
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     summary: {
@@ -195,8 +250,12 @@ export async function GET(request: NextRequest) {
       economicMetricRows90d: metrics.length,
       bookReportRows90d: bookReportRows.length,
       booksWithEconomicData,
-      royalties90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.royalties), 0) * 100) / 100,
-      adSpend90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.ad_spend), 0) * 100) / 100,
+      currencies90d,
+      monetaryAggregationSafe,
+      royalties90d: monetaryAggregationSafe ? (onlyMoney?.royalties ?? 0) : null,
+      adSpend90d: monetaryAggregationSafe ? (onlyMoney?.adSpend ?? 0) : null,
+      monetaryCurrency90d: onlyCurrency,
+      monetaryByCurrency,
       units90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.units), 0) * 100) / 100,
       pagesRead90d: Math.round(metrics.reduce((sum: number, row: any) => sum + num(row.pages_read), 0)),
     },
