@@ -10,10 +10,11 @@ export const BRANDS: Brand[] = [
   { id: "freddypublishing", name: "Freddy Publishing", type: "publishing", description: "Books, Kindle publishing, lead magnets and authority content across Amazon and owned channels", color: "#ef4444", website: "https://books.freddybremseth.com", tone: "authoritative, practical, conversion-focused", target_audience: "Readers, buyers and niche audiences reached through Kindle, social, email and search", specialties: ["book funnels", "authority books", "Amazon metadata", "social book promotion"] },
   { id: "freddyb", name: "Freddy Bremseth", type: "personal", description: "Personal brand - author, entrepreneur and real estate expert in Spain", color: "#3b82f6", website: "https://freddybremseth.com", tone: "authentic, analytical, knowledgeable", target_audience: "Readers, entrepreneurs, expats and business owners", specialties: ["books", "entrepreneurship", "Spanish real estate", "AI and digital business"] },
   { id: "pinosoecolife", name: "Pinoso Ecolife", type: "real_estate", description: "Sustainable rural living in Pinosos, Alicante - eco-friendly country homes", color: "#84cc16", website: "https://pinosoecolife.com", tone: "natural, sustainable, community-oriented", target_audience: "Eco-conscious families seeking rural Spanish lifestyle", specialties: ["country homes", "sustainable living", "Pinosos area", "rural properties"] },
-  { id: "neuralbeat", name: "Re-Master Freddy", type: "music", description: "AI-driven EDM and electronic music production", color: "#ec4899", website: "https://youtube.com/@remasterfreddy", tone: "energetic, futuristic, creative", target_audience: "EDM fans and electronic music listeners", specialties: ["AI music", "EDM production", "music videos", "remasters"] },
+  { id: "remasterfreddy", name: "Re-Master Freddy", type: "music", description: "Re-Master Freddy creator brand; Neural Beat is retained as a legacy/internal music label under this brand", color: "#ec4899", website: "https://youtube.com/@remasterfreddy", tone: "energetic, futuristic, creative", target_audience: "EDM fans and electronic music listeners", specialties: ["AI music", "EDM production", "YouTube releases", "music videos", "Neural Beat catalog"] },
 ];
 
 export const LEAD_STATUSES = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "WON", "ON_HOLD", "LOST"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const PLATFORMS = ["instagram", "facebook", "linkedin", "twitter", "tiktok", "youtube"] as const;
 
 export const SIDEBAR_NAV = {
@@ -40,6 +41,7 @@ export const SIDEBAR_NAV = {
   ],
   automation: [
     { label: "Nexus OS", href: "/nexus-os", icon: "Boxes" },
+    { label: "Channel Connections", href: "/connections", icon: "Wifi" },
     { label: "RealtyFlow OS status", href: "/os", icon: "PanelsTopLeft" },
     { label: "Dealflow Cockpit", href: "/nexus", icon: "Building2" },
     { label: "Automation Center", href: "/automation", icon: "Zap" },
