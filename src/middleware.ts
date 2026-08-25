@@ -125,7 +125,7 @@ function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
 }
 
 function inventoryLeadIntelligenceReturnRedirect(request: NextRequest) {
-  const { nextUrl } = request.nextUrl;
+  const { nextUrl } = request;
   if (nextUrl.pathname !== "/inventory") return null;
   const openedPropertyFromQuery = nextUrl.searchParams.has("propertyId") || nextUrl.searchParams.has("propertyRef");
   if (!openedPropertyFromQuery || nextUrl.searchParams.has("returnTo")) return null;
