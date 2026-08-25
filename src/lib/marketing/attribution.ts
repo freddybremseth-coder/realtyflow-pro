@@ -60,19 +60,20 @@ export interface MarketingTouchpoint {
   contactId?: string | null;
   channel?: string | null;
   touchType: TouchType;
-  occurredAt: string; // ISO
+  occurredAt: string;
   confidence?: AttributionConfidence;
-  commissionEur?: number | null; // på sale-touch
+  commissionEur?: number | null;
   metadata?: Record<string, unknown>;
 }
 
 /** Stabil dedupe-nøkkel (idempotens): samme hendelse skal aldri attribueres to ganger.
- * Brand er del av nøkkelen slik at identiske kontakt/content-identiteter i to brands
- * aldri kolliderer i attribution-ledgeren. */
+ * Brand og creative-variant er del av nøkkelen slik at to annonser som peker på
+ * samme content aldri kolliderer i attribution-ledgeren. */
 export function touchpointDedupeKey(t: MarketingTouchpoint): string {
   const who = t.contactId || t.visitorId || "anon";
-  const minute = (t.occurredAt || "").slice(0, 16); // minutt-oppløsning
-  return `${t.brandId}|${who}|${t.touchType}|${t.contentId ?? "-"}|${minute}`;
+  const minute = (t.occurredAt || "").slice(0, 16);
+  const creative = t.creativeVariantId || "-";
+  return `${t.brandId}|${who}|${t.touchType}|${t.contentId ?? "-"}|${creative}|${minute}`;
 }
 
 /** Confidence for en resolvert touch: exact = utm_content/publication + identitet. */
@@ -101,7 +102,7 @@ export type AttributionModel = (typeof ATTRIBUTION_MODELS)[number];
 const isDirect = (channel?: string | null) => !channel || String(channel).toLowerCase() === "direct";
 
 export interface JourneyCredit {
-  credit: Map<string, number>; // contentId → vekt (summerer til 1)
+  credit: Map<string, number>;
   contentsTouched: string[];
   primaryContent: string | null;
 }
@@ -131,7 +132,6 @@ export function attributeJourneyCredit(touches: MarketingTouchpoint[], model: At
     return { credit, contentsTouched, primaryContent: first };
   }
 
-  // last_touch (non-direct)
   const lastNonDirect = [...contentTouches].reverse().find((t) => !isDirect(t.channel));
   const winner = (lastNonDirect ?? contentTouches[contentTouches.length - 1]).contentId as string;
   credit.set(winner, 1);
@@ -171,7 +171,7 @@ export function rollupContentOutcomes(journeys: Journey[], model: AttributionMod
 
   for (const j of journeys) {
     const rank = Math.max(0, ...j.touches.map((t) => outcomeRankOf(t.touchType)));
-    if (rank < 1) continue; // ingen canonical outcome → ikke tell (organisk uten konvertering)
+    if (rank < 1) continue;
     const commission = j.touches.filter((t) => t.touchType === "sale").reduce((s, t) => s + (Number(t.commissionEur) || 0), 0);
     const { credit, contentsTouched, primaryContent } = attributeJourneyCredit(j.touches, model);
     if (contentsTouched.length === 0) continue;
@@ -187,7 +187,6 @@ export function rollupContentOutcomes(journeys: Journey[], model: AttributionMod
         b.commissionEur = r2(b.commissionEur + w * commission);
       }
     }
-    // Assisted: touchede content som ikke er primær vinner.
     for (const c of contentsTouched) {
       if (c !== primaryContent) bump(c).assistedConversions += 1;
     }
