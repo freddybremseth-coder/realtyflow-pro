@@ -64,6 +64,7 @@ const REMASTER_PROXY_PREFIXES = ["/api/neural-beat/jobs"];
 const NEXUS_SCHEDULER_PATHS = new Set([
   "/api/cron/email-ingest",
   "/api/cron/email-auto-draft",
+  "/api/cron/social-inbox-sync",
 ]);
 
 const ROLE_HOME: Record<AccessRole, string> = {
@@ -124,7 +125,7 @@ function leadIntelligenceReturnPathFromReferer(request: NextRequest) {
 }
 
 function inventoryLeadIntelligenceReturnRedirect(request: NextRequest) {
-  const { nextUrl } = request;
+  const { nextUrl } = request.nextUrl;
   if (nextUrl.pathname !== "/inventory") return null;
   const openedPropertyFromQuery = nextUrl.searchParams.has("propertyId") || nextUrl.searchParams.has("propertyRef");
   if (!openedPropertyFromQuery || nextUrl.searchParams.has("returnTo")) return null;
