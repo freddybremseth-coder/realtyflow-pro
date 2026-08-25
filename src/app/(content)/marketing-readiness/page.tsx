@@ -16,6 +16,7 @@ type Row = {
   published: number;
   measuredEligible: number;
   quarantined: number;
+  evaluatedRules: number;
   actionableRules: number;
   liveLearning: boolean;
   status: string;
@@ -28,6 +29,7 @@ type ControlGate = {
   learningScope: string;
   eligibleObservations: number;
   requiredObservations: number;
+  evaluatedRules: number;
   actionableRules: number;
   nextRecommendedCanary: { brandId: string; channel: string; path: string } | null;
   reason: string;
@@ -78,7 +80,7 @@ export default function MarketingReadinessPage() {
   const runCanary = gate?.status === "RUN_NEXT_CANARY" && gate.nextRecommendedCanary;
 
   return (
-    <div style={{ maxWidth: 1320, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 25 }}>Marketing Expansion Readiness</h1>
@@ -95,7 +97,7 @@ export default function MarketingReadinessPage() {
             <div style={{ fontSize: 12, fontWeight: 800, color: runCanary ? "#166534" : "#92400e" }}>CANARY RECOMMENDATION</div>
             <div style={{ fontSize: 20, fontWeight: 900, marginTop: 3 }}>{runCanary ? "RUN NEXT CANARY" : "WAIT"}</div>
             <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
-              Control: {gate.learningScope} · eligible {gate.eligibleObservations}/{gate.requiredObservations} · actionable rules {gate.actionableRules}
+              Control: {gate.learningScope} · eligible {gate.eligibleObservations}/{gate.requiredObservations} · evaluated rules {gate.evaluatedRules} · actionable {gate.actionableRules}
             </div>
             <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>{gate.reason}</div>
           </div>
@@ -106,10 +108,10 @@ export default function MarketingReadinessPage() {
       </section>}
 
       <div style={{ marginTop: 18, overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1260, background: "white" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1360, background: "white" }}>
           <thead>
             <tr style={{ background: "#f8fafc", textAlign: "left" }}>
-              {["Brand", "Kanal", "Konto", "Status", "Plan", "Pilot", "Hvorfor ikke pilotklar?", "Publisert", "Eligible", "Karantene", "Actionable rules"].map((h) => <th key={h} style={{ padding: 11, fontSize: 12, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}
+              {["Brand", "Kanal", "Konto", "Status", "Plan", "Pilot", "Hvorfor ikke pilotklar?", "Publisert", "Eligible", "Karantene", "Evaluated rules", "Actionable rules"].map((h) => <th key={h} style={{ padding: 11, fontSize: 12, color: "#475569", borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -129,6 +131,7 @@ export default function MarketingReadinessPage() {
                   <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.published}</td>
                   <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.measuredEligible}</td>
                   <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.quarantined}</td>
+                  <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.evaluatedRules}</td>
                   <td style={{ padding: 11, borderBottom: "1px solid #f1f5f9" }}>{row.actionableRules}</td>
                 </tr>
               );
@@ -138,7 +141,7 @@ export default function MarketingReadinessPage() {
       </div>
 
       <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "#f8fafc", color: "#475569", fontSize: 13 }}>
-        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. BRAND_BRAIN_READY betyr at brandets identitet/claims er definert, men kanalen kan fortsatt være blokkert fra pilot. PILOT_READY krever eksplisitt kanalstøtte i Growth OS-registry. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og minst én actionable learning-regel i samme brand × kanal-scope. Canary Recommendation utfører ingenting; den sier bare når neste kontrollerte canary bør kjøres. Alle publiseringer forblir COPILOT/manual-review.
+        <b>Policy:</b> CONNECTED betyr kun konto tilkoblet. BRAND_BRAIN_READY betyr at brandets identitet/claims er definert, men kanalen kan fortsatt være blokkert fra pilot. PILOT_READY krever eksplisitt kanalstøtte i Growth OS-registry. LIVE_LEARNING krever minst 10 learning-eligible observasjoner og at Learning Engine har evaluert/skrevet regler i samme brand × kanal-scope. Actionable rules (favor/avoid) er et separat sterkere signal; null actionable kan fortsatt være et legitimt nøytralt læringsresultat. Canary Recommendation utfører ingenting; den sier bare når neste kontrollerte canary bør kjøres. Alle publiseringer forblir COPILOT/manual-review.
       </div>
     </div>
   );
