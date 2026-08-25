@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
 
 function supabaseAdmin() {
@@ -21,19 +22,21 @@ function nextMetricsCronAt(nowMs: number): Date {
 
 async function readStatus(brandId = "zeneco") {
   const supabase = supabaseAdmin();
+  const channel = "instagram";
+  const learningScope = channelLearningScope(brandId, channel);
 
   const [{ data: snapshots }, { data: rules }, { data: published }, { data: touchpoints }] = await Promise.all([
     supabase
       .from("marketing_events")
       .select("content_id, occurred_at, metadata")
       .eq("brand_id", brandId)
-      .eq("channel", "instagram")
+      .eq("channel", channel)
       .eq("event_type", "metrics_snapshot"),
     supabase
       .from("marketing_learning_rules")
       .select("dimension, value, sample, lift, evidence, verdict, finding, updated_at")
-      .eq("scope", brandId)
-      .in("dimension", ["tag", "tags", "area", "propertyType", "priceBand", "hookType", "ctaType"])
+      .eq("scope", learningScope)
+      .in("dimension", ["tag", "tags", "area", "propertyType", "priceBand", "hookType", "ctaType", "contentPillar", "topic"])
       .order("sample", { ascending: false })
       .order("lift", { ascending: false })
       .limit(80),
@@ -41,13 +44,13 @@ async function readStatus(brandId = "zeneco") {
       .from("marketing_publications")
       .select("publication_id, content_id, updated_at")
       .eq("brand_id", brandId)
-      .eq("channel", "instagram")
+      .eq("channel", channel)
       .eq("state", "published"),
     supabase
       .from("marketing_touchpoints")
       .select("contact_id, content_id, touch_type, commission_eur, occurred_at")
       .eq("brand_id", brandId)
-      .eq("channel", "instagram"),
+      .eq("channel", channel),
   ]);
 
   const snapshotRows = snapshots ?? [];
@@ -116,7 +119,8 @@ async function readStatus(brandId = "zeneco") {
 
   return {
     brandId,
-    channel: "instagram",
+    channel,
+    learningScope,
     publishedCount,
     maturePublishedCount,
     immaturePublishedCount,
@@ -128,7 +132,8 @@ async function readStatus(brandId = "zeneco") {
     observations,
     quarantinedCount,
     learningThreshold,
-    learningActive: observations >= learningThreshold,
+    learningActive: observations >= learningThreshold && (rules ?? []).length > 0,
+    readyToLearn: observations >= learningThreshold,
     remainingUntilLearning: Math.max(0, learningThreshold - observations),
     lastSnapshotAt: snapshotRows
       .map((r) => r.occurred_at)
@@ -136,8 +141,10 @@ async function readStatus(brandId = "zeneco") {
       .sort()
       .at(-1) ?? null,
     quarantineReasons: quarantinedRows.reduce((acc: Record<string, number>, row: any) => {
-      const reason = String(row?.metadata?.data_quality_reason || "unknown");
-      acc[reason] = (acc[reason] || 0) + 1;
+      const reasons = Array.isArray(row?.metadata?.data_quality_reasons)
+        ? row.metadata.data_quality_reasons.map(String)
+        : [String(row?.metadata?.data_quality_reason || "unknown")];
+      for (const reason of reasons) acc[reason] = (acc[reason] || 0) + 1;
       return acc;
     }, {}),
     businessFunnel,
