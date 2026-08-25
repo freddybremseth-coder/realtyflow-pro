@@ -51,11 +51,13 @@ export async function GET(request: NextRequest) {
 
   const drafted = results.filter(x=>x.status==="drafted").length;
   const failed = results.length - drafted;
-  await supabase.from("automation_logs").insert({
-    type:"email_auto_draft",
+  const { error: logError } = await supabase.from("automation_logs").insert({
+    action:"email_auto_draft",
+    agent_name:"nexus_email_auto_draft_cron",
     status: failed ? (drafted ? "partial" : "failed") : "success",
-    details:{ scanned:(candidates??[]).length, drafted, failed, runtime_control:`cron:${PATH}` },
-  }).then(()=>{}).then(undefined,()=>{});
+    details:{ scanned:(candidates??[]).length, drafted, failed, runtime_control:`cron:${PATH}`, max_per_run:maxPerRun },
+  });
+  if (logError) console.error("[email-auto-draft] automation log failed", logError.message);
 
-  return NextResponse.json({ success:true, scanned:(candidates??[]).length, drafted, failed, results });
+  return NextResponse.json({ success:true, scanned:(candidates??[]).length, drafted, failed, results, logged:!logError });
 }
