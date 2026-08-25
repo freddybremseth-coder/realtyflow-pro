@@ -47,6 +47,7 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     kind: "real_estate",
     pilotChannels: ["facebook"],
     plannedChannels: ["facebook"],
+    contentPillars: ["rural_property", "new_build", "land_and_plot", "inland_lifestyle"],
     notes: "Rural/inland property positioning with separate learning from ZenEco.",
   },
   {
