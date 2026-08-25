@@ -30,6 +30,79 @@ function rowToAsset(row: any): GeneratedAsset {
   };
 }
 
+/**
+ * Sørger for at en faktisk ekstern publisering også finnes i den canonical
+ * content_publications-ledgeren som engagement-tracker leser. Dette er en ren
+ * observability/learning-bro: den publiserer ingenting selv, og dry-runs skrives
+ * aldri som ekte kanalposter.
+ */
+async function syncCanonicalContentPublication(
+  supabase: MarketingSupabaseLike,
+  args: {
+    publicationId: string;
+    pub: any;
+    asset: GeneratedAsset;
+    externalId?: string;
+    dryRun?: boolean;
+    at: string;
+    isGenerated: boolean;
+  },
+) {
+  if (args.dryRun || !args.externalId || args.pub?.state === "failed") return;
+  if (!args.pub?.brand_id) return;
+  if (args.asset.channel !== "instagram" && args.asset.channel !== "facebook") return;
+
+  const caption = [args.asset.headline, args.asset.body, args.asset.cta].filter(Boolean).join("\n\n");
+  const media = (args.asset.media ?? {}) as Record<string, unknown>;
+  const mediaUrls = [media.imageUrl, media.videoUrl].filter((value): value is string => typeof value === "string" && value.length > 0);
+  const genome = (args.asset.genome ?? {}) as Record<string, unknown>;
+
+  const row = {
+    brand_id: args.pub.brand_id,
+    content_type: "social",
+    title: args.asset.headline ?? `${args.asset.channel}: ${args.pub.source_id ?? args.asset.contentId}`,
+    description: caption || null,
+    media_urls: mediaUrls,
+    ai_generated: args.isGenerated,
+    ai_title: args.asset.headline ?? null,
+    ai_description: args.asset.body ?? null,
+    status: "published",
+    published_at: args.at,
+    scheduled_platforms: [args.asset.channel],
+    publish_attempts: 1,
+    last_publish_error: null,
+    marketing_publication_id: args.publicationId,
+    marketing_content_id: args.pub.content_id ?? args.asset.contentId,
+    content_features: {
+      source: "marketing_publish_executor",
+      marketingPublicationId: args.publicationId,
+      marketingContentId: args.pub.content_id ?? args.asset.contentId,
+      campaignId: args.pub.campaign_id ?? args.asset.campaignId ?? null,
+      creativeVariantId: args.asset.creativeVariantId ?? null,
+      sourceType: args.pub.source_type ?? null,
+      sourceId: args.pub.source_id ?? null,
+      genome,
+    },
+    performance_goal: typeof genome.goal === "string" ? genome.goal : null,
+    ...(args.asset.channel === "instagram" ? { instagram_post_id: args.externalId } : { facebook_post_id: args.externalId }),
+  };
+
+  const { data: existing } = await supabase
+    .from("content_publications")
+    .select("id")
+    .eq("marketing_publication_id", args.publicationId)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const { error } = await supabase.from("content_publications").update(row).eq("id", existing.id);
+    if (error) throw new Error(`CONTENT_PUBLICATION_SYNC_FAILED: ${error.message}`);
+    return;
+  }
+
+  const { error } = await supabase.from("content_publications").insert(row);
+  if (error) throw new Error(`CONTENT_PUBLICATION_SYNC_FAILED: ${error.message}`);
+}
+
 export interface PublishExecutorConfig {
   supabase: MarketingSupabaseLike;
   publisher: ChannelPublisher;
@@ -135,6 +208,25 @@ export function makeMarketingPublishExecutor(cfg: PublishExecutorConfig): Action
     const at = (cfg.now?.() ?? new Date()).toISOString();
     await supabase.from("marketing_publications").update({ state: res.state, updated_at: at }).eq("publication_id", publicationId);
     await supabase.from("marketing_assets").update({ approved_at: at, updated_at: at }).eq("creative_variant_id", asset.creativeVariantId);
+
+    // Publisering og læring må være samme canonical kjede. Best-effort etter at
+    // Meta allerede har bekreftet posten; en sync-feil må IKKE føre til retry og
+    // dermed risiko for dobbeltpublisering. Feilen logges tydelig for Attention.
+    if (res.state === "published" && !res.dryRun && res.externalId) {
+      try {
+        await syncCanonicalContentPublication(supabase, {
+          publicationId,
+          pub,
+          asset,
+          externalId: res.externalId,
+          dryRun: res.dryRun,
+          at,
+          isGenerated,
+        });
+      } catch (e) {
+        console.error(`[publish-executor] canonical content-publication sync feilet (post er allerede publisert): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
 
     // Lukk run-livssyklusen: agent_runs.status→completed, marketing_runs.stage→done.
     // BEST-EFFORT (aldri kaste) — posten er allerede ute, og executeApproval markerer
