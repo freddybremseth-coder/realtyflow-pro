@@ -37,14 +37,30 @@ export async function GET(request: NextRequest) {
     // Pilot stays intentionally brand-scoped. Expansion to more brands is an
     // explicit config change after Zen Eco Homes has enough observations.
     const brandId = process.env.MARKETING_METRICS_PILOT_BRAND || "zeneco";
+    const days = Number(process.env.MARKETING_METRICS_LOOKBACK_DAYS || 30);
+    const limit = Number(process.env.MARKETING_METRICS_LIMIT || 100);
+    const minAgeHours = Number(process.env.MARKETING_METRICS_MIN_AGE_HOURS || 24);
+    const learningMinObservations = Number(process.env.MARKETING_LEARNING_MIN_OBSERVATIONS || 10);
+
     const result = await syncGrowthInstagramMetrics(supabase as any, {
       brandId,
-      days: Number(process.env.MARKETING_METRICS_LOOKBACK_DAYS || 30),
-      limit: Number(process.env.MARKETING_METRICS_LIMIT || 100),
-      learningMinObservations: Number(process.env.MARKETING_LEARNING_MIN_OBSERVATIONS || 10),
+      days,
+      limit,
+      minAgeHours,
+      learningMinObservations,
     });
 
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({
+      success: true,
+      config: {
+        brandId,
+        days,
+        limit,
+        minAgeHours,
+        learningMinObservations,
+      },
+      ...result,
+    });
   } catch (error) {
     console.error("[Marketing Growth Metrics]", error);
     return NextResponse.json(
