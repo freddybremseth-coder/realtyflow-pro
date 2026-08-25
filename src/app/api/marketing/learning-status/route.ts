@@ -14,11 +14,16 @@ function supabaseAdmin() {
   return createClient(url, key);
 }
 
+/** Nexus/Supabase scheduler: marketing-growth-metrics runs 00:25/06:25/12:25/18:25 UTC. */
 function nextMetricsCronAt(nowMs: number): Date {
   const now = new Date(nowMs);
-  let cron = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 19, 30, 0));
-  if (cron.getTime() <= nowMs) cron = new Date(cron.getTime() + 86_400_000);
-  return cron;
+  const hours = [0, 6, 12, 18];
+  for (const hour of hours) {
+    const candidate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, 25, 0));
+    if (candidate.getTime() > nowMs) return candidate;
+  }
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 25, 0));
+  return tomorrow;
 }
 
 async function readStatus(brandId = "zeneco") {
@@ -122,6 +127,7 @@ async function readStatus(brandId = "zeneco") {
     brandId,
     channel,
     learningScope,
+    scheduler: { source: "nexus_supabase", cadence: "6h", minuteUtc: 25 },
     publishedCount,
     maturePublishedCount,
     immaturePublishedCount,
