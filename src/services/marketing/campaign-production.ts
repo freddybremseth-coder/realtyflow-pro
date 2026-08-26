@@ -26,6 +26,7 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
+const PREAPPROVED_REUSABLE_SOURCES = new Set(["ad_creative", "content_hub_approved"]);
 
 type CampaignAutonomy = {
   level: "copilot" | "guarded";
@@ -130,30 +131,29 @@ export function makeConfiguredCreativeGenerator() {
   return makeDryRunCreativeGenerator();
 }
 
-/** Prefer the exact OAuth token stored for the brand/channel. The legacy env
- * token remains a fail-safe fallback for old manual approval paths only. */
+/** Exact brand/channel OAuth is mandatory for controlled auto. Legacy env credentials
+ * are retained only for old manual approval flows where no brand is supplied. */
 export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike, brandId?: string): ChannelPublisher {
   return {
     async publish(asset, opts) {
       const liveRequested = process.env.MARKETING_META_LIVE === "true";
       const platform = asset.channel === "facebook" ? "facebook" : "instagram";
       if (brandId && liveRequested) {
-        const connected = await getTokensForBrandPlatform(brandId, platform).catch(() => null);
-        if (connected?.tokens.accessToken) {
-          const target = connected.channel.external_id;
-          if (opts.accountId && String(opts.accountId) !== String(target)) {
-            throw new Error(`BRAND_MISMATCH: resolved account ${opts.accountId} differs from connected ${brandId}/${platform} account ${target}`);
-          }
-          const graph = makeGraphApi(connected.tokens.accessToken);
-          const publisher = makeMetaPublisher({
-            supabase,
-            graph,
-            igUserId: platform === "instagram" ? target : undefined,
-            pageId: platform === "facebook" ? target : undefined,
-            live: true,
-          });
-          return publisher.publish(asset, { ...opts, accountId: target });
+        const connected = await getTokensForBrandPlatform(brandId, platform);
+        if (!connected?.tokens.accessToken) throw new Error(`META_TOKEN_MISSING: ingen aktiv OAuth-token for ${brandId}/${platform}`);
+        const target = connected.channel.external_id;
+        if (opts.accountId && String(opts.accountId) !== String(target)) {
+          throw new Error(`BRAND_MISMATCH: resolved account ${opts.accountId} differs from connected ${brandId}/${platform} account ${target}`);
         }
+        const graph = makeGraphApi(connected.tokens.accessToken);
+        const publisher = makeMetaPublisher({
+          supabase,
+          graph,
+          igUserId: platform === "instagram" ? target : undefined,
+          pageId: platform === "facebook" ? target : undefined,
+          live: true,
+        });
+        return publisher.publish(asset, { ...opts, accountId: target });
       }
 
       const igUserId = process.env.META_IG_USER_ID;
@@ -230,6 +230,7 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
     let sourceType = "generated";
     let sourceId: string | null = null;
     let reuseMode: string | null = null;
+    let sourceHumanApproved = false;
     try {
       if (input.legacyPublicationId) {
         const candidate = await loadLegacyPublicationCandidate(supabase, { publicationId: input.legacyPublicationId, brandId: input.brandId, channel: brief.channel, mediaUrl: input.mediaUrl });
@@ -237,6 +238,7 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
         sourceType = "legacy_content_publication";
         sourceId = candidate.contentId;
         reuseMode = "reuse_exact";
+        sourceHumanApproved = !!candidate.humanApproved;
       } else if (inventoryProperty) {
         creative = await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
         creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
@@ -252,6 +254,7 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
           sourceType = decision.chosen.source;
           sourceId = decision.chosen.contentId;
           reuseMode = decision.chosen.reuseMode;
+          sourceHumanApproved = !!decision.chosen.humanApproved;
         } else {
           creative = await generator.generate({ brief, brand, recommendation });
           if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
@@ -275,11 +278,15 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
       language: input.language ?? brief.genome.language ?? null, publishingAccountId: input.publishingAccountId ?? null,
     }).catch(() => null);
 
+    const approvedGenerated = sourceType === "generated" && (!inventoryProperty || reuseMode === "inventory_grounded");
+    const approvedReusable = sourceHumanApproved
+      && PREAPPROVED_REUSABLE_SOURCES.has(sourceType)
+      && reuseMode === "reuse_exact"
+      && !!creative.asset.media?.imageUrl;
     const preapprovedFormat = !!(
       autonomy.controlledAuto
-      && sourceType === "generated"
       && autonomy.preapprovedChannels.has(String(brief.channel).toLowerCase())
-      && (!inventoryProperty || reuseMode === "inventory_grounded")
+      && (approvedGenerated || approvedReusable)
     );
 
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
@@ -310,7 +317,9 @@ function assetFromCandidate(brief: any, brand: any, chosen: any): CreativeResult
     },
     provenance: {
       generatedBy: "content-resolver", model: chosen.source, promptVersion: "resolver-1.0", learningRulesUsed: [],
-      factSources: chosen.factSources ?? [], propertyIds: chosen.propertyIds ?? [], createdAt: new Date().toISOString(), approvedBy: null, approvedAt: null,
+      factSources: chosen.factSources ?? [], propertyIds: chosen.propertyIds ?? [], createdAt: new Date().toISOString(),
+      approvedBy: chosen.humanApproved ? "content-resolver:human-approved" : null,
+      approvedAt: chosen.humanApproved ? new Date().toISOString() : null,
     },
   };
 }
