@@ -4,6 +4,7 @@ import { AgentFleetStrip } from "@/components/nexus/agent-fleet-strip";
 import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
+  { href: "/nexus-os/today", label: "Today" },
   { href: "/nexus-os", label: "Agentic OS" },
   { href: "/agents", label: "Agent Fleet" },
   { href: "/os", label: "Attention" },
@@ -34,7 +35,7 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Link href="/agents" className="rounded-xl border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-400/20">Open Agent Fleet →</Link>
+            <Link href="/nexus-os/today" className="rounded-xl border border-emerald-400/50 bg-emerald-400/10 px-4 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20">Open Today →</Link>
             <Link href="/nexus-os/autonomy" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-xs font-black text-slate-200 transition hover:border-slate-400">Autonomy Policy</Link>
           </div>
         </div>
