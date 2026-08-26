@@ -4,10 +4,8 @@
  * Reads only Growth OS publications, uses the brand's connected Facebook token,
  * waits for maturity, writes one canonical cumulative metrics_snapshot per
  * content/channel, applies the same historical asset quarantine used by the
- * Instagram pilot, and refreshes learning only after enough eligible posts.
- *
- * This service is intentionally NOT scheduled yet. It becomes schedulable only
- * after the first controlled Facebook pilot publication exists.
+ * Instagram pilot, enriches real publication conditions (timing/headline/media/
+ * tags), and refreshes channel-scoped learning only after enough eligible posts.
  */
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
@@ -15,6 +13,7 @@ import { deriveSpecificLocationFromTitle, isBroadInventoryRegion } from "@/servi
 import { makeMarketingStore, type MarketingSupabaseLike } from "@/services/marketing/adapters";
 import { refreshLearningRules } from "@/services/marketing/learning-adapter";
 import { extractPublishedTags, historicalAssetLearningQuality } from "@/services/marketing/growth-metrics-sync";
+import { enrichPublishedGrowthGenomes } from "@/services/marketing/growth-genome-enrichment";
 import { fetchFacebookPostEngagement } from "@/services/integrations/facebook-insights";
 import type { ContentGenome } from "@/lib/marketing/genome";
 import type { ContentMetrics } from "@/lib/marketing/value-score";
@@ -25,6 +24,7 @@ export interface GrowthFacebookMetricsSyncOptions {
   limit?: number;
   minAgeHours?: number;
   learningMinObservations?: number;
+  timeZone?: string;
 }
 
 export interface GrowthFacebookMetricsSyncResult {
@@ -36,6 +36,7 @@ export interface GrowthFacebookMetricsSyncResult {
   observations: number;
   learningRefreshed: boolean;
   rulesWritten: number;
+  enrichment: { candidates: number; enriched: number };
   failures: Array<{ publicationId: string; reason: string }>;
 }
 
@@ -172,6 +173,16 @@ export async function syncGrowthFacebookMetrics(
   const matureBefore = new Date(now - minAgeHours * 3_600_000).toISOString();
   const accessToken = await facebookAccessToken(brandId);
 
+  // Backfill what was ACTUALLY published before metrics are paired with genome.
+  // This keeps Facebook learning channel-scoped and lets the engine learn timing,
+  // headline form, image class and hashtags instead of only planned attributes.
+  const enrichment = await enrichPublishedGrowthGenomes(supabase, {
+    brandId,
+    channel: "facebook",
+    days: Math.max(days, 60),
+    timeZone: options.timeZone ?? "Europe/Madrid",
+  });
+
   const { data: publications, error } = await supabase
     .from("marketing_publications")
     .select("publication_id, content_id, brand_id, channel, state, source_id, updated_at")
@@ -193,6 +204,7 @@ export async function syncGrowthFacebookMetrics(
     observations: 0,
     learningRefreshed: false,
     rulesWritten: 0,
+    enrichment,
     failures: [],
   };
   const store = makeMarketingStore(supabase);
