@@ -76,6 +76,90 @@ test("customer next action prioritizes overdue follow-up after contact is reacha
   assert.match(action.description, /Ring kunden/i);
 });
 
+test("negotiation stage outranks profile completeness once follow-up is current", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    next_followup: "2026-07-15T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    {
+      id: "contact-negotiation",
+      email: "buyer@example.com",
+      pipeline_status: "NEGOTIATION",
+      next_followup: "2026-07-15T09:00:00.000Z",
+    },
+    "Avklar motbud og ønsket overtakelse.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.priority, "HIGH");
+  assert.equal(action.title, "Flytt forhandlingen mot beslutning");
+  assert.equal(action.primaryHref, "/closing");
+  assert.match(action.description, /motbud/i);
+});
+
+test("viewing stage becomes a high priority follow-up instead of profile cleanup", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    phone: "+34123456789",
+    next_followup: "2026-07-15T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    {
+      id: "contact-viewing",
+      phone: "+34123456789",
+      pipeline_status: "VIEWING",
+      next_followup: "2026-07-15T09:00:00.000Z",
+    },
+    "Ring etter visningen og avklar interesse.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.priority, "HIGH");
+  assert.equal(action.reason, "kunden er i visningsstadiet");
+  assert.equal(action.primaryHref, "/customers/contact-viewing");
+});
+
+test("high priority customer work item outranks profile completeness", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    next_followup: "2026-07-15T09:00:00.000Z",
+  });
+  const action = buildCustomerNextAction(
+    { id: "contact-task", email: "buyer@example.com", next_followup: "2026-07-15T09:00:00.000Z" },
+    "Kontakt kunden.",
+    completeness,
+    [{ title: "Send kontraktsutkast", next_action: "Send revidert utkast", priority: "HIGH", status: "TO_DO" }],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.title, "Send kontraktsutkast");
+  assert.equal(action.priority, "HIGH");
+  assert.equal(action.reason, "high-priority kundeoppgave er åpen");
+});
+
+test("missing next follow-up becomes explicit high priority action", () => {
+  const completeness = buildCustomerProfileCompleteness({
+    email: "buyer@example.com",
+    pipeline_value: 450000,
+    property_interest: "Altea",
+  });
+  const action = buildCustomerNextAction(
+    { id: "contact-no-followup", email: "buyer@example.com", pipeline_status: "QUALIFIED" },
+    "Avtal neste samtale.",
+    completeness,
+    [],
+    new Date("2026-07-13T09:00:00.000Z"),
+  );
+
+  assert.equal(action.title, "Sett en konkret neste oppfølging");
+  assert.equal(action.priority, "HIGH");
+  assert.equal(action.primaryHref, "/customers/contact-no-followup");
+});
+
 test("customer next action sends incomplete profiles to Lead Intelligence", () => {
   const completeness = buildCustomerProfileCompleteness({
     email: "buyer@example.com",
