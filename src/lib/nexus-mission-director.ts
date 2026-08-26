@@ -14,8 +14,8 @@ export interface PipelineHealthInput {
   deliveryRetentionOpportunities?: number;
   staleOpportunities: number;
   staleConversionOpportunities?: number;
-  targetNewPerWeek: number;
-  targetConversionsPerMonth?: number;
+  targetNewPerWeek?: number | null;
+  targetConversionsPerMonth?: number | null;
   realizedConversions30d?: number;
 }
 
@@ -62,19 +62,23 @@ const CLOSE_ACTION: Record<BusinessPipelineId, string> = {
 
 export function directPipelineMissions(input: PipelineHealthInput): DirectorMission[] {
   const missions: DirectorMission[] = [];
-  const newGap = Math.max(0, input.targetNewPerWeek - input.newOpportunities7d);
-  const conversionGap = Math.max(0, Number(input.targetConversionsPerMonth || 0) - Number(input.realizedConversions30d || 0));
+  const newTarget = Number(input.targetNewPerWeek || 0);
+  const conversionTarget = Number(input.targetConversionsPerMonth || 0);
+  const hasNewTarget = newTarget > 0;
+  const hasConversionTarget = conversionTarget > 0;
+  const newGap = hasNewTarget ? Math.max(0, newTarget - input.newOpportunities7d) : 0;
+  const conversionGap = hasConversionTarget ? Math.max(0, conversionTarget - Number(input.realizedConversions30d || 0)) : 0;
 
-  if (newGap > 0) {
+  if (hasNewTarget && newGap > 0) {
     missions.push({
       id: `director:${input.brandId}:demand`,
       brandId: input.brandId,
       pipelineId: input.pipelineId,
       role: input.pipelineId === "publishing" || input.pipelineId === "creator_media" ? "content_influencer" : "demand_generation",
       kind: "generate_demand",
-      priority: newGap >= Math.max(3, input.targetNewPerWeek * 0.6) ? "HIGH" : "MEDIUM",
+      priority: newGap >= Math.max(3, newTarget * 0.6) ? "HIGH" : "MEDIUM",
       title: `Pipeline trenger ${newGap} nye opportunities`,
-      reason: `${input.newOpportunities7d}/${input.targetNewPerWeek} nye opportunities siste 7 dager. Nexus skal ikke vente passivt når top-of-funnel ligger bak målet.`,
+      reason: `${input.newOpportunities7d}/${newTarget} nye opportunities siste 7 dager mot et eksplisitt brukerdefinert mål. Nexus skal ikke vente passivt når top-of-funnel ligger bak målet.`,
       action: DEMAND_ACTION[input.pipelineId],
       desiredOutcome: `Skap minst ${newGap} nye kvalifiserbare opportunities uten å senke kvaliteten.`,
       autonomy: "prepare",
@@ -95,7 +99,7 @@ export function directPipelineMissions(input: PipelineHealthInput): DirectorMiss
       desiredOutcome: "Hver closing-sak får et dokumentert beslutningshinder, konkret neste steg og dato.",
       autonomy: "approval",
     });
-  } else if (input.conversionOpportunities > 0 && conversionGap > 0) {
+  } else if (hasConversionTarget && input.conversionOpportunities > 0 && conversionGap > 0) {
     missions.push({
       id: `director:${input.brandId}:close`,
       brandId: input.brandId,
@@ -104,7 +108,7 @@ export function directPipelineMissions(input: PipelineHealthInput): DirectorMiss
       kind: "close_revenue",
       priority: "HIGH",
       title: `Closing-kapasitet skal brukes på ${input.conversionOpportunities} aktive saker`,
-      reason: `${input.realizedConversions30d || 0}/${input.targetConversionsPerMonth || 0} realiserte conversions siste 30 dager.`,
+      reason: `${input.realizedConversions30d || 0}/${conversionTarget} realiserte conversions siste 30 dager mot et eksplisitt brukerdefinert mål.`,
       action: CLOSE_ACTION[input.pipelineId],
       desiredOutcome: `Reduser conversion-gap på ${conversionGap} uten å presse irrelevante eller umodne kunder.`,
       autonomy: "approval",
