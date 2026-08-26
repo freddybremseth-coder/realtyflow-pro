@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { HOME_ROUTE_FALLBACK, homeRouteForRole } from "@/lib/home-route";
 
 export default function HomePage() {
   const router = useRouter();
@@ -20,11 +21,10 @@ export default function HomePage() {
       })
       .then((body) => {
         if (!active || !body?.user) return;
-        const role = String(body.user.role || "").toUpperCase();
-        router.replace(role === "OWNER" ? "/nexus-os" : "/today");
+        router.replace(homeRouteForRole(body.user.role));
       })
       .catch(() => {
-        if (active) router.replace("/nexus-os");
+        if (active) router.replace(HOME_ROUTE_FALLBACK);
       });
 
     return () => {
@@ -36,7 +36,7 @@ export default function HomePage() {
     <main className="flex min-h-[60vh] items-center justify-center">
       <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/80 px-5 py-4 text-sm text-slate-300">
         <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
-        Åpner Nexus OS …
+        Åpner dagens arbeidsflate …
       </div>
     </main>
   );
