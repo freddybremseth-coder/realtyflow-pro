@@ -18,7 +18,7 @@
     { "path": "/api/cron/publishing-autopilot", "schedule": "45 17 * * *" },
     { "path": "/api/cron/publishing-growth-loop", "schedule": "15 17 * * *" },
     { "path": "/api/cron/publishing-market-watch", "schedule": "30 17 * * *" },
-    { "path": "/api/cron/marketing-autopilot", "schedule": "15 9 * * *" },
+    { "path": "/api/cron/marketing-autopilot", "schedule": "15 7,10,14,18 * * *" },
     { "path": "/api/cron/marketing-growth-metrics", "schedule": "10 19 * * *" },
     { "path": "/api/cron/lead-nurture", "schedule": "0 7 * * *" },
     { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" }
