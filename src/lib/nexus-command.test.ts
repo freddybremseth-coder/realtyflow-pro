@@ -7,9 +7,16 @@ test("property searches prioritize Property 360", () => {
   assert.equal(results[0]?.href, "/inventory/property-360");
 });
 
-test("brand and channel terms find social automation", () => {
+test("plain social channel searches still prioritize Marketing Autopilot", () => {
   const results = filterNexusCommands("instagram");
   assert.equal(results[0]?.href, "/social-automation");
+});
+
+test("brand and channel strategy searches prioritize Brand Brain", () => {
+  assert.equal(filterNexusCommands("brand brain")[0]?.href, "/nexus-os/brand-brain");
+  assert.equal(filterNexusCommands("Freddy Publishing kanaler")[0]?.href, "/nexus-os/brand-brain");
+  assert.equal(filterNexusCommands("hvilke brands mangler facebook")[0]?.href, "/nexus-os/brand-brain");
+  assert.equal(filterNexusCommands("Freddy AI products")[0]?.href, "/nexus-os/brand-brain");
 });
 
 test("customer searches find CRM", () => {
