@@ -13,6 +13,7 @@ import {
   Phone,
   RefreshCw,
   Search,
+  Sparkles,
   Target,
   Users,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CrmCustomerCard } from "@/components/crm/crm-customer-card";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
+import { buildCustomerListAction, type CustomerListActionPriority } from "@/lib/customers/action-priority";
 
 interface Contact {
   id: string;
@@ -69,6 +71,13 @@ const STAGE_CLASSES: Record<string, string> = {
   ON_HOLD: "border-slate-600 bg-slate-800 text-slate-300",
 };
 
+const ACTION_CLASSES: Record<CustomerListActionPriority, string> = {
+  CRITICAL: "border-red-500/30 bg-red-500/10 text-red-100",
+  HIGH: "border-amber-500/30 bg-amber-500/10 text-amber-100",
+  MEDIUM: "border-cyan-500/30 bg-cyan-500/10 text-cyan-100",
+  LOW: "border-slate-700 bg-slate-800/70 text-slate-300",
+};
+
 const TAB_STAGES: Record<Exclude<CrmTab, "all">, Set<string>> = {
   leads: new Set(["NEW"]),
   pipeline: new Set(["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"]),
@@ -105,6 +114,7 @@ export default function CustomersPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<CrmTab>("pipeline");
+  const [actionOnly, setActionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -131,64 +141,70 @@ export default function CustomersPage() {
     const requestedTab = params.get("tab") as CrmTab | null;
     if (contactId) setSelectedContactId(contactId);
     if (requestedTab && ["leads", "pipeline", "customers", "all"].includes(requestedTab)) setTab(requestedTab);
+    if (params.get("action") === "1") setActionOnly(true);
   }, []);
 
+  function syncUrl(next: { contactId?: string | null; tab?: CrmTab; actionOnly?: boolean }) {
+    const params = new URLSearchParams(window.location.search);
+    const nextTab = next.tab ?? tab;
+    const nextActionOnly = next.actionOnly ?? actionOnly;
+    params.set("tab", nextTab);
+    if (next.contactId === null) params.delete("contactId");
+    else if (next.contactId) params.set("contactId", next.contactId);
+    if (nextActionOnly) params.set("action", "1");
+    else params.delete("action");
+    window.history.replaceState(null, "", `/customers?${params.toString()}`);
+  }
+
   function openCustomer(contact: Contact) {
-    setSelectedContactId(contact.id);
     const status = normalizeStatus(contact.pipeline_status);
     const nextTab: CrmTab = status === "NEW" ? "leads" : ["WON", "LOST"].includes(status) ? "customers" : "pipeline";
+    setSelectedContactId(contact.id);
     setTab(nextTab);
-    const params = new URLSearchParams(window.location.search);
-    params.set("contactId", contact.id);
-    params.set("tab", nextTab);
-    window.history.replaceState(null, "", `/customers?${params.toString()}`);
+    syncUrl({ contactId: contact.id, tab: nextTab });
   }
 
   function closeCustomer() {
     setSelectedContactId(null);
-    const params = new URLSearchParams(window.location.search);
-    params.delete("contactId");
-    params.set("tab", tab);
-    window.history.replaceState(null, "", `/customers?${params.toString()}`);
+    syncUrl({ contactId: null });
     void load();
   }
 
   function selectTab(nextTab: CrmTab) {
     setTab(nextTab);
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", nextTab);
-    if (!selectedContactId) params.delete("contactId");
-    window.history.replaceState(null, "", `/customers?${params.toString()}`);
+    syncUrl({ tab: nextTab });
+  }
+
+  function toggleActionOnly() {
+    const next = !actionOnly;
+    setActionOnly(next);
+    syncUrl({ actionOnly: next });
   }
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const weights: Record<string, number> = { NEGOTIATION: 8, VIEWING: 7, QUALIFIED: 6, CONTACT: 5, NEW: 4, ON_HOLD: 3, WON: 2, LOST: 1 };
     return contacts
-      .filter((contact) => {
+      .map((contact) => ({ contact, action: buildCustomerListAction(contact) }))
+      .filter(({ contact, action }) => {
         const status = normalizeStatus(contact.pipeline_status);
         if (tab !== "all" && !TAB_STAGES[tab].has(status)) return false;
+        if (actionOnly && !action.needsAction) return false;
         if (!query) return true;
-        return [contact.name, contact.email, contact.phone, contact.property_interest, contact.preferred_location, contact.brand_id, contact.brand, contact.source]
+        return [contact.name, contact.email, contact.phone, contact.property_interest, contact.preferred_location, contact.brand_id, contact.brand, contact.source, action.label, action.reason]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
           .includes(query);
       })
-      .sort((a, b) => {
-        const statusA = normalizeStatus(a.pipeline_status);
-        const statusB = normalizeStatus(b.pipeline_status);
-        const overdueA = isOverdue(a.next_followup) ? 1 : 0;
-        const overdueB = isOverdue(b.next_followup) ? 1 : 0;
-        return overdueB - overdueA || (weights[statusB] || 0) - (weights[statusA] || 0) || Number(b.pipeline_value || 0) - Number(a.pipeline_value || 0);
-      });
-  }, [contacts, search, tab]);
+      .sort((a, b) => b.action.score - a.action.score || Number(b.contact.pipeline_value || 0) - Number(a.contact.pipeline_value || 0));
+  }, [contacts, search, tab, actionOnly]);
 
   const counts = useMemo(() => ({
     leads: contacts.filter((item) => normalizeStatus(item.pipeline_status) === "NEW").length,
     pipeline: contacts.filter((item) => TAB_STAGES.pipeline.has(normalizeStatus(item.pipeline_status))).length,
     customers: contacts.filter((item) => TAB_STAGES.customers.has(normalizeStatus(item.pipeline_status))).length,
     overdue: contacts.filter((item) => isOverdue(item.next_followup) && !["WON", "LOST"].includes(normalizeStatus(item.pipeline_status))).length,
+    action: contacts.filter((item) => buildCustomerListAction(item).needsAction && !["WON", "LOST"].includes(normalizeStatus(item.pipeline_status))).length,
     value: contacts.filter((item) => ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"].includes(normalizeStatus(item.pipeline_status))).reduce((sum, item) => sum + Number(item.pipeline_value || 0), 0),
   }), [contacts]);
 
@@ -198,9 +214,10 @@ export default function CustomersPage() {
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-300"><LayoutGrid size={17} /> Samlet kundeopplevelse</div>
           <h1 className="text-3xl font-bold text-white">CRM & kunder</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-400">Leads, pipeline, kunder, kundedetaljer, visningsnotater, Customer 360, kjøperprofil, boliger, oppgaver og tidslinje er samlet her.</p>
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">Start med hvem som trenger handling. Åpne kunden for Customer 360, full forklaring og autoritativ Next Best Action.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline"><Link href="/today"><Sparkles size={16} className="mr-2" />I dag</Link></Button>
           <Button asChild variant="outline"><Link href="/lead-intelligence"><Bot size={16} className="mr-2" />AI Lead Inbox</Link></Button>
           <Button asChild variant="outline"><Link href="/closing"><Target size={16} className="mr-2" />Closing</Link></Button>
           <Button asChild variant="outline"><Link href="/pipeline">Avansert Kanban</Link></Button>
@@ -222,7 +239,8 @@ export default function CustomersPage() {
         ]}
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{counts.action}</strong></article>
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-blue-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Nye leads</p><strong className="mt-1 block text-2xl text-white">{counts.leads}</strong></article>
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Target className="text-purple-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv pipeline</p><strong className="mt-1 block text-2xl text-white">{counts.pipeline}</strong></article>
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kunder / avsluttet</p><strong className="mt-1 block text-2xl text-white">{counts.customers}</strong></article>
@@ -232,15 +250,16 @@ export default function CustomersPage() {
 
       <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <nav className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             {([
               ["leads", `Leads (${counts.leads})`],
               ["pipeline", `Pipeline (${counts.pipeline})`],
               ["customers", `Kunder (${counts.customers})`],
               ["all", `Alle (${contacts.length})`],
             ] as Array<[CrmTab, string]>).map(([id, label]) => <button key={id} onClick={() => selectTab(id)} className={`rounded-full border px-4 py-2 text-sm transition ${tab === id ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}>{label}</button>)}
-          </nav>
-          <div className="relative w-full max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, e-post, telefon, område, bolig eller brand" className="pl-10" /></div>
+            <button onClick={toggleActionOnly} className={`rounded-full border px-4 py-2 text-sm transition ${actionOnly ? "border-red-400/50 bg-red-500/15 text-red-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}><Sparkles size={14} className="mr-1.5 inline" />Kun handling</button>
+          </div>
+          <div className="relative w-full max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, brand eller anbefalt handling" className="pl-10" /></div>
         </div>
       </section>
 
@@ -250,7 +269,7 @@ export default function CustomersPage() {
         <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-10 text-center text-slate-400">Ingen kontakter i dette filteret.</div>
       ) : (
         <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-          {visible.map((contact) => {
+          {visible.map(({ contact, action }) => {
             const status = normalizeStatus(contact.pipeline_status);
             const brandId = String(contact.brand_id || contact.brand || "zeneco");
             const overdue = isOverdue(contact.next_followup) && !["WON", "LOST"].includes(status);
@@ -268,13 +287,23 @@ export default function CustomersPage() {
                   </div>
                   <span className="rounded-lg border border-slate-700 bg-slate-800 p-2 text-cyan-300 transition group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10"><LayoutGrid size={18} /></span>
                 </div>
+
+                <div className={`mt-4 rounded-lg border p-3 ${ACTION_CLASSES[action.priority]}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wide">Neste fokus · {action.priority}</span>
+                    <span className="text-[10px] opacity-70">{action.score}/100</span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">{action.label}</p>
+                  <p className="mt-1 text-xs opacity-75">Hvorfor: {action.reason}</p>
+                </div>
+
                 <div className="mt-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
                   <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={12} /><span className="truncate">{contact.email || "Ingen e-post"}</span></span>
                   <span className="inline-flex min-w-0 items-center gap-1.5"><Phone size={12} /><span className="truncate">{contact.phone || "Ingen telefon"}</span></span>
                   <span className="inline-flex items-center gap-1.5"><CircleDollarSign size={12} />{money(contact.pipeline_value)}</span>
                   <span className={`inline-flex items-center gap-1.5 ${overdue ? "text-red-300" : ""}`}><CalendarClock size={12} />{dateLabel(contact.next_followup)}</span>
                 </div>
-                <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne samlet kundekort →</div>
+                <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne Customer 360 og gjør anbefalt handling →</div>
               </button>
             );
           })}
