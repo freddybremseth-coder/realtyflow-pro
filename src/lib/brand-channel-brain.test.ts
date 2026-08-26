@@ -19,3 +19,21 @@ test("channel state distinguishes connected, blocked and planned-only channels",
   const publishing = states.find((state) => state.brand.id === "freddypublishing");
   assert.deepEqual(publishing?.pilotReadyChannels, ["instagram"]);
 });
+
+test("brand brain exposes different business pipelines for publishing and AI", () => {
+  const states = buildFreddyBrandChannelState([]);
+  const publishing = states.find((state) => state.brand.id === "freddypublishing");
+  const ai = states.find((state) => state.brand.id === "freddyai");
+  assert.equal(publishing?.business?.pipeline.id, "publishing");
+  assert.equal(ai?.business?.pipeline.id, "ai_products_services");
+  assert.notDeepEqual(
+    publishing?.business?.pipeline.stages.map((stage) => stage.id),
+    ai?.business?.pipeline.stages.map((stage) => stage.id),
+  );
+});
+
+test("Freddy professional is explicitly an umbrella binding", () => {
+  const personal = buildFreddyBrandChannelState([]).find((state) => state.brand.id === "freddyb");
+  assert.equal(personal?.business?.binding.role, "umbrella");
+  assert.equal(personal?.business?.pipeline.id, "expert_advisory");
+});
