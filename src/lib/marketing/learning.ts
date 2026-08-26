@@ -38,6 +38,12 @@ export const LEARNING_DIMENSIONS = [
   "audience",
   "creativeStyle",
   "language",
+  "publishHour",
+  "publishWeekday",
+  "publishDaypart",
+  "headlineLengthBand",
+  "headlineShape",
+  "imageClass",
   /** Each published hashtag is evaluated individually. */
   "tag",
 ] as const;
@@ -109,10 +115,15 @@ export interface DeriveOptions {
  * Hashtags are noisier than most scalar genome dimensions and may co-occur with
  * several other tags. Require at least 10 observations before a tag can become
  * actionable, even though other dimensions keep the default five-observation
- * floor. This prevents early hashtag overfitting and stuffing.
+ * floor. Timing/image rules also require a little more evidence to reduce false
+ * winners caused by one unusually strong listing.
  */
 function actionableMinSample(dimension: LearningDimension, defaultMinSample: number): number {
-  return dimension === "tag" ? Math.max(10, defaultMinSample) : defaultMinSample;
+  if (dimension === "tag") return Math.max(10, defaultMinSample);
+  if (["publishHour", "publishWeekday", "publishDaypart", "imageClass"].includes(dimension)) {
+    return Math.max(8, defaultMinSample);
+  }
+  return defaultMinSample;
 }
 
 export function deriveLearningRules(obs: LearningObservation[], opts: DeriveOptions = {}): LearningRule[] {
