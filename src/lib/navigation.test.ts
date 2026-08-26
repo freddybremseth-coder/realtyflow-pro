@@ -44,6 +44,7 @@ test("owner navigation promotes RealtyFlow Attention Center and Nexus OS as the 
   assert.equal(sections.find((section) => section.id === "marketing")?.items.some((item) => item.href === "/marketing-readiness"), true);
   assert.equal(sections.find((section) => section.id === "content")?.items.some((item) => item.href === "/posts"), true);
   assert.equal(sections.find((section) => section.id === "publishing")?.items.some((item) => item.href === "/publishing"), true);
+  assert.equal(sections.find((section) => section.id === "properties")?.items.some((item) => item.href === "/inventory/property-360"), true);
   for (const section of sections) assert.ok(section.items.length <= 8, `${section.id} has ${section.items.length} items`);
 });
 
@@ -69,6 +70,7 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/automation/nurture", sections), "customers");
   assert.equal(activeNavigationSection("/nexus-os/account-launch", sections), "business");
   assert.equal(activeNavigationSection("/continuous-improvement", sections), "reports");
+  assert.equal(activeNavigationSection("/inventory/property-360", sections), "properties");
 });
 
 test("menu search finds OS and growth surfaces by label", () => {
@@ -93,6 +95,10 @@ test("menu search finds OS and growth surfaces by label", () => {
   const connections = filterNavigationSections(sections, "Connections");
   assert.equal(connections.length, 1);
   assert.deepEqual(connections[0]?.items.map((item) => item.href), ["/connections"]);
+
+  const property360 = filterNavigationSections(sections, "Property 360");
+  assert.equal(property360.length, 1);
+  assert.deepEqual(property360[0]?.items.map((item) => item.href), ["/inventory/property-360"]);
 });
 
 test("favorites are limited, deduplicated and restricted to visible links", () => {
