@@ -88,12 +88,20 @@ function signalMatches(haystack: string, signal: string) {
   return haystack.includes(normalizedSignal);
 }
 
-function findSignal(values: readonly string[], allowedSources?: readonly ("intent" | "cta" | "context")[]) {
+function pipelineOrder(preferredPipelineId?: BusinessPipelineId | null) {
+  if (!preferredPipelineId) return SIGNAL_PIPELINES;
+  return [
+    ...SIGNAL_PIPELINES.filter((row) => row.pipelineId === preferredPipelineId),
+    ...SIGNAL_PIPELINES.filter((row) => row.pipelineId !== preferredPipelineId),
+  ];
+}
+
+function findSignal(values: readonly string[], preferredPipelineId?: BusinessPipelineId | null) {
   const candidates = values.map(normalize).filter(Boolean);
-  for (const row of SIGNAL_PIPELINES) {
+  for (const row of pipelineOrder(preferredPipelineId)) {
     for (const candidate of candidates) {
       const matched = row.signals.find((signal) => signalMatches(candidate, signal));
-      if (matched) return { pipelineId: row.pipelineId, matchedSignal: matched, candidate, allowedSources };
+      if (matched) return { pipelineId: row.pipelineId, matchedSignal: matched, candidate };
     }
   }
   return null;
@@ -103,8 +111,9 @@ function routeFromValues(
   values: readonly string[],
   source: "intent" | "cta" | "context",
   confidence: OfferRouteConfidence,
+  preferredPipelineId?: BusinessPipelineId | null,
 ): BusinessOfferRoute | null {
-  const match = findSignal(values, [source]);
+  const match = findSignal(values, preferredPipelineId);
   if (!match) return null;
   return {
     pipelineId: match.pipelineId,
@@ -128,28 +137,28 @@ export function routeBusinessOffer(input: BusinessOfferRoutingInput): BusinessOf
     };
   }
 
-  const intentRoute = routeFromValues(input.intents ?? [], "intent", "high");
+  const brandId = normalize(input.brandId);
+  const brand = brandId ? businessPipelineForBrand(brandId) : null;
+  const preferredPipelineId = brand?.pipeline.id ?? null;
+
+  const intentRoute = routeFromValues(input.intents ?? [], "intent", "high", preferredPipelineId);
   if (intentRoute) return intentRoute;
 
-  const ctaRoute = routeFromValues(input.ctas ?? [], "cta", "high");
+  const ctaRoute = routeFromValues(input.ctas ?? [], "cta", "high", preferredPipelineId);
   if (ctaRoute) return ctaRoute;
 
   const context = [input.href, input.source, input.text].map(normalize).filter(Boolean);
-  const contextRoute = routeFromValues(context, "context", "medium");
+  const contextRoute = routeFromValues(context, "context", "medium", preferredPipelineId);
   if (contextRoute) return contextRoute;
 
-  const brandId = normalize(input.brandId);
-  if (!brandId) return null;
-  const brand = businessPipelineForBrand(brandId);
-  if (!brand) return null;
-
+  if (!brandId || !brand) return null;
   const isUmbrella = brand.binding.role === "umbrella";
   return {
     pipelineId: brand.pipeline.id,
     confidence: isUmbrella ? "low" : "medium",
     reason: isUmbrella
       ? `Brandet ${brandId} er et umbrella-brand. Ingen tydelig offer-intent ble funnet; standardpipeline brukes bare som foreløpig fallback.`
-      : `Ingen sterk offer-intent ble funnet. Bruker brandets primære business-pipeline som fallback.`,
+      : "Ingen sterk offer-intent ble funnet. Bruker brandets primære business-pipeline som fallback.",
     matchedSignal: brandId,
     source: "brand_default",
     needsReview: isUmbrella,
