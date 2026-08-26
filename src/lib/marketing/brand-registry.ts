@@ -6,12 +6,14 @@ export type OwnedGrowthBrandId =
   | "donaanna"
   | "chatgenius"
   | "freddyb"
+  | "freddypublishing"
+  | "freddyai"
   | "remasterfreddy";
 
 export interface GrowthBrandDefinition {
   id: OwnedGrowthBrandId;
   name: string;
-  kind: "real_estate" | "food_agriculture" | "saas" | "personal" | "creator_media";
+  kind: "real_estate" | "food_agriculture" | "saas" | "personal" | "publishing" | "creator_media";
   website: string;
   /** Channels that can currently use the controlled Growth OS pilot path. */
   pilotChannels: MarketingChannel[];
@@ -81,16 +83,40 @@ export const OWNED_GROWTH_BRANDS: readonly GrowthBrandDefinition[] = [
     pilotChannels: [],
     plannedChannels: ["instagram", "facebook", "linkedin", "youtube", "website", "email"],
     contentPillars: [
+      "expertise_and_analysis",
       "author_and_books",
-      "book_launches_and_samples",
-      "book_ads_and_reading",
       "spain_and_property_advisory",
-      "analysis_knowledge_and_entrepreneurship",
       "ai_and_business_building",
+      "entrepreneurship_and_projects",
+      "selected_brand_stories",
     ],
-    conversionGoals: ["book_sale", "book_page_visit", "sample_read", "author_follow", "website_visit"],
-    primaryCtas: ["read_sample", "view_book", "buy_book", "visit_books_site", "follow"],
-    notes: "freddybremseth.com is the primary personal/author brand. Books should be promoted to social channels with links to the owned book site; Instagram/Facebook remain planned until accounts are connected and write-governance is verified.",
+    conversionGoals: ["expert_follow", "website_visit", "book_page_visit", "advisory_lead", "product_interest"],
+    primaryCtas: ["follow", "read_more", "view_project", "view_book", "contact"],
+    notes: "Professional umbrella/expertise brand. Freddy Bremseth should selectively amplify the strongest stories from owned brands without duplicating identical posts. The private Facebook profile is not an automated commercial publishing destination.",
+  },
+  {
+    id: "freddypublishing",
+    name: "Freddy Publishing",
+    kind: "publishing",
+    website: "https://books.freddybremseth.com",
+    pilotChannels: [],
+    plannedChannels: ["facebook", "instagram", "youtube", "website", "email"],
+    contentPillars: ["book_launches", "book_series", "sample_chapters", "author_catalog", "reading_and_ideas", "publishing_news"],
+    conversionGoals: ["book_sale", "sample_read", "book_page_visit", "newsletter", "catalog_discovery"],
+    primaryCtas: ["read_sample", "view_book", "buy_book", "browse_catalog", "subscribe"],
+    notes: "Dedicated publishing brand for the book catalog and series. Keep publishing/product posts distinct from the Freddy Bremseth expertise feed; cross-post only with a rewritten personal/expert angle.",
+  },
+  {
+    id: "freddyai",
+    name: "Freddy AI Products",
+    kind: "saas",
+    website: "https://freddybremseth.com",
+    pilotChannels: [],
+    plannedChannels: ["facebook", "instagram", "linkedin", "youtube", "website", "email"],
+    contentPillars: ["ai_products", "product_demos", "nexus_os", "realtyflow", "automation_workflows", "business_ai_education", "build_in_public"],
+    conversionGoals: ["product_interest", "demo_request", "website_lead", "consultation", "product_waitlist"],
+    primaryCtas: ["see_product", "see_demo", "learn_more", "join_waitlist", "contact"],
+    notes: "Dedicated AI/product brand for RealtyFlow, Nexus OS and future AI products. Product capability, pricing, customer outcome and integration claims must be verified before publication. Replace the temporary website with the dedicated product destination when it is verified.",
   },
   {
     id: "remasterfreddy",
