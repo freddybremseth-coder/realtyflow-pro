@@ -5,6 +5,7 @@ import "./navigation-shell.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNexusBar } from "@/components/layout/mobile-nexus-bar";
 import { MobileNexusMenu } from "@/components/layout/mobile-nexus-menu";
+import { UniversalNexusCommand } from "@/components/layout/universal-nexus-command";
 import { ChatWidget } from "@/components/chatbot/chat-widget";
 import { JarvisOverlay } from "@/components/agentic/jarvis-overlay";
 
@@ -52,6 +53,7 @@ export default function RootLayout({
           <>
             <div className="hidden lg:block"><Sidebar /></div>
             <MobileNexusMenu />
+            <UniversalNexusCommand />
             <main className="app-shell-main min-h-screen p-4 pb-24 pt-16 sm:p-6 sm:pb-24 sm:pt-16 lg:pb-6 lg:pt-6">
               {children}
             </main>
