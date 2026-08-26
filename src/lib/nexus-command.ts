@@ -12,7 +12,8 @@ export const NEXUS_COMMANDS: NexusCommand[] = [
   { id: "lead-intelligence", label: "AI Lead Inbox", description: "Se Lead Intelligence og buyer profiles", href: "/lead-intelligence", keywords: ["lead", "buyer", "kjøper", "intelligence", "inbox"] },
   { id: "inventory", label: "Eiendommer", description: "Åpne eiendomsporteføljen", href: "/inventory", keywords: ["bolig", "eiendom", "property", "inventory", "portefølje"] },
   { id: "property-360", label: "Property 360", description: "Finn bolig og se beste matchende kjøpere", href: "/inventory/property-360", keywords: ["property 360", "best buyers", "beste kjøpere", "match", "boligmatch"] },
-  { id: "social", label: "Social Automation", description: "Se autopilot, planlagt og publisert innhold", href: "/social-automation", keywords: ["facebook", "instagram", "sosiale medier", "social", "autopilot", "publisering"] },
+  { id: "brand-brain", label: "Brand & Channel Brain", description: "Se Freddy-brandene, kanalstatus, blockers og publiseringsregler", href: "/nexus-os/brand-brain", keywords: ["brand brain", "channel brain", "merkevarer", "brands", "kanaler", "kanalstatus", "freddy publishing kanaler", "freddy ai", "ai products", "mangler facebook", "mangler kanal", "blocked channel", "publiseringsregler"] },
+  { id: "social", label: "Marketing Autopilot", description: "Se autopilot, planlagt og publisert innhold", href: "/social-automation", keywords: ["facebook", "instagram", "sosiale medier", "social", "autopilot", "publisering"] },
   { id: "publishing", label: "Publishing Hub", description: "Åpne Freddy Publishing og bokarbeid", href: "/publishing", keywords: ["bok", "bøker", "publishing", "amazon", "kindle", "forfatter"] },
   { id: "approvals", label: "Approval Center", description: "Se handlinger som venter på godkjenning", href: "/approvals", keywords: ["approve", "approval", "godkjenning", "venter"] },
   { id: "nexus", label: "Nexus OS", description: "Åpne Nexus OS kontrollsenter", href: "/nexus-os", keywords: ["nexus", "os", "director", "autonomy", "kontroll"] },
@@ -36,6 +37,7 @@ export function filterNexusCommands(query: string, limit = 7) {
     if (label.includes(normalized)) score += 30;
     if (keywords.some((keyword) => keyword === normalized)) score += 45;
     if (keywords.some((keyword) => keyword.includes(normalized))) score += 20;
+    if (normalized.length > 3 && keywords.some((keyword) => normalized.includes(keyword))) score += 35;
     if (description.includes(normalized)) score += 10;
     return { command, score };
   })
