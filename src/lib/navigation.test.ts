@@ -19,7 +19,7 @@ test("navigation groups every existing sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation promotes Nexus Inbox and Nexus OS as the main work areas", () => {
+test("owner navigation promotes Nexus Today, Nexus Inbox and Nexus OS as the main work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
@@ -27,7 +27,7 @@ test("owner navigation promotes Nexus Inbox and Nexus OS as the main work areas"
   );
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
-    ["/", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
+    ["/", "/nexus-os/today", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
   );
   assert.deepEqual(
     sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
@@ -67,6 +67,7 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/closing-pack/deal-1", sections), "revenue");
   assert.equal(activeNavigationSection("/book-growth/economics", sections), "publishing");
   assert.equal(activeNavigationSection("/os", sections), "os");
+  assert.equal(activeNavigationSection("/nexus-os/today", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/inbox", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/director", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/brand-brain", sections), "os");
@@ -93,6 +94,10 @@ test("menu search finds OS and growth surfaces by label", () => {
   const nexus = filterNavigationSections(sections, "Nexus OS");
   assert.equal(nexus.length, 1);
   assert.deepEqual(nexus[0]?.items.map((item) => item.href), ["/nexus-os"]);
+
+  const today = filterNavigationSections(sections, "Nexus Today");
+  assert.equal(today.length, 1);
+  assert.deepEqual(today[0]?.items.map((item) => item.href), ["/nexus-os/today"]);
 
   const inbox = filterNavigationSections(sections, "Nexus Inbox");
   assert.equal(inbox.length, 1);
@@ -125,10 +130,10 @@ test("favorites are limited, deduplicated and restricted to visible links", () =
   assert.equal(added[0], "/recovery");
 });
 
-test("owner quick links prioritize Nexus Inbox and control surfaces", () => {
+test("owner quick links prioritize the six primary operating workspaces", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const quick = quickNavigationItems("OWNER", sections, []);
-  assert.deepEqual(quick.map((item) => item.href), ["/nexus-os/inbox", "/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/approvals"]);
+  assert.deepEqual(quick.map((item) => item.href), ["/nexus-os/today", "/nexus-os/inbox", "/customers", "/inventory", "/social-automation", "/nexus-os"]);
 });
 
 test("keyholding role gets the Care workspace as its main menu area", () => {
