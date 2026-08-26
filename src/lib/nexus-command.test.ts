@@ -19,6 +19,13 @@ test("brand and channel strategy searches prioritize Brand Brain", () => {
   assert.equal(filterNexusCommands("Freddy AI products")[0]?.href, "/nexus-os/brand-brain");
 });
 
+test("business model searches prioritize Business Pipelines", () => {
+  assert.equal(filterNexusCommands("business pipeline")[0]?.href, "/nexus-os/business-pipelines");
+  assert.equal(filterNexusCommands("bok pipeline")[0]?.href, "/nexus-os/business-pipelines");
+  assert.equal(filterNexusCommands("AI pipeline")[0]?.href, "/nexus-os/business-pipelines");
+  assert.equal(filterNexusCommands("ulike pipelines")[0]?.href, "/nexus-os/business-pipelines");
+});
+
 test("human decision intent prioritizes Nexus Inbox", () => {
   assert.equal(filterNexusCommands("hva venter på meg")[0]?.href, "/nexus-os/inbox");
   assert.equal(filterNexusCommands("hva trenger handling")[0]?.href, "/nexus-os/inbox");
