@@ -19,6 +19,16 @@ test("brand and channel strategy searches prioritize Brand Brain", () => {
   assert.equal(filterNexusCommands("Freddy AI products")[0]?.href, "/nexus-os/brand-brain");
 });
 
+test("human decision intent prioritizes Nexus Inbox", () => {
+  assert.equal(filterNexusCommands("hva venter på meg")[0]?.href, "/nexus-os/inbox");
+  assert.equal(filterNexusCommands("hva trenger handling")[0]?.href, "/nexus-os/inbox");
+  assert.equal(filterNexusCommands("vis approvals")[0]?.href, "/nexus-os/inbox");
+});
+
+test("explicit approval administration still finds Approval Center", () => {
+  assert.equal(filterNexusCommands("Approval Center")[0]?.href, "/approvals");
+});
+
 test("customer searches find CRM", () => {
   const results = filterNexusCommands("kunde");
   assert.equal(results[0]?.href, "/customers");
