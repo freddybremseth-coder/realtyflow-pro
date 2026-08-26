@@ -27,7 +27,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
   { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar", "/automation/nurture"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
   { id: "revenue", label: "Økonomi & closing", icon: "Handshake", hrefs: ["/revenue-command", "/closing", "/closing-pack", "/commissions", "/billing", "/forecast", "/monthly-close", "/goals"] },
-  { id: "properties", label: "Eiendom", icon: "Building2", hrefs: ["/inventory", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"] },
+  { id: "properties", label: "Eiendom", icon: "Building2", hrefs: ["/inventory", "/inventory/property-360", "/scanner", "/tomtebase", "/areas", "/valuation", "/document-hub"] },
   { id: "marketing", label: "Vekst & markedsføring", icon: "Megaphone", hrefs: ["/growth-hub", "/social-automation", "/marketing-readiness", "/ad-campaigns", "/analytics", "/reports", "/attribution", "/reach"] },
   { id: "content", label: "Innhold & medier", icon: "Clapperboard", hrefs: ["/content-studio", "/media-studio", "/posts", "/ai-personal-brand", "/content-hub", "/image-studio", "/website-cms", "/email"] },
   { id: "publishing", label: "Publishing & creator", icon: "BookOpen", hrefs: ["/publishing", "/publishing/forfatterstudio", "/youtube-studio", "/remaster-freddy"] },
