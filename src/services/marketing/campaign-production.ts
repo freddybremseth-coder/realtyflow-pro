@@ -1,6 +1,6 @@
 /**
  * Phase 7.1B — production composition root for First Live Campaign Path.
- * Brand Brain → CreativeGenerator → Autonomous Orchestrator → Approval → Meta.
+ * Brand Brain → CreativeGenerator → Autonomous Orchestrator → Approval/Guarded Auto → Meta.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { askClaude } from "@/services/ai/claude-client";
@@ -26,6 +26,12 @@ import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 
+type CampaignAutonomy = {
+  level: "copilot" | "guarded";
+  controlledAuto: boolean;
+  preapprovedChannels: Set<string>;
+};
+
 function mapGoal(kind: CommercialGoal["kind"]): ContentGoal {
   switch (kind) {
     case "sales": return "sale";
@@ -33,6 +39,35 @@ function mapGoal(kind: CommercialGoal["kind"]): ContentGoal {
     case "awareness": return "awareness";
     default: return "lead_generation";
   }
+}
+
+function normalizeConfiguredChannels(metadata: Record<string, unknown> | null | undefined): Set<string> {
+  const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
+  if (Array.isArray(raw)) return new Set(raw.map(String).map((v) => v.trim().toLowerCase()).filter(Boolean));
+  if (typeof raw === "string") {
+    return new Set(raw.split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
+  }
+  return new Set();
+}
+
+async function resolveCampaignAutonomy(
+  supabase: MarketingSupabaseLike,
+  brandId: string,
+): Promise<CampaignAutonomy> {
+  const { data } = await supabase
+    .from("marketing_brand_growth_plans")
+    .select("autonomy_mode, metadata")
+    .eq("brand_id", brandId)
+    .maybeSingle();
+
+  const controlledAuto = data?.autonomy_mode === "controlled_auto";
+  return {
+    level: controlledAuto ? "guarded" : "copilot",
+    controlledAuto,
+    preapprovedChannels: controlledAuto
+      ? normalizeConfiguredChannels((data?.metadata ?? {}) as Record<string, unknown>)
+      : new Set<string>(),
+  };
 }
 
 function normalizedCta(value: string | null | undefined): string {
@@ -52,17 +87,6 @@ function hasSemanticBookingCta(value: string): boolean {
   return hasBookingVerb && hasConversation && hasFree;
 }
 
-/**
- * Creative Generator may naturally end body-copy with the same CTA that is also
- * stored in the dedicated `cta` field. Canonicalize BEFORE persist/hash/approval.
- *
- * Strategy:
- * 1) exact/near-exact trailing CTA paragraph -> remove that paragraph, keep cta field.
- * 2) natural closing sentence already contains the same booking intent
- *    (e.g. "book en gratis boligsamtale med oss i dag") -> keep the natural body
- *    and remove the dedicated cta field. This prevents duplicate customer-facing
- *    CTA even when wording is not text-identical.
- */
 function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   const cta = String(creative.asset.cta ?? "").trim();
   const body = String(creative.asset.body ?? "");
@@ -77,32 +101,15 @@ function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
 
   const lastParagraph = paragraphs[last].trim();
   const lastNorm = normalizedCta(lastParagraph);
-
-  // Exact/near-exact duplicate as its own short paragraph.
   if (lastNorm.includes(target) && lastParagraph.length <= 220) {
     paragraphs.splice(last, 1);
-    return {
-      ...creative,
-      asset: {
-        ...creative.asset,
-        body: paragraphs.join("\n\n").trim(),
-      },
-    };
+    return { ...creative, asset: { ...creative.asset, body: paragraphs.join("\n\n").trim() } };
   }
 
-  // Semantic duplicate: body already ends with a natural booking CTA. Keep the
-  // richer sentence and suppress the mechanical dedicated CTA line.
   const tail = body.slice(-420);
   if (hasSemanticBookingCta(cta) && hasSemanticBookingCta(tail)) {
-    return {
-      ...creative,
-      asset: {
-        ...creative.asset,
-        cta: undefined,
-      },
-    };
+    return { ...creative, asset: { ...creative.asset, cta: undefined } };
   }
-
   return creative;
 }
 
@@ -119,9 +126,7 @@ export interface CreateCampaignDraftInput {
   legacyPublicationId?: string;
   channel?: "instagram" | "facebook";
   mediaUrl?: string;
-  /** Property-driven AI: resolve SAME RealtyFlow Inventory used by /inventory. */
   useInventoryProperty?: boolean;
-  /** Optional explicit property. If omitted, adapter selects an eligible visible property for brand. */
   propertyId?: string;
 }
 
@@ -165,9 +170,11 @@ export async function createCampaignDraft(
   input: CreateCampaignDraftInput,
   ctx: { correlationIdSeed?: string } = {},
 ): Promise<CampaignDraftResult> {
+  void ctx;
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
 
+  const autonomy = await resolveCampaignAutonomy(supabase, input.brandId);
   const inventoryProperty = !input.legacyPublicationId && input.useInventoryProperty
     ? await resolveInventoryMarketingProperty(supabase, { brandId: input.brandId, propertyId: input.propertyId ?? null })
     : null;
@@ -175,7 +182,7 @@ export async function createCampaignDraft(
   const effectiveFocus = input.focus || inventoryProperty?.location || undefined;
   const locationInstruction = inventoryProperty
     ? inventoryProperty.locationSpecificity === "specific"
-      ? `KONKRET STED: ${inventoryProperty.location}. Bruk konkret by/område (f.eks. Finestrat/Sierra Cortina) i copy når relevant; bruk ikke bare den brede Costa-regionen som stedsnavn.`
+      ? `KONKRET STED: ${inventoryProperty.location}. Bruk konkret by/område når relevant; bruk ikke bare den brede Costa-regionen som stedsnavn.`
       : `KUN REGION ER VERIFISERT: ${inventoryProperty.location || "ukjent"}. Ikke presenter denne brede regionen som om den var konkret by/sted, og ikke finn på kommune.`
     : "";
   const effectiveMasterIdea = inventoryProperty
@@ -192,7 +199,7 @@ export async function createCampaignDraft(
   const { run, plan, recommendation } = await planMarketingRun(
     { supabase, loadGuardState: guardStateLoader() },
     directorInput as any,
-    { level: "copilot" },
+    { level: autonomy.level },
   );
 
   await ensureMarketingAgentRun(supabase as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId });
@@ -200,6 +207,7 @@ export async function createCampaignDraft(
   const orchestratorDeps: OrchestratorDeps = {
     supabase,
     loadGuardState: guardStateLoader(),
+    publisher: autonomy.controlledAuto ? makeConfiguredMetaPublisher(supabase) : undefined,
     requestApproval: makeMarketingApprovalRequester(supabase as any, { runId: run.marketingRunId, correlationId: run.correlationId }),
   };
 
@@ -207,7 +215,7 @@ export async function createCampaignDraft(
   const fav = plan.favoredDimensions;
   const routedFormat = routeContentFormat(effectiveMediaUrl) ?? "post";
   const baseGenome: ContentGenome = {
-    brandId: input.brandId, channel: "instagram", format: routedFormat,
+    brandId: input.brandId, channel: input.channel ?? "instagram", format: routedFormat,
     hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
     goal: mapGoal(input.goal.kind), area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
   };
@@ -252,13 +260,7 @@ export async function createCampaignDraft(
           facts: inventoryProperty.factSources,
           propertyIds: [inventoryProperty.id],
         });
-        creative = {
-          ...creative,
-          asset: {
-            ...creative.asset,
-            media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" },
-          },
-        };
+        creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = "inventory_grounded";
@@ -315,6 +317,14 @@ export async function createCampaignDraft(
       publishingAccountId: input.publishingAccountId ?? null,
     }).catch(() => null);
 
+    const preapprovedFormat = !!(
+      autonomy.controlledAuto
+      && inventoryProperty
+      && sourceType === "generated"
+      && reuseMode === "inventory_grounded"
+      && autonomy.preapprovedChannels.has(String(brief.channel).toLowerCase())
+    );
+
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
       asset: creative.asset,
       brief,
@@ -326,6 +336,7 @@ export async function createCampaignDraft(
       sourceType,
       sourceId,
       reuseMode,
+      preapprovedFormat,
       propertyIds: creative.provenance.propertyIds ?? [],
     });
 
