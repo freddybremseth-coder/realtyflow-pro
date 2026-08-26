@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Building2, CircleDollarSign, Loader2, MapPin, RefreshCw, Target, UserRound, Users } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle2, CircleDollarSign, Copy, Loader2, MapPin, MessageSquare, RefreshCw, Target, UserRound, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { prepareProperty360Message } from "@/lib/property-360-message";
 
 interface BuyerMatch {
   shortlistId: string;
@@ -46,6 +47,9 @@ export default function Property360Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [preparedFor, setPreparedFor] = useState<string | null>(null);
+  const [preparedMessage, setPreparedMessage] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const source = new URLSearchParams(window.location.search);
@@ -78,6 +82,24 @@ export default function Property360Page() {
   }, [query]);
 
   const hotCount = useMemo(() => data?.matches.filter((item) => item.priority === "HOT").length || 0, [data]);
+
+  function prepareMessage(match: BuyerMatch) {
+    if (!data) return;
+    setPreparedFor(match.buyerProfileId);
+    setPreparedMessage(prepareProperty360Message(data.property, match));
+    setCopied(false);
+  }
+
+  async function copyPreparedMessage() {
+    if (!preparedMessage) return;
+    try {
+      await navigator.clipboard.writeText(preparedMessage);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -124,8 +146,36 @@ export default function Property360Page() {
                     {match.concerns.length > 0 && <p className="mt-2 text-xs text-amber-300">Vær obs på: {match.concerns.slice(0, 3).join(" · ")}</p>}
                     {match.questionsToVerify.length > 0 && <p className="mt-2 text-xs text-slate-400">Må verifiseres: {match.questionsToVerify.slice(0, 3).join(" · ")}</p>}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-3"><div className="text-right"><span className="text-xs uppercase tracking-wide text-slate-500">Match</span><strong className="block text-3xl text-white">{match.score}</strong></div>{match.contactId && <Button asChild size="sm"><Link href={`/customers?contactId=${encodeURIComponent(match.contactId)}`}>Åpne Customer 360</Link></Button>}</div>
+                  <div className="flex shrink-0 flex-col items-end gap-3">
+                    <div className="text-right"><span className="text-xs uppercase tracking-wide text-slate-500">Match</span><strong className="block text-3xl text-white">{match.score}</strong></div>
+                    <Button size="sm" variant="outline" onClick={() => prepareMessage(match)}><MessageSquare size={14} className="mr-1.5" />Prepare message</Button>
+                    {match.contactId && <Button asChild size="sm"><Link href={`/customers?contactId=${encodeURIComponent(match.contactId)}`}>Åpne Customer 360</Link></Button>}
+                  </div>
                 </div>
+
+                {preparedFor === match.buyerProfileId && preparedMessage && (
+                  <div className="mt-4 rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-4" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-cyan-100">Klargjort melding — ikke sendt</p>
+                        <p className="mt-1 text-xs text-slate-400">Forslaget bruker bare lagret property- og match-evidens. Les gjennom før du bruker det.</p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => void copyPreparedMessage()}>
+                        {copied ? <CheckCircle2 size={14} className="mr-1.5 text-emerald-400" /> : <Copy size={14} className="mr-1.5" />}
+                        {copied ? "Kopiert" : "Kopier"}
+                      </Button>
+                    </div>
+                    <textarea
+                      value={preparedMessage}
+                      onChange={(event) => setPreparedMessage(event.target.value)}
+                      className="mt-3 min-h-56 w-full rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-sm leading-6 text-slate-200 outline-none focus:border-cyan-500/50"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {match.contactId && <Button asChild size="sm"><Link href={`/customers?contactId=${encodeURIComponent(match.contactId)}`}>Fortsett i Customer 360</Link></Button>}
+                      <span className="text-[11px] text-slate-500">Ingen e-post, SMS eller WhatsApp sendes fra denne handlingen.</span>
+                    </div>
+                  </div>
+                )}
               </article>
             ))}
           </div>
