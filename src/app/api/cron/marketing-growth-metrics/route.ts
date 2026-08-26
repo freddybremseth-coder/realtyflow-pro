@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
+import { enrichPublishedGrowthGenomes } from "@/services/marketing/growth-genome-enrichment";
 import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
 
 function getSupabase() {
@@ -35,14 +36,19 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Pilot stays intentionally brand-scoped. Expansion to more brands is an
-    // explicit config change after Zen Eco Homes has enough observations.
     const brandId = process.env.MARKETING_METRICS_PILOT_BRAND || "zeneco";
     const days = Number(process.env.MARKETING_METRICS_LOOKBACK_DAYS || 30);
     const limit = Number(process.env.MARKETING_METRICS_LIMIT || 100);
     const minAgeHours = Number(process.env.MARKETING_METRICS_MIN_AGE_HOURS || 24);
     const learningMinObservations = Number(process.env.MARKETING_LEARNING_MIN_OBSERVATIONS || 10);
     const instagram = await resolveBrandInstagramAccessToken(brandId);
+
+    const enrichment = await enrichPublishedGrowthGenomes(supabase as any, {
+      brandId,
+      channel: "instagram",
+      days: Math.max(days, 60),
+      timeZone: process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid",
+    });
 
     const result = await syncGrowthInstagramMetrics(supabase as any, {
       brandId,
@@ -65,6 +71,7 @@ export async function GET(request: NextRequest) {
         instagramAccountId: instagram.accountId,
         tokenScope: "brand_channel",
       },
+      enrichment,
       ...result,
     });
   } catch (error) {
