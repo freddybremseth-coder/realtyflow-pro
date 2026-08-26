@@ -8,6 +8,7 @@ export interface NexusCommand {
 
 export const NEXUS_COMMANDS: NexusCommand[] = [
   { id: "today", label: "Nexus Today", description: "Se hva som trenger oppmerksomhet nå", href: "/nexus-os/today", keywords: ["i dag", "today", "oppmerksomhet", "prioritet", "neste handling"] },
+  { id: "inbox", label: "Nexus Inbox", description: "Se alt som venter på menneskelig vurdering på tvers av system, approvals og marketing", href: "/nexus-os/inbox", keywords: ["inbox", "hva venter på meg", "venter på meg", "trenger handling", "krever handling", "menneskelig vurdering", "beslutningskø", "vis approvals", "approval queue", "marketing blockers", "systemproblemer"] },
   { id: "customers", label: "Kunder", description: "Åpne CRM og kundetriage", href: "/customers", keywords: ["kunde", "kundene", "crm", "kontakt", "lead"] },
   { id: "lead-intelligence", label: "AI Lead Inbox", description: "Se Lead Intelligence og buyer profiles", href: "/lead-intelligence", keywords: ["lead", "buyer", "kjøper", "intelligence", "inbox"] },
   { id: "inventory", label: "Eiendommer", description: "Åpne eiendomsporteføljen", href: "/inventory", keywords: ["bolig", "eiendom", "property", "inventory", "portefølje"] },
@@ -15,7 +16,7 @@ export const NEXUS_COMMANDS: NexusCommand[] = [
   { id: "brand-brain", label: "Brand & Channel Brain", description: "Se Freddy-brandene, kanalstatus, blockers og publiseringsregler", href: "/nexus-os/brand-brain", keywords: ["brand brain", "channel brain", "merkevarer", "brands", "kanaler", "kanalstatus", "freddy publishing kanaler", "freddy ai", "ai products", "mangler facebook", "mangler kanal", "blocked channel", "publiseringsregler"] },
   { id: "social", label: "Marketing Autopilot", description: "Se autopilot, planlagt og publisert innhold", href: "/social-automation", keywords: ["facebook", "instagram", "sosiale medier", "social", "autopilot", "publisering"] },
   { id: "publishing", label: "Publishing Hub", description: "Åpne Freddy Publishing og bokarbeid", href: "/publishing", keywords: ["bok", "bøker", "publishing", "amazon", "kindle", "forfatter"] },
-  { id: "approvals", label: "Approval Center", description: "Se handlinger som venter på godkjenning", href: "/approvals", keywords: ["approve", "approval", "godkjenning", "venter"] },
+  { id: "approvals", label: "Approval Center", description: "Administrer handlinger som venter på godkjenning", href: "/approvals", keywords: ["approval center", "godkjenningssenter", "administrer approvals", "godkjenning"] },
   { id: "nexus", label: "Nexus OS", description: "Åpne Nexus OS kontrollsenter", href: "/nexus-os", keywords: ["nexus", "os", "director", "autonomy", "kontroll"] },
 ];
 
