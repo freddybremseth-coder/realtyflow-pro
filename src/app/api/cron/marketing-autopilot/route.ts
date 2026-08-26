@@ -12,11 +12,7 @@ const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
 const EXPLORATION_HOURS = [9, 12, 16, 20];
 
-type RunRequest = {
-  id: string;
-  brand_ids: string[] | null;
-  channels: string[] | null;
-};
+type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null };
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): Array<"instagram" | "facebook"> {
   const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
@@ -63,12 +59,13 @@ async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
 function ideaForBrand(plan: any, guidance: string) {
   const role = String(plan?.metadata?.brand_role ?? "");
   const sources = Array.isArray(plan?.source_types) ? plan.source_types.join(", ") : "approved brand sources";
-  if (role === "real_estate") return `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.${guidance}`;
-  if (role === "food_agriculture") return `Lag nyttig og visuelt merkevareinnhold basert på verifiserte kilder (${sources}). Prioriter gård, oliven, høsting, opprinnelse, EVOO, matbruk eller oppskrifter. Ikke fremsett helse- eller sykdomspåstander uten uavhengig dokumentasjon/review.${guidance}`;
-  if (role === "saas_b2b") return `Lag konkret B2B-innhold basert på verifiserte produktkilder (${sources}). Ikke finn på funksjoner, priser, kundetall eller resultater. Bruk en tydelig nytteverdi og relevant CTA.${guidance}`;
-  if (role === "personal_author") return `Lag forfatter- og bokinnhold basert på verifisert bokkatalog, bokutdrag, covers, artikler og nettsider. Ikke finn på anmeldelser, salgstall eller bokinnhold.${guidance}`;
-  if (role === "creator_media") return `Lag creator/media-innhold kun fra originalt eller autorisert materiale (${sources}). Ikke bruk eller antyd rettigheter til tredjepartsinnhold.${guidance}`;
-  return `Lag nyttig merkevareinnhold fra verifiserte brandkilder (${sources}). Ikke finn på fakta, priser, resultater eller claims.${guidance}`;
+  const channelSafety = " Ikke skriv ‘lenke i bio’, ‘link in bio’, ‘se lenken i profilen’ eller tilsvarende med mindre en slik kanal-lenke er eksplisitt verifisert i brand-data. Bruk heller en direkte, sann CTA som ‘send oss en melding’ eller ‘kontakt oss’.";
+  if (role === "real_estate") return `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.${channelSafety}${guidance}`;
+  if (role === "food_agriculture") return `Lag nyttig og visuelt merkevareinnhold basert på verifiserte kilder (${sources}). Prioriter gård, oliven, høsting, opprinnelse, EVOO, matbruk eller oppskrifter. Ikke fremsett helse- eller sykdomspåstander uten uavhengig dokumentasjon/review.${channelSafety}${guidance}`;
+  if (role === "saas_b2b") return `Lag konkret B2B-innhold basert på verifiserte produktkilder (${sources}). Ikke finn på funksjoner, priser, kundetall eller resultater. Bruk en tydelig nytteverdi og relevant CTA.${channelSafety}${guidance}`;
+  if (role === "personal_author") return `Lag forfatter- og bokinnhold basert på verifisert bokkatalog, bokutdrag, covers, artikler og nettsider. Ikke finn på anmeldelser, salgstall eller bokinnhold.${channelSafety}${guidance}`;
+  if (role === "creator_media") return `Lag creator/media-innhold kun fra originalt eller autorisert materiale (${sources}). Ikke bruk eller antyd rettigheter til tredjepartsinnhold.${channelSafety}${guidance}`;
+  return `Lag nyttig merkevareinnhold fra verifiserte brandkilder (${sources}). Ikke finn på fakta, priser, resultater eller claims.${channelSafety}${guidance}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -89,7 +86,6 @@ export async function GET(request: NextRequest) {
   try {
     const { data: plans, error } = await supabase.from("marketing_brand_growth_plans").select("brand_id,status,autonomy_mode,metadata,source_types").eq("status", "active").eq("autonomy_mode", "controlled_auto");
     if (error) throw new Error(error.message);
-
     const results: Array<Record<string, unknown>> = [];
     for (const plan of plans ?? []) {
       const brandId = String(plan.brand_id ?? "").trim().toLowerCase();
@@ -108,12 +104,8 @@ export async function GET(request: NextRequest) {
           const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
           const role = String(plan?.metadata?.brand_role ?? "");
           const run = await createCampaignDraft(supabase as any, {
-            brandId,
-            channel,
-            useInventoryProperty: role === "real_estate",
-            masterIdea: ideaForBrand(plan, guidance),
-            goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 },
-            publishingCapacityPerWeek: 4,
+            brandId, channel, useInventoryProperty: role === "real_estate", masterIdea: ideaForBrand(plan, guidance),
+            goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 }, publishingCapacityPerWeek: 4,
           });
           results.push({ brandId, channel, marketingRunId: run.marketingRunId, manualRun, localHour, learnedHour, recommendation: recommendation?.favor ?? {}, publications: run.results.map((item) => ({ publicationId: item.publicationId, state: item.state, mode: item.mode, qualityScore: item.qualityScore, error: item.error ?? null })) });
         } catch (err) { results.push({ brandId, channel, error: err instanceof Error ? err.message : String(err) }); }
