@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildNexusBusinessOpportunity } from "@/lib/nexus-business-opportunity";
-import { opportunityToStoreRow } from "@/lib/nexus-opportunity-store";
+import { opportunityToStoreRow, storeRowToOpportunity } from "@/lib/nexus-opportunity-store";
 
 function opportunity(overrides: Partial<Parameters<typeof buildNexusBusinessOpportunity>[0]> = {}) {
   const value = buildNexusBusinessOpportunity({
@@ -18,7 +18,7 @@ function opportunity(overrides: Partial<Parameters<typeof buildNexusBusinessOppo
     currency: "EUR",
     sourceSystem: "revenue_today",
     sourceId: "contact-1",
-    href: "/today",
+    href: "/customers?contactId=contact-1",
     routeConfidence: "high",
     routeReason: "Explicit real estate source",
     updatedAt: "2026-08-26T12:00:00Z",
@@ -50,9 +50,28 @@ test("explicit state can archive a source projection without changing pipeline s
   assert.equal(row.pipeline_id, "real_estate_sales");
 });
 
-test("metadata keeps normalized audit context", () => {
+test("metadata keeps normalized audit context and href", () => {
   const row = opportunityToStoreRow(opportunity(), { metadata: { adapter_version: 1 } });
   assert.equal(row.metadata.adapter_version, 1);
   assert.equal(row.metadata.normalized_opportunity_id, "revenue:contact-1");
   assert.equal(row.metadata.stage_label, "Forhandling");
+  assert.equal(row.metadata.href, "/customers?contactId=contact-1");
+});
+
+test("persisted row rehydrates to the canonical business opportunity contract", () => {
+  const original = opportunity();
+  const hydrated = storeRowToOpportunity(opportunityToStoreRow(original));
+  assert.ok(hydrated);
+  assert.equal(hydrated.pipelineId, original.pipelineId);
+  assert.equal(hydrated.stageId, original.stageId);
+  assert.equal(hydrated.href, original.href);
+  assert.equal(hydrated.priorityScore, original.priorityScore);
+  assert.equal(hydrated.sourceId, original.sourceId);
+});
+
+test("old snapshots without href receive a safe pipeline fallback", () => {
+  const row = opportunityToStoreRow(opportunity());
+  delete row.metadata.href;
+  const hydrated = storeRowToOpportunity(row);
+  assert.equal(hydrated?.href, "/today");
 });
