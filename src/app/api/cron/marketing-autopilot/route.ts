@@ -4,9 +4,12 @@ export const maxDuration = 120;
 import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
+import { channelLearningScope } from "@/lib/marketing/learning-scope";
+import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
+const EXPLORATION_HOURS = [9, 12, 16, 20];
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): Array<"instagram" | "facebook"> {
   const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
@@ -18,6 +21,32 @@ function configuredChannels(metadata: Record<string, unknown> | null | undefined
   return Array.from(new Set(values
     .map((value) => value.trim().toLowerCase())
     .filter((value): value is "instagram" | "facebook" => SUPPORTED_CHANNELS.has(value))));
+}
+
+function localHourAndWeekday(timeZone = "Europe/Madrid") {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const weekday = String(parts.find((p) => p.type === "weekday")?.value ?? "Mon").toLowerCase();
+  const dayIndex = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(weekday);
+  return { hour, dayIndex: dayIndex >= 0 ? dayIndex : 1 };
+}
+
+function parseLearnedHour(value: string | undefined): number | null {
+  const m = String(value ?? "").match(/^h_(\d{2})$/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  return Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
+
+function shouldRunAtThisSlot(currentHour: number, dayIndex: number, learnedHour: number | null) {
+  if (learnedHour != null) return Math.abs(currentHour - learnedHour) <= 1;
+  const explorationHour = EXPLORATION_HOURS[dayIndex % EXPLORATION_HOURS.length];
+  return Math.abs(currentHour - explorationHour) <= 1;
 }
 
 async function hasRecentAutoPublication(
@@ -52,6 +81,7 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
   const brandId = process.env.MARKETING_AUTOPILOT_BRAND || "zeneco";
+  const timeZone = process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid";
   const { data: plan, error } = await supabase
     .from("marketing_brand_growth_plans")
     .select("brand_id,status,autonomy_mode,metadata")
@@ -68,6 +98,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "No preapproved autopilot channels", brandId });
   }
 
+  const { hour: localHour, dayIndex } = localHourAndWeekday(timeZone);
   const results: Array<Record<string, unknown>> = [];
   for (const channel of channels) {
     if (await hasRecentAutoPublication(supabase, brandId, channel)) {
@@ -75,18 +106,39 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
+    const recommendation = await recommendForGeneration(supabase as any, {
+      scope: channelLearningScope(brandId, channel),
+    }).catch(() => undefined);
+    const learnedHour = parseLearnedHour(recommendation?.favor?.publishHour?.value);
+    if (!shouldRunAtThisSlot(localHour, dayIndex, learnedHour)) {
+      results.push({
+        channel,
+        skipped: true,
+        reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due",
+        localHour,
+        learnedHour,
+      });
+      continue;
+    }
+
     try {
+      const guidance = recommendation
+        ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.`
+        : "";
       const run = await createCampaignDraft(supabase as any, {
         brandId,
         channel,
         useInventoryProperty: true,
-        masterIdea: "Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.",
+        masterIdea: `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.${guidance}`,
         goal: { kind: "qualified_leads", target: 10, horizonDays: 30 },
         publishingCapacityPerWeek: 4,
       });
       results.push({
         channel,
         marketingRunId: run.marketingRunId,
+        localHour,
+        learnedHour,
+        recommendation: recommendation?.favor ?? {},
         publications: run.results.map((item) => ({
           publicationId: item.publicationId,
           state: item.state,
@@ -100,5 +152,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, brandId, channels, results });
+  return NextResponse.json({ success: true, brandId, channels, localHour, timeZone, results });
 }
