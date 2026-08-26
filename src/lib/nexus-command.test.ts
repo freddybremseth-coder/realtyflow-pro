@@ -32,6 +32,13 @@ test("persistent revenue leadership intent finds Revenue Command", () => {
   assert.equal(filterNexusCommands("stale closing")[0]?.href, "/nexus-os/revenue-command");
 });
 
+test("governed mission execution intent finds Mission Operations", () => {
+  assert.equal(filterNexusCommands("mission operations")[0]?.href, "/nexus-os/mission-operations");
+  assert.equal(filterNexusCommands("start mission")[0]?.href, "/nexus-os/mission-operations");
+  assert.equal(filterNexusCommands("mission state")[0]?.href, "/nexus-os/mission-operations");
+  assert.equal(filterNexusCommands("venter approval")[0]?.href, "/nexus-os/mission-operations");
+});
+
 test("sales-team intent prioritizes Mission Control", () => {
   assert.equal(filterNexusCommands("mission control")[0]?.href, "/nexus-os/mission-control");
   assert.equal(filterNexusCommands("hva skal teamet gjøre")[0]?.href, "/nexus-os/mission-control");
