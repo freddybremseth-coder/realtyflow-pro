@@ -145,6 +145,10 @@ function timelineIcon(kind: string) {
   return CalendarClock;
 }
 
+function actionUsesCustomerUpdateTab(href?: string) {
+  return Boolean(href && /^\/customers\/[^/]+$/.test(href));
+}
+
 export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onClose: () => void }) {
   const [data, setData] = useState<Customer360Payload | null>(null);
   const [tab, setTab] = useState<CustomerCardTab>("overview");
@@ -244,15 +248,26 @@ export function CrmCustomerCard({ contactId, onClose }: { contactId: string; onC
                   <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
                     <article className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-emerald-300">Neste handling</span>
+                        <span className="text-sm font-semibold text-emerald-300">Neste beste handling</span>
                         <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityClasses(data.nextAction?.priority)}`}>{data.nextAction?.priority || "MEDIUM"}</span>
                       </div>
                       <h3 className="mt-3 text-lg font-semibold text-white">{data.nextAction?.title || "Følg opp kunden"}</h3>
                       <p className="mt-2 text-sm leading-6 text-slate-200">{data.nextAction?.description || "Åpne kundeoppdatering og registrer neste steg."}</p>
-                      <p className="mt-2 text-xs text-slate-500">Oppfølging: {dateLabel(data.contact.next_followup)}</p>
+                      {data.nextAction?.reason && <p className="mt-2 text-xs text-slate-400">Hvorfor: {data.nextAction.reason}</p>}
+                      <p className="mt-1 text-xs text-slate-500">Oppfølging: {dateLabel(data.contact.next_followup)}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <Button size="sm" onClick={() => setTab("update")}>Registrer oppdatering</Button>
-                        {data.nextAction?.secondaryHref && <Button asChild size="sm" variant="outline"><Link href={data.nextAction.secondaryHref}>{data.nextAction.secondaryLabel || "Åpne"}</Link></Button>}
+                        {actionUsesCustomerUpdateTab(data.nextAction?.primaryHref) ? (
+                          <Button size="sm" onClick={() => setTab("update")}>{data.nextAction?.primaryLabel || "Registrer oppdatering"}</Button>
+                        ) : data.nextAction?.primaryHref ? (
+                          <Button asChild size="sm"><Link href={data.nextAction.primaryHref}>{data.nextAction.primaryLabel || "Åpne handling"}<ArrowRight size={14} className="ml-1" /></Link></Button>
+                        ) : (
+                          <Button size="sm" onClick={() => setTab("update")}>Registrer oppdatering</Button>
+                        )}
+                        {data.nextAction?.secondaryHref && (
+                          actionUsesCustomerUpdateTab(data.nextAction.secondaryHref)
+                            ? <Button size="sm" variant="outline" onClick={() => setTab("update")}>{data.nextAction.secondaryLabel || "Registrer oppdatering"}</Button>
+                            : <Button asChild size="sm" variant="outline"><Link href={data.nextAction.secondaryHref}>{data.nextAction.secondaryLabel || "Åpne"}</Link></Button>
+                        )}
                       </div>
                     </article>
                     <article className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
