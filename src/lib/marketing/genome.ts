@@ -59,6 +59,14 @@ export const ContentGenomeSchema = z.object({
   priceBand: slug.optional(),
   creativeStyle: slug.optional(),
   campaign: slug.optional(),
+  /** Faktiske publiseringsforhold, backfilles fra posted-at i metrics enrichment. */
+  publishHour: slug.optional(),
+  publishWeekday: slug.optional(),
+  publishDaypart: slug.optional(),
+  /** Faktisk headline-form og medieklasse, ikke bare planlagt hook/format. */
+  headlineLengthBand: slug.optional(),
+  headlineShape: slug.optional(),
+  imageClass: slug.optional(),
   /** Faktiske hashtags som ble publisert. Learning Engine lærer per enkelt tag. */
   tags: z.array(tagSlug).max(30).transform((values) => Array.from(new Set(values))).optional(),
   // Koblinger + proveniens
