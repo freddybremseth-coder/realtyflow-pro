@@ -1,3 +1,4 @@
+import { businessPipelineForBrand } from "@/lib/business-pipeline-registry";
 import { OWNED_GROWTH_BRANDS, type GrowthBrandDefinition } from "@/lib/marketing/brand-registry";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
@@ -10,6 +11,7 @@ export interface BrandChannelState {
   pilotReadyChannels: string[];
   blockedChannels: Array<{ platform: string; reason: string }>;
   plannedOnlyChannels: string[];
+  business: ReturnType<typeof businessPipelineForBrand>;
 }
 
 export function freddyBrandDefinitions() {
@@ -25,6 +27,7 @@ export function buildFreddyBrandChannelState(rows: SocialAutopilotRow[]): BrandC
       .filter((row) => row.connected && !row.pilotReady && row.platform && row.pilotBlockReason)
       .map((row) => ({ platform: String(row.platform), reason: String(row.pilotBlockReason) }));
     const plannedOnlyChannels = brand.plannedChannels.filter((channel) => !connectedChannels.includes(channel));
-    return { brand, connectedChannels, pilotReadyChannels, blockedChannels, plannedOnlyChannels };
+    const business = businessPipelineForBrand(brand.id);
+    return { brand, connectedChannels, pilotReadyChannels, blockedChannels, plannedOnlyChannels, business };
   });
 }
