@@ -20,6 +20,7 @@ export interface NavigationSection { id: NavigationSectionId; label: string; ico
 export const NAVIGATION_FAVORITES_LIMIT = 6;
 const REVENUE_READ_PAGES = new Set(["/internal-alerts", "/executive-briefing", "/operating-review", "/weekly-management-review", "/continuous-improvement"]);
 const HIDDEN_LEGACY_HREFS = new Set(["/nexus"]);
+const PROPERTY_360_NAV_ITEM: NavigationItem = { label: "Property 360", href: "/inventory/property-360", icon: "Target" };
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
   { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/today", "/internal-alerts", "/approvals", "/communications"] },
@@ -46,7 +47,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
   VIEWER: ["/revenue-command", "/today", "/customers", "/executive-briefing", "/monthly-close", "/forecast"],
 };
 
-function sourceItems() { return (Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(); }
+function sourceItems() { return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(), PROPERTY_360_NAV_ITEM]; }
 function canSeeItem(role: AccessRole, permissions: string[], href: string) { if (REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role, href); }
 export function buildVisibleNavigation(role: AccessRole, permissions: string[]): NavigationSection[] { const itemByHref = new Map(sourceItems().map((item) => [item.href, { ...item }])); return GROUPS.map((group) => ({ id: group.id, label: group.label, icon: group.icon, items: group.hrefs.map((href) => itemByHref.get(href)).filter((item): item is NavigationItem => Boolean(item)).filter((item) => canSeeItem(role, permissions, item.href)) })).filter((section) => section.items.length > 0); }
 export function isNavigationPathActive(pathname: string, href: string) { if (href === "/") return pathname === "/"; return pathname === href || pathname.startsWith(`${href}/`); }
