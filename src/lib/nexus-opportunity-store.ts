@@ -1,4 +1,7 @@
-import type { NexusBusinessOpportunity } from "@/lib/nexus-business-opportunity";
+import {
+  buildNexusBusinessOpportunity,
+  type NexusBusinessOpportunity,
+} from "@/lib/nexus-business-opportunity";
 
 export type NexusOpportunityState = "active" | "won" | "lost" | "archived";
 
@@ -33,6 +36,13 @@ export interface NexusOpportunityStoreRow {
   metadata: Record<string, unknown>;
 }
 
+function fallbackHref(pipelineId: NexusBusinessOpportunity["pipelineId"]) {
+  if (pipelineId === "real_estate_sales") return "/today";
+  if (pipelineId === "publishing") return "/book-growth";
+  if (pipelineId === "ai_products_services") return "/saas?tab=demosites";
+  return "/nexus-os/business-pipelines";
+}
+
 export function opportunityToStoreRow(
   opportunity: NexusBusinessOpportunity,
   context: NexusOpportunityStoreContext = {},
@@ -64,8 +74,39 @@ export function opportunityToStoreRow(
       pipeline_name: opportunity.pipelineName,
       stage_label: opportunity.stageLabel,
       success_event: opportunity.successEvent,
+      href: opportunity.href,
     },
   };
+}
+
+export function storeRowToOpportunity(row: NexusOpportunityStoreRow): NexusBusinessOpportunity | null {
+  const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const href = typeof metadata.href === "string" && metadata.href.trim()
+    ? metadata.href
+    : fallbackHref(row.pipeline_id);
+
+  return buildNexusBusinessOpportunity({
+    id: typeof metadata.normalized_opportunity_id === "string" && metadata.normalized_opportunity_id.trim()
+      ? metadata.normalized_opportunity_id
+      : `${row.source_system}:${row.source_id}`,
+    brandId: row.brand_id,
+    offerId: row.offer_id,
+    pipelineId: row.pipeline_id,
+    stageId: row.stage_id,
+    title: row.title,
+    reason: row.reason,
+    nextAction: row.next_action,
+    priority: row.priority,
+    priorityScore: Number(row.priority_score || 0),
+    value: row.value,
+    currency: row.currency,
+    sourceSystem: row.source_system,
+    sourceId: row.source_id,
+    href,
+    routeConfidence: row.route_confidence,
+    routeReason: row.route_reason,
+    updatedAt: row.last_activity_at || row.source_updated_at,
+  });
 }
 
 type SupabaseLike = {
