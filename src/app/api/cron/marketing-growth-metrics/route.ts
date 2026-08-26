@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { syncGrowthInstagramMetrics } from "@/services/marketing/growth-metrics-sync";
+import { syncGrowthFacebookMetrics } from "@/services/marketing/growth-facebook-metrics-sync";
 import { enrichPublishedGrowthGenomes } from "@/services/marketing/growth-genome-enrichment";
 import { resolveBrandInstagramAccessToken } from "@/services/marketing/instagram-token";
 
@@ -41,16 +42,17 @@ export async function GET(request: NextRequest) {
     const limit = Number(process.env.MARKETING_METRICS_LIMIT || 100);
     const minAgeHours = Number(process.env.MARKETING_METRICS_MIN_AGE_HOURS || 24);
     const learningMinObservations = Number(process.env.MARKETING_LEARNING_MIN_OBSERVATIONS || 10);
-    const instagram = await resolveBrandInstagramAccessToken(brandId);
+    const timeZone = process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid";
 
-    const enrichment = await enrichPublishedGrowthGenomes(supabase as any, {
+    const instagram = await resolveBrandInstagramAccessToken(brandId);
+    const instagramEnrichment = await enrichPublishedGrowthGenomes(supabase as any, {
       brandId,
       channel: "instagram",
       days: Math.max(days, 60),
-      timeZone: process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid",
+      timeZone,
     });
 
-    const result = await syncGrowthInstagramMetrics(supabase as any, {
+    const instagramResult = await syncGrowthInstagramMetrics(supabase as any, {
       brandId,
       days,
       limit,
@@ -58,6 +60,24 @@ export async function GET(request: NextRequest) {
       learningMinObservations,
       accessToken: instagram.accessToken,
     });
+
+    // Facebook is deliberately isolated from Instagram. A Facebook token/Graph
+    // failure must not discard a successful Instagram metrics refresh.
+    let facebookResult: unknown = null;
+    let facebookError: string | null = null;
+    try {
+      facebookResult = await syncGrowthFacebookMetrics(supabase as any, {
+        brandId,
+        days,
+        limit,
+        minAgeHours,
+        learningMinObservations,
+        timeZone,
+      });
+    } catch (error) {
+      facebookError = error instanceof Error ? error.message : String(error);
+      console.error("[Marketing Growth Metrics][Facebook]", error);
+    }
 
     return NextResponse.json({
       success: true,
@@ -67,12 +87,16 @@ export async function GET(request: NextRequest) {
         limit,
         minAgeHours,
         learningMinObservations,
+        timeZone,
         instagramChannelId: instagram.channelId,
         instagramAccountId: instagram.accountId,
         tokenScope: "brand_channel",
       },
-      enrichment,
-      ...result,
+      instagram: {
+        enrichment: instagramEnrichment,
+        ...instagramResult,
+      },
+      facebook: facebookError ? { success: false, error: facebookError } : { success: true, ...(facebookResult as Record<string, unknown>) },
     });
   } catch (error) {
     console.error("[Marketing Growth Metrics]", error);
