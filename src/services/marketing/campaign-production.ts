@@ -23,6 +23,7 @@ import { resolvePublishingAccount } from "@/services/marketing/account-resolver"
 import { resolveInventoryMarketingProperty } from "@/services/marketing/inventory-property-adapter";
 import { dispatchGeneratedAsset, planMarketingRun, type ChannelPublisher, type OrchestratorDeps } from "@/services/marketing/autonomous-orchestrator";
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
+import { getTokensForBrandPlatform } from "@/lib/oauth/channels";
 
 const META_CHANNELS: MarketingChannel[] = ["instagram", "facebook"];
 
@@ -44,38 +45,22 @@ function mapGoal(kind: CommercialGoal["kind"]): ContentGoal {
 function normalizeConfiguredChannels(metadata: Record<string, unknown> | null | undefined): Set<string> {
   const raw = metadata?.autopilot_channels ?? metadata?.autopilot_scope;
   if (Array.isArray(raw)) return new Set(raw.map(String).map((v) => v.trim().toLowerCase()).filter(Boolean));
-  if (typeof raw === "string") {
-    return new Set(raw.split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
-  }
+  if (typeof raw === "string") return new Set(raw.split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
   return new Set();
 }
 
-async function resolveCampaignAutonomy(
-  supabase: MarketingSupabaseLike,
-  brandId: string,
-): Promise<CampaignAutonomy> {
-  const { data } = await supabase
-    .from("marketing_brand_growth_plans")
-    .select("autonomy_mode, metadata")
-    .eq("brand_id", brandId)
-    .maybeSingle();
-
+async function resolveCampaignAutonomy(supabase: MarketingSupabaseLike, brandId: string): Promise<CampaignAutonomy> {
+  const { data } = await supabase.from("marketing_brand_growth_plans").select("autonomy_mode, metadata").eq("brand_id", brandId).maybeSingle();
   const controlledAuto = data?.autonomy_mode === "controlled_auto";
   return {
     level: controlledAuto ? "guarded" : "copilot",
     controlledAuto,
-    preapprovedChannels: controlledAuto
-      ? normalizeConfiguredChannels((data?.metadata ?? {}) as Record<string, unknown>)
-      : new Set<string>(),
+    preapprovedChannels: controlledAuto ? normalizeConfiguredChannels((data?.metadata ?? {}) as Record<string, unknown>) : new Set<string>(),
   };
 }
 
 function normalizedCta(value: string | null | undefined): string {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9æøå]+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9æøå]+/gi, " ").replace(/\s+/g, " ").trim();
 }
 
 function hasSemanticBookingCta(value: string): boolean {
@@ -93,23 +78,18 @@ function dedupeCreativeCta(creative: CreativeResult): CreativeResult {
   if (!cta || !body) return creative;
   const target = normalizedCta(cta);
   if (!target) return creative;
-
   const paragraphs = body.split(/\n\s*\n/);
   let last = paragraphs.length - 1;
   while (last >= 0 && !paragraphs[last].trim()) last -= 1;
   if (last < 0) return creative;
-
   const lastParagraph = paragraphs[last].trim();
   const lastNorm = normalizedCta(lastParagraph);
   if (lastNorm.includes(target) && lastParagraph.length <= 220) {
     paragraphs.splice(last, 1);
     return { ...creative, asset: { ...creative.asset, body: paragraphs.join("\n\n").trim() } };
   }
-
   const tail = body.slice(-420);
-  if (hasSemanticBookingCta(cta) && hasSemanticBookingCta(tail)) {
-    return { ...creative, asset: { ...creative.asset, cta: undefined } };
-  }
+  if (hasSemanticBookingCta(cta) && hasSemanticBookingCta(tail)) return { ...creative, asset: { ...creative.asset, cta: undefined } };
   return creative;
 }
 
@@ -146,30 +126,51 @@ export interface CampaignDraftResult {
 }
 
 export function makeConfiguredCreativeGenerator() {
-  if (process.env.ANTHROPIC_API_KEY) {
-    return makeCreativeGenerator((prompt, opts) => askClaude(prompt, { ...opts, anthropicOnly: false }));
-  }
+  if (process.env.ANTHROPIC_API_KEY) return makeCreativeGenerator((prompt, opts) => askClaude(prompt, { ...opts, anthropicOnly: false }));
   return makeDryRunCreativeGenerator();
 }
 
-export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike): ChannelPublisher {
-  const igUserId = process.env.META_IG_USER_ID;
-  const pageId = process.env.META_PAGE_ID;
-  const token = process.env.META_ACCESS_TOKEN;
-  const graph = token ? makeGraphApi(token) : undefined;
-  const live = process.env.MARKETING_META_LIVE === "true" && metaCredentialsPresent({ graph, igUserId, pageId });
-  return makeMetaPublisher({ supabase, graph, igUserId, pageId, live });
+/** Prefer the exact OAuth token stored for the brand/channel. The legacy env
+ * token remains a fail-safe fallback for old manual approval paths only. */
+export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike, brandId?: string): ChannelPublisher {
+  return {
+    async publish(asset, opts) {
+      const liveRequested = process.env.MARKETING_META_LIVE === "true";
+      const platform = asset.channel === "facebook" ? "facebook" : "instagram";
+      if (brandId && liveRequested) {
+        const connected = await getTokensForBrandPlatform(brandId, platform).catch(() => null);
+        if (connected?.tokens.accessToken) {
+          const target = connected.channel.external_id;
+          if (opts.accountId && String(opts.accountId) !== String(target)) {
+            throw new Error(`BRAND_MISMATCH: resolved account ${opts.accountId} differs from connected ${brandId}/${platform} account ${target}`);
+          }
+          const graph = makeGraphApi(connected.tokens.accessToken);
+          const publisher = makeMetaPublisher({
+            supabase,
+            graph,
+            igUserId: platform === "instagram" ? target : undefined,
+            pageId: platform === "facebook" ? target : undefined,
+            live: true,
+          });
+          return publisher.publish(asset, { ...opts, accountId: target });
+        }
+      }
+
+      const igUserId = process.env.META_IG_USER_ID;
+      const pageId = process.env.META_PAGE_ID;
+      const token = process.env.META_ACCESS_TOKEN;
+      const graph = token ? makeGraphApi(token) : undefined;
+      const live = liveRequested && metaCredentialsPresent({ graph, igUserId, pageId });
+      return makeMetaPublisher({ supabase, graph, igUserId, pageId, live }).publish(asset, opts);
+    },
+  };
 }
 
 function guardStateLoader() {
   return async () => ({ autopilotEnabled: process.env.MARKETING_AUTOPILOT_ENABLED !== "false" });
 }
 
-export async function createCampaignDraft(
-  supabase: MarketingSupabaseLike,
-  input: CreateCampaignDraftInput,
-  ctx: { correlationIdSeed?: string } = {},
-): Promise<CampaignDraftResult> {
+export async function createCampaignDraft(supabase: MarketingSupabaseLike, input: CreateCampaignDraftInput, ctx: { correlationIdSeed?: string } = {}): Promise<CampaignDraftResult> {
   void ctx;
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
@@ -197,17 +198,14 @@ export async function createCampaignDraft(
   };
 
   const { run, plan, recommendation } = await planMarketingRun(
-    { supabase, loadGuardState: guardStateLoader() },
-    directorInput as any,
-    { level: autonomy.level },
+    { supabase, loadGuardState: guardStateLoader() }, directorInput as any, { level: autonomy.level },
   );
-
   await ensureMarketingAgentRun(supabase as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId });
 
   const orchestratorDeps: OrchestratorDeps = {
     supabase,
     loadGuardState: guardStateLoader(),
-    publisher: autonomy.controlledAuto ? makeConfiguredMetaPublisher(supabase) : undefined,
+    publisher: autonomy.controlledAuto ? makeConfiguredMetaPublisher(supabase, input.brandId) : undefined,
     requestApproval: makeMarketingApprovalRequester(supabase as any, { runId: run.marketingRunId, correlationId: run.correlationId }),
   };
 
@@ -219,16 +217,8 @@ export async function createCampaignDraft(
     hookType: (fav.hookType as any) ?? "price_first", ctaType: (fav.ctaType as any) ?? "book_viewing",
     goal: mapGoal(input.goal.kind), area: effectiveFocus?.toLowerCase().replace(/\s+/g, "_"),
   };
-  const campaign: CampaignPlan = {
-    campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit",
-    goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea,
-  };
-  const briefs = atomizeCampaign(campaign, {
-    baseGenome,
-    makeContentId: (i, c) => `${campaignId}_${i}_${c}`,
-    leadCaptureChannels: [],
-    formatOverride: routedFormat,
-  });
+  const campaign: CampaignPlan = { campaignId, marketingRunId: run.marketingRunId, brandId: input.brandId, strategy: "exploit", goal: input.goal, focus: effectiveFocus, channels, masterIdea: effectiveMasterIdea };
+  const briefs = atomizeCampaign(campaign, { baseGenome, makeContentId: (i, c) => `${campaignId}_${i}_${c}`, leadCaptureChannels: [], formatOverride: routedFormat });
 
   const sources: ResolverSourceMap = { organizationId: brand.contentHubOrgId ?? null, adCampaignIds: brand.adCampaignIds ?? null };
   const generator = makeConfiguredCreativeGenerator();
@@ -242,36 +232,20 @@ export async function createCampaignDraft(
     let reuseMode: string | null = null;
     try {
       if (input.legacyPublicationId) {
-        const candidate = await loadLegacyPublicationCandidate(supabase, {
-          publicationId: input.legacyPublicationId,
-          brandId: input.brandId,
-          channel: brief.channel,
-          mediaUrl: input.mediaUrl,
-        });
+        const candidate = await loadLegacyPublicationCandidate(supabase, { publicationId: input.legacyPublicationId, brandId: input.brandId, channel: brief.channel, mediaUrl: input.mediaUrl });
         creative = assetFromCandidate(brief, brand, candidate);
         sourceType = "legacy_content_publication";
         sourceId = candidate.contentId;
         reuseMode = "reuse_exact";
       } else if (inventoryProperty) {
-        creative = await generator.generate({
-          brief,
-          brand,
-          recommendation,
-          facts: inventoryProperty.factSources,
-          propertyIds: [inventoryProperty.id],
-        });
+        creative = await generator.generate({ brief, brand, recommendation, facts: inventoryProperty.factSources, propertyIds: [inventoryProperty.id] });
         creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: inventoryProperty.primaryImage, mediaType: "image" } } };
         sourceType = "generated";
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = "inventory_grounded";
       } else {
         const decision = await resolveMarketingContent(supabase, {
-          brandId: input.brandId,
-          channel: brief.channel,
-          goal: brief.genome.goal,
-          language: brief.genome.language,
-          area: brief.genome.area,
-          format: brief.genome.format,
+          brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format,
         }, sources).catch(() => null);
         if (decision && decision.decision !== "generate" && decision.chosen) {
           creative = assetFromCandidate(brief, brand, decision.chosen);
@@ -280,27 +254,15 @@ export async function createCampaignDraft(
           reuseMode = decision.chosen.reuseMode;
         } else {
           creative = await generator.generate({ brief, brand, recommendation });
-          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) {
-            creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
-          }
+          if (input.mediaUrl && /^https:\/\//i.test(input.mediaUrl)) creative = { ...creative, asset: { ...creative.asset, media: { imageUrl: input.mediaUrl, mediaType: "image" } } };
         }
       }
     } catch (err) {
       results.push({
-        contentId: brief.contentId,
-        channel: brief.channel,
-        publicationId: "-",
-        state: "rejected",
-        mode: "n/a",
-        qualityScore: null,
-        approvalId: null,
-        error: err instanceof Error ? err.message : "CREATIVE_OUTPUT_INVALID",
-        source: sourceType,
-        propertyId: inventoryProperty?.id ?? null,
-        propertyRef: inventoryProperty?.ref ?? null,
-        propertyTitle: inventoryProperty?.title ?? null,
-        propertyLocation: inventoryProperty?.location ?? null,
-        selectionReason: inventoryProperty?.selectionReason ?? null,
+        contentId: brief.contentId, channel: brief.channel, publicationId: "-", state: "rejected", mode: "n/a", qualityScore: null, approvalId: null,
+        error: err instanceof Error ? err.message : "CREATIVE_OUTPUT_INVALID", source: sourceType,
+        propertyId: inventoryProperty?.id ?? null, propertyRef: inventoryProperty?.ref ?? null, propertyTitle: inventoryProperty?.title ?? null,
+        propertyLocation: inventoryProperty?.location ?? null, selectionReason: inventoryProperty?.selectionReason ?? null,
       });
       continue;
     }
@@ -309,58 +271,29 @@ export async function createCampaignDraft(
     await persistAsset(supabase, creative).catch(() => undefined);
 
     const account = await resolvePublishingAccount(supabase, {
-      brandId: input.brandId,
-      channel: brief.channel,
-      service: input.service ?? null,
-      market: input.market ?? null,
-      language: input.language ?? brief.genome.language ?? null,
-      publishingAccountId: input.publishingAccountId ?? null,
+      brandId: input.brandId, channel: brief.channel, service: input.service ?? null, market: input.market ?? null,
+      language: input.language ?? brief.genome.language ?? null, publishingAccountId: input.publishingAccountId ?? null,
     }).catch(() => null);
 
     const preapprovedFormat = !!(
       autonomy.controlledAuto
-      && inventoryProperty
       && sourceType === "generated"
-      && reuseMode === "inventory_grounded"
       && autonomy.preapprovedChannels.has(String(brief.channel).toLowerCase())
+      && (!inventoryProperty || reuseMode === "inventory_grounded")
     );
 
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
-      asset: creative.asset,
-      brief,
-      run,
-      brand,
-      history: [],
-      account: account ? { accountId: account.accountId } : null,
-      service: input.service ?? null,
-      sourceType,
-      sourceId,
-      reuseMode,
-      preapprovedFormat,
-      propertyIds: creative.provenance.propertyIds ?? [],
+      asset: creative.asset, brief, run, brand, history: [], account: account ? { accountId: account.accountId } : null,
+      service: input.service ?? null, sourceType, sourceId, reuseMode, preapprovedFormat, propertyIds: creative.provenance.propertyIds ?? [],
     });
 
     results.push({
-      contentId: brief.contentId,
-      channel: brief.channel,
-      publicationId: d.publicationId,
-      state: String(d.state),
-      mode: d.mode,
-      qualityScore: d.qualityScore,
-      approvalId: d.approvalId,
-      error: d.error,
-      source: sourceType,
-      caption: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"),
-      imageUrl: creative.asset.media?.imageUrl ?? null,
-      brandId: input.brandId,
-      accountId: account?.accountId ?? null,
-      assetHash: d.assetHash,
-      factSources: creative.asset.factSources ?? [],
-      propertyId: inventoryProperty?.id ?? null,
-      propertyRef: inventoryProperty?.ref ?? null,
-      propertyTitle: inventoryProperty?.title ?? null,
-      propertyLocation: inventoryProperty?.location ?? null,
-      selectionReason: inventoryProperty?.selectionReason ?? null,
+      contentId: brief.contentId, channel: brief.channel, publicationId: d.publicationId, state: String(d.state), mode: d.mode,
+      qualityScore: d.qualityScore, approvalId: d.approvalId, error: d.error, source: sourceType,
+      caption: [creative.asset.headline, creative.asset.body, creative.asset.cta].filter(Boolean).join("\n"), imageUrl: creative.asset.media?.imageUrl ?? null,
+      brandId: input.brandId, accountId: account?.accountId ?? null, assetHash: d.assetHash, factSources: creative.asset.factSources ?? [],
+      propertyId: inventoryProperty?.id ?? null, propertyRef: inventoryProperty?.ref ?? null, propertyTitle: inventoryProperty?.title ?? null,
+      propertyLocation: inventoryProperty?.location ?? null, selectionReason: inventoryProperty?.selectionReason ?? null,
     });
     trace.push(...d.trace);
   }
@@ -371,28 +304,13 @@ export async function createCampaignDraft(
 function assetFromCandidate(brief: any, brand: any, chosen: any): CreativeResult {
   return {
     asset: {
-      contentId: brief.contentId,
-      creativeVariantId: `${brief.contentId}_v1`,
-      campaignId: brief.campaignId,
-      channel: brief.channel,
-      genome: brief.genome,
-      headline: undefined,
-      body: chosen.text ?? "",
-      cta: brand.preferredCta,
-      media: chosen.media ?? undefined,
-      factSources: chosen.factSources ?? [],
-      generator: {},
+      contentId: brief.contentId, creativeVariantId: `${brief.contentId}_v1`, campaignId: brief.campaignId, channel: brief.channel, genome: brief.genome,
+      headline: undefined, body: chosen.text ?? "", cta: brand.preferredCta, media: chosen.media ?? undefined,
+      factSources: chosen.factSources ?? [], generator: {},
     },
     provenance: {
-      generatedBy: "content-resolver",
-      model: chosen.source,
-      promptVersion: "resolver-1.0",
-      learningRulesUsed: [],
-      factSources: chosen.factSources ?? [],
-      propertyIds: chosen.propertyIds ?? [],
-      createdAt: new Date().toISOString(),
-      approvedBy: null,
-      approvedAt: null,
+      generatedBy: "content-resolver", model: chosen.source, promptVersion: "resolver-1.0", learningRulesUsed: [],
+      factSources: chosen.factSources ?? [], propertyIds: chosen.propertyIds ?? [], createdAt: new Date().toISOString(), approvedBy: null, approvedAt: null,
     },
   };
 }
