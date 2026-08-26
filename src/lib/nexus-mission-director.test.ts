@@ -21,20 +21,31 @@ function health(overrides: Partial<PipelineHealthInput> = {}): PipelineHealthInp
   };
 }
 
-test("top-of-funnel deficit creates a demand-generation mission", () => {
+test("top-of-funnel deficit creates a demand-generation mission only against explicit target", () => {
   const missions = directPipelineMissions(health());
   const mission = missions.find((item) => item.kind === "generate_demand");
   assert.ok(mission);
   assert.equal(mission.role, "demand_generation");
   assert.equal(mission.autonomy, "prepare");
+  assert.match(mission.reason, /brukerdefinert mål/i);
 });
 
-test("stale conversion work is escalated to closer before lower-priority activity", () => {
-  const missions = rankDirectorMissions(directPipelineMissions(health({ staleConversionOpportunities: 2 })));
+test("without an explicit lead target Nexus does not invent a demand gap", () => {
+  const missions = directPipelineMissions(health({ targetNewPerWeek: null }));
+  assert.equal(missions.some((item) => item.kind === "generate_demand"), false);
+});
+
+test("stale conversion work is escalated to closer even without a conversion target", () => {
+  const missions = rankDirectorMissions(directPipelineMissions(health({ targetConversionsPerMonth: null, staleConversionOpportunities: 2 })));
   assert.equal(missions[0]?.role, "closer");
   assert.equal(missions[0]?.priority, "CRITICAL");
   assert.equal(missions[0]?.kind, "recover_stalled");
   assert.equal(missions[0]?.autonomy, "approval");
+});
+
+test("without an explicit conversion target Nexus does not invent a closing gap", () => {
+  const missions = directPipelineMissions(health({ targetConversionsPerMonth: null, staleConversionOpportunities: 0 }));
+  assert.equal(missions.some((item) => item.kind === "close_revenue"), false);
 });
 
 test("publishing pipeline uses content/influencer role for demand creation", () => {
