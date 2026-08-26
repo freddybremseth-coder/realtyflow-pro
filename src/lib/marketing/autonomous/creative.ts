@@ -11,7 +11,7 @@ import { CHANNEL_SPECS } from "./channel";
 import type { ContentBrief, GeneratedAsset } from "./schemas";
 import type { BrandContext } from "./brand-brain";
 
-export const CREATIVE_PROMPT_VERSION = "cg-1.6";
+export const CREATIVE_PROMPT_VERSION = "cg-1.7";
 
 export interface CreativeRequest {
   brief: ContentBrief;
@@ -56,11 +56,31 @@ const FORMAT_INSTRUCTIONS: Partial<Record<string, string>> = {
   email: "E-post: personlig åpning, én verdi, tydelig neste steg.",
 };
 
+const ZENECO_PROPERTY_BASE = "https://www.zenecohomes.com/eiendommer";
+
+function zenEcoPropertyRef(req: CreativeRequest): string | null {
+  if (req.brief.genome.brandId !== "zeneco" || !req.propertyIds?.length) return null;
+  for (const fact of req.facts ?? []) {
+    const match = String(fact.claim ?? "").match(/^Referanse:\s*([A-Za-z0-9._-]+)\s*$/i);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
+function resolvedCta(req: CreativeRequest, generatedCta?: string): string | undefined {
+  const ref = zenEcoPropertyRef(req);
+  if (!ref) return generatedCta ?? req.brand.preferredCta;
+  const propertyUrl = `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(ref)}`;
+  return `Se boligen: ${propertyUrl}\nKontakt oss om boligen: ${propertyUrl}#kontakt`;
+}
+
 export function buildCreativePrompt(req: CreativeRequest): { system: string; user: string } {
   const { brief, brand } = req;
   const spec = CHANNEL_SPECS[brief.channel as MarketingChannel];
   const favored = req.recommendation ? Object.entries(req.recommendation.favor).map(([d, v]) => `${d}=${v?.value}`).join(", ") : "";
   const avoided = req.recommendation ? req.recommendation.avoid.map((a) => `${a.dimension}=${a.value}`).join(", ") : "";
+  const propertyRef = zenEcoPropertyRef(req);
+  const propertyUrl = propertyRef ? `${ZENECO_PROPERTY_BASE}/${encodeURIComponent(propertyRef)}` : null;
 
   const system = [
     `Du er markedsføringsforfatter for ${brand.brandName}.`,
@@ -77,7 +97,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     `Leverandør-/Inventory-beskrivelser kan inneholde markedsføringsspråk. Ikke gjør subjektive superlativer, rangeringer eller popularitetsord til nye fakta. Ikke omskriv «et av de beste områdene» til «et av de mest populære områdene», «mest attraktive», «mest ettertraktede», «best beliggende» eller lignende uten en egen uavhengig factSource. Foretrekk nøkterne formuleringer om sted, boligtype, utsikt, fasiliteter og dokumenterte egenskaper.`,
     `Bevar geografiske factSources semantisk nøyaktig. «Region: Costa Blanca South» betyr at boligen ligger i den sørlige delen av Costa Blanca / Costa Blanca South — ALDRI «sør for Costa Blanca». Ikke bruk uverifiserte geografiske aliaser som «solkysten» når factSources sier Costa Blanca; det kan forveksles med Costa del Sol. Tilsvarende gjelder North/Inland: omskriv aldri en region til en annen geografisk relasjon.`,
     `En factSource kan være avkortet eller ende med «...». ALDRI fullfør, gjett eller rekonstruer den manglende delen. Bruk bare ordene og fakta som faktisk er synlige i factSource. Hvis en setning stopper midt i et stedsnavn, avstand, fasilitet eller annen påstand, utelat den delen helt.`,
-    `Skriv aldri «lenke i bio», «link i bio», «se bio», «klikk på lenken i profilen» eller tilsvarende med mindre en eksplisitt verifisert factSource/channel-fact sier at en slik lenke finnes og peker til riktig destinasjon. Uten slik kilde: bruk CTA som «Book en gratis boligsamtale» eller «Kontakt oss».`,
+    propertyUrl
+      ? `Denne posten gjelder en konkret Zen Eco Homes-bolig. Bruk den verifiserte boliglenken ${propertyUrl}. Kontaktskjemaet for akkurat denne boligen ligger på ${propertyUrl}#kontakt. Ikke bytt ut, forkort eller finn på andre URL-er.`
+      : `Skriv aldri «lenke i bio», «link i bio», «se bio», «klikk på lenken i profilen» eller tilsvarende med mindre en eksplisitt verifisert factSource/channel-fact sier at en slik lenke finnes og peker til riktig destinasjon. Uten slik kilde: bruk CTA som «Book en gratis boligsamtale» eller «Kontakt oss».`,
     `Markeds-/trendpåstander og absolutte løfter er også FORBUDT uten uavhengig kilde. Skriv ikke «flere nordmenn ser mot Costa Blanca», «sol året rundt», «ingen skjulte overraskelser», «ingen språkbarrierer» eller tilsvarende. Bruk nøkternt, sant språk: «et hjem i solen», «norsktalende veiledning», «vi hjelper deg gjennom kjøpsprosessen».`,
     `Unngå absolutte ord som «alltid», «aldri», «ingen», «garantert» når de beskriver et resultat, marked, klima eller tjenesteløfte. Absolutter er bare tillatt når de er eksplisitt støttet av en verifiserbar factSource.`,
     (req.brand as { ownsInventory?: boolean }).ownsInventory
@@ -90,7 +112,9 @@ export function buildCreativePrompt(req: CreativeRequest): { system: string; use
     FORMAT_INSTRUCTIONS[brief.genome.format] && `Format: ${FORMAT_INSTRUCTIONS[brief.genome.format]}`,
     `Vinkel: ${brief.angle}`,
     `Mål: ${brief.goal.kind}.`,
-    brand.preferredCta && `Foretrukket CTA: ${brand.preferredCta}.`,
+    propertyUrl
+      ? `CTA skal sende kunden til den konkrete boligen og videre til kontaktskjemaet på samme side. Bolig: ${propertyUrl}. Kontakt: ${propertyUrl}#kontakt.`
+      : brand.preferredCta && `Foretrukket CTA: ${brand.preferredCta}.`,
     favored && `Bruk det som funker (learning): ${favored}.`,
     avoided && `Unngå: ${avoided}.`,
     req.facts?.length && `Verifiserbare fakta du kan bruke:\n${req.facts.map((f) => `- ${f.claim} (kilde: ${f.source})`).join("\n")}`,
@@ -121,7 +145,7 @@ export function assembleAsset(
       genome,
       headline: output.headline,
       body: output.body,
-      cta: output.cta ?? req.brand.preferredCta,
+      cta: resolvedCta(req, output.cta),
       factSources: req.facts ?? [],
       generator: { model: meta.model, costEur: meta.costEur ?? 0 },
     },
