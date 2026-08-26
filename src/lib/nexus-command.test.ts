@@ -26,6 +26,12 @@ test("business model searches prioritize Business Pipelines", () => {
   assert.equal(filterNexusCommands("ulike pipelines")[0]?.href, "/nexus-os/business-pipelines");
 });
 
+test("persistent revenue leadership intent finds Revenue Command", () => {
+  assert.equal(filterNexusCommands("revenue command")[0]?.href, "/nexus-os/revenue-command");
+  assert.equal(filterNexusCommands("pipeline health")[0]?.href, "/nexus-os/revenue-command");
+  assert.equal(filterNexusCommands("stale closing")[0]?.href, "/nexus-os/revenue-command");
+});
+
 test("sales-team intent prioritizes Mission Control", () => {
   assert.equal(filterNexusCommands("mission control")[0]?.href, "/nexus-os/mission-control");
   assert.equal(filterNexusCommands("hva skal teamet gjøre")[0]?.href, "/nexus-os/mission-control");
