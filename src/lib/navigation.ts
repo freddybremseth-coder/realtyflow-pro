@@ -40,7 +40,7 @@ const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; href
 ];
 
 const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
-  OWNER: ["/nexus-os/inbox", "/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/runtime", "/approvals"],
+  OWNER: ["/nexus-os/today", "/nexus-os/inbox", "/customers", "/inventory", "/social-automation", "/nexus-os"],
   SALES: ["/today", "/customers", "/execution", "/lead-intelligence", "/communications", "/recovery"],
   CLOSING: ["/today", "/closing", "/closing-pack", "/execution", "/customers", "/approvals"],
   FINANCE: ["/billing", "/donaanna", "/revenue-command", "/monthly-close", "/commissions", "/forecast", "/goals", "/internal-alerts"],
