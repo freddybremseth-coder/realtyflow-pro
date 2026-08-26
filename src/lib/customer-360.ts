@@ -108,6 +108,14 @@ function isOverdue(value: unknown, now = new Date()) {
   return date.getTime() < now.getTime();
 }
 
+function customerHref(contactId: string) {
+  return contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers";
+}
+
+function crmHref(contactId: string) {
+  return contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline";
+}
+
 export function buildCustomerNextAction(
   contact: CustomerNextActionContactInput,
   recommendedAction: string,
@@ -116,6 +124,7 @@ export function buildCustomerNextAction(
   now = new Date(),
 ): CustomerNextAction {
   const contactId = String(contact.id || "").trim();
+  const stage = String(contact.pipeline_status || "NEW").toUpperCase();
   const openWorkItem = workItems
     .filter((item) => String(item.status || "TO_DO").toUpperCase() !== "DONE")
     .sort((a, b) => {
@@ -130,7 +139,7 @@ export function buildCustomerNextAction(
       reason: "mangler kontaktkanal",
       priority: "CRITICAL",
       primaryLabel: "Oppdater i CRM",
-      primaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+      primaryHref: crmHref(contactId),
     };
   }
 
@@ -143,7 +152,7 @@ export function buildCustomerNextAction(
       primaryLabel: "Se oppgave",
       primaryHref: "/marketing-tasks",
       secondaryLabel: "Åpne CRM",
-      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+      secondaryHref: crmHref(contactId),
     };
   }
 
@@ -153,10 +162,62 @@ export function buildCustomerNextAction(
       description: recommendedAction,
       reason: "oppfølging er forfalt",
       priority: "CRITICAL",
-      primaryLabel: "Planlegg ny oppfølging",
-      primaryHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
+      primaryLabel: "Registrer oppfølging",
+      primaryHref: customerHref(contactId),
       secondaryLabel: "Åpne CRM",
-      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+      secondaryHref: crmHref(contactId),
+    };
+  }
+
+  if (stage === "NEGOTIATION") {
+    return {
+      title: "Flytt forhandlingen mot beslutning",
+      description: recommendedAction || "Avklar pris, vilkår, beslutningstakere og konkret neste milepæl.",
+      reason: "kunden er i forhandling",
+      priority: "HIGH",
+      primaryLabel: "Åpne Closing",
+      primaryHref: "/closing",
+      secondaryLabel: "Registrer kundeoppdatering",
+      secondaryHref: customerHref(contactId),
+    };
+  }
+
+  if (stage === "VIEWING") {
+    return {
+      title: "Følg opp visningen mens signalet er varmt",
+      description: recommendedAction || "Registrer respons fra visningen og avklar neste konkrete steg.",
+      reason: "kunden er i visningsstadiet",
+      priority: "HIGH",
+      primaryLabel: "Registrer visningsrespons",
+      primaryHref: customerHref(contactId),
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: crmHref(contactId),
+    };
+  }
+
+  if (openWorkItem && priorityLabel(openWorkItem.priority) === "HIGH") {
+    return {
+      title: openWorkItem.title || "Prioritert kundeoppgave",
+      description: openWorkItem.next_action || openWorkItem.description || "Fullfør den prioriterte kundeoppgaven før du lager et nytt steg.",
+      reason: "high-priority kundeoppgave er åpen",
+      priority: "HIGH",
+      primaryLabel: "Se oppgave",
+      primaryHref: "/marketing-tasks",
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: crmHref(contactId),
+    };
+  }
+
+  if (!contact.next_followup) {
+    return {
+      title: "Sett en konkret neste oppfølging",
+      description: recommendedAction || "Avtal neste steg og sett dato, slik at kunden ikke faller ut av arbeidsflyten.",
+      reason: "mangler neste oppfølgingsdato",
+      priority: "HIGH",
+      primaryLabel: "Registrer neste steg",
+      primaryHref: customerHref(contactId),
+      secondaryLabel: "Åpne CRM",
+      secondaryHref: crmHref(contactId),
     };
   }
 
@@ -169,7 +230,7 @@ export function buildCustomerNextAction(
       primaryLabel: "Oppdater profil",
       primaryHref: "/lead-intelligence",
       secondaryLabel: "Åpne CRM",
-      secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+      secondaryHref: crmHref(contactId),
     };
   }
 
@@ -178,10 +239,10 @@ export function buildCustomerNextAction(
     description: recommendedAction,
     reason: "basert på pipeline-status, kjøpssignaler og kundeminne",
     priority: "MEDIUM",
-    primaryLabel: "Planlegg oppfølging",
-    primaryHref: contactId ? `/customers/${encodeURIComponent(contactId)}` : "/customers",
+    primaryLabel: "Registrer neste steg",
+    primaryHref: customerHref(contactId),
     secondaryLabel: "Åpne CRM",
-    secondaryHref: contactId ? `/pipeline?contactId=${encodeURIComponent(contactId)}` : "/pipeline",
+    secondaryHref: crmHref(contactId),
   };
 }
 
