@@ -14,8 +14,8 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { OWNED_GROWTH_BRANDS } from "@/lib/marketing/brand-registry";
 import { summarizeSocialAutopilot, type SocialAutopilotRow } from "@/lib/social-autopilot";
+import { buildNexusTodayTopActions } from "@/lib/nexus-today-priority";
 
 type AttentionItem = {
   id: string;
@@ -83,6 +83,13 @@ function attentionTone(severity: AttentionItem["severity"]) {
   return "border-emerald-200 bg-emerald-50 text-emerald-950";
 }
 
+function priorityTone(priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW") {
+  if (priority === "CRITICAL") return "border-rose-200 bg-rose-50 text-rose-950";
+  if (priority === "HIGH") return "border-amber-200 bg-amber-50 text-amber-950";
+  if (priority === "MEDIUM") return "border-cyan-200 bg-cyan-50 text-cyan-950";
+  return "border-slate-200 bg-slate-50 text-slate-950";
+}
+
 export default function NexusTodayPage() {
   const [attention, setAttention] = useState<LoadState<AttentionPayload>>({ data: null, error: null });
   const [revenue, setRevenue] = useState<LoadState<RevenuePayload>>({ data: null, error: null });
@@ -120,6 +127,15 @@ export default function NexusTodayPage() {
   const summary = revenue.data?.summary;
   const portfolioSummary = portfolio.data?.summary;
   const totalAttention = actionableAttention.length + marketingSummary.needsAttention;
+  const topActions = useMemo(
+    () => buildNexusTodayTopActions({
+      attention: actionableAttention,
+      revenue: revenue.data?.recommendedPlay,
+      marketingBlockers: marketingSummary.blockers,
+      quarantined: marketingSummary.quarantined,
+    }),
+    [actionableAttention, marketingSummary.blockers, marketingSummary.quarantined, revenue.data?.recommendedPlay],
+  );
 
   const topCards = [
     { label: "Trenger oppmerksomhet", value: totalAttention, icon: AlertTriangle, href: "/nexus-os/today#attention" },
@@ -144,6 +160,17 @@ export default function NexusTodayPage() {
       </header>
 
       {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex items-start gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><strong>Nexus mangler én eller flere datakilder.</strong><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div><div className="text-xs font-black uppercase tracking-wider text-cyan-700">Nexus recommends</div><h2 className="mt-1 text-xl font-black text-slate-950">De 3 viktigste tingene å gjøre nå</h2></div>
+          <Link href="/nexus-os/inbox" className="text-xs font-black text-cyan-700">Åpne hele Inbox →</Link>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {topActions.map((item, index) => <Link key={item.id} href={item.href} className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${priorityTone(item.priority)}`}><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black">{index + 1}</span><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black uppercase">{item.priority}</span></div><ArrowRight size={16} className="opacity-50 transition group-hover:translate-x-1" /></div><h3 className="mt-3 font-black">{item.title}</h3><p className="mt-2 text-sm font-semibold">{item.action}</p><p className="mt-2 text-xs leading-5 opacity-75"><strong>Hvorfor:</strong> {item.reason}</p><p className="mt-2 text-xs leading-5 opacity-75"><strong>Konsekvens:</strong> {item.impact}</p></Link>)}
+          {!loading && topActions.length === 0 && <div className="lg:col-span-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Ingen presserende handlinger.</strong> Nexus finner ingen salg-, drift- eller marketingoppgaver som må løftes til topp 3 akkurat nå.</div>}
+        </div>
+      </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {topCards.map(({ label, value, icon: Icon, href }) => <Link key={label} href={href} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="flex items-start justify-between"><Icon size={20} className="text-cyan-700" /><ArrowRight size={16} className="text-slate-300 transition group-hover:translate-x-1 group-hover:text-cyan-700" /></div><div className="mt-4 text-3xl font-black text-slate-950">{value}</div><div className="mt-1 text-sm font-semibold text-slate-500">{label}</div></Link>)}
