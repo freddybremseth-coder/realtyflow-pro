@@ -3,6 +3,12 @@ import { buildNexusRevenueCommandCenter } from "@/lib/nexus-revenue-command-cent
 import type { NexusOpportunityStoreRow } from "@/lib/nexus-opportunity-store";
 import { buildNexusSyncHealth, type NexusSyncRunLike } from "@/lib/nexus-sync-health";
 import {
+  buildCommercialTargetEvidence,
+  commercialTargetConfigByPipeline,
+  targetsFromGrowthPlanRows,
+  type MarketingGrowthPlanTargetRow,
+} from "@/lib/nexus-commercial-targets";
+import {
   buildNexusMissionStateProjection,
   type NexusMissionApprovalRow,
   type NexusMissionRunRow,
@@ -13,20 +19,29 @@ export interface NexusRevenueCommandFilters {
   pipeline?: string | null;
 }
 
+type NexusOpportunityReadRow = NexusOpportunityStoreRow & { created_at?: string | null };
+
 export function buildNexusRevenueCommandReadModel(
-  opportunityRows: NexusOpportunityStoreRow[],
+  opportunityRows: NexusOpportunityReadRow[],
   syncRun: NexusSyncRunLike | null,
   storeCount: number,
   readWarnings: string[] = [],
+  targetRows: MarketingGrowthPlanTargetRow[] = [],
+  now = new Date(),
 ) {
-  const snapshot = buildNexusRevenueCommandCenter(opportunityRows);
+  const syncHealth = buildNexusSyncHealth(syncRun, storeCount, now);
+  const targets = targetsFromGrowthPlanRows(targetRows);
+  const commercialTargets = buildCommercialTargetEvidence(targets, opportunityRows, syncHealth, now);
+  const directorConfig = commercialTargetConfigByPipeline(commercialTargets);
+  const snapshot = buildNexusRevenueCommandCenter(opportunityRows, now, directorConfig);
   const snapshotWarnings = Array.isArray((snapshot as { warnings?: unknown[] }).warnings)
     ? ((snapshot as { warnings?: unknown[] }).warnings || []).map(String)
     : [];
 
   return {
     ...snapshot,
-    syncHealth: buildNexusSyncHealth(syncRun, storeCount),
+    syncHealth,
+    commercialTargets,
     warnings: [...snapshotWarnings, ...readWarnings],
   };
 }
@@ -37,7 +52,7 @@ export async function loadNexusRevenueCommandSnapshot(
 ) {
   let opportunityQuery = supabase
     .from("nexus_business_opportunities")
-    .select("contact_id,brand_id,offer_id,pipeline_id,stage_id,lifecycle_phase,opportunity_state,title,reason,next_action,priority,priority_score,value,currency,route_confidence,route_reason,source_system,source_id,source_updated_at,last_activity_at,metadata")
+    .select("contact_id,brand_id,offer_id,pipeline_id,stage_id,lifecycle_phase,opportunity_state,title,reason,next_action,priority,priority_score,value,currency,route_confidence,route_reason,source_system,source_id,source_updated_at,last_activity_at,metadata,created_at")
     .in("opportunity_state", ["active", "won"])
     .order("priority_score", { ascending: false })
     .limit(1000);
@@ -47,7 +62,7 @@ export async function loadNexusRevenueCommandSnapshot(
   if (brand) opportunityQuery = opportunityQuery.eq("brand_id", brand);
   if (pipeline) opportunityQuery = opportunityQuery.eq("pipeline_id", pipeline);
 
-  const [opportunitiesResult, syncRunResult, storeCountResult] = await Promise.all([
+  const [opportunitiesResult, syncRunResult, storeCountResult, targetPlansResult] = await Promise.all([
     opportunityQuery,
     supabase
       .from("automation_runs")
@@ -60,6 +75,10 @@ export async function loadNexusRevenueCommandSnapshot(
       .from("nexus_business_opportunities")
       .select("source_id", { count: "exact", head: true })
       .in("opportunity_state", ["active", "won"]),
+    supabase
+      .from("marketing_brand_growth_plans")
+      .select("brand_id,status,metadata")
+      .eq("status", "active"),
   ]);
 
   if (opportunitiesResult.error) throw new Error(`Opportunity Store: ${opportunitiesResult.error.message}`);
@@ -67,12 +86,14 @@ export async function loadNexusRevenueCommandSnapshot(
   const warnings: string[] = [];
   if (syncRunResult.error) warnings.push(`Opportunity Sync audit kunne ikke leses: ${syncRunResult.error.message}`);
   if (storeCountResult.error) warnings.push(`Opportunity Store count kunne ikke leses: ${storeCountResult.error.message}`);
+  if (targetPlansResult.error) warnings.push(`Commercial targets kunne ikke leses: ${targetPlansResult.error.message}`);
 
   return buildNexusRevenueCommandReadModel(
-    (opportunitiesResult.data || []) as NexusOpportunityStoreRow[],
+    (opportunitiesResult.data || []) as NexusOpportunityReadRow[],
     syncRunResult.error ? null : (syncRunResult.data as NexusSyncRunLike | null),
     storeCountResult.error ? (opportunitiesResult.data || []).length : Number(storeCountResult.count || 0),
     warnings,
+    targetPlansResult.error ? [] : (targetPlansResult.data || []) as MarketingGrowthPlanTargetRow[],
   );
 }
 
