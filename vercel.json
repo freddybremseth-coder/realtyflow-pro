@@ -19,6 +19,7 @@
     { "path": "/api/cron/publishing-growth-loop", "schedule": "15 17 * * *" },
     { "path": "/api/cron/publishing-market-watch", "schedule": "30 17 * * *" },
     { "path": "/api/cron/marketing-autopilot", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/nexus-opportunity-sync", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/marketing-growth-metrics", "schedule": "10 19 * * *" },
     { "path": "/api/cron/lead-nurture", "schedule": "0 7 * * *" },
     { "path": "/api/cron/demosites-followup", "schedule": "0 8 * * *" }

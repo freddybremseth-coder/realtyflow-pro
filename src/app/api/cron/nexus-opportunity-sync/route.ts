@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdminApi } from "@/lib/api-admin";
+import { requireCronApi } from "@/lib/api-cron";
+import { getAdminEmails } from "@/lib/admin-auth";
 import { upsertNexusOpportunitySnapshot } from "@/lib/nexus-opportunity-store";
 import { contactIdForOpportunity } from "@/lib/nexus-opportunity-sync";
-import { runNexusOpportunitySync } from "@/lib/nexus-opportunity-sync-runner";
+import {
+  runNexusOpportunitySync,
+  scheduledNexusOpportunitySources,
+} from "@/lib/nexus-opportunity-sync-runner";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,25 +20,32 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-function forwardedAdminHeaders(request: NextRequest) {
+function ownerProxyHeaders() {
+  const secret = process.env.REALTYFLOW_MIGRATION_SECRET;
+  const ownerEmail = getAdminEmails()[0];
+  if (!secret || !ownerEmail) return null;
   const headers = new Headers();
-  const cookie = request.headers.get("cookie");
-  const migrationSecret = request.headers.get("x-remaster-migration-secret");
-  const remasterAdmin = request.headers.get("x-remaster-admin");
-  if (cookie) headers.set("cookie", cookie);
-  if (migrationSecret) headers.set("x-remaster-migration-secret", migrationSecret);
-  if (remasterAdmin) headers.set("x-remaster-admin", remasterAdmin);
+  headers.set("x-remaster-migration-secret", secret);
+  headers.set("x-remaster-admin", ownerEmail);
   return headers;
 }
 
-export async function POST(request: NextRequest) {
-  const denied = await requireAdminApi(request);
+export async function GET(request: NextRequest) {
+  const denied = requireCronApi(request);
   if (denied) return denied;
 
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const headers = forwardedAdminHeaders(request);
+  const headers = ownerProxyHeaders();
+  if (!headers) {
+    return NextResponse.json({
+      error: "Internal owner proxy not configured",
+      required: "REALTYFLOW_MIGRATION_SECRET + at least one RealtyFlow admin email",
+    }, { status: 503 });
+  }
+
+  const sources = scheduledNexusOpportunitySources(new Date());
   const result = await runNexusOpportunitySync({
     fetchSource: async (_source, path) => {
       const response = await fetch(new URL(path, request.nextUrl.origin), {
@@ -49,9 +60,9 @@ export async function POST(request: NextRequest) {
     upsertOpportunity: async (opportunity, source) => upsertNexusOpportunitySnapshot(supabase as never, opportunity, {
       contactId: contactIdForOpportunity(opportunity),
       lastActivityAt: opportunity.updatedAt,
-      metadata: { sync_source: source, synced_by: "api/nexus/opportunities/sync" },
+      metadata: { sync_source: source, synced_by: "api/cron/nexus-opportunity-sync" },
     }),
-  }, ["real_estate", "publishing", "ai_demosites"]);
+  }, sources);
 
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, schedule: { sources } });
 }
