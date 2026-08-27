@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { BookGrowthApprovedApplyQueue } from "@/components/book-growth/book-growth-approved-apply-queue";
 
 type Recommendation = {
   id: string;
@@ -166,23 +167,7 @@ export default function BookGrowthPage() {
         <div style={{ marginTop: 5, color: "#334155", fontSize: 13 }}><b>Godkjenn forslag</b> betyr at forslaget er vurdert og akseptert. Det endrer ikke Amazon/KDP, Ads eller nettsiden direkte. Godkjente forslag vises nå i en egen kø under, slik at neste Apply-handling er tydelig.</div>
       </section>
 
-      {approved.length > 0 && <section style={{ marginTop: 18, padding: 16, borderRadius: 12, background: "#ecfdf5", border: "2px solid #10b981" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontWeight: 900, fontSize: 18, color: "#064e3b" }}>Godkjent – klar for Apply</div>
-            <div style={{ marginTop: 4, fontSize: 12, color: "#065f46" }}>Disse forslagene er godkjent, men ikke utført eksternt. Neste trinn er en eksplisitt Apply-handling med audit trail.</div>
-          </div>
-          <div style={{ padding: "5px 9px", borderRadius: 999, background: "#065f46", color: "white", fontWeight: 900, fontSize: 12 }}>{approved.length} godkjent</div>
-        </div>
-        <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-          {approved.slice(0, 20).map((r) => <div key={r.id} style={{ background: "white", border: "1px solid #6ee7b7", borderRadius: 10, padding: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#047857", textTransform: "uppercase" }}>{r.recommendation_type} · {r.channel ?? "catalog"} · {r.marketplace ?? "global"}</div>
-            <div style={{ marginTop: 3, fontWeight: 900 }}>{r.bookTitle ?? r.bookSlug ?? "Serie-/katalogforslag"}</div>
-            {r.expected_impact && <div style={{ marginTop: 4, fontSize: 12, color: "#334155" }}>{r.expected_impact}</div>}
-            <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}><b>Godkjent forslag:</b> {show(r.proposed_value)}</div>
-          </div>)}
-        </div>
-      </section>}
+      <BookGrowthApprovedApplyQueue approved={approved} />
 
       <section style={{ marginTop: 18, border: "1px solid #94a3b8", borderRadius: 12, background: "white", overflow: "hidden" }}>
         <div style={{ padding: 14, borderBottom: "1px solid #94a3b8" }}>
