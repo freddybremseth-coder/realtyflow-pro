@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
+import { nexusInternalApiErrorMessage } from "@/lib/nexus-internal-api-error";
 import {
   nextMissionAutopilotAction,
   planMissionAutopilot,
@@ -46,7 +47,7 @@ async function readJson(request: NextRequest, headers: Headers, path: string) {
     headers,
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error || `${path} failed (${response.status})`);
+  if (!response.ok) throw new Error(nexusInternalApiErrorMessage(path, response.status, body));
   return body;
 }
 
@@ -58,7 +59,7 @@ async function postMission(request: NextRequest, headers: Headers, path: string,
     body: JSON.stringify({ missionId }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error || `${path} failed (${response.status})`);
+  if (!response.ok) throw new Error(nexusInternalApiErrorMessage(path, response.status, body));
   return body;
 }
 

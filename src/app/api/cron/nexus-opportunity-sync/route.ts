@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
+import { nexusInternalApiErrorMessage } from "@/lib/nexus-internal-api-error";
 import { upsertNexusOpportunitySnapshot } from "@/lib/nexus-opportunity-store";
 import { contactIdForOpportunity } from "@/lib/nexus-opportunity-sync";
 import {
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
         headers,
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body?.error || `${path} failed (${response.status})`);
+      if (!response.ok) throw new Error(nexusInternalApiErrorMessage(path, response.status, body));
       return body;
     },
     upsertOpportunity: async (opportunity, source) => upsertNexusOpportunitySnapshot(supabase as never, opportunity, {
