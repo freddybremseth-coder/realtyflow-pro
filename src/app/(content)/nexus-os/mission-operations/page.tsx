@@ -66,7 +66,7 @@ const roleLabel: Record<string, string> = {
 function stateLabel(state?: string) {
   if (!state) return "Ikke startet";
   if (state === "awaiting_preparation") return "Venter på preparer";
-  if (state === "prepared") return "Utkast klargjort";
+  if (state === "prepared") return "Artefakt klargjort";
   if (state === "waiting_approval") return "Venter på godkjenning";
   if (state === "approved") return "Godkjent";
   if (state === "executed") return "Utført";
@@ -92,6 +92,18 @@ function modeLabel(mode?: string) {
   if (mode === "draft-first") return "Klargjør først";
   if (mode === "live") return "Policy-live";
   return mode || "—";
+}
+
+function prepareEndpoint(mission: GrowthMission) {
+  if (mission.pipelineId === "real_estate_sales" && mission.role === "sales_sdr") return "/api/nexus/revenue-command/missions/prepare/real-estate";
+  if (mission.pipelineId === "ai_products_services" && mission.role === "sales_sdr") return "/api/nexus/revenue-command/missions/prepare/ai";
+  if (mission.pipelineId === "publishing") return "/api/nexus/revenue-command/missions/prepare/publishing";
+  return null;
+}
+
+function prepareLabel(mission: GrowthMission) {
+  if (mission.pipelineId === "publishing") return "Klargjør growth brief";
+  return "Klargjør utkast";
 }
 
 export default function NexusMissionOperationsPage() {
@@ -148,7 +160,11 @@ export default function NexusMissionOperationsPage() {
   }, [load]);
 
   const advance = useCallback((missionId: string) => postMission(missionId, "/api/nexus/revenue-command/missions/advance"), [postMission]);
-  const prepareRealEstate = useCallback((missionId: string) => postMission(missionId, "/api/nexus/revenue-command/missions/prepare/real-estate"), [postMission]);
+  const prepareMission = useCallback((mission: GrowthMission) => {
+    const endpoint = prepareEndpoint(mission);
+    if (!endpoint) return Promise.resolve();
+    return postMission(mission.id, endpoint);
+  }, [postMission]);
   const requestSendApproval = useCallback((missionId: string) => postMission(missionId, "/api/nexus/revenue-command/missions/approve-send"), [postMission]);
 
   useEffect(() => { void load(); }, [load]);
@@ -167,7 +183,7 @@ export default function NexusMissionOperationsPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-300"><Play size={17} /> Nexus Mission Operations</div>
           <h1 className="mt-2 text-3xl font-black">Fra mission til faktisk, styrt fremdrift</h1>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Start → Prepare → Approval → eksisterende executor. Hver overgang krever et ekte persisted artefakt eller en ekte approval-state; denne flaten sender aldri kundekommunikasjon direkte.</p>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">Start → Prepare → Approval → eksisterende executor. Hver business bruker sin egen preparer og sitt eget artefakt; kundekommunikasjon sendes aldri direkte fra denne flaten.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/nexus-os/revenue-command" className="inline-flex items-center rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-black hover:bg-white/10">Revenue Command <ArrowRight size={16} className="ml-2" /></Link>
@@ -176,7 +192,7 @@ export default function NexusMissionOperationsPage() {
       </div>
     </header>
 
-    <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><div className="flex items-start gap-2"><ShieldCheck size={18} className="mt-0.5 shrink-0" /><div><b>Governed execution.</b> Nexus kan starte missions og klargjøre sikre interne artefakter. Kundekontakt går først til eksisterende Approval Center, og sending skjer bare via den etablerte executor-flyten.</div></div></section>
+    <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><div className="flex items-start gap-2"><ShieldCheck size={18} className="mt-0.5 shrink-0" /><div><b>Business-aware governed execution.</b> Eiendom og AI kan klargjøre kundedrafts; Publishing klargjør Book Growth-recommendations. Bare ekte kundedrafts kan gå videre til send-approval.</div></div></section>
 
     {error && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">{error}</section>}
     {lastResult?.ok && <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950"><b>Mission oppdatert.</b>{lastResult.transition ? ` ${lastResult.transition}.` : ""}{lastResult.draftId ? ` Draft ${lastResult.draftId}.` : ""}{lastResult.approval?.id ? ` Approval ${lastResult.approval.id}.` : ""}</section>}
@@ -198,8 +214,9 @@ export default function NexusMissionOperationsPage() {
           const running = Boolean(busy[mission.id]);
           const terminal = ["executed", "recommended", "rejected", "cancelled"].includes(opState || "");
           const approvalState = ["waiting_approval", "approved"].includes(opState || "");
-          const canPrepareRealEstate = opState === "awaiting_preparation" && mission.pipelineId === "real_estate_sales" && mission.role === "sales_sdr" && plan?.actionClass === "draft" && plan?.capability === "prepare_only";
-          const canRequestSendApproval = opState === "prepared" && Boolean(state?.draftId);
+          const endpoint = prepareEndpoint(mission);
+          const canPrepare = opState === "awaiting_preparation" && Boolean(endpoint) && plan?.actionClass === "draft" && plan?.capability === "prepare_only";
+          const canRequestSendApproval = opState === "prepared" && Boolean(state?.draftId) && ["real_estate_sales", "ai_products_services"].includes(mission.pipelineId);
 
           return <article key={mission.id} className="rounded-2xl border border-slate-200 p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -214,12 +231,12 @@ export default function NexusMissionOperationsPage() {
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Link href={mission.href} className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">Åpne sak <ArrowRight size={14} className="ml-1" /></Link>
-                {approvalState ? <Link href="/approvals" className="inline-flex items-center rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-900">Åpne approval <ShieldCheck size={14} className="ml-1" /></Link> : canRequestSendApproval ? <button onClick={() => void requestSendApproval(mission.id)} disabled={running} className="inline-flex items-center rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Send size={14} className="mr-1" />}Send til godkjenning</button> : canPrepareRealEstate ? <button onClick={() => void prepareRealEstate(mission.id)} disabled={running} className="inline-flex items-center rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white hover:bg-violet-500 disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}Klargjør utkast</button> : <button onClick={() => void advance(mission.id)} disabled={running || terminal || opState === "awaiting_preparation" || opState === "prepared"} className="inline-flex items-center rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Zap size={14} className="mr-1" />}{state ? "Fortsett mission" : "Start mission"}</button>}
+                {approvalState ? <Link href="/approvals" className="inline-flex items-center rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-900">Åpne approval <ShieldCheck size={14} className="ml-1" /></Link> : canRequestSendApproval ? <button onClick={() => void requestSendApproval(mission.id)} disabled={running} className="inline-flex items-center rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Send size={14} className="mr-1" />}Send til godkjenning</button> : canPrepare ? <button onClick={() => void prepareMission(mission)} disabled={running} className="inline-flex items-center rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white hover:bg-violet-500 disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileText size={14} className="mr-1" />}{prepareLabel(mission)}</button> : <button onClick={() => void advance(mission.id)} disabled={running || terminal || opState === "awaiting_preparation" || opState === "prepared"} className="inline-flex items-center rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{running ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Zap size={14} className="mr-1" />}{state ? "Fortsett mission" : "Start mission"}</button>}
               </div>
             </div>
           </article>;
         })}
-        {!loading && missions.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">Ingen Growth Missions ennå. Kjør Opportunity Sync i Revenue Command først.</div>}
+        {!loading && missions.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">Ingen Growth Missions ennå. Opportunity Sync fyller denne køen automatisk når produksjonssyncen er aktiv.</div>}
       </div>
     </section>
   </main>;
