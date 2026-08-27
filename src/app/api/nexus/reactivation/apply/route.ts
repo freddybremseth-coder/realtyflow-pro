@@ -131,14 +131,6 @@ export async function POST(request: NextRequest) {
     }, { status: 409 });
   }
 
-  const updated = await supabase
-    .from("contacts")
-    .update(decision.contactUpdates)
-    .eq("id", contactId)
-    .select("id,pipeline_status,nurture_status,last_contact")
-    .single();
-  if (updated.error) return NextResponse.json({ error: updated.error.message }, { status: 500 });
-
   let workItem: { id: string; created: boolean } | null = null;
   if (decision.createBuyerProfileRefreshWorkItem) {
     try {
@@ -158,10 +150,23 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       return NextResponse.json({
         error: error instanceof Error ? error.message : "Buyer Profile refresh work item failed",
-        contactUpdated: true,
+        contactUpdated: false,
         classification,
       }, { status: 500 });
     }
+  }
+
+  const updated = await supabase
+    .from("contacts")
+    .update(decision.contactUpdates)
+    .eq("id", contactId)
+    .select("id,pipeline_status,nurture_status,last_contact")
+    .single();
+  if (updated.error) {
+    if (workItem?.created) {
+      await supabase.from("work_items").delete().eq("id", workItem.id).then(() => undefined, () => undefined);
+    }
+    return NextResponse.json({ error: updated.error.message }, { status: 500 });
   }
 
   const brandId = String(contact.brand_id || contact.brand || "").trim();
