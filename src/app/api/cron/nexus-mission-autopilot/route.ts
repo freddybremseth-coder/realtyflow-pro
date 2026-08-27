@@ -4,6 +4,7 @@ import { requireCronApi } from "@/lib/api-cron";
 import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
 import { nexusInternalApiErrorMessage } from "@/lib/nexus-internal-api-error";
+import { nexusInternalMutationOrigin } from "@/lib/nexus-internal-origin";
 import {
   loadNexusMissionStateSnapshot,
   loadNexusRevenueCommandSnapshot,
@@ -45,7 +46,8 @@ async function internalOwnerHeaders() {
 }
 
 async function postMission(request: NextRequest, headers: Headers, path: string, missionId: string) {
-  const response = await fetch(new URL(path, request.nextUrl.origin), {
+  const origin = nexusInternalMutationOrigin(request.nextUrl.origin);
+  const response = await fetch(new URL(path, origin), {
     method: "POST",
     cache: "no-store",
     headers,
@@ -154,7 +156,7 @@ export async function GET(request: NextRequest) {
       externalActionExecuted: false,
       humanApprovalStillRequiredForCustomerSend: true,
       closingAutopilot: false,
-      note: "Autopilot reads Revenue Command and Mission State directly from the canonical Supabase models. Mutations still pass through the existing governed mission APIs.",
+      note: "Autopilot reads Revenue Command and Mission State directly from the canonical Supabase models. Mutations still pass through the existing governed mission APIs on the canonical RealtyFlow origin.",
     },
   };
 
@@ -162,7 +164,12 @@ export async function GET(request: NextRequest) {
     name: "Nexus Mission Autopilot",
     path: "/api/cron/nexus-mission-autopilot",
     status: errors === 0 ? "success" : "error",
-    input: { selectedMissionIds, candidateMissions: missions.length, directRead: true },
+    input: {
+      selectedMissionIds,
+      candidateMissions: missions.length,
+      directRead: true,
+      mutationOrigin: nexusInternalMutationOrigin(request.nextUrl.origin),
+    },
     output: responseBody,
     error: errors === 0 ? null : `${errors} mission error(s)`,
     startedAt,
