@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
-import { getAdminEmails } from "@/lib/admin-auth";
+import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { upsertNexusOpportunitySnapshot } from "@/lib/nexus-opportunity-store";
 import { contactIdForOpportunity } from "@/lib/nexus-opportunity-sync";
 import {
@@ -20,14 +20,17 @@ function getSupabase() {
   return createClient(url, key);
 }
 
-function ownerProxyHeaders() {
-  const secret = process.env.REALTYFLOW_MIGRATION_SECRET;
+async function internalOwnerHeaders() {
   const ownerEmail = getAdminEmails()[0];
-  if (!secret || !ownerEmail) return null;
-  const headers = new Headers();
-  headers.set("x-remaster-migration-secret", secret);
-  headers.set("x-remaster-admin", ownerEmail);
-  return headers;
+  if (!ownerEmail) return null;
+  try {
+    const session = await createAdminSession(ownerEmail, "OWNER");
+    const headers = new Headers();
+    headers.set("cookie", `realtyflow_admin=${session}`);
+    return headers;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -37,11 +40,11 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const headers = ownerProxyHeaders();
+  const headers = await internalOwnerHeaders();
   if (!headers) {
     return NextResponse.json({
-      error: "Internal owner proxy not configured",
-      required: "REALTYFLOW_MIGRATION_SECRET + at least one RealtyFlow admin email",
+      error: "Internal owner session could not be created",
+      required: "REALTYFLOW_SESSION_SECRET or SUPABASE_SERVICE_ROLE_KEY + at least one RealtyFlow admin email",
     }, { status: 503 });
   }
 
