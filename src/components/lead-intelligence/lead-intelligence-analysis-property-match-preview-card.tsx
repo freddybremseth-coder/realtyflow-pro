@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { LeadIntelligenceAreaFitPanel } from "@/components/lead-intelligence/lead-intelligence-area-fit-panel";
 import { LeadIntelligenceActiveProfileMatchControls } from "@/components/lead-intelligence/lead-intelligence-active-profile-match-controls";
 import { LeadIntelligenceAnalysisPropertyMatchPanel } from "@/components/lead-intelligence/lead-intelligence-analysis-property-match-panel";
 import type {
@@ -36,6 +37,7 @@ interface ParsedPropertyReferences {
 }
 
 interface LeadIntelligenceAnalysisPropertyMatchPreviewCardProps {
+  areaFitContactId: string | null;
   propertyMatchingEnabled: boolean;
   propertyReferencesText: string;
   parsedPropertyReferences: ParsedPropertyReferences;
@@ -78,6 +80,7 @@ interface LeadIntelligenceAnalysisPropertyMatchPreviewCardProps {
 }
 
 export function LeadIntelligenceAnalysisPropertyMatchPreviewCard({
+  areaFitContactId,
   propertyMatchingEnabled,
   propertyReferencesText,
   parsedPropertyReferences,
@@ -123,21 +126,22 @@ export function LeadIntelligenceAnalysisPropertyMatchPreviewCard({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 id="lead-intelligence-property-match" className="text-sm font-semibold text-slate-200">
-            Eiendomsmatch-preview
+            Område- og eiendomsmatch-preview
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            La systemet søke i eksisterende eiendommer, eller lim inn eksplisitte referanser som
-            N8513 for en kontrollert test. Matchpreviewen lagres ikke; shortlist-utkast lagres
-            bare etter eksplisitt valg.
+            Vurder først om området passer hvordan kunden vil leve, og deretter om selve boligen passer kravene.
+            Matchpreviewen lagres ikke; shortlist-utkast lagres bare etter eksplisitt valg.
           </p>
         </div>
         <Badge variant={propertyMatchingEnabled ? "success" : "secondary"}>
-          {propertyMatchingEnabled ? "Preview aktivert" : "Feature flag av"}
+          {propertyMatchingEnabled ? "Property preview aktivert" : "Property feature flag av"}
         </Badge>
       </div>
 
+      <LeadIntelligenceAreaFitPanel contactId={areaFitContactId} />
+
       {!propertyMatchingEnabled && (
-        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+        <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
           Property matching er deaktivert i dette miljøet. Serveren må ha
           REALTYFLOW_PROPERTY_MATCHING_ENABLED=true før denne read-only previewen kan brukes.
         </div>
