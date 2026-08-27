@@ -49,6 +49,15 @@ const run: AgentRun = {
   ],
 };
 
+const draft = {
+  id: "draft_1",
+  contactRef: "buyer@example.com",
+  channel: "email",
+  subject: "Oppfølging",
+  body: "Hei",
+  status: "draft",
+};
+
 test("prepared draft id is read only from a matching prepared transition", () => {
   assert.equal(preparedDraftIdFromRun(run, mission.id), "draft_1");
   assert.equal(preparedDraftIdFromRun(run, "mission:other"), null);
@@ -59,15 +68,8 @@ test("prepared customer communication can never become a live send", () => {
   assert.notEqual(decision.mode, "live");
 });
 
-test("send approval references the persisted message draft and real recipient", () => {
-  const input = preparedDraftApprovalInput(mission, run, {
-    id: "draft_1",
-    contactRef: "buyer@example.com",
-    channel: "email",
-    subject: "Oppfølging",
-    body: "Hei",
-    status: "draft",
-  });
+test("send approval references the persisted draft and carries decision context", () => {
+  const input = preparedDraftApprovalInput(mission, run, draft);
   assert.equal(input.gatedActionClass, "send_personal");
   assert.equal(input.subjectType, "message_draft");
   assert.equal(input.subjectRef, "draft_1");
@@ -75,12 +77,27 @@ test("send approval references the persisted message draft and real recipient", 
   assert.equal(input.customerRef, "buyer@example.com");
   assert.equal(input.confidence, undefined);
   assert.notEqual(input.decisionMode, "live");
+  assert.match(input.title, /real_estate_sales/);
+  assert.match(input.reason || "", /stage: qualified/);
+  assert.match(input.reason || "", /brand: zeneco/);
+  assert.match(input.reason || "", /priority: HIGH \(88\/100\)/);
+  assert.match(input.reason || "", /Neste mål: Avklart interesse og timing/);
+  assert.equal(input.estimatedOpportunityEur, 500000);
 });
 
-test("approval trace records that no external action executed", () => {
+test("non-EUR opportunity value is never mislabeled as EUR", () => {
+  const nokMission = { ...mission, pipelineId: "ai_products_services" as const, brandId: "chatgenius", expectedValue: 25000, currency: "NOK" };
+  const input = preparedDraftApprovalInput(nokMission, run, draft);
+  assert.equal(input.estimatedOpportunityEur, undefined);
+});
+
+test("approval trace records business context and no external action", () => {
   const step = sendApprovalTraceStep(run, mission, "approval_1", "draft_1", new Date("2026-08-27T00:02:00Z"));
   assert.equal(step.data?.transition, "request_send_approval");
   assert.equal(step.data?.draft_id, "draft_1");
   assert.equal(step.data?.approval_id, "approval_1");
+  assert.equal(step.data?.pipeline_id, "real_estate_sales");
+  assert.equal(step.data?.stage_id, "qualified");
+  assert.equal(step.data?.brand_id, "zeneco");
   assert.equal(step.data?.external_action_executed, false);
 });

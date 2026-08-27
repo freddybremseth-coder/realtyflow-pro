@@ -35,25 +35,34 @@ export function sendPersonalDecisionForPreparedDraft(run: AgentRun) {
   });
 }
 
+function approvalBusinessContext(mission: NexusGrowthMission) {
+  return `Business: ${mission.pipelineId} · stage: ${mission.stageId} · brand: ${mission.brandId} · priority: ${mission.priority} (${mission.priorityScore}/100)`;
+}
+
 export function preparedDraftApprovalInput(
   mission: NexusGrowthMission,
   run: AgentRun,
   draft: NexusPreparedDraftRef,
 ): RequestApprovalInput {
   const decision = sendPersonalDecisionForPreparedDraft(run);
+  const estimatedOpportunityEur = mission.currency === "EUR" && mission.expectedValue != null
+    ? Number(mission.expectedValue)
+    : undefined;
+
   return {
     correlationId: run.correlationId || mission.opportunityId,
     idempotencyKey: operationIdempotencyKey(run.id, "request_approval", `send:${draft.id}`),
     runId: run.id,
-    title: `Godkjenn utsending: ${mission.title}`,
+    title: `Godkjenn utsending · ${mission.pipelineId}: ${mission.title}`,
     gatedActionClass: "send_personal",
     subjectType: "message_draft",
     subjectRef: draft.id,
     draftId: draft.id,
     customerRef: draft.contactRef,
-    reason: `${mission.whyNow} Et konkret e-postutkast er klargjort og må godkjennes før utsending.`,
+    reason: `${approvalBusinessContext(mission)}. Hvorfor nå: ${mission.whyNow} Neste mål: ${mission.desiredOutcome}. Et konkret e-postutkast er klargjort og må godkjennes før utsending.`,
     risk: decision.risk,
     decisionMode: decision.mode,
+    estimatedOpportunityEur: Number.isFinite(estimatedOpportunityEur as number) ? estimatedOpportunityEur : undefined,
   };
 }
 
@@ -79,6 +88,9 @@ export function sendApprovalTraceStep(
     data: {
       mission_id: mission.id,
       opportunity_id: mission.opportunityId,
+      pipeline_id: mission.pipelineId,
+      stage_id: mission.stageId,
+      brand_id: mission.brandId,
       transition: "request_send_approval",
       draft_id: draftId,
       approval_id: approvalId,
