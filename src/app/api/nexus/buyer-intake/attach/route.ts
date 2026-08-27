@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
     .insert({
       title: `Review Buyer Intake: ${text(contact.name, 160) || "CRM lead"}`,
       description: "Skjema/bilde er analysert. Review dokumenterte persona- og livsstilssignaler før de eventuelt lagres i en versjonert Buyer Profile.",
-      status: "todo",
-      priority: intelligence.lifestyleCandidates.length || intelligence.personaCandidates.length ? "high" : "medium",
+      status: "TO_DO",
+      priority: intelligence.lifestyleCandidates.length || intelligence.personaCandidates.length ? "HIGH" : "MEDIUM",
       brand_id: contact.brand_id || contact.brand || null,
       source_type: "ai_agent",
       source_id: sourceId,
