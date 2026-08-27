@@ -1,4 +1,9 @@
 import type { BusinessPipelineId } from "@/lib/business-pipeline-registry";
+import type { NexusOpportunityStoreRow } from "@/lib/nexus-opportunity-store";
+import type { NexusSyncHealth } from "@/lib/nexus-sync-health";
+
+const DAY_MS = 86_400_000;
+const ACQUISITION_BASELINE_DAYS = 7;
 
 export interface NexusCommercialTarget {
   brandId: string;
@@ -6,6 +11,15 @@ export interface NexusCommercialTarget {
   targetNewPerWeek: number | null;
   targetConversionsPerMonth: number | null;
   updatedAt: string | null;
+}
+
+export interface NexusCommercialTargetEvidence extends NexusCommercialTarget {
+  acquisitionEvidenceReady: boolean;
+  acquisitionBaselineDays: number | null;
+  newOpportunities7d: number | null;
+  conversionEvidenceReady: boolean;
+  realizedConversions30d: number | null;
+  reason: string;
 }
 
 export interface MarketingGrowthPlanTargetRow {
@@ -32,6 +46,20 @@ function positiveOrNull(value: unknown) {
 function targetEntries(metadata: Record<string, unknown> | null | undefined) {
   const value = metadata?.nexus_commercial_targets;
   return Array.isArray(value) ? value : [];
+}
+
+function timestamp(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function baselineDays(rows: Array<NexusOpportunityStoreRow & { created_at?: string | null }>, now: Date) {
+  const times = rows
+    .map((row) => timestamp(row.created_at))
+    .filter((value): value is number => value !== null);
+  if (!times.length) return null;
+  return Math.max(0, (now.getTime() - Math.min(...times)) / DAY_MS);
 }
 
 export function targetsFromGrowthPlanRows(rows: MarketingGrowthPlanTargetRow[]) {
@@ -86,14 +114,77 @@ export function upsertCommercialTargetMetadata(
   return { ...(metadata || {}), nexus_commercial_targets: existing };
 }
 
-export function commercialTargetConfigByPipeline(targets: NexusCommercialTarget[]) {
-  return Object.fromEntries(targets.map((target) => [
+export function buildCommercialTargetEvidence(
+  targets: NexusCommercialTarget[],
+  opportunityRows: Array<NexusOpportunityStoreRow & { created_at?: string | null }>,
+  syncHealth: NexusSyncHealth,
+  now = new Date(),
+) {
+  return targets.map((target): NexusCommercialTargetEvidence => {
+    const rows = opportunityRows.filter(
+      (row) => row.brand_id === target.brandId && row.pipeline_id === target.pipelineId,
+    );
+    const observedDays = baselineDays(rows, now);
+    const acquisitionEvidenceReady = Boolean(
+      syncHealth.trustedForPipelineDecisions
+      && observedDays !== null
+      && observedDays >= ACQUISITION_BASELINE_DAYS,
+    );
+    const sevenDaysAgo = now.getTime() - ACQUISITION_BASELINE_DAYS * DAY_MS;
+    const newOpportunities7d = acquisitionEvidenceReady
+      ? rows.filter((row) => {
+          const firstSeen = timestamp(row.created_at);
+          return firstSeen !== null && firstSeen >= sevenDaysAgo;
+        }).length
+      : null;
+
+    // Opportunity Store currently has reliable Nexus first-seen timestamps, but no
+    // universal source-of-truth conversion timestamp across all business pipelines.
+    // Keep monthly conversion targets stored but inactive until that evidence exists.
+    const conversionEvidenceReady = false;
+    const realizedConversions30d = null;
+
+    let reason: string;
+    if (!syncHealth.trustedForPipelineDecisions) {
+      reason = `Target lagret, men Opportunity Sync er ${syncHealth.state}; pipeline-gap er ikke trusted.`;
+    } else if (observedDays === null) {
+      reason = "Target lagret, men Nexus har ingen first-seen baseline for denne brand/pipeline ennå.";
+    } else if (!acquisitionEvidenceReady) {
+      reason = `Target lagret. Nexus har ${Math.floor(observedDays)} av ${ACQUISITION_BASELINE_DAYS} nødvendige observasjonsdager før weekly demand-gap kan aktiveres.`;
+    } else {
+      reason = `Weekly acquisition-evidence er klar: ${newOpportunities7d} Nexus first-seen opportunities siste 7 dager.`;
+    }
+
+    if (target.targetConversionsPerMonth && !conversionEvidenceReady) {
+      reason += " Monthly conversion-target er lagret, men aktiveres ikke før en verifisert conversion-timestamp-kilde er koblet inn.";
+    }
+
+    return {
+      ...target,
+      acquisitionEvidenceReady,
+      acquisitionBaselineDays: observedDays,
+      newOpportunities7d,
+      conversionEvidenceReady,
+      realizedConversions30d,
+      reason,
+    };
+  });
+}
+
+export function commercialTargetConfigByPipeline(evidence: NexusCommercialTargetEvidence[]) {
+  return Object.fromEntries(evidence.map((target) => [
     `${target.brandId}:${target.pipelineId}`,
     {
       targets: {
         targetNewPerWeek: target.targetNewPerWeek,
         targetConversionsPerMonth: target.targetConversionsPerMonth,
       },
+      evidence: {
+        newOpportunities7d: target.acquisitionEvidenceReady ? target.newOpportunities7d : null,
+        realizedConversions30d: target.conversionEvidenceReady ? target.realizedConversions30d : null,
+      },
     },
   ]));
 }
+
+export const NEXUS_ACQUISITION_BASELINE_DAYS = ACQUISITION_BASELINE_DAYS;
