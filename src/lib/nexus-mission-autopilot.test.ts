@@ -9,6 +9,7 @@ const baseMission = {
   autonomy: "prepare",
   priority: "HIGH",
   priorityScore: 90,
+  actionClass: "draft",
 };
 
 test("starts only high-priority prepare missions", () => {
@@ -17,14 +18,27 @@ test("starts only high-priority prepare missions", () => {
   assert.equal(nextMissionAutopilotAction({ ...baseMission, priority: "MEDIUM", priorityScore: 60 }), null);
 });
 
+test("routes real-estate draft and enrichment missions to different preparers", () => {
+  const state = { missionId: baseMission.id, operationalState: "awaiting_preparation" };
+  assert.equal(nextMissionAutopilotAction(baseMission, state)?.action, "prepare_real_estate");
+  assert.equal(nextMissionAutopilotAction({ ...baseMission, actionClass: "enrich" }, state)?.action, "prepare_real_estate_qualification");
+  assert.equal(nextMissionAutopilotAction({ ...baseMission, actionClass: "schedule" }, state), null);
+});
+
 test("routes awaiting preparation to the correct business preparer", () => {
-  assert.equal(nextMissionAutopilotAction(baseMission, { missionId: baseMission.id, operationalState: "awaiting_preparation" })?.action, "prepare_real_estate");
-  assert.equal(nextMissionAutopilotAction({ ...baseMission, pipelineId: "ai_products_services" }, { missionId: baseMission.id, operationalState: "awaiting_preparation" })?.action, "prepare_ai");
-  assert.equal(nextMissionAutopilotAction({ ...baseMission, pipelineId: "publishing", role: "content_influencer" }, { missionId: baseMission.id, operationalState: "awaiting_preparation" })?.action, "prepare_publishing");
+  assert.equal(
+    nextMissionAutopilotAction({ ...baseMission, pipelineId: "ai_products_services" }, { missionId: baseMission.id, operationalState: "awaiting_preparation" })?.action,
+    "prepare_ai",
+  );
+  assert.equal(
+    nextMissionAutopilotAction({ ...baseMission, pipelineId: "publishing", role: "content_influencer" }, { missionId: baseMission.id, operationalState: "awaiting_preparation" })?.action,
+    "prepare_publishing",
+  );
 });
 
 test("only real customer message drafts enter send approval", () => {
   assert.equal(nextMissionAutopilotAction(baseMission, { missionId: baseMission.id, operationalState: "prepared", draftId: "draft-1" })?.action, "request_send_approval");
+  assert.equal(nextMissionAutopilotAction({ ...baseMission, actionClass: "enrich" }, { missionId: baseMission.id, operationalState: "prepared", draftId: "draft-1" }), null);
   assert.equal(nextMissionAutopilotAction({ ...baseMission, pipelineId: "publishing" }, { missionId: baseMission.id, operationalState: "prepared", draftId: "draft-1" }), null);
   assert.equal(nextMissionAutopilotAction(baseMission, { missionId: baseMission.id, operationalState: "prepared", draftId: null }), null);
 });
