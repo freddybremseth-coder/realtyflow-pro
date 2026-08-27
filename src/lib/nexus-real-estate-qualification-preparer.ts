@@ -1,6 +1,11 @@
 import type { AgentRun, AgentTraceStep } from "@/lib/agentic/schemas";
 import { sha256 } from "@/lib/agentic/ids";
 import { buildCustomerProfileCompleteness, type BuyerCriterionInput } from "@/lib/customer-360";
+import {
+  buildBuyerLifestyleProfile,
+  buyerLifestyleDiscoveryGaps,
+  type BuyerLifestyleCriterionLike,
+} from "@/lib/nexus-buyer-lifestyle";
 import type { NexusGrowthMission } from "@/lib/nexus-growth-mission";
 import type { NexusMissionAgenticPlan } from "@/lib/nexus-mission-agentic";
 
@@ -42,7 +47,7 @@ export function buildRealEstateQualificationBrief(
   mission: NexusGrowthMission,
   contact: RealEstateQualificationContact,
   buyerProfile: RealEstateBuyerProfileInput | null,
-  criteria: BuyerCriterionInput[] = [],
+  criteria: Array<BuyerCriterionInput & BuyerLifestyleCriterionLike> = [],
 ) {
   const completeness = buildCustomerProfileCompleteness(
     {
@@ -54,15 +59,19 @@ export function buildRealEstateQualificationBrief(
     },
     criteria,
   );
+  const lifestyle = buildBuyerLifestyleProfile(criteria);
+  const lifestyleGaps = buyerLifestyleDiscoveryGaps(criteria);
 
   const missing = [...completeness.missing];
   if (!buyerProfile?.id) missing.unshift("Strukturert Buyer Profile");
   const uniqueMissing = [...new Set(missing)];
   const contactName = String(contact.name || contact.email || "kjøper").trim();
   const hasProfile = Boolean(buyerProfile?.id);
+  const lifestyleQuestions = lifestyleGaps.slice(0, 5).map((item) => item.question);
+
   const nextAction = hasProfile
-    ? `Oppdater Buyer Profile med verifiserte mangler (${uniqueMissing.slice(0, 4).join(", ") || "ingen kritiske mangler"}) og kjør deretter property matching mot dokumenterte kriterier.`
-    : `Opprett Buyer Profile fra dokumenterte CRM-fakta, verifiser ${uniqueMissing.slice(0, 4).join(", ") || "kjøpskriteriene"}, og kjør deretter property matching.`;
+    ? `Oppdater Buyer Profile med verifiserte mangler (${uniqueMissing.slice(0, 4).join(", ") || "ingen kritiske mangler"}), avklar bare ukjente livsstilspreferanser og kjør deretter property matching mot dokumenterte kriterier.`
+    : `Opprett Buyer Profile fra dokumenterte CRM-fakta, verifiser ${uniqueMissing.slice(0, 4).join(", ") || "kjøpskriteriene"}, avklar bare ukjente livsstilspreferanser og kjør deretter property matching.`;
 
   return {
     title: `Kvalifiser kjøperprofil: ${contactName}`,
@@ -73,11 +82,24 @@ export function buildRealEstateQualificationBrief(
       buyerProfile?.summary ? `Eksisterende Buyer Profile: ${buyerProfile.summary}` : "Det finnes ingen strukturert Buyer Profile for kontakten ennå.",
       `Profilgrunnlag: ${completeness.score}% komplett etter dokumenterte kriterier.`,
       `Mangler: ${uniqueMissing.join(", ") || "ingen registrerte mangler"}.`,
+      lifestyle.confirmed.length
+        ? `Bekreftede livsstilspreferanser: ${lifestyle.summary.join(", ") || lifestyle.confirmed.length}.`
+        : "Ingen bekreftede livsstilspreferanser er strukturert ennå.",
+      lifestyle.inferred.length
+        ? `${lifestyle.inferred.length} livsstilssignal(er) er inferert og skal ikke behandles som bekreftet før kunden eller rådgiver verifiserer dem.`
+        : "Ingen uverifiserte livsstilsinferenser registrert.",
+      lifestyleQuestions.length ? `Prioriterte avklaringer: ${lifestyleQuestions.join(" | ")}` : "Ingen prioriterte lifestyle-gap gjenstår.",
       "Dette er et internt qualification/matching-artefakt. Ingen kundemelding er sendt.",
     ].join("\n"),
     nextAction,
     completeness,
     missing: uniqueMissing,
+    lifestyle: {
+      confirmedCount: lifestyle.confirmed.length,
+      inferredCount: lifestyle.inferred.length,
+      strong: lifestyle.strong,
+      discoveryGaps: lifestyleGaps,
+    },
     metadata: {
       mission_id: mission.id,
       opportunity_id: mission.opportunityId,
@@ -86,6 +108,9 @@ export function buildRealEstateQualificationBrief(
       buyer_profile_exists: hasProfile,
       completeness_score: completeness.score,
       missing: uniqueMissing,
+      lifestyle_confirmed_count: lifestyle.confirmed.length,
+      lifestyle_inferred_count: lifestyle.inferred.length,
+      lifestyle_discovery_gaps: lifestyleGaps,
       crm_property_interest: contact.property_interest || null,
       crm_pipeline_value: Number(contact.pipeline_value || 0) || null,
       buyer_profile_budget: Number(buyerProfile?.budget_amount || 0) || null,
