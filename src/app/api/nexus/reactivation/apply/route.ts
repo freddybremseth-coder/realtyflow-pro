@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
   const brandId = String(contact.brand_id || contact.brand || "").trim();
   if (brandId) {
     await insertRevenueEvent(supabase, {
-      eventType: "reactivation_reply_applied",
+      eventType: "contact_updated",
       title: classification.intent === "stop" ? "Reaktivering stoppet av kundesvar" : "Dormant lead reaktivert fra kundesvar",
       description: `${classification.intent} · ${decision.reason}`,
       contactId: String(contact.id),
