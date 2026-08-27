@@ -32,6 +32,13 @@ test("persistent revenue leadership intent finds Revenue Command", () => {
   assert.equal(filterNexusCommands("stale closing")[0]?.href, "/nexus-os/revenue-command");
 });
 
+test("commercial goal intent finds Commercial Targets", () => {
+  assert.equal(filterNexusCommands("commercial targets")[0]?.href, "/nexus-os/commercial-targets");
+  assert.equal(filterNexusCommands("lead target")[0]?.href, "/nexus-os/commercial-targets");
+  assert.equal(filterNexusCommands("revenue goals")[0]?.href, "/nexus-os/commercial-targets");
+  assert.equal(filterNexusCommands("salgsmål")[0]?.href, "/nexus-os/commercial-targets");
+});
+
 test("governed mission execution intent finds Mission Operations", () => {
   assert.equal(filterNexusCommands("mission operations")[0]?.href, "/nexus-os/mission-operations");
   assert.equal(filterNexusCommands("start mission")[0]?.href, "/nexus-os/mission-operations");
