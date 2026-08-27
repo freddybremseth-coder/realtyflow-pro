@@ -1,9 +1,5 @@
 import { criterionReviewFingerprint } from "@/services/lead-intelligence/review-shared";
-import {
-  ExtractedLeadSchema,
-  normalizePropertyType,
-  type BoundedJson,
-} from "@/services/lead-intelligence/contracts";
+import { ExtractedLeadSchema, normalizePropertyType } from "@/services/lead-intelligence/contracts";
 
 export interface BuyerIntakeReviewContact {
   id: string;
@@ -46,14 +42,18 @@ export interface BuyerIntakeMetadata {
   } | null;
 }
 
-type ReviewCriterion = {
-  criterionType: "preference";
-  fingerprint: string;
-  approvalStatus: "pending_review";
-  customerConfirmed: boolean;
-  label: string;
+type JsonScalar = string | number | boolean | null;
+
+type ReviewablePreference = {
+  key: "property_type" | "location" | "other";
+  otherKey: string | null;
+  operator: "eq" | "contains";
+  value: JsonScalar;
+  appliesToPropertyTypes: [];
   sourceText: string;
   confidence: number;
+  weight: number;
+  customerConfirmed: boolean;
 };
 
 function clamp(value: unknown, fallback = 0.75) {
@@ -71,64 +71,52 @@ function validEmail(value: unknown) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
-function propertyTypePreference(value: string | null | undefined) {
+function propertyTypePreference(value: string | null | undefined): ReviewablePreference | null {
   const sourceText = safeText(value, 160);
   if (!sourceText) return null;
-  const normalized = normalizePropertyType(sourceText);
   return {
-    key: "property_type" as const,
+    key: "property_type",
     otherKey: null,
-    operator: "eq" as const,
-    value: normalized as BoundedJson,
+    operator: "eq",
+    value: normalizePropertyType(sourceText),
     appliesToPropertyTypes: [],
     sourceText,
     confidence: 0.95,
     weight: 0.75,
+    customerConfirmed: true,
   };
 }
 
-function locationPreference(value: string | null | undefined) {
+function locationPreference(value: string | null | undefined): ReviewablePreference | null {
   const sourceText = safeText(value, 160);
   if (!sourceText) return null;
   return {
-    key: "location" as const,
+    key: "location",
     otherKey: null,
-    operator: "contains" as const,
-    value: sourceText as BoundedJson,
+    operator: "contains",
+    value: sourceText,
     appliesToPropertyTypes: [],
     sourceText,
     confidence: 0.95,
     weight: 0.75,
+    customerConfirmed: true,
   };
 }
 
-function lifestylePreference(candidate: NonNullable<NonNullable<BuyerIntakeMetadata["buyer_intelligence"]>["lifestyleCandidates"]>[number]) {
+function lifestylePreference(candidate: NonNullable<NonNullable<BuyerIntakeMetadata["buyer_intelligence"]>["lifestyleCandidates"]>[number]): ReviewablePreference | null {
   const otherKey = safeText(candidate.key, 160).toLowerCase();
   if (!otherKey.includes(":")) return null;
-  const sourceText = safeText(candidate.sourceText, 512) || otherKey;
   return {
-    key: "other" as const,
+    key: "other",
     otherKey,
-    operator: "eq" as const,
-    value: (candidate.value ?? true) as BoundedJson,
+    operator: "eq",
+    value: candidate.value ?? true,
     appliesToPropertyTypes: [],
-    sourceText,
+    sourceText: safeText(candidate.sourceText, 512) || otherKey,
     confidence: clamp(candidate.confidence, 0.8),
     weight: candidate.strength === "nice_to_have" ? 0.5 : 0.75,
     customerConfirmed: Boolean(candidate.customerConfirmed),
   };
-}
-
-function reviewRows(preferences: Array<Record<string, unknown> & { customerConfirmed?: boolean }>): ReviewCriterion[] {
-  return preferences.map((item, index) => ({
-    criterionType: "preference" as const,
-    fingerprint: criterionReviewFingerprint({ criterionType: "preference", index, item }),
-    approvalStatus: "pending_review" as const,
-    customerConfirmed: Boolean(item.customerConfirmed),
-    label: item.key === "other" ? String(item.otherKey || "other") : String(item.key || "preference"),
-    sourceText: String(item.sourceText || ""),
-    confidence: clamp(item.confidence, 0.75),
-  }));
 }
 
 export function buildBuyerIntakeLeadIntelligenceReview(input: {
@@ -136,17 +124,17 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
   metadata: BuyerIntakeMetadata;
 }) {
   const imported = input.metadata.imported_lead || {};
-  const lifestyle = input.metadata.buyer_intelligence?.lifestyleCandidates || [];
+  const preferences: ReviewablePreference[] = [];
   const propertyPreference = propertyTypePreference(imported.preferences?.property_type);
   const location = locationPreference(imported.preferences?.location);
-  const lifestylePreferences = lifestyle.map(lifestylePreference).filter((value): value is NonNullable<ReturnType<typeof lifestylePreference>> => Boolean(value));
-  const preferences = [propertyPreference, location, ...lifestylePreferences]
-    .filter((value): value is NonNullable<typeof value> => Boolean(value))
-    .map((value) => ({ ...value, customerConfirmed: "customerConfirmed" in value ? Boolean(value.customerConfirmed) : true }));
+  if (propertyPreference) preferences.push(propertyPreference);
+  if (location) preferences.push(location);
+  for (const candidate of input.metadata.buyer_intelligence?.lifestyleCandidates || []) {
+    const value = lifestylePreference(candidate);
+    if (value) preferences.push(value);
+  }
 
   const budget = Number(input.contact.pipelineValue || 0);
-  const locations = location ? [String(location.value)] : [];
-  const propertyTypes = propertyPreference ? [String(propertyPreference.value)] : [];
   const status = String(input.contact.pipelineStatus || "").toUpperCase();
   const summaryParts = [
     safeText(imported.property_interest, 600),
@@ -176,8 +164,8 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
       approximate: true,
       hardLimit: null,
     },
-    propertyTypes,
-    locations: { preferred: locations, excluded: [], flexible: false },
+    propertyTypes: propertyPreference ? [String(propertyPreference.value)] : [],
+    locations: { preferred: location ? [String(location.value)] : [], excluded: [], flexible: false },
     hardRequirements: [],
     preferences,
     exclusions: [],
@@ -186,9 +174,19 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
     suggestedNextAction: "Review every imported preference, approve only documented customer facts, then create or revise the Buyer Profile before property matching.",
   });
 
+  const reviewedCriteria = analysis.preferences.map((item, index) => ({
+    criterionType: "preference" as const,
+    fingerprint: criterionReviewFingerprint({ criterionType: "preference", index, item }),
+    approvalStatus: "pending_review" as const,
+    customerConfirmed: item.customerConfirmed ?? false,
+    label: item.key === "other" ? String(item.otherKey || "other") : item.key,
+    sourceText: item.sourceText,
+    confidence: item.confidence ?? 0.75,
+  }));
+
   return {
     analysis,
-    reviewedCriteria: reviewRows(analysis.preferences as Array<Record<string, unknown> & { customerConfirmed?: boolean }>),
+    reviewedCriteria,
     personas: input.metadata.buyer_intelligence?.personaCandidates || [],
     source: {
       formType: input.metadata.form_type || "other",
