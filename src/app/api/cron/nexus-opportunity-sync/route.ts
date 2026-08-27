@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCronApi } from "@/lib/api-cron";
 import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
+import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
 import { upsertNexusOpportunitySnapshot } from "@/lib/nexus-opportunity-store";
 import { contactIdForOpportunity } from "@/lib/nexus-opportunity-sync";
 import {
@@ -37,13 +38,23 @@ export async function GET(request: NextRequest) {
   const denied = requireCronApi(request);
   if (denied) return denied;
 
+  const startedAt = new Date().toISOString();
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
   const headers = await internalOwnerHeaders();
   if (!headers) {
+    const error = "Internal owner session could not be created";
+    await bestEffortNexusAutomationAudit(supabase as never, {
+      name: "Nexus Opportunity Sync",
+      path: "/api/cron/nexus-opportunity-sync",
+      status: "error",
+      error,
+      startedAt,
+      output: { stage: "internal_owner_session" },
+    });
     return NextResponse.json({
-      error: "Internal owner session could not be created",
+      error,
       required: "REALTYFLOW_SESSION_SECRET or SUPABASE_SERVICE_ROLE_KEY + at least one RealtyFlow admin email",
     }, { status: 503 });
   }
@@ -67,5 +78,20 @@ export async function GET(request: NextRequest) {
     }),
   }, sources);
 
-  return NextResponse.json({ ...result, schedule: { sources } });
+  const audit = await bestEffortNexusAutomationAudit(supabase as never, {
+    name: "Nexus Opportunity Sync",
+    path: "/api/cron/nexus-opportunity-sync",
+    status: result.ok ? "success" : "error",
+    input: { sources },
+    output: {
+      totals: result.totals,
+      sources: result.sources,
+      safety: result.safety,
+    },
+    error: result.ok ? null : `${result.totals.errors} sync error(s)`,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+  });
+
+  return NextResponse.json({ ...result, schedule: { sources }, audit });
 }
