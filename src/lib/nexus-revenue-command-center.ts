@@ -1,7 +1,10 @@
 import { buildNexusGrowthMission, rankNexusGrowthMissions } from "@/lib/nexus-growth-mission";
 import { buildNexusMissionAgenticPlan } from "@/lib/nexus-mission-agentic";
 import { buildNexusPipelineHealth } from "@/lib/nexus-pipeline-health";
-import { directPortfolioFromPipelineHealth } from "@/lib/nexus-health-director";
+import {
+  directPortfolioFromPipelineHealth,
+  type NexusPipelineDirectorConfig,
+} from "@/lib/nexus-health-director";
 import {
   storeRowToOpportunity,
   type NexusOpportunityStoreRow,
@@ -26,6 +29,7 @@ function recentWon(row: NexusOpportunityStoreRow, now: Date) {
 export function buildNexusRevenueCommandCenter(
   rows: NexusOpportunityStoreRow[],
   now = new Date(),
+  directorConfigByPipeline: Record<string, NexusPipelineDirectorConfig> = {},
 ) {
   const activeRows = rows.filter((row) => row.opportunity_state === "active");
   const recentWonRows = rows.filter((row) => recentWon(row, now));
@@ -38,7 +42,7 @@ export function buildNexusRevenueCommandCenter(
     .filter((row): row is NonNullable<ReturnType<typeof storeRowToOpportunity>> => Boolean(row));
 
   const health = buildNexusPipelineHealth(activeOpportunities, now);
-  const directorMissions = directPortfolioFromPipelineHealth(health);
+  const directorMissions = directPortfolioFromPipelineHealth(health, directorConfigByPipeline);
   const growthMissions = rankNexusGrowthMissions(
     [...activeOpportunities, ...followupOpportunities].map(buildNexusGrowthMission),
     100,
@@ -76,6 +80,7 @@ export function buildNexusRevenueCommandCenter(
       readOnly: true,
       wonFollowupWindowDays: WON_FOLLOWUP_DAYS,
       targetsInvented: false,
+      directorTargetsSource: Object.keys(directorConfigByPipeline).length ? "explicit_growth_plan_metadata" : "none",
       outboundActions: false,
     },
   };
