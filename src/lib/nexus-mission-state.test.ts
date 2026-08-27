@@ -20,6 +20,17 @@ test("await_preparer becomes awaiting_preparation", () => {
   assert.equal(rows[0]?.operationalState, "awaiting_preparation");
 });
 
+test("real prepared draft becomes prepared and exposes draft id", () => {
+  const rows = buildNexusMissionStateProjection([run("run_1", "mission:1", {
+    steps: [
+      { data: { mission_id: "mission:1", transition: "await_preparer" } },
+      { data: { mission_id: "mission:1", transition: "prepared", draft_id: "draft-123" } },
+    ],
+  })]);
+  assert.equal(rows[0]?.operationalState, "prepared");
+  assert.equal(rows[0]?.draftId, "draft-123");
+});
+
 test("pending approval record becomes waiting_approval", () => {
   const rows = buildNexusMissionStateProjection(
     [run("run_1", "mission:1", { status: "waiting_approval", transition: "request_approval" })],

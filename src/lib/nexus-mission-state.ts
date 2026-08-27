@@ -24,6 +24,7 @@ export interface NexusMissionApprovalRow {
 export type NexusMissionOperationalState =
   | "pending"
   | "awaiting_preparation"
+  | "prepared"
   | "waiting_approval"
   | "approved"
   | "executed"
@@ -40,6 +41,7 @@ export interface NexusMissionStateProjection {
   outcome: string | null;
   operationalState: NexusMissionOperationalState;
   transition: string | null;
+  draftId: string | null;
   approvalId: string | null;
   approvalStatus: string | null;
   startedAt: string | null;
@@ -73,6 +75,15 @@ export function latestMissionTransition(row: NexusMissionRunRow) {
   return null;
 }
 
+export function latestMissionDraftId(row: NexusMissionRunRow) {
+  const steps = traceSteps(row);
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const draftId = traceData(steps[i])?.draft_id;
+    if (typeof draftId === "string" && draftId.trim()) return draftId.trim();
+  }
+  return null;
+}
+
 function operationalState(
   run: NexusMissionRunRow,
   transition: string | null,
@@ -89,6 +100,7 @@ function operationalState(
   if (status === "cancelled") return "cancelled";
   if (status === "completed" && outcome === "recommended") return "recommended";
   if (status === "waiting_approval" || approvalStatus === "pending") return "waiting_approval";
+  if (transition === "prepared") return "prepared";
   if (transition === "await_preparer") return "awaiting_preparation";
   return "pending";
 }
@@ -134,6 +146,7 @@ export function buildNexusMissionStateProjection(
         outcome: run.outcome ? String(run.outcome) : null,
         operationalState: operationalState(run, transition, approval),
         transition,
+        draftId: latestMissionDraftId(run),
         approvalId: approval?.id ? String(approval.id) : null,
         approvalStatus: approval?.status ? String(approval.status) : null,
         startedAt: run.started_at || null,
