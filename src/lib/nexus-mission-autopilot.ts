@@ -1,6 +1,7 @@
 export type MissionAutopilotAction =
   | "advance"
   | "prepare_real_estate"
+  | "prepare_real_estate_qualification"
   | "prepare_ai"
   | "prepare_publishing"
   | "request_send_approval";
@@ -12,6 +13,7 @@ export interface MissionAutopilotMission {
   autonomy: string;
   priority: string;
   priorityScore: number;
+  actionClass?: string | null;
 }
 
 export interface MissionAutopilotState {
@@ -45,10 +47,24 @@ export function nextMissionAutopilotAction(
 
   if (operationalState === "awaiting_preparation") {
     if (mission.pipelineId === "real_estate_sales" && mission.role === "sales_sdr") {
-      return { missionId: mission.id, action: "prepare_real_estate", reason: "Real-estate Sales/SDR mission is ready for its registered preparer." };
+      if (mission.actionClass === "enrich") {
+        return {
+          missionId: mission.id,
+          action: "prepare_real_estate_qualification",
+          reason: "Real-estate qualification mission needs an internal Buyer Intelligence brief, not a customer email draft.",
+        };
+      }
+      if (mission.actionClass === "draft") {
+        return {
+          missionId: mission.id,
+          action: "prepare_real_estate",
+          reason: "Real-estate Sales/SDR draft mission is ready for its customer-message preparer.",
+        };
+      }
+      return null;
     }
-    if (mission.pipelineId === "ai_products_services" && mission.role === "sales_sdr") {
-      return { missionId: mission.id, action: "prepare_ai", reason: "AI Sales/SDR mission is ready for its DemoSites preparer." };
+    if (mission.pipelineId === "ai_products_services" && mission.role === "sales_sdr" && mission.actionClass === "draft") {
+      return { missionId: mission.id, action: "prepare_ai", reason: "AI Sales/SDR draft mission is ready for its DemoSites preparer." };
     }
     if (mission.pipelineId === "publishing") {
       return { missionId: mission.id, action: "prepare_publishing", reason: "Publishing mission is ready for an internal Book Growth brief." };
@@ -56,7 +72,12 @@ export function nextMissionAutopilotAction(
     return null;
   }
 
-  if (operationalState === "prepared" && state?.draftId && ["real_estate_sales", "ai_products_services"].includes(mission.pipelineId)) {
+  if (
+    operationalState === "prepared" &&
+    state?.draftId &&
+    mission.actionClass === "draft" &&
+    ["real_estate_sales", "ai_products_services"].includes(mission.pipelineId)
+  ) {
     return { missionId: mission.id, action: "request_send_approval", reason: "A real customer message draft exists; queue it for human approval without sending." };
   }
 
