@@ -39,6 +39,7 @@ interface ShortlistEmailDraftPreview {
 }
 
 interface LeadIntelligenceAnalysisPropertyMatchPanelProps {
+  areaFitContactId: string | null;
   propertyMatchResult: PropertyMatchPreviewResponse;
   selectedShortlistCount: number;
   clientReadyShortlistCount: number;
@@ -74,6 +75,7 @@ interface LeadIntelligenceAnalysisPropertyMatchPanelProps {
 }
 
 export function LeadIntelligenceAnalysisPropertyMatchPanel({
+  areaFitContactId,
   propertyMatchResult,
   selectedShortlistCount,
   clientReadyShortlistCount,
@@ -165,6 +167,7 @@ export function LeadIntelligenceAnalysisPropertyMatchPanel({
         {shortlistPresentation && shortlistEmailDraft && (
           <div className="mt-3 space-y-4 rounded-lg border border-primary-500/30 bg-slate-950/70 p-4">
             <LeadIntelligenceShortlistPresentationPreviewPanel
+              areaFitContactId={areaFitContactId}
               title={shortlistPresentation.title}
               subtitle={shortlistPresentation.subtitle}
               needBullets={shortlistPresentation.needBullets}
