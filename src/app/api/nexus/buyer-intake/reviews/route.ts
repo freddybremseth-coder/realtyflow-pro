@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     .select("id,title,status,priority,brand_id,source_type,source_id,assigned_agent,metadata,created_at,updated_at")
     .eq("source_type", "ai_agent")
     .eq("assigned_agent", "nexus_buyer_intelligence")
-    .in("status", ["todo", "in_progress"])
+    .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"])
     .order("created_at", { ascending: false })
     .limit(limit * 3);
 
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date().toISOString(),
     summary: {
       total: items.length,
-      highPriority: items.filter((item) => item.priority === "high").length,
+      highPriority: items.filter((item) => String(item.priority || "").toUpperCase() === "HIGH").length,
       withLifestyleEvidence: items.filter((item) => item.counts.lifestyle > 0).length,
     },
     items,
