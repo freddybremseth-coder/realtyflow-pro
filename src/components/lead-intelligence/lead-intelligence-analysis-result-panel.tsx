@@ -210,6 +210,8 @@ export function LeadIntelligenceAnalysisResultPanel({
   onCopyJson,
   onEditableJsonChange,
 }: LeadIntelligenceAnalysisResultPanelProps) {
+  const areaFitContactId = saveResult?.result.contactCandidates.selectedContactId || selectedContactId;
+
   return (
     <div className="space-y-5">
       <LeadIntelligenceAnalysisOverview
@@ -266,6 +268,7 @@ export function LeadIntelligenceAnalysisResultPanel({
 
       {saveResult && (
         <LeadIntelligenceAnalysisPropertyMatchPreviewCard
+          areaFitContactId={areaFitContactId}
           propertyMatchingEnabled={propertyMatchingEnabled}
           propertyReferencesText={propertyReferencesText}
           parsedPropertyReferences={parsedPropertyReferences}
