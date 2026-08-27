@@ -4,6 +4,10 @@ import { requireCronApi } from "@/lib/api-cron";
 import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
 import { nexusInternalApiErrorMessage } from "@/lib/nexus-internal-api-error";
+import {
+  loadAiDemositesOpportunityPayload,
+  loadRealEstateOpportunityPayload,
+} from "@/lib/nexus-opportunity-direct-readers";
 import { upsertNexusOpportunitySnapshot } from "@/lib/nexus-opportunity-store";
 import { contactIdForOpportunity } from "@/lib/nexus-opportunity-sync";
 import {
@@ -43,30 +47,27 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const headers = await internalOwnerHeaders();
-  if (!headers) {
-    const error = "Internal owner session could not be created";
-    await bestEffortNexusAutomationAudit(supabase as never, {
-      name: "Nexus Opportunity Sync",
-      path: "/api/cron/nexus-opportunity-sync",
-      status: "error",
-      error,
-      startedAt,
-      output: { stage: "internal_owner_session" },
-    });
-    return NextResponse.json({
-      error,
-      required: "REALTYFLOW_SESSION_SECRET or SUPABASE_SERVICE_ROLE_KEY + at least one RealtyFlow admin email",
-    }, { status: 503 });
-  }
-
   const sources = scheduledNexusOpportunitySources(new Date());
+  let publishingHeaders: Headers | null | undefined;
+
   const result = await runNexusOpportunitySync({
-    fetchSource: async (_source, path) => {
+    fetchSource: async (source, path) => {
+      if (source === "real_estate") {
+        return loadRealEstateOpportunityPayload(supabase);
+      }
+      if (source === "ai_demosites") {
+        return loadAiDemositesOpportunityPayload(supabase);
+      }
+
+      if (publishingHeaders === undefined) publishingHeaders = await internalOwnerHeaders();
+      if (!publishingHeaders) {
+        throw new Error("Publishing source requires an internal owner session, but one could not be created");
+      }
+
       const response = await fetch(new URL(path, request.nextUrl.origin), {
         method: "GET",
         cache: "no-store",
-        headers,
+        headers: publishingHeaders,
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(nexusInternalApiErrorMessage(path, response.status, body));
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
     name: "Nexus Opportunity Sync",
     path: "/api/cron/nexus-opportunity-sync",
     status: result.ok ? "success" : "error",
-    input: { sources },
+    input: { sources, directSources: ["real_estate", "ai_demosites"], publishingViaInternalApi: sources.includes("publishing") },
     output: {
       totals: result.totals,
       sources: result.sources,
