@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildNexusRevenueCommandCenter } from "@/lib/nexus-revenue-command-center";
 import type { NexusOpportunityStoreRow } from "@/lib/nexus-opportunity-store";
+import { buildNexusSyncHealth, type NexusSyncRunLike } from "@/lib/nexus-sync-health";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,9 +34,36 @@ export async function GET(request: NextRequest) {
   if (brand) query = query.eq("brand_id", brand);
   if (pipeline) query = query.eq("pipeline_id", pipeline);
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const [opportunitiesResult, syncRunResult, storeCountResult] = await Promise.all([
+    query,
+    supabase
+      .from("automation_runs")
+      .select("status,input,output,error,started_at,finished_at")
+      .eq("input->>path", "/api/cron/nexus-opportunity-sync")
+      .order("finished_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("nexus_business_opportunities")
+      .select("source_id", { count: "exact", head: true })
+      .in("opportunity_state", ["active", "won"]),
+  ]);
 
-  const snapshot = buildNexusRevenueCommandCenter((data || []) as NexusOpportunityStoreRow[]);
-  return NextResponse.json(snapshot);
+  if (opportunitiesResult.error) return NextResponse.json({ error: opportunitiesResult.error.message }, { status: 500 });
+
+  const snapshot = buildNexusRevenueCommandCenter((opportunitiesResult.data || []) as NexusOpportunityStoreRow[]);
+  const syncHealth = buildNexusSyncHealth(
+    syncRunResult.error ? null : (syncRunResult.data as NexusSyncRunLike | null),
+    storeCountResult.error ? (opportunitiesResult.data || []).length : Number(storeCountResult.count || 0),
+  );
+
+  return NextResponse.json({
+    ...snapshot,
+    syncHealth,
+    warnings: [
+      ...(Array.isArray((snapshot as { warnings?: unknown[] }).warnings) ? ((snapshot as { warnings?: unknown[] }).warnings || []) : []),
+      ...(syncRunResult.error ? [`Opportunity Sync audit kunne ikke leses: ${syncRunResult.error.message}`] : []),
+      ...(storeCountResult.error ? [`Opportunity Store count kunne ikke leses: ${storeCountResult.error.message}`] : []),
+    ],
+  });
 }
