@@ -9,6 +9,7 @@ import { GET as GETGrowthEngine } from "./growth-engine/route";
 import { GET as GETLeadNurture } from "./lead-nurture/route";
 import { GET as GETMarketData } from "./market-data/route";
 import { GET as GETMarketingGrowthMetrics } from "./marketing-growth-metrics/route";
+import { GET as GETNexusOpportunitySync } from "./nexus-opportunity-sync/route";
 import { GET as GETPublishingAutopilot } from "./publishing-autopilot/route";
 import { GET as GETPublishingGrowthLoop } from "./publishing-growth-loop/route";
 import { GET as GETPublishingMarketWatch } from "./publishing-market-watch/route";
@@ -35,6 +36,7 @@ const cronRoutes = [
   { path: "/api/cron/lead-nurture", handler: GETLeadNurture },
   { path: "/api/cron/market-data", handler: GETMarketData },
   { path: "/api/cron/marketing-growth-metrics", handler: GETMarketingGrowthMetrics },
+  { path: "/api/cron/nexus-opportunity-sync", handler: GETNexusOpportunitySync },
   { path: "/api/cron/publishing-autopilot", handler: GETPublishingAutopilot },
   { path: "/api/cron/publishing-growth-loop", handler: GETPublishingGrowthLoop },
   { path: "/api/cron/publishing-market-watch", handler: GETPublishingMarketWatch },
@@ -52,10 +54,12 @@ test.beforeEach(() => {
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  delete process.env.REALTYFLOW_MIGRATION_SECRET;
 });
 
 test.afterEach(() => {
   delete process.env.CRON_SECRET;
+  delete process.env.REALTYFLOW_MIGRATION_SECRET;
 });
 
 test("selected cron routes fail closed when CRON_SECRET is missing", async () => {
