@@ -45,14 +45,16 @@ export interface BuyerIntakeMetadata {
 type JsonScalar = string | number | boolean | null;
 
 type ReviewablePreference = {
-  key: "property_type" | "location" | "other";
-  otherKey: string | null;
-  operator: "eq" | "contains";
-  value: JsonScalar;
-  appliesToPropertyTypes: [];
-  sourceText: string;
-  confidence: number;
-  weight: number;
+  criterion: {
+    key: "property_type" | "location" | "other";
+    otherKey: string | null;
+    operator: "eq" | "contains";
+    value: JsonScalar;
+    appliesToPropertyTypes: [];
+    sourceText: string;
+    confidence: number;
+    weight: number;
+  };
   customerConfirmed: boolean;
 };
 
@@ -75,14 +77,16 @@ function propertyTypePreference(value: string | null | undefined): ReviewablePre
   const sourceText = safeText(value, 160);
   if (!sourceText) return null;
   return {
-    key: "property_type",
-    otherKey: null,
-    operator: "eq",
-    value: normalizePropertyType(sourceText),
-    appliesToPropertyTypes: [],
-    sourceText,
-    confidence: 0.95,
-    weight: 0.75,
+    criterion: {
+      key: "property_type",
+      otherKey: null,
+      operator: "eq",
+      value: normalizePropertyType(sourceText),
+      appliesToPropertyTypes: [],
+      sourceText,
+      confidence: 0.95,
+      weight: 0.75,
+    },
     customerConfirmed: true,
   };
 }
@@ -91,14 +95,16 @@ function locationPreference(value: string | null | undefined): ReviewablePrefere
   const sourceText = safeText(value, 160);
   if (!sourceText) return null;
   return {
-    key: "location",
-    otherKey: null,
-    operator: "contains",
-    value: sourceText,
-    appliesToPropertyTypes: [],
-    sourceText,
-    confidence: 0.95,
-    weight: 0.75,
+    criterion: {
+      key: "location",
+      otherKey: null,
+      operator: "contains",
+      value: sourceText,
+      appliesToPropertyTypes: [],
+      sourceText,
+      confidence: 0.95,
+      weight: 0.75,
+    },
     customerConfirmed: true,
   };
 }
@@ -107,14 +113,16 @@ function lifestylePreference(candidate: NonNullable<NonNullable<BuyerIntakeMetad
   const otherKey = safeText(candidate.key, 160).toLowerCase();
   if (!otherKey.includes(":")) return null;
   return {
-    key: "other",
-    otherKey,
-    operator: "eq",
-    value: candidate.value ?? true,
-    appliesToPropertyTypes: [],
-    sourceText: safeText(candidate.sourceText, 512) || otherKey,
-    confidence: clamp(candidate.confidence, 0.8),
-    weight: candidate.strength === "nice_to_have" ? 0.5 : 0.75,
+    criterion: {
+      key: "other",
+      otherKey,
+      operator: "eq",
+      value: candidate.value ?? true,
+      appliesToPropertyTypes: [],
+      sourceText: safeText(candidate.sourceText, 512) || otherKey,
+      confidence: clamp(candidate.confidence, 0.8),
+      weight: candidate.strength === "nice_to_have" ? 0.5 : 0.75,
+    },
     customerConfirmed: Boolean(candidate.customerConfirmed),
   };
 }
@@ -124,16 +132,17 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
   metadata: BuyerIntakeMetadata;
 }) {
   const imported = input.metadata.imported_lead || {};
-  const preferences: ReviewablePreference[] = [];
+  const reviewable: ReviewablePreference[] = [];
   const propertyPreference = propertyTypePreference(imported.preferences?.property_type);
   const location = locationPreference(imported.preferences?.location);
-  if (propertyPreference) preferences.push(propertyPreference);
-  if (location) preferences.push(location);
+  if (propertyPreference) reviewable.push(propertyPreference);
+  if (location) reviewable.push(location);
   for (const candidate of input.metadata.buyer_intelligence?.lifestyleCandidates || []) {
     const value = lifestylePreference(candidate);
-    if (value) preferences.push(value);
+    if (value) reviewable.push(value);
   }
 
+  const preferences = reviewable.map((value) => value.criterion);
   const budget = Number(input.contact.pipelineValue || 0);
   const status = String(input.contact.pipelineStatus || "").toUpperCase();
   const summaryParts = [
@@ -164,8 +173,8 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
       approximate: true,
       hardLimit: null,
     },
-    propertyTypes: propertyPreference ? [String(propertyPreference.value)] : [],
-    locations: { preferred: location ? [String(location.value)] : [], excluded: [], flexible: false },
+    propertyTypes: propertyPreference ? [String(propertyPreference.criterion.value)] : [],
+    locations: { preferred: location ? [String(location.criterion.value)] : [], excluded: [], flexible: false },
     hardRequirements: [],
     preferences,
     exclusions: [],
@@ -178,7 +187,7 @@ export function buildBuyerIntakeLeadIntelligenceReview(input: {
     criterionType: "preference" as const,
     fingerprint: criterionReviewFingerprint({ criterionType: "preference", index, item }),
     approvalStatus: "pending_review" as const,
-    customerConfirmed: item.customerConfirmed ?? false,
+    customerConfirmed: reviewable[index]?.customerConfirmed ?? false,
     label: item.key === "other" ? String(item.otherKey || "other") : item.key,
     sourceText: item.sourceText,
     confidence: item.confidence ?? 0.75,
