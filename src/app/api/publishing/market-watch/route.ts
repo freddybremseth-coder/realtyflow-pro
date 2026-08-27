@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("publishing_market_snapshots")
-    .select("id,query,total_results_estimate,summary,top_results,created_at")
+    .select("id,source,query,marketplace,total_results_estimate,summary,top_results,created_at")
     .order("created_at", { ascending: false })
     .limit(12);
 

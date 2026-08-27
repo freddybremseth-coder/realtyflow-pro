@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await runPublishingMarketWatch(supabase);
     await supabase.from("automation_logs").insert({
-      action: "publishing_market_watch_v1",
+      action: "publishing_market_watch_v2",
       agent_name: "publishing",
       status: "success",
       details: result,
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publishing market watch failed";
     await supabase.from("automation_logs").insert({
-      action: "publishing_market_watch_v1",
+      action: "publishing_market_watch_v2",
       agent_name: "publishing",
       status: "error",
       details: { error: message },

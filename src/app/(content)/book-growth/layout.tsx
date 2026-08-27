@@ -10,6 +10,7 @@ const MODULES = [
   { href: "/book-growth/work-review", label: "Work & Translation" },
   { href: "/book-growth/edition-language", label: "Edition & Language" },
   { href: "/book-growth/channel-metadata", label: "Channel Metadata" },
+  { href: "/book-growth/distribution", label: "Distribution" },
   { href: "/book-growth/measurement", label: "Measurement" },
   { href: "/book-growth/learning", label: "Learning" },
 ];
