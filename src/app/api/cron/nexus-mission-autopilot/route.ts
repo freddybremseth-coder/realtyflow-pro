@@ -24,6 +24,7 @@ export const maxDuration = 60;
 const endpointForAction: Record<MissionAutopilotAction, string> = {
   advance: "/api/nexus/revenue-command/missions/advance",
   prepare_real_estate: "/api/nexus/revenue-command/missions/prepare/real-estate",
+  prepare_real_estate_qualification: "/api/nexus/revenue-command/missions/prepare/real-estate-qualification",
   prepare_ai: "/api/nexus/revenue-command/missions/prepare/ai",
   prepare_publishing: "/api/nexus/revenue-command/missions/prepare/publishing",
   request_send_approval: "/api/nexus/revenue-command/missions/approve-send",
@@ -70,7 +71,10 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  let command: { growthMissions?: MissionAutopilotMission[] };
+  let command: {
+    growthMissions?: MissionAutopilotMission[];
+    agenticPlans?: Array<{ missionId: string; actionClass?: string | null }>;
+  };
   let statePayload: { states?: MissionAutopilotState[] };
   try {
     [command, statePayload] = await Promise.all([
@@ -90,7 +94,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  const missions = command.growthMissions || [];
+  const actionClassByMission = new Map((command.agenticPlans || []).map((plan) => [plan.missionId, plan.actionClass || null]));
+  const missions = (command.growthMissions || []).map((mission) => ({
+    ...mission,
+    actionClass: actionClassByMission.get(mission.id) || mission.actionClass || null,
+  }));
   let states = statePayload.states || [];
   const initialPlan = planMissionAutopilot(missions, states, 8);
   const selectedMissionIds = [...new Set(initialPlan.map((item) => item.missionId))];
@@ -153,10 +161,11 @@ export async function GET(request: NextRequest) {
     safety: {
       priorityGate: "HIGH/CRITICAL or score >= 80",
       autonomyGate: "prepare only",
+      actionClassAware: true,
       externalActionExecuted: false,
       humanApprovalStillRequiredForCustomerSend: true,
       closingAutopilot: false,
-      note: "Autopilot reads Revenue Command and Mission State directly from the canonical Supabase models. Mutations still pass through the existing governed mission APIs on the canonical RealtyFlow origin.",
+      note: "Autopilot uses the same Agentic action class as Revenue Command. Enrichment creates internal qualification work; customer-message drafts remain separately approval-gated.",
     },
   };
 
@@ -168,6 +177,7 @@ export async function GET(request: NextRequest) {
       selectedMissionIds,
       candidateMissions: missions.length,
       directRead: true,
+      actionClassAware: true,
       mutationOrigin: nexusInternalMutationOrigin(request.nextUrl.origin),
     },
     output: responseBody,
