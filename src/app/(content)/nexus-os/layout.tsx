@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/nexus-os/revenue-command", label: "Revenue Command" },
   { href: "/nexus-os/commercial-targets", label: "Targets" },
   { href: "/nexus-os/reactivation", label: "Reactivation" },
+  { href: "/nexus-os/reactivation/replies", label: "Reply Review" },
   { href: "/nexus-os/buyer-intake", label: "Buyer Intake" },
   { href: "/nexus-os/mission-operations", label: "Mission Ops" },
   { href: "/nexus-os", label: "Agentic OS" },
