@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildImportedLeadIntelligence, type ImportedLeadLike } from "@/lib/nexus-imported-lead-intelligence";
+import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/brand-allowlist";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,6 +66,15 @@ export async function POST(request: NextRequest) {
   if (contactResult.error) return NextResponse.json({ error: contactResult.error.message }, { status: 500 });
   if (!contactResult.data) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 
+  const contact = contactResult.data;
+  const contactBrand = text(contact.brand_id || contact.brand, 120);
+  if (!isLeadIntelligenceRealEstateBrand(contactBrand)) {
+    return NextResponse.json({
+      error: "Buyer Intake is only available for real-estate brands. Use the business-line-specific intake for this contact.",
+      domain: "real_estate",
+    }, { status: 409 });
+  }
+
   const rawText = text(body?.rawText, 12000);
   const formType = text(body?.formType, 80) || "other";
   const extractionConfidence = text(body?.confidence, 40) || "unknown";
@@ -90,7 +100,6 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const contact = contactResult.data;
   const inserted = await supabase
     .from("work_items")
     .insert({
@@ -98,7 +107,7 @@ export async function POST(request: NextRequest) {
       description: "Skjema/bilde er analysert. Review dokumenterte persona- og livsstilssignaler før de eventuelt lagres i en versjonert Buyer Profile.",
       status: "TO_DO",
       priority: intelligence.lifestyleCandidates.length || intelligence.personaCandidates.length ? "HIGH" : "MEDIUM",
-      brand_id: contact.brand_id || contact.brand || null,
+      brand_id: contactBrand,
       source_type: "ai_agent",
       source_id: sourceId,
       assigned_agent: "nexus_buyer_intelligence",
@@ -106,6 +115,7 @@ export async function POST(request: NextRequest) {
       ai_score: intelligence.lifestyleCandidates.length || intelligence.personaCandidates.length ? 88 : 65,
       metadata: {
         kind: "buyer_intake_review",
+        domain: "real_estate",
         contact_id: contactId,
         pipeline_status: contact.pipeline_status || null,
         form_type: formType,
