@@ -9,6 +9,7 @@ import { GET as GETGrowthEngine } from "./growth-engine/route";
 import { GET as GETLeadNurture } from "./lead-nurture/route";
 import { GET as GETMarketData } from "./market-data/route";
 import { GET as GETMarketingGrowthMetrics } from "./marketing-growth-metrics/route";
+import { GET as GETNexusMissionAutopilot } from "./nexus-mission-autopilot/route";
 import { GET as GETNexusOpportunitySync } from "./nexus-opportunity-sync/route";
 import { GET as GETPublishingAutopilot } from "./publishing-autopilot/route";
 import { GET as GETPublishingGrowthLoop } from "./publishing-growth-loop/route";
@@ -36,6 +37,7 @@ const cronRoutes = [
   { path: "/api/cron/lead-nurture", handler: GETLeadNurture },
   { path: "/api/cron/market-data", handler: GETMarketData },
   { path: "/api/cron/marketing-growth-metrics", handler: GETMarketingGrowthMetrics },
+  { path: "/api/cron/nexus-mission-autopilot", handler: GETNexusMissionAutopilot },
   { path: "/api/cron/nexus-opportunity-sync", handler: GETNexusOpportunitySync },
   { path: "/api/cron/publishing-autopilot", handler: GETPublishingAutopilot },
   { path: "/api/cron/publishing-growth-loop", handler: GETPublishingGrowthLoop },
