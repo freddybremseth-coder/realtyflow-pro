@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getRequestAccessContext, requireAdminApi } from "@/lib/api-admin";
 import { resolveApproval } from "@/lib/agentic/approval-gateway";
 import { executeApproval } from "@/lib/agentic/executor";
+import { reconcileNexusMissionRunFromApproval } from "@/lib/nexus-mission-outcome-reconcile";
 import { makeApprovalGatewayStore, makeGatewayPublishEvent } from "@/services/agentic/adapters";
 import { buildExecutorDeps } from "@/services/agentic/executor-runtime";
 
@@ -36,9 +37,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   // Godkjent → utfør handlingen (executor, dry-run som default). Feilet
   // utførelse lar elementet stå approved for retry — approval reverseres ikke.
+  let execution: Awaited<ReturnType<typeof executeApproval>> | null = null;
   if (res.status === "approved" && !res.alreadyResolved) {
-    const execution = await executeApproval(buildExecutorDeps(supabase), { id: params.id, executedBy: ctx?.email ?? "system" });
-    return NextResponse.json({ ...res, execution });
+    execution = await executeApproval(buildExecutorDeps(supabase), { id: params.id, executedBy: ctx?.email ?? "system" });
   }
-  return NextResponse.json(res);
+
+  // Nexus-run-state harmoniseres ETTER eksisterende gateway/executor. Denne
+  // funksjonen publiserer ingen nye revenue events og ignorerer non-Nexus runs.
+  const nexusRun = await reconcileNexusMissionRunFromApproval(supabase, params.id);
+  return NextResponse.json({ ...res, ...(execution ? { execution } : {}), nexusRun });
 }
