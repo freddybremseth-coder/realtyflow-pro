@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/publishing/distribution.ts",
+    "src/app/api/book-growth/distribution/route.ts",
+    "src/app/(content)/book-growth/distribution/page.tsx",
+    "src/services/automation/publishing-market-watch.ts"
+  ],
+  "exclude": ["node_modules", "**/*.test.ts"]
+}

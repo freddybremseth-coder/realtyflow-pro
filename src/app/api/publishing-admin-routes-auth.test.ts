@@ -21,6 +21,7 @@ import { GET as GETPublishingImpact } from "./publishing/impact/route";
 import { POST as POSTPublishingImport } from "./publishing/import/route";
 import { GET as GETPublishingMarketWatch } from "./publishing/market-watch/route";
 import { GET as GETPublishingRecommendations, POST as POSTPublishingRecommendations } from "./publishing/recommendations/route";
+import { GET as GETBookDistribution, POST as POSTBookDistribution } from "./book-growth/distribution/route";
 
 function jsonRequest(path: string, method: string, body?: Record<string, unknown>) {
   return new NextRequest(`https://realtyflow.test${path}`, {
@@ -87,6 +88,15 @@ test("publishing, agent, advisor, and marketing admin routes require admin befor
     GETPublishingBookExportFile(jsonRequest("/api/publishing/book-engine/export-file?id=project-1", "GET") as any),
     POSTPublishingBookUploadSource(jsonRequest("/api/publishing/book-engine/upload-source", "POST") as any),
     POSTPublishingBookWorkshop(jsonRequest("/api/publishing/book-engine/workshop", "POST", { theme: "Mediterranean" }) as any),
+    GETBookDistribution(jsonRequest("/api/book-growth/distribution", "GET") as any),
+    POSTBookDistribution(jsonRequest("/api/book-growth/distribution", "POST", {
+      action: "prepare",
+      projectId: "11111111-1111-4111-8111-111111111111",
+      channels: ["amazon_kdp"],
+      rightsConfirmed: true,
+      aiDisclosureReviewed: true,
+      kdpSelectEnrollment: "unknown",
+    }) as any),
   ]);
 
   for (const response of responses) {
