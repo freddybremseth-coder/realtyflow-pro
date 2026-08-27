@@ -2,10 +2,12 @@
 
 import { AlertTriangle, CheckCircle2, Clipboard, Loader2, MessageSquareText, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LeadIntelligenceAreaFitPresentationAdvisory } from "@/components/lead-intelligence/lead-intelligence-area-fit-presentation-advisory";
 
 type CopyState = "idle" | "copied" | "failed";
 
 interface LeadIntelligenceShortlistPresentationPreviewPanelProps {
+  areaFitContactId: string | null;
   title: string;
   subtitle: string;
   needBullets: string[];
@@ -18,6 +20,7 @@ interface LeadIntelligenceShortlistPresentationPreviewPanelProps {
 }
 
 export function LeadIntelligenceShortlistPresentationPreviewPanel({
+  areaFitContactId,
   title,
   subtitle,
   needBullets,
@@ -64,6 +67,8 @@ export function LeadIntelligenceShortlistPresentationPreviewPanel({
         </div>
       </div>
 
+      <LeadIntelligenceAreaFitPresentationAdvisory contactId={areaFitContactId} />
+
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -102,6 +107,7 @@ export function LeadIntelligenceShortlistPresentationPreviewPanel({
             <p>Leads opprettet: nei</p>
             <p>Kontakter opprettet: nei</p>
             <p>Presentasjon publisert: nei</p>
+            <p>Area Fit skrevet til kundetekst: nei</p>
           </div>
           {copyState === "copied" && (
             <p className="mt-3 text-xs text-emerald-300">Presentasjonstekst kopiert.</p>
