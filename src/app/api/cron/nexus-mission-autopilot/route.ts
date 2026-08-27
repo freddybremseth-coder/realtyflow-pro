@@ -5,6 +5,10 @@ import { createAdminSession, getAdminEmails } from "@/lib/admin-auth";
 import { bestEffortNexusAutomationAudit } from "@/lib/nexus-automation-audit";
 import { nexusInternalApiErrorMessage } from "@/lib/nexus-internal-api-error";
 import {
+  loadNexusMissionStateSnapshot,
+  loadNexusRevenueCommandSnapshot,
+} from "@/lib/nexus-command-readers";
+import {
   nextMissionAutopilotAction,
   planMissionAutopilot,
   type MissionAutopilotMission,
@@ -40,17 +44,6 @@ async function internalOwnerHeaders() {
   return headers;
 }
 
-async function readJson(request: NextRequest, headers: Headers, path: string) {
-  const response = await fetch(new URL(path, request.nextUrl.origin), {
-    method: "GET",
-    cache: "no-store",
-    headers,
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(nexusInternalApiErrorMessage(path, response.status, body));
-  return body;
-}
-
 async function postMission(request: NextRequest, headers: Headers, path: string, missionId: string) {
   const response = await fetch(new URL(path, request.nextUrl.origin), {
     method: "POST",
@@ -75,26 +68,12 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const headers = await internalOwnerHeaders().catch(() => null);
-  if (!headers) {
-    const error = "Could not create internal owner session";
-    await bestEffortNexusAutomationAudit(supabase as never, {
-      name: "Nexus Mission Autopilot",
-      path: "/api/cron/nexus-mission-autopilot",
-      status: "error",
-      error,
-      startedAt,
-      output: { stage: "internal_owner_session" },
-    });
-    return NextResponse.json({ error }, { status: 503 });
-  }
-
   let command: { growthMissions?: MissionAutopilotMission[] };
   let statePayload: { states?: MissionAutopilotState[] };
   try {
     [command, statePayload] = await Promise.all([
-      readJson(request, headers, "/api/nexus/revenue-command"),
-      readJson(request, headers, "/api/nexus/revenue-command/missions/state"),
+      loadNexusRevenueCommandSnapshot(supabase),
+      loadNexusMissionStateSnapshot(supabase),
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -104,7 +83,7 @@ export async function GET(request: NextRequest) {
       status: "error",
       error: message,
       startedAt,
-      output: { stage: "read_command_state" },
+      output: { stage: "read_command_state_direct" },
     });
     return NextResponse.json({ error: message }, { status: 502 });
   }
@@ -115,9 +94,27 @@ export async function GET(request: NextRequest) {
   const selectedMissionIds = [...new Set(initialPlan.map((item) => item.missionId))];
   const results: Array<{ missionId: string; actions: string[]; finalState?: string | null; error?: string }> = [];
 
+  let headers: Headers | null = null;
+  if (selectedMissionIds.length) {
+    headers = await internalOwnerHeaders().catch(() => null);
+    if (!headers) {
+      const error = "Could not create internal owner session for mission mutations";
+      await bestEffortNexusAutomationAudit(supabase as never, {
+        name: "Nexus Mission Autopilot",
+        path: "/api/cron/nexus-mission-autopilot",
+        status: "error",
+        error,
+        startedAt,
+        input: { selectedMissionIds, candidateMissions: missions.length },
+        output: { stage: "internal_owner_session_for_actions" },
+      });
+      return NextResponse.json({ error }, { status: 503 });
+    }
+  }
+
   for (const missionId of selectedMissionIds) {
     const mission = missions.find((item) => item.id === missionId);
-    if (!mission) continue;
+    if (!mission || !headers) continue;
     const actions: string[] = [];
     let errorMessage: string | undefined;
 
@@ -127,7 +124,7 @@ export async function GET(request: NextRequest) {
       try {
         await postMission(request, headers, endpointForAction[planned.action], missionId);
         actions.push(planned.action);
-        const refreshed = await readJson(request, headers, "/api/nexus/revenue-command/missions/state");
+        const refreshed = await loadNexusMissionStateSnapshot(supabase);
         states = refreshed.states || states;
       } catch (error) {
         errorMessage = error instanceof Error ? error.message : String(error);
@@ -157,7 +154,7 @@ export async function GET(request: NextRequest) {
       externalActionExecuted: false,
       humanApprovalStillRequiredForCustomerSend: true,
       closingAutopilot: false,
-      note: "Autopilot may prepare internal artifacts and queue real message drafts for human approval. It never approves or sends them.",
+      note: "Autopilot reads Revenue Command and Mission State directly from the canonical Supabase models. Mutations still pass through the existing governed mission APIs.",
     },
   };
 
@@ -165,7 +162,7 @@ export async function GET(request: NextRequest) {
     name: "Nexus Mission Autopilot",
     path: "/api/cron/nexus-mission-autopilot",
     status: errors === 0 ? "success" : "error",
-    input: { selectedMissionIds, candidateMissions: missions.length },
+    input: { selectedMissionIds, candidateMissions: missions.length, directRead: true },
     output: responseBody,
     error: errors === 0 ? null : `${errors} mission error(s)`,
     startedAt,
