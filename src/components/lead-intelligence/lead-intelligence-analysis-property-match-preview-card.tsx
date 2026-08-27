@@ -165,6 +165,7 @@ export function LeadIntelligenceAnalysisPropertyMatchPreviewCard({
 
       {propertyMatchResult && (
         <LeadIntelligenceAnalysisPropertyMatchPanel
+          areaFitContactId={areaFitContactId}
           propertyMatchResult={propertyMatchResult}
           selectedShortlistCount={selectedShortlistCount}
           clientReadyShortlistCount={clientReadyShortlistCount}
