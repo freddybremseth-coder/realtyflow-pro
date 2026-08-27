@@ -16,12 +16,101 @@ const MODULES = [
 ];
 
 export default function BookGrowthLayout({ children }: { children: ReactNode }) {
-  return <>
+  return <div className="book-growth-contrast">
+    <style>{`
+      .book-growth-contrast {
+        min-height: 100%;
+        background: #e8eef6;
+        color: #0b1220;
+      }
+
+      .book-growth-contrast h1,
+      .book-growth-contrast h2,
+      .book-growth-contrast h3,
+      .book-growth-contrast b,
+      .book-growth-contrast strong {
+        color: #0b1220;
+      }
+
+      .book-growth-contrast section,
+      .book-growth-contrast article,
+      .book-growth-contrast table,
+      .book-growth-contrast pre {
+        border-color: #aebdce !important;
+      }
+
+      .book-growth-contrast section,
+      .book-growth-contrast article {
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.06);
+      }
+
+      .book-growth-contrast p,
+      .book-growth-contrast td,
+      .book-growth-contrast summary,
+      .book-growth-contrast div {
+        text-rendering: optimizeLegibility;
+      }
+
+      .book-growth-contrast table td,
+      .book-growth-contrast table th {
+        border-color: #c0ccda !important;
+      }
+
+      .book-growth-contrast table th {
+        background: #dfe7f1 !important;
+        color: #111827 !important;
+        font-weight: 800 !important;
+      }
+
+      .book-growth-contrast table tbody tr:nth-child(even) td {
+        background: #f4f7fb;
+      }
+
+      .book-growth-contrast pre {
+        color: #111827 !important;
+      }
+
+      .book-growth-contrast button,
+      .book-growth-contrast a {
+        outline-offset: 2px;
+      }
+
+      .book-growth-contrast button:focus-visible,
+      .book-growth-contrast a:focus-visible {
+        outline: 3px solid #2563eb;
+      }
+    `}</style>
+
     <div style={{ maxWidth: 1500, margin: "0 auto", padding: "16px 24px 0", fontFamily: "system-ui, sans-serif" }}>
-      <nav aria-label="Book Growth OS modules" style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: 10, border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
-        {MODULES.map((item) => <Link key={item.href} href={item.href} style={{ textDecoration: "none", padding: "7px 10px", borderRadius: 8, background: "#f8fafc", color: "#0f172a", fontSize: 12, fontWeight: 800, border: "1px solid #e2e8f0" }}>{item.label}</Link>)}
+      <nav
+        aria-label="Book Growth OS modules"
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: 10,
+          border: "1px solid #94a3b8",
+          borderRadius: 12,
+          background: "#0f172a",
+          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.18)",
+        }}
+      >
+        {MODULES.map((item) => <Link
+          key={item.href}
+          href={item.href}
+          style={{
+            textDecoration: "none",
+            padding: "7px 10px",
+            borderRadius: 8,
+            background: "#f8fafc",
+            color: "#0f172a",
+            fontSize: 12,
+            fontWeight: 900,
+            border: "1px solid #94a3b8",
+          }}
+        >{item.label}</Link>)}
       </nav>
     </div>
     {children}
-  </>;
+  </div>;
 }
