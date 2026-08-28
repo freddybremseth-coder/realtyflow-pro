@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/api-admin';
-import { buildTrackingUrl } from '@/services/social-growth/performance-engine';
+
+function trackingUrl(baseUrl: string, publicationId: string, brandId: string, source: string) {
+  const url = new URL(baseUrl);
+  url.searchParams.set('utm_source', source || 'social');
+  url.searchParams.set('utm_medium', 'organic_social');
+  url.searchParams.set('utm_campaign', brandId);
+  url.searchParams.set('utm_content', publicationId);
+  return url.toString();
+}
 
 /**
  * POST /api/marketing-kit/drafts
@@ -34,13 +42,14 @@ export async function POST(req: NextRequest) {
       const publicationId = crypto.randomUUID();
       const brandId = String(draft.brand_id || 'zeneco').trim();
       const scheduledPlatforms = draft.scheduled_platforms || (draft.metadata?.platform ? [draft.metadata.platform] : []);
+      const trackingSource = String(scheduledPlatforms[0] || draft.metadata?.platform || 'social').trim().toLowerCase();
       const growthActionId = typeof draft.growth_action_id === 'string' ? draft.growth_action_id.trim() : '';
       const contentFeatures = {
         ...(draft.content_features && typeof draft.content_features === 'object' ? draft.content_features : {}),
         ...(draft.metadata && typeof draft.metadata === 'object' ? draft.metadata : {}),
         ...(growthActionId ? { growth_action_id: growthActionId, source: 'growth_engine' } : {}),
       };
-      const trackingUrl = buildTrackingUrl(trackingBaseUrl, { id: publicationId, brand_id: brandId });
+      const postTrackingUrl = trackingUrl(trackingBaseUrl, publicationId, brandId, trackingSource);
 
       const { data, error } = await supabase
         .from('content_publications')
@@ -59,7 +68,7 @@ export async function POST(req: NextRequest) {
           scheduled_platforms: scheduledPlatforms,
           performance_goal: draft.performance_goal || (growthActionId ? 'lead_rate' : null),
           tracking_slug: publicationId,
-          tracking_url: trackingUrl,
+          tracking_url: postTrackingUrl,
           content_features: contentFeatures,
           ...(draft.ai_image_url ? { ai_image_url: draft.ai_image_url } : {}),
         })
