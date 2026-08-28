@@ -44,10 +44,99 @@ export function isRoutingPersona(value: unknown): value is RoutingPersona {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(PERSONA_INTROS, value);
 }
 
+function soleadaRelationshipSequence(base: NurtureSequence): NurtureSequence {
+  return {
+    ...base,
+    eligibleStatuses: ["NEW", "CONTACT", "QUALIFIED", ""],
+    maxNewEnrollmentsPerRun: 25,
+    sendBrandId: "zeneco",
+    fromName: "Freddy Bremseth – Zen Eco Homes",
+    steps: [
+      {
+        id: "reconnect",
+        dayOffset: 0,
+        channel: "email",
+        subject: "Er bolig i Spania fortsatt aktuelt for deg, {name}?",
+        text: `Hei {name},
+
+Vi har tidligere vært i kontakt gjennom Soleada.no om bolig i Spania, og jeg ønsker å følge deg opp personlig.
+
+Jeg heter Freddy Bremseth og jobber videre med kundene jeg har hatt kontakt med gjennom Soleada. Selve kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada.no.
+
+Denne e-posten kommer fra Zen Eco Homes fordi det er plattformen og e-postsystemet jeg nå bruker i mitt daglige rådgivningsarbeid på Costa Blanca. Det endrer altså ikke hvem som står bak kundeforholdet eller et eventuelt salg – Soleada er fortsatt ansvarlig part på den siden.
+
+Jeg ønsker først og fremst å høre om bolig i Spania fortsatt er aktuelt for deg.
+
+Hvis det er det, kan jeg gjerne hjelpe deg videre med blant annet:
+– hvilke områder som passer best til hvordan du ønsker å bruke boligen
+– hva budsjettet ditt realistisk gir i dagens marked
+– aktuelle boliger som passer behovene dine
+– spørsmål om kjøpsprosessen og det praktiske rundt et kjøp i Spania
+
+Svar gjerne kort på denne e-posten med hvor du står i prosessen nå. Det holder fint med for eksempel «fortsatt interessert», «kanskje senere» eller «ikke aktuelt lenger».
+
+Vennlig hilsen
+
+Freddy Bremseth
+Eiendomsrådgiver
+Zen Eco Homes
+
+Oppfølging av kundehenvendelse fra Soleada.no
+Eventuelt boligsalg håndteres gjennom Soleada.no
+
+PS: Hvis du ikke ønsker videre oppfølging, svar «stopp», så registrerer jeg det.`,
+      },
+      {
+        id: "right-place",
+        dayOffset: 3,
+        channel: "email",
+        subject: "{name}, det de fleste glemmer før de kjøper i Spania",
+        text: `Hei {name},
+
+Hvis bolig i Spania fortsatt er aktuelt, er dette noe av det viktigste jeg hjelper kunder med før vi begynner å se på konkrete boliger:
+
+De fleste ser først på boliger de liker, men det er ofte smartere å finne ut HVOR man faktisk vil trives. Costa Blanca er stort, og riktig område avhenger av hvordan du ønsker å leve, bruke boligen og hvor mye du vil ha i nærheten i hverdagen.
+
+Jeg kjenner områdene godt og kan hjelpe deg med å snevre inn valget. Hvis du svarer med noen få ord om hva du ser for deg – feriebolig eller fast bosted, ønsket område og omtrent budsjett – kan jeg komme med noen konkrete forslag.
+
+Jeg følger deg opp personlig gjennom Zen Eco Homes, mens kundeforholdet og et eventuelt boligsalg fortsatt håndteres gjennom Soleada.no.
+
+Vennlig hilsen
+Freddy Bremseth
+Zen Eco Homes
+
+PS: Vil du ikke ha flere e-poster, svar «stopp».`,
+      },
+      {
+        id: "soft-call",
+        dayOffset: 7,
+        channel: "email",
+        subject: "En kort prat, {name}?",
+        text: `Hei {name},
+
+Dette er siste automatiske oppfølging fra meg hvis jeg ikke hører noe.
+
+Hvis bolig i Spania fortsatt er aktuelt, tar jeg gjerne en kort og uforpliktende videoprat. På 15 minutter kan vi avklare hvilke områder som passer, hva budsjettet realistisk gir og hva som er et fornuftig neste steg.
+
+Book et tidspunkt her: {booking_url}
+Eller svar på denne e-posten med et par tidspunkt som passer.
+
+Jeg følger deg opp personlig fra Zen Eco Homes. Kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada.no.
+
+Vennlig hilsen
+Freddy Bremseth
+Zen Eco Homes
+
+PS: Vil du ikke høre mer, svar «stopp».`,
+      },
+    ],
+  };
+}
+
 /**
- * Apply persona-specific copy only when a human-approved routing persona exists.
- * Soleada keeps its relationship-clarification sequence unchanged, and non-Norwegian
- * sequences keep their reviewed language-specific copy until translated persona variants exist.
+ * Applies reviewed relationship copy first, then persona-specific copy only when a
+ * human-approved routing persona exists. Non-Norwegian persona variants intentionally
+ * fall back to their reviewed language-specific base sequence until translated variants exist.
  */
 export function resolveNurtureSequenceWithPersona(
   brandId: string,
@@ -55,7 +144,10 @@ export function resolveNurtureSequenceWithPersona(
   routingPersona?: string | null,
 ): NurtureSequence | null {
   const base = resolveSequence(brandId, source);
-  if (!base || brandId !== "zeneco" || localeFromSource(source) !== "no" || !isRoutingPersona(routingPersona)) return base;
+  if (!base) return null;
+
+  if (brandId === "soleada") return soleadaRelationshipSequence(base);
+  if (brandId !== "zeneco" || localeFromSource(source) !== "no" || !isRoutingPersona(routingPersona)) return base;
 
   const context = PERSONA_INTROS[routingPersona];
   const [first, ...rest] = base.steps;
