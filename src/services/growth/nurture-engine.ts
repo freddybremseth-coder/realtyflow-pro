@@ -7,11 +7,11 @@ import {
   type RevenueEventInput,
 } from "@/lib/revenue/events";
 import {
-  resolveSequence,
   renderTemplate,
   type NurtureSequence,
   type NurtureStep,
 } from "@/services/growth/nurture-sequences";
+import { resolveNurtureSequenceWithPersona } from "@/services/growth/nurture-persona-routing";
 
 // Hvilke statuser som nurtures avgjøres per sekvens (sequence.eligibleStatuses).
 // Så snart et lead er kvalifisert / i samtale / vunnet / tapt, tar mennesket over.
@@ -67,6 +67,33 @@ function daysSince(iso: string | null | undefined): number {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return 0;
   return (Date.now() - t) / DAY_MS;
+}
+
+async function loadApprovedRoutingPersona(supabase: SupabaseClient, contactId: string): Promise<string | null> {
+  const { data: profile, error: profileError } = await supabase
+    .from("buyer_profiles")
+    .select("id,version")
+    .eq("contact_id", contactId)
+    .eq("status", "approved")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (profileError || !profile?.id) return null;
+
+  const { data: criterion, error: criterionError } = await supabase
+    .from("buyer_profile_criteria")
+    .select("value,approval_status,active")
+    .eq("buyer_profile_id", profile.id)
+    .eq("key", "other")
+    .eq("other_key", "routing_persona")
+    .eq("approval_status", "approved")
+    .eq("active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (criterionError || !criterion) return null;
+  return typeof criterion.value === "string" ? criterion.value : null;
 }
 
 /** Finn det tidligste steget som er forfalt og ikke allerede sendt. */
@@ -173,7 +200,8 @@ export async function runNurtureCycle(
 
   for (const contact of contacts || []) {
     const cBrand: string = contact.brand_id || contact.brand || "";
-    const sequence = resolveSequence(cBrand, contact.source);
+    const routingPersona = await loadApprovedRoutingPersona(supabase, contact.id);
+    const sequence = resolveNurtureSequenceWithPersona(cBrand, contact.source, routingPersona);
     if (!sequence) continue;
 
     const status = String(contact.pipeline_status || "").toUpperCase();

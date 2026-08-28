@@ -8,6 +8,8 @@ import { isLeadIntelligenceRealEstateBrand } from "@/services/lead-intelligence/
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const ALLOWED_IMPORT_SOURCES = new Set(["soleada-import", "zeneco-import", "casaverano-import", "historical-import"]);
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -52,6 +54,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const contactId = text(body?.contactId, 120);
   const lead = sanitizeImportedLead(body?.lead);
+  const requestedImportSource = text(body?.importSource, 80).toLowerCase();
+  const importSource = ALLOWED_IMPORT_SOURCES.has(requestedImportSource) ? requestedImportSource : "historical-import";
   if (!contactId) return NextResponse.json({ error: "contactId required" }, { status: 400 });
   if (!lead) return NextResponse.json({ error: "lead object required" }, { status: 400 });
 
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
   const formType = text(body?.formType, 80) || "other";
   const extractionConfidence = text(body?.confidence, 40) || "unknown";
   const intelligence = buildImportedLeadIntelligence(lead);
-  const intakeFingerprint = fingerprint({ contactId, lead, rawText, formType });
+  const intakeFingerprint = fingerprint({ contactId, lead, rawText, formType, importSource });
   const sourceId = `buyer-intake:${contactId}:${intakeFingerprint}`;
 
   const existing = await supabase
@@ -118,6 +122,7 @@ export async function POST(request: NextRequest) {
         domain: "real_estate",
         contact_id: contactId,
         pipeline_status: contact.pipeline_status || null,
+        import_source: importSource,
         form_type: formType,
         extraction_confidence: extractionConfidence,
         raw_text: rawText.slice(0, 8000),

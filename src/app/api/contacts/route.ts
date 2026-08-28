@@ -45,6 +45,23 @@ function normalizeStatus(status: unknown) {
   return value || 'NEW';
 }
 
+function normalizeEmail(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizePhone(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const hasPlus = raw.startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return '';
+  return `${hasPlus ? '+' : ''}${digits}`;
+}
+
+function normalizeBrand(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function isCustomerStatus(status: unknown) {
   return normalizeStatus(status) === 'WON';
 }
@@ -66,6 +83,8 @@ function normalizeIncomingContact(contact: any) {
   if (next.status && !next.pipeline_status) next.pipeline_status = next.status;
   if (next.stage && !next.pipeline_status) next.pipeline_status = next.stage;
   next.pipeline_status = normalizeStatus(next.pipeline_status || 'NEW');
+  if (typeof next.email === 'string') next.email = next.email.trim();
+  if (typeof next.phone === 'string') next.phone = next.phone.trim();
   if (isCustomerStatus(next.pipeline_status)) {
     next.pipeline_status = 'WON';
     next.sentiment = 'hot';
@@ -92,6 +111,47 @@ function numericOrNull(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function findDuplicateContact(supabase: any, contact: any) {
+  const incomingEmail = normalizeEmail(contact.email);
+  const incomingPhone = normalizePhone(contact.phone);
+  const incomingBrand = normalizeBrand(contact.brand_id || contact.brand);
+  if (!incomingEmail && !incomingPhone) return null;
+
+  // Deliberately inspect only identity fields. We do not auto-merge data across brands.
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id,name,email,phone,brand,brand_id,pipeline_status,source,updated_at')
+    .limit(1000);
+  if (error) return null;
+
+  const candidates = (data || []).filter((candidate: any) => {
+    const emailMatch = incomingEmail && normalizeEmail(candidate.email) === incomingEmail;
+    const phoneMatch = incomingPhone && normalizePhone(candidate.phone) === incomingPhone;
+    return Boolean(emailMatch || phoneMatch);
+  });
+  if (!candidates.length) return null;
+
+  const sameBrand = candidates.find((candidate: any) => {
+    const candidateBrand = normalizeBrand(candidate.brand_id || candidate.brand);
+    return incomingBrand && candidateBrand === incomingBrand;
+  });
+
+  if (sameBrand) {
+    return {
+      contact: normalizeContactForClient(sameBrand),
+      matchScope: 'same_brand' as const,
+      matchType: incomingEmail && normalizeEmail(sameBrand.email) === incomingEmail ? 'email' : 'phone',
+    };
+  }
+
+  // Cross-brand identity is a warning only. Brand isolation means this must never be silently merged.
+  return {
+    contact: normalizeContactForClient(candidates[0]),
+    matchScope: 'cross_brand' as const,
+    matchType: incomingEmail && normalizeEmail(candidates[0].email) === incomingEmail ? 'email' : 'phone',
+  };
 }
 
 async function insertContactWithFallbacks(supabase: any, contact: any) {
@@ -169,9 +229,33 @@ export async function POST(request: NextRequest) {
   const supabase = getContactsSupabase();
   if (!supabase) return missingDatabaseResponse();
   const contact = normalizeIncomingContact(await request.json());
+
+  const duplicate = await findDuplicateContact(supabase, contact);
+  if (duplicate?.matchScope === 'same_brand') {
+    return NextResponse.json({
+      contact: duplicate.contact,
+      duplicate: true,
+      duplicateMatch: { scope: duplicate.matchScope, type: duplicate.matchType },
+    });
+  }
+  if (duplicate?.matchScope === 'cross_brand') {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: 'CROSS_BRAND_CONTACT_MATCH',
+          message: 'Samme e-post eller telefon finnes allerede på et annet brand. Velg eksisterende kontakt manuelt eller bekreft korrekt brand før du oppretter en ny.',
+        },
+        possibleContact: duplicate.contact,
+        duplicateMatch: { scope: duplicate.matchScope, type: duplicate.matchType },
+      },
+      { status: 409 },
+    );
+  }
+
   const { data, error } = await insertContactWithFallbacks(supabase, contact);
   if (error) return NextResponse.json({ error: error.message, contact }, { status: 500 });
-  return NextResponse.json({ contact: normalizeContactForClient(data) });
+  return NextResponse.json({ contact: normalizeContactForClient(data), duplicate: false });
 }
 
 export async function PATCH(request: NextRequest) {
