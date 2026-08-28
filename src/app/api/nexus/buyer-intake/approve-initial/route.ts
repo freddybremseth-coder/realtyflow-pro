@@ -12,26 +12,49 @@ import {
 } from "@/services/lead-intelligence/server-runtime";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
 import { LEAD_INTELLIGENCE_LIMITS } from "@/services/lead-intelligence/contracts";
+import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const criterionKeys = [
+  "bedrooms", "bathrooms", "property_type", "location", "total_budget", "purchase_price",
+  "estimated_total_cost", "floor_position", "has_lift", "terrace_area_m2", "terrace_access",
+  "view_quality", "orientation", "parking", "pool", "new_build_or_resale", "availability_status",
+  "availability_verified_at", "adjacent_plot_status", "future_building_risk", "view_privacy_loss_risk",
+  "view_obstruction_risk", "legal_notes", "living_area_m2", "plot_area_m2", "distance_to_beach",
+  "stairs", "other", "unknown",
+] as const;
+
+const propertyTypes = [
+  "end_townhouse", "townhouse", "apartment", "penthouse", "villa", "duplex", "bungalow", "finca",
+  "country_house", "plot", "commercial", "other", "unknown",
+] as const;
+
 const CriterionSchema = z.object({
   criterionType: z.enum(["hard_requirement", "preference", "exclusion", "missing_information"]),
-  key: z.string().trim().min(1).max(80),
+  key: z.enum(criterionKeys),
   otherKey: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable().optional(),
   operator: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "exists", "unknown"]),
   value: z.unknown().default(null),
   weight: z.number().min(0).max(1).nullable().optional(),
   severity: z.enum(["reject", "major_penalty", "minor_penalty"]).nullable().optional(),
-  appliesToPropertyTypes: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+  appliesToPropertyTypes: z.array(z.enum(propertyTypes)).max(20).default([]),
   sourceText: z.string().trim().max(LEAD_INTELLIGENCE_LIMITS.mediumText).nullable().optional(),
   customerConfirmed: z.boolean().default(false),
   active: z.boolean().default(true),
-}).strict();
+}).strict().superRefine((criterion, ctx) => {
+  if (criterion.key === "other" && !criterion.otherKey) {
+    ctx.addIssue({ code: "custom", path: ["otherKey"], message: "otherKey is required when key is other" });
+  }
+  if (criterion.key !== "other" && criterion.otherKey) {
+    ctx.addIssue({ code: "custom", path: ["otherKey"], message: "otherKey is only allowed when key is other" });
+  }
+});
 
 const RequestSchema = z.object({
   workItemId: z.string().uuid(),
+  brand: LeadIntelligenceRealEstateBrandSchema,
   criteria: z.array(CriterionSchema).min(1).max(30),
 }).strict();
 
@@ -56,7 +79,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction("zeneco", async (client) => {
+    const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
       const workItemResult = await client.query<{
         id: string;
         brand_id: string | null;
@@ -90,7 +113,9 @@ export async function POST(request: NextRequest) {
       const contact = contactResult.rows[0];
       if (!contact) throw new LeadIntelligenceError("INVALID_REQUEST", "Linked contact not found", 404);
       const brand = text(contact.brand_id || contact.brand || workItem.brand_id, 80);
-      if (!brand) throw new LeadIntelligenceError("INVALID_REQUEST", "Buyer Intake contact is missing brand", 409);
+      if (brand !== parsed.data.brand) {
+        throw new LeadIntelligenceError("INVALID_REQUEST", "Buyer Intake brand changed or does not match the reviewed contact", 409);
+      }
 
       const existingProfile = await client.query<{ id: string }>(
         `select id::text from public.buyer_profiles where contact_id = $1::uuid and status = 'approved' order by version desc limit 1`,
@@ -130,13 +155,13 @@ export async function POST(request: NextRequest) {
 
       const criteria = parsed.data.criteria.map((criterion) => ({
         criterionType: criterion.criterionType,
-        key: criterion.key as "other",
+        key: criterion.key,
         otherKey: criterion.key === "other" ? criterion.otherKey || null : null,
         operator: criterion.operator,
         value: criterion.value ?? null,
         weight: criterion.criterionType === "preference" ? criterion.weight ?? 0.5 : null,
         severity: criterion.criterionType === "exclusion" ? criterion.severity || "major_penalty" : null,
-        appliesToPropertyTypes: criterion.appliesToPropertyTypes as never[],
+        appliesToPropertyTypes: criterion.appliesToPropertyTypes,
         source: "manual" as const,
         sourceText: criterion.sourceText || null,
         confidence: null,
