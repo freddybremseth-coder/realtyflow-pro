@@ -1,7 +1,7 @@
-import { youtube } from "@googleapis/youtube";
 import { OAuth2Client } from "google-auth-library";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
 import { getChannelsByBrand, getDecryptedTokens } from "@/lib/oauth/channels";
+import { createYoutubeOAuthClient } from "@/services/integrations/youtube-oauth-client";
 
 const REMASTER_BRAND_ID = "remasterfreddy";
 
@@ -22,7 +22,7 @@ async function getVerifiedClient() {
       const auth = new OAuth2Client(credentials.clientId, credentials.clientSecret);
       auth.setCredentials({ refresh_token: refreshToken });
       await auth.getAccessToken();
-      const client = youtube({ version: "v3", auth });
+      const client = createYoutubeOAuthClient(auth);
       const mine = await client.channels.list({ part: ["snippet"], mine: true });
       const verified = mine.data.items?.[0];
       if (!verified?.id) continue;
