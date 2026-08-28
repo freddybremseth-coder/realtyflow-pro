@@ -1,7 +1,7 @@
 # RealtyFlow Book OS — locked master plan
 
-Status: **Locked 2026-08-28**  
-Owner: Freddy Bremseth  
+Status: **Locked 2026-08-28**
+Owner: Freddy Bremseth
 Implementation order: Phase 0 through Phase 5, completed systematically in sequence.
 
 ## Product promise
@@ -82,4 +82,3 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - Zero duplicate active growth actions.
 - At least 95% of campaign interactions include work, edition, channel and campaign identifiers.
 - Sales, royalties, ad cost and conversion can be compared per book, edition and channel.
-
