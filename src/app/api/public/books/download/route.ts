@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { portalJson, portalPreflight } from "@/lib/demosites-portal";
-import { getBooksSupabase } from "@/lib/books-sales";
+import { getBooksSupabase, isBookFileFormat, resolveBookDownload } from "@/lib/books-sales";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,11 +18,12 @@ export async function GET(request: NextRequest) {
 
   const token = String(request.nextUrl.searchParams.get("token") || "").trim();
   const bookId = String(request.nextUrl.searchParams.get("book_id") || "").trim();
+  const requestedFormat = request.nextUrl.searchParams.get("format");
   if (!token || !bookId) return portalJson(request, { error: "token og book_id er påkrevd." }, 400);
 
   const { data: grant } = await supabase
     .from("book_download_grants")
-    .select("id, scope, book_id, download_count")
+    .select("id, scope, book_id, file_format, download_count")
     .eq("token", token)
     .maybeSingle();
   if (!grant) return portalJson(request, { error: "Ugyldig nedlastingslenke." }, 404);
@@ -32,14 +33,20 @@ export async function GET(request: NextRequest) {
 
   const { data: book } = await supabase
     .from("publishing_books")
-    .select("id, title, pdf_path")
+    .select("id, title, pdf_path, epub_path")
     .eq("id", bookId)
     .maybeSingle();
-  if (!book?.pdf_path) return portalJson(request, { error: "Fant ikke PDF-en for denne boken." }, 404);
+  if (!book) return portalJson(request, { error: "Fant ikke denne boken." }, 404);
+  if (requestedFormat && !isBookFileFormat(requestedFormat)) {
+    return portalJson(request, { error: "format må være pdf eller epub." }, 400);
+  }
+  const grantedFormat = grant.scope === "single" ? grant.file_format : null;
+  const download = resolveBookDownload(book, requestedFormat, grantedFormat);
+  if (!download) return portalJson(request, { error: "Dette formatet er ikke inkludert i kjøpet eller er ikke tilgjengelig." }, 403);
 
   const { data: signed, error: signError } = await supabase.storage
-    .from("book-pdfs")
-    .createSignedUrl(book.pdf_path, 60 * 30, { download: `${book.title}.pdf` });
+    .from(download.bucket)
+    .createSignedUrl(download.path, 60 * 30, { download: download.filename });
   if (signError || !signed?.signedUrl) {
     return portalJson(request, { error: "Kunne ikke klargjøre nedlastingen. Kontakt post@chatgenius.pro." }, 500);
   }

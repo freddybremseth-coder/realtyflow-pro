@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextRequest } from "next/server";
 import { portalJson, portalPreflight } from "@/lib/demosites-portal";
-import { getBooksSupabase } from "@/lib/books-sales";
+import { availableBookFormats, getBooksSupabase, isBookFileFormat } from "@/lib/books-sales";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,13 +21,14 @@ type GrantRow = {
   token: string;
   scope: "single" | "all";
   book_id: string | null;
+  file_format: "pdf" | "epub" | null;
   email: string | null;
 };
 
 async function grantFromSession(supabase: NonNullable<ReturnType<typeof getBooksSupabase>>, sessionId: string): Promise<GrantRow | { error: string; status: number }> {
   const { data: existing } = await supabase
     .from("book_download_grants")
-    .select("id, token, scope, book_id, email")
+    .select("id, token, scope, book_id, file_format, email")
     .eq("stripe_session_id", sessionId)
     .maybeSingle();
   if (existing) return existing as GrantRow;
@@ -41,8 +42,10 @@ async function grantFromSession(supabase: NonNullable<ReturnType<typeof getBooks
   });
   const session = (await res.json()) as {
     payment_status?: string;
+    amount_total?: number;
+    currency?: string;
     customer_details?: { email?: string };
-    metadata?: { book_scope?: string; book_id?: string };
+    metadata?: { book_scope?: string; book_id?: string; book_format?: string };
   };
   if (!res.ok) return { error: "Fant ikke betalingen.", status: 404 };
   if (session.payment_status !== "paid") return { error: "Betalingen er ikke fullført ennå.", status: 402 };
@@ -54,22 +57,33 @@ async function grantFromSession(supabase: NonNullable<ReturnType<typeof getBooks
     email: session.customer_details?.email || null,
     scope,
     book_id: scope === "single" ? session.metadata.book_id || null : null,
+    file_format: scope === "single" && isBookFileFormat(session.metadata.book_format) ? session.metadata.book_format : null,
     stripe_session_id: sessionId,
   };
   const { data: created, error } = await supabase
     .from("book_download_grants")
     .insert(insert)
-    .select("id, token, scope, book_id, email")
+    .select("id, token, scope, book_id, file_format, email")
     .single();
   if (error) {
     // Unique race with the webhook — read the row it created.
     const { data: raced } = await supabase
       .from("book_download_grants")
-      .select("id, token, scope, book_id, email")
+      .select("id, token, scope, book_id, file_format, email")
       .eq("stripe_session_id", sessionId)
       .maybeSingle();
     if (raced) return raced as GrantRow;
-    return { error: "Kjør migrasjonen 20260716090000_book_pdf_sales.sql i Supabase.", status: 500 };
+    return { error: "Boktilgangen kunne ikke opprettes.", status: 500 };
+  }
+  if (scope === "single" && insert.book_id && insert.file_format) {
+    await supabase.rpc("publishing_record_direct_sale", {
+      p_stripe_session_id: sessionId,
+      p_book_id: insert.book_id,
+      p_file_format: insert.file_format,
+      p_gross_amount: Number(session.amount_total || 0) / 100,
+      p_currency: String(session.currency || "eur"),
+      p_metadata: { source: "books_access_confirmation" },
+    });
   }
   return created as GrantRow;
 }
@@ -89,7 +103,7 @@ export async function GET(request: NextRequest) {
   } else if (token) {
     const { data } = await supabase
       .from("book_download_grants")
-      .select("id, token, scope, book_id, email")
+      .select("id, token, scope, book_id, file_format, email")
       .eq("token", token)
       .maybeSingle();
     if (!data) return portalJson(request, { error: "Ugyldig nedlastingslenke." }, 404);
@@ -100,8 +114,8 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("publishing_books")
-    .select("id, title, subtitle")
-    .not("pdf_path", "is", null)
+    .select("id, title, subtitle, pdf_path, epub_path")
+    .or("pdf_path.not.is.null,epub_path.not.is.null")
     .order("title");
   if (grant.scope === "single" && grant.book_id) query = query.eq("id", grant.book_id);
 
@@ -109,7 +123,12 @@ export async function GET(request: NextRequest) {
   return portalJson(request, {
     token: grant.token,
     scope: grant.scope,
-    books: books || [],
+    books: (books || []).map((book) => ({
+      id: book.id,
+      title: book.title,
+      subtitle: book.subtitle,
+      formats: grant.scope === "single" && grant.file_format ? [grant.file_format] : availableBookFormats(book),
+    })),
   });
 }
 

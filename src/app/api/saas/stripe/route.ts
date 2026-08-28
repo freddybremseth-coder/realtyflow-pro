@@ -184,28 +184,50 @@ export async function POST(request: NextRequest) {
 
       // ─── Checkout completed (one-time or first subscription) ──
       case 'checkout.session.completed': {
-        // Book PDF purchase on freddybremseth.com: create the download
+        // Direct digital-book purchase: create the download
         // grant and send the customer their permanent link.
         if (data.metadata?.book_scope) {
           const scope = data.metadata.book_scope === 'all' ? 'all' : 'single';
+          const fileFormat = data.metadata.book_format === 'epub' ? 'epub' : 'pdf';
           const { randomBytes } = await import('node:crypto');
           const email = data.customer_details?.email || null;
-          const { data: grant, error: grantError } = await supabase
+          let { data: grant, error: grantError } = await supabase
             .from('book_download_grants')
             .insert({
               token: randomBytes(24).toString('hex'),
               email,
               scope,
               book_id: scope === 'single' ? data.metadata.book_id || null : null,
+              file_format: scope === 'single' ? fileFormat : null,
               stripe_session_id: data.id,
             })
             .select('token')
             .single();
 
-          if (grantError) throw new Error(`Create book download grant: ${grantError.message}`);
+          if (grantError) {
+            const existing = await supabase.from('book_download_grants')
+              .select('token')
+              .eq('stripe_session_id', data.id)
+              .maybeSingle();
+            if (!existing.data) throw new Error(`Create book download grant: ${grantError.message}`);
+            grant = existing.data;
+            grantError = null;
+          }
+
+          if (scope === 'single' && data.metadata.book_id) {
+            const { error: saleError } = await supabase.rpc('publishing_record_direct_sale', {
+              p_stripe_session_id: data.id,
+              p_book_id: data.metadata.book_id,
+              p_file_format: fileFormat,
+              p_gross_amount: Number(data.amount_total || 0) / 100,
+              p_currency: String(data.currency || 'eur'),
+              p_metadata: { source: 'stripe_webhook', livemode: Boolean(event.livemode) },
+            });
+            if (saleError) throw new Error(`Record direct book sale: ${saleError.message}`);
+          }
 
           if (grant && email) {
-            const base = process.env.BOOKS_SITE_BASE_URL || 'https://www.freddybremseth.com';
+            const base = process.env.BOOKS_SITE_BASE_URL || 'https://books.freddybremseth.com';
             const link = `${base}/nedlasting.html?token=${grant.token}`;
             const { sendBrandEmail } = await import('@/services/email/send-brand-email');
             await sendBrandEmail(supabase, {

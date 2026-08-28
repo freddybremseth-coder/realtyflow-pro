@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildConnectorEnvelope } from "@/lib/publishing/connector-contract";
 import {
   PUBLISHING_CHANNELS,
   PUBLISHING_CHANNEL_IDS,
@@ -10,6 +11,7 @@ import {
   type PublishingChannelId,
 } from "@/lib/publishing/distribution";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
+import { runApprovedDirectStoreJobs } from "@/services/publishing/connectors/direct-store";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
       .order("updated_at", { ascending: false })
       .limit(100),
     sb.from("publishing_distribution_jobs")
-      .select("id,publication_id,action,status,requested_by,approved_by,approved_at,output,error,attempt_count,created_at,updated_at")
+      .select("id,publication_id,action,status,requested_by,approved_by,approved_at,output,error,attempt_count,run_after,started_at,finished_at,created_at,updated_at")
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
@@ -122,6 +124,7 @@ export async function GET(request: NextRequest) {
       connected: connectedChannels.size,
       projects: projects.length,
       awaitingApproval: jobs.filter((row: any) => row.status === "awaiting_approval").length,
+      processing: jobs.filter((row: any) => ["approved", "running"].includes(row.status)).length,
       blocked: jobs.filter((row: any) => row.status === "blocked").length,
       published: publications.filter((row: any) => row.status === "published").length,
     },
@@ -166,6 +169,7 @@ async function prepareDistribution(input: z.infer<typeof prepareSchema>) {
       connectionReady: connected.has(channel),
     });
     const publicationStatus = preflight.ready ? "awaiting_approval" : "blocked";
+    const connectorEnvelope = buildConnectorEnvelope(channel, project, artifactManifest);
     const { data: publication, error: publicationError } = await sb.from("publishing_distribution_publications")
       .upsert({
         brand_id: String(project.brand_id || "freddypublishing"),
@@ -205,7 +209,7 @@ async function prepareDistribution(input: z.infer<typeof prepareSchema>) {
           connection_ready: connected.has(channel),
           approval_required: PUBLISHING_CHANNELS[channel].approvalRequired,
         },
-        output: { artifact_manifest: artifactManifest, preflight },
+        output: { artifact_manifest: artifactManifest, preflight, connector_envelope: connectorEnvelope },
         error: preflight.ready ? null : { code: "PREFLIGHT_BLOCKED", findings: preflight.findings },
         updated_at: new Date().toISOString(),
       }, { onConflict: "idempotency_key" })
@@ -238,6 +242,17 @@ async function updateJob(input: z.infer<typeof jobActionSchema>) {
   if (!definition) return NextResponse.json({ error: "Unknown publishing channel" }, { status: 409 });
 
   const now = new Date().toISOString();
+  if (input.action === "approve" && definition.requiresConnection) {
+    const { data: connection, error: connectionError } = await sb.from("publishing_channel_connections")
+      .select("status")
+      .eq("brand_id", "freddypublishing")
+      .eq("channel", channel)
+      .eq("status", "connected")
+      .limit(1)
+      .maybeSingle();
+    if (connectionError) return NextResponse.json({ error: connectionError.message }, { status: 500 });
+    if (!connection) return NextResponse.json({ error: `${definition.name} må kobles til før publiseringsjobben kan godkjennes.` }, { status: 409 });
+  }
   if (input.action === "approve" && job.status !== "awaiting_approval") {
     return NextResponse.json({ error: `Job is already ${job.status}` }, { status: 409 });
   }
@@ -267,7 +282,22 @@ async function updateJob(input: z.infer<typeof jobActionSchema>) {
   });
   if (transitionError) return NextResponse.json({ error: transitionError.message }, { status: 409 });
   const result = Array.isArray(transition) ? transition[0] : transition;
-  return NextResponse.json({ ok: true, status: result?.job_status, publicationStatus: result?.publication_status, output: transitionOutput });
+  let execution: Awaited<ReturnType<typeof runApprovedDirectStoreJobs>> | null = null;
+  if (input.action === "approve" && channel === "direct_store") {
+    execution = await runApprovedDirectStoreJobs(sb, { jobId: job.id, limit: 1, actor: "admin_ui" });
+  }
+  const { data: latest } = await sb.from("publishing_distribution_jobs")
+    .select("status,error,attempt_count,run_after,finished_at")
+    .eq("id", job.id)
+    .maybeSingle();
+  return NextResponse.json({
+    ok: true,
+    status: latest?.status || result?.job_status,
+    publicationStatus: result?.publication_status,
+    output: transitionOutput,
+    execution,
+    error: latest?.error || null,
+  });
 }
 
 export async function POST(request: NextRequest) {

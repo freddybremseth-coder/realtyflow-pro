@@ -1,16 +1,23 @@
 import { NextRequest } from "next/server";
 import { portalJson, portalPreflight } from "@/lib/demosites-portal";
-import { BOOK_ALL_ACCESS_PRICE_EUR, BOOK_PDF_PRICE_EUR, getBooksSupabase } from "@/lib/books-sales";
+import {
+  BOOK_ALL_ACCESS_PRICE_EUR,
+  BOOK_EPUB_PRICE_EUR,
+  availableBookFormats,
+  getBooksSupabase,
+  isBookFileFormat,
+  safeBookPrice,
+} from "@/lib/books-sales";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const SITE_BASE = process.env.BOOKS_SITE_BASE_URL || "https://www.freddybremseth.com";
+const SITE_BASE = process.env.BOOKS_SITE_BASE_URL || "https://books.freddybremseth.com";
 
 /**
  * POST /api/public/books/checkout
- * Body: { book_id } for one PDF (5 EUR) or { scope: "all" } for unlimited
- * downloads of every book (50 EUR). One-time Stripe payment; the webhook
+ * Body: { book_id, format?: "pdf"|"epub" } for one book or { scope: "all" }
+ * for unlimited downloads. One-time Stripe payment; the webhook
  * creates the download grant and the success page picks it up via
  * session_id.
  */
@@ -25,35 +32,44 @@ export async function POST(request: NextRequest) {
   const scope = body.scope === "all" ? "all" : "single";
   const bookId = String(body.book_id || "").trim();
   const customerEmail = String(body.email || "").trim();
+  const requestedFormat = isBookFileFormat(body.format) ? body.format : null;
 
-  let productName = `Alle bøker av Freddy Bremseth – ubegrenset PDF-nedlasting`;
+  let productName = "Alle bøker av Freddy Bremseth – ubegrenset digital nedlasting";
   let amountEur = BOOK_ALL_ACCESS_PRICE_EUR;
+  let selectedFormat: "pdf" | "epub" | null = null;
 
   if (scope === "single") {
     if (!bookId) return portalJson(request, { error: "book_id er påkrevd." }, 400);
     const { data: book } = await supabase
       .from("publishing_books")
-      .select("id, title, pdf_path")
+      .select("id, title, pdf_path, epub_path, price, currency")
       .eq("id", bookId)
       .maybeSingle();
-    if (!book?.pdf_path) return portalJson(request, { error: "Boken er ikke tilgjengelig som PDF." }, 404);
-    productName = `${book.title} – PDF-nedlasting`;
-    amountEur = BOOK_PDF_PRICE_EUR;
+    if (!book) return portalJson(request, { error: "Boken er ikke tilgjengelig." }, 404);
+    const formats = availableBookFormats(book);
+    selectedFormat = requestedFormat || formats[0] || null;
+    if (!selectedFormat || !formats.includes(selectedFormat)) {
+      return portalJson(request, { error: "Det valgte bokformatet er ikke tilgjengelig." }, 404);
+    }
+    productName = `${book.title} – ${selectedFormat.toUpperCase()}-nedlasting`;
+    amountEur = safeBookPrice(book.price, BOOK_EPUB_PRICE_EUR);
   }
 
   const params = new URLSearchParams();
   params.set("mode", "payment");
-  params.append("payment_method_types[]", "card");
   if (customerEmail.includes("@")) params.set("customer_email", customerEmail);
   params.set("locale", "auto");
   params.set("success_url", `${SITE_BASE}/nedlasting.html?session_id={CHECKOUT_SESSION_ID}`);
   params.set("cancel_url", `${SITE_BASE}/nedlasting.html`);
   params.set("line_items[0][quantity]", "1");
   params.set("line_items[0][price_data][currency]", "eur");
-  params.set("line_items[0][price_data][unit_amount]", String(amountEur * 100));
+  params.set("line_items[0][price_data][unit_amount]", String(Math.round(amountEur * 100)));
   params.set("line_items[0][price_data][product_data][name]", productName);
   params.set("metadata[book_scope]", scope);
-  if (scope === "single") params.set("metadata[book_id]", bookId);
+  if (scope === "single") {
+    params.set("metadata[book_id]", bookId);
+    params.set("metadata[book_format]", selectedFormat || "epub");
+  }
 
   try {
     const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {

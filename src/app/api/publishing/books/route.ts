@@ -38,6 +38,7 @@ function sanitizeBook(body: Record<string, unknown>) {
     subtitle: String(body.subtitle || ""),
     asin: String(body.asin || "").trim() || null,
     pdf_path: String(body.pdf_path || "").trim() || null,
+    epub_path: String(body.epub_path || "").trim() || null,
     format: String(body.format || "kindle"),
     marketplace: String(body.marketplace || "amazon.com"),
     amazon_url: String(body.amazon_url || ""),
@@ -60,6 +61,10 @@ function sanitizeBook(body: Record<string, unknown>) {
     next_action: String(body.next_action || ""),
     priority: Math.max(0, Math.min(100, Number(body.priority || 50))),
     notes: String(body.notes || ""),
+    description: String(body.description || ""),
+    language: String(body.language || ""),
+    cover_url: String(body.cover_url || "").trim() || null,
+    published_at: body.published_at || null,
     last_checked_at: body.last_checked_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

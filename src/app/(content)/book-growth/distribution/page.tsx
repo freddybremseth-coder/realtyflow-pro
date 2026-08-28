@@ -9,12 +9,12 @@ type Channel = {
 };
 type Project = { id: string; title: string; language: string; status: string; genre?: string | null; series_name?: string | null };
 type Job = {
-  id: string; status: string; action: string; created_at: string;
+  id: string; status: string; action: string; created_at: string; run_after?: string | null; error?: { message?: string } | null;
   project?: { id: string; title: string } | null;
   publication?: { channel: string; artifact_manifest?: { epub?: string; metadata?: string; cover?: string | null }; preflight?: { findings?: Array<{ severity: string; message: string }> } } | null;
 };
 type Payload = {
-  summary: { channels: number; connected: number; projects: number; awaitingApproval: number; blocked: number; published: number };
+  summary: { channels: number; connected: number; projects: number; awaitingApproval: number; processing: number; blocked: number; published: number };
   channels: Channel[]; projects: Project[]; jobs: Job[];
 };
 
@@ -54,7 +54,7 @@ export default function BookDistributionPage() {
       const response = await fetch("/api/book-growth/distribution", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result?.error || `HTTP ${response.status}`);
-      setMessage(body.action === "prepare" ? "Distribusjonsplanen er kontrollert og lagt i godkjenningskøen." : `Jobben er nå ${result.status}.`);
+      setMessage(body.action === "prepare" ? "Distribusjonsplanen er kontrollert og lagt i godkjenningskøen." : body.action === "approve" && result.execution?.succeeded > 0 ? "Godkjent og automatisk publisert i bokbutikken." : `Jobben er nå ${result.status}.`);
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -72,7 +72,7 @@ export default function BookDistributionPage() {
     {error && <div style={{ padding: 12, background: "#fef2f2", color: "#b91c1c", borderRadius: 8, marginBottom: 12 }}>⛔ {error}</div>}
     {message && <div style={{ padding: 12, background: "#ecfdf5", color: "#047857", borderRadius: 8, marginBottom: 12 }}>✓ {message}</div>}
     {s && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 10 }}>
-      <Metric label="Kanaler" value={s.channels}/><Metric label="Tilkoblet" value={s.connected}/><Metric label="Bokprosjekter" value={s.projects}/><Metric label="Til godkjenning" value={s.awaitingApproval}/><Metric label="Blokkert" value={s.blocked}/><Metric label="Publisert" value={s.published}/>
+      <Metric label="Kanaler" value={s.channels}/><Metric label="Tilkoblet" value={s.connected}/><Metric label="Bokprosjekter" value={s.projects}/><Metric label="Til godkjenning" value={s.awaitingApproval}/><Metric label="Behandles" value={s.processing}/><Metric label="Blokkert" value={s.blocked}/><Metric label="Publisert" value={s.published}/>
     </div>}
 
     <section style={{ marginTop: 18, border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, background: "white" }}>
@@ -106,6 +106,7 @@ export default function BookDistributionPage() {
           return <article key={job.id} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 14, background: "white" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><b>{job.project?.title ?? "Bokprosjekt"}</b><div style={{ fontSize: 12, color: "#64748b" }}>{channel?.name ?? job.publication?.channel ?? "—"} · {job.action}</div></div><b>{job.status.toUpperCase()}</b></div>
             {findings.length > 0 && <ul style={{ margin: "10px 0", paddingLeft: 20, fontSize: 13 }}>{findings.map((item, index) => <li key={`${item.message}-${index}`} style={{ color: item.severity === "blocker" ? "#b91c1c" : "#475569" }}>{item.message}</li>)}</ul>}
+            {job.error?.message && <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12 }}>{job.error.message}{job.run_after ? ` · nytt forsøk ${new Date(job.run_after).toLocaleString("nb-NO")}` : ""}</div>}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
               {job.publication?.artifact_manifest?.epub && <a href={job.publication.artifact_manifest.epub} style={{ padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 7 }}>Last ned EPUB</a>}
               {job.status === "awaiting_approval" && <button disabled={busy !== null} onClick={() => void callAction({ action: "approve", jobId: job.id }, job.id)}>Godkjenn</button>}

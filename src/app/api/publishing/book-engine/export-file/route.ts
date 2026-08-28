@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Document, HeadingLevel, ImageRun, Packer, Paragraph, TextRun } from "docx";
-import JSZip from "jszip";
 import { requireAdminApi } from "@/lib/api-admin";
+import { toEpubBuffer as buildCanonicalEpub } from "@/lib/publishing/epub-export";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -96,15 +96,6 @@ function sanitizeDraftText(raw: unknown): string {
 
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-}
-
-function xmlEscape(value: unknown) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 }
 
 function getProjectParts(project: Record<string, any>) {
@@ -221,154 +212,6 @@ async function toDocxBuffer(project: Record<string, any>) {
   return Packer.toBuffer(doc);
 }
 
-async function toEpubBuffer(project: Record<string, any>) {
-  const { title, subtitle, chapterDrafts, toc, coverUrl, author, kdpDescription } = getProjectParts(project);
-  const zip = new JSZip();
-  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
-
-  const metaInf = zip.folder("META-INF");
-  metaInf?.file(
-    "container.xml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`,
-  );
-
-  const oebps = zip.folder("OEBPS");
-  const images = oebps?.folder("images");
-  const text = oebps?.folder("text");
-
-  const allChapters = chapterDrafts.length > 0
-    ? chapterDrafts.map((chapter, index) => ({
-        title: clean(chapter.chapter_title) || `Chapter ${index + 1}`,
-        body: sanitizeDraftText(chapter.draft) || "",
-      }))
-    : toc.map((row, index) => ({
-        title: clean(row.title) || `Chapter ${index + 1}`,
-        body: clean(row.goal) || "",
-      }));
-
-  const manifestItems: string[] = [];
-  const spineItems: string[] = [];
-  const navListItems: string[] = [];
-  const imageManifest: string[] = [];
-
-  const coverImageUrl = coverUrl;
-  let coverImageHref = "";
-  let coverPageHref = "";
-  if (coverImageUrl && images) {
-    const loaded = await fetchImageBuffer(coverImageUrl);
-    if (loaded) {
-      const ext = loaded.type === "jpg" ? "jpg" : loaded.type;
-      const coverName = `cover.${ext}`;
-      images.file(coverName, loaded.buffer);
-      coverImageHref = `images/${coverName}`;
-      imageManifest.push(
-        `<item id="cover-image" href="${coverImageHref}" media-type="${loaded.type === "jpg" ? "image/jpeg" : `image/${loaded.type}`}" properties="cover-image"/>`,
-      );
-      // Egen omslagsside først i spine — KDP forventer at boken åpner på
-      // omslaget, ikke rett i første kapittel.
-      const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="${xmlEscape(clean(project.language) || "en")}">
-  <head>
-    <meta charset="UTF-8" />
-    <title>${xmlEscape(title)}</title>
-    <style>body{margin:0;padding:0;text-align:center;}img{max-width:100%;height:auto;}</style>
-  </head>
-  <body>
-    <img src="${coverImageHref}" alt="${xmlEscape(title)}" />
-  </body>
-</html>`;
-      text?.file("cover.xhtml", coverXhtml);
-      coverPageHref = "text/cover.xhtml";
-    }
-  }
-
-  for (let i = 0; i < allChapters.length; i += 1) {
-    const chapter = allChapters[i];
-    const chapterId = `chap${i + 1}`;
-    const chapterFile = `${chapterId}.xhtml`;
-    const titleSafe = xmlEscape(chapter.title || `Chapter ${i + 1}`);
-    const paragraphs = String(chapter.body || "")
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .map((p) => `<p>${xmlEscape(p)}</p>`)
-      .join("\n");
-    const chapterXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>${titleSafe}</title>
-  </head>
-  <body>
-    <h1>${titleSafe}</h1>
-    ${paragraphs || "<p></p>"}
-  </body>
-</html>`;
-    text?.file(chapterFile, chapterXhtml);
-    manifestItems.push(`<item id="${chapterId}" href="text/${chapterFile}" media-type="application/xhtml+xml"/>`);
-    spineItems.push(`<itemref idref="${chapterId}"/>`);
-    navListItems.push(`<li><a href="text/${chapterFile}">${titleSafe}</a></li>`);
-  }
-
-  const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Table of Contents</title>
-  </head>
-  <body>
-    <nav epub:type="toc" id="toc">
-      <h1>Contents</h1>
-      <ol>
-        ${navListItems.join("\n")}
-      </ol>
-    </nav>
-  </body>
-</html>`;
-  oebps?.file("nav.xhtml", navXhtml);
-
-  const bookId = slug(title) || `book-${Date.now()}`;
-  const modifiedIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-  // KDP-beskrivelse (fra kdp_package) uten HTML-tagger til dc:description.
-  const descriptionText = (kdpDescription || subtitle || title).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  const coverManifestItem = coverPageHref ? `<item id="coverpage" href="${coverPageHref}" media-type="application/xhtml+xml"/>` : "";
-  const coverSpineItem = coverPageHref ? `<itemref idref="coverpage" linear="yes"/>` : "";
-  const legacyCoverMeta = coverImageHref ? `<meta name="cover" content="cover-image"/>` : "";
-  const contentOpf = `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">urn:uuid:${xmlEscape(bookId)}</dc:identifier>
-    <dc:title>${xmlEscape(title)}</dc:title>
-    <dc:creator>${xmlEscape(author)}</dc:creator>
-    <dc:language>${xmlEscape(clean(project.language) || "en")}</dc:language>
-    <dc:description>${xmlEscape(descriptionText.slice(0, 4000))}</dc:description>
-    ${legacyCoverMeta}
-    <meta property="dcterms:modified">${modifiedIso}</meta>
-  </metadata>
-  <manifest>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    ${coverManifestItem}
-    ${imageManifest.join("\n")}
-    ${manifestItems.join("\n")}
-  </manifest>
-  <spine>
-    ${coverSpineItem}
-    ${spineItems.join("\n")}
-  </spine>
-</package>`;
-  oebps?.file("content.opf", contentOpf);
-
-  return zip.generateAsync({ type: "nodebuffer", mimeType: "application/epub+zip" });
-}
-
 export async function GET(request: NextRequest) {
   const unauthorized = await requireAdminApi(request);
   if (unauthorized) return unauthorized;
@@ -397,7 +240,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const buffer = await toEpubBuffer(project);
+  const buffer = await buildCanonicalEpub(project);
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/epub+zip",
