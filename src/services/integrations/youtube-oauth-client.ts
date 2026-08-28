@@ -16,4 +16,3 @@ export function createYoutubeOAuthClient(auth: OAuth2Client): youtube_v3.Youtube
     auth: auth as unknown as youtube_v3.Options["auth"],
   });
 }
-
