@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
 
 type LibraryBook = {
   id: string;
@@ -53,6 +54,7 @@ type LibraryProject = {
   source_book_id?: string | null;
   parent_project_id?: string | null;
   updated_at?: string | null;
+  metadata_plan?: Record<string, any>;
   chapters: number;
   words: number;
   images: number;
@@ -80,6 +82,7 @@ type FullProject = {
   status?: string | null;
   parent_project_id?: string | null;
   source_book_id?: string | null;
+  updated_at?: string | null;
   chapter_drafts?: Chapter[];
   outline_plan?: { toc?: Array<{ title?: string }> } & Record<string, any>;
   metadata_plan?: Record<string, any>;
@@ -156,7 +159,7 @@ export default function ForfatterstudioPage() {
   const [showVoice, setShowVoice] = useState(false);
   const [showConsistency, setShowConsistency] = useState(false);
   const [showNewBook, setShowNewBook] = useState(false);
-  const [newBook, setNewBook] = useState({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
+  const [newBook, setNewBook] = useState({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150, seriesName: "", style: "", canonNotes: "" });
   const [creatingBook, setCreatingBook] = useState<string | null>(null);
   const [writingNext, setWritingNext] = useState(false);
   const [newBookSource, setNewBookSource] = useState<{ name: string; content: string } | null>(null);
@@ -603,6 +606,8 @@ export default function ForfatterstudioPage() {
           language: newBook.language,
           audience: newBook.audience.trim() || undefined,
           positioning: newBook.brief.trim() || undefined,
+          series_name: newBook.seriesName.trim() || undefined,
+          consistency_notes: [newBook.style.trim(), newBook.canonNotes.trim()].filter(Boolean).join("\n\n") || undefined,
           niche: "",
           target_pages: newBook.pages,
           target_words: Math.max(12000, Math.round(newBook.pages * 190)),
@@ -615,7 +620,7 @@ export default function ForfatterstudioPage() {
       if (!createRes.ok || !created.project?.id) throw new Error(created.error || "Kunne ikke opprette boken.");
       const projectId = String(created.project.id);
 
-      setCreatingBook("Steg 1/2: AI-en lager tittelarbeid og metadata…");
+      setCreatingBook("Steg 1/3: ChatGPT lager metadata og låser seriebibel/canon 1.0…");
       const seoRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -626,7 +631,7 @@ export default function ForfatterstudioPage() {
         console.warn("SEO-steget feilet (fortsetter):", seoErr.error);
       }
 
-      setCreatingBook("Steg 2/2: Kapitteloversikt lages og første kapittel skrives (research → utkast → redaktørkritikk → revisjon). Tar 2–4 minutter — bli på siden…");
+      setCreatingBook("Steg 2–3/3: ChatGPT lager master outline og skriver første kapittel (research → utkast → redaktørkritikk → revisjon). Dette kan ta noen minutter…");
       const genRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -640,7 +645,7 @@ export default function ForfatterstudioPage() {
           : "Boken er i gang: kapitteloversikt + første kapittel er klart.";
 
       setShowNewBook(false);
-      setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150 });
+      setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150, seriesName: "", style: "", canonNotes: "" });
       setNewBookSource(null);
       await loadLibrary();
       await openProject(projectId);
@@ -1384,6 +1389,22 @@ export default function ForfatterstudioPage() {
     }
     return map;
   }, [projects]);
+  const projectGroups = useMemo(() => groupBookProjects(projects), [projects]);
+  const finalApproval = project ? publicationApproval(project) : null;
+
+  const changeDistributionApproval = useCallback(async (approve: boolean) => {
+    if (!project) return;
+    if (approve && !window.confirm("Godkjenne denne eksakte manusversjonen som endelig og sende den videre til Distribution?")) return;
+    const data = await studioPost({
+      mode: approve ? "approve_for_distribution" : "revoke_distribution_approval",
+      project_id: project.id,
+    }, "distribution-approval");
+    if (data) {
+      setStatus(approve
+        ? "Endelig bok er godkjent. Denne utgaven er nå synlig i Distribution."
+        : "Distribusjonsgodkjenningen er trukket tilbake.");
+    }
+  }, [project, studioPost]);
 
   // ─── Studio-visning for et valgt prosjekt ─────────────────────────────────
   if (project) {
@@ -1406,6 +1427,24 @@ export default function ForfatterstudioPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {finalApproval?.approved ? (
+              <>
+                <Badge variant="default" className="h-9 px-3 bg-emerald-600">✓ Endelig godkjent</Badge>
+                <Button variant="outline" size="sm" onClick={() => changeDistributionApproval(false)} disabled={busy}>
+                  Trekk godkjenning
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => changeDistributionApproval(true)}
+                disabled={busy || project.status !== "ready_for_export" || chapters.length === 0}
+              >
+                {busyAction === "distribution-approval" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                Godkjenn endelig bok
+              </Button>
+            )}
             {chaptersRemaining > 0 && !project.parent_project_id && !isRewriteProject ? (
               <Button size="sm" onClick={writeNextChapter} disabled={busy}>
                 {writingNext ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Feather className="mr-2 h-4 w-4" />}
@@ -1522,6 +1561,19 @@ export default function ForfatterstudioPage() {
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {project.metadata_plan?.production_bible ? (
+          <details className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+            <summary className="cursor-pointer font-semibold text-emerald-800 dark:text-emerald-300">
+              ✓ Låst produksjons-/seriebibel {String(project.metadata_plan.production_bible.version || "1.0")} · ChatGPT/OpenAI
+            </summary>
+            <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+              <div><b>Leserløfte</b><p className="mt-1 text-muted-foreground">{String(project.metadata_plan.production_bible.reader_contract?.book_promise || project.outline_plan?.book_promise || "—")}</p></div>
+              <div><b>Redaksjonell linje</b><p className="mt-1 text-muted-foreground">{String(project.metadata_plan.production_bible.editorial_line?.purpose || "—")}</p></div>
+              <div className="md:col-span-2"><b>Canon og kontinuitet</b><p className="mt-1 text-muted-foreground">{([...(project.metadata_plan.production_bible.canon?.established_facts || []), ...(project.metadata_plan.production_bible.series_canon?.continuity_rules || [])] as string[]).slice(0, 8).join(" · ") || "Ingen etablerte canon-punkter ennå."}</p></div>
+            </div>
+          </details>
+        ) : null}
 
         {showCover ? (
           <Card>
@@ -2406,9 +2458,15 @@ export default function ForfatterstudioPage() {
       {showNewBook ? (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2"><Feather className="h-4 w-4" /> Ny bok</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Feather className="h-4 w-4" /> Ny bok · ChatGPT/OpenAI-produksjon</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3">
+              <p className="text-xs font-semibold text-blue-800 dark:text-blue-300">Fast produksjonsløype</p>
+              <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                {["1. Seriebibel + canon", "2. Researchplan", "3. Master outline", "4. Kumulativt manus", "5. Redaktørpass", "6. Faktaverifisering", "7. EPUB/ZIP", "8. Endelig godkjenning"].map((step) => <span key={step} className="rounded-full border bg-background px-2 py-1">{step}</span>)}
+              </div>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="text-sm">
                 <span className="mb-1 block font-medium">Tittel / arbeidstittel *</span>
@@ -2417,6 +2475,10 @@ export default function ForfatterstudioPage() {
               <label className="text-sm">
                 <span className="mb-1 block font-medium">Målgruppe</span>
                 <Input value={newBook.audience} onChange={(e) => setNewBook((b) => ({ ...b, audience: e.target.value }))} placeholder="F.eks. helsebevisste lesere 40+" />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Serie (valgfritt)</span>
+                <Input value={newBook.seriesName} onChange={(e) => setNewBook((b) => ({ ...b, seriesName: e.target.value }))} placeholder="Eksisterende eller ny bokserie" />
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">Sjanger</span>
@@ -2451,6 +2513,16 @@ export default function ForfatterstudioPage() {
                 </label>
               </div>
             </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Stil og forfatterstemme</span>
+                <textarea className="min-h-[90px] w-full rounded-md border bg-background p-3 text-sm" value={newBook.style} onChange={(e) => setNewBook((b) => ({ ...b, style: e.target.value }))} placeholder="Tone, rytme, forbilde, faglig nivå og hvordan teksten skal føles." />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Canon – dette må aldri endres eller oppfinnes</span>
+                <textarea className="min-h-[90px] w-full rounded-md border bg-background p-3 text-sm" value={newBook.canonNotes} onChange={(e) => setNewBook((b) => ({ ...b, canonNotes: e.target.value }))} placeholder="Personer, tidslinje, etablerte fakta, tidligere bøker og absolutte grenser." />
+              </label>
+            </div>
             <label className="block text-sm">
               <span className="mb-1 block font-medium">Hva skal boken handle om? Hva skal leseren sitte igjen med?</span>
               <textarea
@@ -2484,10 +2556,10 @@ export default function ForfatterstudioPage() {
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={createBook} disabled={!newBook.title.trim() || Boolean(creatingBook)}>
                 {creatingBook ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Feather className="mr-1 h-4 w-4" />}
-                Opprett og skriv første kapittel
+                Start profesjonell bokproduksjon
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowNewBook(false)} disabled={Boolean(creatingBook)}>Avbryt</Button>
-              <span className="text-xs text-muted-foreground">AI-en lager kapitteloversikt og skriver første kapittel (2–4 min).</span>
+              <span className="text-xs text-muted-foreground">ChatGPT lager og låser bibelen før outline og første kapittel.</span>
             </div>
           </CardContent>
         </Card>
@@ -2495,20 +2567,26 @@ export default function ForfatterstudioPage() {
       {projectLoading ? <p className="text-sm text-muted-foreground"><Loader2 className="inline h-4 w-4 animate-spin" /> Åpner manus…</p> : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Manus og kladd</h2>
+        <div>
+          <h2 className="text-lg font-semibold">Bøker under arbeid</h2>
+          <p className="text-xs text-muted-foreground">Én bok vises én gang. Manus, eksportfiler og språkutgaver ligger samlet under hovedkortet.</p>
+        </div>
         {projects.length === 0 && !libraryLoading ? (
           <p className="text-sm text-muted-foreground">
             Ingen manusprosjekter ennå. Hent inn en utgitt bok under, eller lag en ny bok i Bokmotoren i Publishing Hub.
           </p>
         ) : null}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((p) => (
-            <Card key={p.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openProject(p.id)}>
+          {projectGroups.map((group) => {
+            const p = group.canonical;
+            const approvedEdition = group.editions.find((edition) => publicationApproval(edition).approved);
+            return (
+            <Card key={group.id} className="transition-shadow hover:shadow-md">
               <CardContent className="pt-5 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-semibold leading-tight">{p.title}</p>
                   <div className="flex items-center gap-1">
-                    <Badge variant="outline">{STATUS_LABELS[String(p.status)] || p.status}</Badge>
+                    {approvedEdition ? <Badge className="bg-emerald-600">Endelig godkjent</Badge> : <Badge variant="outline">Ikke sluttgodkjent</Badge>}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -2528,12 +2606,27 @@ export default function ForfatterstudioPage() {
                 <p className="text-xs text-muted-foreground">
                   {langLabel(p.language)} · {p.chapters} kapitler · {p.words.toLocaleString("nb-NO")} ord
                   {p.images > 0 ? ` · ${p.images} bilder` : ""}
-                  {p.parent_project_id ? " · språkutgave" : ""}
-                  {p.source_book_id ? " · fra utgitt bok" : ""}
+                  {group.editions.length > 1 ? ` · ${group.editions.length} versjoner/utgaver` : ""}
                 </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button size="sm" onClick={() => openProject(approvedEdition?.id || p.id)}>Åpne hovedmanus</Button>
+                  {group.editions.length > 1 ? (
+                    <details className="w-full rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                      <summary className="cursor-pointer font-medium">Vis versjonshistorikk og språkutgaver</summary>
+                      <div className="mt-2 space-y-2">
+                        {group.editions.map((edition) => (
+                          <div key={edition.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+                            <span>{edition.title} · {langLabel(edition.language)} · {STATUS_LABELS[String(edition.status)] || edition.status}</span>
+                            <Button size="sm" variant="outline" className="h-7" onClick={() => openProject(edition.id)}>Åpne</Button>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
-          ))}
+          )})}
         </div>
       </section>
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { askClaude } from "@/services/ai/claude-client";
+import { askBookAuthor as askClaude } from "@/services/ai/book-author-client";
 import { researchWeb } from "@/services/ai/research";
 import { uploadThumbnail } from "@/services/storage/media";
 import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt, type BookBible } from "@/lib/author-craft";
@@ -189,6 +189,53 @@ JSON schema:
     cover_brief: "Premium, clean cover with strong thumbnail readability.",
     launch_angle: "Practical beginner-friendly angle.",
   });
+}
+
+async function generateProductionBible(input: Record<string, any>, seoPlan: Record<string, any>) {
+  const promptInput = compactForPrompt(input);
+  const prompt = `
+Du er sjefredaktør for Freddy Bremseth Publishing. Lag den styrende bibelen FØR boka skrives. Returner KUN gyldig JSON.
+
+Input:
+${JSON.stringify({ ...promptInput, seoPlan }, null, 2)}
+
+Bibelen er kanon og skal låses som versjon 1.0. Den skal være konkret nok til at flere skriveøkter kan fortsette uten kontinuitetsbrudd.
+
+JSON schema:
+{
+  "version":"1.0",
+  "locked":true,
+  "book_identity":{"working_title":"string","series_name":"string","book_number":"string","language":"string","genre":"string"},
+  "reader_contract":{"primary_audience":"string","reader_problem":"string","book_promise":"string","transformation":"string"},
+  "editorial_line":{"purpose":"string","tone":["string"],"style_rules":["string"],"forbidden_patterns":["string"]},
+  "canon":{"established_facts":["string"],"people_places_terms":["string"],"must_not_invent":["string"],"open_questions":["string"]},
+  "series_canon":{"shared_identity":["string"],"continuity_rules":["string"],"previous_book_dependencies":["string"]},
+  "research_plan":{"questions":["string"],"preferred_source_types":["string"],"verification_rules":["string"],"citation_policy":"string"},
+  "structure_rules":{"target_words":30000,"chapter_pattern":["string"],"opening_rule":"string","ending_rule":"string"},
+  "production_workflow":["research","outline","write","edit","verify","format","epub_zip","final_approval"]
+}
+
+Krav:
+- Ikke oppfinn seriehistorikk, fakta eller forfattererfaring. Legg usikre forhold i open_questions.
+- Hvis dette er del av en serie, bruk series_context som overordnet canon.
+- For skjønnlitteratur: canon skal dekke personer, tidslinje, verden, regler, hemmeligheter og hva leseren vet.
+- For sakprosa: canon skal dekke definisjoner, evidensstandard, redaksjonell linje og grensen mellom fakta, praksis og forfatterperspektiv.
+`;
+  const raw = await askClaude(prompt, { model: "sonnet", maxTokens: 6000, temperature: 0.25, responseMimeType: "application/json" });
+  const fallback = {
+    version: "1.0",
+    locked: true,
+    book_identity: { working_title: input.title || "", series_name: input.series_name || "", book_number: "", language: input.language || "en", genre: input.genre || "guide" },
+    reader_contract: { primary_audience: input.audience || "", reader_problem: "", book_promise: input.positioning || "", transformation: "" },
+    editorial_line: { purpose: input.positioning || "", tone: [], style_rules: [], forbidden_patterns: [] },
+    canon: { established_facts: [], people_places_terms: [], must_not_invent: ["Fakta, kilder, personer eller hendelser uten dokumentasjon"], open_questions: [] },
+    series_canon: { shared_identity: [], continuity_rules: [], previous_book_dependencies: [] },
+    research_plan: { questions: [], preferred_source_types: ["Primærkilder", "offisiell statistikk", "fagfellevurdert forskning"], verification_rules: ["Verifiser alle tall og sitater"], citation_policy: "Behold kildegrunnlag for etterprøving." },
+    structure_rules: { target_words: Number(input.target_words || 30000), chapter_pattern: [], opening_rule: "Start konkret.", ending_rule: "Avslutt med fremdrift." },
+    production_workflow: ["research", "outline", "write", "edit", "verify", "format", "epub_zip", "final_approval"],
+  };
+  const parsed = safeJsonParse<Record<string, any>>(raw, fallback);
+  return { ...fallback, ...parsed, version: "1.0", locked: true, locked_at: new Date().toISOString(), provider: "openai_primary" };
 }
 
 async function generateAuthorPlan(input: Record<string, any>, seoPlan: Record<string, any>, sampleChapterCount = 2) {
@@ -466,6 +513,9 @@ async function writeChapterTwoPass(
   const targetWords = Math.min(Math.max(Number(tocRow.target_words || 1800), 900), 4000);
   const sourceMaterial = String(project.metadata_plan?.source_material || "").slice(0, 8000);
   const research = await researchChapter(project, tocRow, craft.id);
+  const productionBible = project.metadata_plan?.production_bible
+    ? JSON.stringify(project.metadata_plan.production_bible, null, 2).slice(0, 8000)
+    : "";
 
   const draftPrompt = `
 Du er en prisbelønt forfatter som skriver et helt kapittel i en bok. Returner KUN gyldig JSON.
@@ -478,6 +528,7 @@ ${JSON.stringify({ title: tocRow.title, goal: tocRow.goal || "", target_words: t
 
 BOK-BIBEL (det som allerede er skrevet — bygg videre, ikke gjenta):
 ${bibleForPrompt(bible)}
+${productionBible ? `\nLÅST PRODUKSJONS-/SERIEBIBEL 1.0 (kanon — må ikke brytes):\n${productionBible}` : ""}
 ${previousTail ? `\nSlutten av forrige kapittel (fortsett flyten herfra):\n---\n${previousTail}\n---` : ""}
 ${voice}
 HÅNDVERKSREGLER (${craft.label}):
@@ -765,12 +816,15 @@ export async function POST(request: NextRequest) {
         source_instructions: String(current.metadata_plan?.source_instructions || ""),
       };
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
-      const enrichedInput = { ...input, series_context: seriesContext };
+      const productionBible = current.metadata_plan?.production_bible?.locked
+        ? current.metadata_plan.production_bible
+        : await generateProductionBible({ ...input, series_context: seriesContext }, current.metadata_plan || {});
+      const enrichedInput = { ...input, series_context: seriesContext, production_bible: productionBible };
       const seoPlan = await generateSeoPlan(enrichedInput);
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
       const fallbackProject = {
         ...current,
-        metadata_plan: seoPlan,
+        metadata_plan: { ...(current.metadata_plan || {}), ...seoPlan, production_bible: productionBible },
         outline_plan: {
           book_promise: authorPlan.book_promise || "",
           toc: asArray(authorPlan.toc),
@@ -800,6 +854,8 @@ export async function POST(request: NextRequest) {
           metadata_plan: {
             ...(current.metadata_plan || {}),
             ...seoPlan,
+            production_bible: productionBible,
+            generation_provider: "openai_primary",
             book_bible: bookBible,
             revision_report: revisionReport,
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
@@ -869,10 +925,15 @@ export async function POST(request: NextRequest) {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
       const enrichedInput = { ...input, series_context: seriesContext };
       const seoPlan = await generateSeoPlan(enrichedInput);
+      const productionBible = current.metadata_plan?.production_bible?.locked
+        ? current.metadata_plan.production_bible
+        : await generateProductionBible(enrichedInput, seoPlan);
       const mergedMetadata = {
         ...(current.metadata_plan || {}),
         ...seoPlan,
-        generation_state: "seo_ready",
+        production_bible: productionBible,
+        generation_provider: "openai_primary",
+        generation_state: "bible_ready",
       };
       const { data, error } = await supabase
         .from("publishing_book_projects")
@@ -924,12 +985,15 @@ export async function POST(request: NextRequest) {
     };
     try {
       const seriesContext = await loadSeriesContext(supabase, input.series_name);
-      const enrichedInput = { ...input, series_context: seriesContext };
+      const productionBible = current.metadata_plan?.production_bible?.locked
+        ? current.metadata_plan.production_bible
+        : await generateProductionBible({ ...input, series_context: seriesContext }, current.metadata_plan || {});
+      const enrichedInput = { ...input, series_context: seriesContext, production_bible: productionBible };
       const seoPlan = (current.metadata_plan || {}) as Record<string, any>;
       const authorPlan = await generateAuthorPlan(enrichedInput, seoPlan, 2);
       const fallbackProject = {
         ...current,
-        metadata_plan: seoPlan,
+        metadata_plan: { ...(current.metadata_plan || {}), ...seoPlan, production_bible: productionBible },
         outline_plan: {
           book_promise: authorPlan.book_promise || "",
           toc: asArray(authorPlan.toc),
@@ -960,6 +1024,8 @@ export async function POST(request: NextRequest) {
           chapter_drafts: mergedDrafts,
           metadata_plan: {
             ...(current.metadata_plan || {}),
+            production_bible: productionBible,
+            generation_provider: "openai_primary",
             book_bible: bookBible,
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
             revision_report: revisionReport,
@@ -1142,6 +1208,8 @@ export async function POST(request: NextRequest) {
     status: "generating",
     metadata_plan: {
       generation_state: "started",
+      generation_provider: "openai_primary",
+      production_workflow: ["series_bible", "research", "outline", "cumulative_manuscript", "editorial_review", "verification", "epub_zip", "final_approval"],
       illustration_style: input.illustration_style,
       consistency_notes: input.consistency_notes,
       recurring_characters: input.recurring_characters,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { askClaude } from "@/services/ai/claude-client";
+import { askBookAuthor as askClaude } from "@/services/ai/book-author-client";
 import { bibleForPrompt, bibleFromMetadata, resolveCraft, voiceForPrompt } from "@/lib/author-craft";
 
 // ─── AI Forfatterstudio ──────────────────────────────────────────────────────
@@ -783,7 +783,7 @@ export async function GET(request: NextRequest) {
       .order("title"),
     supabase
       .from("publishing_book_projects")
-      .select("id, title, subtitle, language, genre, series_name, status, source_book_id, parent_project_id, chapter_drafts, updated_at, created_at")
+      .select("id, title, subtitle, language, genre, series_name, status, source_book_id, parent_project_id, metadata_plan, chapter_drafts, updated_at, created_at")
       .order("updated_at", { ascending: false })
       .limit(100),
   ]);
@@ -800,6 +800,7 @@ export async function GET(request: NextRequest) {
       status: row.status,
       source_book_id: row.source_book_id,
       parent_project_id: row.parent_project_id,
+      metadata_plan: row.metadata_plan || {},
       updated_at: row.updated_at,
       created_at: row.created_at,
       chapters: chapters.length,
@@ -999,6 +1000,53 @@ export async function POST(request: NextRequest) {
 
     const project = await loadProject(supabase, projectId);
     const chapters = asArray<Chapter>(project.chapter_drafts);
+
+    // Én eksplisitt sluttgodkjenning åpner den eksakte manusrevisjonen for
+    // Distribution. Senere manuseditering endrer updated_at og gjør dermed
+    // godkjenningen utdatert uten å slette revisjonshistorikken.
+    if (mode === "approve_for_distribution") {
+      if (project.status !== "ready_for_export" || chapters.length === 0) {
+        return NextResponse.json({ error: "Boken må være ferdig og klar for eksport før sluttgodkjenning." }, { status: 409 });
+      }
+      const approvedAt = new Date().toISOString();
+      const metadataPlan = {
+        ...(project.metadata_plan || {}),
+        publication_approval: {
+          status: "approved",
+          approved_at: approvedAt,
+          approved_by: "freddy",
+          approved_revision_at: project.updated_at,
+        },
+      };
+      const { data: updated, error } = await supabase
+        .from("publishing_book_projects")
+        .update({ metadata_plan: metadataPlan })
+        .eq("id", projectId)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
+
+    if (mode === "revoke_distribution_approval") {
+      const metadataPlan = {
+        ...(project.metadata_plan || {}),
+        publication_approval: {
+          ...((project.metadata_plan || {}).publication_approval || {}),
+          status: "revoked",
+          revoked_at: new Date().toISOString(),
+          revoked_by: "freddy",
+        },
+      };
+      const { data: updated, error } = await supabase
+        .from("publishing_book_projects")
+        .update({ metadata_plan: metadataPlan })
+        .eq("id", projectId)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode, project: updated });
+    }
 
     // Full manusanalyse fra AI-redaktøren.
     if (mode === "analyze") {

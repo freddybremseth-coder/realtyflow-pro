@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { askClaude } from "@/services/ai/claude-client";
+import { askBookAuthor as askClaude } from "@/services/ai/book-author-client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

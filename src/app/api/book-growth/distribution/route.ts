@@ -12,6 +12,7 @@ import {
 } from "@/lib/publishing/distribution";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { runApprovedDirectStoreJobs } from "@/services/publishing/connectors/direct-store";
+import { isDistributionReady, publicationApproval, verifiedAmazonProjectIds } from "@/lib/publishing/book-workflow";
 
 export const dynamic = "force-dynamic";
 
@@ -79,11 +80,14 @@ export async function GET(request: NextRequest) {
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [projectsRes, connectionsRes, publicationsRes, jobsRes] = await Promise.all([
+  const [projectsRes, booksRes, connectionsRes, publicationsRes, jobsRes] = await Promise.all([
     sb.from("publishing_book_projects")
       .select("id,title,subtitle,language,status,genre,series_name,source_book_id,metadata_plan,outline_plan,chapter_drafts,updated_at")
       .order("updated_at", { ascending: false })
       .limit(100),
+    sb.from("publishing_books")
+      .select("id,title,asin,source_project_id,published_at")
+      .limit(500),
     sb.from("publishing_channel_connections")
       .select("id,brand_id,channel,external_account_id,account_label,connector_type,status,capabilities,last_health_check_at,last_error,updated_at")
       .order("channel"),
@@ -97,17 +101,26 @@ export async function GET(request: NextRequest) {
       .limit(100),
   ]);
 
-  const error = projectsRes.error || connectionsRes.error || publicationsRes.error || jobsRes.error;
+  const error = projectsRes.error || booksRes.error || connectionsRes.error || publicationsRes.error || jobsRes.error;
   if (error) {
     const tableNotReady = /publishing_(channel_connections|distribution_)|schema cache|does not exist|relation/i.test(error.message);
     return NextResponse.json({ error: error.message, tableNotReady }, { status: tableNotReady ? 503 : 500 });
   }
 
-  const projects = projectsRes.data ?? [];
+  const allProjects = projectsRes.data ?? [];
+  const books = booksRes.data ?? [];
   const connections = connectionsRes.data ?? [];
   const publications = publicationsRes.data ?? [];
   const publicationById = new Map(publications.map((row: any) => [String(row.id), row]));
-  const projectById = new Map(projects.map((row: any) => [String(row.id), row]));
+  const projectById = new Map(allProjects.map((row: any) => [String(row.id), row]));
+  const amazonPublishedProjectIds = verifiedAmazonProjectIds(allProjects, books, publications);
+  const projects = allProjects
+    .filter((project: any) => isDistributionReady(project))
+    .map((project: any) => ({
+      ...project,
+      approval: publicationApproval(project),
+      amazonAlreadyPublished: amazonPublishedProjectIds.has(String(project.id)),
+    }));
   const connectedChannels = new Set(
     connections.filter((row: any) => row.status === "connected").map((row: any) => String(row.channel)),
   );
@@ -115,17 +128,24 @@ export async function GET(request: NextRequest) {
   const jobs = (jobsRes.data ?? []).map((job: any) => {
     const publication = publicationById.get(String(job.publication_id));
     const project = publication ? projectById.get(String((publication as any).project_id)) : null;
-    return { ...job, publication: publication ?? null, project: project ? { id: (project as any).id, title: (project as any).title } : null };
+    return {
+      ...job,
+      superseded: !project || !isDistributionReady(project as any),
+      publication: publication ?? null,
+      project: project ? { id: (project as any).id, title: (project as any).title } : null,
+    };
   });
+  const currentJobs = jobs.filter((row: any) => !row.superseded);
 
   return NextResponse.json({
     summary: {
       channels: channels.length,
       connected: connectedChannels.size,
       projects: projects.length,
-      awaitingApproval: jobs.filter((row: any) => row.status === "awaiting_approval").length,
-      processing: jobs.filter((row: any) => ["approved", "running"].includes(row.status)).length,
-      blocked: jobs.filter((row: any) => row.status === "blocked").length,
+      hiddenDrafts: allProjects.length - projects.length,
+      awaitingApproval: currentJobs.filter((row: any) => row.status === "awaiting_approval").length,
+      processing: currentJobs.filter((row: any) => ["approved", "running"].includes(row.status)).length,
+      blocked: currentJobs.filter((row: any) => row.status === "blocked").length,
       published: publications.filter((row: any) => row.status === "published").length,
     },
     channels,
@@ -146,6 +166,31 @@ async function prepareDistribution(input: z.infer<typeof prepareSchema>) {
     .maybeSingle();
   if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 });
   if (!project) return NextResponse.json({ error: "Book project not found" }, { status: 404 });
+  if (!isDistributionReady(project)) {
+    return NextResponse.json({
+      error: "Denne manusrevisjonen er ikke endelig godkjent i Forfatterstudio. Godkjenn den der først.",
+    }, { status: 409 });
+  }
+
+  if (input.channels.includes("amazon_kdp")) {
+    const [booksRes, publicationsRes] = await Promise.all([
+      sb.from("publishing_books").select("id,title,asin,source_project_id,published_at")
+        .or(`id.eq.${project.source_book_id || "00000000-0000-0000-0000-000000000000"},source_project_id.eq.${project.id}`),
+      sb.from("publishing_distribution_publications")
+        .select("project_id,book_id,channel,status,external_id,external_url")
+        .eq("channel", "amazon_kdp")
+        .or(`project_id.eq.${project.id},book_id.eq.${project.source_book_id || "00000000-0000-0000-0000-000000000000"}`),
+    ]);
+    const lookupError = booksRes.error || publicationsRes.error;
+    if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 500 });
+    const amazonPublished = verifiedAmazonProjectIds([project], booksRes.data ?? [], publicationsRes.data ?? []).has(project.id);
+    if (amazonPublished) {
+      return NextResponse.json({
+        error: "Boken er allerede bekreftet publisert på Amazon. Bruk oppdater eksisterende utgave i stedet for ny publisering.",
+        code: "AMAZON_ALREADY_PUBLISHED",
+      }, { status: 409 });
+    }
+  }
 
   const { data: connections, error: connectionError } = await sb.from("publishing_channel_connections")
     .select("channel,status")
@@ -242,6 +287,16 @@ async function updateJob(input: z.infer<typeof jobActionSchema>) {
   if (!definition) return NextResponse.json({ error: "Unknown publishing channel" }, { status: 409 });
 
   const now = new Date().toISOString();
+  if (input.action === "approve") {
+    const { data: project, error: projectError } = await sb.from("publishing_book_projects")
+      .select("id,status,updated_at,metadata_plan")
+      .eq("id", publication.project_id)
+      .maybeSingle();
+    if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 });
+    if (!project || !isDistributionReady(project)) {
+      return NextResponse.json({ error: "Godkjenningen er utdatert. Sluttgodkjenn gjeldende manus i Forfatterstudio først." }, { status: 409 });
+    }
+  }
   if (input.action === "approve" && definition.requiresConnection) {
     const { data: connection, error: connectionError } = await sb.from("publishing_channel_connections")
       .select("status")
