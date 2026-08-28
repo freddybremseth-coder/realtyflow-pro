@@ -11,7 +11,7 @@ import {
   withLeadIntelligenceTransaction,
 } from "@/services/lead-intelligence/server-runtime";
 import { LeadIntelligenceError } from "@/services/lead-intelligence/extraction";
-import { LEAD_INTELLIGENCE_LIMITS } from "@/services/lead-intelligence/contracts";
+import { BoundedJsonSchema, LEAD_INTELLIGENCE_LIMITS } from "@/services/lead-intelligence/contracts";
 import { LeadIntelligenceRealEstateBrandSchema } from "@/services/lead-intelligence/brand-allowlist";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ const CriterionSchema = z.object({
   key: z.enum(criterionKeys),
   otherKey: z.string().trim().min(1).max(LEAD_INTELLIGENCE_LIMITS.shortText).nullable().optional(),
   operator: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "exists", "unknown"]),
-  value: z.unknown().default(null),
+  value: BoundedJsonSchema.default(null),
   weight: z.number().min(0).max(1).nullable().optional(),
   severity: z.enum(["reject", "major_penalty", "minor_penalty"]).nullable().optional(),
   appliesToPropertyTypes: z.array(z.enum(propertyTypes)).max(20).default([]),
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
         key: criterion.key,
         otherKey: criterion.key === "other" ? criterion.otherKey || null : null,
         operator: criterion.operator,
-        value: criterion.value ?? null,
+        value: criterion.value,
         weight: criterion.criterionType === "preference" ? criterion.weight ?? 0.5 : null,
         severity: criterion.criterionType === "exclusion" ? criterion.severity || "major_penalty" : null,
         appliesToPropertyTypes: criterion.appliesToPropertyTypes,
