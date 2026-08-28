@@ -10,6 +10,7 @@ import { POST as POSTAgentCommand } from "./agents/command/route";
 import { POST as POSTMarketingKit } from "./marketing-kit/route";
 import { POST as POSTMarketingKitDrafts } from "./marketing-kit/drafts/route";
 import { GET as GETPublishingAutopilotResults } from "./publishing/autopilot-results/route";
+import { GET as GETPublishingAuthorStudio, POST as POSTPublishingAuthorStudio } from "./publishing/author-studio/route";
 import { GET as GETPublishingBookEngine, POST as POSTPublishingBookEngine } from "./publishing/book-engine/route";
 import { GET as GETPublishingBookExport } from "./publishing/book-engine/export/route";
 import { GET as GETPublishingBookExportFile } from "./publishing/book-engine/export-file/route";
@@ -74,6 +75,8 @@ test("publishing, agent, advisor, and marketing admin routes require admin befor
     GETPublishingImpact(jsonRequest("/api/publishing/impact", "GET") as any),
     GETPublishingMarketWatch(jsonRequest("/api/publishing/market-watch", "GET") as any),
     GETPublishingAutopilotResults(jsonRequest("/api/publishing/autopilot-results", "GET") as any),
+    GETPublishingAuthorStudio(jsonRequest("/api/publishing/author-studio", "GET") as any),
+    POSTPublishingAuthorStudio(jsonRequest("/api/publishing/author-studio", "POST", { mode: "approve_for_distribution", project_id: "11111111-1111-4111-8111-111111111111" }) as any),
     GETPublishingHardMode(jsonRequest("/api/publishing/hard-mode", "GET") as any),
     POSTPublishingHardMode(jsonRequest("/api/publishing/hard-mode", "POST", { enabled: true }) as any),
     GETPublishingBooks(jsonRequest("/api/publishing/books", "GET") as any),
