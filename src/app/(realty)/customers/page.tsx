@@ -50,12 +50,12 @@ const BRAND_LABELS: Record<string, string> = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  NEW: "Ny lead",
-  CONTACT: "Kontaktet",
+  NEW: "Ny",
+  CONTACT: "Kontakt",
   QUALIFIED: "Kvalifisert",
   VIEWING: "Visning",
   NEGOTIATION: "Forhandling",
-  WON: "Kunde / vunnet",
+  WON: "Vunnet",
   LOST: "Tapt",
   ON_HOLD: "På vent",
 };
@@ -83,6 +83,8 @@ const TAB_STAGES: Record<Exclude<CrmTab, "all">, Set<string>> = {
   pipeline: new Set(["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"]),
   customers: new Set(["WON", "LOST"]),
 };
+
+const STAGE_ORDER = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD", "WON", "LOST"];
 
 function normalizeStatus(value: unknown) {
   const status = String(value || "NEW").trim().toUpperCase();
@@ -113,7 +115,8 @@ function isOverdue(value: unknown) {
 export default function CustomersPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<CrmTab>("pipeline");
+  const [tab, setTab] = useState<CrmTab>("all");
+  const [stageFilter, setStageFilter] = useState("all");
   const [actionOnly, setActionOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -123,7 +126,7 @@ export default function CustomersPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/contacts?view=pipeline", { cache: "no-store" });
+      const response = await fetch("/api/contacts", { cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke hente CRM-kontakter.");
       setContacts(body?.contacts || []);
@@ -139,29 +142,31 @@ export default function CustomersPage() {
     const params = new URLSearchParams(window.location.search);
     const contactId = params.get("contactId");
     const requestedTab = params.get("tab") as CrmTab | null;
+    const requestedStage = params.get("stage");
     if (contactId) setSelectedContactId(contactId);
     if (requestedTab && ["leads", "pipeline", "customers", "all"].includes(requestedTab)) setTab(requestedTab);
+    if (requestedStage) setStageFilter(requestedStage.toUpperCase());
     if (params.get("action") === "1") setActionOnly(true);
   }, []);
 
-  function syncUrl(next: { contactId?: string | null; tab?: CrmTab; actionOnly?: boolean }) {
+  function syncUrl(next: { contactId?: string | null; tab?: CrmTab; actionOnly?: boolean; stage?: string }) {
     const params = new URLSearchParams(window.location.search);
     const nextTab = next.tab ?? tab;
     const nextActionOnly = next.actionOnly ?? actionOnly;
+    const nextStage = next.stage ?? stageFilter;
     params.set("tab", nextTab);
     if (next.contactId === null) params.delete("contactId");
     else if (next.contactId) params.set("contactId", next.contactId);
     if (nextActionOnly) params.set("action", "1");
     else params.delete("action");
+    if (nextStage && nextStage !== "all") params.set("stage", nextStage);
+    else params.delete("stage");
     window.history.replaceState(null, "", `/customers?${params.toString()}`);
   }
 
   function openCustomer(contact: Contact) {
-    const status = normalizeStatus(contact.pipeline_status);
-    const nextTab: CrmTab = status === "NEW" ? "leads" : ["WON", "LOST"].includes(status) ? "customers" : "pipeline";
     setSelectedContactId(contact.id);
-    setTab(nextTab);
-    syncUrl({ contactId: contact.id, tab: nextTab });
+    syncUrl({ contactId: contact.id });
   }
 
   function closeCustomer() {
@@ -172,7 +177,14 @@ export default function CustomersPage() {
 
   function selectTab(nextTab: CrmTab) {
     setTab(nextTab);
-    syncUrl({ tab: nextTab });
+    setStageFilter("all");
+    syncUrl({ tab: nextTab, stage: "all" });
+  }
+
+  function selectStage(nextStage: string) {
+    setStageFilter(nextStage);
+    setTab("all");
+    syncUrl({ tab: "all", stage: nextStage });
   }
 
   function toggleActionOnly() {
@@ -188,6 +200,7 @@ export default function CustomersPage() {
       .filter(({ contact, action }) => {
         const status = normalizeStatus(contact.pipeline_status);
         if (tab !== "all" && !TAB_STAGES[tab].has(status)) return false;
+        if (stageFilter !== "all" && status !== stageFilter) return false;
         if (actionOnly && !action.needsAction) return false;
         if (!query) return true;
         return [contact.name, contact.email, contact.phone, contact.property_interest, contact.preferred_location, contact.brand_id, contact.brand, contact.source, action.label, action.reason]
@@ -197,7 +210,7 @@ export default function CustomersPage() {
           .includes(query);
       })
       .sort((a, b) => b.action.score - a.action.score || Number(b.contact.pipeline_value || 0) - Number(a.contact.pipeline_value || 0));
-  }, [contacts, search, tab, actionOnly]);
+  }, [contacts, search, tab, stageFilter, actionOnly]);
 
   const counts = useMemo(() => ({
     leads: contacts.filter((item) => normalizeStatus(item.pipeline_status) === "NEW").length,
@@ -208,20 +221,34 @@ export default function CustomersPage() {
     value: contacts.filter((item) => ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"].includes(normalizeStatus(item.pipeline_status))).reduce((sum, item) => sum + Number(item.pipeline_value || 0), 0),
   }), [contacts]);
 
+  const stageCounts = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const contact of contacts) {
+      const status = normalizeStatus(contact.pipeline_status);
+      result[status] = (result[status] || 0) + 1;
+    }
+    return result;
+  }, [contacts]);
+
+  const stageOptions = useMemo(() => {
+    const extras = Object.keys(stageCounts).filter((status) => !STAGE_ORDER.includes(status)).sort();
+    return [...STAGE_ORDER.filter((status) => stageCounts[status]), ...extras];
+  }, [stageCounts]);
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <header className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-900/70 p-6 xl:flex-row xl:items-center xl:justify-between">
+      <header className="flex flex-col gap-4 rounded-2xl border border-slate-700/70 bg-slate-900/70 p-4 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-300"><LayoutGrid size={17} /> Samlet kundeopplevelse</div>
-          <h1 className="text-3xl font-bold text-white">CRM & kunder</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-400">Start med hvem som trenger handling. Åpne kunden for Customer 360, full forklaring og autoritativ Next Best Action.</p>
+          <h1 className="text-2xl font-bold text-white sm:text-3xl">CRM & leads</h1>
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">Hele leadbasen er synlig her. Filtrer eksplisitt på status eller handling — ingen leads skjules av et standardfilter.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button asChild variant="outline"><Link href="/today"><Sparkles size={16} className="mr-2" />I dag</Link></Button>
           <Button asChild variant="outline"><Link href="/lead-intelligence"><Bot size={16} className="mr-2" />AI Lead Inbox</Link></Button>
           <Button asChild variant="outline"><Link href="/closing"><Target size={16} className="mr-2" />Closing</Link></Button>
-          <Button asChild variant="outline"><Link href="/pipeline">Avansert Kanban</Link></Button>
-          <Button onClick={load} disabled={loading}>{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</Button>
+          <Button asChild variant="outline"><Link href="/pipeline">Kanban</Link></Button>
+          <Button onClick={load} disabled={loading} className="col-span-2 sm:col-span-1">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</Button>
         </div>
       </header>
 
@@ -239,34 +266,48 @@ export default function CustomersPage() {
         ]}
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{counts.action}</strong></article>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-blue-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Nye leads</p><strong className="mt-1 block text-2xl text-white">{counts.leads}</strong></article>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Target className="text-purple-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv pipeline</p><strong className="mt-1 block text-2xl text-white">{counts.pipeline}</strong></article>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kunder / avsluttet</p><strong className="mt-1 block text-2xl text-white">{counts.customers}</strong></article>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CalendarClock className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Forfalt oppfølging</p><strong className="mt-1 block text-2xl text-white">{counts.overdue}</strong></article>
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <button onClick={() => selectTab("all")} className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-left"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-cyan-200/70">Alle leads/kunder</p><strong className="mt-1 block text-2xl text-white">{contacts.length}</strong></button>
+        <button onClick={toggleActionOnly} className="rounded-xl border border-red-500/20 bg-slate-900/60 p-4 text-left"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{counts.action}</strong></button>
+        <button onClick={() => selectStage("NEW")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Users className="text-blue-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Nye</p><strong className="mt-1 block text-2xl text-white">{stageCounts.NEW || 0}</strong></button>
+        <button onClick={() => selectStage("CONTACT")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Mail className="text-indigo-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kontakt</p><strong className="mt-1 block text-2xl text-white">{stageCounts.CONTACT || 0}</strong></button>
+        <button onClick={() => selectStage("QUALIFIED")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Target className="text-purple-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kvalifisert</p><strong className="mt-1 block text-2xl text-white">{stageCounts.QUALIFIED || 0}</strong></button>
         <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Pipeline-verdi</p><strong className="mt-1 block text-2xl text-white">{money(counts.value)}</strong></article>
       </section>
 
-      <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {([
-              ["leads", `Leads (${counts.leads})`],
-              ["pipeline", `Pipeline (${counts.pipeline})`],
-              ["customers", `Kunder (${counts.customers})`],
-              ["all", `Alle (${contacts.length})`],
-            ] as Array<[CrmTab, string]>).map(([id, label]) => <button key={id} onClick={() => selectTab(id)} className={`rounded-full border px-4 py-2 text-sm transition ${tab === id ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}>{label}</button>)}
-            <button onClick={toggleActionOnly} className={`rounded-full border px-4 py-2 text-sm transition ${actionOnly ? "border-red-400/50 bg-red-500/15 text-red-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}><Sparkles size={14} className="mr-1.5 inline" />Kun handling</button>
+      <section className="space-y-3 rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {([
+            ["all", `Alle (${contacts.length})`],
+            ["leads", `Nye (${counts.leads})`],
+            ["pipeline", `Aktiv pipeline (${counts.pipeline})`],
+            ["customers", `Avsluttet (${counts.customers})`],
+          ] as Array<[CrmTab, string]>).map(([id, label]) => <button key={id} onClick={() => selectTab(id)} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${tab === id && stageFilter === "all" ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}>{label}</button>)}
+          <button onClick={toggleActionOnly} className={`shrink-0 rounded-full border px-4 py-2 text-sm transition ${actionOnly ? "border-red-400/50 bg-red-500/15 text-red-100" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"}`}><Sparkles size={14} className="mr-1.5 inline" />Kun handling</button>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status · trykk for å filtrere</p>
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button onClick={() => selectStage("all")} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${stageFilter === "all" ? "border-white/30 bg-white/10 text-white" : "border-slate-700 text-slate-400"}`}>Alle {contacts.length}</button>
+            {stageOptions.map((status) => (
+              <button key={status} onClick={() => selectStage(status)} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${stageFilter === status ? (STAGE_CLASSES[status] || "border-cyan-500/40 bg-cyan-500/10 text-cyan-100") : "border-slate-700 text-slate-400"}`}>
+                {STAGE_LABELS[status] || status} {stageCounts[status] || 0}
+              </button>
+            ))}
           </div>
-          <div className="relative w-full max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, brand eller anbefalt handling" className="pl-10" /></div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-500">Viser <b className="text-slate-200">{visible.length}</b> av <b className="text-slate-200">{contacts.length}</b>.</p>
+          <div className="relative w-full sm:max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, brand eller handling" className="pl-10" /></div>
         </div>
       </section>
 
       {loading && contacts.length === 0 ? (
         <div className="flex min-h-64 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" />Henter CRM …</div>
       ) : visible.length === 0 ? (
-        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-10 text-center text-slate-400">Ingen kontakter i dette filteret.</div>
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-10 text-center text-slate-400">Ingen kontakter i dette filteret. <button onClick={() => selectStage("all")} className="ml-1 text-cyan-300 underline">Vis alle</button></div>
       ) : (
         <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {visible.map(({ contact, action }) => {
@@ -274,7 +315,7 @@ export default function CustomersPage() {
             const brandId = String(contact.brand_id || contact.brand || "zeneco");
             const overdue = isOverdue(contact.next_followup) && !["WON", "LOST"].includes(status);
             return (
-              <button key={contact.id} type="button" onClick={() => openCustomer(contact)} className="group rounded-xl border border-slate-700/70 bg-slate-900/60 p-5 text-left transition hover:border-cyan-500/50 hover:bg-slate-900 hover:shadow-lg hover:shadow-cyan-950/20">
+              <button key={contact.id} type="button" onClick={() => openCustomer(contact)} className="group rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left transition hover:border-cyan-500/50 hover:bg-slate-900 hover:shadow-lg hover:shadow-cyan-950/20 sm:p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
