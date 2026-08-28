@@ -210,4 +210,3 @@ main().catch((error) => {
   console.error(`Book OS schema contract failed (${code}).`);
   process.exit(1);
 });
-
