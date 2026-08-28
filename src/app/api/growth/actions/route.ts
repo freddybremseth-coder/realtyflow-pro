@@ -104,6 +104,7 @@ export async function PATCH(request: NextRequest) {
 
     const allowedFields = new Set([
       "status", "ab_winner", "learnings", "executed_at", "reviewed_at", "content", "content_b", "priority",
+      "content_publication_id", "handed_off_at",
     ]);
     const sanitized: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(updates)) {
@@ -117,6 +118,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No valid fields to update" }, { status: 400 });
     }
 
+    if (sanitized.content_publication_id && !sanitized.handed_off_at) sanitized.handed_off_at = new Date().toISOString();
     if (sanitized.status === "published" && !sanitized.executed_at) sanitized.executed_at = new Date().toISOString();
     if (sanitized.status === "completed" && !sanitized.reviewed_at) sanitized.reviewed_at = new Date().toISOString();
 
