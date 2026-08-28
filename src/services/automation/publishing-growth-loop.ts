@@ -12,6 +12,7 @@ type Book = {
   average_rating?: number | null;
   orders?: number | null;
   royalties?: number | null;
+  direct_gross_sales?: number | null;
   ad_spend?: number | null;
   keywords?: string[] | null;
   main_category?: string | null;
@@ -148,7 +149,7 @@ export async function runPublishingGrowthLoop(
   const hardMode = typeof options.hardMode === "boolean" ? options.hardMode : await readHardMode(supabase) || process.env.PUBLISHING_HARD_MODE === "true";
   const { data: books, error } = await supabase
     .from("publishing_books")
-    .select("id,title,subtitle,asin,role,status,price,reviews_count,average_rating,orders,royalties,ad_spend,keywords,main_category,series_name,updated_at")
+    .select("id,title,subtitle,asin,role,status,price,reviews_count,average_rating,orders,royalties,direct_gross_sales,ad_spend,keywords,main_category,series_name,updated_at")
     .order("priority", { ascending: false })
     .limit(limit);
 
@@ -190,6 +191,7 @@ export async function runPublishingGrowthLoop(
           snapshot: {
             orders: book.orders || 0,
             royalties: book.royalties || 0,
+            direct_gross_sales: book.direct_gross_sales || 0,
             ad_spend: book.ad_spend || 0,
             reviews_count: book.reviews_count || 0,
             average_rating: book.average_rating || null,

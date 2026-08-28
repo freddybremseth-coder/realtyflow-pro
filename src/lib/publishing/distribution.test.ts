@@ -28,7 +28,7 @@ test("channel registry never claims an undocumented automated KDP publisher", ()
   assert.equal(PUBLISHING_CHANNELS.amazon_kdp.capabilities.publish, "manual");
   assert.equal(PUBLISHING_CHANNELS.apple_books.deliveryMode, "vendor_cli");
   assert.equal(PUBLISHING_CHANNELS.direct_store.deliveryMode, "internal_api");
-  assert.equal(PUBLISHING_CHANNELS.direct_store.automatedDelivery, false);
+  assert.equal(PUBLISHING_CHANNELS.direct_store.automatedDelivery, true);
   assert.deepEqual(Object.keys(PUBLISHING_CHANNELS), [...PUBLISHING_CHANNEL_IDS]);
 });
 

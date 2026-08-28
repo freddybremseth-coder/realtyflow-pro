@@ -7,8 +7,17 @@
   "include": [
     "next-env.d.ts",
     "src/lib/publishing/distribution.ts",
+    "src/lib/publishing/connector-contract.ts",
+    "src/lib/publishing/epub-export.ts",
+    "src/lib/books-sales.ts",
     "src/app/api/book-growth/distribution/route.ts",
+    "src/app/api/public/books/**/*.ts",
+    "src/app/api/publishing/book-engine/export-file/route.ts",
+    "src/app/api/publishing/books/route.ts",
+    "src/app/api/saas/stripe/route.ts",
+    "src/app/api/cron/book-distribution/route.ts",
     "src/app/(content)/book-growth/distribution/page.tsx",
+    "src/services/publishing/connectors/direct-store.ts",
     "src/services/automation/publishing-market-watch.ts"
   ],
   "exclude": ["node_modules", "**/*.test.ts"]

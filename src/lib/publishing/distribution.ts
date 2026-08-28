@@ -132,7 +132,7 @@ export const PUBLISHING_CHANNELS: Record<PublishingChannelId, PublishingChannelD
     name: "books.freddybremseth.com",
     deliveryMode: "internal_api",
     deliveryLabel: "RealtyFlow Direct Store",
-    automatedDelivery: false,
+    automatedDelivery: true,
     requiresConnection: false,
     approvalRequired: true,
     capabilities: {
@@ -143,7 +143,7 @@ export const PUBLISHING_CHANNELS: Record<PublishingChannelId, PublishingChannelD
       discovery: "automated",
       advertising: "unavailable",
     },
-    notes: "Egen kanal. Bruker kontrollert overlevering nå og kan automatiseres fullt når butikkconnectoren er aktivert.",
+    notes: "Egen kanal. Godkjente bokpakker publiseres automatisk med privat EPUB-lagring, butikkmetadata og salgsmåling.",
     documentationUrl: "https://books.freddybremseth.com",
   },
 };
