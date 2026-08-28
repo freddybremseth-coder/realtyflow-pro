@@ -29,6 +29,46 @@ type GrowthAction = {
   ai_score: number;
 };
 
+type GrowthWorkItemIdentity = {
+  source_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+const GROWTH_LOOP_NAME = "publishing_growth_v1";
+
+export function canonicalGrowthActionKey(bookId: string, actionType: string) {
+  return `growthloop:${bookId}:${actionType}`;
+}
+
+export function canonicalGrowthActionKeyFromWorkItem(row: GrowthWorkItemIdentity) {
+  const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const bookId = String(metadata.book_id || "").trim();
+  const actionType = String(metadata.action_type || "").trim();
+  if (bookId && actionType && (!metadata.loop || metadata.loop === GROWTH_LOOP_NAME)) {
+    return canonicalGrowthActionKey(bookId, actionType);
+  }
+
+  const sourceId = String(row.source_id || "").trim();
+  const legacy = sourceId.match(/^growthloop:(?:\d{4}-\d{2}-\d{2}:)?([^:]+):([^:]+)$/);
+  if (!legacy) return sourceId;
+  return canonicalGrowthActionKey(legacy[1], legacy[2]);
+}
+
+function highestPriorityActions(actions: GrowthAction[]) {
+  const byType = new Map<GrowthAction["type"], GrowthAction>();
+  let suppressed = 0;
+  for (const action of actions) {
+    const current = byType.get(action.type);
+    if (!current) {
+      byType.set(action.type, action);
+      continue;
+    }
+    suppressed += 1;
+    if (action.ai_score > current.ai_score) byType.set(action.type, action);
+  }
+  return { actions: Array.from(byType.values()), suppressed };
+}
+
 function buildActions(book: Book, hardMode = false): GrowthAction[] {
   const actions: GrowthAction[] = [];
   const reviews = Number(book.reviews_count || 0);
@@ -128,10 +168,6 @@ function buildActions(book: Book, hardMode = false): GrowthAction[] {
   return actions;
 }
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function readHardMode(supabase: SupabaseClient) {
   try {
     const { data } = await supabase.from("brand_settings").select("settings").eq("brand_id", "_system").maybeSingle();
@@ -157,18 +193,33 @@ export async function runPublishingGrowthLoop(
   const rows = (books || []) as Book[];
   const existingRes = await supabase
     .from("work_items")
-    .select("source_id,status")
+    .select("source_id,status,metadata")
     .in("source_type", ["kdp", "publishing", "manual"])
     .in("status", ["TO_DO", "IN_PROGRESS", "REVIEW"]);
 
-  const existingOpen = new Set((existingRes.data || []).map((r: any) => String(r.source_id || "")));
+  if (existingRes.error) throw existingRes.error;
+  const existingOpen = new Set(
+    (existingRes.data || [])
+      .map((row: GrowthWorkItemIdentity) => canonicalGrowthActionKeyFromWorkItem(row))
+      .filter(Boolean),
+  );
   const inserts: Record<string, unknown>[] = [];
+  let actionsSkippedExisting = 0;
+  let duplicateActionsSuppressed = 0;
+  let actionsCreated = 0;
+  let concurrencyConflicts = 0;
 
   for (const book of rows) {
-    const actions = buildActions(book, hardMode);
+    const prioritized = highestPriorityActions(buildActions(book, hardMode));
+    duplicateActionsSuppressed += prioritized.suppressed;
+    const actions = prioritized.actions;
     for (const action of actions) {
-      const sourceId = `growthloop:${todayKey()}:${book.id}:${action.type}`;
-      if (existingOpen.has(sourceId)) continue;
+      const sourceId = canonicalGrowthActionKey(book.id, action.type);
+      if (existingOpen.has(sourceId)) {
+        actionsSkippedExisting += 1;
+        continue;
+      }
+      existingOpen.add(sourceId);
       inserts.push({
         title: action.title,
         description: action.description,
@@ -182,7 +233,8 @@ export async function runPublishingGrowthLoop(
         next_action: action.next_action,
         ai_score: action.ai_score,
         metadata: {
-          loop: "publishing_growth_v1",
+          loop: GROWTH_LOOP_NAME,
+          identity_version: 2,
           hard_mode: hardMode,
           book_id: book.id,
           book_title: book.title,
@@ -203,13 +255,24 @@ export async function runPublishingGrowthLoop(
 
   if (inserts.length > 0) {
     const { error: insertErr } = await supabase.from("work_items").insert(inserts);
-    if (insertErr) throw insertErr;
+    // The partial unique index added by phase 0 protects concurrent cron runs.
+    // A concurrent winner is a successful no-op, not a failed automation run.
+    if (insertErr?.code === "23505") {
+      concurrencyConflicts = inserts.length;
+    } else if (insertErr) {
+      throw insertErr;
+    } else {
+      actionsCreated = inserts.length;
+    }
   }
 
   return {
     books_scanned: rows.length,
-    actions_created: inserts.length,
+    actions_created: actionsCreated,
+    actions_skipped_existing: actionsSkippedExisting,
+    duplicate_actions_suppressed: duplicateActionsSuppressed,
+    concurrency_conflicts: concurrencyConflicts,
     hard_mode: hardMode,
-    date: todayKey(),
+    identity_version: 2,
   };
 }
