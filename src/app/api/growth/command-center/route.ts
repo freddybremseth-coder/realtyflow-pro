@@ -63,16 +63,14 @@ export async function GET(request: NextRequest) {
   const monthAgo = new Date(now.getTime() - 30 * 86_400_000).toISOString();
 
   try {
-    let actionQuery = supabase
-      .from("growth_actions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(100);
+    let actionQuery = supabase.from("growth_actions").select("*").order("created_at", { ascending: false }).limit(100);
     if (brand && brand !== "all") actionQuery = actionQuery.eq("brand", brand);
 
-    const [actionsRes, socialRes, leadsWeekRes, leadsMonthRes, cyclesRes] = await Promise.all([
+    const [actionsRes, socialRes, snapshotsRes, publicationsRes, leadsWeekRes, leadsMonthRes, cyclesRes] = await Promise.all([
       actionQuery,
       supabase.from("social_post_metrics").select("impressions,reach,reactions,comments,shares,saves,clicks,profile_views,followers_gained,messages,leads,meetings,sales,recorded_at").gte("recorded_at", monthAgo),
+      supabase.from("engagement_snapshots").select("publication_id,platform,likes,comments,shares,saves,reach,impressions,views,clicks,snapshot_at").gte("snapshot_at", monthAgo).order("snapshot_at", { ascending: false }).limit(1000),
+      supabase.from("content_publications").select("id,brand_id,published_at").gte("published_at", monthAgo),
       supabase.from("contacts").select("id", { count: "exact", head: true }).gte("created_at", weekAgo),
       supabase.from("contacts").select("id", { count: "exact", head: true }).gte("created_at", monthAgo),
       supabase.from("growth_cycles").select("id", { count: "exact", head: true }),
@@ -81,13 +79,45 @@ export async function GET(request: NextRequest) {
     if (actionsRes.error) throw actionsRes.error;
     const actions = (actionsRes.data ?? []).map(normalizeAction);
     const social = socialRes.data ?? [];
+    const publications = new Map((publicationsRes.data ?? []).map((row: any) => [String(row.id), row]));
 
-    const totals = social.reduce((acc: Record<string, number>, row: any) => {
+    const socialTotals = social.reduce((acc: Record<string, number>, row: any) => {
       for (const key of ["impressions", "reach", "reactions", "comments", "shares", "saves", "clicks", "profile_views", "followers_gained", "messages", "leads", "meetings", "sales"]) {
         acc[key] = (acc[key] ?? 0) + n(row[key]);
       }
       return acc;
     }, {});
+
+    // Engagement snapshots are cumulative snapshots, so use only the newest row per publication/platform.
+    const latestSnapshot = new Map<string, any>();
+    for (const snapshot of snapshotsRes.data ?? []) {
+      const publication = publications.get(String(snapshot.publication_id));
+      if (!publication) continue;
+      if (brand && brand !== "all" && publication.brand_id !== brand) continue;
+      const key = `${snapshot.publication_id}:${snapshot.platform}`;
+      if (!latestSnapshot.has(key)) latestSnapshot.set(key, snapshot);
+    }
+    const engagementTotals = Array.from(latestSnapshot.values()).reduce((acc: Record<string, number>, row: any) => {
+      acc.impressions = (acc.impressions ?? 0) + Math.max(n(row.impressions), n(row.views));
+      acc.reach = (acc.reach ?? 0) + n(row.reach);
+      acc.clicks = (acc.clicks ?? 0) + n(row.clicks);
+      acc.reactions = (acc.reactions ?? 0) + n(row.likes);
+      acc.comments = (acc.comments ?? 0) + n(row.comments);
+      acc.shares = (acc.shares ?? 0) + n(row.shares);
+      acc.saves = (acc.saves ?? 0) + n(row.saves);
+      return acc;
+    }, {});
+
+    const totals = {
+      impressions: Math.max(socialTotals.impressions || 0, engagementTotals.impressions || 0),
+      reach: Math.max(socialTotals.reach || 0, engagementTotals.reach || 0),
+      clicks: Math.max(socialTotals.clicks || 0, engagementTotals.clicks || 0),
+      followers_gained: socialTotals.followers_gained || 0,
+      messages: socialTotals.messages || 0,
+      leads: socialTotals.leads || 0,
+      meetings: socialTotals.meetings || 0,
+      sales: socialTotals.sales || 0,
+    };
 
     const resultTracked = actions.filter((a: any) => a.metrics.impressions + a.metrics.clicks + a.metrics.conversions + a.metrics.leads_generated > 0).length;
     const pending = actions.filter((a: any) => ["planned", "ready"].includes(a.status));
@@ -104,14 +134,14 @@ export async function GET(request: NextRequest) {
       actions,
       nextBest,
       performance: {
-        impressions: totals.impressions || 0,
-        reach: totals.reach || 0,
-        clicks: totals.clicks || 0,
-        followersGained: totals.followers_gained || 0,
-        messages: totals.messages || 0,
-        leads: totals.leads || 0,
-        meetings: totals.meetings || 0,
-        sales: totals.sales || 0,
+        impressions: totals.impressions,
+        reach: totals.reach,
+        clicks: totals.clicks,
+        followersGained: totals.followers_gained,
+        messages: totals.messages,
+        leads: totals.leads,
+        meetings: totals.meetings,
+        sales: totals.sales,
         leadRate: Number(leadRate.toFixed(2)),
         salesRate: Number(salesRate.toFixed(2)),
       },
@@ -125,7 +155,8 @@ export async function GET(request: NextRequest) {
       },
       warnings: [
         ...(publishedWithoutResults.length ? [`${publishedWithoutResults.length} publiserte veksthandlinger mangler resultatmåling.`] : []),
-        ...(social.length === 0 ? ["Ingen Social Intelligence-resultater er registrert siste 30 dager."] : []),
+        ...(social.length === 0 && latestSnapshot.size === 0 ? ["Ingen automatiske SoMe-resultater er registrert siste 30 dager."] : []),
+        ...(social.length === 0 && latestSnapshot.size > 0 ? ["Rekkevidde/engasjement hentes automatisk, men leads, møter og salg mangler fortsatt attribusjon."] : []),
       ],
     });
   } catch (error) {
