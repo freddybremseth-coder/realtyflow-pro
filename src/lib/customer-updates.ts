@@ -30,14 +30,29 @@ export const CUSTOMER_PIPELINE_STATUSES = [
   "NEW",
   "CONTACT",
   "QUALIFIED",
+  "MATCHING",
   "VIEWING",
   "NEGOTIATION",
+  "RESERVED",
+  "ON_HOLD",
   "WON",
   "LOST",
-  "ON_HOLD",
 ] as const;
 
 export type CustomerPipelineStatus = (typeof CUSTOMER_PIPELINE_STATUSES)[number];
+
+export const CUSTOMER_PIPELINE_STATUS_LABELS: Record<CustomerPipelineStatus, string> = {
+  NEW: "Ny",
+  CONTACT: "Kontaktet",
+  QUALIFIED: "Kvalifisert",
+  MATCHING: "Boligmatching",
+  VIEWING: "Visning",
+  NEGOTIATION: "Forhandling",
+  RESERVED: "Reservert",
+  ON_HOLD: "På vent",
+  WON: "Gjennomført",
+  LOST: "Tapt",
+};
 
 export function normalizeCustomerPipelineStatus(value: unknown): CustomerPipelineStatus {
   const normalized = String(value || "NEW")
@@ -53,6 +68,9 @@ export function normalizeCustomerPipelineStatus(value: unknown): CustomerPipelin
 
   if (["WON", "CUSTOMER", "VIP", "VUNNET", "SOLGT", "SOLD", "CLOSED", "CLOSED_WON", "COMPLETED", "KUNDE"].includes(normalized)) return "WON";
   if (["LOST", "TAPT", "CLOSED_LOST"].includes(normalized)) return "LOST";
+  if (["PROPERTY_MATCHING", "SHORTLIST", "MATCH", "MATCHING"].includes(normalized)) return "MATCHING";
+  if (["RESERVATION", "RESERVERT", "RESERVED", "DEPOSIT_PAID"].includes(normalized)) return "RESERVED";
+  if (["WAITING", "PAUSED", "HOLD", "ON_HOLD"].includes(normalized)) return "ON_HOLD";
   return CUSTOMER_PIPELINE_STATUSES.includes(normalized as CustomerPipelineStatus)
     ? normalized as CustomerPipelineStatus
     : "NEW";
