@@ -45,6 +45,38 @@ test("uses an earlier interaction source before a later structured source", () =
   assert.equal(result.campaign, "early");
 });
 
+test("legacy Kommo provenance is not reported as a marketing event", () => {
+  const result = extractAttribution(contact({ source: "Kommo Event" }));
+  assert.equal(result.sourceId, "unknown");
+  assert.equal(result.rawSource, "Kommo Event");
+  assert.equal(result.confidence, "UNKNOWN");
+});
+
+test("brand provenance is not invented as an acquisition channel", () => {
+  const result = extractAttribution(contact({ source: "Soleada.no" }));
+  assert.equal(result.sourceId, "unknown");
+  assert.equal(result.rawSource, "Soleada.no");
+});
+
+test("manual provenance remains acquisition-unknown", () => {
+  assert.equal(extractAttribution(contact({ source: "Manuell" })).sourceId, "unknown");
+  assert.equal(extractAttribution(contact({ source: "manual" })).sourceId, "unknown");
+});
+
+test("known ZenEco web form maps to website", () => {
+  const result = extractAttribution(contact({ source: "zenecohomes-home" }));
+  assert.equal(result.sourceId, "website");
+});
+
+test("documented acquisition evidence beats legacy CRM provenance", () => {
+  const result = extractAttribution(contact({
+    source: "Kommo Event",
+    interactions: [{ date: "2026-07-08T08:00:00.000Z", metadata: { utm_source: "instagram", utm_campaign: "documented-later" } }],
+  }));
+  assert.equal(result.sourceId, "instagram");
+  assert.equal(result.campaign, "documented-later");
+});
+
 test("monthly cohort excludes leads attributed outside the selected month", () => {
   const workspace = buildAttributionWorkspace({
     contacts: [
