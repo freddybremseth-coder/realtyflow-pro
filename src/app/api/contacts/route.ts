@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
+import {
+  CUSTOMER_PIPELINE_STATUSES,
+  normalizeCustomerPipelineStatus,
+  type CustomerPipelineStatus,
+} from '@/lib/customer-updates';
 import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
 import { getContactsSupabase } from './supabase-client';
+
+const PIPELINE_VIEW_STATUSES = new Set<CustomerPipelineStatus>(CUSTOMER_PIPELINE_STATUSES);
+const CRM_VIEW_STATUSES = new Set<CustomerPipelineStatus>([
+  'CONTACT',
+  'QUALIFIED',
+  'MATCHING',
+  'VIEWING',
+  'NEGOTIATION',
+  'RESERVED',
+  'ON_HOLD',
+  'WON',
+  'LOST',
+]);
 
 async function requireContactsAccess(request: NextRequest) {
   const context = await getRequestAccessContext(request);
@@ -29,22 +47,6 @@ function missingDatabaseResponse() {
   );
 }
 
-function normalizeStatus(status: unknown) {
-  const raw = String(status || '').trim();
-  const value = raw
-    .toUpperCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/Æ/g, 'AE')
-    .replace(/Ø/g, 'O')
-    .replace(/Å/g, 'A')
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  if (['WON', 'VUNNET', 'SOLGT', 'SOLD', 'CLOSED_WON', 'CLOSED', 'COMPLETED', 'CUSTOMER', 'KUNDE', 'VIP'].includes(value)) return 'WON';
-  if (['LOST', 'TAPT', 'CLOSED_LOST'].includes(value)) return 'LOST';
-  return value || 'NEW';
-}
-
 function normalizeEmail(value: unknown) {
   return String(value || '').trim().toLowerCase();
 }
@@ -63,36 +65,55 @@ function normalizeBrand(value: unknown) {
 }
 
 function isCustomerStatus(status: unknown) {
-  return normalizeStatus(status) === 'WON';
+  return normalizeCustomerPipelineStatus(status) === 'WON';
 }
 
-function normalizeContactForClient(contact: any) {
+export function normalizeContactForClient(contact: any) {
   if (!contact || typeof contact !== 'object') return contact;
-  if (!isCustomerStatus(contact.pipeline_status || contact.status || contact.stage)) return contact;
-  return {
+  const pipelineStatus = normalizeCustomerPipelineStatus(contact.pipeline_status || contact.status || contact.stage);
+  const normalized = {
     ...contact,
-    pipeline_status: 'WON',
+    pipeline_status: pipelineStatus,
+  };
+  if (pipelineStatus !== 'WON') return normalized;
+  return {
+    ...normalized,
     sentiment: contact.sentiment && String(contact.sentiment).toLowerCase() !== 'neutral' ? contact.sentiment : 'hot',
     buying_signal_score: Number(contact.buying_signal_score || contact.purchase_signal_score || 100),
     purchase_signal_score: Number(contact.purchase_signal_score || contact.buying_signal_score || 100),
   };
 }
 
-function normalizeIncomingContact(contact: any) {
+export function normalizeIncomingContact(contact: any, options: { defaultPipelineStatus?: boolean } = {}) {
   const next = { ...(contact || {}) };
-  if (next.status && !next.pipeline_status) next.pipeline_status = next.status;
-  if (next.stage && !next.pipeline_status) next.pipeline_status = next.stage;
-  next.pipeline_status = normalizeStatus(next.pipeline_status || 'NEW');
+  const hasPipelineStatus = next.pipeline_status !== undefined || next.status !== undefined || next.stage !== undefined;
+  const incomingStatus = next.pipeline_status ?? next.status ?? next.stage;
+
+  delete next.status;
+  delete next.stage;
+
+  if (hasPipelineStatus || options.defaultPipelineStatus) {
+    next.pipeline_status = normalizeCustomerPipelineStatus(incomingStatus ?? 'NEW');
+  } else {
+    delete next.pipeline_status;
+  }
+
   if (typeof next.email === 'string') next.email = next.email.trim();
   if (typeof next.phone === 'string') next.phone = next.phone.trim();
-  if (isCustomerStatus(next.pipeline_status)) {
-    next.pipeline_status = 'WON';
+
+  if (next.pipeline_status === 'WON') {
     next.sentiment = 'hot';
     next.buying_signal_score = 100;
     next.purchase_signal_score = 100;
     if (!next.pipeline_value && next.sale_price) next.pipeline_value = next.sale_price;
   }
   return next;
+}
+
+export function filterContactsByView(contacts: any[], view: string | null) {
+  if (view !== 'pipeline' && view !== 'crm') return contacts;
+  const allowed = view === 'pipeline' ? PIPELINE_VIEW_STATUSES : CRM_VIEW_STATUSES;
+  return contacts.filter((contact) => allowed.has(normalizeCustomerPipelineStatus(contact?.pipeline_status)));
 }
 
 function stripUnknownColumn(payload: any, column?: string) {
@@ -119,7 +140,6 @@ async function findDuplicateContact(supabase: any, contact: any) {
   const incomingBrand = normalizeBrand(contact.brand_id || contact.brand);
   if (!incomingEmail && !incomingPhone) return null;
 
-  // Deliberately inspect only identity fields. We do not auto-merge data across brands.
   const { data, error } = await supabase
     .from('contacts')
     .select('id,name,email,phone,brand,brand_id,pipeline_status,source,updated_at')
@@ -146,7 +166,6 @@ async function findDuplicateContact(supabase: any, contact: any) {
     };
   }
 
-  // Cross-brand identity is a warning only. Brand isolation means this must never be silently merged.
   return {
     contact: normalizeContactForClient(candidates[0]),
     matchScope: 'cross_brand' as const,
@@ -207,15 +226,12 @@ export async function GET(request: NextRequest) {
   if (!supabase) return missingDatabaseResponse();
   const { searchParams } = new URL(request.url);
   const view = searchParams.get('view');
-  let query = supabase.from('contacts').select('*').order('updated_at', { ascending: false });
-  if (view === 'pipeline') {
-    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST', 'ON_HOLD', 'CUSTOMER', 'VIP', 'VUNNET', 'SOLGT', 'KUNDE', 'SOLD', 'CLOSED_WON']);
-  } else if (view === 'crm') {
-    query = query.in('pipeline_status', ['CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'CUSTOMER', 'VIP', 'LOST', 'VUNNET', 'SOLGT', 'KUNDE', 'SOLD', 'CLOSED_WON']);
-  }
-  const { data, error } = await query;
+
+  const { data, error } = await supabase.from('contacts').select('*').order('updated_at', { ascending: false });
   if (error) return NextResponse.json({ contacts: [], error: error.message });
-  const contacts = (data || []).map(normalizeContactForClient);
+
+  const normalizedContacts = (data || []).map(normalizeContactForClient);
+  const contacts = filterContactsByView(normalizedContacts, view);
   const repairs = contacts
     .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.buying_signal_score !== 100 || c.purchase_signal_score !== 100 || c.sentiment === 'neutral'))
     .map((c: any) => updateContactWithFallbacks(supabase, c.id, { pipeline_status: 'WON', sentiment: 'hot', buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }));
@@ -228,7 +244,7 @@ export async function POST(request: NextRequest) {
   if (unauthorized) return unauthorized;
   const supabase = getContactsSupabase();
   if (!supabase) return missingDatabaseResponse();
-  const contact = normalizeIncomingContact(await request.json());
+  const contact = normalizeIncomingContact(await request.json(), { defaultPipelineStatus: true });
 
   const duplicate = await findDuplicateContact(supabase, contact);
   if (duplicate?.matchScope === 'same_brand') {
@@ -274,8 +290,8 @@ export async function PATCH(request: NextRequest) {
   const { data, error } = await updateContactWithFallbacks(supabase, id, updates);
   if (error) return NextResponse.json({ error: error.message, updates }, { status: 500 });
 
-  const previousStatus = normalizeStatus(previous?.pipeline_status);
-  const nextStatus = normalizeStatus(data?.pipeline_status || updates.pipeline_status);
+  const previousStatus = normalizeCustomerPipelineStatus(previous?.pipeline_status);
+  const nextStatus = normalizeCustomerPipelineStatus(data?.pipeline_status || updates.pipeline_status || previous?.pipeline_status);
   const contactId = String(data?.id || id);
   const brandId = String(data?.brand_id || data?.brand || previous?.brand_id || previous?.brand || '').trim();
 
