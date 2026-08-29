@@ -11,6 +11,7 @@ import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/ca
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
 const EXPLORATION_HOURS = [9, 12, 16, 20];
+const AUTOPILOT_COOLDOWN_HOURS = 20;
 
 type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null };
 
@@ -41,10 +42,19 @@ function shouldRunAtThisSlot(currentHour: number, dayIndex: number, learnedHour:
   return Math.abs(currentHour - explorationHour) <= 1;
 }
 
-async function hasRecentAutoPublication(supabase: any, brandId: string, channel: string) {
-  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase.from("marketing_publications").select("publication_id").eq("brand_id", brandId).eq("channel", channel).eq("source_type", "generated").in("state", ["published", "scheduled"]).gte("updated_at", since).limit(1);
-  return !!data?.length;
+async function hasRecentPublication(supabase: any, brandId: string, channel: string) {
+  const since = new Date(Date.now() - AUTOPILOT_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("marketing_publications")
+    .select("publication_id,source_type,state,updated_at")
+    .eq("brand_id", brandId)
+    .eq("channel", channel)
+    .in("state", ["published", "scheduled"])
+    .gte("updated_at", since)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`AUTOPILOT_COOLDOWN_LOOKUP_FAILED: ${error.message}`);
+  return data?.[0] ?? null;
 }
 
 async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
@@ -60,8 +70,8 @@ function ideaForBrand(plan: any, guidance: string) {
   const role = String(plan?.metadata?.brand_role ?? "");
   const sources = Array.isArray(plan?.source_types) ? plan.source_types.join(", ") : "approved brand sources";
   const channelSafety = " Ikke skriv ‘lenke i bio’, ‘link in bio’, ‘se lenken i profilen’ eller tilsvarende med mindre en slik kanal-lenke er eksplisitt verifisert i brand-data. Bruk heller en direkte, sann CTA som ‘send oss en melding’ eller ‘kontakt oss’.";
-  if (role === "real_estate") return `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle.${channelSafety}${guidance}`;
-  if (role === "food_agriculture") return `Lag nyttig og visuelt merkevareinnhold basert på verifiserte kilder (${sources}). Prioriter gård, oliven, høsting, opprinnelse, EVOO, matbruk eller oppskrifter. Ikke fremsett helse- eller sykdomspåstander uten uavhengig dokumentasjon/review.${channelSafety}${guidance}`;
+  if (role === "real_estate") return `Presenter én aktuell bolig fra RealtyFlow Inventory på en troverdig, nyttig og salgsutløsende måte. Bruk kun verifiserte Inventory-fakta og brandets godkjente tone, CTA og rolle. Brandet selger/rådgir om eiendom: ikke presenter mat, olivenolje, EVOO, landbruksprodukter, restaurantprodukter eller andre varer som om de tilhører brandet.${channelSafety}${guidance}`;
+  if (role === "food_agriculture") return `Lag nyttig og visuelt merkevareinnhold basert på verifiserte kilder (${sources}). Prioriter gård, oliven, høsting, opprinnelse, EVOO, matbruk eller oppskrifter. Ikke fremsett helse- eller sykdomspåstander uten uavhengig dokumentasjon/review. Ikke presenter eiendomsobjekter eller eiendomstjenester som brandets produkt.${channelSafety}${guidance}`;
   if (role === "saas_b2b") return `Lag konkret B2B-innhold basert på verifiserte produktkilder (${sources}). Ikke finn på funksjoner, priser, kundetall eller resultater. Bruk en tydelig nytteverdi og relevant CTA.${channelSafety}${guidance}`;
   if (role === "personal_author") return `Lag forfatter- og bokinnhold basert på verifisert bokkatalog, bokutdrag, covers, artikler og nettsider. Ikke finn på anmeldelser, salgstall eller bokinnhold.${channelSafety}${guidance}`;
   if (role === "creator_media") return `Lag creator/media-innhold kun fra originalt eller autorisert materiale (${sources}). Ikke bruk eller antyd rettigheter til tredjepartsinnhold.${channelSafety}${guidance}`;
@@ -95,7 +105,11 @@ export async function GET(request: NextRequest) {
       if (!channels.length) { results.push({ brandId, skipped: true, reason: "No requested/preapproved autopilot channels" }); continue; }
 
       for (const channel of channels) {
-        if (await hasRecentAutoPublication(supabase, brandId, channel)) { results.push({ brandId, channel, skipped: true, reason: "recent_auto_publication_exists" }); continue; }
+        const recent = await hasRecentPublication(supabase, brandId, channel);
+        if (recent) {
+          results.push({ brandId, channel, skipped: true, reason: "recent_publication_exists", recentPublicationId: recent.publication_id, recentSourceType: recent.source_type, cooldownHours: AUTOPILOT_COOLDOWN_HOURS });
+          continue;
+        }
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
         const learnedHour = parseLearnedHour(recommendation?.favor?.publishHour?.value);
         if (!manualRun && !shouldRunAtThisSlot(localHour, dayIndex, learnedHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour }); continue; }

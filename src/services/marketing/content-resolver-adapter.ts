@@ -3,10 +3,9 @@
  * (Content Hub via social_posts, Media/Image Studio via media_assets, Ad Builder
  * via ad_creatives) før noe nytt genereres. Ingen parallelle content-tabeller.
  *
- * Brand-isolasjon håndheves i to lag: (1) alle spørringer er brand-scopet på
- * DB-nivå, (2) resolver-kjernen diskvalifiserer alt med feil brand. Uten en
- * eksplisitt brand→org/campaign-mapping hoppes de org-scopede kildene over
- * (fail-safe: aldri fuzzy-match, heller generér nytt).
+ * Brand-isolasjon håndheves i flere lag: alle kilder er eksplisitt brand-scopet,
+ * ad campaigns valideres mot ad_campaigns.brand_id, og resolver-kjernen
+ * diskvalifiserer kandidater med feil brand. Ved uklar mapping genereres nytt.
  */
 
 import {
@@ -19,15 +18,12 @@ import {
 import type { MarketingSupabaseLike } from "@/services/marketing/adapters";
 
 export interface ResolverSourceMap {
-  /** social_posts.organization_id som tilhører dette brandet (eksplisitt). */
   organizationId?: string | null;
-  /** ad_campaigns-IDer som tilhører dette brandet (eksplisitt). */
   adCampaignIds?: string[] | null;
 }
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-/** Content Hub (social_posts) — godkjent = høyere tillit; draft/review = gjenbrukbart studio-asset. */
 async function searchContentHub(supabase: MarketingSupabaseLike, input: ResolverInput, orgId: string): Promise<ContentCandidate[]> {
   const { data } = await supabase
     .from("social_posts")
@@ -37,31 +33,28 @@ async function searchContentHub(supabase: MarketingSupabaseLike, input: Resolver
     .in("status", ["approved", "review", "draft"])
     .limit(50);
   return (data ?? [])
-    // P0: aldri gjenbruk intern/meta-tekst eller innhold merket ikke-publishable.
-    // (En intern agent-tekst hadde status=approved og ble publisert — dette stopper det.)
     .filter((r: any) => {
       const kind = r.content_kind ?? r.metadata?.content_kind;
       if (kind && kind !== "publishable") return false;
       return contentPublishabilityGate(r.content ?? "").publishable;
     })
     .map((r: any) => ({
-    source: r.status === "approved" ? "content_hub_approved" : "studio_reusable",
-    contentId: `social_post:${r.id}`,
-    brandId: input.brandId, // brand-scopet spørring garanterer riktig brand
-    channels: [String(r.platform)],
-    language: r.language ?? null,
-    text: r.content ?? "",
-    status: r.status,
-    humanApproved: r.status === "approved",
-    genome: { channel: r.platform, hookType: r.hook_type ?? undefined, ctaType: r.cta_type ?? undefined, goal: r.goal ?? undefined, language: r.language ?? undefined },
-    createdAt: r.created_at ?? null,
-    lastUsedAt: r.published_at ?? null,
-    factCheckedAt: r.updated_at ?? null,
-    businessValue: num(r.quality_score),
-  }));
+      source: r.status === "approved" ? "content_hub_approved" : "studio_reusable",
+      contentId: `social_post:${r.id}`,
+      brandId: input.brandId,
+      channels: [String(r.platform)],
+      language: r.language ?? null,
+      text: r.content ?? "",
+      status: r.status,
+      humanApproved: r.status === "approved",
+      genome: { channel: r.platform, hookType: r.hook_type ?? undefined, ctaType: r.cta_type ?? undefined, goal: r.goal ?? undefined, language: r.language ?? undefined },
+      createdAt: r.created_at ?? null,
+      lastUsedAt: r.published_at ?? null,
+      factCheckedAt: r.updated_at ?? null,
+      businessValue: num(r.quality_score),
+    }));
 }
 
-/** Property/Media-assets (media_assets) — brand + property-scopet. */
 async function searchMedia(supabase: MarketingSupabaseLike, input: ResolverInput): Promise<ContentCandidate[]> {
   const { data } = await supabase
     .from("media_assets")
@@ -76,7 +69,7 @@ async function searchMedia(supabase: MarketingSupabaseLike, input: ResolverInput
       source: "property_media" as const,
       contentId: `media_asset:${r.id}`,
       brandId: r.brand_id,
-      channels: [input.channel], // media er kanal-agnostisk → egnet
+      channels: [input.channel],
       media: r.media_type === "video"
         ? { videoUrl: r.public_url ?? undefined, mediaType: "video" as const, aspectRatio: r.aspect_ratio ?? undefined }
         : { imageUrl: r.public_url ?? undefined, mediaType: "image" as const, aspectRatio: r.aspect_ratio ?? undefined },
@@ -87,20 +80,32 @@ async function searchMedia(supabase: MarketingSupabaseLike, input: ResolverInput
     }));
 }
 
-/** Ad Builder-creatives (ad_creatives) — brand-scopet via kampanje-IDer. */
+async function verifiedCampaignIds(supabase: MarketingSupabaseLike, brandId: string, campaignIds: string[]): Promise<string[]> {
+  if (!campaignIds.length) return [];
+  const { data, error } = await supabase
+    .from("ad_campaigns")
+    .select("id,brand_id")
+    .in("id", campaignIds)
+    .eq("brand_id", brandId);
+  if (error) return [];
+  return (data ?? []).map((row: any) => String(row.id)).filter(Boolean);
+}
+
 async function searchAdCreatives(supabase: MarketingSupabaseLike, input: ResolverInput, campaignIds: string[]): Promise<ContentCandidate[]> {
+  const ownedCampaignIds = await verifiedCampaignIds(supabase, input.brandId, campaignIds);
+  if (!ownedCampaignIds.length) return [];
   const { data } = await supabase
     .from("ad_creatives")
     .select("id, campaign_id, aspect_ratio, image_url, caption_primary, hashtags, status, is_top_pick, created_at")
-    .in("campaign_id", campaignIds)
+    .in("campaign_id", ownedCampaignIds)
     .eq("status", "completed")
     .limit(50);
   return (data ?? [])
-    .filter((r: any) => !!r.image_url)
+    .filter((r: any) => !!r.image_url && ownedCampaignIds.includes(String(r.campaign_id)))
     .map((r: any) => ({
       source: "ad_creative" as const,
       contentId: `ad_creative:${r.id}`,
-      brandId: input.brandId, // kampanje-IDene er brand-scopet
+      brandId: input.brandId,
       channels: [input.channel],
       text: r.caption_primary ?? "",
       media: { imageUrl: r.image_url, mediaType: "image" as const, aspectRatio: r.aspect_ratio ?? undefined },
@@ -110,7 +115,6 @@ async function searchAdCreatives(supabase: MarketingSupabaseLike, input: Resolve
     }));
 }
 
-/** Hovedinngang: samle kandidater fra alle eksisterende kilder + beslutt gjenbruk vs generér. */
 export async function resolveMarketingContent(
   supabase: MarketingSupabaseLike,
   input: ResolverInput,
