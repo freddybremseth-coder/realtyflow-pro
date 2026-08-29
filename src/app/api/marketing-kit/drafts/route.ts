@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/api-admin';
 
+function trackingUrl(baseUrl: string, publicationId: string, brandId: string, source: string) {
+  const url = new URL(baseUrl);
+  url.searchParams.set('utm_source', source || 'social');
+  url.searchParams.set('utm_medium', 'organic_social');
+  url.searchParams.set('utm_campaign', brandId);
+  url.searchParams.set('utm_content', publicationId);
+  return url.toString();
+}
+
 /**
  * POST /api/marketing-kit/drafts
  * Create draft posts in content_publications from marketing kit content.
- * Body: { drafts: [...], property_id: string }
+ * Growth-originated drafts keep a durable growth_action_id and post-level UTM
+ * tracking URL so leads can later be attributed back to the originating action.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,13 +35,27 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = createClient(url, key);
+    const trackingBaseUrl = process.env.NEXT_PUBLIC_SOCIAL_LEAD_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://realtyflow.chatgenius.pro';
 
     const results = [];
     for (const draft of drafts) {
+      const publicationId = crypto.randomUUID();
+      const brandId = String(draft.brand_id || 'zeneco').trim();
+      const scheduledPlatforms = draft.scheduled_platforms || (draft.metadata?.platform ? [draft.metadata.platform] : []);
+      const trackingSource = String(scheduledPlatforms[0] || draft.metadata?.platform || 'social').trim().toLowerCase();
+      const growthActionId = typeof draft.growth_action_id === 'string' ? draft.growth_action_id.trim() : '';
+      const contentFeatures = {
+        ...(draft.content_features && typeof draft.content_features === 'object' ? draft.content_features : {}),
+        ...(draft.metadata && typeof draft.metadata === 'object' ? draft.metadata : {}),
+        ...(growthActionId ? { growth_action_id: growthActionId, source: 'growth_engine' } : {}),
+      };
+      const postTrackingUrl = trackingUrl(trackingBaseUrl, publicationId, brandId, trackingSource);
+
       const { data, error } = await supabase
         .from('content_publications')
         .insert({
-          brand_id: draft.brand_id || 'zeneco',
+          id: publicationId,
+          brand_id: brandId,
           content_type: draft.content_type || 'marketing_post',
           title: draft.title,
           description: draft.description,
@@ -41,17 +65,27 @@ export async function POST(req: NextRequest) {
           ai_title: draft.title,
           ai_description: draft.description,
           ai_tags: draft.tags || [],
-          scheduled_platforms: draft.scheduled_platforms || (draft.metadata?.platform ? [draft.metadata.platform] : []),
+          scheduled_platforms: scheduledPlatforms,
+          performance_goal: draft.performance_goal || (growthActionId ? 'lead_rate' : null),
+          tracking_slug: publicationId,
+          tracking_url: postTrackingUrl,
+          content_features: contentFeatures,
           ...(draft.ai_image_url ? { ai_image_url: draft.ai_image_url } : {}),
         })
-        .select('id, title, status')
+        .select('id, title, status, tracking_url, content_features')
         .single();
 
       if (error) {
         console.error('[Marketing Kit Drafts] Insert error:', error.message);
         results.push({ platform: draft.metadata?.platform, success: false, error: error.message });
       } else {
-        results.push({ platform: draft.metadata?.platform, success: true, id: data.id });
+        results.push({
+          platform: draft.metadata?.platform,
+          success: true,
+          id: data.id,
+          tracking_url: data.tracking_url,
+          growth_action_id: growthActionId || null,
+        });
       }
     }
 
