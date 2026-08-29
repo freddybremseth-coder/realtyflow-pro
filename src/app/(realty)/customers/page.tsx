@@ -21,7 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CrmCustomerCard } from "@/components/crm/crm-customer-card";
 import { DomainWorkItems } from "@/components/hub/domain-work-items";
-import { buildCustomerListAction, type CustomerListActionPriority } from "@/lib/customers/action-priority";
+import {
+  REAL_ESTATE_STAGE_LABELS,
+  REAL_ESTATE_STAGE_ORDER,
+  buildCustomerListAction,
+  normalizeRealEstateStage,
+  type CustomerListActionPriority,
+} from "@/lib/customers/action-priority";
 
 interface Contact {
   id: string;
@@ -35,7 +41,9 @@ interface Contact {
   brand_id?: string | null;
   brand?: string | null;
   next_followup?: string | null;
+  last_contact?: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
   source?: string | null;
   interactions?: Array<Record<string, unknown>> | null;
 }
@@ -49,26 +57,17 @@ const BRAND_LABELS: Record<string, string> = {
   keyholding: "Keyholding",
 };
 
-const STAGE_LABELS: Record<string, string> = {
-  NEW: "Ny",
-  CONTACT: "Kontakt",
-  QUALIFIED: "Kvalifisert",
-  VIEWING: "Visning",
-  NEGOTIATION: "Forhandling",
-  WON: "Vunnet",
-  LOST: "Tapt",
-  ON_HOLD: "På vent",
-};
-
 const STAGE_CLASSES: Record<string, string> = {
   NEW: "border-blue-500/30 bg-blue-500/10 text-blue-200",
   CONTACT: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
   QUALIFIED: "border-purple-500/30 bg-purple-500/10 text-purple-200",
+  MATCHING: "border-cyan-500/30 bg-cyan-500/10 text-cyan-100",
   VIEWING: "border-amber-500/30 bg-amber-500/10 text-amber-200",
   NEGOTIATION: "border-orange-500/30 bg-orange-500/10 text-orange-200",
-  WON: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-  LOST: "border-red-500/30 bg-red-500/10 text-red-200",
+  RESERVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
   ON_HOLD: "border-slate-600 bg-slate-800 text-slate-300",
+  WON: "border-green-500/30 bg-green-500/10 text-green-200",
+  LOST: "border-red-500/30 bg-red-500/10 text-red-200",
 };
 
 const ACTION_CLASSES: Record<CustomerListActionPriority, string> = {
@@ -80,17 +79,18 @@ const ACTION_CLASSES: Record<CustomerListActionPriority, string> = {
 
 const TAB_STAGES: Record<Exclude<CrmTab, "all">, Set<string>> = {
   leads: new Set(["NEW"]),
-  pipeline: new Set(["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD"]),
+  pipeline: new Set(["CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED", "ON_HOLD"]),
   customers: new Set(["WON", "LOST"]),
 };
 
-const STAGE_ORDER = ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION", "ON_HOLD", "WON", "LOST"];
+const ACTIVE_VALUE_STAGES = new Set(["NEW", "CONTACT", "QUALIFIED", "MATCHING", "VIEWING", "NEGOTIATION", "RESERVED"]);
 
 function normalizeStatus(value: unknown) {
-  const status = String(value || "NEW").trim().toUpperCase();
-  if (["CUSTOMER", "KUNDE", "VUNNET", "SOLGT", "SOLD", "CLOSED_WON"].includes(status)) return "WON";
-  if (["TAPT", "CLOSED_LOST"].includes(status)) return "LOST";
-  return status;
+  return normalizeRealEstateStage(value);
+}
+
+function stageLabel(status: string) {
+  return REAL_ESTATE_STAGE_LABELS[status as keyof typeof REAL_ESTATE_STAGE_LABELS] || status;
 }
 
 function money(value: unknown) {
@@ -145,7 +145,7 @@ export default function CustomersPage() {
     const requestedStage = params.get("stage");
     if (contactId) setSelectedContactId(contactId);
     if (requestedTab && ["leads", "pipeline", "customers", "all"].includes(requestedTab)) setTab(requestedTab);
-    if (requestedStage) setStageFilter(requestedStage.toUpperCase());
+    if (requestedStage) setStageFilter(normalizeStatus(requestedStage));
     if (params.get("action") === "1") setActionOnly(true);
   }, []);
 
@@ -161,7 +161,8 @@ export default function CustomersPage() {
     else params.delete("action");
     if (nextStage && nextStage !== "all") params.set("stage", nextStage);
     else params.delete("stage");
-    window.history.replaceState(null, "", `/customers?${params.toString()}`);
+    const suffix = params.toString();
+    window.history.replaceState(null, "", suffix ? `/customers?${suffix}` : "/customers");
   }
 
   function openCustomer(contact: Contact) {
@@ -218,7 +219,7 @@ export default function CustomersPage() {
     customers: contacts.filter((item) => TAB_STAGES.customers.has(normalizeStatus(item.pipeline_status))).length,
     overdue: contacts.filter((item) => isOverdue(item.next_followup) && !["WON", "LOST"].includes(normalizeStatus(item.pipeline_status))).length,
     action: contacts.filter((item) => buildCustomerListAction(item).needsAction && !["WON", "LOST"].includes(normalizeStatus(item.pipeline_status))).length,
-    value: contacts.filter((item) => ["NEW", "CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"].includes(normalizeStatus(item.pipeline_status))).reduce((sum, item) => sum + Number(item.pipeline_value || 0), 0),
+    value: contacts.filter((item) => ACTIVE_VALUE_STAGES.has(normalizeStatus(item.pipeline_status))).reduce((sum, item) => sum + Number(item.pipeline_value || 0), 0),
   }), [contacts]);
 
   const stageCounts = useMemo(() => {
@@ -231,8 +232,9 @@ export default function CustomersPage() {
   }, [contacts]);
 
   const stageOptions = useMemo(() => {
-    const extras = Object.keys(stageCounts).filter((status) => !STAGE_ORDER.includes(status)).sort();
-    return [...STAGE_ORDER.filter((status) => stageCounts[status]), ...extras];
+    const canonical = REAL_ESTATE_STAGE_ORDER.filter((status) => stageCounts[status]);
+    const extras = Object.keys(stageCounts).filter((status) => !REAL_ESTATE_STAGE_ORDER.includes(status as any)).sort();
+    return [...canonical, ...extras];
   }, [stageCounts]);
 
   return (
@@ -241,7 +243,7 @@ export default function CustomersPage() {
         <div>
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-300"><LayoutGrid size={17} /> Samlet kundeopplevelse</div>
           <h1 className="text-2xl font-bold text-white sm:text-3xl">CRM & leads</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-400">Hele leadbasen er synlig her. Filtrer eksplisitt på status eller handling — ingen leads skjules av et standardfilter.</p>
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">Én operativ kundebase fra ny lead til boligmatching, visning, reservasjon og gjennomført salg. Planlagte kunder skilles fra saker som faktisk trenger handling nå.</p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <Button asChild variant="outline"><Link href="/today"><Sparkles size={16} className="mr-2" />I dag</Link></Button>
@@ -266,13 +268,14 @@ export default function CustomersPage() {
         ]}
       />
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <button onClick={() => selectTab("all")} className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-left"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-cyan-200/70">Alle leads/kunder</p><strong className="mt-1 block text-2xl text-white">{contacts.length}</strong></button>
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
+        <button onClick={() => selectTab("all")} className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-left"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-cyan-200/70">Alle</p><strong className="mt-1 block text-2xl text-white">{contacts.length}</strong></button>
         <button onClick={toggleActionOnly} className="rounded-xl border border-red-500/20 bg-slate-900/60 p-4 text-left"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{counts.action}</strong></button>
+        <article className="rounded-xl border border-amber-500/20 bg-slate-900/60 p-4"><CalendarClock className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Forfalt</p><strong className="mt-1 block text-2xl text-white">{counts.overdue}</strong></article>
         <button onClick={() => selectStage("NEW")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Users className="text-blue-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Nye</p><strong className="mt-1 block text-2xl text-white">{stageCounts.NEW || 0}</strong></button>
-        <button onClick={() => selectStage("CONTACT")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Mail className="text-indigo-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kontakt</p><strong className="mt-1 block text-2xl text-white">{stageCounts.CONTACT || 0}</strong></button>
         <button onClick={() => selectStage("QUALIFIED")} className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4 text-left"><Target className="text-purple-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Kvalifisert</p><strong className="mt-1 block text-2xl text-white">{stageCounts.QUALIFIED || 0}</strong></button>
-        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Pipeline-verdi</p><strong className="mt-1 block text-2xl text-white">{money(counts.value)}</strong></article>
+        <button onClick={() => selectStage("MATCHING")} className="rounded-xl border border-cyan-500/20 bg-slate-900/60 p-4 text-left"><Search className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Matching</p><strong className="mt-1 block text-2xl text-white">{stageCounts.MATCHING || 0}</strong></button>
+        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv verdi</p><strong className="mt-1 block text-2xl text-white">{money(counts.value)}</strong></article>
       </section>
 
       <section className="space-y-3 rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
@@ -287,12 +290,12 @@ export default function CustomersPage() {
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status · trykk for å filtrere</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Pipeline-steg</p>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button onClick={() => selectStage("all")} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${stageFilter === "all" ? "border-white/30 bg-white/10 text-white" : "border-slate-700 text-slate-400"}`}>Alle {contacts.length}</button>
             {stageOptions.map((status) => (
               <button key={status} onClick={() => selectStage(status)} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${stageFilter === status ? (STAGE_CLASSES[status] || "border-cyan-500/40 bg-cyan-500/10 text-cyan-100") : "border-slate-700 text-slate-400"}`}>
-                {STAGE_LABELS[status] || status} {stageCounts[status] || 0}
+                {stageLabel(status)} {stageCounts[status] || 0}
               </button>
             ))}
           </div>
@@ -319,7 +322,7 @@ export default function CustomersPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] ${STAGE_CLASSES[status] || STAGE_CLASSES.ON_HOLD}`}>{STAGE_LABELS[status] || status}</span>
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] ${STAGE_CLASSES[status] || STAGE_CLASSES.ON_HOLD}`}>{stageLabel(status)}</span>
                       <span className="text-xs text-slate-500">{BRAND_LABELS[brandId] || brandId}</span>
                       {overdue && <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] text-red-200">Forfalt</span>}
                     </div>
@@ -331,7 +334,7 @@ export default function CustomersPage() {
 
                 <div className={`mt-4 rounded-lg border p-3 ${ACTION_CLASSES[action.priority]}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wide">Neste fokus · {action.priority}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">{action.needsAction ? `Neste fokus · ${action.priority}` : "Planlagt"}</span>
                     <span className="text-[10px] opacity-70">{action.score}/100</span>
                   </div>
                   <p className="mt-1 text-sm font-semibold">{action.label}</p>
@@ -344,7 +347,7 @@ export default function CustomersPage() {
                   <span className="inline-flex items-center gap-1.5"><CircleDollarSign size={12} />{money(contact.pipeline_value)}</span>
                   <span className={`inline-flex items-center gap-1.5 ${overdue ? "text-red-300" : ""}`}><CalendarClock size={12} />{dateLabel(contact.next_followup)}</span>
                 </div>
-                <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne Customer 360 og gjør anbefalt handling →</div>
+                <div className="mt-4 border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300">Åpne Customer 360 og gjør neste steg →</div>
               </button>
             );
           })}
