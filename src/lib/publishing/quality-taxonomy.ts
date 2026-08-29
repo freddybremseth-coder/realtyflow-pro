@@ -17,8 +17,9 @@ export type TaxonomyAssignment = {
   code: string;
 };
 
-const BASE_CHECKS = ["canon_consistency", "editorial", "epub_validation", "accessibility", "metadata"] as const;
-const NONFICTION_CHECKS = ["factual", "citations"] as const;
+const COMMON_AI_CHECKS = ["canon_consistency", "editorial"] as const;
+const NONFICTION_AI_CHECKS = ["factual", "citations"] as const;
+const TECHNICAL_AND_METADATA_CHECKS = ["epub_validation", "accessibility", "metadata"] as const;
 const TECHNICAL_CHECKS = new Set(["epub_validation", "accessibility"]);
 
 export function inferBookKind(...values: unknown[]): "fiction" | "nonfiction" {
@@ -29,7 +30,9 @@ export function inferBookKind(...values: unknown[]): "fiction" | "nonfiction" {
 }
 
 export function requiredQualityChecks(kind: "fiction" | "nonfiction") {
-  return kind === "nonfiction" ? [...BASE_CHECKS, ...NONFICTION_CHECKS] : [...BASE_CHECKS];
+  return kind === "nonfiction"
+    ? [...COMMON_AI_CHECKS, ...NONFICTION_AI_CHECKS, ...TECHNICAL_AND_METADATA_CHECKS]
+    : [...COMMON_AI_CHECKS, ...TECHNICAL_AND_METADATA_CHECKS];
 }
 
 function latestChecks(checks: QualityCheck[]) {

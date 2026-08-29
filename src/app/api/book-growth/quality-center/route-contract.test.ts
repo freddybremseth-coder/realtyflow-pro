@@ -19,3 +19,13 @@ test("quality center derives readiness from exact revision data", () => {
   assert.match(route, /row\.revision_id === canonicalRevision\.id/);
   assert.match(route, /qualityTaxonomyReadiness/);
 });
+
+test("OpenAI quality evidence stays pending until a separate human decision", () => {
+  assert.match(route, /action === "run_quality_check"/);
+  assert.match(route, /reviewBookQuality/);
+  assert.match(route, /result: "running", decision: "pending", automated: true/);
+  assert.match(route, /findings: review\.findings, web_sources: review\.webSources, coverage: review\.coverage/);
+  assert.match(route, /action === "decide_quality_check"/);
+  assert.match(route, /decision === "approved" && !\["pass", "warning"\]\.includes\(check\.result\)/);
+  assert.match(route, /decided_by: "admin_ui"/);
+});

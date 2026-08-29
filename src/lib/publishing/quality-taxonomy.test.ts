@@ -9,7 +9,7 @@ test("book kind inference keeps fiction and nonfiction quality gates distinct", 
 
 test("nonfiction requires factual and citation evidence in addition to common gates", () => {
   assert.deepEqual(requiredQualityChecks("nonfiction"), [
-    "canon_consistency", "editorial", "epub_validation", "accessibility", "metadata", "factual", "citations",
+    "canon_consistency", "editorial", "factual", "citations", "epub_validation", "accessibility", "metadata",
   ]);
   assert.equal(requiredQualityChecks("fiction").includes("factual" as never), false);
 });
