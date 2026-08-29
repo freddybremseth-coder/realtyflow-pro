@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Link2, Loader2, Mail, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Link2, Loader2, Mail, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { EmailLinkApprovalButton } from "@/components/nexus/email-link-approval-button";
 
 interface HealthItem {
   state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
@@ -76,14 +77,14 @@ export default function EmailLinkHealthPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Link2 className="h-4 w-4" /> Email Link Health</div>
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Koble inbox til riktig kunde uten å gjette</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Read-only kontroll av e-postkoblingen. Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Navnelikhet brukes ikke automatisk.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Navnelikhet brukes ikke automatisk. En kobling skrives først etter at du eksplisitt godkjenner den.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-        <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Sikker modus</div>
-        <p className="mt-1">Ingen e-post eller CRM-kontakt kobles fra denne siden. Sikker kandidat betyr forslag til senere menneskelig godkjenning — ikke automatisk write.</p>
+        <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert kobling</div>
+        <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. API-et validerer hele matchen på nytt før write, og overskriver aldri en kobling som har endret seg i mellomtiden.</p>
       </div>
 
       {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">{error}</div> : null}
@@ -122,7 +123,7 @@ export default function EmailLinkHealthPage() {
         </div>
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="text-xs font-black uppercase tracking-wide text-slate-500">CRM-kandidat</div>
-          {item.candidates.length ? <div className="mt-2 space-y-2">{item.candidates.map((candidate) => <div key={candidate.id} className="flex flex-col gap-2 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-black text-slate-900">{candidate.name}</div><div className="text-xs text-slate-500">{candidate.email || "ingen e-post"} · {candidate.brandId || "brand ukjent"}</div></div><Link href={`/customers?contactId=${encodeURIComponent(candidate.id)}`} className="text-xs font-black text-cyan-700 hover:underline">Åpne Customer 360</Link></div>)}</div> : <div className="mt-2 flex items-center gap-2 text-sm text-slate-500"><AlertTriangle className="h-4 w-4" />Ingen sikker CRM-kandidat.</div>}
+          {item.candidates.length ? <div className="mt-2 space-y-2">{item.candidates.map((candidate) => <div key={candidate.id} className="flex flex-col gap-3 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-black text-slate-900">{candidate.name}</div><div className="text-xs text-slate-500">{candidate.email || "ingen e-post"} · {candidate.brandId || "brand ukjent"}</div></div><div className="flex flex-wrap items-center gap-2"><Link href={`/customers?contactId=${encodeURIComponent(candidate.id)}`} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-cyan-700 hover:bg-slate-50">Åpne Customer 360</Link>{item.state === "exact_candidate" && item.candidates.length === 1 ? <EmailLinkApprovalButton messageId={item.message.id} contactId={candidate.id} contactName={candidate.name} onApproved={() => void load()} /> : null}</div></div>)}</div> : <div className="mt-2 flex items-center gap-2 text-sm text-slate-500"><AlertTriangle className="h-4 w-4" />Ingen sikker CRM-kandidat.</div>}
         </div>
       </article>)}
     </section>

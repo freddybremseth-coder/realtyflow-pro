@@ -30,6 +30,14 @@ export interface EmailLinkAssessment {
   reason: string;
 }
 
+export interface EmailLinkApprovalValidation {
+  ok: boolean;
+  idempotent: boolean;
+  contactId: string | null;
+  reason: string;
+  assessment: EmailLinkAssessment;
+}
+
 function email(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
@@ -48,9 +56,19 @@ function unique(values: string[]) {
 
 export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkContact[]): EmailLinkAssessment {
   const byId = new Map(contacts.map((contact) => [String(contact.id), contact]));
-  const directIds = unique([String(message.matched_lead_id || ""), String(message.matched_customer_id || "")])
-    .filter((id) => byId.has(id));
+  const explicitIds = unique([String(message.matched_lead_id || ""), String(message.matched_customer_id || "")]);
+  const directIds = explicitIds.filter((id) => byId.has(id));
+  const unresolvedExplicitIds = explicitIds.filter((id) => !byId.has(id));
 
+  if (unresolvedExplicitIds.length > 0) {
+    return {
+      message,
+      state: "ambiguous",
+      confidence: "NONE",
+      contactIds: directIds,
+      reason: "Meldingen har en eksisterende CRM-ID som ikke kan valideres mot dagens kontaktbase.",
+    };
+  }
   if (directIds.length === 1) {
     return { message, state: "linked", confidence: "HIGH", contactIds: directIds, reason: "Eksisterende eksplisitt CRM-kobling." };
   }
@@ -83,6 +101,53 @@ export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkCo
   }
 
   return { message, state: "unlinked", confidence: "NONE", contactIds: [], reason: "Ingen sikker ID- eller eksakt e-postmatch." };
+}
+
+export function validateEmailLinkApproval(
+  message: EmailLinkMessage,
+  contacts: EmailLinkContact[],
+  requestedContactId: string,
+): EmailLinkApprovalValidation {
+  const contactId = String(requestedContactId || "").trim();
+  const assessment = assessEmailLink(message, contacts);
+
+  if (!contactId) {
+    return { ok: false, idempotent: false, contactId: null, reason: "contactId mangler.", assessment };
+  }
+
+  if (assessment.state === "linked") {
+    const sameContact = assessment.contactIds.length === 1 && assessment.contactIds[0] === contactId;
+    return {
+      ok: sameContact,
+      idempotent: sameContact,
+      contactId: sameContact ? contactId : null,
+      reason: sameContact ? "Meldingen er allerede koblet til denne kontakten." : "Meldingen er allerede koblet til en annen kontakt.",
+      assessment,
+    };
+  }
+
+  const exactCandidate = assessment.state === "exact_candidate"
+    && assessment.confidence === "HIGH"
+    && assessment.contactIds.length === 1
+    && assessment.contactIds[0] === contactId;
+
+  if (!exactCandidate) {
+    return {
+      ok: false,
+      idempotent: false,
+      contactId: null,
+      reason: "Godkjenning avvist: meldingen er ikke en entydig, eksakt kandidat for valgt kontakt.",
+      assessment,
+    };
+  }
+
+  return {
+    ok: true,
+    idempotent: false,
+    contactId,
+    reason: assessment.reason,
+    assessment,
+  };
 }
 
 export function buildEmailLinkHealth(messages: EmailLinkMessage[], contacts: EmailLinkContact[]) {
