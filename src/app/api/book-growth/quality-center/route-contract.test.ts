@@ -37,3 +37,13 @@ test("deterministic gates retain structured evidence and do not impersonate edit
   assert.match(route, /evidence_fingerprint: fingerprint\(evidence\)/);
   assert.match(route, /decision: "pending"/);
 });
+
+test("taxonomy generation is proposal-only and bundle approval is a separate admin action", () => {
+  assert.match(route, /action === "generate_taxonomy"/);
+  assert.match(route, /suggestBookTaxonomy/);
+  assert.match(route, /publishing_stage_taxonomy_bundle/);
+  assert.match(route, /action === "decide_taxonomy_bundle"/);
+  assert.match(route, /publishing_decide_taxonomy_bundle/);
+  assert.match(route, /p_actor: "admin_ui"/);
+  assert.doesNotMatch(route, /book_growth_apply_channel_metadata_candidate/);
+});

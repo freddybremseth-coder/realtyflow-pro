@@ -5,6 +5,7 @@ import { toEpubBuffer } from "@/lib/publishing/epub-export";
 import { inferBookKind, qualityTaxonomyReadiness } from "@/lib/publishing/quality-taxonomy";
 import { DETERMINISTIC_QUALITY_CHECKS, runDeterministicQualityCheck, type DeterministicQualityCheckType } from "@/lib/publishing/technical-quality-validator";
 import { AI_QUALITY_CHECKS, reviewBookQuality, type AiQualityCheckType } from "@/services/ai/book-quality-reviewer";
+import { suggestBookTaxonomy } from "@/services/ai/book-taxonomy-suggester";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ function fingerprint(value: unknown) {
   return createHash("sha256").update(stable(value)).digest("hex");
 }
 
-function nextAction(input: { canonicalRevision: boolean; canImport: boolean; draftBibleIds: string[]; readiness: ReturnType<typeof qualityTaxonomyReadiness>; checks: any[] }) {
+function nextAction(input: { canonicalRevision: boolean; canImport: boolean; draftBibleIds: string[]; readiness: ReturnType<typeof qualityTaxonomyReadiness>; checks: any[]; taxonomy: any[] }) {
   if (!input.canonicalRevision) return { code: "select_revision", label: "Velg kanonisk manusrevisjon" };
   if (input.readiness.missingBibles.length) {
     if (input.draftBibleIds.length) return { code: "approve_bibles", label: "Godkjenn seriebibel og canon" };
@@ -47,7 +48,11 @@ function nextAction(input: { canonicalRevision: boolean; canImport: boolean; dra
     if (DETERMINISTIC_QUALITY_CHECKS.includes(checkType as DeterministicQualityCheckType)) return { code: "run_technical_quality", label: `Kjør teknisk kontroll: ${checkType}`, checkType };
     return { code: "quality_check", label: `Kjør kvalitetskontroll: ${checkType}` };
   }
-  if (input.readiness.taxonomyIssues.length) return { code: "taxonomy", label: "Fullfør kategorier og 5–7 søkeord" };
+  if (input.readiness.taxonomyIssues.length) {
+    const proposalIds = input.taxonomy.filter((row) => row.status === "proposed").map((row) => String(row.id));
+    if (proposalIds.length) return { code: "review_taxonomy", label: "Vurder foreslåtte kategorier og søkeord", assignmentIds: proposalIds };
+    return { code: "generate_taxonomy", label: "Foreslå kategorier og 5–7 søkeord" };
+  }
   return { code: "ready", label: "Kvalitet og metadata er klare" };
 }
 
@@ -63,7 +68,7 @@ export async function GET(request: NextRequest) {
     supabase.from("publishing_catalog_revisions").select("id,edition_id,revision_number,status,is_canonical").order("revision_number", { ascending: false }),
     supabase.from("publishing_work_bibles").select("id,work_id,source_project_id,bible_type,version,status,change_summary,approved_by,approved_at,created_at").order("version", { ascending: false }),
     supabase.from("publishing_revision_quality_checks").select("id,revision_id,check_type,attempt,result,decision,score,summary,evidence,decided_by,decided_at").order("attempt", { ascending: false }),
-    supabase.from("publishing_edition_taxonomy_assignments").select("id,edition_id,revision_id,assignment_type,status,scheme,channel,code,label,rank"),
+    supabase.from("publishing_edition_taxonomy_assignments").select("id,edition_id,revision_id,assignment_type,status,scheme,channel,code,label,rank,confidence,evidence,proposed_by,approved_by,approved_at"),
     supabase.from("publishing_book_projects").select("id,title,niche,series_name,metadata_plan,status,updated_at"),
   ]);
   const error = worksRes.error || editionsRes.error || revisionsRes.error || biblesRes.error || checksRes.error || taxonomyRes.error || projectsRes.error;
@@ -112,8 +117,9 @@ export async function GET(request: NextRequest) {
       bibles: workBibles,
       draftBibleIds,
       checks: revisionChecks,
+      taxonomy: editionTaxonomy,
       readiness,
-      nextAction: nextAction({ canonicalRevision: Boolean(canonicalRevision), canImport, draftBibleIds, readiness, checks: revisionChecks }),
+      nextAction: nextAction({ canonicalRevision: Boolean(canonicalRevision), canImport, draftBibleIds, readiness, checks: revisionChecks, taxonomy: editionTaxonomy }),
     };
   }).sort((a: any, b: any) => Number(a.readiness.ready) - Number(b.readiness.ready) || a.title.localeCompare(b.title));
 
@@ -137,6 +143,49 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const body = await request.json().catch(() => ({}));
   const action = String(body?.action ?? "");
+
+  if (action === "generate_taxonomy") {
+    const editionId = typeof body?.editionId === "string" ? body.editionId.trim() : "";
+    if (!editionId) return NextResponse.json({ error: "editionId er påkrevd" }, { status: 400 });
+    const [{ data: edition, error: editionError }, { data: revision, error: revisionError }] = await Promise.all([
+      supabase.from("publishing_catalog_editions").select("id,title,subtitle,language,canonical_project_id").eq("id", editionId).maybeSingle(),
+      supabase.from("publishing_catalog_revisions").select("id,edition_id,is_canonical").eq("edition_id", editionId).eq("is_canonical", true).maybeSingle(),
+    ]);
+    const lookupError = editionError || revisionError;
+    if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 500 });
+    if (!edition?.canonical_project_id || !revision) return NextResponse.json({ error: "Utgaven mangler kanonisk manusprosjekt eller revisjon" }, { status: 409 });
+    const { data: project, error: projectError } = await supabase.from("publishing_book_projects").select("id,title,subtitle,language,niche,chapter_drafts,metadata_plan").eq("id", edition.canonical_project_id).maybeSingle();
+    if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 });
+    if (!project) return NextResponse.json({ error: "Fant ikke manusprosjektet" }, { status: 404 });
+    try {
+      const metadata = objectValue(project.metadata_plan);
+      const kdp = objectValue(metadata.kdp);
+      const suggestion = await suggestBookTaxonomy({
+        title: project.title || edition.title, subtitle: project.subtitle || edition.subtitle || "", language: project.language || edition.language || "en",
+        description: String(kdp.description_html || kdp.description || metadata.description || ""), niche: project.niche || "",
+        chapters: Array.isArray(project.chapter_drafts) ? project.chapter_drafts : [],
+      });
+      const model = process.env.OPENAI_BOOK_MODEL || "gpt-5.6";
+      const evidence = { positioning_summary: suggestion.positioningSummary, web_sources: suggestion.webSources, generated_at: new Date().toISOString(), provider: "openai", model };
+      const { data, error } = await supabase.rpc("publishing_stage_taxonomy_bundle", {
+        p_edition_id: editionId, p_revision_id: revision.id, p_language: project.language || edition.language || "en",
+        p_proposals: suggestion.proposals, p_evidence: evidence, p_actor: `openai:${model}`, p_source_version: new Date().toISOString().slice(0, 10),
+      });
+      if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+      return NextResponse.json({ ok: true, action, result: data });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Kunne ikke lage taggeforslag" }, { status: 502 });
+    }
+  }
+
+  if (action === "decide_taxonomy_bundle") {
+    const assignmentIds = Array.isArray(body?.assignmentIds) ? [...new Set(body.assignmentIds.map(String).map((id: string) => id.trim()).filter(Boolean))].slice(0, 20) : [];
+    const decision = body?.decision === "approved" || body?.decision === "rejected" ? body.decision : "";
+    if (!assignmentIds.length || !decision) return NextResponse.json({ error: "Taggepakke og gyldig beslutning er påkrevd" }, { status: 400 });
+    const { data, error } = await supabase.rpc("publishing_decide_taxonomy_bundle", { p_assignment_ids: assignmentIds, p_decision: decision, p_actor: "admin_ui" });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action, result: data });
+  }
 
   if (action === "run_technical_quality_check") {
     const revisionId = typeof body?.revisionId === "string" ? body.revisionId.trim() : "";

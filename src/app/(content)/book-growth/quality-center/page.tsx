@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 
 type Bible = { id: string; bible_type: string; version: number; status: string; approved_by?: string | null; approved_at?: string | null };
 type QualityCheck = { id: string; check_type: string; result: string; decision: string; score?: number | null; summary?: string | null; evidence?: { validator?: string; findings?: Array<{ severity: string; location: string; issue?: string; message?: string }> } };
+type TaxonomyAssignment = { id: string; assignment_type: "category" | "keyword" | "audience" | "theme"; status: string; scheme: string; channel: string; code: string; label: string; rank: number; confidence?: number | null; evidence?: { rationale?: string; positioning_summary?: string; web_sources?: Array<{ title: string; url: string }> } };
 type Edition = {
   editionId: string;
   title: string;
@@ -16,9 +17,10 @@ type Edition = {
   canImport: boolean;
   bibles: Bible[];
   checks: QualityCheck[];
+  taxonomy: TaxonomyAssignment[];
   draftBibleIds: string[];
   readiness: { ready: boolean; missingBibles: string[]; missingChecks: string[]; taxonomyIssues: string[]; categoryCount: number; keywordCount: number };
-  nextAction: { code: string; label: string; checkType?: string; checkId?: string };
+  nextAction: { code: string; label: string; checkType?: string; checkId?: string; assignmentIds?: string[] };
 };
 type Data = { available: boolean; error?: string; summary?: Record<string, number>; editions?: Edition[] };
 
@@ -53,7 +55,7 @@ export default function QualityCenterPage() {
 
   useEffect(() => { load().catch((err) => setError(err instanceof Error ? err.message : "Kunne ikke laste Quality Center")); }, [load]);
 
-  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "run_technical_quality_check" | "decide_quality_check", decision?: "approved" | "rejected") => {
+  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "run_technical_quality_check" | "decide_quality_check" | "generate_taxonomy" | "decide_taxonomy_bundle", decision?: "approved" | "rejected") => {
     setBusyId(edition.editionId);
     setError("");
     setNotice("");
@@ -66,6 +68,8 @@ export default function QualityCenterPage() {
             : action === "approve_bible_bundle" ? { action, bibleIds: edition.draftBibleIds }
               : action === "run_quality_check" ? { action, revisionId: edition.canonicalRevision?.id, checkType: edition.nextAction.checkType }
                 : action === "run_technical_quality_check" ? { action, revisionId: edition.canonicalRevision?.id, checkType: edition.nextAction.checkType }
+                  : action === "generate_taxonomy" ? { action, editionId: edition.editionId }
+                    : action === "decide_taxonomy_bundle" ? { action, assignmentIds: edition.nextAction.assignmentIds, decision }
                 : { action, checkId: edition.nextAction.checkId, decision }),
         });
         const body = await response.json();
@@ -74,6 +78,8 @@ export default function QualityCenterPage() {
           : action === "approve_bible_bundle" ? "Seriebibel og canon er godkjent for dette bokverket."
             : action === "run_quality_check" ? "OpenAI-kontrollen er ferdig og venter på din beslutning."
               : action === "run_technical_quality_check" ? "Den tekniske kontrollen er ferdig og bevisene er lagret."
+                : action === "generate_taxonomy" ? "Taggepakken er klar og venter på din vurdering."
+                  : action === "decide_taxonomy_bundle" ? (decision === "approved" ? "Kategorier, målgruppe, temaer og søkeord er godkjent." : "Taggeforslaget er avvist.")
               : decision === "approved" ? "Kvalitetsresultatet er godkjent." : "Resultatet er avvist. En ny kontroll kan kjøres etter retting.");
         await load();
       } catch (err) {
@@ -108,6 +114,8 @@ export default function QualityCenterPage() {
         const approved = edition.bibles.filter((row) => row.status === "approved");
         const missing = [...edition.readiness.missingBibles, ...edition.readiness.missingChecks, ...edition.readiness.taxonomyIssues];
         const latestChecks = edition.checks.filter((row, index, all) => all.findIndex((candidate) => candidate.check_type === row.check_type) === index);
+        const taxonomyProposals = edition.taxonomy.filter((row) => row.status === "proposed").sort((a, b) => a.assignment_type.localeCompare(b.assignment_type) || a.rank - b.rank);
+        const taxonomyEvidence = taxonomyProposals[0]?.evidence;
         const activeCheck = edition.nextAction.checkId
           ? edition.checks.find((row) => row.id === edition.nextAction.checkId)
           : edition.nextAction.checkType ? latestChecks.find((row) => row.check_type === edition.nextAction.checkType) : null;
@@ -138,10 +146,19 @@ export default function QualityCenterPage() {
               {edition.nextAction.code === "build_bibles" ? <Link href="/publishing/forfatterstudio" style={{ display: "block", textAlign: "center", padding: "9px 12px", borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 900, textDecoration: "none" }}>Bygg i Forfatterstudio</Link> : null}
               {edition.nextAction.code === "run_quality" ? <button disabled={busy} onClick={() => act(edition, "run_quality_check")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 900 }}>{busy ? "OpenAI leser og kontrollerer…" : "Kjør OpenAI-kontroll"}</button> : null}
               {edition.nextAction.code === "run_technical_quality" ? <button disabled={busy} onClick={() => act(edition, "run_technical_quality_check")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#0f766e", color: "white", fontWeight: 900 }}>{busy ? "Kontrollerer EPUB og metadata…" : "Kjør teknisk kontroll"}</button> : null}
+              {edition.nextAction.code === "generate_taxonomy" ? <button disabled={busy} onClick={() => act(edition, "generate_taxonomy")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#7c3aed", color: "white", fontWeight: 900 }}>{busy ? "OpenAI undersøker marked og kategorier…" : "Lag taggeforslag"}</button> : null}
+              {edition.nextAction.code === "review_taxonomy" ? <div>
+                {taxonomyEvidence?.positioning_summary ? <p style={{ margin: "0 0 8px", padding: 8, borderRadius: 7, background: "#f5f3ff", fontSize: 12 }}><strong>Posisjonering:</strong> {taxonomyEvidence.positioning_summary}</p> : null}
+                <div style={{ maxHeight: 310, overflowY: "auto", display: "grid", gap: 6, marginBottom: 9 }}>
+                  {taxonomyProposals.map((row) => <div key={row.id} style={{ padding: 7, border: "1px solid #ddd6fe", borderRadius: 7, background: "#faf5ff", fontSize: 12 }}><strong>{labels[row.assignment_type] || ({ category: "Kategori", keyword: "Søkeord", audience: "Målgruppe", theme: "Tema" } as Record<string, string>)[row.assignment_type]}:</strong> {row.label}{typeof row.confidence === "number" ? <span style={{ float: "right", color: "#64748b" }}>{Math.round(row.confidence * 100)}%</span> : null}{row.assignment_type === "category" ? <span style={{ display: "block", color: "#64748b" }}>{row.scheme} · {row.code}</span> : null}{row.evidence?.rationale ? <span style={{ display: "block", marginTop: 3, color: "#475569" }}>{row.evidence.rationale}</span> : null}</div>)}
+                </div>
+                {taxonomyEvidence?.web_sources?.length ? <details style={{ marginBottom: 9, fontSize: 12 }}><summary style={{ cursor: "pointer", fontWeight: 800 }}>Kilder brukt ({taxonomyEvidence.web_sources.length})</summary>{taxonomyEvidence.web_sources.slice(0, 8).map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}>{source.title || source.url}</a>)}</details> : null}
+                <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_taxonomy_bundle", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Godkjenner…" : `Godkjenn hele pakken (${taxonomyProposals.length})`}</button><button disabled={busy} onClick={() => act(edition, "decide_taxonomy_bundle", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Avvis og lag nytt forslag</button></div>
+              </div> : null}
               {edition.nextAction.code === "approve_quality" ? <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Lagrer…" : "Godkjenn resultat"}</button><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Krever endringer</button></div> : null}
               {edition.nextAction.code === "quality_running" ? <p role="status" style={{ margin: 0, fontSize: 12, color: "#1d4ed8", fontWeight: 800 }}>OpenAI arbeider med manus nå…</p> : null}
               {edition.nextAction.code === "ready" ? <div style={{ color: "#166534", fontWeight: 900 }}>✓ Klar for neste publiseringssteg</div> : null}
-              {["select_revision", "quality_check", "taxonomy"].includes(edition.nextAction.code) ? <p style={{ margin: 0, fontSize: 12, color: "#475569" }}>Denne kontrollen kobles til riktig verktøy i neste delsteg.</p> : null}
+              {["select_revision", "quality_check"].includes(edition.nextAction.code) ? <p style={{ margin: 0, fontSize: 12, color: "#475569" }}>Denne kontrollen kobles til riktig verktøy i neste delsteg.</p> : null}
             </div>
           </div>
         </article>;
