@@ -74,6 +74,17 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - `npm run build` passes from a clean dependency installation.
 - The current production schema and repository migration history have a documented reconciliation path.
 
+## Phase 1 acceptance criteria
+
+- The Publisher Cockpit presents exactly four primary actions: create, continue, publish, and sell/improve.
+- Every active project shows one current lifecycle stage, its latest activity, and one recommended next action.
+- A failed production is prioritized ahead of ordinary in-progress work and exposes the persisted error state.
+- A returning user can see an active production after reload and open the affected project directly.
+- Legacy and interrupted projects can be upgraded to the current bible/canon workflow without replacing source chapters.
+- Final approval is revision-specific, visibly separate from distribution, and can be revoked.
+- Distribution and Book Growth become primary actions only after the exact manuscript revision is approved.
+- Editing, export, translation, analysis, and administrative tools remain available without competing with the primary workflow.
+
 ## Success measures
 
 - 100% of active book projects show a current state and latest activity.
