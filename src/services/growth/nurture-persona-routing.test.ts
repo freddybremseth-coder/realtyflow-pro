@@ -30,6 +30,8 @@ test("Soleada relationship ownership always wins over persona routing", () => {
   assert.equal(sequence.fromName, "Freddy Bremseth – Zen Eco Homes");
   assert.deepEqual(sequence.eligibleStatuses, ["NEW", "CONTACT", "QUALIFIED", ""]);
   assert.equal(sequence.maxNewEnrollmentsPerRun, 25);
+  assert.equal(sequence.steps[0].subject, "Er bolig i Spania fortsatt aktuelt for deg?");
+  assert.doesNotMatch(sequence.steps[0].subject, /\{name\}/);
   assert.match(sequence.steps[0].text, /kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada\.no/i);
 });
 
