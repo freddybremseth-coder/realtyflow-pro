@@ -97,6 +97,19 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - Publisher Cockpit shows catalogue coverage and directs incomplete editions to one reconciliation workspace.
 - Canonical catalogue tables and merge functions are server-only, RLS-protected, and covered by schema-contract tests.
 
+## Phase 3 acceptance criteria
+
+- Series bible, work canon, style guide and research standard are versioned records linked to the canonical work.
+- Only one approved version of each bible type is active for a work, and approval records actor and time.
+- Every quality result belongs to an exact production revision; a later attempt supersedes earlier evidence without deleting it.
+- Machine or AI result and human decision are separate fields. An AI pass never becomes editorial, factual or canon approval by itself.
+- Fiction and nonfiction use explicit, different required quality gates; waived gates require an attributable reason.
+- EPUB and accessibility validators retain structured evidence and may pass deterministic technical gates without pretending to be editorial approval.
+- BISAC, retailer categories, keywords, audience and themes are controlled assignments with source/version provenance.
+- Taxonomy suggestions remain proposals until approved and cannot silently overwrite applied channel metadata.
+- The normal UI presents missing gates as concrete next actions rather than one opaque quality score.
+- Quality and taxonomy tables are server-only, RLS-protected and covered by schema-contract tests.
+
 ## Success measures
 
 - 100% of active book projects show a current state and latest activity.
