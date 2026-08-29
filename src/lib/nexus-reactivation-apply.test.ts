@@ -42,10 +42,10 @@ test("changed preferences create a refresh work item without degrading stage", (
   assert.equal(result.createBuyerProfileRefreshWorkItem, true);
 });
 
-test("explicit stop only pauses nurture and preserves pipeline stage", () => {
+test("explicit stop permanently stops nurture and preserves pipeline stage", () => {
   const result = buildReactivationApplyDecision({ classification: classification("stop"), currentPipelineStatus: "QUALIFIED", replyOccurredAt: replyAt });
   assert.equal(result.allowed, true);
-  assert.equal(result.contactUpdates.nurture_status, "paused");
+  assert.equal(result.contactUpdates.nurture_status, "stopped");
   assert.equal(Object.prototype.hasOwnProperty.call(result.contactUpdates, "pipeline_status"), false);
 });
 
