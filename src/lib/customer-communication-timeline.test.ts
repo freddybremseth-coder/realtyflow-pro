@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildNurtureTimelineEvents } from "./customer-communication-timeline";
+import { buildLinkedEmailTimelineEvents, buildNurtureTimelineEvents } from "./customer-communication-timeline";
 
 test("dry-run nurture is internal and explicitly not sent", () => {
   const events = buildNurtureTimelineEvents([{
@@ -48,4 +48,47 @@ test("failed nurture send never appears as sent", () => {
   assert.equal(events[0].title, "Nurture-send feilet");
   assert.equal(events[0].direction, "internal");
   assert.match(String(events[0].detail), /SMTP unavailable/);
+});
+
+test("explicitly linked inbound email becomes customer timeline memory", () => {
+  const events = buildLinkedEmailTimelineEvents([{
+    id: "mail-in-1",
+    direction: "inbound",
+    subject: "Visning neste uke",
+    ai_intent: "follow_up",
+    ai_urgency: "high",
+    matched_lead_id: "contact-1",
+    received_at: "2026-08-29T10:00:00.000Z",
+  }]);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].direction, "in");
+  assert.equal(events[0].title, "E-post mottatt: Visning neste uke");
+  assert.match(String(events[0].detail), /Intent: follow_up/);
+  assert.match(String(events[0].detail), /Haster: high/);
+});
+
+test("explicitly linked outbound email is marked outbound", () => {
+  const events = buildLinkedEmailTimelineEvents([{
+    id: "mail-out-1",
+    direction: "outbound",
+    subject: "Boligforslag",
+    matched_customer_id: "contact-2",
+    created_at: "2026-08-29T09:00:00.000Z",
+  }]);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].direction, "out");
+  assert.equal(events[0].title, "E-post sendt: Boligforslag");
+});
+
+test("unlinked email is excluded even if it has a valid timestamp", () => {
+  const events = buildLinkedEmailTimelineEvents([{
+    id: "mail-unlinked",
+    direction: "inbound",
+    subject: "Should not appear",
+    received_at: "2026-08-29T10:00:00.000Z",
+  }]);
+
+  assert.equal(events.length, 0);
 });
