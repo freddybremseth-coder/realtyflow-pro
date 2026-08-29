@@ -1,403 +1,1301 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { BRANDS } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { BRANDS } from "@/lib/constants";
+import { DomainWorkItems } from "@/components/hub/domain-work-items";
 import {
-  ArrowRight,
-  BarChart3,
-  Brain,
-  Check,
-  ChevronRight,
-  CircleDollarSign,
-  Eye,
-  Gauge,
-  Loader2,
-  Mail,
-  MessageCircle,
-  MousePointerClick,
-  RefreshCw,
-  Rocket,
-  Send,
-  Sparkles,
-  Target,
-  TrendingUp,
-  Users,
-  X,
+  Rocket, Target, Zap, Brain, TrendingUp, BarChart3, Sparkles,
+  Plus, Play, Check, X, Crown, Split, Lightbulb, ChevronRight,
+  Loader2, Star, Eye, Send, RefreshCw, Pause, ToggleLeft, ToggleRight,
+  FileText, Mail, Globe, Instagram, Linkedin, Youtube, Twitter, Music,
 } from "lucide-react";
 
-type GrowthMetrics = {
-  impressions?: number;
-  views?: number;
-  clicks?: number;
-  conversions?: number;
-  engagement_rate?: number;
-  shares?: number;
-  leads_generated?: number;
-};
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-type GrowthAction = {
+interface GrowthAction {
   id: string;
-  brand: string;
-  brand_id?: string;
+  brand_id: string;
   action_type: string;
   platform: string;
   content: string;
-  hypothesis?: string;
-  expected_outcome?: string;
+  status: "planned" | "ready" | "published" | "completed";
   priority: number;
-  status: "planned" | "ready" | "published" | "completed" | "failed";
-  metrics?: GrowthMetrics;
-  score?: number;
+  metrics?: Record<string, number>;
   created_at: string;
+}
+
+interface LeadMagnet {
+  id: string;
+  brand_id: string;
+  title: string;
+  type: string;
+  description: string;
+  landing_page_copy?: string;
+  cta?: string;
+  email_sequence?: string[];
+  status: "active" | "paused" | "draft";
+  conversion_rate?: number;
+  created_at: string;
+}
+
+interface ABTest {
+  id: string;
+  brand_id: string;
+  content_type: string;
+  variant_a: string;
+  variant_b: string;
+  metrics_a?: Record<string, number>;
+  metrics_b?: Record<string, number>;
+  winner?: "a" | "b" | null;
+  status: "running" | "completed" | "draft";
+  created_at: string;
+}
+
+interface Insight {
+  id: string;
+  type: "improvement" | "decline" | "recommendation" | "trend";
+  title: string;
+  description: string;
+  brand_id?: string;
+  icon: string;
+  metric?: string;
+  change?: number;
+}
+
+interface BrandStrategy {
+  brand_id: string;
+  followers: number;
+  target_followers: number;
+  focus_areas: string[];
+  weekly_actions: string[];
+  performance_score: number;
+}
+
+interface Toast {
+  id: number;
+  message: string;
+  type: "success" | "error";
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const platformIcon = (platform: string) => {
+  switch (platform?.toLowerCase()) {
+    case "instagram": return <Instagram size={14} />;
+    case "linkedin": return <Linkedin size={14} />;
+    case "youtube": return <Youtube size={14} />;
+    case "twitter": case "x": return <Twitter size={14} />;
+    case "tiktok": return <Music size={14} />;
+    case "facebook": return <Globe size={14} />;
+    case "email": return <Mail size={14} />;
+    case "blog": return <FileText size={14} />;
+    default: return <Globe size={14} />;
+  }
 };
 
-type CommandCenter = {
-  success: boolean;
-  generatedAt?: string;
-  actions: GrowthAction[];
-  nextBest: GrowthAction[];
-  performance: {
-    impressions: number;
-    reach: number;
-    clicks: number;
-    followersGained: number;
-    messages: number;
-    leads: number;
-    meetings: number;
-    sales: number;
-    leadRate: number;
-    salesRate: number;
-  };
-  pipeline: {
-    activeActions: number;
-    publishedAwaitingResults: number;
-    trackedActions: number;
-    contactsThisWeek: number;
-    contactsLast30Days: number;
-    cyclesRun: number;
-  };
-  warnings: string[];
+const statusColors: Record<string, { bg: string; text: string; variant: "default" | "secondary" | "outline" | "success" | "warning" }> = {
+  planned: { bg: "bg-blue-500/20", text: "text-blue-300", variant: "outline" },
+  ready: { bg: "bg-amber-500/20", text: "text-amber-300", variant: "warning" },
+  published: { bg: "bg-emerald-500/20", text: "text-emerald-300", variant: "success" },
+  completed: { bg: "bg-cyan-500/20", text: "text-cyan-300", variant: "default" },
+  active: { bg: "bg-emerald-500/20", text: "text-emerald-300", variant: "success" },
+  paused: { bg: "bg-slate-500/20", text: "text-slate-300", variant: "secondary" },
+  draft: { bg: "bg-slate-500/20", text: "text-slate-400", variant: "secondary" },
+  running: { bg: "bg-amber-500/20", text: "text-amber-300", variant: "warning" },
 };
 
-type Toast = { id: number; message: string; type: "success" | "error" };
+const getBrand = (id: string) => BRANDS.find((b) => b.id === id);
 
-const EMPTY: CommandCenter = {
-  success: true,
-  actions: [],
-  nextBest: [],
-  performance: {
-    impressions: 0,
-    reach: 0,
-    clicks: 0,
-    followersGained: 0,
-    messages: 0,
-    leads: 0,
-    meetings: 0,
-    sales: 0,
-    leadRate: 0,
-    salesRate: 0,
-  },
-  pipeline: {
-    activeActions: 0,
-    publishedAwaitingResults: 0,
-    trackedActions: 0,
-    contactsThisWeek: 0,
-    contactsLast30Days: 0,
-    cyclesRun: 0,
-  },
-  warnings: [],
-};
+const priorityStars = (n: number) => Array.from({ length: 5 }, (_, i) => (
+  <Star key={i} size={12} className={i < n ? "text-amber-400 fill-amber-400" : "text-slate-600"} />
+));
 
-function brandFor(id: string) {
-  return BRANDS.find((brand) => brand.id === id);
-}
-
-function labelType(type: string) {
-  const labels: Record<string, string> = {
-    social_post: "SoMe-innlegg",
-    lead_magnet: "Lead magnet",
-    email_campaign: "E-postkampanje",
-    ab_test: "A/B-test",
-    viral_content: "Viral idé",
-    engagement: "Engasjement",
-    collaboration: "Samarbeid",
-    seo_content: "SEO-innhold",
-  };
-  return labels[type] || type.replaceAll("_", " ");
-}
-
-function statusLabel(status: GrowthAction["status"]) {
-  return {
-    planned: "Planlagt",
-    ready: "Klar",
-    published: "Sendt til Hub",
-    completed: "Målt",
-    failed: "Feilet",
-  }[status];
-}
-
-function primaryResult(action: GrowthAction) {
-  if (action.metrics?.leads_generated) return `${action.metrics.leads_generated} leads`;
-  if (action.metrics?.conversions) return `${action.metrics.conversions} konverteringer`;
-  if (action.metrics?.clicks) return `${action.metrics.clicks} klikk`;
-  if (action.metrics?.impressions || action.metrics?.views) return `${action.metrics.impressions || action.metrics.views} visninger`;
-  return null;
-}
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GrowthHubPage() {
+  // State
+  const [activeTab, setActiveTab] = useState("vekst-ai");
   const [selectedBrand, setSelectedBrand] = useState("all");
-  const [data, setData] = useState<CommandCenter>(EMPTY);
-  const [loading, setLoading] = useState(true);
-  const [runningCycle, setRunningCycle] = useState(false);
-  const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [metricsId, setMetricsId] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState({ impressions: "", clicks: "", conversions: "", leads: "" });
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [showAll, setShowAll] = useState(false);
+  let toastCounter = 0;
 
-  const toast = useCallback((message: string, type: Toast["type"] = "success") => {
+  // Data states
+  const [actions, setActions] = useState<GrowthAction[]>([]);
+  const [leadMagnets, setLeadMagnets] = useState<LeadMagnet[]>([]);
+  const [abTests, setABTests] = useState<ABTest[]>([]);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [strategies, setStrategies] = useState<BrandStrategy[]>([]);
+
+  // Loading states
+  const [loadingCycle, setLoadingCycle] = useState(false);
+  const [loadingActions, setLoadingActions] = useState(false);
+  const [loadingLeadMagnets, setLoadingLeadMagnets] = useState(false);
+  const [loadingABTest, setLoadingABTest] = useState(false);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  const [loadingStrategies, setLoadingStrategies] = useState(false);
+  const [generatingLeadMagnet, setGeneratingLeadMagnet] = useState<string | null>(null);
+  const [publishingActionId, setPublishingActionId] = useState<string | null>(null);
+
+  // Stats
+  const [stats, setStats] = useState({ activeActions: 0, leadsThisWeek: 0, growthRate: 0, cyclesRun: 0 });
+
+  // Modal states
+  const [showMetricsModal, setShowMetricsModal] = useState<string | null>(null);
+  const [metricsInput, setMetricsInput] = useState({ views: "", clicks: "", conversions: "" });
+  const [showABTestModal, setShowABTestModal] = useState(false);
+  const [abTestForm, setABTestForm] = useState({ brand_id: BRANDS[0].id, content_type: "social_post" });
+
+  // Toast helper
+  const addToast = useCallback((message: string, type: "success" | "error") => {
     const id = Date.now();
-    setToasts((items) => [...items, { id, message, type }]);
-    setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 4500);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // ─── API Calls ─────────────────────────────────────────────────────────────
+
+  const fetchActions = useCallback(async () => {
+    setLoadingActions(true);
     try {
-      const query = selectedBrand === "all" ? "" : `?brand=${encodeURIComponent(selectedBrand)}`;
-      const response = await fetch(`/api/growth/command-center${query}`, { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.success === false) throw new Error(payload.error || "Kunne ikke laste Growth Hub");
-      setData({ ...EMPTY, ...payload });
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "Kunne ikke laste Growth Hub", "error");
+      const res = await fetch("/api/growth/actions" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
+      if (res.ok) {
+        const data = await res.json();
+        const rawActions = (data.actions || data || []).map((a: Record<string, unknown>) => ({ ...a, brand_id: a.brand_id || a.brand }));
+        setActions(rawActions);
+        const activeCount = rawActions.filter((a: GrowthAction) => ["planned", "ready"].includes(a.status)).length;
+        setStats((s) => ({ ...s, activeActions: activeCount }));
+      }
+    } catch {
+      // silently handle
     } finally {
-      setLoading(false);
+      setLoadingActions(false);
     }
-  }, [selectedBrand, toast]);
+  }, [selectedBrand]);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/growth/stats");
+      if (res.ok) {
+        const data = await res.json();
+        setStats((s) => ({ ...s, ...data }));
+      }
+    } catch {
+      // silently handle
+    }
+  }, []);
+
+  const fetchLeadMagnets = useCallback(async () => {
+    setLoadingLeadMagnets(true);
+    try {
+      const res = await fetch("/api/growth/lead-magnets" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
+      if (res.ok) {
+        const data = await res.json();
+        const rawLM = (data.lead_magnets || data || []).map((lm: Record<string, unknown>) => ({
+          ...lm,
+          brand_id: lm.brand_id || lm.brand,
+          landing_page_copy: lm.landing_page_copy || lm.landing_page_headline || "",
+          cta: lm.cta || lm.cta_text || "",
+          email_sequence: Array.isArray(lm.email_sequence)
+            ? (lm.email_sequence as unknown[]).map((e: unknown) =>
+                typeof e === "string" ? e : (e && typeof e === "object" && "subject" in (e as Record<string,unknown>))
+                  ? `${(e as Record<string,string>).subject}: ${(e as Record<string,string>).body || ""}`
+                  : String(e)
+              )
+            : [],
+        }));
+        setLeadMagnets(rawLM);
+      }
+    } catch {
+      // silently handle
+    } finally {
+      setLoadingLeadMagnets(false);
+    }
+  }, [selectedBrand]);
+
+  const fetchABTests = useCallback(async () => {
+    setLoadingABTest(true);
+    try {
+      const res = await fetch("/api/growth/ab-tests" + (selectedBrand !== "all" ? `?brand=${selectedBrand}` : ""));
+      if (res.ok) {
+        const data = await res.json();
+        setABTests(data.tests || data || []);
+      }
+    } catch {
+      // silently handle
+    } finally {
+      setLoadingABTest(false);
+    }
+  }, [selectedBrand]);
+
+  const fetchStrategies = useCallback(async () => {
+    setLoadingStrategies(true);
+    try {
+      // Fetch strategy for each brand
+      const results: BrandStrategy[] = [];
+      for (const brand of BRANDS) {
+        try {
+          const res = await fetch(`/api/growth/engine?brand=${brand.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            const s = data.strategy;
+            if (s && typeof s === "object") {
+              // Normalize: engine returns current_followers as object per platform
+              const totalFollowers = typeof s.followers === "number"
+                ? s.followers
+                : (s.current_followers && typeof s.current_followers === "object"
+                  ? Object.values(s.current_followers as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+                  : 0);
+              const totalTarget = typeof s.target_followers === "number"
+                ? s.target_followers
+                : (s.target_followers && typeof s.target_followers === "object"
+                  ? Object.values(s.target_followers as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+                  : 1000);
+              const focusAreas = s.focus_areas || s.recommended_focus || [];
+              const weeklyActions = s.weekly_actions
+                || (Array.isArray(s.weekly_action_plan)
+                  ? (s.weekly_action_plan as Array<Record<string, unknown>>).map((a: Record<string, unknown>) => String(a.content || a.action_type || a)).slice(0, 5)
+                  : []);
+
+              results.push({
+                brand_id: s.brand_id || s.brand || brand.id,
+                followers: totalFollowers,
+                target_followers: totalTarget,
+                focus_areas: Array.isArray(focusAreas) ? focusAreas.map(String) : [],
+                weekly_actions: Array.isArray(weeklyActions) ? weeklyActions.map(String) : [],
+                performance_score: s.performance_score || 0,
+              });
+            }
+          }
+        } catch {
+          // skip this brand
+        }
+      }
+      setStrategies(results);
+    } catch {
+      // silently handle
+    } finally {
+      setLoadingStrategies(false);
+    }
+  }, []);
+
+  // Load data on mount and brand change
+  useEffect(() => {
+    fetchActions();
+    fetchStats();
+  }, [fetchActions, fetchStats]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (activeTab === "lead-magnets") fetchLeadMagnets();
+    if (activeTab === "ab-testing") fetchABTests();
+    if (activeTab === "strategi") fetchStrategies();
+  }, [activeTab, fetchLeadMagnets, fetchABTests, fetchStrategies]);
 
-  const runCycle = async () => {
-    setRunningCycle(true);
+  // ─── Action Handlers ──────────────────────────────────────────────────────
+
+  const runGrowthCycle = async () => {
+    setLoadingCycle(true);
     try {
-      const response = await fetch("/api/growth/engine", {
+      const res = await fetch("/api/growth/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run_cycle", brand: selectedBrand === "all" ? undefined : selectedBrand }),
+        body: JSON.stringify({ action: "run_cycle", brand: selectedBrand !== "all" ? selectedBrand : undefined }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Vekstsyklus feilet");
-      toast(`${(payload.actions || payload.results || []).length || "Nye"} veksthandlinger er klare.`);
-      await load();
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "Vekstsyklus feilet", "error");
+      if (res.ok) {
+        const data = await res.json();
+        const newActions = (data.actions || data.results || []).map((a: Record<string, unknown>) => ({ ...a, brand_id: a.brand_id || a.brand }));
+        setActions((prev) => [...newActions, ...prev]);
+        setStats((s) => ({ ...s, cyclesRun: s.cyclesRun + 1, activeActions: s.activeActions + newActions.length }));
+        addToast(`Vekstsyklus fullfort! ${newActions.length} nye handlinger generert.`, "success");
+      } else {
+        addToast("Feil ved kjoring av vekstsyklus.", "error");
+      }
+    } catch {
+      addToast("Nettverksfeil. Prov igjen.", "error");
     } finally {
-      setRunningCycle(false);
+      setLoadingCycle(false);
     }
   };
 
-  const sendToHub = async (action: GrowthAction) => {
-    setPublishingId(action.id);
+  const publishAction = async (actionId: string) => {
+    setPublishingActionId(actionId);
     try {
+      const action = actions.find((a) => a.id === actionId);
+      if (!action) {
+        addToast("Fant ikke handlingen som skulle publiseres.", "error");
+        return;
+      }
+
       const platform = String(action.platform || "").toLowerCase();
-      const platforms = ["facebook", "instagram", "linkedin", "pinterest", "tiktok"].includes(platform)
+      const scheduledPlatforms = ["facebook", "instagram", "linkedin", "pinterest", "tiktok"].includes(platform)
         ? [platform]
         : ["facebook", "instagram", "linkedin"];
-      const draftResponse = await fetch("/api/marketing-kit/drafts", {
+
+      const draftRes = await fetch("/api/marketing-kit/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           drafts: [{
-            brand_id: action.brand_id || action.brand,
+            brand_id: action.brand_id,
             content_type: action.action_type || "social_post",
-            title: `${action.platform || "Kanal"} · ${labelType(action.action_type)}`,
+            title: `${action.platform || "SoMe"} - ${action.action_type}`,
             description: action.content,
             tags: [action.platform, action.action_type, "growth-engine"].filter(Boolean),
-            scheduled_platforms: platforms,
+            scheduled_platforms: scheduledPlatforms,
           }],
         }),
       });
-      const draft = await draftResponse.json().catch(() => ({}));
-      if (!draftResponse.ok || draft.drafts_created === 0) throw new Error(draft.error || "Kunne ikke opprette utkast");
+      const draftData = await draftRes.json().catch(() => ({}));
+      if (!draftRes.ok || draftData.drafts_created === 0) {
+        throw new Error(draftData.error || draftData.results?.map((r: { error?: string }) => r.error).filter(Boolean).join(", ") || "Kunne ikke opprette Content Hub-utkast");
+      }
 
-      const update = await fetch("/api/growth/actions", {
+      // 1. Update status in growth_actions
+      const res = await fetch("/api/growth/actions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: action.id, status: "published" }),
+        body: JSON.stringify({ id: actionId, status: "published" }),
       });
-      const updated = await update.json().catch(() => ({}));
-      if (!update.ok) throw new Error(updated.error || "Utkast opprettet, men status kunne ikke oppdateres");
-      toast("Sendt til Content Hub som utkast. Ingenting er automatisk publisert.");
-      await load();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Utkast ble opprettet, men handlingen kunne ikke markeres publisert.");
+      }
+      setActions((prev) => prev.map((a) => a.id === actionId ? { ...a, status: "published" as const } : a));
+      addToast("Handling sendt til Content Hub som publiserbart utkast.", "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : "Kunne ikke sende til Hub", "error");
+      addToast(error instanceof Error ? error.message : "Kunne ikke publisere.", "error");
     } finally {
-      setPublishingId(null);
+      setPublishingActionId(null);
     }
   };
 
-  const saveMetrics = async () => {
-    if (!metricsId) return;
+  const addMetrics = async (actionId: string) => {
     try {
-      const response = await fetch("/api/growth/actions", {
+      const res = await fetch("/api/growth/actions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: metricsId,
+          id: actionId,
           status: "completed",
           metrics: {
-            impressions: Number(metrics.impressions || 0),
-            clicks: Number(metrics.clicks || 0),
-            conversions: Number(metrics.conversions || 0),
-            leads_generated: Number(metrics.leads || 0),
+            views: parseInt(metricsInput.views) || 0,
+            clicks: parseInt(metricsInput.clicks) || 0,
+            conversions: parseInt(metricsInput.conversions) || 0,
           },
         }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Kunne ikke lagre resultater");
-      toast("Resultater lagret. De inngår nå i læringssløyfen.");
-      setMetricsId(null);
-      setMetrics({ impressions: "", clicks: "", conversions: "", leads: "" });
-      await load();
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "Kunne ikke lagre resultater", "error");
+      if (res.ok) {
+        setActions((prev) => prev.map((a) => a.id === actionId ? {
+          ...a,
+          status: "completed" as const,
+          metrics: { views: parseInt(metricsInput.views) || 0, clicks: parseInt(metricsInput.clicks) || 0, conversions: parseInt(metricsInput.conversions) || 0 },
+        } : a));
+        setShowMetricsModal(null);
+        setMetricsInput({ views: "", clicks: "", conversions: "" });
+        addToast("Metrikker lagret!", "success");
+      }
+    } catch {
+      addToast("Kunne ikke lagre metrikker.", "error");
     }
   };
 
-  const pendingMeasurement = useMemo(
-    () => data.actions.filter((action) => action.status === "published" && !primaryResult(action)),
-    [data.actions],
-  );
+  const generateLeadMagnet = async (brandId: string) => {
+    setGeneratingLeadMagnet(brandId);
+    try {
+      const res = await fetch("/api/growth/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate_lead_magnet", brand: brandId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const raw = data.lead_magnet || data;
+        // Normalize: engine returns different field names than frontend expects
+        const newMagnet: LeadMagnet = {
+          id: raw.id || `lm-${Date.now()}`,
+          brand_id: raw.brand_id || raw.brand || brandId,
+          title: raw.title || "",
+          type: raw.type || "guide",
+          description: raw.description || "",
+          landing_page_copy: raw.landing_page_copy || raw.landing_page_headline || "",
+          cta: raw.cta || raw.cta_text || "",
+          email_sequence: Array.isArray(raw.email_sequence)
+            ? raw.email_sequence.map((e: unknown) =>
+                typeof e === "string" ? e : (e && typeof e === "object" && "subject" in (e as Record<string,unknown>))
+                  ? `${(e as Record<string,string>).subject}: ${(e as Record<string,string>).body || ""}`
+                  : String(e)
+              )
+            : [],
+          status: raw.status || "draft",
+          conversion_rate: raw.conversion_rate,
+          created_at: raw.created_at || new Date().toISOString(),
+        };
+        setLeadMagnets((prev) => [newMagnet, ...prev]);
+        addToast("Lead magnet generert!", "success");
+      }
+    } catch {
+      addToast("Kunne ikke generere lead magnet.", "error");
+    } finally {
+      setGeneratingLeadMagnet(null);
+    }
+  };
 
-  const visibleActions = showAll ? data.actions : data.actions.slice(0, 8);
-  const topAction = data.nextBest[0];
+  const toggleLeadMagnet = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === "active" ? "paused" : "active";
+    try {
+      await fetch(`/api/growth/lead-magnets`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: newStatus }),
+      });
+      setLeadMagnets((prev) => prev.map((lm) => lm.id === id ? { ...lm, status: newStatus as "active" | "paused" } : lm));
+      addToast(`Lead magnet ${newStatus === "active" ? "aktivert" : "pauset"}.`, "success");
+    } catch {
+      addToast("Kunne ikke oppdatere status.", "error");
+    }
+  };
+
+  const createABTest = async () => {
+    setLoadingABTest(true);
+    setShowABTestModal(false);
+    try {
+      const res = await fetch("/api/growth/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ab_test", brand: abTestForm.brand_id, content_type: abTestForm.content_type }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const raw = data.ab_test || data.test || data;
+        // Normalize: API may return a/b or variant_a/variant_b
+        const newTest: ABTest = {
+          id: raw.id || `ab-${Date.now()}`,
+          brand_id: raw.brand_id || raw.brand || abTestForm.brand_id,
+          content_type: raw.content_type || abTestForm.content_type,
+          variant_a: raw.variant_a || raw.a || "",
+          variant_b: raw.variant_b || raw.b || "",
+          status: raw.status || "running",
+          created_at: raw.created_at || new Date().toISOString(),
+        };
+        setABTests((prev) => [newTest, ...prev]);
+        addToast("A/B test opprettet med AI-genererte varianter!", "success");
+      }
+    } catch {
+      addToast("Kunne ikke opprette A/B test.", "error");
+    } finally {
+      setLoadingABTest(false);
+    }
+  };
+
+  const selectWinner = async (testId: string, winner: "a" | "b") => {
+    try {
+      await fetch(`/api/growth/ab-tests`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: testId, winner, status: "completed" }),
+      });
+      setABTests((prev) => prev.map((t) => t.id === testId ? { ...t, winner, status: "completed" as const } : t));
+      addToast(`Variant ${winner.toUpperCase()} valgt som vinner!`, "success");
+    } catch {
+      addToast("Kunne ikke lagre vinner.", "error");
+    }
+  };
+
+  const runAnalysis = async () => {
+    setLoadingInsights(true);
+    try {
+      const res = await fetch("/api/growth/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "analyze", brand: selectedBrand !== "all" ? selectedBrand : undefined }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const rawInsights = data.insights || [];
+        // Ensure each insight has the required fields
+        const normalized: Insight[] = (Array.isArray(rawInsights) ? rawInsights : []).map((item: Record<string, unknown>, i: number) => ({
+          id: String(item.id || `insight-${i}`),
+          type: String(item.type || 'recommendation') as Insight['type'],
+          title: String(item.title || item),
+          description: String(item.description || item),
+          brand_id: item.brand_id as string | undefined,
+          icon: String(item.icon || ''),
+          metric: item.metric as string | undefined,
+          change: item.change as number | undefined,
+        }));
+        setInsights(normalized);
+        addToast("Analyse fullfort!", "success");
+      }
+    } catch {
+      addToast("Analyse feilet.", "error");
+    } finally {
+      setLoadingInsights(false);
+    }
+  };
+
+  const updateStrategy = async (brandId: string) => {
+    try {
+      addToast(`Genererer strategi for ${getBrand(brandId)?.name || brandId}...`, "success");
+      // Strategy is generated via GET ?brand=X - refetch all strategies
+      await fetchStrategies();
+      addToast("Strategi oppdatert!", "success");
+    } catch {
+      addToast("Kunne ikke oppdatere strategi.", "error");
+    }
+  };
+
+  // Filter actions by brand
+  const filteredActions = selectedBrand === "all" ? actions : actions.filter((a) => a.brand_id === selectedBrand);
+
+  const insightIcon = (type: string) => {
+    switch (type) {
+      case "improvement": return <TrendingUp size={18} className="text-emerald-400" />;
+      case "decline": return <TrendingUp size={18} className="text-red-400 rotate-180" />;
+      case "recommendation": return <Lightbulb size={18} className="text-amber-400" />;
+      case "trend": return <BarChart3 size={18} className="text-cyan-400" />;
+      default: return <Sparkles size={18} className="text-purple-400" />;
+    }
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 pb-24 sm:space-y-6 sm:pb-8">
-      <div className="fixed right-3 top-3 z-[100] space-y-2 sm:right-5 sm:top-5">
-        {toasts.map((item) => (
-          <div key={item.id} className={`max-w-[calc(100vw-1.5rem)] rounded-xl border px-4 py-3 text-sm font-medium shadow-xl sm:max-w-sm ${item.type === "success" ? "border-emerald-400/30 bg-emerald-950 text-emerald-50" : "border-red-400/30 bg-red-950 text-red-50"}`}>
-            <div className="flex items-start gap-2">{item.type === "success" ? <Check size={16} className="mt-0.5 shrink-0" /> : <X size={16} className="mt-0.5 shrink-0" />}<span>{item.message}</span></div>
+    <div className="space-y-6 relative">
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-[100] space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in flex items-center gap-2 min-w-[280px] ${
+              toast.type === "success"
+                ? "bg-emerald-500/90 text-white border border-emerald-400/30"
+                : "bg-red-500/90 text-white border border-red-400/30"
+            }`}
+          >
+            {toast.type === "success" ? <Check size={16} /> : <X size={16} />}
+            {toast.message}
           </div>
         ))}
       </div>
 
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300"><Rocket size={15} /> Growth Hub</div>
-          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Hva gir vekst nå?</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-400">Prioriter handlingene som mest sannsynlig skaper klikk, leads, møter og salg — og mål hva som faktisk virker.</p>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30">
+              <Rocket className="text-cyan-400" size={24} />
+            </div>
+            Vekstmotor
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">Autonom vekstmotor for alle dine brands</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? "mr-2 animate-spin" : "mr-2"} />Oppdater</Button>
-          <Button onClick={runCycle} disabled={runningCycle}><Brain size={15} className="mr-2" />{runningCycle ? "Analyserer…" : "Kjør vekst-AI"}</Button>
-        </div>
-      </header>
+        <Button
+          onClick={runGrowthCycle}
+          disabled={loadingCycle}
+          className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-semibold px-6 py-2.5 shadow-lg shadow-cyan-500/20"
+        >
+          {loadingCycle ? (
+            <><Loader2 size={18} className="mr-2 animate-spin" />AI genererer...</>
+          ) : (
+            <><Zap size={18} className="mr-2" />Kjor Vekst-syklus</>
+          )}
+        </Button>
+      </div>
 
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <button onClick={() => setSelectedBrand("all")} className={`shrink-0 rounded-full border px-4 py-2 text-sm font-medium ${selectedBrand === "all" ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-100" : "border-slate-700 bg-slate-900 text-slate-400"}`}>Alle</button>
+      <DomainWorkItems
+        title="Markedsføring-hub"
+        description="Åpne markedsføringsoppgaver fra Oppgave-HUB-en — fullfør dem her."
+        sources={["content", "brand", "market_intelligence", "automation"]}
+        links={[
+          { label: "Ad Campaigns", href: "/ad-campaigns" },
+          { label: "Reach Nyhetsbrev", href: "/reach" },
+          { label: "Oppgave-HUB", href: "/marketing-tasks" },
+          { label: "Analytics", href: "/analytics" },
+        ]}
+      />
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide">Aktive handlinger</p>
+                <p className="text-2xl font-bold text-white mt-1">{stats.activeActions}</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-cyan-500/10"><Target size={20} className="text-cyan-400" /></div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide">Leads denne uken</p>
+                <p className="text-2xl font-bold text-white mt-1">{stats.leadsThisWeek}</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-emerald-500/10"><TrendingUp size={20} className="text-emerald-400" /></div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide">Vekstrate</p>
+                <p className="text-2xl font-bold text-white mt-1">
+                  {stats.growthRate > 0 ? "+" : ""}{stats.growthRate}%
+                </p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-amber-500/10"><BarChart3 size={20} className="text-amber-400" /></div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-700/50 bg-slate-800/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400 uppercase tracking-wide">AI-sykluser kjort</p>
+                <p className="text-2xl font-bold text-white mt-1">{stats.cyclesRun}</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-purple-500/10"><Brain size={20} className="text-purple-400" /></div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Brand Filter Bar */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <button
+          onClick={() => setSelectedBrand("all")}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            selectedBrand === "all"
+              ? "bg-slate-600 text-white"
+              : "bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700"
+          }`}
+        >
+          Alle brands
+        </button>
         {BRANDS.map((brand) => (
-          <button key={brand.id} onClick={() => setSelectedBrand(brand.id)} className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium ${selectedBrand === brand.id ? "border-slate-500 bg-slate-800 text-white" : "border-slate-700 bg-slate-900 text-slate-400"}`}>
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: brand.color }} />{brand.name}
+          <button
+            key={brand.id}
+            onClick={() => setSelectedBrand(brand.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedBrand === brand.id
+                ? "text-white shadow-lg"
+                : "bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700"
+            }`}
+            style={selectedBrand === brand.id ? { backgroundColor: brand.color } : {}}
+          >
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: brand.color }} />
+            {brand.name}
           </button>
         ))}
       </div>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric title="Klikk" value={data.performance.clicks} icon={<MousePointerClick size={18} />} hint="siste 30 dager" />
-        <Metric title="Leads" value={data.performance.leads || data.pipeline.contactsThisWeek} icon={<Users size={18} />} hint={data.performance.leads ? `${data.performance.leadRate}% av trafikk` : `${data.pipeline.contactsThisWeek} nye kontakter siste uke`} />
-        <Metric title="Møter" value={data.performance.meetings} icon={<MessageCircle size={18} />} hint="attribuert i Social Intelligence" />
-        <Metric title="Salg" value={data.performance.sales} icon={<CircleDollarSign size={18} />} hint={data.performance.salesRate ? `${data.performance.salesRate}% av leads` : "mål og lær"} />
-      </section>
+      {/* Tabs */}
+      <Tabs defaultValue="vekst-ai" value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="vekst-ai"><Brain size={14} className="mr-1.5" />Vekst-AI</TabsTrigger>
+          <TabsTrigger value="lead-magnets"><Sparkles size={14} className="mr-1.5" />Lead Magnets</TabsTrigger>
+          <TabsTrigger value="ab-testing"><Split size={14} className="mr-1.5" />A/B Testing</TabsTrigger>
+          <TabsTrigger value="innsikter"><Lightbulb size={14} className="mr-1.5" />Innsikter</TabsTrigger>
+          <TabsTrigger value="strategi"><Target size={14} className="mr-1.5" />Strategi</TabsTrigger>
+        </TabsList>
 
-      {data.warnings.length > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="p-4">
-            <div className="flex gap-3"><Gauge className="mt-0.5 shrink-0 text-amber-300" size={19} /><div><p className="font-semibold text-amber-100">Måling trenger oppfølging</p>{data.warnings.map((warning) => <p key={warning} className="mt-1 text-sm text-amber-100/70">{warning}</p>)}</div></div>
-          </CardContent>
-        </Card>
-      )}
+        {/* ═══ TAB 1: Vekst-AI ═══════════════════════════════════════════════ */}
+        <TabsContent value="vekst-ai">
+          <div className="space-y-4">
+            {/* Loading state for cycle */}
+            {loadingCycle && (
+              <Card className="border-cyan-500/30 bg-cyan-500/5">
+                <CardContent className="p-8 flex flex-col items-center justify-center text-center">
+                  <div className="relative">
+                    <Loader2 size={48} className="text-cyan-400 animate-spin" />
+                    <Brain size={20} className="text-cyan-300 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                  <p className="text-lg font-semibold text-white mt-4">AI analyserer og genererer veksthandlinger...</p>
+                  <p className="text-sm text-slate-400 mt-1">Dette kan ta opptil 30 sekunder</p>
+                </CardContent>
+              </Card>
+            )}
 
-      <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Neste beste handling</p><h2 className="mt-1 text-xl font-bold text-white">Gjør dette først</h2></div>
-          <Badge variant="outline" className="border-emerald-500/30 text-emerald-200">{data.pipeline.activeActions} aktive</Badge>
-        </div>
+            {/* Actions List */}
+            {loadingActions ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={24} className="text-slate-400 animate-spin" />
+              </div>
+            ) : filteredActions.length === 0 ? (
+              <Card className="border-slate-700/30">
+                <CardContent className="p-12 text-center">
+                  <Rocket size={48} className="text-slate-600 mx-auto mb-4" />
+                  <p className="text-lg font-medium text-slate-300">Ingen handlinger enda</p>
+                  <p className="text-sm text-slate-500 mt-1">Kjor en vekstsyklus for a generere AI-drevne handlinger</p>
+                  <Button onClick={runGrowthCycle} className="mt-4" disabled={loadingCycle}>
+                    <Zap size={16} className="mr-2" />Kjor forste syklus
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                    Handlinger ({filteredActions.length})
+                  </h3>
+                  <Button size="sm" variant="outline" onClick={fetchActions} disabled={loadingActions}>
+                    <RefreshCw size={14} className="mr-1" />Oppdater
+                  </Button>
+                </div>
+                {filteredActions.map((action) => {
+                  const brand = getBrand(action.brand_id);
+                  const sc = statusColors[action.status] || statusColors.planned;
+                  return (
+                    <Card key={action.id} className="border-slate-700/30 hover:border-slate-600/50 transition-all">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          {/* Brand dot */}
+                          <div className="mt-1.5">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand?.color || "#06b6d4" }} />
+                          </div>
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                                style={{ backgroundColor: `${brand?.color}20`, color: brand?.color, borderColor: `${brand?.color}40` }}
+                              >
+                                {brand?.name || action.brand_id}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px]">{action.action_type}</Badge>
+                              <span className="text-slate-500 flex items-center gap-1 text-xs">
+                                {platformIcon(action.platform)}
+                                {action.platform}
+                              </span>
+                              <Badge variant={sc.variant} className="text-[10px] ml-auto">
+                                {action.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-slate-200 line-clamp-2">{action.content}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                              <div className="flex items-center gap-0.5">{priorityStars(action.priority)}</div>
+                              {action.metrics && (
+                                <span className="text-[10px] text-slate-500">
+                                  {action.metrics.views} visn. / {action.metrics.clicks} klikk / {action.metrics.conversions} konv.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Action buttons */}
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                            {(action.status === "planned" || action.status === "ready") && (
+                              <Button size="sm" variant="default" className="text-xs h-7" disabled={publishingActionId === action.id} onClick={() => publishAction(action.id)}>
+                                {publishingActionId === action.id ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Send size={12} className="mr-1" />}
+                                Send til Hub
+                              </Button>
+                            )}
+                            {action.status === "published" && (
+                              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => { setShowMetricsModal(action.id); setMetricsInput({ views: "", clicks: "", conversions: "" }); }}>
+                                <BarChart3 size={12} className="mr-1" />Legg til metrikker
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-        {loading ? (
-          <Card><CardContent className="flex items-center justify-center p-10"><Loader2 className="animate-spin text-slate-400" /></CardContent></Card>
-        ) : topAction ? (
-          <ActionCard action={topAction} featured publishing={publishingId === topAction.id} onSend={() => void sendToHub(topAction)} onMeasure={() => setMetricsId(topAction.id)} />
-        ) : (
-          <Card className="border-slate-700"><CardContent className="p-6 text-center"><Target className="mx-auto text-slate-600" size={34} /><p className="mt-3 font-semibold text-white">Ingen klare veksthandlinger</p><p className="mt-1 text-sm text-slate-400">Kjør vekst-AI for å generere prioriterte handlinger.</p><Button onClick={runCycle} className="mt-4" disabled={runningCycle}><Sparkles size={15} className="mr-2" />Generer handlinger</Button></CardContent></Card>
-        )}
-      </section>
+        {/* ═══ TAB 2: Lead Magnets ═══════════════════════════════════════════ */}
+        <TabsContent value="lead-magnets">
+          <div className="space-y-4">
+            {/* Generate buttons per brand */}
+            <div className="flex gap-2 flex-wrap">
+              {BRANDS.map((brand) => (
+                <Button
+                  key={brand.id}
+                  size="sm"
+                  variant="outline"
+                  disabled={generatingLeadMagnet === brand.id}
+                  onClick={() => generateLeadMagnet(brand.id)}
+                  className="text-xs"
+                >
+                  {generatingLeadMagnet === brand.id ? (
+                    <Loader2 size={14} className="mr-1 animate-spin" />
+                  ) : (
+                    <Plus size={14} className="mr-1" />
+                  )}
+                  <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: brand.color }} />
+                  Generer for {brand.name}
+                </Button>
+              ))}
+            </div>
 
-      {data.nextBest.length > 1 && (
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-white">Deretter</h2>
-          <div className="grid gap-3 lg:grid-cols-2">{data.nextBest.slice(1).map((action) => <ActionCard key={action.id} action={action} publishing={publishingId === action.id} onSend={() => void sendToHub(action)} onMeasure={() => setMetricsId(action.id)} />)}</div>
-        </section>
-      )}
+            {/* Lead Magnets Grid */}
+            {loadingLeadMagnets ? (
+              <div className="flex items-center justify-center py-12"><Loader2 size={24} className="text-slate-400 animate-spin" /></div>
+            ) : leadMagnets.length === 0 ? (
+              <Card className="border-slate-700/30">
+                <CardContent className="p-12 text-center">
+                  <Sparkles size={48} className="text-slate-600 mx-auto mb-4" />
+                  <p className="text-lg font-medium text-slate-300">Ingen lead magnets enda</p>
+                  <p className="text-sm text-slate-500 mt-1">Generer en lead magnet for en av dine brands</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {leadMagnets.map((lm) => {
+                  const brand = getBrand(lm.brand_id);
+                  const sc = statusColors[lm.status] || statusColors.draft;
+                  return (
+                    <Card key={lm.id} className="border-slate-700/30 hover:border-slate-600/50 transition-all">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: brand?.color }} />
+                            <CardTitle className="text-sm">{lm.title}</CardTitle>
+                          </div>
+                          <button
+                            onClick={() => toggleLeadMagnet(lm.id, lm.status)}
+                            className="text-slate-400 hover:text-white transition-colors"
+                          >
+                            {lm.status === "active" ? <ToggleRight size={22} className="text-emerald-400" /> : <ToggleLeft size={22} />}
+                          </button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0 space-y-2">
+                        <p className="text-xs text-slate-400 line-clamp-2">{lm.description}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="text-[10px]">{lm.type}</Badge>
+                          <Badge variant="secondary" className="text-[10px]" style={{ color: brand?.color }}>{brand?.name}</Badge>
+                          <Badge variant={sc.variant} className="text-[10px]">{lm.status}</Badge>
+                        </div>
+                        {lm.conversion_rate !== undefined && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-slate-500">Konverteringsrate:</span>
+                            <span className="text-emerald-400 font-semibold">{lm.conversion_rate}%</span>
+                          </div>
+                        )}
+                        {lm.landing_page_copy && (
+                          <details className="text-xs">
+                            <summary className="text-cyan-400 cursor-pointer hover:text-cyan-300">Vis landingsside-tekst</summary>
+                            <p className="text-slate-400 mt-1 bg-slate-800/50 p-2 rounded">{lm.landing_page_copy}</p>
+                          </details>
+                        )}
+                        {lm.cta && (
+                          <div className="text-xs">
+                            <span className="text-slate-500">CTA: </span>
+                            <span className="text-amber-300 font-medium">{lm.cta}</span>
+                          </div>
+                        )}
+                        {lm.email_sequence && lm.email_sequence.length > 0 && (
+                          <details className="text-xs">
+                            <summary className="text-cyan-400 cursor-pointer hover:text-cyan-300">E-postsekvens ({lm.email_sequence.length} e-poster)</summary>
+                            <div className="mt-1 space-y-1">
+                              {lm.email_sequence.map((email, i) => (
+                                <div key={i} className="bg-slate-800/50 p-2 rounded text-slate-400">
+                                  <span className="text-slate-500 font-medium">E-post {i + 1}:</span> {email}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-      {pendingMeasurement.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Lukk læringssløyfen</p><h2 className="mt-1 text-lg font-semibold text-white">Hva skjedde etter publisering?</h2></div><Badge variant="outline" className="border-amber-500/30 text-amber-200">{pendingMeasurement.length}</Badge></div>
-          <div className="space-y-2">{pendingMeasurement.slice(0, 4).map((action) => (
-            <button key={action.id} onClick={() => setMetricsId(action.id)} className="flex w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-left transition hover:border-amber-500/40">
-              <BarChart3 size={18} className="shrink-0 text-amber-300" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-white">{labelType(action.action_type)} · {brandFor(action.brand_id || action.brand)?.name || action.brand}</p><p className="mt-0.5 text-xs text-slate-500">Legg inn visninger, klikk, leads og konverteringer</p></div><ChevronRight size={18} className="shrink-0 text-slate-500" />
-            </button>
-          ))}</div>
-        </section>
-      )}
+        {/* ═══ TAB 3: A/B Testing ════════════════════════════════════════════ */}
+        <TabsContent value="ab-testing">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">A/B Tester</h3>
+              <Button onClick={() => setShowABTestModal(true)}>
+                <Plus size={16} className="mr-2" />Ny A/B Test
+              </Button>
+            </div>
+            <p className="text-xs text-slate-400">
+              AI genererer to innholdsvarianter (A og B) for valgt brand og innholdstype. Publiser begge, legg inn metrikker, og velg vinneren.
+            </p>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">Arbeidskø</p><h2 className="mt-1 text-lg font-semibold text-white">Alle handlinger</h2></div><Button size="sm" variant="ghost" onClick={() => setShowAll((value) => !value)}>{showAll ? "Vis færre" : "Vis alle"}</Button></div>
-        <div className="space-y-2">{visibleActions.map((action) => {
-          const brand = brandFor(action.brand_id || action.brand);
-          const result = primaryResult(action);
-          return <div key={action.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"><div className="flex items-start gap-3"><span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: brand?.color || "#22d3ee" }} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-white">{brand?.name || action.brand}</span><Badge variant="outline" className="text-[10px]">{labelType(action.action_type)}</Badge><span className="text-xs text-slate-500">{action.platform}</span></div><p className="mt-2 line-clamp-2 text-sm text-slate-300">{action.content}</p><div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500"><span>Prioritet {action.priority}/10</span><span>{statusLabel(action.status)}</span>{result && <span className="font-medium text-emerald-300">{result}</span>}</div></div>{["planned", "ready"].includes(action.status) ? <Button size="sm" variant="outline" className="shrink-0" onClick={() => void sendToHub(action)} disabled={publishingId === action.id}>{publishingId === action.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}</Button> : action.status === "published" ? <Button size="sm" variant="outline" className="shrink-0" onClick={() => setMetricsId(action.id)}><BarChart3 size={14} /></Button> : null}</div></div>;
-        })}</div>
-      </section>
+            {loadingABTest ? (
+              <div className="flex items-center justify-center py-12"><Loader2 size={24} className="text-slate-400 animate-spin" /></div>
+            ) : abTests.length === 0 ? (
+              <Card className="border-slate-700/30">
+                <CardContent className="p-12 text-center">
+                  <Split size={48} className="text-slate-600 mx-auto mb-4" />
+                  <p className="text-lg font-medium text-slate-300">Ingen A/B tester enda</p>
+                  <p className="text-sm text-slate-500 mt-1">Opprett en A/B test for a la AI generere to varianter</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {abTests.map((test) => {
+                  const brand = getBrand(test.brand_id);
+                  return (
+                    <Card key={test.id} className="border-slate-700/30">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand?.color }} />
+                          <span className="text-sm font-medium text-white">{brand?.name}</span>
+                          <Badge variant="outline" className="text-[10px]">{test.content_type}</Badge>
+                          <Badge variant={statusColors[test.status]?.variant || "secondary"} className="text-[10px] ml-auto">
+                            {test.status}
+                          </Badge>
+                          {test.winner && (
+                            <Badge variant="success" className="text-[10px]">
+                              <Crown size={10} className="mr-1" />Vinner: Variant {test.winner.toUpperCase()}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Variant A */}
+                          <div className={`p-4 rounded-lg border ${test.winner === "a" ? "border-emerald-500/50 bg-emerald-500/5" : "border-slate-700/50 bg-slate-800/30"}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-slate-300 uppercase">Variant A</span>
+                              {test.winner === "a" && <Crown size={14} className="text-emerald-400" />}
+                            </div>
+                            <p className="text-sm text-slate-200">{test.variant_a}</p>
+                            {test.metrics_a && (
+                              <div className="flex gap-4 mt-3 text-xs text-slate-400">
+                                {Object.entries(test.metrics_a).map(([key, val]) => (
+                                  <span key={key}>{key}: <span className="text-white font-medium">{val}</span></span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {/* Variant B */}
+                          <div className={`p-4 rounded-lg border ${test.winner === "b" ? "border-emerald-500/50 bg-emerald-500/5" : "border-slate-700/50 bg-slate-800/30"}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-slate-300 uppercase">Variant B</span>
+                              {test.winner === "b" && <Crown size={14} className="text-emerald-400" />}
+                            </div>
+                            <p className="text-sm text-slate-200">{test.variant_b}</p>
+                            {test.metrics_b && (
+                              <div className="flex gap-4 mt-3 text-xs text-slate-400">
+                                {Object.entries(test.metrics_b).map(([key, val]) => (
+                                  <span key={key}>{key}: <span className="text-white font-medium">{val}</span></span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {test.status === "running" && !test.winner && (
+                          <div className="flex gap-2 mt-4 justify-end">
+                            <Button size="sm" variant="outline" className="text-xs" onClick={() => selectWinner(test.id, "a")}>
+                              <Check size={12} className="mr-1" />Velg A som vinner
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs" onClick={() => selectWinner(test.id, "b")}>
+                              <Check size={12} className="mr-1" />Velg B som vinner
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <Card><CardContent className="p-4"><Eye className="text-cyan-300" size={20} /><p className="mt-3 text-2xl font-bold text-white">{data.performance.impressions}</p><p className="text-xs text-slate-500">visninger målt</p></CardContent></Card>
-        <Card><CardContent className="p-4"><TrendingUp className="text-emerald-300" size={20} /><p className="mt-3 text-2xl font-bold text-white">{data.performance.followersGained}</p><p className="text-xs text-slate-500">nye følgere</p></CardContent></Card>
-        <Card><CardContent className="p-4"><Mail className="text-purple-300" size={20} /><p className="mt-3 text-2xl font-bold text-white">{data.performance.messages}</p><p className="text-xs text-slate-500">meldinger / henvendelser</p></CardContent></Card>
-      </section>
+        {/* ═══ TAB 4: Innsikter ══════════════════════════════════════════════ */}
+        <TabsContent value="innsikter">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">AI-drevne innsikter</h3>
+              <Button onClick={runAnalysis} disabled={loadingInsights}>
+                {loadingInsights ? (
+                  <><Loader2 size={16} className="mr-2 animate-spin" />Analyserer...</>
+                ) : (
+                  <><Brain size={16} className="mr-2" />Analyser</>
+                )}
+              </Button>
+            </div>
 
-      {metricsId && (
-        <div className="fixed inset-0 z-[90] flex items-end bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4" onClick={() => setMetricsId(null)}>
-          <Card className="w-full rounded-b-none border-slate-700 bg-slate-950 sm:max-w-lg sm:rounded-xl" onClick={(event) => event.stopPropagation()}>
-            <CardHeader><CardTitle>Registrer resultat</CardTitle><p className="text-sm text-slate-400">Disse tallene brukes til å prioritere fremtidige veksthandlinger.</p></CardHeader>
-            <CardContent className="space-y-4 pb-7"><div className="grid grid-cols-2 gap-3"><Field label="Visninger" value={metrics.impressions} onChange={(value) => setMetrics((m) => ({ ...m, impressions: value }))} /><Field label="Klikk" value={metrics.clicks} onChange={(value) => setMetrics((m) => ({ ...m, clicks: value }))} /><Field label="Leads" value={metrics.leads} onChange={(value) => setMetrics((m) => ({ ...m, leads: value }))} /><Field label="Konverteringer" value={metrics.conversions} onChange={(value) => setMetrics((m) => ({ ...m, conversions: value }))} /></div><div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setMetricsId(null)}>Avbryt</Button><Button onClick={() => void saveMetrics()}><Check size={15} className="mr-2" />Lagre</Button></div></CardContent>
+            {loadingInsights ? (
+              <Card className="border-purple-500/30 bg-purple-500/5">
+                <CardContent className="p-8 flex flex-col items-center text-center">
+                  <Loader2 size={40} className="text-purple-400 animate-spin" />
+                  <p className="text-white font-medium mt-4">AI analyserer data pa tvers av alle brands...</p>
+                  <p className="text-sm text-slate-400 mt-1">Ser etter trender, muligheter og forbedringer</p>
+                </CardContent>
+              </Card>
+            ) : insights.length === 0 ? (
+              <Card className="border-slate-700/30">
+                <CardContent className="p-12 text-center">
+                  <Lightbulb size={48} className="text-slate-600 mx-auto mb-4" />
+                  <p className="text-lg font-medium text-slate-300">Ingen innsikter enda</p>
+                  <p className="text-sm text-slate-500 mt-1">Kjor en analyse for a fa AI-genererte innsikter</p>
+                  <Button onClick={runAnalysis} className="mt-4">
+                    <Brain size={16} className="mr-2" />Kjor forste analyse
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {insights.map((insight) => {
+                  const brand = insight.brand_id ? getBrand(insight.brand_id) : null;
+                  return (
+                    <Card key={insight.id} className="border-slate-700/30 hover:border-slate-600/50 transition-all">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-lg bg-slate-800/80 shrink-0 mt-0.5">
+                            {insightIcon(insight.type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-medium text-white">{insight.title}</p>
+                              {brand && (
+                                <Badge variant="secondary" className="text-[10px]" style={{ color: brand.color }}>
+                                  {brand.name}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-400">{insight.description}</p>
+                            {insight.metric && (
+                              <div className="flex items-center gap-2 mt-2 text-xs">
+                                <span className="text-slate-500">{insight.metric}:</span>
+                                <span className={insight.change && insight.change > 0 ? "text-emerald-400" : "text-red-400"}>
+                                  {insight.change && insight.change > 0 ? "+" : ""}{insight.change}%
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <ChevronRight size={16} className="text-slate-600 shrink-0 mt-1" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ═══ TAB 5: Strategi ═══════════════════════════════════════════════ */}
+        <TabsContent value="strategi">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Brand-strategier</h3>
+              <Button size="sm" variant="outline" onClick={fetchStrategies} disabled={loadingStrategies}>
+                <RefreshCw size={14} className="mr-1" />Oppdater alle
+              </Button>
+            </div>
+
+            {loadingStrategies ? (
+              <div className="flex items-center justify-center py-12"><Loader2 size={24} className="text-slate-400 animate-spin" /></div>
+            ) : strategies.length === 0 ? (
+              /* Show brand cards even without API data */
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {BRANDS.map((brand) => (
+                  <Card key={brand.id} className="border-slate-700/30">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand.color }} />
+                        <CardTitle className="text-sm">{brand.name}</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 space-y-3">
+                      <p className="text-xs text-slate-500">{brand.description}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {brand.specialties?.map((s) => (
+                          <Badge key={s} variant="outline" className="text-[10px]">{s}</Badge>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500">Malpublikum: {brand.target_audience}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full text-xs"
+                        onClick={() => updateStrategy(brand.id)}
+                      >
+                        <Sparkles size={12} className="mr-1" />Generer strategi
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {strategies.map((strategy) => {
+                  const brand = getBrand(strategy.brand_id);
+                  if (!brand) return null;
+                  const progress = strategy.target_followers > 0
+                    ? Math.round((strategy.followers / strategy.target_followers) * 100)
+                    : 0;
+                  return (
+                    <Card key={strategy.brand_id} className="border-slate-700/30 hover:border-slate-600/50 transition-all">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: brand.color }} />
+                            <CardTitle className="text-sm">{brand.name}</CardTitle>
+                          </div>
+                          <span className="text-xs text-slate-500">Score: {strategy.performance_score}/10</span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0 space-y-3">
+                        {/* Follower progress */}
+                        <div>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="text-slate-400">Folgere</span>
+                            <span className="text-white font-medium">{strategy.followers.toLocaleString()} / {strategy.target_followers.toLocaleString()}</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: brand.color }}
+                            />
+                          </div>
+                        </div>
+                        {/* Focus areas */}
+                        {strategy.focus_areas && strategy.focus_areas.length > 0 && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1.5">Fokusomrader:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {strategy.focus_areas.map((area) => (
+                                <Badge key={area} variant="outline" className="text-[10px]">{area}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Weekly actions */}
+                        {strategy.weekly_actions && strategy.weekly_actions.length > 0 && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1.5">Ukentlige handlinger:</p>
+                            <div className="space-y-1">
+                              {strategy.weekly_actions.map((action, i) => (
+                                <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                                  <ChevronRight size={12} className="text-cyan-500 mt-0.5 shrink-0" />
+                                  <span>{action}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs"
+                          onClick={() => updateStrategy(strategy.brand_id)}
+                        >
+                          <RefreshCw size={12} className="mr-1" />Oppdater strategi
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* ─── Metrics Modal ──────────────────────────────────────────────────── */}
+      {showMetricsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowMetricsModal(null)}>
+          <Card className="w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Legg til metrikker</h2>
+                <Button variant="ghost" size="icon" onClick={() => setShowMetricsModal(null)}>
+                  <X size={18} />
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Visninger</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={metricsInput.views}
+                    onChange={(e) => setMetricsInput((p) => ({ ...p, views: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Klikk</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={metricsInput.clicks}
+                    onChange={(e) => setMetricsInput((p) => ({ ...p, clicks: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Konverteringer</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={metricsInput.conversions}
+                    onChange={(e) => setMetricsInput((p) => ({ ...p, conversions: e.target.value }))}
+                  />
+                </div>
+                <Button onClick={() => addMetrics(showMetricsModal)} className="w-full">
+                  <Check size={16} className="mr-2" />Lagre metrikker
+                </Button>
+              </div>
+            </CardContent>
           </Card>
         </div>
       )}
 
-      <div className="fixed bottom-3 left-3 right-3 z-40 sm:hidden"><Button className="h-12 w-full shadow-2xl" onClick={topAction ? () => void sendToHub(topAction) : runCycle} disabled={topAction ? publishingId === topAction.id : runningCycle}>{topAction ? <><Send size={16} className="mr-2" />Gjør neste handling</> : <><Brain size={16} className="mr-2" />Kjør vekst-AI</>}</Button></div>
+      {/* ─── A/B Test Modal ─────────────────────────────────────────────────── */}
+      {showABTestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowABTestModal(false)}>
+          <Card className="w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Ny A/B Test</h2>
+                <Button variant="ghost" size="icon" onClick={() => setShowABTestModal(false)}>
+                  <X size={18} />
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
+                  <select
+                    value={abTestForm.brand_id}
+                    onChange={(e) => setABTestForm((p) => ({ ...p, brand_id: e.target.value }))}
+                    className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                  >
+                    {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1 block">Innholdstype</label>
+                  <select
+                    value={abTestForm.content_type}
+                    onChange={(e) => setABTestForm((p) => ({ ...p, content_type: e.target.value }))}
+                    className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
+                  >
+                    <option value="social_post">Sosialt innlegg</option>
+                    <option value="email_subject">E-postemne</option>
+                    <option value="ad_copy">Annonsetekst</option>
+                    <option value="landing_page">Landingsside</option>
+                    <option value="cta">Call-to-Action</option>
+                  </select>
+                </div>
+                <Button onClick={createABTest} className="w-full">
+                  <Sparkles size={16} className="mr-2" />Generer A/B varianter med AI
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
-}
-
-function Metric({ title, value, hint, icon }: { title: string; value: number; hint: string; icon: React.ReactNode }) {
-  return <Card className="border-slate-800 bg-slate-950/50"><CardContent className="p-4"><div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p><span className="text-cyan-300">{icon}</span></div><p className="mt-2 text-2xl font-bold text-white sm:text-3xl">{value}</p><p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{hint}</p></CardContent></Card>;
-}
-
-function ActionCard({ action, featured = false, publishing, onSend, onMeasure }: { action: GrowthAction; featured?: boolean; publishing: boolean; onSend: () => void; onMeasure: () => void }) {
-  const brand = brandFor(action.brand_id || action.brand);
-  const canSend = action.status === "planned" || action.status === "ready";
-  const result = primaryResult(action);
-  return <Card className={featured ? "border-emerald-500/35 bg-gradient-to-br from-emerald-500/10 via-slate-950 to-cyan-500/5" : "border-slate-800 bg-slate-950/60"}><CardContent className={featured ? "p-5 sm:p-6" : "p-4 sm:p-5"}><div className="flex flex-wrap items-center gap-2"><Badge style={{ color: brand?.color, borderColor: `${brand?.color}55` }} variant="outline">{brand?.name || action.brand}</Badge><Badge variant="outline">{labelType(action.action_type)}</Badge><span className="text-xs text-slate-500">{action.platform}</span>{action.score != null && <span className="ml-auto text-xs font-semibold text-emerald-300">Score {action.score}</span>}</div><p className={`${featured ? "mt-4 text-base sm:text-lg" : "mt-3 text-sm"} font-medium leading-relaxed text-white`}>{action.content}</p>{action.expected_outcome && <div className="mt-4 rounded-lg bg-slate-900/70 p-3"><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Forventet effekt</p><p className="mt-1 text-sm text-slate-300">{action.expected_outcome}</p></div>}<div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500"><span>Prioritet {action.priority}/10</span><span>{statusLabel(action.status)}</span>{result && <span className="font-semibold text-emerald-300">{result}</span>}</div><div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">{canSend ? <Button onClick={onSend} disabled={publishing} className="w-full">{publishing ? <Loader2 size={15} className="mr-2 animate-spin" /> : <Send size={15} className="mr-2" />}Send til Content Hub</Button> : action.status === "published" ? <Button onClick={onMeasure} className="w-full"><BarChart3 size={15} className="mr-2" />Registrer resultat</Button> : <Button variant="outline" disabled className="w-full"><Check size={15} className="mr-2" />Ferdig målt</Button>}<Badge variant="outline" className="justify-center py-2 text-xs">Ingen auto-publisering</Badge></div></CardContent></Card>;
-}
-
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="space-y-1.5"><span className="text-xs font-medium text-slate-400">{label}</span><Input inputMode="numeric" type="number" min="0" value={value} onChange={(event) => onChange(event.target.value)} placeholder="0" /></label>;
 }

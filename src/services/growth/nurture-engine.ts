@@ -38,7 +38,6 @@ export interface NurturePlannedSend {
   subject: string;
   status: "sent" | "dry_run" | "failed" | "skipped";
   error?: string;
-  alreadyPlanned?: boolean;
 }
 
 export interface NurtureRunResult {
@@ -50,8 +49,6 @@ export interface NurtureRunResult {
   failed: number;
   skipped: number;
   flaggedSpam: number;
-  awaitingLive: number;
-  duplicateDryRunsSuppressed: number;
 }
 
 interface NurtureRevenueContact {
@@ -148,8 +145,6 @@ export async function runNurtureCycle(
     failed: 0,
     skipped: 0,
     flaggedSpam: 0,
-    awaitingLive: 0,
-    duplicateDryRunsSuppressed: 0,
   };
 
   // Teller nye innmeldinger per sekvens denne kjøringen (for daglig bolk-tak).
@@ -214,25 +209,15 @@ export async function runNurtureCycle(
 
     result.eligible += 1;
 
-    // Hent både reelle sends og tidligere dry-run-planer. Reelle sends styrer
-    // progresjon; dry-run brukes kun til å hindre at samme plan logges på nytt
-    // hver cron-kjøring mens LIVE-bryteren fortsatt er av.
+    // Hvilke steg er allerede reelt sendt/køet for dette leadet?
     const { data: events } = await supabase
       .from("lead_nurture_events")
-      .select("step_id, status, dry_run")
+      .select("step_id, status")
       .eq("contact_id", contact.id)
-      .eq("sequence_id", sequence.id);
+      .eq("sequence_id", sequence.id)
+      .in("status", ["sent", "queued"]);
 
-    const sentStepIds = new Set(
-      (events || [])
-        .filter((e) => e.status === "sent" || e.status === "queued")
-        .map((e) => String(e.step_id))
-    );
-    const dryRunStepIds = new Set(
-      (events || [])
-        .filter((e) => e.status === "dry_run" || e.dry_run === true)
-        .map((e) => String(e.step_id))
-    );
+    const sentStepIds = new Set((events || []).map((e) => String(e.step_id)));
 
     const isReactivation = sequence.mode === "reactivation";
     const alreadyEnrolled = !!contact.nurture_enrolled_at;
@@ -281,14 +266,6 @@ export async function runNurtureCycle(
     };
 
     if (dryRun) {
-      result.awaitingLive += 1;
-      if (dryRunStepIds.has(step.id)) {
-        planned.alreadyPlanned = true;
-        result.duplicateDryRunsSuppressed += 1;
-        result.planned.push(planned);
-        continue;
-      }
-
       result.planned.push(planned);
       await supabase.from("lead_nurture_events").insert({
         contact_id: contact.id,

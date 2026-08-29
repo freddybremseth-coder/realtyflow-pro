@@ -47,3 +47,12 @@ test("taxonomy generation is proposal-only and bundle approval is a separate adm
   assert.match(route, /p_actor: "admin_ui"/);
   assert.doesNotMatch(route, /book_growth_apply_channel_metadata_candidate/);
 });
+
+test("channel mapping produces four proposal packages and keeps submission separate", () => {
+  assert.match(route, /action === "generate_channel_packages"/);
+  assert.match(route, /buildChannelMetadataPackages/);
+  assert.match(route, /publishing_stage_channel_metadata_bundle/);
+  assert.match(route, /action === "decide_channel_metadata_bundle"/);
+  assert.match(route, /publishing_decide_channel_metadata_bundle/);
+  assert.doesNotMatch(route, /publishing_distribution_transition_job/);
+});

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 type Bible = { id: string; bible_type: string; version: number; status: string; approved_by?: string | null; approved_at?: string | null };
 type QualityCheck = { id: string; check_type: string; result: string; decision: string; score?: number | null; summary?: string | null; evidence?: { validator?: string; findings?: Array<{ severity: string; location: string; issue?: string; message?: string }> } };
 type TaxonomyAssignment = { id: string; assignment_type: "category" | "keyword" | "audience" | "theme"; status: string; scheme: string; channel: string; code: string; label: string; rank: number; confidence?: number | null; evidence?: { rationale?: string; positioning_summary?: string; web_sources?: Array<{ title: string; url: string }> } };
+type ChannelPackage = { id: string; channel: string; version: number; status: string; payload: { categories?: Array<{ label: string }>; keywords?: string[] } };
 type Edition = {
   editionId: string;
   title: string;
@@ -18,9 +19,11 @@ type Edition = {
   bibles: Bible[];
   checks: QualityCheck[];
   taxonomy: TaxonomyAssignment[];
+  channelPackages: ChannelPackage[];
+  phase3Ready: boolean;
   draftBibleIds: string[];
   readiness: { ready: boolean; missingBibles: string[]; missingChecks: string[]; taxonomyIssues: string[]; categoryCount: number; keywordCount: number };
-  nextAction: { code: string; label: string; checkType?: string; checkId?: string; assignmentIds?: string[] };
+  nextAction: { code: string; label: string; checkType?: string; checkId?: string; assignmentIds?: string[]; packageIds?: string[] };
 };
 type Data = { available: boolean; error?: string; summary?: Record<string, number>; editions?: Edition[] };
 
@@ -55,7 +58,7 @@ export default function QualityCenterPage() {
 
   useEffect(() => { load().catch((err) => setError(err instanceof Error ? err.message : "Kunne ikke laste Quality Center")); }, [load]);
 
-  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "run_technical_quality_check" | "decide_quality_check" | "generate_taxonomy" | "decide_taxonomy_bundle", decision?: "approved" | "rejected") => {
+  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "run_technical_quality_check" | "decide_quality_check" | "generate_taxonomy" | "decide_taxonomy_bundle" | "generate_channel_packages" | "decide_channel_metadata_bundle", decision?: "approved" | "rejected") => {
     setBusyId(edition.editionId);
     setError("");
     setNotice("");
@@ -70,6 +73,8 @@ export default function QualityCenterPage() {
                 : action === "run_technical_quality_check" ? { action, revisionId: edition.canonicalRevision?.id, checkType: edition.nextAction.checkType }
                   : action === "generate_taxonomy" ? { action, editionId: edition.editionId }
                     : action === "decide_taxonomy_bundle" ? { action, assignmentIds: edition.nextAction.assignmentIds, decision }
+                      : action === "generate_channel_packages" ? { action, editionId: edition.editionId }
+                        : action === "decide_channel_metadata_bundle" ? { action, packageIds: edition.nextAction.packageIds, decision }
                 : { action, checkId: edition.nextAction.checkId, decision }),
         });
         const body = await response.json();
@@ -80,6 +85,8 @@ export default function QualityCenterPage() {
               : action === "run_technical_quality_check" ? "Den tekniske kontrollen er ferdig og bevisene er lagret."
                 : action === "generate_taxonomy" ? "Taggepakken er klar og venter på din vurdering."
                   : action === "decide_taxonomy_bundle" ? (decision === "approved" ? "Kategorier, målgruppe, temaer og søkeord er godkjent." : "Taggeforslaget er avvist.")
+                    : action === "generate_channel_packages" ? "Fire kanalpakker er klare for vurdering. Ingenting er sendt."
+                      : action === "decide_channel_metadata_bundle" ? (decision === "approved" ? "Kanalmetadata er godkjent. Ingenting er sendt til bokhandlerne." : "Kanalpakkene er avvist.")
               : decision === "approved" ? "Kvalitetsresultatet er godkjent." : "Resultatet er avvist. En ny kontroll kan kjøres etter retting.");
         await load();
       } catch (err) {
@@ -104,7 +111,7 @@ export default function QualityCenterPage() {
     {notice ? <p role="status" style={{ padding: 12, background: "#ecfdf5", border: "1px solid #22c55e", borderRadius: 8 }}>{notice}</p> : null}
 
     <section aria-label="Quality Center status" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, margin: "20px 0" }}>
-      {[["Utgaver", summary.editions], ["Klare", summary.ready], ["Mangler bibel/canon", summary.needsBible], ["Mangler kvalitet", summary.needsQuality], ["Mangler tagging", summary.needsTaxonomy]].map(([label, value]) => <article key={String(label)} style={{ background: "white", border: "1px solid #aebdce", borderRadius: 10, padding: 14 }}><div style={{ fontSize: 12, fontWeight: 800 }}>{label}</div><div style={{ fontSize: 28, fontWeight: 900 }}>{value ?? 0}</div></article>)}
+      {[["Utgaver", summary.editions], ["Kvalitet/tagging klar", summary.ready], ["Fase 3 klar", summary.phase3Ready], ["Mangler bibel/canon", summary.needsBible], ["Mangler kvalitet", summary.needsQuality], ["Mangler tagging", summary.needsTaxonomy]].map(([label, value]) => <article key={String(label)} style={{ background: "white", border: "1px solid #aebdce", borderRadius: 10, padding: 14 }}><div style={{ fontSize: 12, fontWeight: 800 }}>{label}</div><div style={{ fontSize: 28, fontWeight: 900 }}>{value ?? 0}</div></article>)}
     </section>
 
     <section style={{ background: "white", border: "1px solid #aebdce", borderRadius: 12, padding: 18 }}>
@@ -116,6 +123,7 @@ export default function QualityCenterPage() {
         const latestChecks = edition.checks.filter((row, index, all) => all.findIndex((candidate) => candidate.check_type === row.check_type) === index);
         const taxonomyProposals = edition.taxonomy.filter((row) => row.status === "proposed").sort((a, b) => a.assignment_type.localeCompare(b.assignment_type) || a.rank - b.rank);
         const taxonomyEvidence = taxonomyProposals[0]?.evidence;
+        const packageProposals = edition.channelPackages.filter((row) => row.status === "proposed").sort((a, b) => a.channel.localeCompare(b.channel));
         const activeCheck = edition.nextAction.checkId
           ? edition.checks.find((row) => row.id === edition.nextAction.checkId)
           : edition.nextAction.checkType ? latestChecks.find((row) => row.check_type === edition.nextAction.checkType) : null;
@@ -156,8 +164,14 @@ export default function QualityCenterPage() {
                 <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_taxonomy_bundle", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Godkjenner…" : `Godkjenn hele pakken (${taxonomyProposals.length})`}</button><button disabled={busy} onClick={() => act(edition, "decide_taxonomy_bundle", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Avvis og lag nytt forslag</button></div>
               </div> : null}
               {edition.nextAction.code === "approve_quality" ? <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Lagrer…" : "Godkjenn resultat"}</button><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Krever endringer</button></div> : null}
+              {edition.nextAction.code === "generate_channel_packages" ? <button disabled={busy} onClick={() => act(edition, "generate_channel_packages")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#0369a1", color: "white", fontWeight: 900 }}>{busy ? "Bygger fire kanalpakker…" : "Lag kanalmetadata"}</button> : null}
+              {edition.nextAction.code === "review_channel_packages" ? <div>
+                <p style={{ margin: "0 0 8px", padding: 8, borderRadius: 7, background: "#fff7ed", fontSize: 12 }}><strong>Ikke sendt:</strong> Dette godkjenner bare metadata. Publisering skjer senere som et eget steg.</p>
+                <div style={{ display: "grid", gap: 6, marginBottom: 9 }}>{packageProposals.map((row) => <div key={row.id} style={{ padding: 7, border: "1px solid #bae6fd", borderRadius: 7, background: "#f0f9ff", fontSize: 12 }}><strong>{row.channel}</strong> · v{row.version}<span style={{ display: "block", color: "#475569" }}>{row.payload.categories?.map((item) => item.label).join(", ") || "Ingen kategori"} · {row.payload.keywords?.length || 0} søkeord</span></div>)}</div>
+                <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_channel_metadata_bundle", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Godkjenner…" : "Godkjenn fire metadata-pakker"}</button><button disabled={busy} onClick={() => act(edition, "decide_channel_metadata_bundle", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Avvis kanalmetadata</button></div>
+              </div> : null}
               {edition.nextAction.code === "quality_running" ? <p role="status" style={{ margin: 0, fontSize: 12, color: "#1d4ed8", fontWeight: 800 }}>OpenAI arbeider med manus nå…</p> : null}
-              {edition.nextAction.code === "ready" ? <div style={{ color: "#166534", fontWeight: 900 }}>✓ Klar for neste publiseringssteg</div> : null}
+              {edition.nextAction.code === "ready" ? <div style={{ color: "#166534", fontWeight: 900 }}>✓ Fase 3 klar<br/><span style={{ fontSize: 12, fontWeight: 600 }}>Metadata er godkjent, men ikke sendt.</span></div> : null}
               {["select_revision", "quality_check"].includes(edition.nextAction.code) ? <p style={{ margin: 0, fontSize: 12, color: "#475569" }}>Denne kontrollen kobles til riktig verktøy i neste delsteg.</p> : null}
             </div>
           </div>
