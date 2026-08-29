@@ -13,7 +13,6 @@ interface BackfillItem {
     pipelineStatus?: string | null;
     pipelineValue?: number | null;
     propertyInterest?: string | null;
-    preferredLocation?: string | null;
     source?: string | null;
     brandId?: string | null;
   };
@@ -97,7 +96,6 @@ export default function PersonaBackfillPage() {
         item.contact.email,
         item.contact.phone,
         item.contact.propertyInterest,
-        item.contact.preferredLocation,
         item.contact.source,
         item.candidate.persona ? PERSONA_LABELS[item.candidate.persona] || item.candidate.persona : "",
         ...item.candidate.evidence.map((row) => `${row.signal} ${row.excerpt}`),
@@ -165,7 +163,7 @@ export default function PersonaBackfillPage() {
                 {item.candidate.persona ? <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-black text-white">{PERSONA_LABELS[item.candidate.persona] || item.candidate.persona}</span> : null}
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
-                <span>{item.contact.pipelineStatus || "Ukjent status"}</span><span>{money(item.contact.pipelineValue)}</span><span>{item.contact.preferredLocation || item.contact.propertyInterest || "Område ikke registrert"}</span><span>{item.contact.source || "Kilde ukjent"}</span>
+                <span>{item.contact.pipelineStatus || "Ukjent status"}</span><span>{money(item.contact.pipelineValue)}</span><span>{item.contact.propertyInterest || "Område / boligønske ikke registrert"}</span><span>{item.contact.source || "Kilde ukjent"}</span>
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-700">{item.candidate.reason}</p>
             </div>
