@@ -56,7 +56,7 @@ function soleadaRelationshipSequence(base: NurtureSequence): NurtureSequence {
         id: "reconnect",
         dayOffset: 0,
         channel: "email",
-        subject: "Er bolig i Spania fortsatt aktuelt for deg, {name}?",
+        subject: "Er bolig i Spania fortsatt aktuelt for deg?",
         text: `Hei {name},
 
 Vi har tidligere vært i kontakt gjennom Soleada.no om bolig i Spania, og jeg ønsker å følge deg opp personlig.
