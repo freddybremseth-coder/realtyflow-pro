@@ -30,6 +30,7 @@ const RoutingPersonaSchema = z.enum([
 const RequestSchema = z.object({
   contactId: z.string().uuid(),
   persona: RoutingPersonaSchema,
+  brand: LeadIntelligenceRealEstateBrandSchema,
 }).strict();
 
 function text(value: unknown, max = 2000) {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await withLeadIntelligenceTransaction("zeneco", async (client) => {
+    const result = await withLeadIntelligenceTransaction(parsed.data.brand, async (client) => {
       const contactResult = await client.query<{
         id: string;
         name: string | null;
@@ -84,6 +85,9 @@ export async function POST(request: NextRequest) {
         throw new LeadIntelligenceError("INVALID_REQUEST", "Contact brand is not eligible for Buyer Profile Persona routing", 409);
       }
       const brand = brandParse.data;
+      if (brand !== parsed.data.brand) {
+        throw new LeadIntelligenceError("INVALID_REQUEST", "Contact brand changed or does not match the reviewed Persona candidate", 409);
+      }
 
       const validation = validatePersonaBackfillApproval({
         id: contact.id,
