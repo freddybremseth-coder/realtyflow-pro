@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/nexus-os/buyer-intake/reviews", label: "Intake Reviews" },
   { href: "/nexus-os/persona-backfill", label: "Persona Backfill" },
   { href: "/nexus-os/source-health", label: "Source Health" },
+  { href: "/nexus-os/email-link-health", label: "Email Link Health" },
   { href: "/nexus-os/mission-operations", label: "Mission Ops" },
   { href: "/nexus-os", label: "Agentic OS" },
   { href: "/agents", label: "Agent Fleet" },
