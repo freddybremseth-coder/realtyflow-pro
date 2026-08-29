@@ -23,12 +23,12 @@ export function buildReactivationApplyDecision(input: {
     return {
       allowed: true,
       contactUpdates: {
-        nurture_status: "paused",
+        nurture_status: "stopped",
         last_contact: replyOccurredAt,
         updated_at: replyOccurredAt,
       },
       createBuyerProfileRefreshWorkItem: false,
-      reason: "Explicit stop signal: pause nurture and preserve pipeline stage.",
+      reason: "Explicit stop signal: permanently stop nurture and preserve pipeline stage.",
     };
   }
 
