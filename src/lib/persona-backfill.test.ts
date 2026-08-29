@@ -7,7 +7,7 @@ test("strong investment language proposes investor with evidence", () => {
     id: "1",
     notes: "Ønsker investering med realistisk utleie og avkastning. Ser på langtidsutleie.",
     pipeline_value: 450000,
-    preferred_location: "Alicante",
+    property_interest: "Alicante",
   });
   assert.equal(result.persona, "investor");
   assert.ok(result.confidence >= 70);
