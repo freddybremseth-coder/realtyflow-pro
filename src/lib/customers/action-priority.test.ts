@@ -21,6 +21,44 @@ test("customer list triage prioritizes overdue follow-up", () => {
   assert.equal(result.label, "Følg opp nå");
 });
 
+test("future explicit waiting state suppresses action noise without changing pipeline stage", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "MATCHING",
+    waiting_on: "customer",
+    waiting_reason: "Kunden avklarer finansiering",
+    waiting_until: "2026-10-01T09:00:00.000Z",
+    next_followup: "2026-10-01T09:00:00.000Z",
+  }, now);
+  assert.equal(result.priority, "LOW");
+  assert.equal(result.needsAction, false);
+  assert.equal(result.label, "Venter på kunden");
+  assert.equal(result.reason, "Kunden avklarer finansiering");
+});
+
+test("expired waiting state becomes the highest resume action", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "QUALIFIED",
+    waiting_on: "third_party",
+    waiting_until: "2026-08-25T09:00:00.000Z",
+  }, now);
+  assert.equal(result.priority, "CRITICAL");
+  assert.equal(result.score, 97);
+  assert.equal(result.label, "Gjenoppta oppfølging");
+  assert.match(result.reason, /tredjepart/i);
+});
+
+test("waiting state without resume date is surfaced as incomplete", () => {
+  const result = buildCustomerListAction({
+    email: "buyer@example.com",
+    pipeline_status: "QUALIFIED",
+    waiting_on: "customer",
+  }, now);
+  assert.equal(result.priority, "HIGH");
+  assert.equal(result.label, "Sett dato for ventetilstand");
+});
+
 test("negotiation outranks viewing when neither is overdue", () => {
   const negotiation = buildCustomerListAction({
     email: "buyer@example.com",
