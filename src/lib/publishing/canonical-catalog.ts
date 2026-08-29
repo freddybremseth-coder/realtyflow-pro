@@ -41,6 +41,39 @@ export type CanonicalPublicationRow = {
   status: string;
 };
 
+export type ReconciliationCandidate = {
+  id: string;
+  source_work_id: string;
+  target_work_id: string;
+  candidate_type: string;
+  confidence: number | string;
+  status: string;
+  evidence?: { title?: string; reason?: string } | null;
+  sourceWork?: { canonical_title?: string | null } | null;
+  targetWork?: { canonical_title?: string | null } | null;
+};
+
+export function groupReconciliationCandidates<T extends ReconciliationCandidate>(candidates: T[]) {
+  const groups = new Map<string, { key: string; title: string; candidates: T[]; workIds: Set<string> }>();
+  for (const candidate of candidates) {
+    const title = String(candidate.evidence?.title || candidate.sourceWork?.canonical_title || candidate.targetWork?.canonical_title || "Ukjent bok").trim();
+    const key = title.toLocaleLowerCase("nb-NO").replace(/\s+/g, " ");
+    const group = groups.get(key) ?? { key, title, candidates: [], workIds: new Set<string>() };
+    group.candidates.push(candidate);
+    group.workIds.add(candidate.source_work_id);
+    group.workIds.add(candidate.target_work_id);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((group) => ({
+    key: group.key,
+    title: group.title,
+    candidates: group.candidates.sort((a, b) => Number(b.confidence) - Number(a.confidence)),
+    workCount: group.workIds.size,
+    pendingCount: group.candidates.filter((candidate) => candidate.status === "pending").length,
+    approvedCount: group.candidates.filter((candidate) => candidate.status === "approved").length,
+  })).sort((a, b) => b.workCount - a.workCount || a.title.localeCompare(b.title, "nb-NO"));
+}
+
 export type CanonicalEditionCoverage = CanonicalEditionRow & {
   hasCanonicalRevision: boolean;
   hasEpub: boolean;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalCatalogSummary, canonicalEditionCoverage } from "./canonical-catalog";
+import { canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "./canonical-catalog";
 
 const edition = { id: "e1", work_id: "w1", edition_key: "en-ebook", title: "Book", language: "en", format: "ebook", status: "published" };
 
@@ -46,4 +46,16 @@ test("catalogue summary keeps pending and approved merges separate", () => {
   assert.equal(summary.pendingMerges, 1);
   assert.equal(summary.approvedMerges, 1);
   assert.equal(summary.verifiedSourceLinks, 1);
+});
+
+test("reconciliation candidates with the same title become one review group", () => {
+  const candidates = [
+    { id: "c1", source_work_id: "w1", target_work_id: "w2", candidate_type: "merge_works", confidence: 0.95, status: "pending", evidence: { title: "The Book" } },
+    { id: "c2", source_work_id: "w3", target_work_id: "w2", candidate_type: "merge_works", confidence: 0.95, status: "approved", evidence: { title: "  the   book " } },
+  ];
+  const groups = groupReconciliationCandidates(candidates);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].workCount, 3);
+  assert.equal(groups[0].pendingCount, 1);
+  assert.equal(groups[0].approvedCount, 1);
 });
