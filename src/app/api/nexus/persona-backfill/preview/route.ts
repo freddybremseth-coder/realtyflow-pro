@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
 
   const contactsResult = await supabase
     .from("contacts")
-    .select("id,name,email,phone,notes,property_interest,preferred_location,pipeline_status,pipeline_value,source,brand_id,brand,interactions")
-    .not("pipeline_status", "in", '("WON","LOST")')
+    .select("id,name,email,phone,notes,property_interest,pipeline_status,pipeline_value,source,brand_id,brand,interactions")
+    .not("pipeline_status", "in", "(WON,LOST)")
     .order("updated_at", { ascending: false })
     .limit(1000);
 
@@ -78,7 +78,6 @@ export async function GET(request: NextRequest) {
         pipelineStatus: contact.pipeline_status,
         pipelineValue: contact.pipeline_value,
         propertyInterest: contact.property_interest,
-        preferredLocation: contact.preferred_location,
         source: contact.source,
         brandId: contact.brand_id || contact.brand || null,
       },
