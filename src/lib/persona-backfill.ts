@@ -1,4 +1,4 @@
-import type { RoutingPersona } from "@/services/growth/nurture-persona-routing";
+import { isRoutingPersona, type RoutingPersona } from "@/services/growth/nurture-persona-routing";
 
 export interface PersonaBackfillContact {
   id: string;
@@ -28,6 +28,13 @@ export interface PersonaBackfillCandidate {
   missingInformation: string[];
   reason: string;
   requiresHumanReview: true;
+}
+
+export interface PersonaBackfillApprovalValidation {
+  ok: boolean;
+  persona: RoutingPersona | null;
+  reason: string;
+  candidate: PersonaBackfillCandidate;
 }
 
 const PERSONA_RULES: Record<RoutingPersona, Array<{ pattern: RegExp; signal: string; weight: number }>> = {
@@ -147,6 +154,27 @@ export function inferPersonaBackfillCandidate(contact: PersonaBackfillContact): 
     reason: `Forslaget bygger på ${best.evidence.length} dokumenterte CRM-signal(er) og har tydelig margin til nest sterkeste Persona.`,
     requiresHumanReview: true,
   };
+}
+
+export function validatePersonaBackfillApproval(
+  contact: PersonaBackfillContact,
+  requestedPersona: unknown,
+  minimumConfidence = 80,
+): PersonaBackfillApprovalValidation {
+  const candidate = inferPersonaBackfillCandidate(contact);
+  if (!isRoutingPersona(requestedPersona)) {
+    return { ok: false, persona: null, reason: "Ugyldig routing-persona.", candidate };
+  }
+  if (!candidate.persona) {
+    return { ok: false, persona: requestedPersona, reason: "Persona kan ikke godkjennes fordi CRM-evidensen ikke gir en entydig kandidat.", candidate };
+  }
+  if (candidate.persona !== requestedPersona) {
+    return { ok: false, persona: requestedPersona, reason: "Persona-forslaget har endret seg eller valgt Persona samsvarer ikke med rekalkulert CRM-evidens.", candidate };
+  }
+  if (candidate.confidence < minimumConfidence) {
+    return { ok: false, persona: requestedPersona, reason: `Persona krever minst ${minimumConfidence}% confidence for direkte backfill-godkjenning.`, candidate };
+  }
+  return { ok: true, persona: requestedPersona, reason: candidate.reason, candidate };
 }
 
 export function prioritizePersonaBackfill<T extends PersonaBackfillContact>(contacts: T[]) {
