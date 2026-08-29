@@ -12,9 +12,15 @@ import {
   type NurtureStep,
 } from "@/services/growth/nurture-sequences";
 import { resolveNurtureSequenceWithPersona } from "@/services/growth/nurture-persona-routing";
+import {
+  canEvaluateForNurture,
+  normalizeNurtureState,
+  nurtureStateAfterSuccessfulSend,
+  shouldPersistCompletedWhenIneligible,
+} from "@/services/growth/nurture-state";
 
 // Hvilke statuser som nurtures avgjøres per sekvens (sequence.eligibleStatuses).
-// Så snart et lead er kvalifisert / i samtale / vunnet / tapt, tar mennesket over.
+// Nurture state er separat fra pipeline: eligible = kan vurderes, enrolled = faktisk aktiv sekvens.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -185,7 +191,7 @@ export async function runNurtureCycle(
   let query = supabase
     .from("contacts")
     .select(
-      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, property_interest, created_at, nurture_enrolled_at"
+      "id, name, email, brand_id, brand, source, pipeline_status, nurture_status, nurture_sequence, property_interest, created_at, nurture_enrolled_at"
     )
     .order("created_at", { ascending: false })
     .limit(Math.max(limit, 1000));
@@ -205,18 +211,16 @@ export async function runNurtureCycle(
     if (!sequence) continue;
 
     const status = String(contact.pipeline_status || "").toUpperCase();
-    const nurtureStatus = String(contact.nurture_status || "active");
+    const nurtureState = normalizeNurtureState(contact);
     const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact.email || ""));
 
     if (!hasEmail) continue;
-    if (nurtureStatus !== "active") continue;
+    if (!canEvaluateForNurture(nurtureState)) continue;
 
     // Beskytt avsenderomdømmet: aldri send til åpenbar spam/bot.
     if (isLikelyBot(contact.name, contact.email)) {
       result.flaggedSpam += 1;
       if (!dryRun) {
-        // Sett på pause (ikke slett) så de kan gjennomgås, og ikke
-        // prosesseres på nytt hver kjøring.
         await supabase
           .from("contacts")
           .update({ nurture_status: "paused" })
@@ -226,8 +230,9 @@ export async function runNurtureCycle(
     }
 
     if (!sequence.eligibleStatuses.includes(status)) {
-      // Leadet har gått videre – fullfør nurture stille.
-      if (!dryRun) {
+      // Bare en kontakt som faktisk var innmeldt skal markeres fullført.
+      // En kontakt som kun var `eligible` har aldri startet sekvensen.
+      if (!dryRun && shouldPersistCompletedWhenIneligible(nurtureState)) {
         await supabase
           .from("contacts")
           .update({ nurture_status: "completed" })
@@ -263,7 +268,7 @@ export async function runNurtureCycle(
     );
 
     const isReactivation = sequence.mode === "reactivation";
-    const alreadyEnrolled = !!contact.nurture_enrolled_at;
+    const alreadyEnrolled = nurtureState === "enrolled" || !!contact.nurture_enrolled_at || !!contact.nurture_sequence;
     const isNewEnrollment = isReactivation && !alreadyEnrolled;
 
     // Daglig bolk-tak: begrens antall NYE reaktiverings-innmeldinger per kjøring.
@@ -282,7 +287,17 @@ export async function runNurtureCycle(
       : contact.nurture_enrolled_at || contact.created_at;
     const ageDays = daysSince(anchor);
     const step = nextDueStep(sequence, ageDays, sentStepIds);
-    if (!step) continue;
+
+    if (!step) {
+      const allStepsSent = sequence.steps.length > 0 && sequence.steps.every((candidate) => sentStepIds.has(candidate.id));
+      if (!dryRun && nurtureState === "enrolled" && allStepsSent) {
+        await supabase
+          .from("contacts")
+          .update({ nurture_status: "completed", updated_at: new Date().toISOString() })
+          .eq("id", contact.id);
+      }
+      continue;
+    }
 
     if (isNewEnrollment) {
       enrollCounts.set(sequence.id, (enrollCounts.get(sequence.id) ?? 0) + 1);
@@ -333,7 +348,7 @@ export async function runNurtureCycle(
       continue;
     }
 
-    // LIVE: send via merkets SMTP
+    // LIVE: send via merkets SMTP. Først etter vellykket send blir kontakten `enrolled`.
     const send = await sendBrandEmail(supabase, {
       brandId: sequence.sendBrandId || cBrand,
       to: [contact.email],
@@ -360,11 +375,11 @@ export async function runNurtureCycle(
         scheduled_for: now,
         sent_at: now,
       });
-      // Marker oppfølging på kontakten (bruker eksisterende CRM-felter).
       await supabase
         .from("contacts")
         .update({
           last_ai_followup: now,
+          nurture_status: nurtureStateAfterSuccessfulSend(),
           nurture_sequence: sequence.id,
           nurture_enrolled_at: contact.nurture_enrolled_at || anchor,
           pipeline_status: status === "NEW" || status === "" ? "CONTACT" : status,
