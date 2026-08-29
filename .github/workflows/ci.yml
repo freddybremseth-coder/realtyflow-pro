@@ -50,6 +50,8 @@ jobs:
         run: npm run test:attribution
       - name: CRM Source Normalization tests
         run: npx tsx --test src/lib/crm/source-normalization.test.ts src/lib/crm/source-health.test.ts
+      - name: Email Link Health tests
+        run: npx tsx --test src/lib/crm/email-link-health.test.ts
       - name: Revenue Data Health tests
         run: npm run test:revenue-data-health
       - name: Controlled Communications tests
