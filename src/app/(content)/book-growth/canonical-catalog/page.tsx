@@ -33,6 +33,7 @@ const issueLabels: Record<string, string> = {
 export default function CanonicalCatalogPage() {
   const [data, setData] = useState<CatalogData | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState("");
   const [, startTransition] = useTransition();
 
@@ -69,6 +70,29 @@ export default function CanonicalCatalogPage() {
     });
   };
 
+  const scanArtifactVariants = () => {
+    setBusyId("scan");
+    setError("");
+    setNotice("");
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/book-growth/canonical-catalog", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "scan_artifact_variants" }),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Skanningen mislyktes");
+        setNotice(body.created > 0 ? `${body.created} nye forslag ble lagt til for manuell vurdering.` : "Skanningen fant ingen nye versjonstitler som ikke allerede er registrert.");
+        await load();
+      } catch (scanError) {
+        setError(scanError instanceof Error ? scanError.message : "Skanningen mislyktes");
+      } finally {
+        setBusyId("");
+      }
+    });
+  };
+
   if (!data && !error) return <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24 }}><p role="status">Laster Canonical Catalogue…</p></main>;
 
   const summary = data?.summary ?? {};
@@ -88,6 +112,7 @@ export default function CanonicalCatalogPage() {
     </header>
 
     {error ? <p role="alert" style={{ padding: 12, background: "#fee2e2", border: "1px solid #ef4444", borderRadius: 8 }}>{error}</p> : null}
+    {notice ? <p role="status" style={{ padding: 12, background: "#ecfdf5", border: "1px solid #22c55e", borderRadius: 8 }}>{notice}</p> : null}
     {data && !data.available ? <section style={{ padding: 18, background: "#fff7ed", border: "1px solid #f97316", borderRadius: 12 }}><h2 style={{ marginTop: 0 }}>Ikke aktivert ennå</h2><p>{data.error}</p><p>Migreringen må verifiseres i CI og godkjennes før den kjøres i Supabase.</p></section> : null}
 
     {data?.available ? <>
@@ -104,7 +129,7 @@ export default function CanonicalCatalogPage() {
       </section>
 
       <section style={{ background: "white", border: "1px solid #aebdce", borderRadius: 12, padding: 18 }}>
-        <h2 style={{ marginTop: 0 }}>Mulige duplikatverk: {candidateGroups.length} bokgrupper ({candidates.length} relasjoner)</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}><div><h2 style={{ marginTop: 0, marginBottom: 6 }}>Mulige duplikatverk: {candidateGroups.length} bokgrupper ({candidates.length} relasjoner)</h2><p style={{ marginTop: 0 }}>Systemet skiller bokidentitet fra navn på manus, eksportfiler og versjoner.</p></div><button disabled={busyId === "scan"} onClick={scanArtifactVariants} style={{ padding: "9px 13px", background: "#1d4ed8", color: "white", borderRadius: 8, border: 0, fontWeight: 900 }}>{busyId === "scan" ? "Søker…" : "Finn Final / Export / Manus-versjoner"}</button></div>
         <p>Forslag med samme boktittel er samlet. Å godkjenne markerer bare én relasjon som vurdert; sammenslåing krever fortsatt en egen handling.</p>
         {candidateGroups.length === 0 ? <p>Ingen kandidater trenger vurdering.</p> : candidateGroups.map((group) => <details key={group.key} style={{ borderTop: "1px solid #cbd5e1", padding: "14px 0" }}>
           <summary style={{ cursor: "pointer", fontWeight: 900 }}>{group.title} · {group.workCount} katalogoppføringer · {group.pendingCount} til vurdering</summary>

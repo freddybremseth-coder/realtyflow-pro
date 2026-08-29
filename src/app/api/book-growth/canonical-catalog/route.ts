@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "@/lib/publishing/canonical-catalog";
+import { buildArtifactVariantCandidates, canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "@/lib/publishing/canonical-catalog";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +72,28 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const body = await request.json().catch(() => ({}));
   const action = String(body?.action ?? "");
+
+  if (action === "scan_artifact_variants") {
+    const [worksRes, linksRes] = await Promise.all([
+      supabase.from("publishing_catalog_works").select("id,canonical_title,status").neq("status", "archived"),
+      supabase.from("publishing_catalog_source_links").select("entity_id,entity_type,source_type,verified").eq("entity_type", "work"),
+    ]);
+    const scanError = worksRes.error || linksRes.error;
+    if (scanError) return NextResponse.json({ error: scanError.message }, { status: isCatalogUnavailable(scanError.message) ? 503 : 500 });
+    const linksByWork = new Map<string, any[]>();
+    for (const link of linksRes.data ?? []) {
+      const list = linksByWork.get(String((link as any).entity_id)) ?? [];
+      list.push(link);
+      linksByWork.set(String((link as any).entity_id), list);
+    }
+    const proposals = buildArtifactVariantCandidates((worksRes.data ?? []).map((work: any) => ({ ...work, sourceLinks: linksByWork.get(String(work.id)) ?? [] })));
+    if (proposals.length === 0) return NextResponse.json({ ok: true, action, proposed: 0, created: 0 });
+    const { data, error } = await supabase.from("publishing_catalog_reconciliation_candidates")
+      .upsert(proposals, { onConflict: "candidate_key", ignoreDuplicates: true }).select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, action, proposed: proposals.length, created: data?.length ?? 0 });
+  }
+
   const candidateId = typeof body?.candidateId === "string" ? body.candidateId.trim() : "";
   if (!candidateId || !["approve", "reject", "apply"].includes(action)) {
     return NextResponse.json({ error: "candidateId og gyldig action er påkrevd" }, { status: 400 });
