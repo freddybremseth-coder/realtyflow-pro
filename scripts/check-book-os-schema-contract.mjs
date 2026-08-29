@@ -45,6 +45,10 @@ const requiredColumns = {
   book_growth_channel_metadata_candidates: ["id", "book_id", "channel", "status", "proposed_title"],
   book_growth_channel_metadata_apply_log: ["id", "candidate_id", "book_id", "applied_by"],
   work_items: ["id", "status", "source_type", "source_id", "metadata", "created_at", "updated_at"],
+  publishing_work_bibles: ["id", "work_id", "bible_type", "version", "status", "content", "approved_by", "approved_at"],
+  publishing_revision_quality_checks: ["id", "revision_id", "check_type", "result", "decision", "evidence", "decided_by"],
+  publishing_taxonomy_terms: ["id", "scheme", "channel", "code", "label", "source_version"],
+  publishing_edition_taxonomy_assignments: ["id", "edition_id", "revision_id", "scheme", "channel", "code", "status", "approved_by"],
 };
 
 const serverOnlyTables = [
@@ -67,6 +71,10 @@ const serverOnlyTables = [
   "book_growth_work_merge_candidates",
   "book_growth_work_merge_log",
   "book_growth_works",
+  "publishing_work_bibles",
+  "publishing_revision_quality_checks",
+  "publishing_taxonomy_terms",
+  "publishing_edition_taxonomy_assignments",
 ];
 
 const failures = [];
