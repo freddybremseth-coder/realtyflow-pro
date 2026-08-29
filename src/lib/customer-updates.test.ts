@@ -137,13 +137,13 @@ test("waiting outcome becomes orthogonal persisted waiting state", () => {
   if (parsed.action !== "ADD_UPDATE") return;
   assert.deepEqual(customerWaitingStatePatch(parsed.update), {
     waiting_on: "customer",
-    waiting_reason: "Call again after financing review",
+    waiting_reason: "Customer needs more time",
     waiting_until: "2026-10-01T09:00:00.000Z",
     next_followup: "2026-10-01T09:00:00.000Z",
   });
 });
 
-test("explicit progress outcome clears old waiting state while neutral notes do not", () => {
+test("explicit progress outcome clears old waiting state and old wait schedule while neutral notes do not", () => {
   const base = {
     updateType: "general_note" as const,
     occurredAt: "2026-08-29T08:00:00.000Z",
@@ -158,6 +158,7 @@ test("explicit progress outcome clears old waiting state while neutral notes do 
     waiting_on: null,
     waiting_reason: null,
     waiting_until: null,
+    next_followup: null,
   });
   assert.deepEqual(customerWaitingStatePatch({ ...base, outcome: null }), {});
   assert.deepEqual(customerWaitingStatePatch({ ...base, outcome: "other" }), {});
