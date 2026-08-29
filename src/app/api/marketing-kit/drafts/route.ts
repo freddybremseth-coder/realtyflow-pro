@@ -28,19 +28,42 @@ export async function POST(req: NextRequest) {
 
     const results = [];
     for (const draft of drafts) {
+      const brandId = draft.brand_id || 'zeneco';
+      const requestedTags = Array.isArray(draft.tags) ? draft.tags.map(String).filter(Boolean) : [];
+      let growthActionId = typeof draft.growth_action_id === 'string' ? draft.growth_action_id.trim() : '';
+
+      // Backward compatible attribution for Growth Hub callers that predate
+      // growth_action_id: exact brand + content match only, never fuzzy match.
+      if (!growthActionId && requestedTags.includes('growth-engine') && draft.description) {
+        const { data: action } = await supabase
+          .from('growth_actions')
+          .select('id')
+          .eq('brand', brandId)
+          .eq('content', draft.description)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        growthActionId = action?.id ? String(action.id) : '';
+      }
+
+      const tags = Array.from(new Set([
+        ...requestedTags,
+        ...(growthActionId ? [`growth-action:${growthActionId}`] : []),
+      ]));
+
       const { data, error } = await supabase
         .from('content_publications')
         .insert({
-          brand_id: draft.brand_id || 'zeneco',
+          brand_id: brandId,
           content_type: draft.content_type || 'marketing_post',
           title: draft.title,
           description: draft.description,
-          tags: draft.tags || [],
+          tags,
           status: 'draft',
           ai_generated: true,
           ai_title: draft.title,
           ai_description: draft.description,
-          ai_tags: draft.tags || [],
+          ai_tags: tags,
           scheduled_platforms: draft.scheduled_platforms || (draft.metadata?.platform ? [draft.metadata.platform] : []),
           ...(draft.ai_image_url ? { ai_image_url: draft.ai_image_url } : {}),
         })
@@ -51,7 +74,12 @@ export async function POST(req: NextRequest) {
         console.error('[Marketing Kit Drafts] Insert error:', error.message);
         results.push({ platform: draft.metadata?.platform, success: false, error: error.message });
       } else {
-        results.push({ platform: draft.metadata?.platform, success: true, id: data.id });
+        results.push({
+          platform: draft.metadata?.platform,
+          success: true,
+          id: data.id,
+          growth_action_id: growthActionId || null,
+        });
       }
     }
 
