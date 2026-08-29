@@ -40,6 +40,7 @@ export const CUSTOMER_PIPELINE_STATUSES = [
 ] as const;
 
 export type CustomerPipelineStatus = (typeof CUSTOMER_PIPELINE_STATUSES)[number];
+export type CustomerWaitingOn = "customer" | "third_party";
 
 export const CUSTOMER_PIPELINE_STATUS_LABELS: Record<CustomerPipelineStatus, string> = {
   NEW: "Ny",
@@ -112,19 +113,29 @@ export const CustomerDetailsInputSchema = z.object({
   }).strict(),
 }).strict();
 
+const CustomerTimelineUpdateSchema = z.object({
+  updateType: z.enum(CUSTOMER_UPDATE_TYPES),
+  occurredAt: z.string().datetime(),
+  title: nullableText(180),
+  details: z.string().trim().min(1).max(8000),
+  propertyReference: nullableText(300),
+  outcome: z.enum(CUSTOMER_UPDATE_OUTCOMES).nullable(),
+  nextAction: nullableText(1500),
+  nextFollowup: z.string().datetime().nullable(),
+  direction: z.enum(["in", "out", "internal"]).default("internal"),
+}).strict().superRefine((update, ctx) => {
+  if (["waiting_customer", "waiting_third_party"].includes(update.outcome || "") && !update.nextFollowup) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["nextFollowup"],
+      message: "Ventetilstand krever en konkret dato for gjenopptakelse.",
+    });
+  }
+});
+
 export const CustomerTimelineUpdateInputSchema = z.object({
   action: z.literal("ADD_UPDATE"),
-  update: z.object({
-    updateType: z.enum(CUSTOMER_UPDATE_TYPES),
-    occurredAt: z.string().datetime(),
-    title: nullableText(180),
-    details: z.string().trim().min(1).max(8000),
-    propertyReference: nullableText(300),
-    outcome: z.enum(CUSTOMER_UPDATE_OUTCOMES).nullable(),
-    nextAction: nullableText(1500),
-    nextFollowup: z.string().datetime().nullable(),
-    direction: z.enum(["in", "out", "internal"]).default("internal"),
-  }).strict(),
+  update: CustomerTimelineUpdateSchema,
 }).strict();
 
 export const CustomerUpdateRequestSchema = z.discriminatedUnion("action", [
@@ -133,7 +144,7 @@ export const CustomerUpdateRequestSchema = z.discriminatedUnion("action", [
 ]);
 
 export type CustomerUpdateRequest = z.infer<typeof CustomerUpdateRequestSchema>;
-export type CustomerTimelineUpdate = z.infer<typeof CustomerTimelineUpdateInputSchema>["update"];
+export type CustomerTimelineUpdate = z.infer<typeof CustomerTimelineUpdateSchema>;
 
 export const CUSTOMER_UPDATE_TYPE_LABELS: Record<(typeof CUSTOMER_UPDATE_TYPES)[number], string> = {
   general_note: "Kundenotat",
@@ -173,6 +184,31 @@ export function contactDetailPatch(details: z.infer<typeof CustomerDetailsInputS
     pipeline_value: details.pipelineValue,
     pipeline_status: details.pipelineStatus,
   };
+}
+
+export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
+  if (update.outcome === "waiting_customer" || update.outcome === "waiting_third_party") {
+    const waitingOn: CustomerWaitingOn = update.outcome === "waiting_customer" ? "customer" : "third_party";
+    const waitingReason = update.nextAction || update.title || update.details.slice(0, 1500);
+    return {
+      waiting_on: waitingOn,
+      waiting_reason: waitingReason,
+      waiting_until: update.nextFollowup,
+      next_followup: update.nextFollowup,
+    };
+  }
+
+  // A concrete non-waiting outcome means the previous wait has resolved.
+  // An internal/general note with outcome=null or outcome=other must not silently clear waiting.
+  if (update.outcome && update.outcome !== "other") {
+    return {
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+    };
+  }
+
+  return {};
 }
 
 export function buildCustomerTimelineInteraction(params: {
