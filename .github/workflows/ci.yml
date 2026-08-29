@@ -27,7 +27,7 @@ jobs:
       - name: Closing Workspace tests
         run: npm run test:closing
       - name: Customer 360 tests
-        run: npm run test:customer-360
+        run: npx tsx --test src/lib/customer-360.test.ts src/lib/customer-communication-timeline.test.ts
       - name: Customer CRM updates and Lead Inbox deletion tests
         run: npm run test:customer-crm
       - name: Approval Center tests
