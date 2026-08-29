@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
       .select("id,brand_id,channel,external_account_id,account_label,connector_type,status,capabilities,last_health_check_at,last_error,updated_at")
       .order("channel"),
     sb.from("publishing_distribution_publications")
-      .select("id,project_id,book_id,channel,marketplace,external_id,external_url,status,preflight,artifact_manifest,updated_at")
+      .select("id,project_id,book_id,edition_id,revision_id,channel,marketplace,external_id,external_url,status,preflight,artifact_manifest,updated_at")
       .order("updated_at", { ascending: false })
       .limit(100),
     sb.from("publishing_distribution_jobs")
@@ -206,6 +206,14 @@ async function prepareDistribution(input: z.infer<typeof prepareSchema>) {
     metadata: `/api/publishing/book-engine/export?id=${project.id}`,
     cover: String(cover.image_url || metadata.cover_image_url || "") || null,
   };
+  const catalogEditionId = typeof project.catalog_edition_id === "string" ? project.catalog_edition_id : null;
+  let catalogRevisionId: string | null = null;
+  if (catalogEditionId) {
+    const { data: revision, error: revisionError } = await sb.from("publishing_catalog_revisions")
+      .select("id").eq("edition_id", catalogEditionId).eq("is_canonical", true).maybeSingle();
+    if (revisionError) return NextResponse.json({ error: revisionError.message }, { status: 500 });
+    catalogRevisionId = revision?.id ?? null;
+  }
   const results: any[] = [];
 
   for (const channel of input.channels) {
@@ -220,6 +228,8 @@ async function prepareDistribution(input: z.infer<typeof prepareSchema>) {
         brand_id: String(project.brand_id || "freddypublishing"),
         project_id: project.id,
         book_id: project.source_book_id || null,
+        edition_id: catalogEditionId,
+        revision_id: catalogRevisionId,
         channel,
         marketplace: "global",
         status: publicationStatus,

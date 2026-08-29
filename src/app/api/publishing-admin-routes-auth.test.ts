@@ -24,6 +24,7 @@ import { GET as GETPublishingMarketWatch } from "./publishing/market-watch/route
 import { GET as GETPublishingRecommendations, POST as POSTPublishingRecommendations } from "./publishing/recommendations/route";
 import { GET as GETBookDistribution, POST as POSTBookDistribution } from "./book-growth/distribution/route";
 import { GET as GETBookFileReconciliation, POST as POSTBookFileReconciliation } from "./book-growth/file-reconciliation/route";
+import { GET as GETCanonicalCatalog, POST as POSTCanonicalCatalog } from "./book-growth/canonical-catalog/route";
 
 function jsonRequest(path: string, method: string, body?: Record<string, unknown>) {
   return new NextRequest(`https://realtyflow.test${path}`, {
@@ -95,6 +96,8 @@ test("publishing, agent, advisor, and marketing admin routes require admin befor
     GETBookDistribution(jsonRequest("/api/book-growth/distribution", "GET") as any),
     GETBookFileReconciliation(jsonRequest("/api/book-growth/file-reconciliation", "GET") as any),
     POSTBookFileReconciliation(jsonRequest("/api/book-growth/file-reconciliation", "POST", { action: "scan" }) as any),
+    GETCanonicalCatalog(jsonRequest("/api/book-growth/canonical-catalog", "GET") as any),
+    POSTCanonicalCatalog(jsonRequest("/api/book-growth/canonical-catalog", "POST", { action: "approve", candidateId: "candidate-1" }) as any),
     POSTBookDistribution(jsonRequest("/api/book-growth/distribution", "POST", {
       action: "prepare",
       projectId: "11111111-1111-4111-8111-111111111111",

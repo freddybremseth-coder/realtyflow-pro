@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PublisherCockpit } from "@/components/publishing/publisher-cockpit";
+import { CatalogCoverage } from "@/components/publishing/catalog-coverage";
 import { BOOK_LIFECYCLE_STEPS, bookCockpitStatus, groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
 
 type LibraryBook = {
@@ -2519,6 +2520,7 @@ export default function ForfatterstudioPage() {
       </div>
 
       {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+      <CatalogCoverage />
       <PublisherCockpit
         projects={projects}
         onCreate={() => { setShowNewBook(true); setShowInterview(false); }}

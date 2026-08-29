@@ -85,6 +85,18 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - Distribution and Book Growth become primary actions only after the exact manuscript revision is approved.
 - Editing, export, translation, analysis, and administrative tools remain available without competing with the primary workflow.
 
+## Phase 2 acceptance criteria
+
+- Work, edition, production revision, asset, identifier, and channel publication have separate stable identifiers.
+- Every legacy or operational source row can be traced to its canonical entity through an explicit source link.
+- Existing source rows and files are preserved; catalogue backfill never deletes or silently overwrites them.
+- Title similarity may create a reconciliation candidate, but never an automatic merge.
+- Applying a work merge requires a separately recorded approval and produces an immutable merge log.
+- Every active edition has at most one selected canonical revision and one selected canonical asset per asset type.
+- Channel publications identify the exact edition and production revision they deliver.
+- Publisher Cockpit shows catalogue coverage and directs incomplete editions to one reconciliation workspace.
+- Canonical catalogue tables and merge functions are server-only, RLS-protected, and covered by schema-contract tests.
+
 ## Success measures
 
 - 100% of active book projects show a current state and latest activity.
