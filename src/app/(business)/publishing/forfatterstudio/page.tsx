@@ -28,7 +28,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
+import { PublisherCockpit } from "@/components/publishing/publisher-cockpit";
+import { BOOK_LIFECYCLE_STEPS, bookCockpitStatus, groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
 
 type LibraryBook = {
   id: string;
@@ -164,6 +165,12 @@ function wordsOf(text: string) {
 
 function langLabel(code?: string | null) {
   return LANGUAGES.find((l) => l.code === (code || ""))?.label || (code || "").toUpperCase();
+}
+
+function activityTime(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString("nb-NO", { dateStyle: "short", timeStyle: "short" });
 }
 
 export default function ForfatterstudioPage() {
@@ -1549,6 +1556,11 @@ export default function ForfatterstudioPage() {
     status: (preferLocalProgress ? productionJob.status : String(storedProgress?.status || productionJob.status)) as ProductionJob["status"],
   } : null;
   const finalApproval = project ? publicationApproval(project) : null;
+  const projectCockpit = project ? bookCockpitStatus({
+    ...project,
+    chapters: chapters.length,
+    words: chapters.reduce((sum, item) => sum + wordsOf(item.draft), 0),
+  }) : null;
 
   const changeDistributionApproval = useCallback(async (approve: boolean) => {
     if (!project) return;
@@ -1588,6 +1600,8 @@ export default function ForfatterstudioPage() {
             {finalApproval?.approved ? (
               <>
                 <Badge variant="default" className="h-9 px-3 bg-emerald-600">✓ Endelig godkjent</Badge>
+                <Button size="sm" asChild><a href="/book-growth/distribution">Åpne Distribution</a></Button>
+                <Button size="sm" variant="outline" asChild><a href={`/book-growth?project=${encodeURIComponent(project.id)}`}>Selg og forbedre</a></Button>
                 <Button variant="outline" size="sm" onClick={() => changeDistributionApproval(false)} disabled={busy}>
                   Trekk godkjenning
                 </Button>
@@ -1615,6 +1629,10 @@ export default function ForfatterstudioPage() {
                 Fortsett omskriving ({chaptersRemaining} igjen)
               </Button>
             ) : null}
+            <details className="w-full rounded-lg border bg-muted/20 px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold">Flere verktøy og avanserte valg</summary>
+              <p className="mt-1 text-xs text-muted-foreground">Redigering, analyse, formatering, oversettelse, eksport og administrasjon.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
             {chapters.length > 0 && !isRewriteProject ? (
               <Button variant={showRewrite ? "secondary" : "outline"} size="sm" onClick={() => setShowRewrite((v) => !v)} disabled={busy}>
                 <Wand2 className="mr-2 h-4 w-4" />
@@ -1630,7 +1648,7 @@ export default function ForfatterstudioPage() {
             {chapters.length > 0 ? (
               <Button variant={showKdp ? "secondary" : "outline"} size="sm" onClick={() => setShowKdp((v) => !v)} disabled={busy}>
                 <BookOpen className="mr-2 h-4 w-4" />
-                Publiser til KDP
+                KDP-pakke og metadata
               </Button>
             ) : null}
             {chapters.length > 0 && chapters.length <= 3 && chapters.some((c) => wordsOf(c.draft) > 3500) ? (
@@ -1715,10 +1733,37 @@ export default function ForfatterstudioPage() {
               {deletingId === project.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
               Slett kladden
             </Button>
+              </div>
+            </details>
           </div>
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {projectCockpit ? (
+          <Card className={projectCockpit.state === "attention" ? "border-red-500/40" : projectCockpit.state === "approved" ? "border-emerald-500/40" : "border-primary/25"}>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nåværende fase</p>
+                  <p className="font-semibold">Steg {projectCockpit.stage}/8 · {projectCockpit.stageLabel}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Siste aktivitet: {projectCockpit.activityLabel}</p>
+                  {activityTime(projectCockpit.updatedAt) ? <p className="mt-1 text-xs text-muted-foreground">Oppdatert {activityTime(projectCockpit.updatedAt)}</p> : null}
+                  {projectCockpit.error ? <p className="mt-1 text-sm font-medium text-red-600">{projectCockpit.error}</p> : null}
+                </div>
+                <div className="rounded-md bg-muted px-3 py-2 text-sm"><b>Neste:</b> {projectCockpit.nextLabel}</div>
+              </div>
+              <div className="grid grid-cols-4 gap-1 md:grid-cols-8">
+                {BOOK_LIFECYCLE_STEPS.map((label, index) => (
+                  <div key={label} title={label} className="space-y-1">
+                    <div className={`h-2 rounded-full ${index < projectCockpit.stage ? projectCockpit.state === "attention" && index === projectCockpit.stage - 1 ? "bg-red-500" : "bg-primary" : "bg-muted"}`} />
+                    <p className="truncate text-[10px] text-muted-foreground">{index + 1}. {label}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {project.metadata_plan?.production_bible ? (
           <details className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
@@ -2458,18 +2503,10 @@ export default function ForfatterstudioPage() {
             <Feather className="h-6 w-6" /> Forfatterstudio
           </h1>
           <p className="text-sm text-muted-foreground">
-            Alle bøkene dine — ferdige og kladd. AI-en er din personlige ekspertforfatter, redaktør og grafiske designer.
+            Ett arbeidsområde fra idé og canon til publisering, salg og læring.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setShowNewBook((v) => !v)} disabled={Boolean(creatingBook)}>
-            <Feather className="mr-2 h-4 w-4" />
-            Ny bok
-          </Button>
-          <Button variant={showInterview ? "secondary" : "outline"} size="sm" onClick={() => setShowInterview((v) => !v)} disabled={Boolean(creatingBook)}>
-            <Search className="mr-2 h-4 w-4" />
-            Finn neste bok
-          </Button>
           <Button variant={showImportManus ? "secondary" : "outline"} size="sm" onClick={() => setShowImportManus((v) => !v)} disabled={Boolean(creatingBook)}>
             <Upload className="mr-2 h-4 w-4" />
             Importer manus
@@ -2482,6 +2519,12 @@ export default function ForfatterstudioPage() {
       </div>
 
       {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+      <PublisherCockpit
+        projects={projects}
+        onCreate={() => { setShowNewBook(true); setShowInterview(false); }}
+        onFindIdea={() => { setShowInterview(true); setShowNewBook(false); }}
+        onOpen={openProject}
+      />
       {visibleProduction ? (
         <Card className={visibleProduction.status === "failed" ? "border-red-500/40" : visibleProduction.status === "completed" ? "border-emerald-500/40" : "border-primary/40"}>
           <CardContent className="pt-5 space-y-3">
@@ -2829,8 +2872,8 @@ export default function ForfatterstudioPage() {
           {projectGroups.map((group) => {
             const p = group.canonical;
             const approvedEdition = group.editions.find((edition) => publicationApproval(edition).approved);
-            const progress = p.metadata_plan?.production_progress as Record<string, any> | undefined;
             const usesNewWorkflow = Boolean(p.metadata_plan?.production_bible?.locked);
+            const cockpit = bookCockpitStatus(p);
             return (
             <Card key={group.id} className="transition-shadow hover:shadow-md">
               <CardContent className="pt-5 space-y-2">
@@ -2859,17 +2902,19 @@ export default function ForfatterstudioPage() {
                   {p.images > 0 ? ` · ${p.images} bilder` : ""}
                   {group.editions.length > 1 ? ` · ${group.editions.length} versjoner/utgaver` : ""}
                 </p>
-                {progress ? (
-                  <div className={`rounded-md border px-3 py-2 text-xs ${progress.status === "failed" ? "border-red-500/30 bg-red-500/5" : progress.status === "in_progress" ? "border-primary/30 bg-primary/5" : "border-emerald-500/30 bg-emerald-500/5"}`}>
-                    <p className="flex items-center gap-2 font-medium">
-                      {progress.status === "in_progress" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : progress.status === "failed" ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-                      {String(progress.label || "Produksjonsstatus")}
-                    </p>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full bg-primary" style={{ width: `${Math.max(8, Math.min(100, (Number(progress.step || 0) / Math.max(1, Number(progress.total_steps || 3))) * 100))}%` }} />
-                    </div>
+                <div className={`rounded-md border px-3 py-2 text-xs ${cockpit.state === "attention" ? "border-red-500/35 bg-red-500/5" : cockpit.state === "approved" ? "border-emerald-500/35 bg-emerald-500/5" : cockpit.state === "ready" ? "border-blue-500/35 bg-blue-500/5" : "bg-muted/20"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Steg {cockpit.stage}/8 · {cockpit.stageLabel}</span>
+                    <span className="text-muted-foreground">{cockpit.progressPercent}%</span>
                   </div>
-                ) : null}
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className={`h-full ${cockpit.state === "attention" ? "bg-red-500" : cockpit.state === "approved" ? "bg-emerald-600" : "bg-primary"}`} style={{ width: `${cockpit.progressPercent}%` }} />
+                  </div>
+                  <p className="mt-2 text-muted-foreground">Siste aktivitet: {cockpit.activityLabel}</p>
+                  {activityTime(cockpit.updatedAt) ? <p className="mt-1 text-muted-foreground">Oppdatert {activityTime(cockpit.updatedAt)}</p> : null}
+                  {cockpit.error ? <p className="mt-1 font-medium text-red-600">{cockpit.error}</p> : null}
+                  <p className="mt-1 font-medium">Neste: {cockpit.nextLabel}</p>
+                </div>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button size="sm" onClick={() => openProject(approvedEdition?.id || p.id)}>Åpne hovedmanus</Button>
                   {!usesNewWorkflow ? (
