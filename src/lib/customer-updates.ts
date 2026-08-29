@@ -189,7 +189,7 @@ export function contactDetailPatch(details: z.infer<typeof CustomerDetailsInputS
 export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
   if (update.outcome === "waiting_customer" || update.outcome === "waiting_third_party") {
     const waitingOn: CustomerWaitingOn = update.outcome === "waiting_customer" ? "customer" : "third_party";
-    const waitingReason = update.nextAction || update.title || update.details.slice(0, 1500);
+    const waitingReason = update.title || update.details.slice(0, 1500);
     return {
       waiting_on: waitingOn,
       waiting_reason: waitingReason,
@@ -205,6 +205,7 @@ export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
       waiting_on: null,
       waiting_reason: null,
       waiting_until: null,
+      next_followup: update.nextFollowup,
     };
   }
 
