@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CUSTOMER_PIPELINE_STATUS_LABELS,
   CustomerUpdateRequestSchema,
   appendCustomerInteraction,
   buildCustomerTimelineInteraction,
   changedCustomerDetailFields,
   contactDetailPatch,
+  normalizeCustomerPipelineStatus,
 } from "./customer-updates";
 
 test("customer details request normalizes empty values and maps CRM fields", () => {
@@ -32,6 +34,36 @@ test("customer details request normalizes empty values and maps CRM fields", () 
   assert.equal(patch.phone, null);
   assert.equal(patch.pipeline_value, 550000);
   assert.equal(patch.pipeline_status, "QUALIFIED");
+});
+
+test("canonical real-estate stages normalize matching and reservation aliases", () => {
+  assert.equal(normalizeCustomerPipelineStatus("property matching"), "MATCHING");
+  assert.equal(normalizeCustomerPipelineStatus("shortlist"), "MATCHING");
+  assert.equal(normalizeCustomerPipelineStatus("reservert"), "RESERVED");
+  assert.equal(normalizeCustomerPipelineStatus("deposit paid"), "RESERVED");
+  assert.equal(CUSTOMER_PIPELINE_STATUS_LABELS.MATCHING, "Boligmatching");
+  assert.equal(CUSTOMER_PIPELINE_STATUS_LABELS.RESERVED, "Reservert");
+});
+
+test("customer details accepts matching and reserved as persisted CRM stages", () => {
+  for (const pipelineStatus of ["MATCHING", "RESERVED"] as const) {
+    const parsed = CustomerUpdateRequestSchema.parse({
+      action: "UPDATE_DETAILS",
+      details: {
+        name: "Buyer",
+        email: "buyer@example.com",
+        phone: "+4712345678",
+        country: "Norway",
+        language: "Norwegian",
+        preferredLocation: "Albir",
+        propertyInterest: "Apartment",
+        pipelineValue: 550000,
+        pipelineStatus,
+      },
+    });
+    assert.equal(parsed.action, "UPDATE_DETAILS");
+    if (parsed.action === "UPDATE_DETAILS") assert.equal(contactDetailPatch(parsed.details).pipeline_status, pipelineStatus);
+  }
 });
 
 test("viewing update becomes an append-only internal interaction with actor and next step", () => {
