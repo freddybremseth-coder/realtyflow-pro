@@ -7,7 +7,6 @@ export interface PersonaBackfillContact {
   phone?: string | null;
   notes?: string | null;
   property_interest?: string | null;
-  preferred_location?: string | null;
   pipeline_status?: string | null;
   pipeline_value?: number | null;
   source?: string | null;
@@ -15,7 +14,7 @@ export interface PersonaBackfillContact {
 }
 
 export interface PersonaEvidence {
-  field: "notes" | "property_interest" | "preferred_location" | "interactions";
+  field: "notes" | "property_interest" | "interactions";
   signal: string;
   excerpt: string;
   weight: number;
@@ -101,7 +100,6 @@ export function inferPersonaBackfillCandidate(contact: PersonaBackfillContact): 
   const sources: Array<[PersonaEvidence["field"], string]> = [
     ["notes", text(contact.notes)],
     ["property_interest", text(contact.property_interest)],
-    ["preferred_location", text(contact.preferred_location)],
     ["interactions", interactionText(contact.interactions)],
   ].filter((entry): entry is [PersonaEvidence["field"], string] => Boolean(entry[1]));
 
@@ -122,7 +120,7 @@ export function inferPersonaBackfillCandidate(contact: PersonaBackfillContact): 
 
   const missingInformation: string[] = [];
   if (!contact.pipeline_value || Number(contact.pipeline_value) <= 0) missingInformation.push("budsjett");
-  if (!text(contact.preferred_location) && !text(contact.property_interest)) missingInformation.push("område / boligønske");
+  if (!text(contact.property_interest)) missingInformation.push("område / boligønske");
   if (!text(contact.notes) && !interactionText(contact.interactions)) missingInformation.push("kundens begrunnelse / livsstilsbehov");
   if (!strongEnough) missingInformation.unshift("tydelig formål med boligkjøpet");
 
