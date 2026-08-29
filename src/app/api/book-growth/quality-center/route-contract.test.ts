@@ -29,3 +29,11 @@ test("OpenAI quality evidence stays pending until a separate human decision", ()
   assert.match(route, /decision === "approved" && !\["pass", "warning"\]\.includes\(check\.result\)/);
   assert.match(route, /decided_by: "admin_ui"/);
 });
+
+test("deterministic gates retain structured evidence and do not impersonate editorial approval", () => {
+  assert.match(route, /action === "run_technical_quality_check"/);
+  assert.match(route, /runDeterministicQualityCheck/);
+  assert.match(route, /provider: "realtyflow", model: null/);
+  assert.match(route, /evidence_fingerprint: fingerprint\(evidence\)/);
+  assert.match(route, /decision: "pending"/);
+});

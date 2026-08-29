@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { toEpubBuffer } from "@/lib/publishing/epub-export";
 import { inferBookKind, qualityTaxonomyReadiness } from "@/lib/publishing/quality-taxonomy";
+import { DETERMINISTIC_QUALITY_CHECKS, runDeterministicQualityCheck, type DeterministicQualityCheckType } from "@/lib/publishing/technical-quality-validator";
 import { AI_QUALITY_CHECKS, reviewBookQuality, type AiQualityCheckType } from "@/services/ai/book-quality-reviewer";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
@@ -42,6 +44,7 @@ function nextAction(input: { canonicalRevision: boolean; canImport: boolean; dra
       return { code: "approve_quality", label: `Vurder kontroll: ${checkType}`, checkType, checkId: latest.id };
     }
     if (AI_QUALITY_CHECKS.includes(checkType as AiQualityCheckType)) return { code: "run_quality", label: `Kjør OpenAI-kontroll: ${checkType}`, checkType };
+    if (DETERMINISTIC_QUALITY_CHECKS.includes(checkType as DeterministicQualityCheckType)) return { code: "run_technical_quality", label: `Kjør teknisk kontroll: ${checkType}`, checkType };
     return { code: "quality_check", label: `Kjør kvalitetskontroll: ${checkType}` };
   }
   if (input.readiness.taxonomyIssues.length) return { code: "taxonomy", label: "Fullfør kategorier og 5–7 søkeord" };
@@ -134,6 +137,36 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
   const body = await request.json().catch(() => ({}));
   const action = String(body?.action ?? "");
+
+  if (action === "run_technical_quality_check") {
+    const revisionId = typeof body?.revisionId === "string" ? body.revisionId.trim() : "";
+    const checkType = String(body?.checkType ?? "") as DeterministicQualityCheckType;
+    if (!revisionId || !DETERMINISTIC_QUALITY_CHECKS.includes(checkType)) return NextResponse.json({ error: "Ugyldig revisjon eller teknisk kontrolltype" }, { status: 400 });
+    const { data: revision, error: revisionError } = await supabase.from("publishing_catalog_revisions").select("id,edition_id,project_id,is_canonical,content_fingerprint").eq("id", revisionId).maybeSingle();
+    if (revisionError) return NextResponse.json({ error: revisionError.message }, { status: 500 });
+    if (!revision?.is_canonical || !revision.project_id) return NextResponse.json({ error: "Kontrollen krever en kanonisk revisjon koblet til et manusprosjekt" }, { status: 409 });
+    const { data: project, error: projectError } = await supabase.from("publishing_book_projects").select("id,title,subtitle,language,chapter_drafts,outline_plan,metadata_plan,updated_at,created_at").eq("id", revision.project_id).maybeSingle();
+    if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 });
+    if (!project) return NextResponse.json({ error: "Fant ikke manusprosjektet" }, { status: 404 });
+    const { data: attempts, error: attemptsError } = await supabase.from("publishing_revision_quality_checks").select("attempt").eq("revision_id", revisionId).eq("check_type", checkType).order("attempt", { ascending: false }).limit(1);
+    if (attemptsError) return NextResponse.json({ error: attemptsError.message }, { status: 500 });
+    const attempt = Number(attempts?.[0]?.attempt ?? 0) + 1;
+    const startedAt = new Date().toISOString();
+    try {
+      const epub = await toEpubBuffer(project as Record<string, any>);
+      const review = await runDeterministicQualityCheck(checkType, project as Record<string, any>, epub);
+      const evidence = { content_fingerprint: revision.content_fingerprint, ...review.evidence };
+      const { data: created, error: createError } = await supabase.from("publishing_revision_quality_checks").insert({
+        revision_id: revisionId, check_type: checkType, attempt, result: review.result, decision: "pending", score: review.score,
+        automated: true, provider: "realtyflow", model: null, summary: review.summary, evidence,
+        evidence_fingerprint: fingerprint(evidence), started_at: startedAt, completed_at: new Date().toISOString(),
+      }).select("id,result,decision,score").single();
+      if (createError) return NextResponse.json({ error: createError.message }, { status: 409 });
+      return NextResponse.json({ ok: true, action, check: created });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Den tekniske kontrollen mislyktes" }, { status: 500 });
+    }
+  }
 
   if (action === "run_quality_check") {
     const revisionId = typeof body?.revisionId === "string" ? body.revisionId.trim() : "";

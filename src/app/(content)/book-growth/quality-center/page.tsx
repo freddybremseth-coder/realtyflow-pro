@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 type Bible = { id: string; bible_type: string; version: number; status: string; approved_by?: string | null; approved_at?: string | null };
-type QualityCheck = { id: string; check_type: string; result: string; decision: string; score?: number | null; summary?: string | null; evidence?: { findings?: Array<{ severity: string; location: string; issue: string }> } };
+type QualityCheck = { id: string; check_type: string; result: string; decision: string; score?: number | null; summary?: string | null; evidence?: { validator?: string; findings?: Array<{ severity: string; location: string; issue?: string; message?: string }> } };
 type Edition = {
   editionId: string;
   title: string;
@@ -53,7 +53,7 @@ export default function QualityCenterPage() {
 
   useEffect(() => { load().catch((err) => setError(err instanceof Error ? err.message : "Kunne ikke laste Quality Center")); }, [load]);
 
-  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "decide_quality_check", decision?: "approved" | "rejected") => {
+  const act = (edition: Edition, action: "import_existing_bibles" | "approve_bible_bundle" | "run_quality_check" | "run_technical_quality_check" | "decide_quality_check", decision?: "approved" | "rejected") => {
     setBusyId(edition.editionId);
     setError("");
     setNotice("");
@@ -65,6 +65,7 @@ export default function QualityCenterPage() {
           body: JSON.stringify(action === "import_existing_bibles" ? { action, editionId: edition.editionId }
             : action === "approve_bible_bundle" ? { action, bibleIds: edition.draftBibleIds }
               : action === "run_quality_check" ? { action, revisionId: edition.canonicalRevision?.id, checkType: edition.nextAction.checkType }
+                : action === "run_technical_quality_check" ? { action, revisionId: edition.canonicalRevision?.id, checkType: edition.nextAction.checkType }
                 : { action, checkId: edition.nextAction.checkId, decision }),
         });
         const body = await response.json();
@@ -72,6 +73,7 @@ export default function QualityCenterPage() {
         setNotice(action === "import_existing_bibles" ? (body.created ? `${body.created} bibel-/canon-versjoner er importert til vurdering.` : body.message)
           : action === "approve_bible_bundle" ? "Seriebibel og canon er godkjent for dette bokverket."
             : action === "run_quality_check" ? "OpenAI-kontrollen er ferdig og venter på din beslutning."
+              : action === "run_technical_quality_check" ? "Den tekniske kontrollen er ferdig og bevisene er lagret."
               : decision === "approved" ? "Kvalitetsresultatet er godkjent." : "Resultatet er avvist. En ny kontroll kan kjøres etter retting.");
         await load();
       } catch (err) {
@@ -105,7 +107,10 @@ export default function QualityCenterPage() {
         const busy = busyId === edition.editionId;
         const approved = edition.bibles.filter((row) => row.status === "approved");
         const missing = [...edition.readiness.missingBibles, ...edition.readiness.missingChecks, ...edition.readiness.taxonomyIssues];
-        const activeCheck = edition.nextAction.checkId ? edition.checks.find((row) => row.id === edition.nextAction.checkId) : null;
+        const latestChecks = edition.checks.filter((row, index, all) => all.findIndex((candidate) => candidate.check_type === row.check_type) === index);
+        const activeCheck = edition.nextAction.checkId
+          ? edition.checks.find((row) => row.id === edition.nextAction.checkId)
+          : edition.nextAction.checkType ? latestChecks.find((row) => row.check_type === edition.nextAction.checkType) : null;
         return <article key={edition.editionId} style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 14, marginTop: 12, background: edition.readiness.ready ? "#f0fdf4" : "#f8fafc" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 520px" }}>
@@ -113,6 +118,7 @@ export default function QualityCenterPage() {
               <p style={{ margin: "5px 0", color: "#475569" }}>{edition.seriesName ? `${edition.seriesName} · ` : ""}{edition.language.toUpperCase()} · {edition.format} · {edition.kind === "fiction" ? "Skjønnlitteratur" : "Sakprosa"}{edition.canonicalRevision ? ` · Revisjon ${edition.canonicalRevision.revision_number}` : " · Ingen kanonisk revisjon"}</p>
               <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
                 {approved.map((row) => <span key={row.id} style={{ padding: "4px 8px", borderRadius: 999, background: "#dcfce7", border: "1px solid #22c55e", fontSize: 12, fontWeight: 800 }}>{labels[row.bible_type] ?? row.bible_type} v{row.version} godkjent</span>)}
+                {latestChecks.filter((row) => row.result !== "running").map((row) => <span key={row.id} title={row.summary || ""} style={{ padding: "4px 8px", borderRadius: 999, background: row.result === "pass" ? "#dcfce7" : row.result === "warning" ? "#fff7ed" : "#fee2e2", border: `1px solid ${row.result === "pass" ? "#22c55e" : row.result === "warning" ? "#fb923c" : "#ef4444"}`, fontSize: 12, fontWeight: 800 }}>{labels[row.check_type] ?? row.check_type}: {row.result === "pass" ? "bestått" : row.result === "warning" ? "advarsel" : "feil"}</span>)}
                 {missing.slice(0, 5).map((item) => <span key={item} style={{ padding: "4px 8px", borderRadius: 999, background: "#fff7ed", border: "1px solid #fb923c", fontSize: 12 }}>{labels[item] ?? item}</span>)}
                 {missing.length > 5 ? <span style={{ padding: "4px 8px", fontSize: 12 }}>+ {missing.length - 5} flere</span> : null}
               </div>
@@ -121,15 +127,17 @@ export default function QualityCenterPage() {
             <div style={{ minWidth: 260, maxWidth: 360, background: "white", border: "1px solid #94a3b8", borderRadius: 9, padding: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>ANBEFALT NESTE HANDLING</div>
               <strong style={{ display: "block", margin: "5px 0 10px" }}>{edition.nextAction.label}</strong>
-              {activeCheck ? <div style={{ marginBottom: 10, padding: 9, borderRadius: 7, background: activeCheck.result === "warning" ? "#fff7ed" : "#f0fdf4", fontSize: 12 }}>
-                <strong>{activeCheck.result === "warning" ? "Forbedringer funnet" : "Kontroll bestått"}{typeof activeCheck.score === "number" ? ` · ${activeCheck.score}/100` : ""}</strong>
+              {activeCheck && activeCheck.result !== "running" ? <div style={{ marginBottom: 10, padding: 9, borderRadius: 7, background: activeCheck.result === "warning" ? "#fff7ed" : activeCheck.result === "pass" ? "#f0fdf4" : "#fee2e2", fontSize: 12 }}>
+                <strong>{activeCheck.result === "warning" ? "Forbedringer funnet" : activeCheck.result === "pass" ? "Kontroll bestått" : "Kontrollen fant feil"}{typeof activeCheck.score === "number" ? ` · ${activeCheck.score}/100` : ""}</strong>
                 {activeCheck.summary ? <p style={{ margin: "5px 0 0" }}>{activeCheck.summary}</p> : null}
                 {activeCheck.evidence?.findings?.length ? <p style={{ margin: "5px 0 0" }}>{activeCheck.evidence.findings.length} konkrete funn er lagret.</p> : null}
+                {activeCheck.evidence?.findings?.slice(0, 3).map((finding, index) => <p key={`${finding.location}-${index}`} style={{ margin: "5px 0 0", paddingTop: 5, borderTop: "1px solid #cbd5e1" }}><strong>{finding.location}:</strong> {finding.issue || finding.message}</p>)}
               </div> : null}
               {edition.nextAction.code === "import_bibles" ? <button disabled={busy} onClick={() => act(edition, "import_existing_bibles")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 900 }}>{busy ? "Importerer…" : "Importer til vurdering"}</button> : null}
               {edition.nextAction.code === "approve_bibles" ? <button disabled={busy} onClick={() => act(edition, "approve_bible_bundle")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Godkjenner…" : "Godkjenn seriebibel og canon"}</button> : null}
               {edition.nextAction.code === "build_bibles" ? <Link href="/publishing/forfatterstudio" style={{ display: "block", textAlign: "center", padding: "9px 12px", borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 900, textDecoration: "none" }}>Bygg i Forfatterstudio</Link> : null}
               {edition.nextAction.code === "run_quality" ? <button disabled={busy} onClick={() => act(edition, "run_quality_check")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#1d4ed8", color: "white", fontWeight: 900 }}>{busy ? "OpenAI leser og kontrollerer…" : "Kjør OpenAI-kontroll"}</button> : null}
+              {edition.nextAction.code === "run_technical_quality" ? <button disabled={busy} onClick={() => act(edition, "run_technical_quality_check")} style={{ width: "100%", padding: "9px 12px", border: 0, borderRadius: 8, background: "#0f766e", color: "white", fontWeight: 900 }}>{busy ? "Kontrollerer EPUB og metadata…" : "Kjør teknisk kontroll"}</button> : null}
               {edition.nextAction.code === "approve_quality" ? <div style={{ display: "grid", gap: 7 }}><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "approved")} style={{ padding: "9px 12px", border: 0, borderRadius: 8, background: "#166534", color: "white", fontWeight: 900 }}>{busy ? "Lagrer…" : "Godkjenn resultat"}</button><button disabled={busy} onClick={() => act(edition, "decide_quality_check", "rejected")} style={{ padding: "9px 12px", border: "1px solid #b91c1c", borderRadius: 8, background: "white", color: "#b91c1c", fontWeight: 900 }}>Krever endringer</button></div> : null}
               {edition.nextAction.code === "quality_running" ? <p role="status" style={{ margin: 0, fontSize: 12, color: "#1d4ed8", fontWeight: 800 }}>OpenAI arbeider med manus nå…</p> : null}
               {edition.nextAction.code === "ready" ? <div style={{ color: "#166534", fontWeight: 900 }}>✓ Klar for neste publiseringssteg</div> : null}
