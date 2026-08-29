@@ -53,6 +53,61 @@ export type ReconciliationCandidate = {
   targetWork?: { canonical_title?: string | null } | null;
 };
 
+export type ArtifactVariantWork = {
+  id: string;
+  canonical_title: string;
+  status: string;
+  sourceLinks?: Array<{ source_type: string; verified: boolean }>;
+};
+
+function canonicalAnchorScore(work: ArtifactVariantWork) {
+  const links = work.sourceLinks ?? [];
+  if (links.some((link) => link.source_type === "book_title" && link.verified)) return 300;
+  if (links.some((link) => link.source_type === "publishing_book_project" && link.verified)) return 200;
+  if (links.some((link) => link.source_type === "publishing_book")) return 100;
+  return work.status === "active" ? 10 : 0;
+}
+
+export function buildArtifactVariantCandidates(works: ArtifactVariantWork[]) {
+  const groups = new Map<string, ArtifactVariantWork[]>();
+  for (const work of works) {
+    const identity = normalizeBookIdentityTitle(work.canonical_title);
+    if (!identity) continue;
+    const group = groups.get(identity) ?? [];
+    group.push(work);
+    groups.set(identity, group);
+  }
+
+  const candidates: Array<Record<string, unknown>> = [];
+  for (const [identity, group] of groups) {
+    if (group.length < 2) continue;
+    const distinctTitles = new Set(group.map((work) => work.canonical_title.trim().toLocaleLowerCase("nb-NO")));
+    if (distinctTitles.size < 2) continue;
+    const ranked = [...group].sort((a, b) => canonicalAnchorScore(b) - canonicalAnchorScore(a) || a.id.localeCompare(b.id));
+    const target = ranked[0];
+    for (const source of ranked.slice(1)) {
+      if (source.canonical_title.trim().toLocaleLowerCase("nb-NO") === target.canonical_title.trim().toLocaleLowerCase("nb-NO")) continue;
+      candidates.push({
+        candidate_key: `artifact-title:${source.id}:${target.id}`,
+        candidate_type: "merge_works",
+        source_work_id: source.id,
+        target_work_id: target.id,
+        confidence: 0.9,
+        status: "pending",
+        evidence: {
+          reason: "artifact_label_variant",
+          title: target.canonical_title,
+          identity,
+          source_title: source.canonical_title,
+          target_title: target.canonical_title,
+          requires_human_review: true,
+        },
+      });
+    }
+  }
+  return candidates;
+}
+
 export function groupReconciliationCandidates<T extends ReconciliationCandidate>(candidates: T[]) {
   const groups = new Map<string, { key: string; title: string; candidates: T[]; workIds: Set<string> }>();
   for (const candidate of candidates) {
@@ -155,3 +210,4 @@ export function canonicalCatalogSummary(input: {
     completenessPercent: coverage.length ? Math.round((complete / coverage.length) * 100) : 0,
   };
 }
+import { normalizeBookIdentityTitle } from "./book-workflow";

@@ -55,7 +55,7 @@ export type DistributionPublicationWorkflowRow = {
   external_url?: string | null;
 };
 
-const ARTIFACT_WORDS = /\b(?:complete\s+manuscript|final(?:e)?|endelig(?:e)?|export|epub|master(?:manus(?:cript)?)?|version|versjon|v\s*\d+(?:[._-]\d+)*)\b/gi;
+const ARTIFACT_WORDS = /\b(?:complete\s+manuscript|ny\s+hovedutgave|new\s+main\s+edition|hovedutgave|final(?:e)?|ferdig|endelig(?:e)?|export|epub|ebook|paperback|docx|pdf|zip|master(?:manus(?:cript)?)?|version|versjon|v\s*\d+(?:[._-]\d+)*)\b/gi;
 
 export function normalizeBookIdentityTitle(value: unknown) {
   return String(value || "")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "./canonical-catalog";
+import { buildArtifactVariantCandidates, canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "./canonical-catalog";
 
 const edition = { id: "e1", work_id: "w1", edition_key: "en-ebook", title: "Book", language: "en", format: "ebook", status: "published" };
 
@@ -58,4 +58,31 @@ test("reconciliation candidates with the same title become one review group", ()
   assert.equal(groups[0].workCount, 3);
   assert.equal(groups[0].pendingCount, 1);
   assert.equal(groups[0].approvedCount, 1);
+});
+
+test("artifact-labelled manuscripts point to the verified website work", () => {
+  const candidates = buildArtifactVariantCandidates([
+    { id: "project", canonical_title: "My Journey as a Father — Complete Manuscript v1.4 EPUB", status: "active", sourceLinks: [{ source_type: "publishing_book_project", verified: true }] },
+    { id: "website", canonical_title: "My Journey as a Father", status: "active", sourceLinks: [{ source_type: "book_title", verified: true }] },
+  ]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].source_work_id, "project");
+  assert.equal(candidates[0].target_work_id, "website");
+  assert.deepEqual((candidates[0].evidence as Record<string, unknown>).requires_human_review, true);
+});
+
+test("same clean title is not emitted as an artifact candidate", () => {
+  assert.deepEqual(buildArtifactVariantCandidates([
+    { id: "one", canonical_title: "The Joy Code", status: "active" },
+    { id: "two", canonical_title: "The Joy Code", status: "active" },
+  ]), []);
+});
+
+test("Norwegian main-edition labels are revisions, not new book identities", () => {
+  const candidates = buildArtifactVariantCandidates([
+    { id: "revision", canonical_title: "Hvem eier virkeligheten ny hovedutgave v2 PDF", status: "active", sourceLinks: [{ source_type: "publishing_book_project", verified: true }] },
+    { id: "catalog", canonical_title: "Hvem eier virkeligheten?", status: "active", sourceLinks: [{ source_type: "book_title", verified: true }] },
+  ]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].target_work_id, "catalog");
 });

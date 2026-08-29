@@ -59,6 +59,7 @@ test("Publisher Cockpit prioritizes attention, publishing and growth targets ind
 
 test("artifact labels do not create separate book identities", () => {
   assert.equal(normalizeBookIdentityTitle("My Journey as a Father — Complete Manuscript v1.4 EPUB"), "my journey as a father");
+  assert.equal(normalizeBookIdentityTitle("Hvem eier virkeligheten – ny hovedutgave v2 PDF"), "hvem eier virkeligheten");
   const groups = groupBookProjects([
     { id: "a", title: "My Journey as a Father", updated_at: "2026-01-01" },
     { id: "b", title: "My Journey as a Father — FINAL export", updated_at: "2026-01-02" },
