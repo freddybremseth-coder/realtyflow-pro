@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/nexus-os/reactivation/replies", label: "Reply Review" },
   { href: "/nexus-os/buyer-intake", label: "Buyer Intake" },
   { href: "/nexus-os/buyer-intake/reviews", label: "Intake Reviews" },
+  { href: "/nexus-os/persona-backfill", label: "Persona Backfill" },
   { href: "/nexus-os/mission-operations", label: "Mission Ops" },
   { href: "/nexus-os", label: "Agentic OS" },
   { href: "/agents", label: "Agent Fleet" },
