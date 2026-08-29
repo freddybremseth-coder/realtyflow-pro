@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { qualityTaxonomyReadiness, requiredQualityChecks } from "./quality-taxonomy";
+import { inferBookKind, qualityTaxonomyReadiness, requiredQualityChecks } from "./quality-taxonomy";
+
+test("book kind inference keeps fiction and nonfiction quality gates distinct", () => {
+  assert.equal(inferBookKind("Psychological Thriller"), "fiction");
+  assert.equal(inferBookKind("Personal finance and central banks"), "nonfiction");
+});
 
 test("nonfiction requires factual and citation evidence in addition to common gates", () => {
   assert.deepEqual(requiredQualityChecks("nonfiction"), [
