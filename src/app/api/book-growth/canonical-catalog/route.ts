@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
-import { canonicalCatalogSummary, canonicalEditionCoverage } from "@/lib/publishing/canonical-catalog";
+import { canonicalCatalogSummary, canonicalEditionCoverage, groupReconciliationCandidates } from "@/lib/publishing/canonical-catalog";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     supabase.from("publishing_catalog_revisions").select("id,edition_id,status,is_canonical"),
     supabase.from("publishing_catalog_assets").select("id,edition_id,asset_type,status,is_canonical"),
     supabase.from("publishing_catalog_identifiers").select("id,edition_id,scheme,verified"),
-    supabase.from("publishing_catalog_source_links").select("id,verified"),
-    supabase.from("publishing_catalog_reconciliation_candidates").select("id,source_work_id,target_work_id,match_type,confidence,evidence,status,approved_by,approved_at,applied_at,created_at").order("confidence", { ascending: false }),
+    supabase.from("publishing_catalog_source_links").select("id,entity_id,entity_type,source_type,source_id,relation_type,verified"),
+    supabase.from("publishing_catalog_reconciliation_candidates").select("id,source_work_id,target_work_id,candidate_type,confidence,evidence,status,approved_by,approved_at,applied_at,created_at").order("confidence", { ascending: false }),
     supabase.from("publishing_distribution_publications").select("id,edition_id,revision_id,status"),
   ]);
   const error = worksRes.error || editionsRes.error || revisionsRes.error || assetsRes.error || identifiersRes.error || sourceLinksRes.error || candidatesRes.error || publicationsRes.error;
@@ -41,18 +41,27 @@ export async function GET(request: NextRequest) {
   const sourceLinks = sourceLinksRes.data ?? [];
   const candidates = candidatesRes.data ?? [];
   const publications = publicationsRes.data ?? [];
-  const workById = new Map(works.map((work: any) => [String(work.id), work]));
+  const linksByWork = new Map<string, any[]>();
+  for (const link of sourceLinks as any[]) {
+    if (link.entity_type !== "work") continue;
+    const list = linksByWork.get(String(link.entity_id)) ?? [];
+    list.push(link);
+    linksByWork.set(String(link.entity_id), list);
+  }
+  const workById = new Map(works.map((work: any) => [String(work.id), { ...work, sourceLinks: linksByWork.get(String(work.id)) ?? [] }]));
   const coverage = canonicalEditionCoverage(editions as any, revisions as any, assets as any, identifiers as any, publications as any);
+  const hydratedCandidates = candidates.map((candidate: any) => ({
+    ...candidate,
+    sourceWork: workById.get(String(candidate.source_work_id)) ?? null,
+    targetWork: workById.get(String(candidate.target_work_id)) ?? null,
+  }));
 
   return NextResponse.json({
     available: true,
     summary: canonicalCatalogSummary({ works, editions: editions as any, revisions: revisions as any, assets: assets as any, identifiers: identifiers as any, publications: publications as any, sourceLinks, candidates }),
     editions: coverage,
-    candidates: candidates.map((candidate: any) => ({
-      ...candidate,
-      sourceWork: workById.get(String(candidate.source_work_id)) ?? null,
-      targetWork: workById.get(String(candidate.target_work_id)) ?? null,
-    })),
+    candidates: hydratedCandidates,
+    candidateGroups: groupReconciliationCandidates(hydratedCandidates),
   });
 }
 

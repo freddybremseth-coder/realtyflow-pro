@@ -8,8 +8,18 @@ type CatalogData = {
   error?: string;
   summary?: Record<string, number>;
   editions?: Array<{ id: string; title: string; language: string; format: string; status: string; score: number; issues: string[] }>;
-  candidates?: Array<{ id: string; status: string; confidence: number; match_type: string; sourceWork?: { canonical_title: string } | null; targetWork?: { canonical_title: string } | null }>;
+  candidates?: Candidate[];
+  candidateGroups?: Array<{ key: string; title: string; workCount: number; pendingCount: number; approvedCount: number; candidates: Candidate[] }>;
 };
+
+type Work = { canonical_title: string; series_name?: string | null; sourceLinks?: Array<{ source_type: string; verified: boolean }> };
+type Candidate = { id: string; status: string; confidence: number | string; candidate_type: string; sourceWork?: Work | null; targetWork?: Work | null };
+
+function sourceLabel(work?: Work | null) {
+  if (!work?.sourceLinks?.length) return "Ukjent kilde";
+  const labels = new Set(work.sourceLinks.map((link) => link.source_type === "book_title" ? "boknettside" : link.source_type === "publishing_book_project" ? "manusprosjekt" : link.source_type === "publishing_book" ? "publiseringskatalog" : "eldre katalog"));
+  return [...labels].join(" + ");
+}
 
 const issueLabels: Record<string, string> = {
   missing_canonical_revision: "Mangler kanonisk manus",
@@ -65,6 +75,7 @@ export default function CanonicalCatalogPage() {
   const editions = data?.editions ?? [];
   const incomplete = editions.filter((edition) => edition.issues.length > 0);
   const candidates = data?.candidates ?? [];
+  const candidateGroups = data?.candidateGroups ?? [];
 
   return <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
     <header style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -93,18 +104,22 @@ export default function CanonicalCatalogPage() {
       </section>
 
       <section style={{ background: "white", border: "1px solid #aebdce", borderRadius: 12, padding: 18 }}>
-        <h2 style={{ marginTop: 0 }}>Mulige duplikatverk ({candidates.length})</h2>
-        <p>Lik tittel er bare et forslag. Ingen bøker slås sammen før du først godkjenner og deretter uttrykkelig utfører sammenslåingen.</p>
-        {candidates.length === 0 ? <p>Ingen kandidater trenger vurdering.</p> : candidates.map((candidate) => {
-          const busy = busyId === candidate.id;
-          return <article key={candidate.id} style={{ borderTop: "1px solid #cbd5e1", padding: "14px 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><strong>{candidate.sourceWork?.canonical_title ?? "Ukjent verk"}</strong> → <strong>{candidate.targetWork?.canonical_title ?? "Ukjent verk"}</strong><div>{Math.round(candidate.confidence * 100)}% samsvar · {candidate.match_type} · Status: {candidate.status}</div></div><div style={{ display: "flex", gap: 8 }}>
-              {candidate.status === "pending" ? <><button disabled={busy} onClick={() => act(candidate.id, "approve")} style={{ padding: "8px 12px", fontWeight: 800 }}>Godkjenn forslag</button><button disabled={busy} onClick={() => act(candidate.id, "reject")} style={{ padding: "8px 12px" }}>Avvis</button></> : null}
-              {candidate.status === "approved" ? <button disabled={busy} onClick={() => act(candidate.id, "apply")} style={{ padding: "8px 12px", background: "#166534", color: "white", fontWeight: 900 }}>Utfør sammenslåing</button> : null}
-              {busy ? <span role="status">Arbeider…</span> : null}
-            </div></div>
-          </article>;
-        })}
+        <h2 style={{ marginTop: 0 }}>Mulige duplikatverk: {candidateGroups.length} bokgrupper ({candidates.length} relasjoner)</h2>
+        <p>Forslag med samme boktittel er samlet. Å godkjenne markerer bare én relasjon som vurdert; sammenslåing krever fortsatt en egen handling.</p>
+        {candidateGroups.length === 0 ? <p>Ingen kandidater trenger vurdering.</p> : candidateGroups.map((group) => <details key={group.key} style={{ borderTop: "1px solid #cbd5e1", padding: "14px 0" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 900 }}>{group.title} · {group.workCount} katalogoppføringer · {group.pendingCount} til vurdering</summary>
+          <p style={{ margin: "8px 0", color: "#475569" }}>Kontroller særlig språk, serie og kilde før du godkjenner. Like titler kan fortsatt være ulike bøker.</p>
+          {group.candidates.map((candidate) => {
+            const busy = busyId === candidate.id;
+            return <article key={candidate.id} style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 8, padding: 12, marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><strong>{candidate.sourceWork?.canonical_title ?? "Ukjent verk"}</strong> → <strong>{candidate.targetWork?.canonical_title ?? "Ukjent verk"}</strong><div>{Math.round(Number(candidate.confidence) * 100)}% samsvar · {candidate.candidate_type} · Status: {candidate.status}</div><div style={{ fontSize: 12, color: "#475569" }}>{sourceLabel(candidate.sourceWork)} → {sourceLabel(candidate.targetWork)}{candidate.sourceWork?.series_name || candidate.targetWork?.series_name ? ` · Serie: ${candidate.sourceWork?.series_name || candidate.targetWork?.series_name}` : ""}</div></div><div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {candidate.status === "pending" ? <><button disabled={busy} onClick={() => act(candidate.id, "approve")} style={{ padding: "8px 12px", fontWeight: 800 }}>Godkjenn relasjon</button><button disabled={busy} onClick={() => act(candidate.id, "reject")} style={{ padding: "8px 12px" }}>Avvis</button></> : null}
+                {candidate.status === "approved" ? <button disabled={busy} onClick={() => act(candidate.id, "apply")} style={{ padding: "8px 12px", background: "#166534", color: "white", fontWeight: 900 }}>Utfør sammenslåing</button> : null}
+                {busy ? <span role="status">Arbeider…</span> : null}
+              </div></div>
+            </article>;
+          })}
+        </details>)}
       </section>
     </> : null}
   </main>;
