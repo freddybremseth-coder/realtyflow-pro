@@ -9,6 +9,7 @@ const MODULES = [
   { href: "/book-growth/catalog-quality", label: "Catalog Quality" },
   { href: "/book-growth/file-reconciliation", label: "Book Files" },
   { href: "/book-growth/canonical-catalog", label: "Canonical Catalogue" },
+  { href: "/book-growth/quality-center", label: "Quality Center" },
   { href: "/book-growth/work-review", label: "Work & Translation" },
   { href: "/book-growth/edition-language", label: "Edition & Language" },
   { href: "/book-growth/channel-metadata", label: "Channel Metadata" },

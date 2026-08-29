@@ -157,6 +157,27 @@ async function checkMutationFunction(client) {
   if (!row.service_execute) failures.push("service_role cannot execute the Book Growth mutation RPC");
   if (!row.security_definer) failures.push("Book Growth mutation RPC lost its atomic privileged execution contract");
   if (!row.configuration.includes("search_path=\"\"")) failures.push("Book Growth mutation RPC search_path is not empty");
+
+  const { rows: bibleRows } = await client.query(`
+    select
+      has_function_privilege('anon', p.oid, 'EXECUTE') as anon_execute,
+      has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_execute,
+      has_function_privilege('service_role', p.oid, 'EXECUTE') as service_execute,
+      p.prosecdef as security_definer,
+      coalesce(array_to_string(p.proconfig, ','), '') as configuration
+    from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public'
+      and p.oid='public.publishing_approve_work_bible_bundle(uuid[],text)'::regprocedure
+  `);
+  const bibleRow = bibleRows[0];
+  if (!bibleRow) failures.push("publishing_approve_work_bible_bundle(uuid[],text) is missing");
+  else {
+    if (bibleRow.anon_execute || bibleRow.authenticated_execute) failures.push("Bible approval RPC is publicly executable");
+    if (!bibleRow.service_execute) failures.push("service_role cannot execute the Bible approval RPC");
+    if (!bibleRow.security_definer) failures.push("Bible approval RPC lost atomic privileged execution");
+    if (!bibleRow.configuration.includes("search_path=\"\"")) failures.push("Bible approval RPC search_path is not empty");
+  }
 }
 
 async function checkGrowthActionIdentity(client) {

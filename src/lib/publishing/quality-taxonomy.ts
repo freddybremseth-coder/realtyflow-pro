@@ -21,6 +21,13 @@ const BASE_CHECKS = ["canon_consistency", "editorial", "epub_validation", "acces
 const NONFICTION_CHECKS = ["factual", "citations"] as const;
 const TECHNICAL_CHECKS = new Set(["epub_validation", "accessibility"]);
 
+export function inferBookKind(...values: unknown[]): "fiction" | "nonfiction" {
+  const text = values.map((value) => String(value ?? "").toLocaleLowerCase()).join(" ");
+  return /\b(fiction|thriller|novel|mystery|romance|fantasy|sci[ -]?fi|crime|roman|krim|skjønnlitter)/.test(text)
+    ? "fiction"
+    : "nonfiction";
+}
+
 export function requiredQualityChecks(kind: "fiction" | "nonfiction") {
   return kind === "nonfiction" ? [...BASE_CHECKS, ...NONFICTION_CHECKS] : [...BASE_CHECKS];
 }
