@@ -1,3 +1,4 @@
+import { normalizeCrmSource } from "@/lib/crm/source-normalization";
 import { normalizeForecastStage, STAGE_PROBABILITIES, type ForecastStage } from "@/lib/revenue/forecast";
 
 export const ATTRIBUTION_SCOPES = ["all", "zeneco", "soleada", "pinosoecolife", "keyholding"] as const;
@@ -229,6 +230,18 @@ function normalizeSource(raw: string): AttributionSourceId {
   return "other";
 }
 
+function provenanceOnly(raw: string) {
+  const normalized = normalizeCrmSource(raw);
+  return !normalized.acquisitionChannelKnown && ["legacy_crm", "brand_source", "manual"].includes(normalized.sourceType);
+}
+
+function normalizeAttributionSource(raw: string): AttributionSourceId {
+  const normalized = normalizeCrmSource(raw);
+  if (provenanceOnly(raw)) return "unknown";
+  if (normalized.sourceType === "web_form") return "website";
+  return normalizeSource(raw);
+}
+
 function candidate(rawSource: unknown, campaign: unknown, confidence: AttributionConfidence, date: unknown, evidence: string, order: number): Candidate | null {
   const raw = clean(rawSource);
   if (!raw) return null;
@@ -310,21 +323,23 @@ export function extractAttribution(contact: AttributionContactInput): Attributio
     };
   }
 
-  candidates.sort((a, b) => {
+  const attributableCandidates = candidates.filter((item) => !provenanceOnly(item.rawSource));
+  const rankedCandidates = attributableCandidates.length > 0 ? attributableCandidates : candidates;
+  rankedCandidates.sort((a, b) => {
     const aTime = a.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const bTime = b.date?.getTime() ?? Number.MAX_SAFE_INTEGER;
     if (aTime !== bTime) return aTime - bTime;
     const confidence = CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence];
     return confidence || a.order - b.order;
   });
-  const selected = candidates[0];
-  const sourceId = normalizeSource(selected.rawSource);
+  const selected = rankedCandidates[0];
+  const sourceId = normalizeAttributionSource(selected.rawSource);
   return {
     sourceId,
     sourceLabel: ATTRIBUTION_SOURCE_LABELS[sourceId],
     rawSource: selected.rawSource,
     campaign: selected.campaign,
-    confidence: selected.confidence,
+    confidence: sourceId === "unknown" ? "UNKNOWN" : selected.confidence,
     attributedAt: selected.date?.toISOString() || safeDate(createdAt)?.toISOString() || null,
     evidence: selected.evidence,
   };
