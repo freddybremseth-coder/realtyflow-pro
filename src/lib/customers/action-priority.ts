@@ -4,6 +4,9 @@ export interface CustomerListContact {
   pipeline_status?: string | null;
   pipeline_value?: number | null;
   next_followup?: string | null;
+  waiting_on?: string | null;
+  waiting_reason?: string | null;
+  waiting_until?: string | null;
   last_contact?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -111,6 +114,10 @@ function daysBetween(earlier: Date | null, later: Date) {
   return Math.max(0, (later.getTime() - earlier.getTime()) / (24 * 60 * 60 * 1000));
 }
 
+function waitingPartyLabel(value: unknown) {
+  return String(value || "").toLowerCase() === "third_party" ? "tredjepart" : "kunden";
+}
+
 export function buildCustomerListAction(contact: CustomerListContact, now = new Date()): CustomerListAction {
   const status = normalizeRealEstateStage(contact.pipeline_status);
   if (["WON", "LOST"].includes(status)) {
@@ -119,6 +126,24 @@ export function buildCustomerListAction(contact: CustomerListContact, now = new 
 
   if (!contact.email && !contact.phone) {
     return { priority: "CRITICAL", score: 100, label: "Finn kontaktkanal", reason: "mangler både e-post og telefon", needsAction: true };
+  }
+
+  if (contact.waiting_on) {
+    const waitingUntil = validDate(contact.waiting_until);
+    const party = waitingPartyLabel(contact.waiting_on);
+    if (!waitingUntil) {
+      return { priority: "HIGH", score: 91, label: "Sett dato for ventetilstand", reason: `venter på ${party} uten gjenopptakelsesdato`, needsAction: true };
+    }
+    if (waitingUntil.getTime() < now.getTime()) {
+      return { priority: "CRITICAL", score: 97, label: "Gjenoppta oppfølging", reason: `ventetiden på ${party} er utløpt`, needsAction: true };
+    }
+    return {
+      priority: "LOW",
+      score: 18,
+      label: contact.waiting_on === "third_party" ? "Venter på tredjepart" : "Venter på kunden",
+      reason: contact.waiting_reason || `venter til ${waitingUntil.toLocaleDateString("nb-NO")}`,
+      needsAction: false,
+    };
   }
 
   const followup = validDate(contact.next_followup);
