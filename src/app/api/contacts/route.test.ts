@@ -2,15 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
+import { DELETE, GET, PATCH, POST } from "./route";
 import {
-  DELETE,
-  GET,
-  PATCH,
-  POST,
   filterContactsByView,
   normalizeContactForClient,
   normalizeIncomingContact,
-} from "./route";
+} from "./lifecycle";
 import { setContactsSupabaseFactoryForTests } from "./supabase-client";
 
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
