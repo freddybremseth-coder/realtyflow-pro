@@ -16,6 +16,7 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
   assert.equal(items.some((item) => item.id === "email-identity:mail-conflict"), true);
   assert.equal(items.some((item) => item.id === "email-identity:mail-low"), false);
   assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.priority, "critical");
+  assert.equal(items.find((item) => item.id === "email-identity:mail-conflict")?.href, "/nexus-os/email-link-health?messageId=mail-conflict");
   const summary = summarizeNexusInbox(items);
   assert.deepEqual(summary, { total: 5, critical: 3, approvals: 1, marketing: 2, emailIdentity: 1, system: 1 });
 });
@@ -40,11 +41,11 @@ test("high exact candidate is visible as high but not critical email attention",
     attention: [],
     approvals: [],
     marketingRows: [],
-    emailIdentityReviews: [{ id: "candidate", subject: "Interested in villa", priority: "high", reason: "Entydig eksakt CRM-kandidat.", state: "exact_candidate", domain: "gmail.com" }],
+    emailIdentityReviews: [{ id: "candidate/with space", subject: "Interested in villa", priority: "high", reason: "Entydig eksakt CRM-kandidat.", state: "exact_candidate", domain: "gmail.com" }],
   });
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.source, "email_identity");
   assert.equal(items[0]?.priority, "high");
-  assert.equal(items[0]?.href, "/nexus-os/email-link-health");
+  assert.equal(items[0]?.href, "/nexus-os/email-link-health?messageId=candidate%2Fwith%20space");
 });
