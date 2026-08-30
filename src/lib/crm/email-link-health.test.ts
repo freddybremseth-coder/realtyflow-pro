@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessEmailLink, buildEmailLinkHealth, isCrmRelevantEmailAssessment, validateEmailLinkApproval } from "./email-link-health";
+import { assessEmailLink, buildEmailLinkHealth, classifyEmailSenderEvidence, isCrmRelevantEmailAssessment, validateEmailLinkApproval } from "./email-link-health";
 
 const contacts = [
   { id: "soleada-1", name: "Kari", email: "kari@example.com", brand_id: "soleada" },
@@ -103,6 +103,7 @@ test("known system notification is not CRM-relevant when it is otherwise unlinke
   }, contacts);
   assert.equal(assessment.state, "unlinked");
   assert.equal(isCrmRelevantEmailAssessment(assessment), false);
+  assert.equal(classifyEmailSenderEvidence(assessment).type, "system_notification");
 });
 
 test("outbound mail remains CRM-relevant even without a current contact match", () => {
@@ -113,6 +114,7 @@ test("outbound mail remains CRM-relevant even without a current contact match", 
     to_addresses: ["new.person@example.net"],
   }, contacts);
   assert.equal(isCrmRelevantEmailAssessment(assessment), true);
+  assert.equal(classifyEmailSenderEvidence(assessment).type, "outbound_unmatched");
 });
 
 test("explicit CRM conflict remains visible even when sender is a system domain", () => {
@@ -124,6 +126,30 @@ test("explicit CRM conflict remains visible even when sender is a system domain"
   }, contacts);
   assert.equal(assessment.state, "ambiguous");
   assert.equal(isCrmRelevantEmailAssessment(assessment), true);
+  assert.equal(classifyEmailSenderEvidence(assessment).type, "conflict");
+});
+
+test("exact email identity is classified as CRM contact evidence", () => {
+  const assessment = assessEmailLink({ id: "crm", direction: "inbound", from_address: "kari@example.com" }, contacts);
+  const sender = classifyEmailSenderEvidence(assessment);
+  assert.equal(sender.type, "crm_contact");
+  assert.match(sender.reason, /eksakt/i);
+});
+
+test("unmatched public mailbox is kept as public mailbox without assuming customer relationship", () => {
+  const assessment = assessEmailLink({ id: "public", direction: "inbound", from_address: "unknown.person@gmail.com" }, contacts);
+  const sender = classifyEmailSenderEvidence(assessment);
+  assert.equal(sender.type, "public_mailbox");
+  assert.equal(sender.domain, "gmail.com");
+  assert.match(sender.reason, /uten dokumentert CRM-identitet/i);
+});
+
+test("unmatched custom domain is external-domain evidence, not partner or customer inference", () => {
+  const assessment = assessEmailLink({ id: "external", direction: "inbound", from_address: "sales@agency.example" }, contacts);
+  const sender = classifyEmailSenderEvidence(assessment);
+  assert.equal(sender.type, "external_domain");
+  assert.equal(sender.domain, "agency.example");
+  assert.match(sender.reason, /relasjonstype er ikke antatt/i);
 });
 
 test("health summary excludes known non-CRM notifications from linkage denominator", () => {
