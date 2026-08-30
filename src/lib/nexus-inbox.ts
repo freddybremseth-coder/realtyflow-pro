@@ -118,7 +118,7 @@ export function buildNexusInbox(input: {
       priority: row.state === "ambiguous" ? "critical" : "high",
       title: row.subject || "E-postidentitet trenger review",
       reason: `${row.reason}${row.domain ? ` · ${row.domain}` : ""}`,
-      href: "/nexus-os/email-link-health",
+      href: `/nexus-os/email-link-health?messageId=${encodeURIComponent(row.id)}`,
       actionLabel: "Review identitet",
     });
   }

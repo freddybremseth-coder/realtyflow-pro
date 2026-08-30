@@ -92,6 +92,7 @@ export default function EmailLinkHealthPage() {
   const [filter, setFilter] = useState<"all" | HealthItem["state"]>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | ReviewPriority>("all");
   const [search, setSearch] = useState("");
+  const [targetMessageId, setTargetMessageId] = useState("");
 
   async function load() {
     setLoading(true);
@@ -108,20 +109,25 @@ export default function EmailLinkHealthPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setTargetMessageId(params.get("messageId")?.trim() || "");
+    void load();
+  }, []);
 
   const items = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (data?.items || [])
       .filter((item) => {
+        if (targetMessageId && item.message.id !== targetMessageId) return false;
         if (filter !== "all" && item.state !== filter) return false;
         if (priorityFilter !== "all" && item.reviewPriority.priority !== priorityFilter) return false;
         if (!query) return true;
-        return [item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.identityEvidence.domain, item.identityEvidence.reason, item.reviewPriority.reason, IDENTITY_LABELS[item.identityEvidence.type], PRIORITY_LABELS[item.reviewPriority.priority], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
+        return [item.message.id, item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.identityEvidence.domain, item.identityEvidence.reason, item.reviewPriority.reason, IDENTITY_LABELS[item.identityEvidence.type], PRIORITY_LABELS[item.reviewPriority.priority], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
           .filter(Boolean).join(" ").toLowerCase().includes(query);
       })
       .sort((a, b) => PRIORITY_ORDER[a.reviewPriority.priority] - PRIORITY_ORDER[b.reviewPriority.priority]);
-  }, [data, filter, priorityFilter, search]);
+  }, [data, filter, priorityFilter, search, targetMessageId]);
 
   return <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 sm:py-8">
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -138,6 +144,11 @@ export default function EmailLinkHealthPage() {
         <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert kobling</div>
         <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. AI-intent som `inquiry` og `follow_up` kan løfte review-prioriteten, men kan aldri alene koble en melding til CRM.</p>
       </div>
+
+      {targetMessageId ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 sm:flex-row sm:items-center sm:justify-between">
+        <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox.</div>
+        <Link href="/nexus-os/email-link-health" className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Vis hele Email Link Health</Link>
+      </div> : null}
 
       {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
         Nexus analyserer {data.summary.messages} CRM-relevante meldinger av {data.summary.totalMessages} totalt. {data.summary.excludedNonCrm} kjente systemvarsler er ekskludert fra dekningstallet, men finnes fortsatt i inbox-dataene.
@@ -173,8 +184,8 @@ export default function EmailLinkHealthPage() {
 
     <section className="mt-5 space-y-3">
       {loading && !data ? <div className="flex items-center justify-center gap-2 rounded-3xl border border-slate-200 bg-white p-10 text-sm font-bold text-slate-500"><Loader2 className="h-5 w-5 animate-spin" />Analyserer inbox …</div> : null}
-      {!loading && items.length === 0 ? <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm font-bold text-slate-500">Ingen meldinger matcher dette filteret.</div> : null}
-      {items.map((item) => <article key={item.message.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      {!loading && items.length === 0 ? <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm font-bold text-slate-500">{targetMessageId ? "Den valgte meldingen finnes ikke lenger i den CRM-relevante review-køen." : "Ingen meldinger matcher dette filteret."}</div> : null}
+      {items.map((item) => <article id={`message-${item.message.id}`} key={item.message.id} className={`rounded-3xl border bg-white p-5 shadow-sm sm:p-6 ${targetMessageId === item.message.id ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200"}`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
