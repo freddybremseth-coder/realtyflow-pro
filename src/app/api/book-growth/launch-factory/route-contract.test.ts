@@ -27,5 +27,10 @@ test("launch factory exposes traceable internal calendar state", () => {
   assert.match(route, /publishing_launch_calendar_items/);
   assert.match(route, /activeCalendars/);
   assert.match(route, /draftItems/);
-  assert.match(route, /calendar_active/);
+  assert.match(route, /calendar_review/);
+  assert.match(route, /publishing_launch_calendar_item_versions/);
+  assert.match(route, /publishing_launch_calendar_item_decisions/);
+  assert.match(route, /publishing_edit_launch_calendar_item/);
+  assert.match(route, /publishing_decide_launch_calendar_item/);
+  assert.doesNotMatch(route, /\.from\("marketing_publications"\)/);
 });
