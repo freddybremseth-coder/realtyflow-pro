@@ -22,6 +22,7 @@ export interface EmailLinkMessage {
 
 export type EmailLinkState = "linked" | "exact_candidate" | "ambiguous" | "unlinked";
 export type EmailIdentityEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
+export type EmailIdentityReviewPriority = "high" | "medium" | "low";
 
 export interface EmailLinkAssessment {
   message: EmailLinkMessage;
@@ -34,6 +35,11 @@ export interface EmailLinkAssessment {
 export interface EmailIdentityEvidence {
   type: EmailIdentityEvidenceType;
   domain: string | null;
+  reason: string;
+}
+
+export interface EmailIdentityReviewAssessment {
+  priority: EmailIdentityReviewPriority;
   reason: string;
 }
 
@@ -68,6 +74,8 @@ const PUBLIC_MAILBOX_DOMAINS = new Set([
   "proton.me",
   "protonmail.com",
 ]);
+
+const ACTIONABLE_INTENTS = new Set(["inquiry", "follow_up"]);
 
 function email(value: unknown) {
   return String(value || "").trim().toLowerCase();
@@ -200,6 +208,37 @@ export function classifyEmailIdentityEvidence(assessment: EmailLinkAssessment): 
     domain,
     reason: "Eksternt eget domene uten dokumentert CRM-identitet; relasjonstype er ikke antatt.",
   };
+}
+
+export function classifyEmailIdentityReviewPriority(assessment: EmailLinkAssessment): EmailIdentityReviewAssessment {
+  if (assessment.state === "exact_candidate") {
+    return { priority: "high", reason: "Entydig eksakt CRM-kandidat kan gjennomgås og eventuelt godkjennes." };
+  }
+  if (assessment.state === "ambiguous") {
+    return { priority: "high", reason: "Identitetskonflikt krever menneskelig review før videre bruk." };
+  }
+  if (assessment.state === "linked") {
+    return { priority: "low", reason: "Meldingen har allerede dokumentert CRM-kobling." };
+  }
+
+  const direction = String(assessment.message.direction || "").trim().toLowerCase();
+  const intent = String(assessment.message.ai_intent || "").trim().toLowerCase();
+  if (direction === "inbound" && ACTIONABLE_INTENTS.has(intent)) {
+    return {
+      priority: "high",
+      reason: `Inbound ${intent} uten sikker CRM-identitet bør gjennomgås tidlig. AI-intent er kun prioriteringssignal, ikke koblingsevidens.`,
+    };
+  }
+
+  const identity = classifyEmailIdentityEvidence(assessment);
+  if (identity.type === "outbound_unmatched") {
+    return { priority: "medium", reason: "Utgående melding til motpart uten nåværende eksakt CRM-match bør kontrolleres." };
+  }
+  if (identity.type === "public_mailbox") {
+    return { priority: "medium", reason: "Offentlig/personlig e-postkonto uten CRM-identitet kan være en person som mangler i CRM." };
+  }
+
+  return { priority: "low", reason: "Ingen sterk identitets- eller intent-evidens som tilsier tidlig review." };
 }
 
 export function isCrmRelevantEmailAssessment(assessment: EmailLinkAssessment) {
