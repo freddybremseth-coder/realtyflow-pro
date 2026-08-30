@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { buildEmailLinkHealth, classifyEmailIdentityEvidence } from "@/lib/crm/email-link-health";
+import { buildEmailLinkHealth, classifyEmailIdentityEvidence, classifyEmailIdentityReviewPriority } from "@/lib/crm/email-link-health";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
     confidence: item.confidence,
     reason: item.reason,
     identityEvidence: classifyEmailIdentityEvidence(item),
+    reviewPriority: classifyEmailIdentityReviewPriority(item),
     message: {
       id: item.message.id,
       brandId: item.message.brand_id || null,
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
       readOnly: true,
       fuzzyNameMatching: false,
       relationshipInference: false,
+      aiIntentUsedForLinking: false,
       crmUpdated: false,
       emailMessageUpdated: false,
       emailSent: false,
