@@ -44,10 +44,11 @@ const requestSchema = z.discriminatedUnion("action", [
     decision: z.enum(["queue", "withdraw"]),
     note: z.string().trim().max(1000).optional(),
   }),
+  z.object({ action: z.literal("run_preflight"), handoffId: z.string().uuid() }),
 ]);
 
 function unavailable(message: string) {
-  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs)|publishing_(stage|activate|edit|decide|prepare)_launch|schema cache|does not exist|relation/i.test(message);
+  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs|channel_preflights)|publishing_(stage|activate|edit|decide|prepare|run)_launch|schema cache|does not exist|relation/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes] = await Promise.all([
+  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes, preflightsRes] = await Promise.all([
     sb.from("publishing_catalog_works").select("id,canonical_title,series_name,status").neq("status", "archived"),
     sb.from("publishing_catalog_editions").select("id,work_id,title,subtitle,language,format,status").neq("status", "retired"),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("is_canonical", true),
@@ -68,12 +69,13 @@ export async function GET(request: NextRequest) {
     sb.from("publishing_launch_calendar_item_versions").select("id,calendar_item_id,version,payload,created_by,change_reason,created_at").order("version", { ascending: false }),
     sb.from("publishing_launch_calendar_item_decisions").select("id,calendar_item_id,item_version,decision,actor,note,created_at").order("created_at", { ascending: false }),
     sb.from("publishing_launch_channel_handoffs").select("id,calendar_item_id,item_version,attempt,channel,status,payload_snapshot,prepared_by,prepared_at,queued_by,queued_at,withdrawn_by,withdrawn_at,note,created_at,updated_at").order("created_at", { ascending: false }),
+    sb.from("publishing_launch_channel_preflights").select("id,handoff_id,calendar_item_id,run_number,status,checks,blocker_codes,evaluated_by,evaluated_at").order("run_number", { ascending: false }),
   ]);
-  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error;
+  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error || preflightsRes.error;
   if (error) {
     const missingMigration = unavailable(error.message);
     return NextResponse.json(
-      { available: false, error: missingMigration ? "Fase 4.3-migreringen er ikke installert ennå." : error.message },
+      { available: false, error: missingMigration ? "Fase 4.4-migreringen er ikke installert ennå." : error.message },
       { status: missingMigration ? 503 : 500 },
     );
   }
@@ -88,6 +90,7 @@ export async function GET(request: NextRequest) {
   const itemVersions = versionsRes.data ?? [];
   const itemDecisions = itemDecisionsRes.data ?? [];
   const handoffs = handoffsRes.data ?? [];
+  const preflights = preflightsRes.data ?? [];
   const workById = new Map(works.map((row: any) => [String(row.id), row]));
 
   const rows = (editionsRes.data ?? []).map((edition: any) => {
@@ -107,7 +110,10 @@ export async function GET(request: NextRequest) {
       ...item,
       versions: itemVersions.filter((row: any) => row.calendar_item_id === item.id),
       decisions: itemDecisions.filter((row: any) => row.calendar_item_id === item.id),
-      handoffs: handoffs.filter((row: any) => row.calendar_item_id === item.id),
+      handoffs: handoffs.filter((row: any) => row.calendar_item_id === item.id).map((handoff: any) => ({
+        ...handoff,
+        preflights: preflights.filter((row: any) => row.handoff_id === handoff.id),
+      })),
     })) : [];
     const packageChannels = new Set(editionPackages.map((row: any) => row.channel));
     const hasEpub = editionAssets.some((row: any) => row.asset_type === "epub" && row.revision_id === revision?.id);
@@ -175,6 +181,8 @@ export async function GET(request: NextRequest) {
       approvedItems: rows.reduce((total: number, row: any) => total + row.calendar.filter((item: any) => item.status === "approved").length, 0),
       preparedHandoffs: handoffs.filter((row: any) => row.status === "prepared").length,
       queuedHandoffs: handoffs.filter((row: any) => row.status === "queued").length,
+      readyPreflights: handoffs.filter((handoff: any) => handoff.status === "queued" && preflights.find((row: any) => row.handoff_id === handoff.id)?.status === "ready").length,
+      blockedPreflights: handoffs.filter((handoff: any) => handoff.status === "queued" && preflights.find((row: any) => row.handoff_id === handoff.id)?.status === "blocked").length,
     },
     editions: rows,
   });
@@ -249,6 +257,15 @@ export async function POST(request: NextRequest) {
     });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "decide_handoff", result: data });
+  }
+
+  if (parsed.data.action === "run_preflight") {
+    const { data, error } = await sb.rpc("publishing_run_launch_channel_preflight", {
+      p_handoff_id: parsed.data.handoffId,
+      p_actor: "admin_ui",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "run_preflight", result: data });
   }
 
   const editionId = parsed.data.editionId;
