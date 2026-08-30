@@ -45,10 +45,11 @@ const requestSchema = z.discriminatedUnion("action", [
     note: z.string().trim().max(1000).optional(),
   }),
   z.object({ action: z.literal("run_preflight"), handoffId: z.string().uuid() }),
+  z.object({ action: z.literal("set_website_target"), targetUrl: z.literal("https://books.freddybremseth.com") }),
 ]);
 
 function unavailable(message: string) {
-  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs|channel_preflights)|publishing_(stage|activate|edit|decide|prepare|run)_launch|schema cache|does not exist|relation/i.test(message);
+  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs|channel_preflights|channel_settings)|publishing_(stage|activate|edit|decide|prepare|run|set)_launch|schema cache|does not exist|relation/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes, preflightsRes] = await Promise.all([
+  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes, preflightsRes, socialRes, emailRes, channelSettingsRes] = await Promise.all([
     sb.from("publishing_catalog_works").select("id,canonical_title,series_name,status").neq("status", "archived"),
     sb.from("publishing_catalog_editions").select("id,work_id,title,subtitle,language,format,status").neq("status", "retired"),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("is_canonical", true),
@@ -70,8 +71,11 @@ export async function GET(request: NextRequest) {
     sb.from("publishing_launch_calendar_item_decisions").select("id,calendar_item_id,item_version,decision,actor,note,created_at").order("created_at", { ascending: false }),
     sb.from("publishing_launch_channel_handoffs").select("id,calendar_item_id,item_version,attempt,channel,status,payload_snapshot,prepared_by,prepared_at,queued_by,queued_at,withdrawn_by,withdrawn_at,note,created_at,updated_at").order("created_at", { ascending: false }),
     sb.from("publishing_launch_channel_preflights").select("id,handoff_id,calendar_item_id,run_number,status,checks,blocker_codes,evaluated_by,evaluated_at").order("run_number", { ascending: false }),
+    sb.from("social_channels").select("id,brand_id,platform,display_name,is_active").in("brand_id", ["freddypublishing", "freddy_publishing"]).in("platform", ["facebook", "instagram"]).eq("is_active", true),
+    sb.from("brand_email_configs").select("id,brand_id,email_address,display_name,is_active,health_status,health_message,auto_fetch_paused_by_system,last_success_at").in("brand_id", ["freddypublishing", "freddy_publishing"]).eq("is_active", true),
+    sb.from("publishing_launch_channel_settings").select("id,brand_id,channel,target_url,status,updated_at").eq("brand_id", "freddypublishing"),
   ]);
-  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error || preflightsRes.error;
+  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error || preflightsRes.error || socialRes.error || emailRes.error || channelSettingsRes.error;
   if (error) {
     const missingMigration = unavailable(error.message);
     return NextResponse.json(
@@ -91,6 +95,23 @@ export async function GET(request: NextRequest) {
   const itemDecisions = itemDecisionsRes.data ?? [];
   const handoffs = handoffsRes.data ?? [];
   const preflights = preflightsRes.data ?? [];
+  const socialChannels = socialRes.data ?? [];
+  const socialIds = socialChannels.map((row: any) => row.id);
+  const tokenRes = socialIds.length
+    ? await sb.from("oauth_tokens").select("social_channel_id,scopes,expires_at").in("social_channel_id", socialIds)
+    : { data: [], error: null };
+  if (tokenRes.error) return NextResponse.json({ available: false, error: tokenRes.error.message }, { status: 500 });
+  const tokenByChannel = new Map((tokenRes.data ?? []).map((row: any) => [String(row.social_channel_id), row]));
+  const connectionCenter: Array<{ channel: string; connected: boolean; label: string | null; manageHref: string | null }> = ["facebook", "instagram"].map((channel) => {
+    const rows = socialChannels.filter((row: any) => row.platform === channel);
+    const connected = rows.some((row: any) => tokenByChannel.has(String(row.id)));
+    return { channel, connected, label: rows[0]?.display_name || null, manageHref: `/api/oauth/facebook?brand_id=freddypublishing&return_to=/book-growth/launch-factory&capability=publishing` };
+  });
+  const emailRows = emailRes.data ?? [];
+  const healthyEmail = emailRows.find((row: any) => !row.auto_fetch_paused_by_system && !["degraded", "paused", "error"].includes(String(row.health_status || "healthy")));
+  connectionCenter.push({ channel: "email", connected: Boolean(healthyEmail), label: healthyEmail?.email_address || emailRows[0]?.email_address || null, manageHref: "/nexus-os/communications" });
+  const website: any = (channelSettingsRes.data ?? []).find((row: any) => row.channel === "website");
+  connectionCenter.push({ channel: "website", connected: website?.status === "active" && website?.target_url === "https://books.freddybremseth.com", label: website?.target_url || null, manageHref: null });
   const workById = new Map(works.map((row: any) => [String(row.id), row]));
 
   const rows = (editionsRes.data ?? []).map((edition: any) => {
@@ -170,6 +191,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     available: true,
     frequencyPolicy: BOOK_LAUNCH_FREQUENCY_POLICY,
+    connectionCenter,
     summary: {
       editions: rows.length,
       packageReady: rows.filter((row: any) => row.readyForCampaign).length,
@@ -266,6 +288,15 @@ export async function POST(request: NextRequest) {
     });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "run_preflight", result: data });
+  }
+
+  if (parsed.data.action === "set_website_target") {
+    const { data, error } = await sb.rpc("publishing_set_launch_website_target", {
+      p_target_url: parsed.data.targetUrl,
+      p_actor: "admin_ui",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "set_website_target", result: data });
   }
 
   const editionId = parsed.data.editionId;
