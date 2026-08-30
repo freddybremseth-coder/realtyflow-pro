@@ -4,6 +4,7 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { buildEmailLinkHealth, classifyEmailIdentityEvidence } from "@/lib/crm/email-link-health";
 import { filterOwnAddressEmailHealth } from "@/lib/crm/email-link-health-own-addresses";
 import { classifyEmailIdentityReviewPriorityWithAge } from "@/lib/crm/email-review-priority";
+import { summarizeEmailIdentityReviewPriorities } from "@/lib/crm/email-review-summary";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -44,13 +45,20 @@ export async function GET(request: NextRequest) {
     (ownAddressesResult.data || []).map((row) => String(row.email_address || "")),
   );
   const reviewNow = new Date();
+  const classifiedItems = health.items.map((item) => ({
+    item,
+    reviewPriority: classifyEmailIdentityReviewPriorityWithAge(item, reviewNow),
+  }));
+  const reviewPrioritySummary = summarizeEmailIdentityReviewPriorities(
+    classifiedItems.map(({ reviewPriority }) => reviewPriority),
+  );
 
-  const items = health.items.map((item) => ({
+  const items = classifiedItems.map(({ item, reviewPriority }) => ({
     state: item.state,
     confidence: item.confidence,
     reason: item.reason,
     identityEvidence: classifyEmailIdentityEvidence(item),
-    reviewPriority: classifyEmailIdentityReviewPriorityWithAge(item, reviewNow),
+    reviewPriority,
     message: {
       id: item.message.id,
       brandId: item.message.brand_id || null,
@@ -72,7 +80,13 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     generatedAt: reviewNow.toISOString(),
-    summary: health.summary,
+    summary: {
+      ...health.summary,
+      reviewPriorityHigh: reviewPrioritySummary.high,
+      reviewPriorityMedium: reviewPrioritySummary.medium,
+      reviewPriorityLow: reviewPrioritySummary.low,
+      reviewPriorityTotal: reviewPrioritySummary.total,
+    },
     items,
     safety: {
       readOnly: true,
