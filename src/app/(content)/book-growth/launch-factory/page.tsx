@@ -50,7 +50,7 @@ type CalendarItem = {
   approved_at?: string | null;
   versions: Array<{ id: string; version: number; payload: CampaignItem; created_by: string; change_reason: string; created_at: string }>;
   decisions: Array<{ id: string; item_version: number; decision: string; actor: string; note?: string | null; created_at: string }>;
-  handoffs: Array<{ id: string; item_version: number; attempt: number; channel: string; status: "prepared" | "queued" | "withdrawn"; prepared_by: string; prepared_at: string; queued_at?: string | null; note?: string | null }>;
+  handoffs: Array<{ id: string; item_version: number; attempt: number; channel: string; status: "prepared" | "queued" | "withdrawn"; prepared_by: string; prepared_at: string; queued_at?: string | null; note?: string | null; preflights: Array<{ id: string; run_number: number; status: "ready" | "blocked"; checks: Array<{ code: string; passed: boolean }>; blocker_codes: string[]; evaluated_at: string }> }>;
 };
 type Edition = {
   editionId: string;
@@ -92,6 +92,14 @@ const itemStatus: Record<string, { label: string; color: string; background: str
   ready_for_review: { label: "Venter godkjenning", color: "#1d4ed8", background: "#eff6ff" },
   approved: { label: "Godkjent", color: "#166534", background: "#f0fdf4" },
   cancelled: { label: "Avbrutt", color: "#475569", background: "#f1f5f9" },
+};
+const preflightLabels: Record<string, string> = {
+  handoff_not_queued: "Overleveringen er ikke lagt i intern kø",
+  approval_or_version_stale: "Godkjenningen eller innholdsversjonen er utdatert",
+  channel_connection_missing: "Aktiv kanaltilkobling mangler",
+  channel_content_invalid: "Innholdet passer ikke kanalformatet",
+  schedule_not_future: "Planlagt tidspunkt er passert eller ugyldig",
+  canonical_cover_missing: "Verifisert kanonisk cover mangler",
 };
 
 function dateAfterToday() {
@@ -229,6 +237,29 @@ export default function LaunchFactoryPage() {
     }
   }
 
+  async function runPreflight(item: CalendarItem, handoffId: string) {
+    setBusyItemId(item.id);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/book-growth/launch-factory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "run_preflight", handoffId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Preflight mislyktes");
+      setNotice(body.result?.status === "ready"
+        ? "Preflight er klar. Dette er fortsatt bare en intern kontroll – ingenting er publisert."
+        : `Preflight fant ${body.result?.blocker_codes?.length ?? "flere"} blokkeringer. Se sjekklisten på innholdskortet.`);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Preflight mislyktes");
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
   function beginEdit(item: CalendarItem) {
     setEditingItemId(item.id);
     setEditPayload({ ...item.payload });
@@ -244,10 +275,10 @@ export default function LaunchFactoryPage() {
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <header>
-        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.3</p>
+        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.4</p>
         <h1 style={{ margin: "6px 0" }}>Launch Factory</h1>
         <p style={{ maxWidth: 900, marginTop: 0 }}>
-          Godkjent innhold kan klargjøres og legges i en kontrollert intern kanalkø. Klargjøring og kølegging sender eller publiserer fortsatt ingenting til Facebook, Instagram, e-post eller nettsiden.
+          Kjør en tydelig kanal-preflight på innhold i intern kø. Systemet kontrollerer tilkobling, format, godkjenning, tidspunkt og ressurser – men sender, planlegger eller publiserer fortsatt ingenting.
         </p>
       </header>
 
@@ -266,6 +297,8 @@ export default function LaunchFactoryPage() {
           ["Godkjent innhold", summary.approvedItems],
           ["Klargjort", summary.preparedHandoffs],
           ["Intern kanalkø", summary.queuedHandoffs],
+          ["Preflight klar", summary.readyPreflights],
+          ["Preflight blokkert", summary.blockedPreflights],
         ].map(([label, value]) => (
           <article key={String(label)} style={{ background: "white", border: "1px solid #aebdce", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 800 }}>{label}</div>
@@ -317,6 +350,7 @@ export default function LaunchFactoryPage() {
                           const itemBusy = busyItemId === item.id;
                           const note = decisionNotes[item.id] || "";
                           const handoff = item.handoffs?.find((row) => row.item_version === item.current_version && row.status !== "withdrawn");
+                          const latestPreflight = handoff?.preflights?.[0];
                           return (
                             <div key={item.id} style={{ padding: 12, border: `1px solid ${status.color}`, borderRadius: 9, background: "white" }}>
                               <strong style={{ display: "block", fontSize: 12 }}>{formatScheduled(item.scheduled_for, item.timezone)} · {channelLabels[item.channel] || item.channel}</strong>
@@ -371,6 +405,18 @@ export default function LaunchFactoryPage() {
                                           <strong style={{ color: "#115e59", fontSize: 12 }}>{handoff.status === "queued" ? "I intern kanalkø" : "Kanalutkast klargjort"} · v{handoff.item_version} · forsøk {handoff.attempt}</strong>
                                           <span style={{ color: "#475569", fontSize: 11 }}>Låst øyeblikksbilde · ikke sendt · ikke publisert</span>
                                           {handoff.status === "prepared" ? <button disabled={itemBusy} onClick={() => handoffAction(item, "decide_handoff", handoff.id, "queue")} style={{ padding: 8, border: 0, borderRadius: 6, background: "#1d4ed8", color: "white", fontWeight: 900 }}>{itemBusy ? "Legger i kø…" : "Legg i intern kanalkø"}</button> : null}
+                                          {handoff.status === "queued" ? (
+                                            <>
+                                              <button disabled={itemBusy} onClick={() => runPreflight(item, handoff.id)} style={{ padding: 8, border: 0, borderRadius: 6, background: "#7c3aed", color: "white", fontWeight: 900 }}>{itemBusy ? "Kontrollerer…" : latestPreflight ? "Kjør preflight på nytt" : "Kjør kanal-preflight"}</button>
+                                              {latestPreflight ? (
+                                                <div style={{ padding: 8, borderRadius: 6, background: latestPreflight.status === "ready" ? "#dcfce7" : "#fef2f2", color: latestPreflight.status === "ready" ? "#166534" : "#991b1b", fontSize: 11 }}>
+                                                  <strong>{latestPreflight.status === "ready" ? "✓ Klar preflight" : `Blokkert · ${latestPreflight.blocker_codes.length} punkter`} · kontroll {latestPreflight.run_number}</strong>
+                                                  {latestPreflight.blocker_codes.map((code) => <span key={code} style={{ display: "block", marginTop: 3 }}>• {preflightLabels[code] || code}</span>)}
+                                                  <span style={{ display: "block", marginTop: 5, fontWeight: 800 }}>Intern kontroll · ikke publisert</span>
+                                                </div>
+                                              ) : null}
+                                            </>
+                                          ) : null}
                                           <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for tilbaketrekking" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
                                           <button disabled={itemBusy || !note.trim()} onClick={() => handoffAction(item, "decide_handoff", handoff.id, "withdraw")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Trekk tilbake overlevering</button>
                                         </div>
