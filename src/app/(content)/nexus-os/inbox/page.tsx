@@ -13,7 +13,7 @@ type EmailIdentityPayload = { items?: Array<{
   state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
   reviewPriority: { priority: "high" | "medium" | "low"; reason: string };
   identityEvidence: { domain?: string | null };
-  message: { id: string; subject: string };
+  message: { id: string; subject: string; occurredAt?: string | null };
 }> };
 type Filter = "all" | NexusInboxSource;
 
@@ -42,6 +42,13 @@ function sourceLabel(source: NexusInboxSource) {
   return "System";
 }
 
+function timeLabel(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 export default function NexusInboxPage() {
   const [items, setItems] = useState<NexusInboxItem[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
@@ -68,6 +75,7 @@ export default function NexusInboxPage() {
         reason: item.reviewPriority.reason,
         state: item.state,
         domain: item.identityEvidence.domain ?? null,
+        occurredAt: item.message.occurredAt ?? null,
       })),
     }));
     setLoading(false);
@@ -111,17 +119,20 @@ export default function NexusInboxPage() {
     </section>
 
     <section className="space-y-3">
-      {visible.map((item) => <Link key={item.id} href={item.href} className={`block rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone(item)}`}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500"><span>{sourceLabel(item.source)}</span><span>·</span><span>{item.priority}</span>{item.blocked && <span className="rounded-full bg-white/70 px-2 py-0.5 text-slate-600">blocked</span>}</div>
-            <h2 className="mt-2 text-lg font-black text-slate-950">{item.title}</h2>
-            {item.customerName && <div className="mt-1 text-xs font-bold text-slate-500">{item.customerName}</div>}
-            <p className="mt-2 text-sm leading-6 text-slate-700">{item.reason}</p>
+      {visible.map((item) => {
+        const occurredAt = item.source === "email_identity" ? timeLabel(item.occurredAt) : null;
+        return <Link key={item.id} href={item.href} className={`block rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone(item)}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500"><span>{sourceLabel(item.source)}</span><span>·</span><span>{item.priority}</span>{occurredAt && <><span>·</span><span>{occurredAt}</span></>}{item.blocked && <span className="rounded-full bg-white/70 px-2 py-0.5 text-slate-600">blocked</span>}</div>
+              <h2 className="mt-2 text-lg font-black text-slate-950">{item.title}</h2>
+              {item.customerName && <div className="mt-1 text-xs font-bold text-slate-500">{item.customerName}</div>}
+              <p className="mt-2 text-sm leading-6 text-slate-700">{item.reason}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white">{item.actionLabel}<ArrowRight size={14} /></div>
           </div>
-          <div className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white">{item.actionLabel}<ArrowRight size={14} /></div>
-        </div>
-      </Link>)}
+        </Link>;
+      })}
       {!loading && visible.length === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><CheckCircle2 size={20} className="mt-0.5" /><div><div className="font-black">Ingen beslutninger i denne køen</div><div className="mt-1 text-sm text-emerald-800">Det finnes ingen elementer fra de valgte kildene som trenger menneskelig oppmerksomhet nå.</div></div></div>}
     </section>
 
