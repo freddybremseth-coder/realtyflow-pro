@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessEmailLink, buildEmailLinkHealth, validateEmailLinkApproval } from "./email-link-health";
+import { assessEmailLink, buildEmailLinkHealth, isCrmRelevantEmailAssessment, validateEmailLinkApproval } from "./email-link-health";
 
 const contacts = [
   { id: "soleada-1", name: "Kari", email: "kari@example.com", brand_id: "soleada" },
@@ -95,14 +95,50 @@ test("approval rejects ambiguous duplicate identity", () => {
   assert.equal(result.ok, false);
 });
 
-test("health summary separates safe candidates from unresolved mail", () => {
+test("known system notification is not CRM-relevant when it is otherwise unlinked", () => {
+  const assessment = assessEmailLink({
+    id: "instagram-notice",
+    direction: "inbound",
+    from_address: "notification@mail.instagram.com",
+  }, contacts);
+  assert.equal(assessment.state, "unlinked");
+  assert.equal(isCrmRelevantEmailAssessment(assessment), false);
+});
+
+test("outbound mail remains CRM-relevant even without a current contact match", () => {
+  const assessment = assessEmailLink({
+    id: "outbound-new-lead",
+    direction: "outbound",
+    from_address: "freddy@zenecohomes.com",
+    to_addresses: ["new.person@example.net"],
+  }, contacts);
+  assert.equal(isCrmRelevantEmailAssessment(assessment), true);
+});
+
+test("explicit CRM conflict remains visible even when sender is a system domain", () => {
+  const assessment = assessEmailLink({
+    id: "system-conflict",
+    direction: "inbound",
+    from_address: "notification@mail.instagram.com",
+    matched_lead_id: "deleted-contact",
+  }, contacts);
+  assert.equal(assessment.state, "ambiguous");
+  assert.equal(isCrmRelevantEmailAssessment(assessment), true);
+});
+
+test("health summary excludes known non-CRM notifications from linkage denominator", () => {
   const result = buildEmailLinkHealth([
     { id: "linked", matched_customer_id: "soleada-1" },
     { id: "candidate", direction: "inbound", from_address: "ola@example.com" },
     { id: "unknown", direction: "inbound", from_address: "nobody@example.org" },
+    { id: "system", direction: "inbound", from_address: "notice@supabase.com" },
   ], contacts);
+  assert.equal(result.summary.totalMessages, 4);
+  assert.equal(result.summary.excludedNonCrm, 1);
+  assert.equal(result.summary.messages, 3);
   assert.equal(result.summary.linked, 1);
   assert.equal(result.summary.exactCandidates, 1);
   assert.equal(result.summary.unlinked, 1);
   assert.equal(result.summary.safeCoveragePercent, 67);
+  assert.equal(result.items.some((item) => item.message.id === "system"), false);
 });
