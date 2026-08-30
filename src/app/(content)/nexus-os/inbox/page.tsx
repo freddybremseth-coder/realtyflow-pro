@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Inbox, Loader2, Megaphone, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Inbox, Loader2, MailWarning, Megaphone, RefreshCw, ShieldCheck } from "lucide-react";
 import { buildNexusInbox, summarizeNexusInbox, type NexusInboxItem, type NexusInboxSource } from "@/lib/nexus-inbox";
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 
 type OsPayload = { attention?: Array<{ id: string; severity: "high" | "medium" | "low"; title: string; detail: string; href: string }> };
 type ApprovalPayload = { items?: Array<{ id: string; title: string; summary: string | null; ready: boolean; blocker: string | null; ageDays: number; customerName: string; reviewHref: string }> };
 type MarketingPayload = { rows?: SocialAutopilotRow[] };
+type EmailIdentityPayload = { items?: Array<{
+  state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
+  reviewPriority: { priority: "high" | "medium" | "low"; reason: string };
+  identityEvidence: { domain?: string | null };
+  message: { id: string; subject: string };
+}> };
 type Filter = "all" | NexusInboxSource;
 
 async function getJson<T>(url: string): Promise<{ data: T | null; error: string | null }> {
@@ -32,6 +38,7 @@ function tone(item: NexusInboxItem) {
 function sourceLabel(source: NexusInboxSource) {
   if (source === "approval") return "Approval";
   if (source === "marketing") return "Marketing";
+  if (source === "email_identity") return "Email identity";
   return "System";
 }
 
@@ -43,16 +50,25 @@ export default function NexusInboxPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [os, approvals, marketing] = await Promise.all([
+    const [os, approvals, marketing, emailIdentity] = await Promise.all([
       getJson<OsPayload>("/api/os/status"),
       getJson<ApprovalPayload>("/api/approvals"),
       getJson<MarketingPayload>("/api/marketing/readiness"),
+      getJson<EmailIdentityPayload>("/api/nexus/email-link-health"),
     ]);
-    setErrors([os.error, approvals.error, marketing.error].filter((value): value is string => Boolean(value)));
+    setErrors([os.error, approvals.error, marketing.error, emailIdentity.error].filter((value): value is string => Boolean(value)));
     setItems(buildNexusInbox({
       attention: os.data?.attention ?? [],
       approvals: approvals.data?.items ?? [],
       marketingRows: marketing.data?.rows ?? [],
+      emailIdentityReviews: (emailIdentity.data?.items ?? []).map((item) => ({
+        id: item.message.id,
+        subject: item.message.subject,
+        priority: item.reviewPriority.priority,
+        reason: item.reviewPriority.reason,
+        state: item.state,
+        domain: item.identityEvidence.domain ?? null,
+      })),
     }));
     setLoading(false);
   }, []);
@@ -64,6 +80,7 @@ export default function NexusInboxPage() {
   const tabs: Array<[Filter, string, number]> = [
     ["all", "Alle", summary.total],
     ["approval", "Approvals", summary.approvals],
+    ["email_identity", "Email identity", summary.emailIdentity],
     ["marketing", "Marketing", summary.marketing],
     ["system", "System", summary.system],
   ];
@@ -74,7 +91,7 @@ export default function NexusInboxPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Inbox size={16} /> Nexus Inbox</div>
           <h1 className="mt-2 text-3xl font-black text-slate-950">Beslutninger som trenger et menneske</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én read-only triageflate over eksisterende OS Attention, Approval Queue og Marketing Readiness. Nexus Inbox flytter ikke godkjenninger og utfører ingen handlinger selv.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Én read-only triageflate over OS Attention, Approval Queue, Marketing Readiness og høyprioritert Email Link-review. Nexus Inbox flytter ikke godkjenninger, kobler ikke CRM-identiteter og utfører ingen handlinger selv.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</button>
       </div>
@@ -82,8 +99,8 @@ export default function NexusInboxPage() {
 
     {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><b>Én eller flere kilder kunne ikke leses.</b><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {[["Totalt", summary.total, Inbox], ["Kritisk", summary.critical, AlertTriangle], ["Approvals", summary.approvals, ShieldCheck], ["Marketing", summary.marketing, Megaphone]].map(([label, value, Icon]) => {
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {[["Totalt", summary.total, Inbox], ["Kritisk", summary.critical, AlertTriangle], ["Approvals", summary.approvals, ShieldCheck], ["Email identity", summary.emailIdentity, MailWarning], ["Marketing", summary.marketing, Megaphone]].map(([label, value, Icon]) => {
         const Comp = Icon as typeof Inbox;
         return <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Comp size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{String(value)}</div><div className="text-sm font-semibold text-slate-500">{String(label)}</div></div>;
       })}
@@ -108,6 +125,6 @@ export default function NexusInboxPage() {
       {!loading && visible.length === 0 && errors.length === 0 && <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950"><CheckCircle2 size={20} className="mt-0.5" /><div><div className="font-black">Ingen beslutninger i denne køen</div><div className="mt-1 text-sm text-emerald-800">Det finnes ingen elementer fra de valgte kildene som trenger menneskelig oppmerksomhet nå.</div></div></div>}
     </section>
 
-    <div className="text-xs leading-5 text-slate-500">Snooze, dismiss og direkte execute legges først til når vi har en eksplisitt, auditerbar action-state. Denne versjonen er bevisst read-only.</div>
+    <div className="text-xs leading-5 text-slate-500">Email identity-elementer er kun read-only review-signaler. AI-intent kan prioritere en melding, men er aldri koblingsevidens. Snooze, dismiss og direkte execute legges først til når vi har eksplisitt, auditerbar action-state.</div>
   </main>;
 }
