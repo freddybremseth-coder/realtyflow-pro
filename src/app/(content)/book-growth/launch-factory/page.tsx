@@ -73,6 +73,7 @@ type Data = {
   frequencyPolicy?: Record<string, number>;
   summary?: Record<string, number>;
   editions?: Edition[];
+  connectionCenter?: Array<{ channel: string; connected: boolean; label: string | null; manageHref: string | null }>;
 };
 
 const missingLabels: Record<string, string> = {
@@ -260,6 +261,26 @@ export default function LaunchFactoryPage() {
     }
   }
 
+  async function setWebsiteTarget() {
+    setBusyId("website-target");
+    setError("");
+    try {
+      const response = await fetch("/api/book-growth/launch-factory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "set_website_target", targetUrl: "https://books.freddybremseth.com" }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Kunne ikke lagre nettstedmålet");
+      setNotice("Nettstedmålet er satt til books.freddybremseth.com. Ingen publisering ble utført.");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Kunne ikke lagre nettstedmålet");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   function beginEdit(item: CalendarItem) {
     setEditingItemId(item.id);
     setEditPayload({ ...item.payload });
@@ -275,15 +296,31 @@ export default function LaunchFactoryPage() {
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <header>
-        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.4</p>
+        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.5</p>
         <h1 style={{ margin: "6px 0" }}>Launch Factory</h1>
         <p style={{ maxWidth: 900, marginTop: 0 }}>
-          Kjør en tydelig kanal-preflight på innhold i intern kø. Systemet kontrollerer tilkobling, format, godkjenning, tidspunkt og ressurser – men sender, planlegger eller publiserer fortsatt ingenting.
+          Koble og kontroller Freddy Publishing-kanalene fra samme arbeidsflate. OAuth og e-posthemmeligheter håndteres av eksisterende sikre tilkoblingssystem; Book OS viser bare readiness og nettstedmål.
         </p>
       </header>
 
       {error ? <p role="alert" style={{ padding: 12, background: "#fee2e2", border: "1px solid #ef4444", borderRadius: 8 }}>{error}</p> : null}
       {notice ? <p role="status" style={{ padding: 12, background: "#ecfdf5", border: "1px solid #22c55e", borderRadius: 8 }}>{notice}</p> : null}
+
+      <section style={{ marginTop: 18, padding: 16, border: "1px solid #0f766e", borderRadius: 12, background: "#f0fdfa" }}>
+        <h2 style={{ margin: 0 }}>Freddy Publishing Connection Center</h2>
+        <p style={{ margin: "5px 0 12px", color: "#475569", fontSize: 13 }}>Løs kanalblokkeringer her. Å koble eller rette en kanal publiserer ingenting.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+          {(data?.connectionCenter ?? []).map((connection) => (
+            <article key={connection.channel} style={{ padding: 12, border: `1px solid ${connection.connected ? "#22c55e" : "#f59e0b"}`, borderRadius: 9, background: "white" }}>
+              <strong>{channelLabels[connection.channel] || connection.channel}</strong>
+              <span style={{ display: "block", marginTop: 5, color: connection.connected ? "#166534" : "#92400e", fontSize: 12, fontWeight: 900 }}>{connection.connected ? "✓ Klar" : "Må kobles eller rettes"}</span>
+              <span style={{ display: "block", minHeight: 32, marginTop: 4, color: "#64748b", fontSize: 11 }}>{connection.label || "Ingen aktiv forbindelse funnet"}</span>
+              {connection.manageHref ? <a href={connection.manageHref} style={{ display: "block", marginTop: 8, padding: 8, borderRadius: 7, background: "#0f172a", color: "white", textAlign: "center", textDecoration: "none", fontSize: 12, fontWeight: 900 }}>{connection.connected ? "Koble på nytt" : "Koble kanal"}</a> : null}
+              {connection.channel === "website" && !connection.connected ? <button disabled={busyId === "website-target"} onClick={setWebsiteTarget} style={{ width: "100%", marginTop: 8, padding: 8, border: 0, borderRadius: 7, background: "#0f766e", color: "white", fontWeight: 900 }}>{busyId === "website-target" ? "Lagrer…" : "Bruk books.freddybremseth.com"}</button> : null}
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section aria-label="Launch Factory status" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, margin: "20px 0" }}>
         {[
