@@ -37,10 +37,17 @@ const requestSchema = z.discriminatedUnion("action", [
     decision: z.enum(["submitted", "approved", "returned", "cancelled"]),
     note: z.string().trim().max(1000).optional(),
   }),
+  z.object({ action: z.literal("prepare_handoff"), itemId: z.string().uuid() }),
+  z.object({
+    action: z.literal("decide_handoff"),
+    handoffId: z.string().uuid(),
+    decision: z.enum(["queue", "withdraw"]),
+    note: z.string().trim().max(1000).optional(),
+  }),
 ]);
 
 function unavailable(message: string) {
-  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions)|publishing_(stage|activate|edit|decide)_launch|schema cache|does not exist|relation/i.test(message);
+  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs)|publishing_(stage|activate|edit|decide|prepare)_launch|schema cache|does not exist|relation/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -49,7 +56,7 @@ export async function GET(request: NextRequest) {
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes] = await Promise.all([
+  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes] = await Promise.all([
     sb.from("publishing_catalog_works").select("id,canonical_title,series_name,status").neq("status", "archived"),
     sb.from("publishing_catalog_editions").select("id,work_id,title,subtitle,language,format,status").neq("status", "retired"),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("is_canonical", true),
@@ -60,12 +67,13 @@ export async function GET(request: NextRequest) {
     sb.from("publishing_launch_calendar_items").select("id,activation_id,campaign_id,source_item_index,channel,content_type,scheduled_for,local_date,timezone,status,payload,current_version,submitted_by,submitted_at,approved_by,approved_at").order("scheduled_for", { ascending: true }),
     sb.from("publishing_launch_calendar_item_versions").select("id,calendar_item_id,version,payload,created_by,change_reason,created_at").order("version", { ascending: false }),
     sb.from("publishing_launch_calendar_item_decisions").select("id,calendar_item_id,item_version,decision,actor,note,created_at").order("created_at", { ascending: false }),
+    sb.from("publishing_launch_channel_handoffs").select("id,calendar_item_id,item_version,attempt,channel,status,payload_snapshot,prepared_by,prepared_at,queued_by,queued_at,withdrawn_by,withdrawn_at,note,created_at,updated_at").order("created_at", { ascending: false }),
   ]);
-  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error;
+  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error;
   if (error) {
     const missingMigration = unavailable(error.message);
     return NextResponse.json(
-      { available: false, error: missingMigration ? "Fase 4.2-migreringen er ikke installert ennå." : error.message },
+      { available: false, error: missingMigration ? "Fase 4.3-migreringen er ikke installert ennå." : error.message },
       { status: missingMigration ? 503 : 500 },
     );
   }
@@ -79,6 +87,7 @@ export async function GET(request: NextRequest) {
   const calendarItems = calendarRes.data ?? [];
   const itemVersions = versionsRes.data ?? [];
   const itemDecisions = itemDecisionsRes.data ?? [];
+  const handoffs = handoffsRes.data ?? [];
   const workById = new Map(works.map((row: any) => [String(row.id), row]));
 
   const rows = (editionsRes.data ?? []).map((edition: any) => {
@@ -98,6 +107,7 @@ export async function GET(request: NextRequest) {
       ...item,
       versions: itemVersions.filter((row: any) => row.calendar_item_id === item.id),
       decisions: itemDecisions.filter((row: any) => row.calendar_item_id === item.id),
+      handoffs: handoffs.filter((row: any) => row.calendar_item_id === item.id),
     })) : [];
     const packageChannels = new Set(editionPackages.map((row: any) => row.channel));
     const hasEpub = editionAssets.some((row: any) => row.asset_type === "epub" && row.revision_id === revision?.id);
@@ -110,6 +120,8 @@ export async function GET(request: NextRequest) {
     ].filter(Boolean);
     const readyItemCount = calendar.filter((item: any) => item.status === "ready_for_review").length;
     const draftItemCount = calendar.filter((item: any) => item.status === "draft").length;
+    const preparedHandoffCount = calendar.reduce((total: number, item: any) => total + item.handoffs.filter((row: any) => row.status === "prepared").length, 0);
+    const queuedHandoffCount = calendar.reduce((total: number, item: any) => total + item.handoffs.filter((row: any) => row.status === "queued").length, 0);
     const nextAction = activation
       ? !activationIsCurrent
         ? { code: "calendar_review", label: "Kontroller kalender fra tidligere revisjon" }
@@ -117,7 +129,11 @@ export async function GET(request: NextRequest) {
           ? { code: "calendar_review", label: `${readyItemCount} utkast venter på godkjenning` }
           : draftItemCount > 0
             ? { code: "calendar_review", label: `${draftItemCount} utkast må redigeres eller sendes til vurdering` }
-            : { code: "calendar_reviewed", label: "Alle aktive kalenderutkast er vurdert" }
+            : preparedHandoffCount > 0
+              ? { code: "handoff_review", label: `${preparedHandoffCount} kanalutkast kan legges i intern kø` }
+              : queuedHandoffCount > 0
+                ? { code: "handoff_queued", label: `${queuedHandoffCount} innhold ligger i intern kanalkø` }
+                : { code: "calendar_reviewed", label: "Godkjent innhold kan klargjøres for kanal" }
       : missing.length
         ? { code: "complete_package", label: "Fullfør godkjent publiseringspakke" }
         : proposed
@@ -157,6 +173,8 @@ export async function GET(request: NextRequest) {
       draftItems: rows.reduce((total: number, row: any) => total + row.calendar.filter((item: any) => item.status === "draft").length, 0),
       reviewItems: rows.reduce((total: number, row: any) => total + row.calendar.filter((item: any) => item.status === "ready_for_review").length, 0),
       approvedItems: rows.reduce((total: number, row: any) => total + row.calendar.filter((item: any) => item.status === "approved").length, 0),
+      preparedHandoffs: handoffs.filter((row: any) => row.status === "prepared").length,
+      queuedHandoffs: handoffs.filter((row: any) => row.status === "queued").length,
     },
     editions: rows,
   });
@@ -211,6 +229,26 @@ export async function POST(request: NextRequest) {
     });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "decide_item", result: data });
+  }
+
+  if (parsed.data.action === "prepare_handoff") {
+    const { data, error } = await sb.rpc("publishing_prepare_launch_channel_handoff", {
+      p_item_id: parsed.data.itemId,
+      p_actor: "admin_ui",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "prepare_handoff", result: data });
+  }
+
+  if (parsed.data.action === "decide_handoff") {
+    const { data, error } = await sb.rpc("publishing_decide_launch_channel_handoff", {
+      p_handoff_id: parsed.data.handoffId,
+      p_decision: parsed.data.decision,
+      p_actor: "admin_ui",
+      p_note: parsed.data.note || null,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "decide_handoff", result: data });
   }
 
   const editionId = parsed.data.editionId;
