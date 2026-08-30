@@ -145,9 +145,12 @@ export default function EmailLinkHealthPage() {
         <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. AI-intent som `inquiry` og `follow_up` kan løfte review-prioriteten, men kan aldri alene koble en melding til CRM.</p>
       </div>
 
-      {targetMessageId ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 sm:flex-row sm:items-center sm:justify-between">
+      {targetMessageId ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 lg:flex-row lg:items-center lg:justify-between">
         <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox.</div>
-        <Link href="/nexus-os/email-link-health" className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Vis hele Email Link Health</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/nexus-os/inbox" className="inline-flex w-fit rounded-xl bg-violet-800 px-3 py-2 text-xs font-black text-white hover:bg-violet-900">Tilbake til Nexus Inbox</Link>
+          <Link href="/nexus-os/email-link-health" className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Vis hele Email Link Health</Link>
+        </div>
       </div> : null}
 
       {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
