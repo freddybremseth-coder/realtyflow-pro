@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildEmailLinkHealth, classifyEmailIdentityEvidence, classifyEmailIdentityReviewPriority } from "@/lib/crm/email-link-health";
+import { filterOwnAddressEmailHealth } from "@/lib/crm/email-link-health-own-addresses";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,21 +21,27 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [contactsResult, messagesResult] = await Promise.all([
+  const [contactsResult, messagesResult, ownAddressesResult] = await Promise.all([
     supabase.from("contacts").select("id,name,email,brand_id,brand").order("updated_at", { ascending: false }).limit(2000),
     supabase
       .from("email_messages")
       .select("id,brand_id,direction,from_address,to_addresses,subject,ai_intent,received_at,created_at,matched_lead_id,matched_customer_id")
       .order("received_at", { ascending: false })
       .limit(1000),
+    supabase.from("brand_email_configs").select("email_address").eq("is_active", true).limit(500),
   ]);
 
   if (contactsResult.error) return NextResponse.json({ error: contactsResult.error.message }, { status: 500 });
   if (messagesResult.error) return NextResponse.json({ error: messagesResult.error.message }, { status: 500 });
+  if (ownAddressesResult.error) return NextResponse.json({ error: ownAddressesResult.error.message }, { status: 500 });
 
   const contacts = contactsResult.data || [];
   const contactMap = new Map(contacts.map((contact) => [String(contact.id), contact]));
-  const health = buildEmailLinkHealth(messagesResult.data || [], contacts);
+  const baseHealth = buildEmailLinkHealth(messagesResult.data || [], contacts);
+  const health = filterOwnAddressEmailHealth(
+    baseHealth,
+    (ownAddressesResult.data || []).map((row) => String(row.email_address || "")),
+  );
 
   const items = health.items.map((item) => ({
     state: item.state,
@@ -70,6 +77,7 @@ export async function GET(request: NextRequest) {
       fuzzyNameMatching: false,
       relationshipInference: false,
       aiIntentUsedForLinking: false,
+      ownAddressSource: "active_brand_email_configs",
       crmUpdated: false,
       emailMessageUpdated: false,
       emailSent: false,
