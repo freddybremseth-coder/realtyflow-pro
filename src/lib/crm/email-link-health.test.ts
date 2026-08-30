@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessEmailLink, buildEmailLinkHealth, classifyEmailIdentityEvidence, isCrmRelevantEmailAssessment, validateEmailLinkApproval } from "./email-link-health";
+import { assessEmailLink, buildEmailLinkHealth, classifyEmailIdentityEvidence, classifyEmailIdentityReviewPriority, isCrmRelevantEmailAssessment, validateEmailLinkApproval } from "./email-link-health";
 
 const contacts = [
   { id: "soleada-1", name: "Kari", email: "kari@example.com", brand_id: "soleada" },
@@ -166,6 +166,38 @@ test("unmatched custom domain is external-domain evidence, not partner or custom
   assert.equal(identity.type, "external_domain");
   assert.equal(identity.domain, "agency.example");
   assert.match(identity.reason, /relasjonstype er ikke antatt/i);
+});
+
+test("exact candidate is high review priority without changing linking evidence", () => {
+  const assessment = assessEmailLink({ id: "review-exact", direction: "inbound", from_address: "kari@example.com" }, contacts);
+  const review = classifyEmailIdentityReviewPriority(assessment);
+  assert.equal(review.priority, "high");
+  assert.equal(assessment.state, "exact_candidate");
+});
+
+test("identity conflict is high review priority", () => {
+  const assessment = assessEmailLink({ id: "review-conflict", matched_lead_id: "missing-contact", direction: "inbound", from_address: "person@example.org" }, contacts);
+  const review = classifyEmailIdentityReviewPriority(assessment);
+  assert.equal(review.priority, "high");
+  assert.match(review.reason, /konflikt/i);
+});
+
+test("inbound inquiry without CRM identity is high review priority but remains unlinked", () => {
+  const assessment = assessEmailLink({ id: "review-inquiry", direction: "inbound", from_address: "new.person@example.org", ai_intent: "inquiry" }, contacts);
+  const review = classifyEmailIdentityReviewPriority(assessment);
+  assert.equal(assessment.state, "unlinked");
+  assert.equal(review.priority, "high");
+  assert.match(review.reason, /kun prioriteringssignal/i);
+});
+
+test("inbound follow-up without CRM identity is high review priority", () => {
+  const assessment = assessEmailLink({ id: "review-follow-up", direction: "inbound", from_address: "new.person@example.org", ai_intent: "follow_up" }, contacts);
+  assert.equal(classifyEmailIdentityReviewPriority(assessment).priority, "high");
+});
+
+test("already linked mail is low review priority", () => {
+  const assessment = assessEmailLink({ id: "review-linked", matched_customer_id: "soleada-1", ai_intent: "inquiry" }, contacts);
+  assert.equal(classifyEmailIdentityReviewPriority(assessment).priority, "low");
 });
 
 test("health summary excludes known non-CRM notifications from linkage denominator", () => {
