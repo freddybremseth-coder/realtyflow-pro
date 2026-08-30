@@ -6,12 +6,14 @@ import { AlertTriangle, Link2, Loader2, Mail, RefreshCw, Search, ShieldCheck } f
 import { EmailLinkApprovalButton } from "@/components/nexus/email-link-approval-button";
 
 type IdentityEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
+type ReviewPriority = "high" | "medium" | "low";
 
 interface HealthItem {
   state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
   confidence: "HIGH" | "NONE";
   reason: string;
   identityEvidence: { type: IdentityEvidenceType; domain?: string | null; reason: string };
+  reviewPriority: { priority: ReviewPriority; reason: string };
   message: { id: string; brandId?: string | null; direction?: string | null; subject: string; aiIntent?: string | null; occurredAt?: string | null };
   candidates: Array<{ id: string; name: string; email?: string | null; brandId?: string | null }>;
 }
@@ -64,6 +66,20 @@ const IDENTITY_CLASSES: Record<IdentityEvidenceType, string> = {
   unknown: "bg-slate-100 text-slate-700 ring-slate-200",
 };
 
+const PRIORITY_LABELS: Record<ReviewPriority, string> = {
+  high: "Høy review",
+  medium: "Medium review",
+  low: "Lav review",
+};
+
+const PRIORITY_CLASSES: Record<ReviewPriority, string> = {
+  high: "bg-rose-100 text-rose-900 ring-rose-200",
+  medium: "bg-amber-100 text-amber-900 ring-amber-200",
+  low: "bg-slate-100 text-slate-700 ring-slate-200",
+};
+
+const PRIORITY_ORDER: Record<ReviewPriority, number> = { high: 0, medium: 1, low: 2 };
+
 function dateLabel(value: unknown) {
   const date = new Date(String(value || ""));
   return Number.isNaN(date.getTime()) ? "Ukjent dato" : new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium", timeStyle: "short" }).format(date);
@@ -74,6 +90,7 @@ export default function EmailLinkHealthPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | HealthItem["state"]>("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | ReviewPriority>("all");
   const [search, setSearch] = useState("");
 
   async function load() {
@@ -95,13 +112,16 @@ export default function EmailLinkHealthPage() {
 
   const items = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (data?.items || []).filter((item) => {
-      if (filter !== "all" && item.state !== filter) return false;
-      if (!query) return true;
-      return [item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.identityEvidence.domain, item.identityEvidence.reason, IDENTITY_LABELS[item.identityEvidence.type], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
-        .filter(Boolean).join(" ").toLowerCase().includes(query);
-    });
-  }, [data, filter, search]);
+    return (data?.items || [])
+      .filter((item) => {
+        if (filter !== "all" && item.state !== filter) return false;
+        if (priorityFilter !== "all" && item.reviewPriority.priority !== priorityFilter) return false;
+        if (!query) return true;
+        return [item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.identityEvidence.domain, item.identityEvidence.reason, item.reviewPriority.reason, IDENTITY_LABELS[item.identityEvidence.type], PRIORITY_LABELS[item.reviewPriority.priority], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
+          .filter(Boolean).join(" ").toLowerCase().includes(query);
+      })
+      .sort((a, b) => PRIORITY_ORDER[a.reviewPriority.priority] - PRIORITY_ORDER[b.reviewPriority.priority]);
+  }, [data, filter, priorityFilter, search]);
 
   return <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 sm:py-8">
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -109,14 +129,14 @@ export default function EmailLinkHealthPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Link2 className="h-4 w-4" /> Email Link Health</div>
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Koble inbox til riktig kunde uten å gjette</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Identitetsevidens følger relevant motpart: avsender på inbound og mottaker på outbound. Et eksternt domene betyr aldri automatisk kunde eller partner.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Review-prioritet hjelper deg å se hva som bør vurderes først, men brukes aldri som koblingsevidens.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
         <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert kobling</div>
-        <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. Identitetskategori er forklarende evidens og gir aldri i seg selv tillatelse til å koble en melding til CRM.</p>
+        <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. AI-intent som `inquiry` og `follow_up` kan løfte review-prioriteten, men kan aldri alene koble en melding til CRM.</p>
       </div>
 
       {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
@@ -138,11 +158,16 @@ export default function EmailLinkHealthPage() {
         ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-500">{label}</div></div>)}
       </div>
 
-      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk emne, brand, intent, domene eller kontakt…" className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-cyan-500" /></div>
-        <div className="flex gap-2 overflow-x-auto pb-1">{([
-          ["all", "Alle"], ["linked", "Koblet"], ["exact_candidate", "Sikker kandidat"], ["ambiguous", "Tvetydig"], ["unlinked", "Ikke koblet"],
-        ] as const).map(([key, label]) => <button key={key} onClick={() => setFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${filter === key ? "bg-cyan-700 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
+      <div className="mt-5 flex flex-col gap-3">
+        <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk emne, brand, intent, domene, prioritet eller kontakt…" className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-cyan-500" /></div>
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex gap-2 overflow-x-auto pb-1">{([
+            ["all", "Alle status"], ["linked", "Koblet"], ["exact_candidate", "Sikker kandidat"], ["ambiguous", "Tvetydig"], ["unlinked", "Ikke koblet"],
+          ] as const).map(([key, label]) => <button key={key} onClick={() => setFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${filter === key ? "bg-cyan-700 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">{([
+            ["all", "Alle prioriteter"], ["high", "Høy"], ["medium", "Medium"], ["low", "Lav"],
+          ] as const).map(([key, label]) => <button key={key} onClick={() => setPriorityFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${priorityFilter === key ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
+        </div>
       </div>
     </section>
 
@@ -153,6 +178,7 @@ export default function EmailLinkHealthPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${PRIORITY_CLASSES[item.reviewPriority.priority]}`}>{PRIORITY_LABELS[item.reviewPriority.priority]}</span>
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${STATE_CLASSES[item.state]}`}>{STATE_LABELS[item.state]}</span>
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${IDENTITY_CLASSES[item.identityEvidence.type]}`}>{IDENTITY_LABELS[item.identityEvidence.type]}{item.identityEvidence.domain ? ` · ${item.identityEvidence.domain}` : ""}</span>
               <span className="text-xs font-bold text-slate-500">{item.message.brandId || "brand ukjent"}</span><span className="text-xs text-slate-400">{item.message.direction || "retning ukjent"}</span>
@@ -160,7 +186,8 @@ export default function EmailLinkHealthPage() {
             <h3 className="mt-3 text-base font-black text-slate-950 sm:text-lg">{item.message.subject}</h3>
             <p className="mt-1 text-xs text-slate-500">{dateLabel(item.message.occurredAt)}{item.message.aiIntent ? ` · intent: ${item.message.aiIntent}` : ""}</p>
             <p className="mt-3 text-sm text-slate-700">{item.reason}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">Identitetsevidens: {item.identityEvidence.reason}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">Review-prioritet: {item.reviewPriority.reason}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Identitetsevidens: {item.identityEvidence.reason}</p>
           </div>
           <Mail className="h-5 w-5 shrink-0 text-slate-400" />
         </div>
