@@ -37,6 +37,9 @@ test("launch factory exposes traceable internal calendar state", () => {
   assert.match(route, /publishing_decide_launch_channel_handoff/);
   assert.match(route, /action: z\.literal\("prepare_handoff"\)/);
   assert.match(route, /decision: z\.enum\(\["queue", "withdraw"\]\)/);
+  assert.match(route, /publishing_launch_channel_preflights/);
+  assert.match(route, /publishing_run_launch_channel_preflight/);
+  assert.match(route, /action: z\.literal\("run_preflight"\)/);
   assert.doesNotMatch(route, /\.from\("marketing_publications"\)/);
   assert.doesNotMatch(route, /\.from\("content_publications"\)/);
 });
