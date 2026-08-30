@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
-import { buildEmailLinkHealth, classifyEmailIdentityEvidence, classifyEmailIdentityReviewPriority } from "@/lib/crm/email-link-health";
+import { buildEmailLinkHealth, classifyEmailIdentityEvidence } from "@/lib/crm/email-link-health";
 import { filterOwnAddressEmailHealth } from "@/lib/crm/email-link-health-own-addresses";
+import { classifyEmailIdentityReviewPriorityWithAge } from "@/lib/crm/email-review-priority";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,13 +43,14 @@ export async function GET(request: NextRequest) {
     baseHealth,
     (ownAddressesResult.data || []).map((row) => String(row.email_address || "")),
   );
+  const reviewNow = new Date();
 
   const items = health.items.map((item) => ({
     state: item.state,
     confidence: item.confidence,
     reason: item.reason,
     identityEvidence: classifyEmailIdentityEvidence(item),
-    reviewPriority: classifyEmailIdentityReviewPriority(item),
+    reviewPriority: classifyEmailIdentityReviewPriorityWithAge(item, reviewNow),
     message: {
       id: item.message.id,
       brandId: item.message.brand_id || null,
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
   }));
 
   return NextResponse.json({
-    generatedAt: new Date().toISOString(),
+    generatedAt: reviewNow.toISOString(),
     summary: health.summary,
     items,
     safety: {
@@ -78,6 +80,7 @@ export async function GET(request: NextRequest) {
       relationshipInference: false,
       aiIntentUsedForLinking: false,
       ownAddressSource: "active_brand_email_configs",
+      intentAgeUsedForLinking: false,
       crmUpdated: false,
       emailMessageUpdated: false,
       emailSent: false,
