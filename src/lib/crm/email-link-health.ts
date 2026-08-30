@@ -21,7 +21,7 @@ export interface EmailLinkMessage {
 }
 
 export type EmailLinkState = "linked" | "exact_candidate" | "ambiguous" | "unlinked";
-export type EmailSenderEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
+export type EmailIdentityEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
 
 export interface EmailLinkAssessment {
   message: EmailLinkMessage;
@@ -31,8 +31,8 @@ export interface EmailLinkAssessment {
   reason: string;
 }
 
-export interface EmailSenderEvidence {
-  type: EmailSenderEvidenceType;
+export interface EmailIdentityEvidence {
+  type: EmailIdentityEvidenceType;
   domain: string | null;
   reason: string;
 }
@@ -91,6 +91,19 @@ function domainOf(address: unknown) {
   return at >= 0 ? normalized.slice(at + 1) : "";
 }
 
+function identityDomains(message: EmailLinkMessage) {
+  const direction = String(message.direction || "").trim().toLowerCase();
+  const addresses = direction === "outbound"
+    ? (Array.isArray(message.to_addresses) ? message.to_addresses : [])
+    : [message.from_address];
+  return unique(addresses.map(domainOf));
+}
+
+function identityDomain(message: EmailLinkMessage) {
+  const domains = identityDomains(message);
+  return domains.length === 1 ? domains[0] : null;
+}
+
 export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkContact[]): EmailLinkAssessment {
   const byId = new Map(contacts.map((contact) => [String(contact.id), contact]));
   const explicitIds = unique([String(message.matched_lead_id || ""), String(message.matched_customer_id || "")]);
@@ -140,45 +153,51 @@ export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkCo
   return { message, state: "unlinked", confidence: "NONE", contactIds: [], reason: "Ingen sikker ID- eller eksakt e-postmatch." };
 }
 
-export function classifyEmailSenderEvidence(assessment: EmailLinkAssessment): EmailSenderEvidence {
+export function classifyEmailIdentityEvidence(assessment: EmailLinkAssessment): EmailIdentityEvidence {
   const direction = String(assessment.message.direction || "").trim().toLowerCase();
-  const senderDomain = domainOf(assessment.message.from_address) || null;
+  const domain = identityDomain(assessment.message);
 
   if (assessment.state === "linked" || assessment.state === "exact_candidate") {
     return {
       type: "crm_contact",
-      domain: senderDomain,
+      domain,
       reason: assessment.state === "linked" ? "Dokumentert CRM-kobling." : "Eksakt CRM-e-postidentitet.",
     };
   }
 
   if (assessment.state === "ambiguous") {
-    return { type: "conflict", domain: senderDomain, reason: "CRM-identiteten er tvetydig eller ugyldig og krever review." };
+    return { type: "conflict", domain, reason: "CRM-identiteten er tvetydig eller ugyldig og krever review." };
   }
 
   if (direction === "outbound") {
-    return { type: "outbound_unmatched", domain: senderDomain, reason: "Utgående melding uten nåværende eksakt CRM-match." };
+    return {
+      type: "outbound_unmatched",
+      domain,
+      reason: identityDomains(assessment.message).length > 1
+        ? "Utgående melding til flere mottakerdomener uten nåværende eksakt CRM-match."
+        : "Utgående melding uten nåværende eksakt CRM-match.",
+    };
   }
 
-  if (senderDomain && NON_CRM_SYSTEM_DOMAINS.has(senderDomain)) {
-    return { type: "system_notification", domain: senderDomain, reason: "Kjent system-/plattformdomene uten CRM-identitet." };
+  if (domain && NON_CRM_SYSTEM_DOMAINS.has(domain)) {
+    return { type: "system_notification", domain, reason: "Kjent system-/plattformdomene uten CRM-identitet." };
   }
 
-  if (!senderDomain) {
-    return { type: "unknown", domain: null, reason: "Avsenderdomene kan ikke fastslås." };
+  if (!domain) {
+    return { type: "unknown", domain: null, reason: "Relevant motpartdomene kan ikke fastslås entydig." };
   }
 
-  if (PUBLIC_MAILBOX_DOMAINS.has(senderDomain)) {
+  if (PUBLIC_MAILBOX_DOMAINS.has(domain)) {
     return {
       type: "public_mailbox",
-      domain: senderDomain,
+      domain,
       reason: "Personlig/offentlig e-posttjeneste uten dokumentert CRM-identitet.",
     };
   }
 
   return {
     type: "external_domain",
-    domain: senderDomain,
+    domain,
     reason: "Eksternt eget domene uten dokumentert CRM-identitet; relasjonstype er ikke antatt.",
   };
 }
@@ -187,7 +206,7 @@ export function isCrmRelevantEmailAssessment(assessment: EmailLinkAssessment) {
   if (assessment.state !== "unlinked") return true;
   const direction = String(assessment.message.direction || "").trim().toLowerCase();
   if (direction === "outbound") return true;
-  return classifyEmailSenderEvidence(assessment).type !== "system_notification";
+  return classifyEmailIdentityEvidence(assessment).type !== "system_notification";
 }
 
 export function validateEmailLinkApproval(
