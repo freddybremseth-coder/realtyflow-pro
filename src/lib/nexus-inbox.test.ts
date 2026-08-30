@@ -8,8 +8,8 @@ test("Nexus Inbox combines system, approval, marketing and high email identity a
     approvals: [{ id: "a1", title: "Kjøperprofil", summary: "Klar", ready: true, blocker: null, ageDays: 4, customerName: "Kunde", reviewHref: "/lead-intelligence" }],
     marketingRows: [{ brandId: "freddyb", brandName: "Freddy Bremseth", platform: "facebook", connected: true, pilotReady: false, pilotBlockReason: "Mangler readiness", published: 0, measuredEligible: 0, quarantined: 2, liveLearning: false }],
     emailIdentityReviews: [
-      { id: "mail-conflict", subject: "Re: bolig", priority: "high", reason: "Identitetskonflikt krever review.", state: "ambiguous", domain: "example.com" },
-      { id: "mail-low", subject: "Nyhetsbrev", priority: "low", reason: "Lavt signal.", state: "unlinked", domain: "example.org" },
+      { id: "mail-conflict", subject: "Re: bolig", priority: "high", reason: "Identitetskonflikt krever review.", state: "ambiguous", domain: "example.com", occurredAt: "2026-08-30T09:00:00Z" },
+      { id: "mail-low", subject: "Nyhetsbrev", priority: "low", reason: "Lavt signal.", state: "unlinked", domain: "example.org", occurredAt: "2026-08-30T10:00:00Z" },
     ],
   });
 
@@ -41,11 +41,31 @@ test("high exact candidate is visible as high but not critical email attention",
     attention: [],
     approvals: [],
     marketingRows: [],
-    emailIdentityReviews: [{ id: "candidate/with space", subject: "Interested in villa", priority: "high", reason: "Entydig eksakt CRM-kandidat.", state: "exact_candidate", domain: "gmail.com" }],
+    emailIdentityReviews: [{ id: "candidate/with space", subject: "Interested in villa", priority: "high", reason: "Entydig eksakt CRM-kandidat.", state: "exact_candidate", domain: "gmail.com", occurredAt: "2026-08-30T10:00:00Z" }],
   });
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.source, "email_identity");
   assert.equal(items[0]?.priority, "high");
   assert.equal(items[0]?.href, "/nexus-os/email-link-health?messageId=candidate%2Fwith%20space");
+});
+
+test("same-priority email identity review is ordered newest first without changing other source ordering", () => {
+  const items = buildNexusInbox({
+    attention: [],
+    approvals: [],
+    marketingRows: [],
+    emailIdentityReviews: [
+      { id: "older", subject: "A older subject", priority: "high", reason: "Review", state: "unlinked", occurredAt: "2026-08-28T10:00:00Z" },
+      { id: "newer", subject: "Z newer subject", priority: "high", reason: "Review", state: "unlinked", occurredAt: "2026-08-30T10:00:00Z" },
+      { id: "unknown-date", subject: "B unknown date", priority: "high", reason: "Review", state: "unlinked", occurredAt: null },
+    ],
+  });
+
+  assert.deepEqual(items.map((item) => item.id), [
+    "email-identity:newer",
+    "email-identity:older",
+    "email-identity:unknown-date",
+  ]);
+  assert.equal(items[0]?.occurredAt, "2026-08-30T10:00:00Z");
 });
