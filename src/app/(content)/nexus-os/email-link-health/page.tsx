@@ -30,6 +30,10 @@ interface HealthResponse {
     ambiguous: number;
     unlinked: number;
     safeCoveragePercent: number;
+    reviewPriorityTotal: number;
+    reviewPriorityHigh: number;
+    reviewPriorityMedium: number;
+    reviewPriorityLow: number;
   };
   items: HealthItem[];
 }
@@ -173,6 +177,15 @@ export default function EmailLinkHealthPage() {
           ["Ikke koblet", data?.summary.unlinked ?? 0],
           ["Sikker dekning", `${data?.summary.safeCoveragePercent ?? 0}%`],
         ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-500">{label}</div></div>)}
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          ["Review totalt", data?.summary.reviewPriorityTotal ?? 0, "border-slate-200 bg-white"],
+          ["Høy review", data?.summary.reviewPriorityHigh ?? 0, "border-rose-200 bg-rose-50"],
+          ["Medium review", data?.summary.reviewPriorityMedium ?? 0, "border-amber-200 bg-amber-50"],
+          ["Lav review", data?.summary.reviewPriorityLow ?? 0, "border-slate-200 bg-slate-50"],
+        ].map(([label, value, className]) => <div key={String(label)} className={`rounded-2xl border p-4 ${className}`}><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-600">{label}</div></div>)}
       </div>
 
       <div className="mt-5 flex flex-col gap-3">
