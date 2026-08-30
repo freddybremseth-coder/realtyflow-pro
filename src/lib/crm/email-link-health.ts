@@ -38,6 +38,16 @@ export interface EmailLinkApprovalValidation {
   assessment: EmailLinkAssessment;
 }
 
+const NON_CRM_SYSTEM_DOMAINS = new Set([
+  "mail.instagram.com",
+  "accounts.google.com",
+  "google.com",
+  "supabase.com",
+  "mail.app.supabase.io",
+  "vercel.com",
+  "info.vercel.com",
+]);
+
 function email(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
@@ -52,6 +62,12 @@ function messageBrand(message: EmailLinkMessage) {
 
 function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function domainOf(address: unknown) {
+  const normalized = email(address);
+  const at = normalized.lastIndexOf("@");
+  return at >= 0 ? normalized.slice(at + 1) : "";
 }
 
 export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkContact[]): EmailLinkAssessment {
@@ -103,6 +119,14 @@ export function assessEmailLink(message: EmailLinkMessage, contacts: EmailLinkCo
   return { message, state: "unlinked", confidence: "NONE", contactIds: [], reason: "Ingen sikker ID- eller eksakt e-postmatch." };
 }
 
+export function isCrmRelevantEmailAssessment(assessment: EmailLinkAssessment) {
+  if (assessment.state !== "unlinked") return true;
+  const direction = String(assessment.message.direction || "").trim().toLowerCase();
+  if (direction === "outbound") return true;
+  const senderDomain = domainOf(assessment.message.from_address);
+  return !NON_CRM_SYSTEM_DOMAINS.has(senderDomain);
+}
+
 export function validateEmailLinkApproval(
   message: EmailLinkMessage,
   contacts: EmailLinkContact[],
@@ -151,11 +175,14 @@ export function validateEmailLinkApproval(
 }
 
 export function buildEmailLinkHealth(messages: EmailLinkMessage[], contacts: EmailLinkContact[]) {
-  const items = (messages || []).map((message) => assessEmailLink(message, contacts));
+  const assessed = (messages || []).map((message) => assessEmailLink(message, contacts));
+  const items = assessed.filter(isCrmRelevantEmailAssessment);
   const count = (state: EmailLinkState) => items.filter((item) => item.state === state).length;
   return {
     summary: {
       messages: items.length,
+      totalMessages: assessed.length,
+      excludedNonCrm: assessed.length - items.length,
       linked: count("linked"),
       exactCandidates: count("exact_candidate"),
       ambiguous: count("ambiguous"),
