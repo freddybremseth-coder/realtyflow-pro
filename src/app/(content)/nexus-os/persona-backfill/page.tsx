@@ -50,6 +50,8 @@ const PERSONA_LABELS: Record<string, string> = {
   coastal_social: "Coastal / Social",
 };
 
+const APPROVABLE_BRANDS = new Set(["zeneco", "soleada", "pinosoecolife"]);
+
 function money(value: unknown) {
   const amount = Number(value || 0);
   if (!amount) return "Budsjett mangler";
@@ -65,8 +67,10 @@ export default function PersonaBackfillPage() {
   const [data, setData] = useState<BackfillResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "strong" | "review" | "discovery">("all");
+  const [approvingContactId, setApprovingContactId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -84,6 +88,40 @@ export default function PersonaBackfillPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  async function approvePersona(item: BackfillItem) {
+    const persona = item.candidate.persona;
+    const brand = String(item.contact.brandId || "").trim().toLowerCase();
+    if (!persona || item.candidate.confidence < 80 || !APPROVABLE_BRANDS.has(brand)) return;
+    const label = PERSONA_LABELS[persona] || persona;
+    const name = item.contact.name || item.contact.email || "denne kontakten";
+    const confirmed = window.confirm(
+      `Godkjenn Persona «${label}» for ${name}?\n\nServeren rekalkulerer CRM-evidensen før lagring. Dette oppretter en godkjent Buyer Profile/Persona hvis kontakten ikke allerede har en godkjent profil. Ingen e-post sendes, og LIVE nurture forblir av.`,
+    );
+    if (!confirmed) return;
+
+    setApprovingContactId(item.contact.id);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch("/api/nexus/persona-backfill/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: item.contact.id, persona, brand }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = body?.error?.message || body?.error || "Kunne ikke godkjenne Persona.";
+        throw new Error(message);
+      }
+      setSuccess(`${name}: Persona «${label}» er godkjent. Ingen e-post er sendt, og nurture-status er ikke endret.`);
+      await load();
+    } catch (approveError) {
+      setError(approveError instanceof Error ? approveError.message : "Kunne ikke godkjenne Persona.");
+    } finally {
+      setApprovingContactId(null);
+    }
+  }
 
   const items = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -109,19 +147,20 @@ export default function PersonaBackfillPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-violet-700"><UserRoundSearch className="h-4 w-4" /> Persona Backfill</div>
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Forstå eksisterende CRM før vi automatiserer mer</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Read-only analyse av eksisterende kundedata. Nexus foreslår kun Persona når dokumentert CRM-evidens er tydelig nok. Alle forslag krever menneskelig review før de kan bli Buyer Profile-kriterier.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Nexus foreslår Persona kun når dokumentert CRM-evidens er tydelig nok. Sterke kandidater kan nå godkjennes én og én. Serveren rekalkulerer evidensen ved godkjenning; svak eller endret evidens avvises.</p>
         </div>
-        <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">
+        <button onClick={() => void load()} disabled={loading || Boolean(approvingContactId)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater analyse
         </button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-        <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Sikker modus</div>
-        <p className="mt-1">Ingen CRM-data, Buyer Profiles, nurture-status eller e-post endres fra denne siden. Persona-kandidater påvirker ikke utsendelser før de senere er eksplisitt godkjent.</p>
+        <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert Persona-godkjenning</div>
+        <p className="mt-1">Ingen massebackfill. Bare kandidater med minst 80% confidence kan godkjennes her, én kontakt per eksplisitt handling. Godkjenning sender ingen e-post, endrer ikke CRM-status/nurture-status og aktiverer ikke LIVE nurture.</p>
       </div>
 
       {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">{error}</div> : null}
+      {success ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">{success}</div> : null}
 
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
         {[
@@ -152,6 +191,9 @@ export default function PersonaBackfillPage() {
         const state = bucket(item);
         const strong = state === "strong";
         const discovery = state === "discovery";
+        const brand = String(item.contact.brandId || "").trim().toLowerCase();
+        const canApprove = strong && Boolean(item.candidate.persona) && APPROVABLE_BRANDS.has(brand);
+        const approving = approvingContactId === item.contact.id;
         return <article key={item.contact.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">
@@ -163,7 +205,7 @@ export default function PersonaBackfillPage() {
                 {item.candidate.persona ? <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-black text-white">{PERSONA_LABELS[item.candidate.persona] || item.candidate.persona}</span> : null}
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
-                <span>{item.contact.pipelineStatus || "Ukjent status"}</span><span>{money(item.contact.pipelineValue)}</span><span>{item.contact.propertyInterest || "Område / boligønske ikke registrert"}</span><span>{item.contact.source || "Kilde ukjent"}</span>
+                <span>{item.contact.pipelineStatus || "Ukjent status"}</span><span>{money(item.contact.pipelineValue)}</span><span>{item.contact.propertyInterest || "Område / boligønske ikke registrert"}</span><span>{item.contact.source || "Kilde ukjent"}</span><span>{item.contact.brandId || "Brand ukjent"}</span>
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-700">{item.candidate.reason}</p>
             </div>
@@ -182,9 +224,9 @@ export default function PersonaBackfillPage() {
               <div className="mt-3 flex flex-wrap gap-2">{item.candidate.missingInformation.length ? item.candidate.missingInformation.map((value) => <span key={value} className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900">{value}</span>) : <span className="text-sm text-emerald-700">Ingen åpenbare datagap for selve Persona-forslaget.</span>}</div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <Link href={`/customers?contactId=${encodeURIComponent(item.contact.id)}`} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800">Åpne Customer 360</Link>
-                <Link href="/nexus-os/buyer-intake/reviews" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">Åpne review-system</Link>
+                {canApprove ? <button onClick={() => void approvePersona(item)} disabled={Boolean(approvingContactId)} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2 text-xs font-black text-white hover:bg-violet-800 disabled:opacity-50">{approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{approving ? "Revaliderer …" : "Godkjenn Persona"}</button> : <Link href="/nexus-os/buyer-intake/reviews" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">Åpne review-system</Link>}
               </div>
-              <p className="mt-3 text-[11px] leading-5 text-slate-500">Neste fase kan legge til eksplisitt godkjenning som oppretter en versjonert Buyer Profile-kriteriepost. Denne siden skriver ingenting.</p>
+              <p className="mt-3 text-[11px] leading-5 text-slate-500">Sterk kandidat kan godkjennes her etter ny server-side evidenssjekk. Kontakter med eksisterende godkjent Buyer Profile må fortsatt gå gjennom versjonert Buyer Profile-revisjon for å bevare eksisterende kriterier.</p>
             </div>
           </div>
         </article>;

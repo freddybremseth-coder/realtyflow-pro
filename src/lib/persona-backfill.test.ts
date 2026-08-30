@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferPersonaBackfillCandidate, prioritizePersonaBackfill } from "./persona-backfill";
+import { inferPersonaBackfillCandidate, prioritizePersonaBackfill, validatePersonaBackfillApproval } from "./persona-backfill";
 
 test("strong investment language proposes investor with evidence", () => {
   const result = inferPersonaBackfillCandidate({
@@ -62,4 +62,58 @@ test("backfill queue prioritizes usable candidates before unknowns", () => {
   assert.equal(rows[0].contact.id, "family");
   assert.equal(rows[0].candidate.persona, "family");
   assert.equal(rows[1].candidate.persona, null);
+});
+
+test("high-confidence matching Persona can be explicitly approved", () => {
+  const result = validatePersonaBackfillApproval({
+    id: "approve-investor",
+    notes: "Investor søker investeringsbolig for langtidsutleie med fokus på yield og avkastning.",
+    pipeline_value: 500000,
+    property_interest: "Alicante investment apartment",
+  }, "investor");
+  assert.equal(result.ok, true);
+  assert.equal(result.persona, "investor");
+  assert.ok(result.candidate.confidence >= 80);
+});
+
+test("wrong requested Persona is rejected after server-side re-evaluation", () => {
+  const result = validatePersonaBackfillApproval({
+    id: "approve-family",
+    notes: "Familie med barn, skole, barnehage og aktiviteter er avgjørende for boligvalget.",
+    property_interest: "4 bedroom family home",
+  }, "investor");
+  assert.equal(result.ok, false);
+  assert.equal(result.candidate.persona, "family");
+  assert.match(result.reason, /samsvarer ikke/i);
+});
+
+test("weak evidence cannot be directly approved even when requested Persona is valid", () => {
+  const result = validatePersonaBackfillApproval({
+    id: "approve-weak",
+    property_interest: "Leilighet i Altea",
+  }, "coastal_social");
+  assert.equal(result.ok, false);
+  assert.equal(result.candidate.persona, null);
+});
+
+test("invalid Persona is rejected", () => {
+  const result = validatePersonaBackfillApproval({
+    id: "approve-invalid",
+    notes: "Investor med utleie og avkastning som hovedmål.",
+  }, "luxury_buyer");
+  assert.equal(result.ok, false);
+  assert.equal(result.persona, null);
+});
+
+test("approval threshold rejects otherwise usable candidate below configured confidence", () => {
+  const contact = {
+    id: "threshold",
+    notes: "Pensjonist som ønsker å bo i Spania.",
+    pipeline_value: 300000,
+  };
+  const candidate = inferPersonaBackfillCandidate(contact);
+  assert.equal(candidate.persona, "retiree");
+  const result = validatePersonaBackfillApproval(contact, "retiree", 96);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /minst 96%/i);
 });
