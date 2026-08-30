@@ -14,6 +14,7 @@ export interface NexusInboxItem {
   actionLabel: string;
   customerName?: string | null;
   blocked?: boolean;
+  occurredAt?: string | null;
 }
 
 type OsAttentionItem = {
@@ -42,6 +43,7 @@ type EmailIdentityReviewItem = {
   reason: string;
   state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
   domain?: string | null;
+  occurredAt?: string | null;
 };
 
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
@@ -50,6 +52,11 @@ function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
   if (severity === "high") return "critical";
   if (severity === "medium") return "high";
   return "medium";
+}
+
+function timestamp(value: string | null | undefined) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function buildNexusInbox(input: {
@@ -120,10 +127,19 @@ export function buildNexusInbox(input: {
       reason: `${row.reason}${row.domain ? ` · ${row.domain}` : ""}`,
       href: `/nexus-os/email-link-health?messageId=${encodeURIComponent(row.id)}`,
       actionLabel: "Review identitet",
+      occurredAt: row.occurredAt ?? null,
     });
   }
 
-  return items.sort((a, b) => PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority] || a.title.localeCompare(b.title, "nb"));
+  return items.sort((a, b) => {
+    const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
+    if (priorityDifference) return priorityDifference;
+    if (a.source === "email_identity" && b.source === "email_identity") {
+      const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
+      if (recencyDifference) return recencyDifference;
+    }
+    return a.title.localeCompare(b.title, "nb");
+  });
 }
 
 export function summarizeNexusInbox(items: NexusInboxItem[]) {
