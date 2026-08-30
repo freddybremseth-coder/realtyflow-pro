@@ -14,7 +14,16 @@ interface HealthItem {
 }
 
 interface HealthResponse {
-  summary: { messages: number; linked: number; exactCandidates: number; ambiguous: number; unlinked: number; safeCoveragePercent: number };
+  summary: {
+    messages: number;
+    totalMessages: number;
+    excludedNonCrm: number;
+    linked: number;
+    exactCandidates: number;
+    ambiguous: number;
+    unlinked: number;
+    safeCoveragePercent: number;
+  };
   items: HealthItem[];
 }
 
@@ -77,7 +86,7 @@ export default function EmailLinkHealthPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Link2 className="h-4 w-4" /> Email Link Health</div>
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Koble inbox til riktig kunde uten å gjette</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Navnelikhet brukes ikke automatisk. En kobling skrives først etter at du eksplisitt godkjenner den.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Navnelikhet brukes ikke automatisk. Kjente systemvarsler holdes utenfor CRM-dekningen, men rå e-postdata beholdes urørt.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
       </div>
@@ -87,11 +96,17 @@ export default function EmailLinkHealthPage() {
         <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. API-et validerer hele matchen på nytt før write, og overskriver aldri en kobling som har endret seg i mellomtiden.</p>
       </div>
 
+      {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
+        Nexus analyserer {data.summary.messages} CRM-relevante meldinger av {data.summary.totalMessages} totalt. {data.summary.excludedNonCrm} kjente systemvarsler er ekskludert fra dekningstallet, men finnes fortsatt i inbox-dataene.
+      </div> : null}
+
       {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">{error}</div> : null}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
         {[
-          ["Meldinger", data?.summary.messages ?? 0],
+          ["Rå meldinger", data?.summary.totalMessages ?? 0],
+          ["CRM-relevante", data?.summary.messages ?? 0],
+          ["Systemvarsler", data?.summary.excludedNonCrm ?? 0],
           ["Koblet", data?.summary.linked ?? 0],
           ["Sikre kandidater", data?.summary.exactCandidates ?? 0],
           ["Tvetydige", data?.summary.ambiguous ?? 0],
