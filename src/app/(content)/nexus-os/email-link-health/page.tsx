@@ -23,6 +23,8 @@ interface HealthResponse {
     messages: number;
     totalMessages: number;
     excludedNonCrm: number;
+    excludedSystemNotifications: number;
+    excludedOwnAddresses: number;
     linked: number;
     exactCandidates: number;
     ambiguous: number;
@@ -154,16 +156,17 @@ export default function EmailLinkHealthPage() {
       </div> : null}
 
       {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
-        Nexus analyserer {data.summary.messages} CRM-relevante meldinger av {data.summary.totalMessages} totalt. {data.summary.excludedNonCrm} kjente systemvarsler er ekskludert fra dekningstallet, men finnes fortsatt i inbox-dataene.
+        Nexus analyserer {data.summary.messages} CRM-relevante meldinger av {data.summary.totalMessages} totalt. {data.summary.excludedSystemNotifications} kjente systemvarsler og {data.summary.excludedOwnAddresses} meldinger fra aktive egne brand-adresser er ekskludert fra dekningstallet, men rådataene beholdes.
       </div> : null}
 
       {error ? <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">{error}</div> : null}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5 xl:grid-cols-9">
         {[
           ["Rå meldinger", data?.summary.totalMessages ?? 0],
           ["CRM-relevante", data?.summary.messages ?? 0],
-          ["Systemvarsler", data?.summary.excludedNonCrm ?? 0],
+          ["Systemvarsler", data?.summary.excludedSystemNotifications ?? 0],
+          ["Egne adresser", data?.summary.excludedOwnAddresses ?? 0],
           ["Koblet", data?.summary.linked ?? 0],
           ["Sikre kandidater", data?.summary.exactCandidates ?? 0],
           ["Tvetydige", data?.summary.ambiguous ?? 0],
