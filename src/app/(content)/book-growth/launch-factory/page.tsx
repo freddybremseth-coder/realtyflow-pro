@@ -50,6 +50,7 @@ type CalendarItem = {
   approved_at?: string | null;
   versions: Array<{ id: string; version: number; payload: CampaignItem; created_by: string; change_reason: string; created_at: string }>;
   decisions: Array<{ id: string; item_version: number; decision: string; actor: string; note?: string | null; created_at: string }>;
+  handoffs: Array<{ id: string; item_version: number; attempt: number; channel: string; status: "prepared" | "queued" | "withdrawn"; prepared_by: string; prepared_at: string; queued_at?: string | null; note?: string | null }>;
 };
 type Edition = {
   editionId: string;
@@ -199,6 +200,35 @@ export default function LaunchFactoryPage() {
     }
   }
 
+  async function handoffAction(item: CalendarItem, action: "prepare_handoff" | "decide_handoff", handoffId?: string, decision?: "queue" | "withdraw") {
+    setBusyItemId(item.id);
+    setError("");
+    setNotice("");
+    try {
+      const payload = action === "prepare_handoff"
+        ? { action, itemId: item.id }
+        : { action, handoffId, decision, note: decisionNotes[item.id] || undefined };
+      const response = await fetch("/api/book-growth/launch-factory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Overleveringen mislyktes");
+      setNotice(action === "prepare_handoff"
+        ? "Et låst kanalutkast er klargjort internt. Ingenting er sendt eller publisert."
+        : decision === "queue"
+          ? "Kanalutkastet ligger i intern kø. Ingen ekstern kanal er kontaktet."
+          : "Kanaloverleveringen er trukket tilbake. Innholdet kan redigeres igjen.");
+      setDecisionNotes((current) => ({ ...current, [item.id]: "" }));
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Overleveringen mislyktes");
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
   function beginEdit(item: CalendarItem) {
     setEditingItemId(item.id);
     setEditPayload({ ...item.payload });
@@ -214,10 +244,10 @@ export default function LaunchFactoryPage() {
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <header>
-        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.2</p>
+        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.3</p>
         <h1 style={{ margin: "6px 0" }}>Launch Factory</h1>
         <p style={{ maxWidth: 900, marginTop: 0 }}>
-          Rediger og godkjenn hvert kalenderinnhold med full versjonshistorikk. Alt forblir internt: verken redigering, vurdering eller godkjenning publiserer til Facebook, Instagram, e-post eller nettsiden.
+          Godkjent innhold kan klargjøres og legges i en kontrollert intern kanalkø. Klargjøring og kølegging sender eller publiserer fortsatt ingenting til Facebook, Instagram, e-post eller nettsiden.
         </p>
       </header>
 
@@ -234,6 +264,8 @@ export default function LaunchFactoryPage() {
           ["Utkast", summary.draftItems],
           ["Til vurdering", summary.reviewItems],
           ["Godkjent innhold", summary.approvedItems],
+          ["Klargjort", summary.preparedHandoffs],
+          ["Intern kanalkø", summary.queuedHandoffs],
         ].map(([label, value]) => (
           <article key={String(label)} style={{ background: "white", border: "1px solid #aebdce", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 800 }}>{label}</div>
@@ -284,6 +316,7 @@ export default function LaunchFactoryPage() {
                           const editing = editingItemId === item.id && editPayload;
                           const itemBusy = busyItemId === item.id;
                           const note = decisionNotes[item.id] || "";
+                          const handoff = item.handoffs?.find((row) => row.item_version === item.current_version && row.status !== "withdrawn");
                           return (
                             <div key={item.id} style={{ padding: 12, border: `1px solid ${status.color}`, borderRadius: 9, background: "white" }}>
                               <strong style={{ display: "block", fontSize: 12 }}>{formatScheduled(item.scheduled_for, item.timezone)} · {channelLabels[item.channel] || item.channel}</strong>
@@ -316,7 +349,7 @@ export default function LaunchFactoryPage() {
                                   <p style={{ margin: "6px 0", color: "#475569", fontSize: 12 }}>{item.payload.body}</p>
                                   <p style={{ margin: "7px 0", color: "#64748b", fontSize: 11 }}>Kilde: {item.payload.sourceClaim}</p>
                                   <p style={{ margin: "7px 0", color: "#b45309", fontSize: 11, fontWeight: 900 }}>Internt · ikke publisert</p>
-                                  {item.status !== "cancelled" ? <button disabled={itemBusy} onClick={() => beginEdit(item)} style={{ padding: 7, border: "1px solid #7c3aed", borderRadius: 6, background: "white", color: "#6d28d9", fontWeight: 800 }}>Rediger</button> : null}
+                                  {item.status !== "cancelled" && !handoff ? <button disabled={itemBusy} onClick={() => beginEdit(item)} style={{ padding: 7, border: "1px solid #7c3aed", borderRadius: 6, background: "white", color: "#6d28d9", fontWeight: 800 }}>Rediger</button> : null}
                                   {item.status === "draft" ? <button disabled={itemBusy} onClick={() => itemAction(item, "decide_item", "submitted")} style={{ marginLeft: 6, padding: 7, border: 0, borderRadius: 6, background: "#1d4ed8", color: "white", fontWeight: 800 }}>{itemBusy ? "Sender…" : "Send til vurdering"}</button> : null}
                                   {item.status === "ready_for_review" ? (
                                     <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
@@ -327,8 +360,21 @@ export default function LaunchFactoryPage() {
                                   ) : null}
                                   {item.status === "approved" ? (
                                     <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                                      <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for ny redigering" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
-                                      <button disabled={itemBusy || !note.trim()} onClick={() => itemAction(item, "decide_item", "returned")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Åpne for ny redigering</button>
+                                      {!handoff ? (
+                                        <>
+                                          <button disabled={itemBusy} onClick={() => handoffAction(item, "prepare_handoff")} style={{ padding: 8, border: 0, borderRadius: 6, background: "#0f766e", color: "white", fontWeight: 900 }}>{itemBusy ? "Klargjør…" : `Klargjør for ${channelLabels[item.channel] || item.channel}`}</button>
+                                          <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for ny redigering" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
+                                          <button disabled={itemBusy || !note.trim()} onClick={() => itemAction(item, "decide_item", "returned")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Åpne for ny redigering</button>
+                                        </>
+                                      ) : (
+                                        <div style={{ display: "grid", gap: 6, padding: 9, border: "1px solid #0f766e", borderRadius: 7, background: "#f0fdfa" }}>
+                                          <strong style={{ color: "#115e59", fontSize: 12 }}>{handoff.status === "queued" ? "I intern kanalkø" : "Kanalutkast klargjort"} · v{handoff.item_version} · forsøk {handoff.attempt}</strong>
+                                          <span style={{ color: "#475569", fontSize: 11 }}>Låst øyeblikksbilde · ikke sendt · ikke publisert</span>
+                                          {handoff.status === "prepared" ? <button disabled={itemBusy} onClick={() => handoffAction(item, "decide_handoff", handoff.id, "queue")} style={{ padding: 8, border: 0, borderRadius: 6, background: "#1d4ed8", color: "white", fontWeight: 900 }}>{itemBusy ? "Legger i kø…" : "Legg i intern kanalkø"}</button> : null}
+                                          <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for tilbaketrekking" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
+                                          <button disabled={itemBusy || !note.trim()} onClick={() => handoffAction(item, "decide_handoff", handoff.id, "withdraw")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Trekk tilbake overlevering</button>
+                                        </div>
+                                      )}
                                     </div>
                                   ) : null}
                                 </>
