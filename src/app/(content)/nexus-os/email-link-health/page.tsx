@@ -5,13 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Link2, Loader2, Mail, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { EmailLinkApprovalButton } from "@/components/nexus/email-link-approval-button";
 
-type SenderEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
+type IdentityEvidenceType = "crm_contact" | "external_domain" | "public_mailbox" | "outbound_unmatched" | "conflict" | "system_notification" | "unknown";
 
 interface HealthItem {
   state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
   confidence: "HIGH" | "NONE";
   reason: string;
-  senderEvidence: { type: SenderEvidenceType; domain?: string | null; reason: string };
+  identityEvidence: { type: IdentityEvidenceType; domain?: string | null; reason: string };
   message: { id: string; brandId?: string | null; direction?: string | null; subject: string; aiIntent?: string | null; occurredAt?: string | null };
   candidates: Array<{ id: string; name: string; email?: string | null; brandId?: string | null }>;
 }
@@ -44,17 +44,17 @@ const STATE_CLASSES: Record<HealthItem["state"], string> = {
   unlinked: "bg-slate-200 text-slate-700",
 };
 
-const SENDER_LABELS: Record<SenderEvidenceType, string> = {
+const IDENTITY_LABELS: Record<IdentityEvidenceType, string> = {
   crm_contact: "CRM-identitet",
   external_domain: "Eksternt domene",
   public_mailbox: "Offentlig e-postkonto",
   outbound_unmatched: "Outbound uten CRM-match",
   conflict: "Identitetskonflikt",
   system_notification: "Systemvarsel",
-  unknown: "Ukjent avsender",
+  unknown: "Ukjent motpart",
 };
 
-const SENDER_CLASSES: Record<SenderEvidenceType, string> = {
+const IDENTITY_CLASSES: Record<IdentityEvidenceType, string> = {
   crm_contact: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   external_domain: "bg-violet-50 text-violet-800 ring-violet-200",
   public_mailbox: "bg-blue-50 text-blue-800 ring-blue-200",
@@ -98,7 +98,7 @@ export default function EmailLinkHealthPage() {
     return (data?.items || []).filter((item) => {
       if (filter !== "all" && item.state !== filter) return false;
       if (!query) return true;
-      return [item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.senderEvidence.domain, item.senderEvidence.reason, SENDER_LABELS[item.senderEvidence.type], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
+      return [item.message.subject, item.message.brandId, item.message.aiIntent, item.reason, item.identityEvidence.domain, item.identityEvidence.reason, IDENTITY_LABELS[item.identityEvidence.type], ...item.candidates.flatMap((candidate) => [candidate.name, candidate.email, candidate.brandId])]
         .filter(Boolean).join(" ").toLowerCase().includes(query);
     });
   }, [data, filter, search]);
@@ -109,14 +109,14 @@ export default function EmailLinkHealthPage() {
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-cyan-700"><Link2 className="h-4 w-4" /> Email Link Health</div>
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Koble inbox til riktig kunde uten å gjette</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Nexus viser nå også hvilken avsenderevidens som faktisk finnes, uten å anta at et eksternt domene betyr kunde eller partner.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Identitetsevidens følger relevant motpart: avsender på inbound og mottaker på outbound. Et eksternt domene betyr aldri automatisk kunde eller partner.</p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
         <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert kobling</div>
-        <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. Senderkategori er forklarende evidens og gir aldri i seg selv tillatelse til å koble en melding til CRM.</p>
+        <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. Identitetskategori er forklarende evidens og gir aldri i seg selv tillatelse til å koble en melding til CRM.</p>
       </div>
 
       {data?.summary.excludedNonCrm ? <div className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
@@ -154,13 +154,13 @@ export default function EmailLinkHealthPage() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${STATE_CLASSES[item.state]}`}>{STATE_LABELS[item.state]}</span>
-              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${SENDER_CLASSES[item.senderEvidence.type]}`}>{SENDER_LABELS[item.senderEvidence.type]}{item.senderEvidence.domain ? ` · ${item.senderEvidence.domain}` : ""}</span>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${IDENTITY_CLASSES[item.identityEvidence.type]}`}>{IDENTITY_LABELS[item.identityEvidence.type]}{item.identityEvidence.domain ? ` · ${item.identityEvidence.domain}` : ""}</span>
               <span className="text-xs font-bold text-slate-500">{item.message.brandId || "brand ukjent"}</span><span className="text-xs text-slate-400">{item.message.direction || "retning ukjent"}</span>
             </div>
             <h3 className="mt-3 text-base font-black text-slate-950 sm:text-lg">{item.message.subject}</h3>
             <p className="mt-1 text-xs text-slate-500">{dateLabel(item.message.occurredAt)}{item.message.aiIntent ? ` · intent: ${item.message.aiIntent}` : ""}</p>
             <p className="mt-3 text-sm text-slate-700">{item.reason}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">Avsenderevidens: {item.senderEvidence.reason}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">Identitetsevidens: {item.identityEvidence.reason}</p>
           </div>
           <Mail className="h-5 w-5 shrink-0 text-slate-400" />
         </div>
