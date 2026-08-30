@@ -110,6 +110,16 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - The normal UI presents missing gates as concrete next actions rather than one opaque quality score.
 - Quality and taxonomy tables are server-only, RLS-protected and covered by schema-contract tests.
 
+## Phase 4 acceptance criteria
+
+- A launch campaign can only be generated from the exact canonical revision, four approved channel metadata packages, and verified canonical EPUB and cover.
+- The 30-day campaign obeys the locked total, per-channel and spacing limits before it can be staged.
+- Campaign approval is one attributable decision and remains separate from activation, scheduling and external publication.
+- Activating an approved campaign is atomic and idempotent and creates only traceable internal calendar drafts for the selected start date and timezone.
+- Calendar activation revalidates canon, metadata and source assets so stale campaigns cannot enter the active calendar.
+- No launch action creates an external marketing publication until a later, separately approved and operational channel workflow exists.
+- Launch campaign, activation and calendar data are server-only, RLS-protected and covered by schema-contract tests.
+
 ## Success measures
 
 - 100% of active book projects show a current state and latest activity.

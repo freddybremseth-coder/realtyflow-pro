@@ -10,10 +10,16 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("generate"), editionId: z.string().uuid() }),
   z.object({ action: z.literal("decide"), campaignId: z.string().uuid(), decision: z.enum(["approved", "rejected"]) }),
+  z.object({
+    action: z.literal("activate"),
+    campaignId: z.string().uuid(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    timezone: z.enum(["Europe/Madrid", "Europe/Oslo", "UTC"]),
+  }),
 ]);
 
 function unavailable(message: string) {
-  return /publishing_launch_campaigns|publishing_stage_launch_campaign|schema cache|does not exist|relation/i.test(message);
+  return /publishing_launch_(campaigns|activations|calendar_items)|publishing_(stage|activate)_launch_campaign|schema cache|does not exist|relation/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -21,37 +27,100 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
-  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes] = await Promise.all([
+
+  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes] = await Promise.all([
     sb.from("publishing_catalog_works").select("id,canonical_title,series_name,status").neq("status", "archived"),
     sb.from("publishing_catalog_editions").select("id,work_id,title,subtitle,language,format,status").neq("status", "retired"),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("is_canonical", true),
     sb.from("publishing_channel_metadata_packages").select("id,edition_id,revision_id,channel,status,payload,payload_fingerprint").eq("status", "approved"),
     sb.from("publishing_catalog_assets").select("id,edition_id,revision_id,asset_type,status,is_canonical,storage_bucket,storage_path,external_url,fingerprint").eq("is_canonical", true).eq("status", "verified"),
     sb.from("publishing_launch_campaigns").select("id,work_id,edition_id,revision_id,version,status,plan,frequency_policy,generated_by,model,prompt_version,approved_by,approved_at,created_at").order("version", { ascending: false }),
+    sb.from("publishing_launch_activations").select("id,campaign_id,edition_id,revision_id,start_date,timezone,status,activated_by,activated_at"),
+    sb.from("publishing_launch_calendar_items").select("id,activation_id,campaign_id,source_item_index,channel,content_type,scheduled_for,local_date,timezone,status,payload").order("scheduled_for", { ascending: true }),
   ]);
-  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error;
-  if (error) return NextResponse.json({ available: false, error: unavailable(error.message) ? "Fase 4.0-migreringen er ikke installert ennå." : error.message }, { status: unavailable(error.message) ? 503 : 500 });
-  const works = worksRes.data ?? []; const revisions = revisionsRes.data ?? []; const packages = packagesRes.data ?? []; const assets = assetsRes.data ?? []; const campaigns = campaignsRes.data ?? [];
+  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error;
+  if (error) {
+    const missingMigration = unavailable(error.message);
+    return NextResponse.json(
+      { available: false, error: missingMigration ? "Fase 4.1-migreringen er ikke installert ennå." : error.message },
+      { status: missingMigration ? 503 : 500 },
+    );
+  }
+
+  const works = worksRes.data ?? [];
+  const revisions = revisionsRes.data ?? [];
+  const packages = packagesRes.data ?? [];
+  const assets = assetsRes.data ?? [];
+  const campaigns = campaignsRes.data ?? [];
+  const activations = activationsRes.data ?? [];
+  const calendarItems = calendarRes.data ?? [];
   const workById = new Map(works.map((row: any) => [String(row.id), row]));
+
   const rows = (editionsRes.data ?? []).map((edition: any) => {
     const work: any = workById.get(String(edition.work_id)) ?? {};
     const revision: any = revisions.find((row: any) => row.edition_id === edition.id) ?? null;
     const editionPackages = revision ? packages.filter((row: any) => row.edition_id === edition.id && row.revision_id === revision.id) : [];
     const editionAssets = assets.filter((row: any) => row.edition_id === edition.id && (!row.revision_id || row.revision_id === revision?.id));
-    const editionCampaigns = campaigns.filter((row: any) => row.edition_id === edition.id && row.revision_id === revision?.id);
+    const allEditionCampaigns = campaigns.filter((row: any) => row.edition_id === edition.id);
+    const editionCampaigns = allEditionCampaigns.filter((row: any) => row.revision_id === revision?.id);
     const proposed: any = editionCampaigns.find((row: any) => row.status === "proposed") ?? null;
     const approved: any = editionCampaigns.find((row: any) => row.status === "approved") ?? null;
+    const activation: any = activations.find((row: any) => row.edition_id === edition.id && ["active", "paused"].includes(row.status)) ?? null;
+    const activatedCampaign: any = activation ? allEditionCampaigns.find((row: any) => row.id === activation.campaign_id) ?? null : null;
+    const activationIsCurrent = Boolean(activation && revision && activation.revision_id === revision.id);
+    const campaign: any = activatedCampaign || proposed || approved;
+    const calendar = activation ? calendarItems.filter((row: any) => row.activation_id === activation.id) : [];
     const packageChannels = new Set(editionPackages.map((row: any) => row.channel));
     const hasEpub = editionAssets.some((row: any) => row.asset_type === "epub" && row.revision_id === revision?.id);
     const hasCover = editionAssets.some((row: any) => row.asset_type === "cover");
-    const missing = [!revision ? "canonical_revision" : null, packageChannels.size < 4 ? "approved_channel_metadata" : null, !hasEpub ? "canonical_epub" : null, !hasCover ? "canonical_cover" : null].filter(Boolean);
-    const nextAction = missing.length ? { code: "complete_package", label: "Fullfør godkjent publiseringspakke" }
-      : proposed ? { code: "review_campaign", label: "Vurder én samlet lanseringskampanje", campaignId: proposed.id }
-        : approved ? { code: "ready", label: "Lanseringskampanjen er godkjent, men ikke aktivert" }
+    const missing = [
+      !revision ? "canonical_revision" : null,
+      packageChannels.size < 4 ? "approved_channel_metadata" : null,
+      !hasEpub ? "canonical_epub" : null,
+      !hasCover ? "canonical_cover" : null,
+    ].filter(Boolean);
+    const nextAction = activation
+      ? { code: "calendar_active", label: activationIsCurrent ? "Lanseringskalenderen er aktiv" : "Aktiv kalender bruker en tidligere revisjon" }
+      : missing.length
+        ? { code: "complete_package", label: "Fullfør godkjent publiseringspakke" }
+        : proposed
+        ? { code: "review_campaign", label: "Vurder én samlet lanseringskampanje", campaignId: proposed.id }
+        : approved && !activation
+          ? { code: "activate_campaign", label: "Velg startdato og aktiver kalenderutkast", campaignId: approved.id }
           : { code: "generate_campaign", label: "Lag 30-dagers lanseringskampanje med OpenAI" };
-    return { editionId: edition.id, workId: edition.work_id, title: work.canonical_title || edition.title, seriesName: work.series_name || null, language: edition.language, format: edition.format, revision, packages: editionPackages, assets: editionAssets, campaign: proposed || approved, missing, readyForCampaign: missing.length === 0, nextAction };
+    return {
+      editionId: edition.id,
+      workId: edition.work_id,
+      title: work.canonical_title || edition.title,
+      seriesName: work.series_name || null,
+      language: edition.language,
+      format: edition.format,
+      revision,
+      packages: editionPackages,
+      assets: editionAssets,
+      campaign,
+      activation,
+      activationIsCurrent,
+      calendar,
+      missing,
+      readyForCampaign: missing.length === 0,
+      nextAction,
+    };
   }).sort((a: any, b: any) => Number(b.readyForCampaign) - Number(a.readyForCampaign) || a.title.localeCompare(b.title));
-  return NextResponse.json({ available: true, frequencyPolicy: BOOK_LAUNCH_FREQUENCY_POLICY, summary: { editions: rows.length, packageReady: rows.filter((row: any) => row.readyForCampaign).length, awaitingApproval: rows.filter((row: any) => row.nextAction.code === "review_campaign").length, approved: rows.filter((row: any) => row.nextAction.code === "ready").length }, editions: rows });
+
+  return NextResponse.json({
+    available: true,
+    frequencyPolicy: BOOK_LAUNCH_FREQUENCY_POLICY,
+    summary: {
+      editions: rows.length,
+      packageReady: rows.filter((row: any) => row.readyForCampaign).length,
+      awaitingApproval: rows.filter((row: any) => row.nextAction.code === "review_campaign").length,
+      approved: rows.filter((row: any) => row.nextAction.code === "activate_campaign").length,
+      activeCalendars: rows.filter((row: any) => row.nextAction.code === "calendar_active").length,
+      draftItems: rows.reduce((total: number, row: any) => total + row.calendar.length, 0),
+    },
+    editions: rows,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -61,10 +130,26 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Ugyldig fase 4-handling", issues: parsed.error.issues }, { status: 400 });
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+
   if (parsed.data.action === "decide") {
-    const { data, error } = await sb.rpc("publishing_decide_launch_campaign", { p_campaign_id: parsed.data.campaignId, p_decision: parsed.data.decision, p_actor: "admin_ui" });
+    const { data, error } = await sb.rpc("publishing_decide_launch_campaign", {
+      p_campaign_id: parsed.data.campaignId,
+      p_decision: parsed.data.decision,
+      p_actor: "admin_ui",
+    });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "decide", result: data });
+  }
+
+  if (parsed.data.action === "activate") {
+    const { data, error } = await sb.rpc("publishing_activate_launch_campaign", {
+      p_campaign_id: parsed.data.campaignId,
+      p_start_date: parsed.data.startDate,
+      p_timezone: parsed.data.timezone,
+      p_actor: "admin_ui",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "activate", result: data });
   }
 
   const editionId = parsed.data.editionId;
@@ -80,14 +165,44 @@ export async function POST(request: NextRequest) {
   const exactPackages = (packages ?? []).filter((row: any) => row.revision_id === revision.id);
   if (new Set(exactPackages.map((row: any) => row.channel)).size !== 4) return NextResponse.json({ error: "Fire godkjente kanalmetadata-pakker kreves" }, { status: 409 });
   const exactAssets = (assets ?? []).filter((row: any) => !row.revision_id || row.revision_id === revision.id);
-  if (!exactAssets.some((row: any) => row.asset_type === "epub" && row.revision_id === revision.id) || !exactAssets.some((row: any) => row.asset_type === "cover")) return NextResponse.json({ error: "Verifisert kanonisk EPUB og cover kreves" }, { status: 409 });
+  if (!exactAssets.some((row: any) => row.asset_type === "epub" && row.revision_id === revision.id) || !exactAssets.some((row: any) => row.asset_type === "cover")) {
+    return NextResponse.json({ error: "Verifisert kanonisk EPUB og cover kreves" }, { status: 409 });
+  }
   const { data: work, error: workError } = await sb.from("publishing_catalog_works").select("id,canonical_title,series_name").eq("id", edition.work_id).maybeSingle();
   if (workError) return NextResponse.json({ error: workError.message }, { status: 500 });
   const common: any = exactPackages[0]?.payload ?? {};
   try {
-    const generated = await proposeBookLaunch({ title: common.title || work?.canonical_title || edition.title, subtitle: common.subtitle || edition.subtitle, author: common.author || "Freddy Bremseth", language: common.language || edition.language, description: common.description || "", audiences: Array.isArray(common.audiences) ? common.audiences : [], themes: Array.isArray(common.themes) ? common.themes : [], keywords: Array.isArray(common.keywords) ? common.keywords : [], seriesName: work?.series_name });
-    const planFingerprint = createHash("sha256").update(JSON.stringify({ revisionId: revision.id, packageIds: exactPackages.map((row: any) => row.id).sort(), assetIds: exactAssets.map((row: any) => row.id).sort(), plan: generated.plan, frequencyPolicy: BOOK_LAUNCH_FREQUENCY_POLICY })).digest("hex");
-    const { data, error } = await sb.rpc("publishing_stage_launch_campaign", { p_work_id: edition.work_id, p_edition_id: editionId, p_revision_id: revision.id, p_source_package_ids: exactPackages.map((row: any) => row.id), p_source_asset_ids: exactAssets.map((row: any) => row.id), p_plan: generated.plan, p_frequency_policy: BOOK_LAUNCH_FREQUENCY_POLICY, p_plan_fingerprint: planFingerprint, p_actor: `openai:${generated.model}`, p_model: generated.model, p_prompt_version: "book-launch-v1" });
+    const generated = await proposeBookLaunch({
+      title: common.title || work?.canonical_title || edition.title,
+      subtitle: common.subtitle || edition.subtitle,
+      author: common.author || "Freddy Bremseth",
+      language: common.language || edition.language,
+      description: common.description || "",
+      audiences: Array.isArray(common.audiences) ? common.audiences : [],
+      themes: Array.isArray(common.themes) ? common.themes : [],
+      keywords: Array.isArray(common.keywords) ? common.keywords : [],
+      seriesName: work?.series_name,
+    });
+    const planFingerprint = createHash("sha256").update(JSON.stringify({
+      revisionId: revision.id,
+      packageIds: exactPackages.map((row: any) => row.id).sort(),
+      assetIds: exactAssets.map((row: any) => row.id).sort(),
+      plan: generated.plan,
+      frequencyPolicy: BOOK_LAUNCH_FREQUENCY_POLICY,
+    })).digest("hex");
+    const { data, error } = await sb.rpc("publishing_stage_launch_campaign", {
+      p_work_id: edition.work_id,
+      p_edition_id: editionId,
+      p_revision_id: revision.id,
+      p_source_package_ids: exactPackages.map((row: any) => row.id),
+      p_source_asset_ids: exactAssets.map((row: any) => row.id),
+      p_plan: generated.plan,
+      p_frequency_policy: BOOK_LAUNCH_FREQUENCY_POLICY,
+      p_plan_fingerprint: planFingerprint,
+      p_actor: `openai:${generated.model}`,
+      p_model: generated.model,
+      p_prompt_version: "book-launch-v1",
+    });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "generate", result: data });
   } catch (error) {
