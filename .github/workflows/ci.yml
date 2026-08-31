@@ -22,8 +22,8 @@ jobs:
         run: npm ci --silent
       - name: Contacts API auth tests
         run: npm run test:contacts-api
-      - name: Email admin auth tests
-        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/app/api/email-admin-routes-auth.test.ts
+      - name: Email admin and backfill safety tests
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/app/api/email-admin-routes-auth.test.ts src/lib/email/history-backfill-policy.test.ts
       - name: Revenue Inbox tests
         run: npm run test:revenue-today
       - name: Closing Workspace tests
