@@ -108,10 +108,11 @@ export default function NexusInboxPage() {
     {errors.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950"><div className="flex gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><b>Én eller flere kilder kunne ikke leses.</b><div className="mt-1 text-rose-800">{errors.join(" · ")}</div></div></div></section>}
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {[["Totalt", summary.total, Inbox], ["Kritisk", summary.critical, AlertTriangle], ["Approvals", summary.approvals, ShieldCheck], ["Email identity", summary.emailIdentity, MailWarning], ["Marketing", summary.marketing, Megaphone]].map(([label, value, Icon]) => {
-        const Comp = Icon as typeof Inbox;
-        return <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Comp size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{String(value)}</div><div className="text-sm font-semibold text-slate-500">{String(label)}</div></div>;
-      })}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Inbox size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.total}</div><div className="text-sm font-semibold text-slate-500">Totalt</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><AlertTriangle size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.critical}</div><div className="text-sm font-semibold text-slate-500">Kritisk</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><ShieldCheck size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.approvals}</div><div className="text-sm font-semibold text-slate-500">Approvals</div></div>
+      <Link href="/nexus-os/email-link-health?priority=high" className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md"><MailWarning size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.emailIdentity}</div><div className="flex items-center gap-1 text-sm font-semibold text-slate-500">Email identity <ArrowRight size={13} className="transition group-hover:translate-x-0.5" /></div></Link>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><Megaphone size={19} className="text-cyan-700" /><div className="mt-3 text-3xl font-black text-slate-950">{summary.marketing}</div><div className="text-sm font-semibold text-slate-500">Marketing</div></div>
     </section>
 
     <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
