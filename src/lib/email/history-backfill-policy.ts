@@ -10,6 +10,7 @@ export interface EmailHistoryBackfillRequest {
   maxMessages: number;
   includeSent: boolean;
   mode: EmailHistoryBackfillMode;
+  previewFingerprint?: string;
 }
 
 export interface EmailHistoryBackfillPolicyResult {
@@ -29,8 +30,12 @@ export function resolveEmailHistoryBackfillRequest(body: Record<string, unknown>
   if (!brandId) return { ok: false, error: "brand_id is required" };
 
   const mode: EmailHistoryBackfillMode = body.mode === "apply" ? "apply" : "preview";
+  const previewFingerprint = String(body.preview_fingerprint || "").trim();
   if (mode === "apply" && body.confirm !== EMAIL_HISTORY_BACKFILL_CONFIRMATION) {
     return { ok: false, error: `apply requires confirm=${EMAIL_HISTORY_BACKFILL_CONFIRMATION}` };
+  }
+  if (mode === "apply" && !previewFingerprint) {
+    return { ok: false, error: "apply requires preview_fingerprint from a successful preview" };
   }
 
   return {
@@ -41,6 +46,7 @@ export function resolveEmailHistoryBackfillRequest(body: Record<string, unknown>
       maxMessages: boundedInteger(body.max_messages, 250, 1, EMAIL_HISTORY_BACKFILL_MAX_MESSAGES),
       includeSent: body.include_sent !== false,
       mode,
+      previewFingerprint: previewFingerprint || undefined,
     },
   };
 }
