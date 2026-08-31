@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { classifyEmailConfigReadiness } from "@/lib/email/config-readiness";
 import { evaluateMetaCapabilities } from "@/lib/oauth/meta-capabilities";
 import { buildOsAttention } from "@/lib/os/attention";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
@@ -32,13 +33,14 @@ export async function GET(request: NextRequest) {
 
   const nowMs = Date.now();
   const since24h = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
-  const [approvalsR, recsR, experimentsR, automationR, runtimeR, channelsR] = await Promise.all([
+  const [approvalsR, recsR, experimentsR, automationR, runtimeR, channelsR, emailConfigsR] = await Promise.all([
     supabase.from("agentic_approvals").select("id,title,risk,estimated_opportunity_eur,status,created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(100),
     supabase.from("book_growth_recommendations").select("status"),
     supabase.from("book_growth_experiments").select("status"),
     supabase.from("automation_logs").select("action,agent_name,status,details,created_at").gte("created_at", since24h).order("created_at", { ascending: false }).limit(300),
     supabase.from("nexus_runtime_controls").select("control_key,label,category,enabled,risk_level,updated_at").order("control_key"),
     supabase.from("social_channels").select("id,brand_id,platform,display_name,is_active").eq("is_active", true).in("platform", ["facebook", "instagram"]),
+    supabase.from("brand_email_configs").select("id,brand_id,email_address,is_active,imap_host,encrypted_password,encryption_iv,health_status,health_message,auto_fetch_paused_by_system,last_success_at,consecutive_failures").eq("is_active", true),
   ]);
 
   const candidateTables = [
@@ -63,6 +65,7 @@ export async function GET(request: NextRequest) {
   sourceError(sourceErrors, "Automation", automationR.error, "/automation");
   sourceError(sourceErrors, "Runtime", runtimeR.error, "/nexus-os/runtime");
   sourceError(sourceErrors, "Social", channelsR.error || tokenR.error, "/nexus-os/communications/social");
+  sourceError(sourceErrors, "Email", emailConfigsR.error, "/nexus-os/communications/readiness");
   for (const result of candidateResults) sourceError(sourceErrors, `Book Growth/${result.table}`, result.error, "/book-growth");
 
   const approvals = approvalsR.error ? [] : (approvalsR.data ?? []);
@@ -113,6 +116,15 @@ export async function GET(request: NextRequest) {
   const scheduledAutomationEnabled = scheduledAutomation.filter((job) => job.enabled);
   const scheduledAutomationStale = scheduledAutomationEnabled.filter((job) => job.stale);
 
+  const emailReadiness = (emailConfigsR.error ? [] : (emailConfigsR.data ?? [])).map((row: any) => ({
+    id: row.id,
+    brandId: row.brand_id,
+    emailAddress: row.email_address,
+    readiness: classifyEmailConfigReadiness(row),
+  }));
+  const emailAccountsNotReady = emailReadiness.filter((row) => row.readiness.state !== "ready").length;
+  const emailAccountsSystemPaused = emailReadiness.filter((row) => row.readiness.state === "paused").length;
+
   const tokenByChannel = new Map((tokenR.data ?? []).map((row: any) => [String(row.social_channel_id), row]));
   const socialChannels = channelsR.error ? [] : (channelsR.data ?? []);
   const socialReadiness = socialChannels.map((channel: any) => {
@@ -151,6 +163,9 @@ export async function GET(request: NextRequest) {
     scheduledAutomationStale: scheduledAutomationStale.length,
     runtimeEnabled: runtime.filter((row: any) => row.enabled).length,
     runtimeHighRiskEnabled: highRiskEnabled.length,
+    emailAccounts: emailReadiness.length,
+    emailAccountsNotReady,
+    emailAccountsSystemPaused,
     socialChannels: socialReadiness.length,
     instagramConnected: instagram.length,
     instagramCommentReadReady: instagram.filter((row: any) => row.readComments).length,
@@ -172,6 +187,8 @@ export async function GET(request: NextRequest) {
       expectedMinutes: job.expectedMinutes,
       href: job.href,
     })),
+    emailAccountsNotReady,
+    emailAccountsSystemPaused,
     socialSyncEnabled,
     socialLastSyncAt: lastSocialSync?.created_at ?? null,
     socialLastSyncStatus: lastSocialSync?.status ?? null,
