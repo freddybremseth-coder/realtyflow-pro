@@ -4,6 +4,7 @@ import { createServerClient } from "@/lib/supabase/server";
 import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill-policy";
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
+import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   fetchHistoricalMailboxEmails,
@@ -21,7 +22,7 @@ function stableMessageId(message: HistoricalFetchedEmail) {
 /**
  * POST /api/email/inbox/backfill
  * Controlled historical mailbox import. Preview is the default and performs no writes.
- * Apply requires the explicit confirmation phrase enforced by history-backfill-policy.
+ * Apply requires the explicit confirmation phrase and a fingerprint from a matching preview.
  * Historical messages are stored read + archived so they can be reviewed by Nexus
  * without flooding the operational unread inbox. This route never sends email and
  * never advances brand_email_configs.last_fetched_at.
@@ -80,6 +81,8 @@ export async function POST(req: NextRequest) {
     let duplicates = 0;
     let skippedMissingMessageId = 0;
     let inserted = 0;
+    const candidateMessageIds: string[] = [];
+    const pendingMessages: Array<{ message: HistoricalFetchedEmail; accountIndex: number }> = [];
     const accountResults: Array<{
       email: string;
       fetched: number;
@@ -137,30 +140,11 @@ export async function POST(req: NextRequest) {
           else newMessages.push(message);
         }
 
-        let accountInserted = 0;
-        if (request.mode === "apply") {
-          for (const message of newMessages) {
-            const messageId = stableMessageId(message)!;
-            const { error: insertError } = await supabase.from("email_messages").insert({
-              brand_id: request.brandId,
-              message_id: messageId,
-              thread_id: message.threadId || messageId,
-              direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
-              from_address: message.from.address,
-              from_name: message.from.name || null,
-              to_addresses: message.to.map((address) => address.address),
-              cc_addresses: message.cc?.map((address) => address.address) || null,
-              subject: message.subject,
-              body_text: message.bodyText || null,
-              body_html: message.bodyHtml || null,
-              received_at: message.date.toISOString(),
-              is_read: true,
-              is_archived: true,
-            });
-            if (insertError) throw new Error(insertError.message);
-            existingIds.add(messageId);
-            accountInserted++;
-          }
+        const accountIndex = accountResults.length;
+        for (const message of newMessages) {
+          const messageId = stableMessageId(message)!;
+          candidateMessageIds.push(messageId);
+          pendingMessages.push({ message, accountIndex });
         }
 
         const accountFetched = combined.length;
@@ -168,14 +152,13 @@ export async function POST(req: NextRequest) {
         candidates += newMessages.length;
         duplicates += accountDuplicates;
         skippedMissingMessageId += accountSkippedMissing;
-        inserted += accountInserted;
         accountResults.push({
           email: config.email_address,
           fetched: accountFetched,
           candidates: newMessages.length,
           duplicates: accountDuplicates,
           skipped_missing_message_id: accountSkippedMissing,
-          inserted: accountInserted,
+          inserted: 0,
           mailboxes,
         });
       } catch (error) {
@@ -192,6 +175,57 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const previewFingerprint = buildEmailHistoryBackfillPreviewFingerprint({
+      brandId: request.brandId,
+      sinceDays: request.sinceDays,
+      maxMessages: request.maxMessages,
+      includeSent: request.includeSent,
+      candidateMessageIds,
+    });
+
+    if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
+      return NextResponse.json(
+        {
+          error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
+          preview_fingerprint_matches: false,
+          current_preview_fingerprint: previewFingerprint,
+          candidates,
+          safety: {
+            previewFingerprintRequired: true,
+            databaseMessagesWritten: false,
+            emailSent: false,
+          },
+        },
+        { status: 409 }
+      );
+    }
+
+    if (request.mode === "apply") {
+      for (const pending of pendingMessages) {
+        const message = pending.message;
+        const messageId = stableMessageId(message)!;
+        const { error: insertError } = await supabase.from("email_messages").insert({
+          brand_id: request.brandId,
+          message_id: messageId,
+          thread_id: message.threadId || messageId,
+          direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
+          from_address: message.from.address,
+          from_name: message.from.name || null,
+          to_addresses: message.to.map((address) => address.address),
+          cc_addresses: message.cc?.map((address) => address.address) || null,
+          subject: message.subject,
+          body_text: message.bodyText || null,
+          body_html: message.bodyHtml || null,
+          received_at: message.date.toISOString(),
+          is_read: true,
+          is_archived: true,
+        });
+        if (insertError) throw new Error(insertError.message);
+        inserted++;
+        accountResults[pending.accountIndex].inserted += 1;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       mode: request.mode,
@@ -199,6 +233,8 @@ export async function POST(req: NextRequest) {
       since_days: request.sinceDays,
       max_messages: request.maxMessages,
       include_sent: request.includeSent,
+      preview_fingerprint: previewFingerprint,
+      preview_fingerprint_matches: request.mode === "apply" ? true : null,
       fetched,
       candidates,
       duplicates,
@@ -210,6 +246,7 @@ export async function POST(req: NextRequest) {
         adminRequired: true,
         readinessRequiredServerSide: true,
         previewWrites: false,
+        previewFingerprintRequiredForApply: true,
         applyRequiresExplicitConfirmation: true,
         historicalMessagesMarkedRead: true,
         historicalMessagesArchived: true,
