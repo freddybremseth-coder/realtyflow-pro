@@ -204,6 +204,10 @@ export async function POST(req: NextRequest) {
       skipped_missing_message_id: skippedMissingMessageId,
       inserted,
       accounts: accountResults,
+      review: {
+        emailLinkHealth: "/nexus-os/email-link-health",
+        highPriority: "/nexus-os/email-link-health?priority=high",
+      },
       safety: {
         adminRequired: true,
         readinessRequiredServerSide: true,
@@ -214,6 +218,7 @@ export async function POST(req: NextRequest) {
         updatesLastFetchedAt: false,
         sendsEmail: false,
         automaticCrmLinking: false,
+        identityReviewRequired: true,
       },
     });
   } catch (error) {
