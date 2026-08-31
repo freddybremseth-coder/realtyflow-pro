@@ -11,6 +11,7 @@ const MODULES = [
   { href: "/book-growth/canonical-catalog", label: "Canonical Catalogue" },
   { href: "/book-growth/quality-center", label: "Quality Center" },
   { href: "/book-growth/launch-factory", label: "Launch Factory" },
+  { href: "/book-growth/sales-evidence", label: "Sales Evidence" },
   { href: "/book-growth/work-review", label: "Work & Translation" },
   { href: "/book-growth/edition-language", label: "Edition & Language" },
   { href: "/book-growth/channel-metadata", label: "Channel Metadata" },

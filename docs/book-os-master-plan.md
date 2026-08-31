@@ -120,6 +120,18 @@ Import channel results, measure direct sales and attribution, run reversible exp
 - No launch action creates an external marketing publication until a later, separately approved and operational channel workflow exists.
 - Launch campaign, activation and calendar data are server-only, RLS-protected and covered by schema-contract tests.
 
+## Phase 5 acceptance criteria
+
+- Sales, royalties, advertising cost and engagement evidence retain their source row and are attributed to a canonical work and edition.
+- Revision attribution is explicit: exact revision and edition-only evidence are different visible states.
+- Re-importing the same source metric is idempotent and never duplicates, deletes or overwrites canonical evidence.
+- Unmatched or ambiguous sales rows enter a visible reconciliation queue and are never silently assigned to a similarly titled book.
+- Monetary totals remain separated by currency unless a dated, attributable exchange-rate conversion is explicitly applied.
+- Experiments require a recorded baseline, one controlled change, a measurement window and a reversible application path.
+- Weak evidence produces an inconclusive result; one experiment can never become a reusable learning rule.
+- Learning-based improvements and new-book recommendations remain proposals until explicitly approved.
+- Sales evidence, experiment and learning tables are server-only, RLS-protected and covered by schema-contract tests.
+
 ## Success measures
 
 - 100% of active book projects show a current state and latest activity.
