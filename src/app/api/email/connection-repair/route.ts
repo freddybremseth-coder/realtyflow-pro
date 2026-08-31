@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
       emailAddress: account.email_address,
       health: "healthy",
       autoFetch: Boolean(account.auto_fetch),
+      autoFetchPreserved: true,
       connection: result,
       repairedAt: now,
       safety: {
