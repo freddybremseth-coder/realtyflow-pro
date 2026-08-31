@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Eye, Loader2, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, MailCheck, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 
 type EmailAccount = {
   id: string;
@@ -39,6 +39,14 @@ type CheckResult = {
   inboxFound?: boolean;
   sentFound?: boolean;
   mailboxCount?: number;
+  error?: string;
+  detail?: string;
+};
+
+type RepairResult = {
+  success: boolean;
+  repairedAt?: string;
+  autoFetchPreserved?: boolean;
   error?: string;
   detail?: string;
 };
@@ -86,6 +94,8 @@ export default function EmailReadinessPage() {
   const [error, setError] = useState("");
   const [checking, setChecking] = useState<string | null>(null);
   const [checks, setChecks] = useState<Record<string, CheckResult>>({});
+  const [repairing, setRepairing] = useState<string | null>(null);
+  const [repairs, setRepairs] = useState<Record<string, RepairResult>>({});
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, BackfillPreview>>({});
 
@@ -138,6 +148,47 @@ export default function EmailReadinessPage() {
     }
   }
 
+  async function repairConnection(account: EmailAccount) {
+    const confirmed = window.confirm(
+      `Reparer health for ${account.email_address}? Lagrede credentials verifiseres på nytt. Systempause og feiltellere ryddes bare ved vellykket IMAP-test. Auto-fetch, credentials og serverinnstillinger beholdes uendret.`
+    );
+    if (!confirmed) return;
+
+    setRepairing(account.id);
+    setRepairs((current) => ({ ...current, [account.id]: { success: false } }));
+    try {
+      const response = await fetch("/api/email/connection-repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.id, confirm: "REPAIR_EMAIL_CONNECTION" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      const result: RepairResult = {
+        success: response.ok && body?.success === true,
+        repairedAt: body?.repairedAt,
+        autoFetchPreserved: body?.autoFetchPreserved,
+        error: response.ok ? undefined : body?.error || `HTTP ${response.status}`,
+        detail: body?.detail,
+      };
+      setRepairs((current) => ({ ...current, [account.id]: result }));
+      if (result.success) {
+        setPreviews((current) => {
+          const next = { ...current };
+          delete next[account.id];
+          return next;
+        });
+        await load();
+      }
+    } catch (err) {
+      setRepairs((current) => ({
+        ...current,
+        [account.id]: { success: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    } finally {
+      setRepairing(null);
+    }
+  }
+
   async function previewBackfill(account: EmailAccount) {
     setPreviewing(account.id);
     setPreviews((current) => ({ ...current, [account.id]: { success: false } }));
@@ -179,7 +230,7 @@ export default function EmailReadinessPage() {
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black">Email Readiness</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Kanonisk status for credentials, tilkoblingshelse og historisk backfill. Tilkoblingstesten leser kun mailbox-metadata. Backfill preview leser historikk og beregner kandidater/duplikater uten database-write.</p>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Kanonisk status for credentials, tilkoblingshelse og historisk backfill. Tilkoblingstesten leser kun mailbox-metadata. Controlled health repair kan rydde pause/feilstatus etter vellykket test uten å aktivere auto-fetch. Backfill preview leser historikk og beregner kandidater/duplikater uten database-write.</p>
           </div>
           <div className="flex gap-2">
             <Link href="/nexus-os/communications" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm font-black text-white">Communications</Link>
@@ -203,7 +254,9 @@ export default function EmailReadinessPage() {
         {(data?.emailAccounts || []).map((account) => {
           const readiness = account.readiness || {};
           const check = checks[account.id];
+          const repair = repairs[account.id];
           const preview = previews[account.id];
+          const canRepair = check?.success === true && readiness.state !== "ready";
           return (
             <article key={account.id} className={`rounded-2xl border p-5 shadow-sm ${readinessClasses(readiness.state)}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -221,11 +274,15 @@ export default function EmailReadinessPage() {
               {readiness.reason && <div className="mt-4 rounded-xl border border-current/20 bg-white/70 p-3 text-sm font-semibold">{readiness.reason}</div>}
               {account.health_message && <div className="mt-3 text-xs opacity-80">Health: {account.health_message}</div>}
               <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={() => checkConnection(account)} disabled={!readiness.canTestConnection || checking === account.id} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+                <button onClick={() => checkConnection(account)} disabled={!readiness.canTestConnection || checking === account.id || repairing === account.id} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
                   {checking === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 inline h-4 w-4" />}
                   Test tilkobling
                 </button>
-                <button onClick={() => previewBackfill(account)} disabled={!readiness.canBackfillHistory || previewing === account.id} className="rounded-xl border border-current/20 bg-white/80 px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40">
+                {canRepair && <button onClick={() => repairConnection(account)} disabled={repairing === account.id} className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  {repairing === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <Wrench className="mr-2 inline h-4 w-4" />}
+                  Reparer health
+                </button>}
+                <button onClick={() => previewBackfill(account)} disabled={!readiness.canBackfillHistory || previewing === account.id || repairing === account.id} className="rounded-xl border border-current/20 bg-white/80 px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40">
                   {previewing === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <Eye className="mr-2 inline h-4 w-4" />}
                   Preview historikk
                 </button>
@@ -234,7 +291,12 @@ export default function EmailReadinessPage() {
               {!readiness.canBackfillHistory && <div className="mt-3 text-xs font-semibold opacity-75">Historikk-preview er låst til kontoen har dokumentert vellykket tilkobling og ren readiness-status.</div>}
               {check && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${check.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
                 {check.success ? `Tilkobling OK · Inbox ${check.inboxFound ? "funnet" : "ikke funnet"} · Sent ${check.sentFound ? "funnet" : "ikke funnet"} · ${check.mailboxCount ?? "—"} mapper` : `Tilkobling feilet: ${check.error || check.detail || "ukjent feil"}`}
+                {check.success && readiness.state !== "ready" && <div className="mt-2 text-xs">Lagret credential virker, men kanonisk health er fortsatt {readiness.state || "ikke klar"}. «Reparer health» er en separat eksplisitt handling og aktiverer ikke auto-fetch.</div>}
                 {check.checkedAt && <div className="mt-1 text-xs opacity-70">Sjekket {fmt(check.checkedAt)}</div>}
+              </div>}
+              {repair && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${repair.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
+                {repair.success ? `Health reparert. Auto-fetch ble bevart ${repair.autoFetchPreserved === true ? "uendret" : "etter eksisterende verdi"}.` : `Health repair feilet: ${repair.error || repair.detail || "ukjent feil"}`}
+                {repair.repairedAt && <div className="mt-1 text-xs opacity-70">Reparert {fmt(repair.repairedAt)}</div>}
               </div>}
               {preview && <div className={`mt-4 rounded-xl border p-3 text-sm ${preview.success ? "border-cyan-300 bg-cyan-50 text-cyan-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
                 {preview.success ? <>
@@ -259,7 +321,7 @@ export default function EmailReadinessPage() {
         })}
       </section>
 
-      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch, reconnect eller backfill apply. Connection-check endrer ikke health. Historikk-preview leser historikk og beregner kandidater, men skriver ikke til email_messages og sender ingenting.</div>
+      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch, credential-rotasjon eller backfill apply. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse og kan bare rydde health/pause/failure-status. Historikk-preview skriver ikke til email_messages og sender ingenting.</div>
     </div>
   );
 }
