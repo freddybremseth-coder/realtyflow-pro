@@ -124,14 +124,22 @@ export default function EmailLinkHealthPage() {
     const params = new URLSearchParams(window.location.search);
     if (next === "all") params.delete("priority"); else params.set("priority", next);
     const query = params.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (nextUrl !== currentUrl) window.history.pushState(null, "", nextUrl);
   }
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setTargetMessageId(params.get("messageId")?.trim() || "");
-    setPriorityFilter(parsePriority(params.get("priority")));
+    const syncUrlState = () => {
+      const params = new URLSearchParams(window.location.search);
+      setTargetMessageId(params.get("messageId")?.trim() || "");
+      setPriorityFilter(parsePriority(params.get("priority")));
+    };
+
+    syncUrlState();
+    window.addEventListener("popstate", syncUrlState);
     void load();
+    return () => window.removeEventListener("popstate", syncUrlState);
   }, []);
 
   const items = useMemo(() => {
