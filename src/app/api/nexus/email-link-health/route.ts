@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
+  const brandId = request.nextUrl.searchParams.get("brand")?.trim() || null;
+
   const [contactsResult, messagesResult, ownAddressesResult] = await Promise.all([
     supabase.from("contacts").select("id,name,email,brand_id,brand").order("updated_at", { ascending: false }).limit(2000),
     supabase
@@ -38,8 +40,9 @@ export async function GET(request: NextRequest) {
   if (ownAddressesResult.error) return NextResponse.json({ error: ownAddressesResult.error.message }, { status: 500 });
 
   const contacts = contactsResult.data || [];
+  const messages = (messagesResult.data || []).filter((message) => !brandId || String(message.brand_id || "") === brandId);
   const contactMap = new Map(contacts.map((contact) => [String(contact.id), contact]));
-  const baseHealth = buildEmailLinkHealth(messagesResult.data || [], contacts);
+  const baseHealth = buildEmailLinkHealth(messages, contacts);
   const health = filterOwnAddressEmailHealth(
     baseHealth,
     (ownAddressesResult.data || []).map((row) => String(row.email_address || "")),
@@ -80,6 +83,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     generatedAt: reviewNow.toISOString(),
+    filter: {
+      brandId,
+    },
     summary: {
       ...health.summary,
       reviewPriorityHigh: reviewPrioritySummary.high,
@@ -90,6 +96,7 @@ export async function GET(request: NextRequest) {
     items,
     safety: {
       readOnly: true,
+      brandScopeChangesMatching: false,
       fuzzyNameMatching: false,
       relationshipInference: false,
       aiIntentUsedForLinking: false,
