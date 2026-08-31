@@ -180,12 +180,12 @@ export default function EmailLinkHealthPage() {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          ["Review totalt", data?.summary.reviewPriorityTotal ?? 0, "border-slate-200 bg-white"],
-          ["Høy review", data?.summary.reviewPriorityHigh ?? 0, "border-rose-200 bg-rose-50"],
-          ["Medium review", data?.summary.reviewPriorityMedium ?? 0, "border-amber-200 bg-amber-50"],
-          ["Lav review", data?.summary.reviewPriorityLow ?? 0, "border-slate-200 bg-slate-50"],
-        ].map(([label, value, className]) => <div key={String(label)} className={`rounded-2xl border p-4 ${className}`}><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-600">{label}</div></div>)}
+        {([
+          ["all", "Review totalt", data?.summary.reviewPriorityTotal ?? 0, "border-slate-200 bg-white"],
+          ["high", "Høy review", data?.summary.reviewPriorityHigh ?? 0, "border-rose-200 bg-rose-50"],
+          ["medium", "Medium review", data?.summary.reviewPriorityMedium ?? 0, "border-amber-200 bg-amber-50"],
+          ["low", "Lav review", data?.summary.reviewPriorityLow ?? 0, "border-slate-200 bg-slate-50"],
+        ] as const).map(([key, label, value, className]) => <button key={key} type="button" onClick={() => setPriorityFilter(key)} aria-pressed={priorityFilter === key} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${className} ${priorityFilter === key ? "ring-2 ring-slate-900/15" : ""}`}><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-600">{label}</div></button>)}
       </div>
 
       <div className="mt-5 flex flex-col gap-3">
