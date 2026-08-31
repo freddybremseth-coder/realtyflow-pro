@@ -22,6 +22,8 @@ jobs:
         run: npm ci --silent
       - name: Contacts API auth tests
         run: npm run test:contacts-api
+      - name: Email admin auth tests
+        run: npx tsx --test src/app/api/email-admin-routes-auth.test.ts
       - name: Revenue Inbox tests
         run: npm run test:revenue-today
       - name: Closing Workspace tests
