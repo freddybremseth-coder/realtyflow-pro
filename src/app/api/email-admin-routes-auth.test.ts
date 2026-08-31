@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { DELETE as DELETEEmailConfig, GET as GETEmailConfig, POST as POSTEmailConfig } from "./email/config/route";
+import { POST as POSTEmailBackfill } from "./email/inbox/backfill/route";
 import { GET as GETEmailInbox, POST as POSTEmailInbox } from "./email/inbox/route";
 
 function request(path: string, method: "GET" | "POST" | "DELETE", body?: Record<string, unknown>) {
@@ -20,13 +21,14 @@ test.beforeEach(() => {
   delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 });
 
-test("email config and inbox routes require admin session before database or IMAP access", async () => {
+test("email config, inbox and history backfill routes require admin session before database or IMAP access", async () => {
   const responses = await Promise.all([
     GETEmailConfig(request("/api/email/config", "GET") as any),
     POSTEmailConfig(request("/api/email/config", "POST", { brand_id: "soleada", email_address: "test@example.com" }) as any),
     DELETEEmailConfig(request("/api/email/config?id=test", "DELETE") as any),
     GETEmailInbox(request("/api/email/inbox?brand_id=soleada", "GET") as any),
     POSTEmailInbox(request("/api/email/inbox", "POST", { brand_id: "soleada" }) as any),
+    POSTEmailBackfill(request("/api/email/inbox/backfill", "POST", { brand_id: "soleada" }) as any),
   ]);
 
   for (const response of responses) {
