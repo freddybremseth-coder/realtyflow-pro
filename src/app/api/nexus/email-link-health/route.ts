@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildEmailLinkHealth, classifyEmailIdentityEvidence } from "@/lib/crm/email-link-health";
+import { filterEmailMessagesByBrand } from "@/lib/crm/email-link-health-brand-scope";
 import { filterOwnAddressEmailHealth } from "@/lib/crm/email-link-health-own-addresses";
 import { classifyEmailIdentityReviewPriorityWithAge } from "@/lib/crm/email-review-priority";
 import { summarizeEmailIdentityReviewPriorities } from "@/lib/crm/email-review-summary";
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
+  const brandId = request.nextUrl.searchParams.get("brand")?.trim() || null;
+
   const [contactsResult, messagesResult, ownAddressesResult] = await Promise.all([
     supabase.from("contacts").select("id,name,email,brand_id,brand").order("updated_at", { ascending: false }).limit(2000),
     supabase
@@ -38,8 +41,9 @@ export async function GET(request: NextRequest) {
   if (ownAddressesResult.error) return NextResponse.json({ error: ownAddressesResult.error.message }, { status: 500 });
 
   const contacts = contactsResult.data || [];
+  const messages = filterEmailMessagesByBrand(messagesResult.data || [], brandId);
   const contactMap = new Map(contacts.map((contact) => [String(contact.id), contact]));
-  const baseHealth = buildEmailLinkHealth(messagesResult.data || [], contacts);
+  const baseHealth = buildEmailLinkHealth(messages, contacts);
   const health = filterOwnAddressEmailHealth(
     baseHealth,
     (ownAddressesResult.data || []).map((row) => String(row.email_address || "")),
@@ -80,6 +84,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     generatedAt: reviewNow.toISOString(),
+    filter: {
+      brandId,
+    },
     summary: {
       ...health.summary,
       reviewPriorityHigh: reviewPrioritySummary.high,
@@ -90,6 +97,7 @@ export async function GET(request: NextRequest) {
     items,
     safety: {
       readOnly: true,
+      brandScopeChangesMatching: false,
       fuzzyNameMatching: false,
       relationshipInference: false,
       aiIntentUsedForLinking: false,
