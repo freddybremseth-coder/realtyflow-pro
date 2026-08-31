@@ -1,11 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { classifyEmailConfigReadiness } from "@/lib/email/config-readiness";
 import { createServerClient } from "@/lib/supabase/server";
 import { encryptPassword } from "@/services/email/crypto";
 
+const PUBLIC_EMAIL_CONFIG_FIELDS =
+  "id, brand_id, email_address, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, auto_fetch, fetch_interval_minutes, ai_auto_draft, signature, is_active, last_fetched_at, created_at, updated_at";
+
+const EMAIL_CONFIG_READINESS_FIELDS = `${PUBLIC_EMAIL_CONFIG_FIELDS}, encrypted_password, encryption_iv, health_status, health_message, consecutive_failures, last_error_at, last_success_at, auto_fetch_paused_by_system`;
+
+function toPublicConfig(config: Record<string, unknown>) {
+  const {
+    encrypted_password,
+    encryption_iv,
+    ...publicConfig
+  } = config;
+
+  return {
+    ...publicConfig,
+    readiness: classifyEmailConfigReadiness({
+      is_active: config.is_active as boolean | null | undefined,
+      imap_host: config.imap_host as string | null | undefined,
+      encrypted_password: encrypted_password as string | null | undefined,
+      encryption_iv: encryption_iv as string | null | undefined,
+      health_status: config.health_status as string | null | undefined,
+      health_message: config.health_message as string | null | undefined,
+      auto_fetch_paused_by_system:
+        config.auto_fetch_paused_by_system as boolean | null | undefined,
+      last_success_at: config.last_success_at as string | null | undefined,
+      consecutive_failures:
+        config.consecutive_failures as number | null | undefined,
+    }),
+  };
+}
+
 /**
  * GET /api/email/config
- * List email configs for brands (without passwords).
+ * List email configs for brands without exposing encrypted credentials.
  * Query params: brand_id (optional)
  */
 export async function GET(req: NextRequest) {
@@ -20,9 +51,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from("brand_email_configs")
-      .select(
-        "id, brand_id, email_address, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, auto_fetch, fetch_interval_minutes, ai_auto_draft, signature, is_active, last_fetched_at, created_at, updated_at"
-      )
+      .select(EMAIL_CONFIG_READINESS_FIELDS)
       .order("created_at", { ascending: false });
 
     if (brandId) {
@@ -35,7 +64,11 @@ export async function GET(req: NextRequest) {
       throw new Error(error.message);
     }
 
-    return NextResponse.json({ configs: configs || [] });
+    return NextResponse.json({
+      configs: (configs || []).map((config) =>
+        toPublicConfig(config as Record<string, unknown>)
+      ),
+    });
   } catch (error) {
     console.error("[Email Config GET]", error);
     return NextResponse.json(
@@ -86,7 +119,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (id) {
-      // Update existing config
       const updateData: Record<string, unknown> = {
         email_address,
         display_name: display_name || null,
@@ -102,7 +134,6 @@ export async function POST(req: NextRequest) {
         signature: signature || null,
       };
 
-      // Only update password if a new one is provided
       if (password) {
         const { encrypted, iv } = encryptPassword(password);
         updateData.encrypted_password = encrypted;
@@ -113,9 +144,7 @@ export async function POST(req: NextRequest) {
         .from("brand_email_configs")
         .update(updateData)
         .eq("id", id)
-        .select(
-          "id, brand_id, email_address, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, auto_fetch, fetch_interval_minutes, ai_auto_draft, signature, is_active, created_at, updated_at"
-        )
+        .select(PUBLIC_EMAIL_CONFIG_FIELDS)
         .single();
 
       if (error) {
@@ -124,7 +153,6 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, config });
     } else {
-      // Create new config
       if (!password || !imap_host || !smtp_host) {
         return NextResponse.json(
           { error: "password, imap_host, and smtp_host are required for new configs" },
@@ -153,9 +181,7 @@ export async function POST(req: NextRequest) {
           ai_auto_draft,
           signature: signature || null,
         })
-        .select(
-          "id, brand_id, email_address, display_name, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, auto_fetch, fetch_interval_minutes, ai_auto_draft, signature, is_active, created_at, updated_at"
-        )
+        .select(PUBLIC_EMAIL_CONFIG_FIELDS)
         .single();
 
       if (error) {
