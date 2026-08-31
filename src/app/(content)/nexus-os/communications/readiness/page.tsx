@@ -72,6 +72,13 @@ type BackfillResult = {
     mailboxes: { inbox?: number; sent?: number };
     error?: string;
   }>;
+  review?: {
+    emailLinkHealth?: string;
+    highPriority?: string;
+  };
+  safety?: {
+    identityReviewRequired?: boolean;
+  };
   error?: string;
 };
 
@@ -389,14 +396,24 @@ export default function EmailReadinessPage() {
                 </> : <div className="font-semibold">Preview feilet: {preview.error || "ukjent feil"}</div>}
               </div>}
               {apply && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${apply.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
-                {apply.success ? `Historisk backfill fullført: ${apply.inserted ?? 0} meldinger importert som lest + arkivert. Ingen e-post ble sendt og ingen CRM-kobling ble gjort automatisk.` : `Backfill apply feilet: ${apply.error || "ukjent feil"}`}
+                {apply.success ? <>
+                  <div>Historisk backfill fullført: {apply.inserted ?? 0} meldinger importert som lest + arkivert. Ingen e-post ble sendt og ingen CRM-kobling ble gjort automatisk.</div>
+                  {(apply.safety?.identityReviewRequired || apply.review?.emailLinkHealth || apply.review?.highPriority) && <div className="mt-3 rounded-lg border border-emerald-300 bg-white/70 p-3 text-xs">
+                    <div className="font-black">Neste steg: menneskelig identity-review</div>
+                    <div className="mt-1 font-medium">Importerte meldinger må gjennom Email Link Health før eventuell kontrollert CRM-kobling.</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {apply.review?.highPriority && <Link href={apply.review.highPriority} className="rounded-lg bg-emerald-800 px-3 py-2 font-black text-white">Åpne high-priority review</Link>}
+                      {apply.review?.emailLinkHealth && <Link href={apply.review.emailLinkHealth} className="rounded-lg border border-emerald-400 bg-white px-3 py-2 font-black text-emerald-950">Åpne hele Email Link Health</Link>}
+                    </div>
+                  </div>}
+                </> : `Backfill apply feilet: ${apply.error || "ukjent feil"}`}
               </div>}
             </article>
           );
         })}
       </section>
 
-      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch eller credential-rotasjon. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse. Historikk-preview skriver ingenting. Backfill apply kan bare startes fra en vellykket preview med nye kandidater, krever en ny eksplisitt bekreftelse, lagrer historikk som lest + arkivert og utfører ingen automatisk CRM-kobling eller e-postsending.</div>
+      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch eller credential-rotasjon. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse. Historikk-preview skriver ingenting. Backfill apply kan bare startes fra en vellykket preview med nye kandidater, krever en ny eksplisitt bekreftelse, lagrer historikk som lest + arkivert og utfører ingen automatisk CRM-kobling eller e-postsending. Etter import må identity-review gjøres eksplisitt i Email Link Health.</div>
     </div>
   );
 }
