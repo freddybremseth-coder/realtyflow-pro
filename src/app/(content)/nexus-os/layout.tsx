@@ -21,6 +21,7 @@ const LINKS = [
   { href: "/nexus-os/focus", label: "Owner Focus" },
   { href: "/nexus-os/director", label: "Director" },
   { href: "/nexus-os/communications", label: "Communications" },
+  { href: "/nexus-os/communications/readiness", label: "Email Readiness" },
   { href: "/nexus-os/runtime", label: "Runtime" },
   { href: "/nexus-os/autonomy", label: "Autonomy" },
   { href: "/approvals", label: "Approvals" },
