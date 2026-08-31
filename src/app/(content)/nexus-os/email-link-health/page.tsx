@@ -122,6 +122,10 @@ export default function EmailLinkHealthPage() {
   function updatePriorityFilter(next: "all" | ReviewPriority) {
     setPriorityFilter(next);
     const params = new URLSearchParams(window.location.search);
+    if (targetMessageId) {
+      params.delete("messageId");
+      setTargetMessageId("");
+    }
     if (next === "all") params.delete("priority"); else params.set("priority", next);
     const query = params.toString();
     const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
