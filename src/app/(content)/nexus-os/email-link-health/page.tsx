@@ -146,7 +146,7 @@ export default function EmailLinkHealthPage() {
     const query = search.trim().toLowerCase();
     return (data?.items || [])
       .filter((item) => {
-        if (targetMessageId && item.message.id !== targetMessageId) return false;
+        if (targetMessageId) return item.message.id === targetMessageId;
         if (filter !== "all" && item.state !== filter) return false;
         if (priorityFilter !== "all" && item.reviewPriority.priority !== priorityFilter) return false;
         if (!query) return true;
@@ -173,7 +173,7 @@ export default function EmailLinkHealthPage() {
       </div>
 
       {targetMessageId ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 lg:flex-row lg:items-center lg:justify-between">
-        <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox.</div>
+        <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox. Køfiltre og søk settes midlertidig til side slik at den valgte meldingen ikke kan skjules.</div>
         <div className="flex flex-wrap gap-2">
           <Link href="/nexus-os/inbox" className="inline-flex w-fit rounded-xl bg-violet-800 px-3 py-2 text-xs font-black text-white hover:bg-violet-900">Tilbake til Nexus Inbox</Link>
           <Link href="/nexus-os/email-link-health" className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Vis hele Email Link Health</Link>
