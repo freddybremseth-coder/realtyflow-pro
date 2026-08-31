@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill-policy";
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
+import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   fetchHistoricalMailboxEmails,
@@ -204,10 +205,7 @@ export async function POST(req: NextRequest) {
       skipped_missing_message_id: skippedMissingMessageId,
       inserted,
       accounts: accountResults,
-      review: {
-        emailLinkHealth: "/nexus-os/email-link-health",
-        highPriority: "/nexus-os/email-link-health?priority=high",
-      },
+      review: buildEmailHistoryReviewLinks(request.brandId),
       safety: {
         adminRequired: true,
         readinessRequiredServerSide: true,
