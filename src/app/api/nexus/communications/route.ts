@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
+import { classifyEmailConfigReadiness } from "@/lib/email/config-readiness";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
   const [emailsR, draftsR, configsR, nurtureR, focusR, runtimeR, socialChannelsR] = await Promise.all([
     supabase.from("email_messages").select("id,brand_id,from_address,from_name,subject,ai_summary,ai_intent,ai_urgency,ai_sentiment,ai_suggested_action,is_read,is_archived,has_draft_reply,replied_at,received_at,created_at").eq("direction", "inbound").eq("is_archived", false).order("received_at", { ascending: false }).limit(limit),
     supabase.from("email_drafts").select("id,email_message_id,brand_id,subject,body_text,ai_confidence,status,created_at").order("created_at", { ascending: false }).limit(500),
-    supabase.from("brand_email_configs").select("id,brand_id,email_address,display_name,is_active,auto_fetch,fetch_interval_minutes,ai_auto_draft,last_fetched_at,health_status,health_message,consecutive_failures,last_error_at,last_success_at,auto_fetch_paused_by_system").eq("is_active", true),
+    supabase.from("brand_email_configs").select("id,brand_id,email_address,display_name,is_active,auto_fetch,fetch_interval_minutes,ai_auto_draft,last_fetched_at,health_status,health_message,consecutive_failures,last_error_at,last_success_at,auto_fetch_paused_by_system,imap_host,encrypted_password,encryption_iv").eq("is_active", true),
     supabase.from("lead_nurture_events").select("brand_id,status,dry_run,created_at,sent_at,error").gte("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString()).limit(2000),
     supabase.from("nexus_owner_focus").select("brand_id,focus_key,title,notes,intensity,status,success_definition,review_due_at").eq("status", "active"),
     supabase.from("nexus_runtime_controls").select("control_key,enabled,risk_level,updated_at,config").in("control_key", ["cron:/api/cron/email-ingest", "cron:/api/cron/email-auto-draft", "feature:nurture_live", "feature:routine_email_reply_live"]),
@@ -89,7 +90,26 @@ export async function GET(request: NextRequest) {
   const configHealth = (configsR.data ?? []).map((row: any) => {
     const hours = ageHours(row.last_fetched_at);
     const unhealthy = ["degraded", "paused"].includes(String(row.health_status || ""));
-    return { ...row, lastFetchAgeHours: hours == null ? null : Math.round(hours * 10) / 10, stale: row.auto_fetch && (hours == null || hours > Math.max(1, Number(row.fetch_interval_minutes || 15) / 60 * 4)), unhealthy, needsReconnect: unhealthy || Boolean(row.auto_fetch_paused_by_system) };
+    const readiness = classifyEmailConfigReadiness({
+      is_active: row.is_active,
+      imap_host: row.imap_host,
+      encrypted_password: row.encrypted_password,
+      encryption_iv: row.encryption_iv,
+      health_status: row.health_status,
+      health_message: row.health_message,
+      auto_fetch_paused_by_system: row.auto_fetch_paused_by_system,
+      last_success_at: row.last_success_at,
+      consecutive_failures: row.consecutive_failures,
+    });
+    const { encrypted_password: _encryptedPassword, encryption_iv: _encryptionIv, ...publicRow } = row;
+    return {
+      ...publicRow,
+      readiness,
+      lastFetchAgeHours: hours == null ? null : Math.round(hours * 10) / 10,
+      stale: row.auto_fetch && (hours == null || hours > Math.max(1, Number(row.fetch_interval_minutes || 15) / 60 * 4)),
+      unhealthy,
+      needsReconnect: readiness.state !== "ready",
+    };
   });
   const nurture = nurtureR.data ?? [];
   const nurtureSummary = { sent: nurture.filter((x: any) => x.status === "sent").length, dryRun: nurture.filter((x: any) => x.status === "dry_run").length, failed: nurture.filter((x: any) => x.status === "failed").length };
@@ -102,8 +122,9 @@ export async function GET(request: NextRequest) {
       withoutDraft: inbox.filter((x: any) => !x.has_draft_reply).length,
       unreplied24h: inbox.filter((x: any) => !x.replied_at && Number(x.ageHours || 0) > 24).length,
       staleEmailAccounts: configHealth.filter((x: any) => x.stale).length,
-      unhealthyEmailAccounts: configHealth.filter((x: any) => x.unhealthy).length,
-      pausedEmailAccounts: configHealth.filter((x: any) => x.health_status === "paused").length,
+      unhealthyEmailAccounts: configHealth.filter((x: any) => x.readiness.state !== "ready").length,
+      pausedEmailAccounts: configHealth.filter((x: any) => x.readiness.state === "paused").length,
+      emailBackfillReady: configHealth.filter((x: any) => x.readiness.canBackfill).length,
       socialChannels: socialReadiness.length,
       socialCommunicationReady: socialReadiness.filter((x:any)=>!x.needsCommunicationReconnect).length,
       nurture30d: nurtureSummary,
