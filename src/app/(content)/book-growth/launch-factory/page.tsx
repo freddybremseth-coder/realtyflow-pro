@@ -50,7 +50,7 @@ type CalendarItem = {
   approved_at?: string | null;
   versions: Array<{ id: string; version: number; payload: CampaignItem; created_by: string; change_reason: string; created_at: string }>;
   decisions: Array<{ id: string; item_version: number; decision: string; actor: string; note?: string | null; created_at: string }>;
-  handoffs: Array<{ id: string; item_version: number; attempt: number; channel: string; status: "prepared" | "queued" | "withdrawn"; prepared_by: string; prepared_at: string; queued_at?: string | null; note?: string | null; preflights: Array<{ id: string; run_number: number; status: "ready" | "blocked"; checks: Array<{ code: string; passed: boolean }>; blocker_codes: string[]; evaluated_at: string }> }>;
+  handoffs: Array<{ id: string; item_version: number; attempt: number; channel: string; status: "prepared" | "queued" | "withdrawn"; prepared_by: string; prepared_at: string; queued_at?: string | null; note?: string | null; preflights: Array<{ id: string; run_number: number; status: "ready" | "blocked"; checks: Array<{ code: string; passed: boolean }>; blocker_codes: string[]; evaluated_at: string }>; releases: Array<{ id: string; preflight_id: string; status: "pending_approval" | "approved" | "revoked" | "stale"; requested_at: string; approved_at?: string | null; revocation_note?: string | null }> }>;
 };
 type Edition = {
   editionId: string;
@@ -261,6 +261,35 @@ export default function LaunchFactoryPage() {
     }
   }
 
+  async function releaseAction(item: CalendarItem, action: "prepare_release" | "decide_release", handoffId?: string, releaseId?: string, decision?: "approve" | "revoke") {
+    setBusyItemId(item.id);
+    setError("");
+    setNotice("");
+    try {
+      const payload = action === "prepare_release"
+        ? { action, handoffId }
+        : { action, releaseId, decision, note: decisionNotes[item.id] || undefined };
+      const response = await fetch("/api/book-growth/launch-factory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Release-handlingen mislyktes");
+      setNotice(action === "prepare_release"
+        ? "Release-kandidaten venter på en separat intern sluttgodkjenning. Ingenting er publisert."
+        : decision === "approve"
+          ? "Sluttgodkjent internt. Det er fortsatt ikke opprettet noen ekstern publisering eller sending."
+          : "Den interne release-godkjenningen er trukket tilbake.");
+      setDecisionNotes((current) => ({ ...current, [item.id]: "" }));
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Release-handlingen mislyktes");
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
   async function setWebsiteTarget() {
     setBusyId("website-target");
     setError("");
@@ -296,10 +325,10 @@ export default function LaunchFactoryPage() {
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <header>
-        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.5</p>
+        <p style={{ margin: 0, color: "#7c3aed", fontWeight: 900 }}>BOOK OS · FASE 4.6</p>
         <h1 style={{ margin: "6px 0" }}>Launch Factory</h1>
         <p style={{ maxWidth: 900, marginTop: 0 }}>
-          Koble og kontroller Freddy Publishing-kanalene fra samme arbeidsflate. OAuth og e-posthemmeligheter håndteres av eksisterende sikre tilkoblingssystem; Book OS viser bare readiness og nettstedmål.
+          Kontroller hele veien frem til separat intern sluttgodkjenning. Selv en sluttgodkjent release er fortsatt ikke publisert, sendt eller planlagt i en ekstern kanal.
         </p>
       </header>
 
@@ -336,6 +365,8 @@ export default function LaunchFactoryPage() {
           ["Intern kanalkø", summary.queuedHandoffs],
           ["Preflight klar", summary.readyPreflights],
           ["Preflight blokkert", summary.blockedPreflights],
+          ["Venter sluttgodkjenning", summary.pendingReleases],
+          ["Sluttgodkjent internt", summary.approvedReleases],
         ].map(([label, value]) => (
           <article key={String(label)} style={{ background: "white", border: "1px solid #aebdce", borderRadius: 10, padding: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 800 }}>{label}</div>
@@ -388,6 +419,8 @@ export default function LaunchFactoryPage() {
                           const note = decisionNotes[item.id] || "";
                           const handoff = item.handoffs?.find((row) => row.item_version === item.current_version && row.status !== "withdrawn");
                           const latestPreflight = handoff?.preflights?.[0];
+                          const activeRelease = handoff?.releases?.find((row) => row.status === "pending_approval" || row.status === "approved");
+                          const latestPreflightRelease = latestPreflight ? handoff?.releases?.find((row) => row.preflight_id === latestPreflight.id) : undefined;
                           return (
                             <div key={item.id} style={{ padding: 12, border: `1px solid ${status.color}`, borderRadius: 9, background: "white" }}>
                               <strong style={{ display: "block", fontSize: 12 }}>{formatScheduled(item.scheduled_for, item.timezone)} · {channelLabels[item.channel] || item.channel}</strong>
@@ -450,6 +483,29 @@ export default function LaunchFactoryPage() {
                                                   <strong>{latestPreflight.status === "ready" ? "✓ Klar preflight" : `Blokkert · ${latestPreflight.blocker_codes.length} punkter`} · kontroll {latestPreflight.run_number}</strong>
                                                   {latestPreflight.blocker_codes.map((code) => <span key={code} style={{ display: "block", marginTop: 3 }}>• {preflightLabels[code] || code}</span>)}
                                                   <span style={{ display: "block", marginTop: 5, fontWeight: 800 }}>Intern kontroll · ikke publisert</span>
+                                                </div>
+                                              ) : null}
+                                              {latestPreflight?.status === "ready" && !latestPreflightRelease ? (
+                                                <button disabled={itemBusy} onClick={() => releaseAction(item, "prepare_release", handoff.id)} style={{ padding: 8, border: 0, borderRadius: 6, background: "#0f766e", color: "white", fontWeight: 900 }}>{itemBusy ? "Oppretter…" : "Opprett release-kandidat"}</button>
+                                              ) : null}
+                                              {latestPreflight?.status === "ready" && latestPreflightRelease && !activeRelease ? (
+                                                <span style={{ padding: 8, borderRadius: 6, background: "#f1f5f9", color: "#475569", fontSize: 11, fontWeight: 800 }}>Release-kandidaten er {latestPreflightRelease.status === "revoked" ? "trukket tilbake" : "utdatert"}. Kjør preflight på nytt for en ny kandidat.</span>
+                                              ) : null}
+                                              {activeRelease?.status === "pending_approval" ? (
+                                                <div style={{ display: "grid", gap: 6, padding: 9, border: "1px solid #f59e0b", borderRadius: 7, background: "#fffbeb" }}>
+                                                  <strong style={{ color: "#92400e", fontSize: 12 }}>Venter separat sluttgodkjenning</strong>
+                                                  <span style={{ color: "#92400e", fontSize: 11 }}>Release-kandidat · ikke sendt · ikke publisert</span>
+                                                  <button disabled={itemBusy} onClick={() => releaseAction(item, "decide_release", undefined, activeRelease.id, "approve")} style={{ padding: 8, border: 0, borderRadius: 6, background: "#166534", color: "white", fontWeight: 900 }}>{itemBusy ? "Godkjenner…" : "Sluttgodkjenn internt"}</button>
+                                                  <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for å trekke tilbake" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
+                                                  <button disabled={itemBusy || !note.trim()} onClick={() => releaseAction(item, "decide_release", undefined, activeRelease.id, "revoke")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Trekk tilbake release-kandidat</button>
+                                                </div>
+                                              ) : null}
+                                              {activeRelease?.status === "approved" ? (
+                                                <div style={{ display: "grid", gap: 6, padding: 9, border: "1px solid #22c55e", borderRadius: 7, background: "#f0fdf4" }}>
+                                                  <strong style={{ color: "#166534", fontSize: 12 }}>✓ Sluttgodkjent internt</strong>
+                                                  <span style={{ color: "#166534", fontSize: 11 }}>Fortsatt ikke sendt, planlagt eller publisert eksternt</span>
+                                                  <input value={note} onChange={(event) => setDecisionNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Begrunnelse for å trekke godkjenningen" style={{ padding: 7, border: "1px solid #94a3b8", borderRadius: 6 }} />
+                                                  <button disabled={itemBusy || !note.trim()} onClick={() => releaseAction(item, "decide_release", undefined, activeRelease.id, "revoke")} style={{ padding: 7, border: "1px solid #b45309", borderRadius: 6, background: "white", color: "#92400e", fontWeight: 800 }}>Trekk tilbake sluttgodkjenning</button>
                                                 </div>
                                               ) : null}
                                             </>

@@ -45,11 +45,18 @@ const requestSchema = z.discriminatedUnion("action", [
     note: z.string().trim().max(1000).optional(),
   }),
   z.object({ action: z.literal("run_preflight"), handoffId: z.string().uuid() }),
+  z.object({ action: z.literal("prepare_release"), handoffId: z.string().uuid() }),
+  z.object({
+    action: z.literal("decide_release"),
+    releaseId: z.string().uuid(),
+    decision: z.enum(["approve", "revoke"]),
+    note: z.string().trim().max(1000).optional(),
+  }),
   z.object({ action: z.literal("set_website_target"), targetUrl: z.literal("https://books.freddybremseth.com") }),
 ]);
 
 function unavailable(message: string) {
-  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs|channel_preflights|channel_settings)|publishing_(stage|activate|edit|decide|prepare|run|set)_launch|schema cache|does not exist|relation/i.test(message);
+  return /publishing_launch_(campaigns|activations|calendar_items|calendar_item_versions|calendar_item_decisions|channel_handoffs|channel_preflights|channel_settings|release_candidates)|publishing_(stage|activate|edit|decide|prepare|run|set)_launch|schema cache|does not exist|relation/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -58,7 +65,7 @@ export async function GET(request: NextRequest) {
   const sb = getServiceSupabase();
   if (!sb) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
 
-  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes, preflightsRes, socialRes, emailRes, channelSettingsRes] = await Promise.all([
+  const [worksRes, editionsRes, revisionsRes, packagesRes, assetsRes, campaignsRes, activationsRes, calendarRes, versionsRes, itemDecisionsRes, handoffsRes, preflightsRes, releasesRes, socialRes, emailRes, channelSettingsRes] = await Promise.all([
     sb.from("publishing_catalog_works").select("id,canonical_title,series_name,status").neq("status", "archived"),
     sb.from("publishing_catalog_editions").select("id,work_id,title,subtitle,language,format,status").neq("status", "retired"),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("is_canonical", true),
@@ -71,15 +78,16 @@ export async function GET(request: NextRequest) {
     sb.from("publishing_launch_calendar_item_decisions").select("id,calendar_item_id,item_version,decision,actor,note,created_at").order("created_at", { ascending: false }),
     sb.from("publishing_launch_channel_handoffs").select("id,calendar_item_id,item_version,attempt,channel,status,payload_snapshot,prepared_by,prepared_at,queued_by,queued_at,withdrawn_by,withdrawn_at,note,created_at,updated_at").order("created_at", { ascending: false }),
     sb.from("publishing_launch_channel_preflights").select("id,handoff_id,calendar_item_id,run_number,status,checks,blocker_codes,evaluated_by,evaluated_at").order("run_number", { ascending: false }),
+    sb.from("publishing_launch_release_candidates").select("id,handoff_id,preflight_id,calendar_item_id,item_version,channel,status,scheduled_for_snapshot,requested_by,requested_at,approved_by,approved_at,revoked_by,revoked_at,revocation_note,created_at,updated_at").order("created_at", { ascending: false }),
     sb.from("social_channels").select("id,brand_id,platform,display_name,is_active").in("brand_id", ["freddypublishing", "freddy_publishing"]).in("platform", ["facebook", "instagram"]).eq("is_active", true),
     sb.from("brand_email_configs").select("id,brand_id,email_address,display_name,is_active,health_status,health_message,auto_fetch_paused_by_system,last_success_at").in("brand_id", ["freddypublishing", "freddy_publishing"]).eq("is_active", true),
     sb.from("publishing_launch_channel_settings").select("id,brand_id,channel,target_url,status,updated_at").eq("brand_id", "freddypublishing"),
   ]);
-  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error || preflightsRes.error || socialRes.error || emailRes.error || channelSettingsRes.error;
+  const error = worksRes.error || editionsRes.error || revisionsRes.error || packagesRes.error || assetsRes.error || campaignsRes.error || activationsRes.error || calendarRes.error || versionsRes.error || itemDecisionsRes.error || handoffsRes.error || preflightsRes.error || releasesRes.error || socialRes.error || emailRes.error || channelSettingsRes.error;
   if (error) {
     const missingMigration = unavailable(error.message);
     return NextResponse.json(
-      { available: false, error: missingMigration ? "Fase 4.4-migreringen er ikke installert ennå." : error.message },
+      { available: false, error: missingMigration ? "Nyeste Launch Factory-migrering er ikke installert ennå." : error.message },
       { status: missingMigration ? 503 : 500 },
     );
   }
@@ -95,6 +103,7 @@ export async function GET(request: NextRequest) {
   const itemDecisions = itemDecisionsRes.data ?? [];
   const handoffs = handoffsRes.data ?? [];
   const preflights = preflightsRes.data ?? [];
+  const releases = releasesRes.data ?? [];
   const socialChannels = socialRes.data ?? [];
   const socialIds = socialChannels.map((row: any) => row.id);
   const tokenRes = socialIds.length
@@ -134,6 +143,7 @@ export async function GET(request: NextRequest) {
       handoffs: handoffs.filter((row: any) => row.calendar_item_id === item.id).map((handoff: any) => ({
         ...handoff,
         preflights: preflights.filter((row: any) => row.handoff_id === handoff.id),
+        releases: releases.filter((row: any) => row.handoff_id === handoff.id),
       })),
     })) : [];
     const packageChannels = new Set(editionPackages.map((row: any) => row.channel));
@@ -205,6 +215,8 @@ export async function GET(request: NextRequest) {
       queuedHandoffs: handoffs.filter((row: any) => row.status === "queued").length,
       readyPreflights: handoffs.filter((handoff: any) => handoff.status === "queued" && preflights.find((row: any) => row.handoff_id === handoff.id)?.status === "ready").length,
       blockedPreflights: handoffs.filter((handoff: any) => handoff.status === "queued" && preflights.find((row: any) => row.handoff_id === handoff.id)?.status === "blocked").length,
+      pendingReleases: releases.filter((row: any) => row.status === "pending_approval").length,
+      approvedReleases: releases.filter((row: any) => row.status === "approved").length,
     },
     editions: rows,
   });
@@ -288,6 +300,26 @@ export async function POST(request: NextRequest) {
     });
     if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
     return NextResponse.json({ ok: true, action: "run_preflight", result: data });
+  }
+
+  if (parsed.data.action === "prepare_release") {
+    const { data, error } = await sb.rpc("publishing_prepare_launch_release_candidate", {
+      p_handoff_id: parsed.data.handoffId,
+      p_actor: "admin_ui",
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "prepare_release", result: data });
+  }
+
+  if (parsed.data.action === "decide_release") {
+    const { data, error } = await sb.rpc("publishing_decide_launch_release_candidate", {
+      p_release_id: parsed.data.releaseId,
+      p_decision: parsed.data.decision,
+      p_actor: "admin_ui",
+      p_note: parsed.data.note || null,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
+    return NextResponse.json({ ok: true, action: "decide_release", result: data });
   }
 
   if (parsed.data.action === "set_website_target") {
