@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
 import { buildEmailLinkHealth, classifyEmailIdentityEvidence } from "@/lib/crm/email-link-health";
+import { filterEmailMessagesByBrand } from "@/lib/crm/email-link-health-brand-scope";
 import { filterOwnAddressEmailHealth } from "@/lib/crm/email-link-health-own-addresses";
 import { classifyEmailIdentityReviewPriorityWithAge } from "@/lib/crm/email-review-priority";
 import { summarizeEmailIdentityReviewPriorities } from "@/lib/crm/email-review-summary";
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
   if (ownAddressesResult.error) return NextResponse.json({ error: ownAddressesResult.error.message }, { status: 500 });
 
   const contacts = contactsResult.data || [];
-  const messages = (messagesResult.data || []).filter((message) => !brandId || String(message.brand_id || "") === brandId);
+  const messages = filterEmailMessagesByBrand(messagesResult.data || [], brandId);
   const contactMap = new Map(contacts.map((contact) => [String(contact.id), contact]));
   const baseHealth = buildEmailLinkHealth(messages, contacts);
   const health = filterOwnAddressEmailHealth(
