@@ -156,6 +156,8 @@ export default function EmailLinkHealthPage() {
       .sort((a, b) => PRIORITY_ORDER[a.reviewPriority.priority] - PRIORITY_ORDER[b.reviewPriority.priority]);
   }, [data, filter, priorityFilter, search, targetMessageId]);
 
+  const queueHref = priorityFilter === "all" ? "/nexus-os/email-link-health" : `/nexus-os/email-link-health?priority=${priorityFilter}`;
+
   return <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 sm:py-8">
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -176,7 +178,7 @@ export default function EmailLinkHealthPage() {
         <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox. Køfiltre og søk settes midlertidig til side slik at den valgte meldingen ikke kan skjules.</div>
         <div className="flex flex-wrap gap-2">
           <Link href="/nexus-os/inbox" className="inline-flex w-fit rounded-xl bg-violet-800 px-3 py-2 text-xs font-black text-white hover:bg-violet-900">Tilbake til Nexus Inbox</Link>
-          <Link href="/nexus-os/email-link-health" className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Vis hele Email Link Health</Link>
+          <Link href={queueHref} className="inline-flex w-fit rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800 hover:bg-violet-100">Tilbake til review-kø</Link>
         </div>
       </div> : null}
 
