@@ -19,6 +19,7 @@ interface HealthItem {
 }
 
 interface HealthResponse {
+  filter?: { brandId?: string | null };
   summary: {
     messages: number;
     totalMessages: number;
@@ -103,12 +104,16 @@ export default function EmailLinkHealthPage() {
   const [priorityFilter, setPriorityFilter] = useState<"all" | ReviewPriority>("all");
   const [search, setSearch] = useState("");
   const [targetMessageId, setTargetMessageId] = useState("");
+  const [brandFilter, setBrandFilter] = useState("");
 
-  async function load() {
+  async function load(brandId = brandFilter) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/nexus/email-link-health", { cache: "no-store" });
+      const apiUrl = brandId
+        ? `/api/nexus/email-link-health?brand=${encodeURIComponent(brandId)}`
+        : "/api/nexus/email-link-health";
+      const response = await fetch(apiUrl, { cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || "Kunne ikke hente Email Link Health.");
       setData(body);
@@ -133,17 +138,42 @@ export default function EmailLinkHealthPage() {
     if (nextUrl !== currentUrl) window.history.pushState(null, "", nextUrl);
   }
 
+  function clearBrandFilter() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("brand");
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+    window.history.pushState(null, "", nextUrl);
+    setBrandFilter("");
+    void load("");
+  }
+
   useEffect(() => {
-    const syncUrlState = () => {
+    const readUrlState = () => {
       const params = new URLSearchParams(window.location.search);
-      setTargetMessageId(params.get("messageId")?.trim() || "");
-      setPriorityFilter(parsePriority(params.get("priority")));
+      return {
+        messageId: params.get("messageId")?.trim() || "",
+        priority: parsePriority(params.get("priority")),
+        brand: params.get("brand")?.trim() || "",
+      };
     };
 
-    syncUrlState();
-    window.addEventListener("popstate", syncUrlState);
-    void load();
-    return () => window.removeEventListener("popstate", syncUrlState);
+    const initial = readUrlState();
+    setTargetMessageId(initial.messageId);
+    setPriorityFilter(initial.priority);
+    setBrandFilter(initial.brand);
+    void load(initial.brand);
+
+    const handlePopState = () => {
+      const next = readUrlState();
+      setTargetMessageId(next.messageId);
+      setPriorityFilter(next.priority);
+      setBrandFilter(next.brand);
+      void load(next.brand);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const items = useMemo(() => {
@@ -160,7 +190,11 @@ export default function EmailLinkHealthPage() {
       .sort((a, b) => PRIORITY_ORDER[a.reviewPriority.priority] - PRIORITY_ORDER[b.reviewPriority.priority]);
   }, [data, filter, priorityFilter, search, targetMessageId]);
 
-  const queueHref = priorityFilter === "all" ? "/nexus-os/email-link-health" : `/nexus-os/email-link-health?priority=${priorityFilter}`;
+  const queueParams = new URLSearchParams();
+  if (brandFilter) queueParams.set("brand", brandFilter);
+  if (priorityFilter !== "all") queueParams.set("priority", priorityFilter);
+  const queueQuery = queueParams.toString();
+  const queueHref = `/nexus-os/email-link-health${queueQuery ? `?${queueQuery}` : ""}`;
 
   return <main className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 sm:py-8">
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -170,13 +204,18 @@ export default function EmailLinkHealthPage() {
           <h2 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Koble inbox til riktig kunde uten å gjette</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Bare eksisterende CRM-ID eller eksakt e-postadresse kan bli en sikker kandidat. Review-prioritet hjelper deg å se hva som bør vurderes først, men brukes aldri som koblingsevidens.</p>
         </div>
-        <button onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
+        <button onClick={() => void load(brandFilter)} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-800 hover:bg-slate-50 disabled:opacity-50">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Oppdater</button>
       </div>
 
       <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
         <div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Kontrollert kobling</div>
         <p className="mt-1">«Godkjenn kobling» vises bare for én entydig eksakt kandidat. AI-intent som `inquiry` og `follow_up` kan løfte review-prioriteten, men kan aldri alene koble en melding til CRM.</p>
       </div>
+
+      {brandFilter ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950 sm:flex-row sm:items-center sm:justify-between">
+        <div><span className="font-black">Brand-scope:</span> viser bare e-postkøen for <span className="font-black">{data?.filter?.brandId || brandFilter}</span>. Brand brukes kun til køavgrensning og er ikke identitetsevidens.</div>
+        <button type="button" onClick={clearBrandFilter} className="w-fit rounded-xl border border-cyan-400 bg-white px-3 py-2 text-xs font-black text-cyan-900 hover:bg-cyan-100">Vis alle brands</button>
+      </div> : null}
 
       {targetMessageId ? <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 lg:flex-row lg:items-center lg:justify-between">
         <div><span className="font-black">Fokusert review:</span> viser bare meldingen valgt fra Nexus Inbox. Køfiltre og søk settes midlertidig til side slik at den valgte meldingen ikke kan skjules.</div>
@@ -250,7 +289,7 @@ export default function EmailLinkHealthPage() {
         </div>
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="text-xs font-black uppercase tracking-wide text-slate-500">CRM-kandidat</div>
-          {item.candidates.length ? <div className="mt-2 space-y-2">{item.candidates.map((candidate) => <div key={candidate.id} className="flex flex-col gap-3 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-black text-slate-900">{candidate.name}</div><div className="text-xs text-slate-500">{candidate.email || "ingen e-post"} · {candidate.brandId || "brand ukjent"}</div></div><div className="flex flex-wrap items-center gap-2"><Link href={`/customers?contactId=${encodeURIComponent(candidate.id)}`} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-cyan-700 hover:bg-slate-50">Åpne Customer 360</Link>{item.state === "exact_candidate" && item.candidates.length === 1 ? <EmailLinkApprovalButton messageId={item.message.id} contactId={candidate.id} contactName={candidate.name} onApproved={() => void load()} /> : null}</div></div>)}</div> : <div className="mt-2 flex items-center gap-2 text-sm text-slate-500"><AlertTriangle className="h-4 w-4" />Ingen sikker CRM-kandidat.</div>}
+          {item.candidates.length ? <div className="mt-2 space-y-2">{item.candidates.map((candidate) => <div key={candidate.id} className="flex flex-col gap-3 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-black text-slate-900">{candidate.name}</div><div className="text-xs text-slate-500">{candidate.email || "ingen e-post"} · {candidate.brandId || "brand ukjent"}</div></div><div className="flex flex-wrap items-center gap-2"><Link href={`/customers?contactId=${encodeURIComponent(candidate.id)}`} className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-cyan-700 hover:bg-slate-50">Åpne Customer 360</Link>{item.state === "exact_candidate" && item.candidates.length === 1 ? <EmailLinkApprovalButton messageId={item.message.id} contactId={candidate.id} contactName={candidate.name} onApproved={() => void load(brandFilter)} /> : null}</div></div>)}</div> : <div className="mt-2 flex items-center gap-2 text-sm text-slate-500"><AlertTriangle className="h-4 w-4" />Ingen sikker CRM-kandidat.</div>}
         </div>
       </article>)}
     </section>
