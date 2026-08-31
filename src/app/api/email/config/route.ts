@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import { encryptPassword } from "@/services/email/crypto";
 
@@ -8,6 +9,9 @@ import { encryptPassword } from "@/services/email/crypto";
  * Query params: brand_id (optional)
  */
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const { searchParams } = new URL(req.url);
     const brandId = searchParams.get("brand_id");
@@ -49,6 +53,9 @@ export async function GET(req: NextRequest) {
  *         ai_auto_draft, signature, id? (for update) }
  */
 export async function POST(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const body = await req.json();
     const supabase = createServerClient();
@@ -172,6 +179,9 @@ export async function POST(req: NextRequest) {
  * Query params: id
  */
 export async function DELETE(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
