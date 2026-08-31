@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import { insertRevenueEvent } from "@/lib/revenue/events";
 import {
@@ -14,6 +15,9 @@ import { decryptPassword } from "@/services/email/crypto";
  * Query params: brand_id, limit, offset, unread_only, intent, urgency
  */
 export async function GET(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const { searchParams } = new URL(req.url);
     const brandId = searchParams.get("brand_id");
@@ -84,6 +88,9 @@ export async function GET(req: NextRequest) {
  * Body: { brand_id: string }
  */
 export async function POST(req: NextRequest) {
+  const adminError = await requireAdminApi(req);
+  if (adminError) return adminError;
+
   try {
     const { brand_id } = await req.json();
 
