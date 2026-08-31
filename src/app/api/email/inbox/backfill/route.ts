@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { createServerClient } from "@/lib/supabase/server";
 import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill-policy";
+import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   fetchHistoricalMailboxEmails,
@@ -46,6 +47,24 @@ export async function POST(req: NextRequest) {
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
     if (!configs?.length) {
       return NextResponse.json({ error: "No active email config found for this brand" }, { status: 404 });
+    }
+
+    const readinessGate = evaluateEmailHistoryBackfillReadiness(configs);
+    if (!readinessGate.ok) {
+      return NextResponse.json(
+        {
+          error: "Email history backfill is blocked until every active email account is ready",
+          blocked_accounts: readinessGate.blockedAccounts,
+          safety: {
+            readinessRequiredServerSide: true,
+            imapAttempted: false,
+            databaseMessagesRead: false,
+            databaseMessagesWritten: false,
+            emailSent: false,
+          },
+        },
+        { status: 409 }
+      );
     }
 
     const { data: existingMessages, error: existingError } = await supabase
@@ -187,6 +206,7 @@ export async function POST(req: NextRequest) {
       accounts: accountResults,
       safety: {
         adminRequired: true,
+        readinessRequiredServerSide: true,
         previewWrites: false,
         applyRequiresExplicitConfirmation: true,
         historicalMessagesMarkedRead: true,
