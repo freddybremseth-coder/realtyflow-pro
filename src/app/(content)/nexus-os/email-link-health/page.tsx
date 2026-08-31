@@ -91,6 +91,10 @@ function dateLabel(value: unknown) {
   return Number.isNaN(date.getTime()) ? "Ukjent dato" : new Intl.DateTimeFormat("nb-NO", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function parsePriority(value: string | null): "all" | ReviewPriority {
+  return value === "high" || value === "medium" || value === "low" ? value : "all";
+}
+
 export default function EmailLinkHealthPage() {
   const [data, setData] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,9 +119,18 @@ export default function EmailLinkHealthPage() {
     }
   }
 
+  function updatePriorityFilter(next: "all" | ReviewPriority) {
+    setPriorityFilter(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === "all") params.delete("priority"); else params.set("priority", next);
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setTargetMessageId(params.get("messageId")?.trim() || "");
+    setPriorityFilter(parsePriority(params.get("priority")));
     void load();
   }, []);
 
@@ -185,7 +198,7 @@ export default function EmailLinkHealthPage() {
           ["high", "Høy review", data?.summary.reviewPriorityHigh ?? 0, "border-rose-200 bg-rose-50"],
           ["medium", "Medium review", data?.summary.reviewPriorityMedium ?? 0, "border-amber-200 bg-amber-50"],
           ["low", "Lav review", data?.summary.reviewPriorityLow ?? 0, "border-slate-200 bg-slate-50"],
-        ] as const).map(([key, label, value, className]) => <button key={key} type="button" onClick={() => setPriorityFilter(key)} aria-pressed={priorityFilter === key} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${className} ${priorityFilter === key ? "ring-2 ring-slate-900/15" : ""}`}><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-600">{label}</div></button>)}
+        ] as const).map(([key, label, value, className]) => <button key={key} type="button" onClick={() => updatePriorityFilter(key)} aria-pressed={priorityFilter === key} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${className} ${priorityFilter === key ? "ring-2 ring-slate-900/15" : ""}`}><div className="text-2xl font-black text-slate-950">{value}</div><div className="mt-1 text-xs font-bold text-slate-600">{label}</div></button>)}
       </div>
 
       <div className="mt-5 flex flex-col gap-3">
@@ -196,7 +209,7 @@ export default function EmailLinkHealthPage() {
           ] as const).map(([key, label]) => <button key={key} onClick={() => setFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${filter === key ? "bg-cyan-700 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
           <div className="flex gap-2 overflow-x-auto pb-1">{([
             ["all", "Alle prioriteter"], ["high", "Høy"], ["medium", "Medium"], ["low", "Lav"],
-          ] as const).map(([key, label]) => <button key={key} onClick={() => setPriorityFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${priorityFilter === key ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
+          ] as const).map(([key, label]) => <button key={key} onClick={() => updatePriorityFilter(key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${priorityFilter === key ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{label}</button>)}</div>
         </div>
       </div>
     </section>
