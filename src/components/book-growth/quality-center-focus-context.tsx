@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { launchFactoryHref } from "@/lib/publishing/book-os-launch-factory-link";
 
 type FocusEdition = {
   editionId: string;
@@ -12,6 +13,7 @@ type FocusEdition = {
   format?: string;
   canonicalRevision?: { id: string; revision_number: number; status: string } | null;
   nextAction?: { label?: string };
+  phase3Ready?: boolean;
 };
 
 export function QualityCenterFocusContext() {
@@ -41,6 +43,8 @@ export function QualityCenterFocusContext() {
 
   if (!editionId && !revisionId) return null;
 
+  const launchHref = launchFactoryHref({ editionId: focused?.editionId || editionId, revisionId: focused?.canonicalRevision?.id || revisionId });
+
   return <div style={{ maxWidth: 1400, margin: "16px auto 0", padding: "0 24px", fontFamily: "system-ui, sans-serif" }}>
     <section style={{ border: "2px solid #2563eb", borderRadius: 12, background: "#eff6ff", padding: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.1, color: "#1d4ed8" }}>FOCUSED REVIEW FROM PRODUCTION HANDOFF</div>
@@ -51,12 +55,14 @@ export function QualityCenterFocusContext() {
           {focused.canonicalRevision ? ` · Revision ${focused.canonicalRevision.revision_number} · ${focused.canonicalRevision.status}` : ""}
         </p>
         <p style={{ margin: "8px 0 0", fontSize: 13 }}><b>Next Quality Center action:</b> {focused.nextAction?.label || "Review the revision below."}</p>
+        {focused.phase3Ready ? <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 800, color: "#166534" }}>Quality Center gates are complete for this revision. Launch Factory can now use the same locked edition/revision context.</p> : null}
       </> : <>
         <h2 style={{ margin: "6px 0 4px", fontSize: 19 }}>Revision context not found in the active Quality Center set</h2>
         <p style={{ margin: 0, lineHeight: 1.45 }}>The deep link is preserved, but no approval action will be inferred or executed. Refresh the catalogue or open the full Quality Center list.</p>
       </>}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
         <Link href="/book-growth/quality-center" style={{ fontWeight: 800 }}>Clear focused review</Link>
+        {focused?.phase3Ready ? <Link href={launchHref} style={{ padding: "7px 10px", borderRadius: 8, background: "#14532d", color: "white", textDecoration: "none", fontWeight: 900 }}>Open this revision in Launch Factory</Link> : null}
         {editionId ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>edition: {editionId}</code> : null}
         {revisionId ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>revision: {revisionId}</code> : null}
       </div>
