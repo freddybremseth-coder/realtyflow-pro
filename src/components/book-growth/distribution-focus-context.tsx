@@ -48,18 +48,18 @@ export function DistributionFocusContext() {
         <p style={{ margin: 0, lineHeight: 1.45 }}>
           {String(result?.edition?.language || "").toUpperCase()} · {result?.edition?.format || "edition"}
           {result?.revision?.revision_number ? ` · Revision ${result.revision.revision_number}` : ""}
-          {result?.project?.title ? ` · Project: ${result.project.title}` : ""}
+          {result?.project?.title ? ` · Canonical project: ${result.project.title}` : ""}
         </p>
         <p style={{ margin: "8px 0 0", fontSize: 13 }}><b>Canonical revision:</b> {result?.revisionMatches ? "Yes" : "No"} · <b>Finally approved for Distribution:</b> {result?.distributionReady ? "Yes" : "No"}</p>
         {result?.project?.approval?.approvedAt ? <p style={{ margin: "5px 0 0", fontSize: 12 }}>Final approval: {result.project.approval.approvedBy || "owner"} · {new Date(result.project.approval.approvedAt).toLocaleString("nb-NO")}</p> : null}
         {Array.isArray(result?.blocking) && result.blocking.length ? <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>{result.blocking.map((item) => <li key={item}>{item}</li>)}</ul> : null}
         <p style={{ margin: "8px 0 0", fontSize: 13 }}>{result?.next}</p>
-        {ready ? <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 800 }}>The project shown below is the canonical source for this edition. Rights confirmation, AI disclosure, channel selection, prepare and approval remain explicit actions.</p> : null}
+        {ready ? <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 800 }}>Canonical project resolved above. In the Distribution selector, use this exact project. Rights confirmation, AI disclosure, channel selection, prepare and approval remain explicit actions.</p> : null}
       </>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
         <Link href="/book-growth/distribution" style={{ fontWeight: 800 }}>Clear focused distribution context</Link>
         <Link href={`/book-growth/launch-factory?editionId=${encodeURIComponent(editionId)}${revisionId ? `&revisionId=${encodeURIComponent(revisionId)}` : ""}`} style={{ fontWeight: 800 }}>Back to this revision in Launch Factory</Link>
-        {result?.project?.id ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>project: {result.project.id}</code> : null}
+        {result?.project?.id ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>canonical project: {result.project.id}</code> : null}
       </div>
     </section>
   </div>;
