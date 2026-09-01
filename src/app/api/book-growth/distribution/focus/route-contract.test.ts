@@ -13,6 +13,16 @@ const launchContext = fs.readFileSync(
   "utf8",
 );
 
+const distributionContext = fs.readFileSync(
+  path.join(process.cwd(), "src/components/book-growth/distribution-focus-context.tsx"),
+  "utf8",
+);
+
+const salesEvidenceContext = fs.readFileSync(
+  path.join(process.cwd(), "src/components/book-growth/sales-evidence-focus-context.tsx"),
+  "utf8",
+);
+
 test("Distribution focus is admin-only, read-only and resolves canonical project", () => {
   assert.match(source, /requireAdminApi/);
   assert.match(source, /canonical_project_id/);
@@ -29,4 +39,22 @@ test("Launch context exposes Distribution only for an approved release", () => {
   assert.match(launchContext, /distributionHref/);
   assert.match(launchContext, /Open this release in Distribution/);
   assert.doesNotMatch(launchContext, /method:\s*"POST"/);
+});
+
+test("Distribution exposes Sales Evidence only after confirmed published distribution", () => {
+  assert.match(source, /row\.status === "published"/);
+  assert.match(source, /hasPublishedDistribution/);
+  assert.match(source, /salesEvidenceHref/);
+  assert.match(distributionContext, /Open this published revision in Sales Evidence/);
+  assert.doesNotMatch(distributionContext, /method:\s*"POST"/);
+});
+
+test("focused Sales Evidence is read-only and filters exact edition and revision", () => {
+  assert.match(salesEvidenceContext, /row\.edition_id !== editionId/);
+  assert.match(salesEvidenceContext, /row\.revision_id !== revisionId/);
+  assert.match(salesEvidenceContext, /exact_revision/);
+  assert.doesNotMatch(salesEvidenceContext, /method:\s*"POST"/);
+  assert.doesNotMatch(salesEvidenceContext, /reconcile_legacy/);
+  assert.doesNotMatch(salesEvidenceContext, /stage_resolution/);
+  assert.doesNotMatch(salesEvidenceContext, /decide_resolution/);
 });
