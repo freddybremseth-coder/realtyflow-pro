@@ -105,7 +105,7 @@ export function verifiedManifestAsset(input: ArtifactUploadTicketInput, storageP
     storageBucket: PUBLICATION_ASSET_BUCKET,
     storagePath,
     fingerprint: input.fingerprint,
-    version: 1,
+    version: input.revisionNumber,
     verified: true,
     canonical: input.canonical,
     metadata: {
