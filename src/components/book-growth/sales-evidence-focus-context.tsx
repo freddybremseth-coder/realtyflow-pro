@@ -80,6 +80,7 @@ export function SalesEvidenceFocusContext() {
   }, [facts]);
 
   if (!editionId) return null;
+  const experimentsHref = `/book-growth/experiments?editionId=${encodeURIComponent(editionId)}${revisionId ? `&revisionId=${encodeURIComponent(revisionId)}` : ""}`;
 
   return <div style={{ maxWidth: 1400, margin: "16px auto 0", padding: "0 24px", fontFamily: "system-ui, sans-serif" }}>
     <section style={{ border: "2px solid #0f766e", borderRadius: 12, background: "#f0fdfa", padding: 14 }}>
@@ -100,6 +101,7 @@ export function SalesEvidenceFocusContext() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
         <Link href="/book-growth/sales-evidence" style={{ fontWeight: 800 }}>Clear focused sales evidence</Link>
         <Link href={`/book-growth/distribution?editionId=${encodeURIComponent(editionId)}${revisionId ? `&revisionId=${encodeURIComponent(revisionId)}` : ""}`} style={{ fontWeight: 800 }}>Back to this revision in Distribution</Link>
+        {facts.length > 0 ? <Link href={experimentsHref} style={{ fontWeight: 900, color: "#7c3aed" }}>Open this evidence in Controlled Experiments →</Link> : null}
         <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>edition: {editionId}</code>
         {revisionId ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>revision: {revisionId}</code> : null}
       </div>
