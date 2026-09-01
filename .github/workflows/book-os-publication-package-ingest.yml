@@ -5,6 +5,7 @@ on:
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/book-growth/distribution/focus/**"
+      - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
       - "src/app/(content)/book-growth/layout.tsx"
       - "src/app/(content)/book-growth/production-handoff/**"
@@ -13,10 +14,12 @@ on:
       - "src/app/(content)/book-growth/launch-factory/**"
       - "src/app/(content)/book-growth/distribution/**"
       - "src/app/(content)/book-growth/sales-evidence/**"
+      - "src/app/(content)/book-growth/experiments/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
       - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/book-growth/distribution-focus-context.tsx"
       - "src/components/book-growth/sales-evidence-focus-context.tsx"
+      - "src/components/book-growth/experiments-focus-context.tsx"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
       - "src/components/publishing/publication-series-batch-uploader.tsx"
@@ -56,9 +59,11 @@ on:
       - "feat/book-os-launch-factory-deeplink"
       - "feat/book-os-distribution-deeplink"
       - "feat/book-os-sales-evidence-deeplink"
+      - "feat/book-os-experiments-deeplink"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/book-growth/distribution/focus/**"
+      - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
       - "src/app/(content)/book-growth/layout.tsx"
       - "src/app/(content)/book-growth/production-handoff/**"
@@ -67,10 +72,12 @@ on:
       - "src/app/(content)/book-growth/launch-factory/**"
       - "src/app/(content)/book-growth/distribution/**"
       - "src/app/(content)/book-growth/sales-evidence/**"
+      - "src/app/(content)/book-growth/experiments/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
       - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/book-growth/distribution-focus-context.tsx"
       - "src/components/book-growth/sales-evidence-focus-context.tsx"
+      - "src/components/book-growth/experiments-focus-context.tsx"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
       - "src/components/publishing/publication-series-batch-uploader.tsx"
@@ -122,4 +129,5 @@ jobs:
           src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
           src/app/api/book-growth/package-ingest/route-contract.test.ts
           src/app/api/book-growth/distribution/focus/route-contract.test.ts
+          src/app/api/book-growth/experiments/focus/route-contract.test.ts
           src/app/api/publishing/book-engine/production-handoff/route-contract.test.ts
