@@ -15,11 +15,15 @@ export async function GET(request: NextRequest) {
   const revisionId = String(request.nextUrl.searchParams.get("revisionId") || "").trim();
   if (!editionId) return NextResponse.json({ error: "editionId is required" }, { status: 400 });
 
-  const [{ data: edition, error: editionError }, { data: canonicalRevision, error: revisionError }] = await Promise.all([
+  const [{ data: edition, error: editionError }, { data: canonicalRevision, error: revisionError }, { data: publications, error: publicationsError }] = await Promise.all([
     sb.from("publishing_catalog_editions").select("id,title,language,format,canonical_project_id").eq("id", editionId).maybeSingle(),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("edition_id", editionId).eq("is_canonical", true).maybeSingle(),
+    sb.from("publishing_distribution_publications")
+      .select("id,edition_id,revision_id,channel,marketplace,status,external_id,external_url,published_at,updated_at")
+      .eq("edition_id", editionId)
+      .order("updated_at", { ascending: false }),
   ]);
-  const lookupError = editionError || revisionError;
+  const lookupError = editionError || revisionError || publicationsError;
   if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 500 });
   if (!edition) return NextResponse.json({ error: "Catalog edition not found" }, { status: 404 });
 
@@ -33,6 +37,8 @@ export async function GET(request: NextRequest) {
 
   const revisionMatches = !revisionId || String((canonicalRevision as any)?.id || "") === revisionId;
   const distributionReady = Boolean(project && isDistributionReady(project as any));
+  const exactPublications = (publications ?? []).filter((row: any) => !revisionId || String(row.revision_id || "") === revisionId);
+  const publishedPublications = exactPublications.filter((row: any) => row.status === "published");
 
   return NextResponse.json({
     ok: true,
@@ -53,13 +59,21 @@ export async function GET(request: NextRequest) {
       approval: publicationApproval(project as any),
     } : null,
     distributionReady,
+    publications: exactPublications,
+    publishedPublications,
+    hasPublishedDistribution: publishedPublications.length > 0,
+    salesEvidenceHref: publishedPublications.length > 0
+      ? `/book-growth/sales-evidence?editionId=${encodeURIComponent(editionId)}${revisionId ? `&revisionId=${encodeURIComponent(revisionId)}` : ""}`
+      : null,
     blocking: [
       !project ? "No canonical Book Engine project is bound to this catalog edition." : null,
       !revisionMatches ? "The requested revision is no longer the canonical revision." : null,
       project && !distributionReady ? "The canonical project is not finally approved for distribution." : null,
     ].filter(Boolean),
-    next: distributionReady && revisionMatches
-      ? "Review rights, AI disclosure, channel selection and Distribution preflight. No delivery has been prepared."
-      : "Resolve the blocking condition before preparing distribution.",
+    next: publishedPublications.length > 0
+      ? "At least one channel is confirmed published. Open Sales Evidence to inspect canonical sales and royalty attribution for this revision."
+      : distributionReady && revisionMatches
+        ? "Review rights, AI disclosure, channel selection and Distribution preflight. No published channel is confirmed yet."
+        : "Resolve the blocking condition before preparing distribution.",
   });
 }
