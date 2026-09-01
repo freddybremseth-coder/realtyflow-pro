@@ -8,6 +8,7 @@ const MODULES = [
   { href: "/book-growth/asins", label: "ASIN" },
   { href: "/book-growth/catalog-quality", label: "Catalog Quality" },
   { href: "/book-growth/file-reconciliation", label: "Book Files" },
+  { href: "/book-growth/production-handoff", label: "Production Handoff" },
   { href: "/book-growth/package-ingest", label: "Package Ingest" },
   { href: "/book-growth/canonical-catalog", label: "Canonical Catalogue" },
   { href: "/book-growth/quality-center", label: "Quality Center" },
