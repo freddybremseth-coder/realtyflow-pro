@@ -18,6 +18,8 @@ import {
   verifiedManifestAsset,
 } from "@/lib/publishing/publication-artifact-upload";
 import { publicationPackageGateSummary, validatePublicationPackageManifest } from "@/lib/publishing/publication-package";
+import { printProfileSummary } from "@/lib/publishing/book-print-production";
+import { renderBookPrintInterior, renderKdpFullWrap } from "@/services/publishing/book-print-renderer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -51,50 +53,76 @@ export async function POST(request: NextRequest) {
   const cover = coverUrl ? await fetchBookImage(coverUrl) : null;
   const readiness = handoffReadiness(project, Boolean(cover));
   if (!readiness.ok) return NextResponse.json({ error: "Book project is not ready for production handoff", readiness }, { status: 409 });
+  if (!cover) return NextResponse.json({ error: "Canonical cover could not be loaded" }, { status: 409 });
+  if (cover.type !== "jpg" && cover.type !== "png") {
+    return NextResponse.json({ error: `Print production requires a JPG or PNG canonical cover; received ${cover.type}` }, { status: 409 });
+  }
 
   const identity = bookProductionHandoffIdentity(project, revisionNumber);
   const titleSlug = slug(project.title);
   const docx = await toBookProjectDocxBuffer(project);
   const epub = await toEpubBuffer(project);
   const metadata = bookProductionRetailerMetadata(project);
-  if (!cover) return NextResponse.json({ error: "Canonical cover could not be loaded" }, { status: 409 });
-  const coverExt = cover.type === "jpg" ? "jpg" : cover.type;
-  const coverMime = cover.type === "jpg" ? "image/jpeg" : `image/${cover.type}`;
+  const coverExt = cover.type;
+  const coverMime = cover.type === "jpg" ? "image/jpeg" : "image/png";
 
-  const digitalFiles = [
+  let printInterior;
+  let fullWrap;
+  try {
+    printInterior = await renderBookPrintInterior(project);
+    fullWrap = await renderKdpFullWrap(project, printInterior.pageCount, { buffer: cover.buffer, type: cover.type });
+  } catch (cause) {
+    return NextResponse.json({
+      error: cause instanceof Error ? cause.message : String(cause),
+      prepared: false,
+      ingested: false,
+      productionStatus: "digital_ready",
+      printPrepared: false,
+    }, { status: 422 });
+  }
+
+  const printProfile = printProfileSummary(printInterior.pageCount);
+  const publicationFiles = [
     { input: artifactInput(identity, { assetType: "manuscript_docx", role: "english_master", filename: `${titleSlug}_English_Master_r${revisionNumber}.docx`, bytes: docx, mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), bytes: new Uint8Array(docx) },
     { input: artifactInput(identity, { assetType: "epub", role: "retailer_epub", filename: `${titleSlug}_r${revisionNumber}.epub`, bytes: epub, mimeType: "application/epub+zip" }), bytes: new Uint8Array(epub) },
     { input: artifactInput(identity, { assetType: "cover", role: "ebook_cover", filename: `${titleSlug}_Ebook_Cover_r${revisionNumber}.${coverExt}`, bytes: cover.buffer, mimeType: coverMime }), bytes: new Uint8Array(cover.buffer) },
     { input: artifactInput(identity, { assetType: "metadata", role: "retailer_metadata", filename: `${titleSlug}_Retailer_Metadata_r${revisionNumber}.txt`, bytes: metadata, mimeType: "text/plain" }), bytes: new Uint8Array(metadata) },
+    { input: artifactInput(identity, { assetType: "pdf", role: "print_interior", filename: `${titleSlug}_Print_Interior_6x9_${printInterior.pageCount}pp_r${revisionNumber}.pdf`, bytes: printInterior.buffer, mimeType: "application/pdf" }), bytes: new Uint8Array(printInterior.buffer) },
+    { input: artifactInput(identity, { assetType: "cover", role: "kdp_full_wrap", filename: `${titleSlug}_KDP_Full_Cover_6x9_${printInterior.pageCount}pp_r${revisionNumber}.pdf`, bytes: fullWrap.buffer, mimeType: "application/pdf", canonical: false }), bytes: new Uint8Array(fullWrap.buffer) },
   ];
 
   const report = Buffer.from([
     `Book OS Production Handoff`,
     `Project ID: ${project.id}`,
-    `Status: digital_ready`,
+    `Status: publication_ready`,
     `Generated: ${new Date().toISOString()}`,
     `DOCX: generated`,
     `EPUB: generated`,
     `Ebook cover: verified from canonical project cover`,
     `Retailer metadata: generated`,
-    `Print interior PDF: NOT GENERATED`,
-    `KDP full-wrap: NOT GENERATED`,
+    `Print interior PDF: generated`,
+    `Trim: 6x9 inches`,
+    `Print page count: ${printInterior.pageCount}`,
+    `Paper: cream`,
+    `Spine width: ${fullWrap.spineWidthIn.toFixed(4)} inches`,
+    `KDP full-wrap: generated`,
+    `Full-wrap size: ${fullWrap.widthIn.toFixed(4)} x ${fullWrap.heightIn.toFixed(4)} inches`,
     `Quality Center remains mandatory after ingest.`,
   ].join("\n"), "utf8");
 
   const packageZip = new JSZip();
-  for (const item of digitalFiles) packageZip.file(item.input.filename, item.bytes);
+  for (const item of publicationFiles) packageZip.file(item.input.filename, item.bytes);
   packageZip.file("Production_Handoff_Report.txt", report);
   const packageBytes = await packageZip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
   const packageInput = artifactInput(identity, {
     assetType: "package_zip",
-    role: "digital_publication_package",
-    filename: `${titleSlug}_Digital_Production_Package_r${revisionNumber}.zip`,
+    role: "complete_publication_package",
+    filename: `${titleSlug}_Complete_Publication_Package_r${revisionNumber}.zip`,
     bytes: packageBytes,
     mimeType: "application/zip",
   });
 
-  const objects = [...digitalFiles, { input: packageInput, bytes: packageBytes }].map((item) => ({
+  const objects = [...publicationFiles, { input: packageInput, bytes: packageBytes }].map((item) => ({
     ...item,
     storagePath: publicationArtifactStoragePath(item.input),
   }));
@@ -138,8 +166,8 @@ export async function POST(request: NextRequest) {
     brandId: String(project.brand_id || "freddy_publishing"),
     revisionNumber: identity.revisionNumber,
     packageFingerprint: packageInput.fingerprint,
-    contentFingerprint: digitalFiles[0].input.fingerprint,
-    productionStatus: "digital_ready",
+    contentFingerprint: publicationFiles[0].input.fingerprint,
+    productionStatus: "publication_ready",
     source: "book_engine_production_handoff",
     assets,
   };
@@ -153,16 +181,29 @@ export async function POST(request: NextRequest) {
     prepared: true,
     ingested: false,
     projectId: project.id,
+    productionStatus: "publication_ready",
     manifest: validation.manifest,
     gates: publicationPackageGateSummary(validation.manifest),
-    readiness,
+    readiness: { ...readiness, productionStatus: "publication_ready", warnings: [] },
+    print: {
+      pageCount: printInterior.pageCount,
+      trim: printInterior.trim,
+      paper: printProfile.paper,
+      spineWidthIn: fullWrap.spineWidthIn,
+      fullCoverWidthIn: fullWrap.widthIn,
+      fullCoverHeightIn: fullWrap.heightIn,
+      interiorWidthPt: printInterior.widthPt,
+      interiorHeightPt: printInterior.heightPt,
+    },
     generated: {
-      docxFingerprint: digitalFiles[0].input.fingerprint,
-      epubFingerprint: digitalFiles[1].input.fingerprint,
-      coverFingerprint: digitalFiles[2].input.fingerprint,
-      metadataFingerprint: digitalFiles[3].input.fingerprint,
+      docxFingerprint: publicationFiles[0].input.fingerprint,
+      epubFingerprint: publicationFiles[1].input.fingerprint,
+      coverFingerprint: publicationFiles[2].input.fingerprint,
+      metadataFingerprint: publicationFiles[3].input.fingerprint,
+      printInteriorFingerprint: publicationFiles[4].input.fingerprint,
+      kdpFullWrapFingerprint: publicationFiles[5].input.fingerprint,
       packageFingerprint: sha256Bytes(packageBytes),
     },
-    next: "Preview and ingest the generated manifest into review. Add verified print interior and KDP full-wrap before declaring publication_ready.",
+    next: "Preview and ingest the publication-ready manifest into review. Quality Center remains mandatory before release.",
   });
 }
