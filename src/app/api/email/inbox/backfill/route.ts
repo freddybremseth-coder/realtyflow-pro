@@ -5,6 +5,12 @@ import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
 import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
+import {
+  EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
+  EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
+  buildEmailHistoryBackfillPreviewCookieValue,
+  readEmailHistoryBackfillPreviewCookieValue,
+} from "@/lib/email/history-backfill-preview-cookie";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   fetchHistoricalMailboxEmails,
@@ -17,6 +23,16 @@ export const dynamic = "force-dynamic";
 
 function stableMessageId(message: HistoricalFetchedEmail) {
   return message.messageId && !message.messageId.startsWith("gen-") ? message.messageId : null;
+}
+
+function clearPreviewCookie(response: NextResponse) {
+  response.cookies.set(EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+    path: "/api/email/inbox/backfill",
+  });
 }
 
 /**
@@ -32,8 +48,18 @@ export async function POST(req: NextRequest) {
   if (adminError) return adminError;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const policy = resolveEmailHistoryBackfillRequest(body as Record<string, unknown>);
+    const parsedBody = await req.json().catch(() => ({}));
+    const body: Record<string, unknown> = { ...(parsedBody as Record<string, unknown>) };
+    const requestedBrandId = String(body.brand_id || "").trim();
+    if (body.mode === "apply" && !body.preview_fingerprint && requestedBrandId) {
+      const cookieFingerprint = readEmailHistoryBackfillPreviewCookieValue(
+        req.cookies.get(EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE)?.value,
+        requestedBrandId
+      );
+      if (cookieFingerprint) body.preview_fingerprint = cookieFingerprint;
+    }
+
+    const policy = resolveEmailHistoryBackfillRequest(body);
     if (!policy.ok || !policy.request) {
       return NextResponse.json({ error: policy.error || "Invalid backfill request" }, { status: 400 });
     }
@@ -184,11 +210,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
           preview_fingerprint_matches: false,
-          current_preview_fingerprint: previewFingerprint,
           candidates,
           safety: {
             previewFingerprintRequired: true,
@@ -198,6 +223,8 @@ export async function POST(req: NextRequest) {
         },
         { status: 409 }
       );
+      clearPreviewCookie(response);
+      return response;
     }
 
     if (request.mode === "apply") {
@@ -226,7 +253,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       mode: request.mode,
       brand_id: request.brandId,
@@ -235,6 +262,8 @@ export async function POST(req: NextRequest) {
       include_sent: request.includeSent,
       preview_fingerprint: previewFingerprint,
       preview_fingerprint_matches: request.mode === "apply" ? true : null,
+      preview_token_expires_in_seconds:
+        request.mode === "preview" ? EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS : 0,
       fetched,
       candidates,
       duplicates,
@@ -247,6 +276,8 @@ export async function POST(req: NextRequest) {
         readinessRequiredServerSide: true,
         previewWrites: false,
         previewFingerprintRequiredForApply: true,
+        previewTokenHttpOnly: true,
+        previewTokenBrandBound: true,
         applyRequiresExplicitConfirmation: true,
         historicalMessagesMarkedRead: true,
         historicalMessagesArchived: true,
@@ -256,6 +287,24 @@ export async function POST(req: NextRequest) {
         identityReviewRequired: true,
       },
     });
+
+    if (request.mode === "preview") {
+      response.cookies.set(
+        EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
+        buildEmailHistoryBackfillPreviewCookieValue(request.brandId, previewFingerprint),
+        {
+          httpOnly: true,
+          sameSite: "strict",
+          secure: process.env.NODE_ENV === "production",
+          maxAge: EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
+          path: "/api/email/inbox/backfill",
+        }
+      );
+    } else {
+      clearPreviewCookie(response);
+    }
+
+    return response;
   } catch (error) {
     console.error("[Email History Backfill]", error);
     return NextResponse.json(
