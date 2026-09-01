@@ -43,11 +43,13 @@ on:
       - "src/lib/publishing/book-os-launch-factory-link*"
       - "src/lib/publishing/book-os-distribution-link*"
       - "src/lib/publishing/book-engine-learning-origin-guard*"
+      - "src/lib/publishing/book-os-learning-origin-production-guard-migration-contract.test.ts"
       - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
       - "supabase/migrations/20260901124500_book_os_publication_assets_bucket.sql"
+      - "supabase/migrations/20260901211000_book_os_learning_origin_production_guard.sql"
       - ".github/workflows/book-os-publication-package-ingest.yml"
   push:
     branches:
@@ -111,11 +113,13 @@ on:
       - "src/lib/publishing/book-os-launch-factory-link*"
       - "src/lib/publishing/book-os-distribution-link*"
       - "src/lib/publishing/book-engine-learning-origin-guard*"
+      - "src/lib/publishing/book-os-learning-origin-production-guard-migration-contract.test.ts"
       - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
       - "supabase/migrations/20260901124500_book_os_publication_assets_bucket.sql"
+      - "supabase/migrations/20260901211000_book_os_learning_origin_production_guard.sql"
 
 jobs:
   contract:
@@ -142,6 +146,7 @@ jobs:
           src/lib/publishing/book-os-launch-factory-link.test.ts
           src/lib/publishing/book-os-distribution-link.test.ts
           src/lib/publishing/book-engine-learning-origin-guard.test.ts
+          src/lib/publishing/book-os-learning-origin-production-guard-migration-contract.test.ts
           src/services/publishing/book-print-renderer.test.tsx
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
           src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
