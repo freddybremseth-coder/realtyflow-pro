@@ -5,6 +5,7 @@ import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
 import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
+import { evaluateEmailHistoryBackfillAccountGate } from "@/lib/email/history-backfill-account-gate";
 import {
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
@@ -201,6 +202,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const accountGate = evaluateEmailHistoryBackfillAccountGate(accountResults);
+    if (request.mode === "apply" && !accountGate.ok) {
+      const response = NextResponse.json(
+        {
+          error: "Backfill apply is blocked because one or more active email accounts failed during historical fetch. Run preview again after every account succeeds.",
+          account_fetch_complete: false,
+          failed_accounts: accountGate.failedAccounts,
+          candidates,
+          safety: {
+            allActiveAccountFetchesRequiredForApply: true,
+            databaseMessagesWritten: false,
+            emailSent: false,
+          },
+        },
+        { status: 409 }
+      );
+      clearPreviewCookie(response);
+      return response;
+    }
+
     const previewFingerprint = buildEmailHistoryBackfillPreviewFingerprint({
       brandId: request.brandId,
       sinceDays: request.sinceDays,
@@ -260,6 +281,8 @@ export async function POST(req: NextRequest) {
       since_days: request.sinceDays,
       max_messages: request.maxMessages,
       include_sent: request.includeSent,
+      account_fetch_complete: accountGate.ok,
+      failed_accounts: accountGate.failedAccounts,
       preview_fingerprint: previewFingerprint,
       preview_fingerprint_matches: request.mode === "apply" ? true : null,
       preview_token_expires_in_seconds:
@@ -275,6 +298,7 @@ export async function POST(req: NextRequest) {
         adminRequired: true,
         readinessRequiredServerSide: true,
         previewWrites: false,
+        allActiveAccountFetchesRequiredForApply: true,
         previewFingerprintRequiredForApply: true,
         previewTokenHttpOnly: true,
         previewTokenBrandBound: true,
