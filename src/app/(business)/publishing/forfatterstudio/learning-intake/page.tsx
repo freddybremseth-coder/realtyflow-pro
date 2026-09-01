@@ -37,6 +37,8 @@ export default function LearningBookEngineIntakePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [createdProjectId, setCreatedProjectId] = useState("");
+  const [productionStarted, setProductionStarted] = useState(false);
+  const [productionMessage, setProductionMessage] = useState("");
   const [form, setForm] = useState({ title: "", seriesName: "", language: "en", genre: "guide", audience: "", brief: "", pages: 180, canonNotes: "" });
 
   useEffect(() => {
@@ -62,12 +64,13 @@ export default function LearningBookEngineIntakePage() {
 
   async function createDraftProject() {
     if (!ready) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setProductionMessage("");
     try {
       const res = await fetch("/api/publishing/book-engine/learning-intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "create_draft",
           proposalId,
           title: form.title.trim(),
           genre: form.genre,
@@ -81,10 +84,54 @@ export default function LearningBookEngineIntakePage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.project?.id) throw new Error(body?.error || "Could not create Book Engine draft project");
-      if (body.production_started !== false) throw new Error("Book Engine safety contract was not confirmed");
+      if (body.production_started !== false || body.production_start_approved !== false) throw new Error("Book Engine draft safety contract was not confirmed");
       setCreatedProjectId(String(body.project.id));
+      setProductionMessage("Draft registered. Production is still stopped.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startControlledProduction() {
+    if (!createdProjectId || !proposalId || busy || productionStarted) return;
+    setBusy(true); setError("");
+    try {
+      setProductionMessage("Step 1/3: approving controlled production start…");
+      const approveRes = await fetch("/api/publishing/book-engine/learning-intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start_production", proposalId, projectId: createdProjectId }),
+      });
+      const approved = await approveRes.json().catch(() => ({}));
+      if (!approveRes.ok || approved.production_start_approved !== true || approved.production_started !== false) {
+        throw new Error(approved?.error || "Controlled production start could not be approved");
+      }
+
+      setProductionMessage("Step 2/3: building SEO metadata and locking series bible/canon 1.0…");
+      const seoRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_seo", id: createdProjectId }),
+      });
+      const seo = await seoRes.json().catch(() => ({}));
+      if (!seoRes.ok) throw new Error(seo?.error || "Series bible/canon generation failed");
+
+      setProductionMessage("Step 3/3: building master outline, research and first chapter…");
+      const authorRes = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "generate_author", id: createdProjectId }),
+      });
+      const author = await authorRes.json().catch(() => ({}));
+      if (!authorRes.ok) throw new Error(author?.error || "Outline and first-chapter generation failed");
+
+      setProductionStarted(true);
+      setProductionMessage(author?.warning ? String(author.warning) : "Controlled production started successfully: canon, outline and first chapter are ready.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setProductionMessage("Production stopped at the failed step. No later step was started automatically.");
     } finally {
       setBusy(false);
     }
@@ -94,8 +141,8 @@ export default function LearningBookEngineIntakePage() {
   return <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24, fontFamily: "system-ui,sans-serif" }}>
     <header>
       <p style={{ margin: 0, color: "#1d4ed8", fontWeight: 900 }}>BOOK OS · CONTROLLED BOOK ENGINE INTAKE</p>
-      <h1 style={{ margin: "5px 0" }}>Approved learning proposal → draft project</h1>
-      <p style={{ color: "#475569", maxWidth: 900 }}>This page can prepare a Book Engine draft from an explicitly approved next-book proposal. Nothing is created until you press the create button. Creating the draft records structured Book OS provenance and does not run SEO, lock canon, build the outline or start writing.</p>
+      <h1 style={{ margin: "5px 0" }}>Approved learning proposal → draft → controlled production</h1>
+      <p style={{ color: "#475569", maxWidth: 900 }}>This page keeps the approval boundaries separate. First create a traceable Book Engine draft. Then use a second explicit action to approve and start production in the required order: SEO/canon first, then outline and first chapter.</p>
     </header>
 
     {loading ? <p>Resolving approved proposal…</p> : null}
@@ -109,7 +156,7 @@ export default function LearningBookEngineIntakePage() {
       <details><summary style={{ cursor: "pointer", fontWeight: 800 }}>Evidence snapshot</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: 11 }}>{JSON.stringify(intake.proposal.evidence_snapshot || {}, null, 2)}</pre></details>
     </section> : null}
 
-    {intake?.proposal ? <section style={{ ...card, marginTop: 16 }}>
+    {intake?.proposal && !createdProjectId ? <section style={{ ...card, marginTop: 16 }}>
       <h2 style={{ marginTop: 0 }}>Draft project intake</h2>
       <p style={{ fontSize: 12, color: "#475569" }}>Review and edit every field. Approval of the learning proposal does not approve these production settings.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 10 }}>
@@ -123,13 +170,16 @@ export default function LearningBookEngineIntakePage() {
       <label style={{ display: "block", marginTop: 10 }}>Book promise / brief<textarea value={form.brief} onChange={(e) => setForm({ ...form, brief: e.target.value })} style={{ display: "block", width: "100%", minHeight: 100, padding: 9 }} /></label>
       <label style={{ display: "block", marginTop: 10 }}>Canon / provenance notes<textarea value={form.canonNotes} onChange={(e) => setForm({ ...form, canonNotes: e.target.value })} style={{ display: "block", width: "100%", minHeight: 90, padding: 9 }} /></label>
       <button disabled={!ready} onClick={createDraftProject} style={{ marginTop: 12, padding: "10px 14px", border: 0, borderRadius: 8, background: ready ? "#1d4ed8" : "#94a3b8", color: "white", fontWeight: 900 }}>{busy ? "Creating draft…" : "Create Book Engine draft"}</button>
-      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Fixed boundary:</b> this button creates one draft with structured proposal provenance. It does not start SEO, canon, outline, writing, publication or distribution.</p>
+      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 1:</b> this creates one pending draft with structured proposal provenance. It does not start SEO, canon, outline, writing, publication or distribution.</p>
     </section> : null}
 
-    {createdProjectId ? <section style={{ ...card, marginTop: 16, background: "#ecfdf5", borderColor: "#86efac" }}>
-      <h2 style={{ marginTop: 0 }}>Draft created</h2>
-      <p>The approved proposal has produced one traceable Book Engine draft. Production remains stopped until an explicit action in Forfatterstudio.</p>
-      <Link href={`/publishing/forfatterstudio?project=${encodeURIComponent(createdProjectId)}`} style={{ fontWeight: 900 }}>Open draft in Forfatterstudio</Link>
+    {createdProjectId ? <section style={{ ...card, marginTop: 16, background: productionStarted ? "#ecfdf5" : "#fffbeb", borderColor: productionStarted ? "#86efac" : "#fbbf24" }}>
+      <h2 style={{ marginTop: 0 }}>{productionStarted ? "Controlled production started" : "Draft created — production still stopped"}</h2>
+      <p>{productionMessage || "The approved proposal has produced one traceable Book Engine draft."}</p>
+      {!productionStarted ? <>
+        <button disabled={busy} onClick={startControlledProduction} style={{ padding: "10px 14px", border: 0, borderRadius: 8, background: busy ? "#94a3b8" : "#166534", color: "white", fontWeight: 900 }}>{busy ? "Running controlled start…" : "Start controlled production"}</button>
+        <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 2:</b> this separate action revalidates proposal provenance, approves production start, then runs SEO/canon before outline and first chapter. If a step fails, later steps are not started.</p>
+      </> : <Link href={`/publishing/forfatterstudio?project=${encodeURIComponent(createdProjectId)}`} style={{ fontWeight: 900 }}>Open started project in Forfatterstudio</Link>}
     </section> : null}
 
     <div style={{ marginTop: 16 }}><Link href="/book-growth/learning">Back to Learning Proposal Center</Link></div>
