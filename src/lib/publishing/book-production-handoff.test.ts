@@ -10,15 +10,25 @@ test("uses stable Book Engine project identity instead of title", () => {
   assert.equal(identity.ingestKey, "book-engine:8b73a089-1111-2222-3333-abcdef012345:en:r2");
 });
 
-test("requires ready manuscript and real cover before digital handoff", () => {
-  const ready = handoffReadiness({ status: "ready_for_export", chapter_drafts: [{ draft: "Chapter" }] }, true);
+test("requires publication-ready manuscript, cover and retailer metadata before handoff", () => {
+  const ready = handoffReadiness({
+    title: "Book",
+    subtitle: "Subtitle",
+    series_name: "Series",
+    status: "ready_for_export",
+    chapter_drafts: [{ draft: "Chapter" }],
+    metadata_plan: { kdp: { description: "Description", keywords: ["one"], categories: ["Economics"] } },
+  }, true);
   assert.equal(ready.ok, true);
-  assert.equal(ready.productionStatus, "digital_ready");
-  assert.match(ready.warnings.join(" "), /Print interior PDF/);
+  assert.equal(ready.productionStatus, "publication_ready_candidate");
+  assert.equal(ready.blocking.length, 0);
 
   const blocked = handoffReadiness({ status: "generated", chapter_drafts: [] }, false);
   assert.equal(blocked.ok, false);
-  assert.equal(blocked.blocking.length, 3);
+  assert.match(blocked.blocking.join(" "), /ready_for_export/);
+  assert.match(blocked.blocking.join(" "), /chapters/);
+  assert.match(blocked.blocking.join(" "), /cover/);
+  assert.match(blocked.blocking.join(" "), /description/);
 });
 
 test("builds deterministic retailer metadata from project truth", () => {
