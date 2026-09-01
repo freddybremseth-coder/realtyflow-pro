@@ -6,18 +6,33 @@ import test from "node:test";
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/publishing/book-engine/learning-intake/route.ts"), "utf8");
 const links = fs.readFileSync(path.join(process.cwd(), "src/components/book-growth/approved-next-book-intake-links.tsx"), "utf8");
 const page = fs.readFileSync(path.join(process.cwd(), "src/app/(business)/publishing/forfatterstudio/learning-intake/page.tsx"), "utf8");
+const [getSection, postSection = ""] = route.split("export async function POST");
 
-test("learning intake resolver is admin-only, read-only and approved next-book only", () => {
-  assert.match(route, /requireAdminApi\(request\)/);
-  assert.match(route, /proposal\.proposal_type !== "next_book"/);
-  assert.match(route, /proposal\.status !== "approved"/);
-  assert.match(route, /requiresExplicitCreate:\s*true/);
-  assert.doesNotMatch(route, /export async function POST/);
-  assert.doesNotMatch(route, /\.insert\(/);
-  assert.doesNotMatch(route, /\.upsert\(/);
-  assert.doesNotMatch(route, /\.update\(/);
-  assert.doesNotMatch(route, /\.delete\(/);
-  assert.doesNotMatch(route, /\.rpc\(/);
+test("learning intake GET is admin-only, read-only and approved next-book only", () => {
+  assert.match(getSection, /requireAdminApi\(request\)/);
+  assert.match(getSection, /proposal\.proposal_type !== "next_book"/);
+  assert.match(getSection, /proposal\.status !== "approved"/);
+  assert.match(getSection, /requiresExplicitCreate:\s*true/);
+  assert.doesNotMatch(getSection, /\.insert\(/);
+  assert.doesNotMatch(getSection, /\.upsert\(/);
+  assert.doesNotMatch(getSection, /\.update\(/);
+  assert.doesNotMatch(getSection, /\.delete\(/);
+  assert.doesNotMatch(getSection, /\.rpc\(/);
+});
+
+test("explicit POST revalidates approval, prevents duplicate origin and creates only a draft project", () => {
+  assert.match(postSection, /loadApprovedNextBookProposal\(sb, proposalId\)/);
+  assert.match(postSection, /book_os_origin/);
+  assert.match(postSection, /learning_proposal_id:\s*proposal\.id/);
+  assert.match(postSection, /\.contains\("metadata_plan", \{ book_os_origin: \{ learning_proposal_id: proposalId \} \}\)/);
+  assert.match(postSection, /\.from\("publishing_book_projects"\)\.insert\(/);
+  assert.match(postSection, /status:\s*"draft"/);
+  assert.match(postSection, /status:\s*"pending"/);
+  assert.match(postSection, /production_started:\s*false/);
+  assert.match(postSection, /queued:\s*false/);
+  assert.doesNotMatch(postSection, /generate_seo/);
+  assert.doesNotMatch(postSection, /generate_author/);
+  assert.doesNotMatch(postSection, /\.rpc\(/);
 });
 
 test("Learning Center exposes intake only for approved next-book proposals", () => {
@@ -27,14 +42,14 @@ test("Learning Center exposes intake only for approved next-book proposals", () 
   assert.doesNotMatch(links, /method:\s*"POST"/);
 });
 
-test("Book Engine intake requires explicit draft creation and stops before production", () => {
+test("Book Engine intake uses controlled origin endpoint and stops before production", () => {
   assert.match(page, /Create Book Engine draft/);
   assert.match(page, /async function createDraftProject/);
-  assert.match(page, /fetch\("\/api\/publishing\/book-engine"/);
-  assert.match(page, /method:\s*"POST"/);
+  assert.match(page, /fetch\("\/api\/publishing\/book-engine\/learning-intake"/);
+  assert.match(page, /proposalId,/);
+  assert.match(page, /body\.production_started !== false/);
+  assert.doesNotMatch(page, /fetch\("\/api\/publishing\/book-engine",/);
   assert.doesNotMatch(page, /mode:\s*"generate_seo"/);
   assert.doesNotMatch(page, /mode:\s*"generate_author"/);
-  assert.doesNotMatch(page, /fetch\([^\n]*production-handoff/);
-  assert.doesNotMatch(page, /fetch\([^\n]*distribution/);
   assert.match(page, /\/publishing\/forfatterstudio\?project=/);
 });
