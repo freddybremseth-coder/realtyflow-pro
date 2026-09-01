@@ -4,37 +4,34 @@ import path from "node:path";
 import test from "node:test";
 
 const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/publishing/book-engine/route.ts"), "utf8");
+const core = fs.readFileSync(path.join(process.cwd(), "src/app/api/publishing/book-engine/core.ts"), "utf8");
 
-function section(start: string, end: string) {
-  const startIndex = route.indexOf(start);
-  assert.notEqual(startIndex, -1, `Missing section: ${start}`);
-  const endIndex = route.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `Missing end section: ${end}`);
-  return route.slice(startIndex, endIndex);
-}
-
-test("Book Engine imports the Learning-origin production guard", () => {
-  assert.match(route, /import \{ guardLearningOriginProduction \} from "@\/lib\/publishing\/book-engine-learning-origin-guard";/);
+test("public Book Engine route wraps the preserved core implementation", () => {
+  assert.match(route, /import \{ GET as coreGET, POST as corePOST \} from "\.\/core";/);
+  assert.match(route, /return coreGET\(request\)/);
+  assert.match(route, /return corePOST\(request\)/);
+  assert.match(core, /export async function GET\(request: NextRequest\)/);
+  assert.match(core, /export async function POST\(request: NextRequest\)/);
 });
 
-test("generate_seo enforces the Learning-origin production-start guard before mutation", () => {
-  const body = section('if (mode === "generate_seo")', 'if (mode === "generate_author")');
-  assert.match(body, /guardLearningOriginProduction\(current, "generate_seo"\)/);
-  assert.match(body, /learningGuard\.allowed/);
-  assert.ok(body.indexOf('guardLearningOriginProduction(current, "generate_seo")') < body.indexOf('.update({'));
+test("only the three Learning-sensitive production modes are guarded", () => {
+  assert.match(route, /new Set<LearningOriginGuardMode>\(\["generate_seo", "generate_author", "continue"\]\)/);
+  assert.match(route, /if \(!GUARDED_MODES\.has\(mode\)\) return corePOST\(request\)/);
 });
 
-test("generate_author enforces locked canon before mutation", () => {
-  const body = section('if (mode === "generate_author")', 'if (mode === "continue")');
-  assert.match(body, /guardLearningOriginProduction\(current, "generate_author"\)/);
-  assert.match(body, /learningGuard\.allowed/);
-  assert.ok(body.indexOf('guardLearningOriginProduction(current, "generate_author")') < body.indexOf('.update({'));
+test("guard runs after admin auth and project lookup but before core production", () => {
+  const authIndex = route.indexOf("requireAdminApi(request)");
+  const queryIndex = route.indexOf('.from("publishing_book_projects")');
+  const guardIndex = route.indexOf("guardLearningOriginProduction(project as Record<string, any>, mode)");
+  const guardedCoreIndex = route.lastIndexOf("return corePOST(request)");
+  assert.ok(authIndex >= 0);
+  assert.ok(queryIndex > authIndex);
+  assert.ok(guardIndex > queryIndex);
+  assert.ok(guardedCoreIndex > guardIndex);
+  assert.match(route, /learning_origin_guard:\s*true/);
+  assert.match(route, /status:\s*learningGuard\.status/);
 });
 
-test("continue enforces the Learning-origin author-step guard before generation", () => {
-  const body = section('if (mode === "continue")', 'if (mode === "generate_images")');
-  assert.match(body, /guardLearningOriginProduction\(project as Record<string, any>, "continue"\)/);
-  assert.match(body, /learningGuard\.allowed/);
-  assert.ok(body.indexOf('guardLearningOriginProduction(project as Record<string, any>, "continue")') < body.indexOf('generateOutlineIfMissing'));
-  assert.ok(body.indexOf('guardLearningOriginProduction(project as Record<string, any>, "continue")') < body.indexOf('generateChapterDraftBatch'));
+test("wrapper reads a cloned request so delegation receives the original body", () => {
+  assert.match(route, /request\.clone\(\)\.json\(\)/);
 });
