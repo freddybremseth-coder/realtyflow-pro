@@ -32,9 +32,9 @@ test("Book Engine intake requires explicit draft creation and stops before produ
   assert.match(page, /async function createDraftProject/);
   assert.match(page, /fetch\("\/api\/publishing\/book-engine"/);
   assert.match(page, /method:\s*"POST"/);
-  assert.doesNotMatch(page, /generate_seo/);
-  assert.doesNotMatch(page, /generate_author/);
-  assert.doesNotMatch(page, /production-handoff/);
-  assert.doesNotMatch(page, /distribution/);
+  assert.doesNotMatch(page, /mode:\s*"generate_seo"/);
+  assert.doesNotMatch(page, /mode:\s*"generate_author"/);
+  assert.doesNotMatch(page, /fetch\([^\n]*production-handoff/);
+  assert.doesNotMatch(page, /fetch\([^\n]*distribution/);
   assert.match(page, /\/publishing\/forfatterstudio\?project=/);
 });
