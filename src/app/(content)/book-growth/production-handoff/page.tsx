@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ProductionHandoffPreflightCard } from "@/components/publishing/production-handoff-preflight-card";
 
 type Project = { id: string; title: string; subtitle?: string; language?: string; series_name?: string; status?: string; updated_at?: string };
 
@@ -8,6 +9,7 @@ export default function ProductionHandoffPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [revision, setRevision] = useState(1);
+  const [preflightReady, setPreflightReady] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [handoff, setHandoff] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
@@ -25,7 +27,7 @@ export default function ProductionHandoffPage() {
   const selected = projects.find((project) => project.id === projectId) || null;
 
   async function prepare() {
-    if (!projectId || !confirmed) return;
+    if (!projectId || !confirmed || !preflightReady) return;
     setBusy(true); setHandoff(null); setResult(null);
     setStatus("Generating the locked publication revision: DOCX, EPUB, canonical cover, retailer metadata, 6×9 print interior, page-count-dependent KDP full-wrap and complete ZIP…");
     try {
@@ -61,29 +63,32 @@ export default function ProductionHandoffPage() {
     <header style={{ marginBottom: 22 }}>
       <p style={{ fontWeight: 900, letterSpacing: 1.4, fontSize: 12, margin: 0 }}>BOOK OS · BOOK ENGINE BRIDGE</p>
       <h1 style={{ fontSize: 34, margin: "6px 0" }}>Production Handoff</h1>
-      <p style={{ maxWidth: 920, lineHeight: 1.55 }}>Convert a finished Book Engine project into one locked, verified publication revision. The bridge generates the master DOCX, retailer EPUB, canonical ebook cover, retailer metadata, exact 6×9 print interior, actual final page count, KDP full-wrap and complete publication ZIP. It then stops for controlled gate preview and Quality Center review.</p>
+      <p style={{ maxWidth: 920, lineHeight: 1.55 }}>Convert a finished Book Engine project into one locked, verified publication revision. A read-only preflight checks manuscript status, canonical cover, retailer metadata and revision conflicts before any immutable asset is written.</p>
     </header>
 
     <section style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
       <h2 style={{ marginTop: 0 }}>1. Select ready project</h2>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(320px, 1fr) 150px", gap: 10 }}>
         <label style={{ fontWeight: 800 }}>Book Engine project
-          <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setHandoff(null); setResult(null); setConfirmed(false); }} style={{ display: "block", width: "100%", padding: 9, marginTop: 5 }}>
+          <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setHandoff(null); setResult(null); setConfirmed(false); setPreflightReady(false); }} style={{ display: "block", width: "100%", padding: 9, marginTop: 5 }}>
             <option value="">Choose a ready_for_export project…</option>
             {ready.map((project) => <option key={project.id} value={project.id}>{project.title} · {(project.language || "en").toUpperCase()}</option>)}
           </select>
         </label>
         <label style={{ fontWeight: 800 }}>Revision
-          <input type="number" min={1} value={revision} onChange={(e) => { setRevision(Math.max(1, Number(e.target.value) || 1)); setConfirmed(false); }} style={{ display: "block", width: "100%", padding: 9, marginTop: 5, boxSizing: "border-box" }} />
+          <input type="number" min={1} value={revision} onChange={(e) => { setRevision(Math.max(1, Number(e.target.value) || 1)); setConfirmed(false); setPreflightReady(false); }} style={{ display: "block", width: "100%", padding: 9, marginTop: 5, boxSizing: "border-box" }} />
         </label>
       </div>
       {ready.length === 0 ? <p style={{ color: "#b45309", fontWeight: 800 }}>No Book Engine projects are currently marked ready_for_export.</p> : null}
       {selected ? <p style={{ fontSize: 13 }}>Selected: <b>{selected.title}</b>{selected.subtitle ? ` — ${selected.subtitle}` : ""}{selected.series_name ? ` · ${selected.series_name}` : ""}</p> : null}
+
+      <ProductionHandoffPreflightCard projectId={projectId} revisionNumber={revision} onReadyChange={setPreflightReady} />
+
       <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, maxWidth: 900, lineHeight: 1.45 }}>
-        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!projectId || busy} style={{ marginTop: 3 }} />
+        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!projectId || busy || !preflightReady} style={{ marginTop: 3 }} />
         <span><b>I understand this creates immutable production assets for this revision.</b> Re-running the same revision is safe only when the generated fingerprints are identical; changed content must use a new revision number.</span>
       </label>
-      <button disabled={busy || !projectId || !confirmed} onClick={prepare} style={{ marginTop: 12, padding: "10px 15px", fontWeight: 900, background: "#0f172a", color: "white", borderRadius: 8, opacity: busy || !projectId || !confirmed ? 0.55 : 1 }}>Generate publication-ready package</button>
+      <button disabled={busy || !projectId || !confirmed || !preflightReady} onClick={prepare} style={{ marginTop: 12, padding: "10px 15px", fontWeight: 900, background: "#0f172a", color: "white", borderRadius: 8, opacity: busy || !projectId || !confirmed || !preflightReady ? 0.55 : 1 }}>Generate publication-ready package</button>
     </section>
 
     {handoff ? <section style={{ marginTop: 18, background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>

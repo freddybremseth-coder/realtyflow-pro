@@ -35,6 +35,7 @@ on:
       - "feat/book-os-print-production-builder"
       - "feat/book-os-print-runtime-smoke"
       - "feat/book-os-production-handoff-ui-sync"
+      - "feat/book-os-production-handoff-preflight"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
@@ -76,6 +77,7 @@ jobs:
           src/lib/publishing/publication-ingest-draft.test.ts
           src/lib/publishing/publication-series-batch.test.ts
           src/lib/publishing/book-production-handoff.test.ts
+          src/lib/publishing/book-production-handoff-preflight.test.ts
           src/lib/publishing/book-print-production.test.ts
           src/services/publishing/book-print-renderer.test.tsx
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
