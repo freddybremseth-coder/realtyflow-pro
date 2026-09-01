@@ -7,8 +7,8 @@ function clean(value: unknown) {
 export function productionHandoffMetadataReadiness(project: Record<string, any>) {
   const metadata = project.metadata_plan && typeof project.metadata_plan === "object" ? project.metadata_plan : {};
   const kdp = metadata.kdp && typeof metadata.kdp === "object" ? metadata.kdp : metadata;
-  const keywords = Array.isArray(kdp.keywords) ? kdp.keywords.map(String).map((v) => v.trim()).filter(Boolean) : [];
-  const categories = Array.isArray(kdp.categories) ? kdp.categories.map(String).map((v) => v.trim()).filter(Boolean) : [];
+  const keywords = Array.isArray(kdp.keywords) ? kdp.keywords.map(String).map((v: string) => v.trim()).filter(Boolean) : [];
+  const categories = Array.isArray(kdp.categories) ? kdp.categories.map(String).map((v: string) => v.trim()).filter(Boolean) : [];
   const description = clean(kdp.description_html) || clean(kdp.description);
   const blocking: string[] = [];
   const warnings: string[] = [];
