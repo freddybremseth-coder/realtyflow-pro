@@ -43,11 +43,6 @@ export async function runLeadNurtureRequest(request: NextRequest) {
 
   try {
     const result = await runNurtureCycle(supabase, { dryRun, brandId, limit, email });
-    const operationalState = result.dryRun && result.awaitingLive > 0
-      ? "awaiting_live"
-      : result.failed > 0
-        ? "partial"
-        : "active";
 
     await supabase
       .from("automation_logs")
@@ -56,33 +51,19 @@ export async function runLeadNurtureRequest(request: NextRequest) {
         status: result.failed > 0 ? "partial" : "success",
         details: {
           runtime_control: "feature:nurture_live",
-          operational_state: operationalState,
           nexus_live: nexusLive,
           dryRun: result.dryRun,
           scanned: result.scanned,
           eligible: result.eligible,
           sent: result.sent,
           failed: result.failed,
-          awaiting_live: result.awaitingLive,
-          duplicate_dry_runs_suppressed: result.duplicateDryRunsSuppressed,
-          dry_run_planned: result.dryRun ? result.planned.filter((item) => !item.alreadyPlanned).length : undefined,
-          next_action: result.dryRun && result.awaitingLive > 0
-            ? "Enable feature:nurture_live in Nexus Runtime Controls after owner confirmation"
-            : undefined,
+          dry_run_planned: result.dryRun ? result.planned.length : undefined,
         },
       })
       .then(() => {})
       .then(undefined, () => {});
 
-    return NextResponse.json({
-      success: true,
-      nexusLive,
-      operationalState,
-      nextAction: result.dryRun && result.awaitingLive > 0
-        ? "enable_nurture_live"
-        : null,
-      ...result,
-    });
+    return NextResponse.json({ success: true, nexusLive, ...result });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal error" },

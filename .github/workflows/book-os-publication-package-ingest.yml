@@ -1,0 +1,37 @@
+name: Book OS Publication Package Ingest
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/book-growth/package-ingest/**"
+      - "src/app/(content)/book-growth/package-ingest/**"
+      - "src/lib/publishing/publication-package*"
+      - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
+      - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
+      - ".github/workflows/book-os-publication-package-ingest.yml"
+  push:
+    branches:
+      - "feat/book-os-publication-package-ingest"
+    paths:
+      - "src/app/api/book-growth/package-ingest/**"
+      - "src/app/(content)/book-growth/package-ingest/**"
+      - "src/lib/publishing/publication-package*"
+      - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
+      - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Publication package contracts
+        run: >-
+          npx tsx --test
+          src/lib/publishing/publication-package.test.ts
+          src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
+          src/app/api/book-growth/package-ingest/route-contract.test.ts

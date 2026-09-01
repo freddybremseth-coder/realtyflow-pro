@@ -792,10 +792,11 @@ export async function POST(request: NextRequest) {
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
 
     const current = project as Record<string, any>;
-    await supabase
+    const { error: progressError } = await supabase
       .from("publishing_book_projects")
       .update({ status: "generating", updated_at: new Date().toISOString() })
       .eq("id", id);
+    if (progressError) return NextResponse.json({ error: progressError.message }, { status: 500 });
 
     try {
       const input = {
@@ -895,12 +896,150 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (mode === "upgrade_workflow") {
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ error: "id is required for upgrade_workflow mode" }, { status: 400 });
+    const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
+    if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
+    const current = project as Record<string, any>;
+    const startedAt = new Date().toISOString();
+    const existingChapters = asArray<Record<string, any>>(current.chapter_drafts);
+    const manuscriptContext = existingChapters
+      .map((chapter) => `# ${String(chapter.chapter_title || "Kapittel")}\n${String(chapter.draft || "")}`)
+      .join("\n\n")
+      .slice(0, 60000);
+    const startingMetadata = {
+      ...(current.metadata_plan || {}),
+      generation_state: "upgrade_analyzing",
+      generation_error: null,
+      production_progress: {
+        stage: "series_bible",
+        step: 1,
+        total_steps: 3,
+        label: "Analyserer eksisterende manus og bygger seriebibel/canon 1.0",
+        status: "in_progress",
+        started_at: startedAt,
+        updated_at: startedAt,
+      },
+    };
+    const { error: startError } = await supabase
+      .from("publishing_book_projects")
+      .update({ metadata_plan: startingMetadata, status: "generating", updated_at: startedAt })
+      .eq("id", id);
+    if (startError) return NextResponse.json({ error: startError.message }, { status: 500 });
+
+    const input = {
+      brand_id: String(current.brand_id || "freddypublishing"),
+      title: String(current.title || "").trim(),
+      subtitle: String(current.subtitle || "").trim(),
+      language: String(current.language || "en"),
+      niche: String(current.niche || ""),
+      genre: String(current.genre || "guide"),
+      series_name: String(body.series_name || current.series_name || "").trim(),
+      audience: String(current.audience || ""),
+      positioning: String(current.positioning || ""),
+      target_words: Number(current.target_words || 30000),
+      target_pages: Number(current.target_pages || 180),
+      seed_keywords: asKeywords(current.seed_keywords),
+      illustration_style: String(current.metadata_plan?.illustration_style || ""),
+      consistency_notes: String(current.metadata_plan?.consistency_notes || ""),
+      recurring_characters: asKeywords(current.metadata_plan?.recurring_characters),
+      source_mode: "upgrade_existing_manuscript",
+      source_material: manuscriptContext,
+      source_instructions: "Bevar eksisterende manus ordrett. Utled og lås canon, serieidentitet, redaksjonell linje og kontinuitetsregler rundt det som allerede er skrevet.",
+    };
+
+    try {
+      const seriesContext = await loadSeriesContext(supabase, input.series_name);
+      const seoPlan = await generateSeoPlan({ ...input, series_context: seriesContext });
+      const productionBible = await generateProductionBible({ ...input, series_context: seriesContext }, { ...(current.metadata_plan || {}), ...seoPlan });
+      const completedAt = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("publishing_book_projects")
+        .update({
+          series_name: input.series_name,
+          status: existingChapters.length > 0 ? (current.status === "ready_for_export" ? "ready_for_export" : "generated") : "drafting",
+          metadata_plan: {
+            ...(current.metadata_plan || {}),
+            ...seoPlan,
+            production_bible: productionBible,
+            generation_provider: "openai_primary",
+            generation_state: existingChapters.length > 0 ? "author_ready" : "bible_ready",
+            production_workflow_version: "2.0",
+            upgraded_to_canon_at: completedAt,
+            production_progress: {
+              stage: existingChapters.length > 0 ? "manuscript" : "series_bible",
+              step: existingChapters.length > 0 ? 3 : 1,
+              total_steps: 3,
+              label: existingChapters.length > 0
+                ? `Seriebibel/canon er låst. ${existingChapters.length} eksisterende kapitler er bevart.`
+                : "Seriebibel/canon er låst. Klar for outline.",
+              status: "completed",
+              started_at: startedAt,
+              updated_at: completedAt,
+            },
+          },
+          updated_at: completedAt,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true, mode, project: data, preserved_chapters: existingChapters.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Kunne ikke oppgradere arbeidsflyten.";
+      const failedAt = new Date().toISOString();
+      await supabase
+        .from("publishing_book_projects")
+        .update({
+          status: String(current.status || "drafting"),
+          metadata_plan: {
+            ...startingMetadata,
+            generation_state: "upgrade_failed",
+            generation_error: message,
+            production_progress: {
+              ...startingMetadata.production_progress,
+              status: "failed",
+              label: "Oppgraderingen stoppet. Manuset er ikke endret.",
+              updated_at: failedAt,
+            },
+          },
+          updated_at: failedAt,
+        })
+        .eq("id", id);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   if (mode === "generate_seo") {
     const id = String(body.id || "").trim();
     if (!id) return NextResponse.json({ error: "id is required for generate_seo mode" }, { status: 400 });
     const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
     const current = project as Record<string, any>;
+    const bibleStartedAt = new Date().toISOString();
+    const { error: progressError } = await supabase
+      .from("publishing_book_projects")
+      .update({
+        status: "generating",
+        metadata_plan: {
+          ...(current.metadata_plan || {}),
+          generation_state: "bible_generating",
+          generation_error: null,
+          production_progress: {
+            stage: "series_bible",
+            step: 1,
+            total_steps: 3,
+            label: "ChatGPT bygger og låser seriebibel/canon 1.0",
+            status: "in_progress",
+            started_at: current.metadata_plan?.production_progress?.started_at || bibleStartedAt,
+            updated_at: bibleStartedAt,
+          },
+        },
+        updated_at: bibleStartedAt,
+      })
+      .eq("id", id);
+    if (progressError) return NextResponse.json({ error: progressError.message }, { status: 500 });
     const input = {
       brand_id: String(current.brand_id || "freddypublishing"),
       title: String(current.title || "").trim(),
@@ -934,6 +1073,15 @@ export async function POST(request: NextRequest) {
         production_bible: productionBible,
         generation_provider: "openai_primary",
         generation_state: "bible_ready",
+        production_progress: {
+          stage: "series_bible",
+          step: 1,
+          total_steps: 3,
+          label: "Seriebibel/canon 1.0 er låst",
+          status: "completed",
+          started_at: current.metadata_plan?.production_progress?.started_at || bibleStartedAt,
+          updated_at: new Date().toISOString(),
+        },
       };
       const { data, error } = await supabase
         .from("publishing_book_projects")
@@ -949,7 +1097,20 @@ export async function POST(request: NextRequest) {
         .from("publishing_book_projects")
         .update({
           status: "generation_failed",
-          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "seo_failed", generation_error: message },
+          metadata_plan: {
+            ...(current.metadata_plan || {}),
+            generation_state: "seo_failed",
+            generation_error: message,
+            production_progress: {
+              stage: "series_bible",
+              step: 1,
+              total_steps: 3,
+              label: "Seriebibel/canon kunne ikke bygges",
+              status: "failed",
+              started_at: current.metadata_plan?.production_progress?.started_at || bibleStartedAt,
+              updated_at: new Date().toISOString(),
+            },
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", id);
@@ -963,6 +1124,29 @@ export async function POST(request: NextRequest) {
     const { data: project, error: loadError } = await supabase.from("publishing_book_projects").select("*").eq("id", id).single();
     if (loadError) return NextResponse.json({ error: loadError.message }, { status: 500 });
     const current = project as Record<string, any>;
+    const authorStartedAt = new Date().toISOString();
+    const { error: progressError } = await supabase
+      .from("publishing_book_projects")
+      .update({
+        status: "generating",
+        metadata_plan: {
+          ...(current.metadata_plan || {}),
+          generation_state: "author_generating",
+          generation_error: null,
+          production_progress: {
+            stage: "outline_and_first_chapter",
+            step: 2,
+            total_steps: 3,
+            label: "ChatGPT lager master outline, research og første kapittel",
+            status: "in_progress",
+            started_at: current.metadata_plan?.production_progress?.started_at || authorStartedAt,
+            updated_at: authorStartedAt,
+          },
+        },
+        updated_at: authorStartedAt,
+      })
+      .eq("id", id);
+    if (progressError) return NextResponse.json({ error: progressError.message }, { status: 500 });
     const input = {
       brand_id: String(current.brand_id || "freddypublishing"),
       title: String(current.title || "").trim(),
@@ -1029,6 +1213,17 @@ export async function POST(request: NextRequest) {
             book_bible: bookBible,
             generation_state: hasToc && hasDrafts ? "author_ready" : "author_partial",
             revision_report: revisionReport,
+            production_progress: {
+              stage: hasToc && hasDrafts ? "first_chapter" : "outline_and_first_chapter",
+              step: hasToc && hasDrafts ? 3 : 2,
+              total_steps: 3,
+              label: hasToc && hasDrafts
+                ? "Bokproduksjonen er startet: bibel, outline og første kapittel er klare"
+                : "Outline er klar; første kapittel må prøves på nytt",
+              status: hasToc && hasDrafts ? "completed" : "attention",
+              started_at: current.metadata_plan?.production_progress?.started_at || authorStartedAt,
+              updated_at: new Date().toISOString(),
+            },
             ...(hasToc && hasDrafts
               ? {}
               : {
@@ -1049,7 +1244,20 @@ export async function POST(request: NextRequest) {
         .from("publishing_book_projects")
         .update({
           status: "generation_failed",
-          metadata_plan: { ...(current.metadata_plan || {}), generation_state: "author_failed", generation_error: message },
+          metadata_plan: {
+            ...(current.metadata_plan || {}),
+            generation_state: "author_failed",
+            generation_error: message,
+            production_progress: {
+              stage: "outline_and_first_chapter",
+              step: 2,
+              total_steps: 3,
+              label: "Produksjonen stoppet under outline eller første kapittel",
+              status: "failed",
+              started_at: current.metadata_plan?.production_progress?.started_at || authorStartedAt,
+              updated_at: new Date().toISOString(),
+            },
+          },
           updated_at: new Date().toISOString(),
         })
         .eq("id", id);
@@ -1209,7 +1417,17 @@ export async function POST(request: NextRequest) {
     metadata_plan: {
       generation_state: "started",
       generation_provider: "openai_primary",
+      production_workflow_version: "2.0",
       production_workflow: ["series_bible", "research", "outline", "cumulative_manuscript", "editorial_review", "verification", "epub_zip", "final_approval"],
+      production_progress: {
+        stage: "registered",
+        step: 0,
+        total_steps: 3,
+        label: "Bokprosjektet er registrert og venter på seriebibel/canon",
+        status: "in_progress",
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
       illustration_style: input.illustration_style,
       consistency_notes: input.consistency_notes,
       recurring_characters: input.recurring_characters,

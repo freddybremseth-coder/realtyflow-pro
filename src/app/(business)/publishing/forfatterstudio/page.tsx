@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Search,
   Trash2,
   Undo2,
   Upload,
@@ -27,7 +28,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
+import { PublisherCockpit } from "@/components/publishing/publisher-cockpit";
+import { CatalogCoverage } from "@/components/publishing/catalog-coverage";
+import { BOOK_LIFECYCLE_STEPS, bookCockpitStatus, groupBookProjects, publicationApproval } from "@/lib/publishing/book-workflow";
 
 type LibraryBook = {
   id: string;
@@ -88,6 +91,43 @@ type FullProject = {
   metadata_plan?: Record<string, any>;
 };
 
+type ProductionJob = {
+  projectId: string;
+  title: string;
+  step: number;
+  message: string;
+  status: "in_progress" | "completed" | "failed" | "attention";
+  startedAt: string;
+};
+
+type BookDirection = {
+  id: string;
+  title: string;
+  audience?: string;
+  promise?: string;
+  commercial_potential?: "high" | "medium" | "low";
+  why_now?: string;
+  why_freddy?: string;
+  keywords?: string[];
+  notes?: string;
+  sources?: Array<{ title?: string; url?: string }>;
+};
+
+const ESTABLISHED_SERIES = [
+  "The Michael Thorne Series",
+  "The Elias Holm Series",
+  "Let Me Explain It to You",
+  "Let Me Teach You",
+  "Let Me Guide You",
+  "The Anatomy of Empires",
+  "The Hidden Systems of Power",
+  "The Balanced Life Series",
+  "Mediterraneo Vital",
+  "Victoria & Andreas",
+];
+
+const PRODUCTION_JOB_KEY = "realtyflow.active-book-production.v2";
+
 const GENRES: Array<{ id: string; label: string }> = [
   { id: "guide", label: "Sakprosa / guide" },
   { id: "self_development", label: "Selvutvikling" },
@@ -128,6 +168,12 @@ function langLabel(code?: string | null) {
   return LANGUAGES.find((l) => l.code === (code || ""))?.label || (code || "").toUpperCase();
 }
 
+function activityTime(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString("nb-NO", { dateStyle: "short", timeStyle: "short" });
+}
+
 export default function ForfatterstudioPage() {
   const [books, setBooks] = useState<LibraryBook[]>([]);
   const [projects, setProjects] = useState<LibraryProject[]>([]);
@@ -161,15 +207,19 @@ export default function ForfatterstudioPage() {
   const [showNewBook, setShowNewBook] = useState(false);
   const [newBook, setNewBook] = useState({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150, seriesName: "", style: "", canonNotes: "" });
   const [creatingBook, setCreatingBook] = useState<string | null>(null);
+  const [productionJob, setProductionJob] = useState<ProductionJob | null>(null);
+  const [upgradingId, setUpgradingId] = useState<string | null>(null);
+  const [newSeriesMode, setNewSeriesMode] = useState(false);
   const [writingNext, setWritingNext] = useState(false);
   const [newBookSource, setNewBookSource] = useState<{ name: string; content: string } | null>(null);
   const [sourceUploading, setSourceUploading] = useState(false);
   const [showInterview, setShowInterview] = useState(false);
   const [interviewTheme, setInterviewTheme] = useState("");
   const [interviewLoading, setInterviewLoading] = useState(false);
-  const [interviewData, setInterviewData] = useState<{ directions: Array<{ id: string; title: string; audience?: string; promise?: string; notes?: string }>; questions: string[] } | null>(null);
+  const [interviewData, setInterviewData] = useState<{ directions: BookDirection[]; questions: string[]; researchSummary?: string; researchSources?: Array<{ title?: string; url?: string }> } | null>(null);
   const [interviewDirection, setInterviewDirection] = useState("");
   const [interviewAnswers, setInterviewAnswers] = useState<Record<number, string>>({});
+  const [ideaSource, setIdeaSource] = useState<"keywords" | "author_knowledge" | "market">("keywords");
   const [showRewrite, setShowRewrite] = useState(false);
   const [rewriteInstruction, setRewriteInstruction] = useState("");
   const [rewriting, setRewriting] = useState(false);
@@ -210,9 +260,15 @@ export default function ForfatterstudioPage() {
   const chapter = chapters[chapterIndex] || null;
   const review = project?.metadata_plan?.author_review as Record<string, any> | undefined;
   const consistency = project?.metadata_plan?.consistency_report as Record<string, any> | undefined;
+  const knownSeries = useMemo(() => {
+    const names = new Set(ESTABLISHED_SERIES);
+    for (const item of books) if (item.series_name?.trim()) names.add(item.series_name.trim());
+    for (const item of projects) if (item.series_name?.trim()) names.add(item.series_name.trim());
+    return [...names].sort((a, b) => a.localeCompare(b, "nb"));
+  }, [books, projects]);
 
-  const loadLibrary = useCallback(async () => {
-    setLibraryLoading(true);
+  const loadLibrary = useCallback(async (silent = false) => {
+    if (!silent) setLibraryLoading(true);
     try {
       const res = await fetch("/api/publishing/author-studio", { cache: "no-store" });
       const data = await res.json();
@@ -224,13 +280,49 @@ export default function ForfatterstudioPage() {
     } catch {
       setStatus("Kunne ikke hente biblioteket. Prøv igjen.");
     } finally {
-      setLibraryLoading(false);
+      if (!silent) setLibraryLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadLibrary();
   }, [loadLibrary]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(PRODUCTION_JOB_KEY);
+      if (stored) setProductionJob(JSON.parse(stored) as ProductionJob);
+    } catch {
+      window.localStorage.removeItem(PRODUCTION_JOB_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (productionJob) window.localStorage.setItem(PRODUCTION_JOB_KEY, JSON.stringify(productionJob));
+    else window.localStorage.removeItem(PRODUCTION_JOB_KEY);
+  }, [productionJob]);
+
+  useEffect(() => {
+    const hasRunningProject = projects.some((item) => item.metadata_plan?.production_progress?.status === "in_progress");
+    if (!productionJob && !hasRunningProject) return;
+    const timer = window.setInterval(() => loadLibrary(true), 8000);
+    return () => window.clearInterval(timer);
+  }, [productionJob, projects, loadLibrary]);
+
+  useEffect(() => {
+    if (productionJob) return;
+    const running = projects.find((item) => item.metadata_plan?.production_progress?.status === "in_progress");
+    if (!running) return;
+    const progress = running.metadata_plan?.production_progress || {};
+    setProductionJob({
+      projectId: running.id,
+      title: running.title,
+      step: Number(progress.step || 0),
+      message: String(progress.label || "Bokproduksjonen arbeider."),
+      status: "in_progress",
+      startedAt: String(progress.started_at || running.updated_at || new Date().toISOString()),
+    });
+  }, [projects, productionJob]);
 
   // Dyplenke fra andre deler av appen: /publishing/forfatterstudio?project=<id>
   // åpner prosjektet direkte. Kjøres én gang ved oppstart.
@@ -523,29 +615,45 @@ export default function ForfatterstudioPage() {
   }, []);
 
   const runInterview = useCallback(async () => {
-    if (!interviewTheme.trim()) return;
+    const theme = interviewTheme.trim() || (ideaSource === "author_knowledge"
+      ? "Foreslå den beste neste boken basert på Freddy Bremseths kunnskap og etablerte bokserier."
+      : ideaSource === "market"
+        ? "Finn aktuelle boktemaer med dokumenterbare markedssignaler som passer Freddy Bremseths katalog og kunnskap."
+        : "");
+    if (!theme) return;
     setInterviewLoading(true);
     setInterviewData(null);
+    setStatus(ideaSource === "market" ? "ChatGPT undersøker aktuelle markedssignaler og kilder…" : "ChatGPT vurderer mulige bokretninger…");
     try {
       const res = await fetch("/api/publishing/book-engine/workshop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "discover", theme: interviewTheme.trim(), genre: newBook.genre }),
+        body: JSON.stringify({
+          mode: "discover",
+          theme,
+          genre: newBook.genre,
+          series_name: newBook.seriesName,
+          known_series: knownSeries,
+          discovery_source: ideaSource,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Intervjuet feilet.");
       setInterviewData({
         directions: Array.isArray(data.directions) ? data.directions : [],
         questions: Array.isArray(data.questions) ? data.questions.map(String).slice(0, 8) : [],
+        researchSummary: String(data.research_summary || ""),
+        researchSources: Array.isArray(data.research_sources) ? data.research_sources : [],
       });
       setInterviewDirection("");
       setInterviewAnswers({});
+      setStatus(ideaSource === "market" ? "Markedsresearchen er klar — velg en bokretning." : "Forslagene er klare — velg en bokretning.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Intervjuet feilet.");
     } finally {
       setInterviewLoading(false);
     }
-  }, [interviewTheme, newBook.genre]);
+  }, [interviewTheme, ideaSource, newBook.genre, newBook.seriesName, knownSeries]);
 
   const finishInterview = useCallback(async () => {
     if (!interviewData) return;
@@ -560,9 +668,10 @@ export default function ForfatterstudioPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "plan",
-          theme: interviewTheme.trim(),
+          theme: interviewTheme.trim() || direction?.title || "Ny bok",
           selected_direction: direction ? `${direction.title} — ${direction.promise || ""}` : "",
           genre: newBook.genre,
+          series_name: newBook.seriesName,
           question_answers: answers,
           language: newBook.language,
           length_pages: newBook.pages,
@@ -590,12 +699,14 @@ export default function ForfatterstudioPage() {
     } finally {
       setInterviewLoading(false);
     }
-  }, [interviewData, interviewDirection, interviewAnswers, interviewTheme, newBook.genre, newBook.language, newBook.pages]);
+  }, [interviewData, interviewDirection, interviewAnswers, interviewTheme, newBook.genre, newBook.language, newBook.pages, newBook.seriesName]);
 
   const createBook = useCallback(async () => {
     if (!newBook.title.trim()) return;
     setCreatingBook("Oppretter bokprosjektet…");
     setStatus(null);
+    let projectId = "";
+    const startedAt = new Date().toISOString();
     try {
       const createRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
@@ -618,9 +729,19 @@ export default function ForfatterstudioPage() {
       });
       const created = await createRes.json();
       if (!createRes.ok || !created.project?.id) throw new Error(created.error || "Kunne ikke opprette boken.");
-      const projectId = String(created.project.id);
+      projectId = String(created.project.id);
+      setProductionJob({
+        projectId,
+        title: newBook.title.trim(),
+        step: 0,
+        message: "Bokprosjektet er registrert. ChatGPT starter seriebibel/canon nå.",
+        status: "in_progress",
+        startedAt,
+      });
+      await loadLibrary(true);
 
       setCreatingBook("Steg 1/3: ChatGPT lager metadata og låser seriebibel/canon 1.0…");
+      setProductionJob((job) => job ? { ...job, step: 1, message: "ChatGPT bygger og låser seriebibel/canon 1.0." } : job);
       const seoRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -630,8 +751,10 @@ export default function ForfatterstudioPage() {
         const seoErr = await seoRes.json().catch(() => ({}));
         console.warn("SEO-steget feilet (fortsetter):", seoErr.error);
       }
+      await loadLibrary(true);
 
       setCreatingBook("Steg 2–3/3: ChatGPT lager master outline og skriver første kapittel (research → utkast → redaktørkritikk → revisjon). Dette kan ta noen minutter…");
+      setProductionJob((job) => job ? { ...job, step: 2, message: "Seriebibelen er behandlet. ChatGPT lager master outline, research og første kapittel." } : job);
       const genRes = await fetch("/api/publishing/book-engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -644,14 +767,23 @@ export default function ForfatterstudioPage() {
           ? String(gen.warning)
           : "Boken er i gang: kapitteloversikt + første kapittel er klart.";
 
+      if (!genRes.ok) throw new Error(finalMessage);
+      setProductionJob((job) => job ? { ...job, step: 3, message: finalMessage, status: "completed" } : job);
+
       setShowNewBook(false);
       setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150, seriesName: "", style: "", canonNotes: "" });
+      setNewSeriesMode(false);
       setNewBookSource(null);
       await loadLibrary();
       await openProject(projectId);
       setStatus(finalMessage);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Kunne ikke opprette boken.");
+      const message = error instanceof Error ? error.message : "Kunne ikke opprette boken.";
+      setStatus(message);
+      if (projectId) {
+        setProductionJob((job) => job ? { ...job, message: `${message} Prosjektet er lagret og kan fortsettes.`, status: "failed" } : job);
+        await loadLibrary(true);
+      }
     } finally {
       setCreatingBook(null);
     }
@@ -1378,6 +1510,28 @@ export default function ForfatterstudioPage() {
     [project, loadLibrary],
   );
 
+  const upgradeWorkflow = useCallback(async (item: LibraryProject) => {
+    if (!window.confirm(`Oppgradere «${item.title}» til den nye ChatGPT-arbeidsflyten? Eksisterende manus og kapitler bevares. Systemet bygger og låser seriebibel/canon rundt innholdet. En eventuell tidligere sluttgodkjenning må gis på nytt.`)) return;
+    setUpgradingId(item.id);
+    setStatus(`Oppgraderer «${item.title}»: analyserer manus og bygger seriebibel/canon…`);
+    try {
+      const res = await fetch("/api/publishing/book-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "upgrade_workflow", id: item.id, series_name: item.series_name || "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Oppgraderingen feilet.");
+      await loadLibrary(true);
+      setStatus(`«${item.title}» bruker nå låst seriebibel/canon. ${Number(data.preserved_chapters || 0)} kapitler ble bevart.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Oppgraderingen feilet. Manuset ble ikke endret.");
+      await loadLibrary(true);
+    } finally {
+      setUpgradingId(null);
+    }
+  }, [loadLibrary]);
+
   const busy = Boolean(busyAction) || importBusy || writingNext || Boolean(creatingBook) || rewriting;
   const tocCount = project?.outline_plan?.toc?.length || 0;
   const chaptersRemaining = Math.max(0, tocCount - chapters.length);
@@ -1390,7 +1544,24 @@ export default function ForfatterstudioPage() {
     return map;
   }, [projects]);
   const projectGroups = useMemo(() => groupBookProjects(projects), [projects]);
+  const activeProductionProject = useMemo(
+    () => productionJob ? projects.find((item) => item.id === productionJob.projectId) || null : null,
+    [productionJob, projects],
+  );
+  const storedProgress = activeProductionProject?.metadata_plan?.production_progress as Record<string, any> | undefined;
+  const preferLocalProgress = productionJob && Number(storedProgress?.step ?? -1) < productionJob.step;
+  const visibleProduction = productionJob ? {
+    ...productionJob,
+    step: Math.max(productionJob.step, Number(storedProgress?.step ?? 0)),
+    message: preferLocalProgress ? productionJob.message : String(storedProgress?.label || productionJob.message),
+    status: (preferLocalProgress ? productionJob.status : String(storedProgress?.status || productionJob.status)) as ProductionJob["status"],
+  } : null;
   const finalApproval = project ? publicationApproval(project) : null;
+  const projectCockpit = project ? bookCockpitStatus({
+    ...project,
+    chapters: chapters.length,
+    words: chapters.reduce((sum, item) => sum + wordsOf(item.draft), 0),
+  }) : null;
 
   const changeDistributionApproval = useCallback(async (approve: boolean) => {
     if (!project) return;
@@ -1430,6 +1601,8 @@ export default function ForfatterstudioPage() {
             {finalApproval?.approved ? (
               <>
                 <Badge variant="default" className="h-9 px-3 bg-emerald-600">✓ Endelig godkjent</Badge>
+                <Button size="sm" asChild><a href="/book-growth/distribution">Åpne Distribution</a></Button>
+                <Button size="sm" variant="outline" asChild><a href={`/book-growth?project=${encodeURIComponent(project.id)}`}>Selg og forbedre</a></Button>
                 <Button variant="outline" size="sm" onClick={() => changeDistributionApproval(false)} disabled={busy}>
                   Trekk godkjenning
                 </Button>
@@ -1457,6 +1630,10 @@ export default function ForfatterstudioPage() {
                 Fortsett omskriving ({chaptersRemaining} igjen)
               </Button>
             ) : null}
+            <details className="w-full rounded-lg border bg-muted/20 px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold">Flere verktøy og avanserte valg</summary>
+              <p className="mt-1 text-xs text-muted-foreground">Redigering, analyse, formatering, oversettelse, eksport og administrasjon.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
             {chapters.length > 0 && !isRewriteProject ? (
               <Button variant={showRewrite ? "secondary" : "outline"} size="sm" onClick={() => setShowRewrite((v) => !v)} disabled={busy}>
                 <Wand2 className="mr-2 h-4 w-4" />
@@ -1472,7 +1649,7 @@ export default function ForfatterstudioPage() {
             {chapters.length > 0 ? (
               <Button variant={showKdp ? "secondary" : "outline"} size="sm" onClick={() => setShowKdp((v) => !v)} disabled={busy}>
                 <BookOpen className="mr-2 h-4 w-4" />
-                Publiser til KDP
+                KDP-pakke og metadata
               </Button>
             ) : null}
             {chapters.length > 0 && chapters.length <= 3 && chapters.some((c) => wordsOf(c.draft) > 3500) ? (
@@ -1557,10 +1734,37 @@ export default function ForfatterstudioPage() {
               {deletingId === project.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
               Slett kladden
             </Button>
+              </div>
+            </details>
           </div>
         </div>
 
         {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
+
+        {projectCockpit ? (
+          <Card className={projectCockpit.state === "attention" ? "border-red-500/40" : projectCockpit.state === "approved" ? "border-emerald-500/40" : "border-primary/25"}>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nåværende fase</p>
+                  <p className="font-semibold">Steg {projectCockpit.stage}/8 · {projectCockpit.stageLabel}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Siste aktivitet: {projectCockpit.activityLabel}</p>
+                  {activityTime(projectCockpit.updatedAt) ? <p className="mt-1 text-xs text-muted-foreground">Oppdatert {activityTime(projectCockpit.updatedAt)}</p> : null}
+                  {projectCockpit.error ? <p className="mt-1 text-sm font-medium text-red-600">{projectCockpit.error}</p> : null}
+                </div>
+                <div className="rounded-md bg-muted px-3 py-2 text-sm"><b>Neste:</b> {projectCockpit.nextLabel}</div>
+              </div>
+              <div className="grid grid-cols-4 gap-1 md:grid-cols-8">
+                {BOOK_LIFECYCLE_STEPS.map((label, index) => (
+                  <div key={label} title={label} className="space-y-1">
+                    <div className={`h-2 rounded-full ${index < projectCockpit.stage ? projectCockpit.state === "attention" && index === projectCockpit.stage - 1 ? "bg-red-500" : "bg-primary" : "bg-muted"}`} />
+                    <p className="truncate text-[10px] text-muted-foreground">{index + 1}. {label}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {project.metadata_plan?.production_bible ? (
           <details className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
@@ -2300,23 +2504,15 @@ export default function ForfatterstudioPage() {
             <Feather className="h-6 w-6" /> Forfatterstudio
           </h1>
           <p className="text-sm text-muted-foreground">
-            Alle bøkene dine — ferdige og kladd. AI-en er din personlige ekspertforfatter, redaktør og grafiske designer.
+            Ett arbeidsområde fra idé og canon til publisering, salg og læring.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setShowNewBook((v) => !v)} disabled={Boolean(creatingBook)}>
-            <Feather className="mr-2 h-4 w-4" />
-            Ny bok
-          </Button>
-          <Button variant={showInterview ? "secondary" : "outline"} size="sm" onClick={() => setShowInterview((v) => !v)} disabled={Boolean(creatingBook)}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Intervju: finn vinkelen
-          </Button>
           <Button variant={showImportManus ? "secondary" : "outline"} size="sm" onClick={() => setShowImportManus((v) => !v)} disabled={Boolean(creatingBook)}>
             <Upload className="mr-2 h-4 w-4" />
             Importer manus
           </Button>
-          <Button variant="outline" size="sm" onClick={loadLibrary} disabled={libraryLoading}>
+          <Button variant="outline" size="sm" onClick={() => loadLibrary()} disabled={libraryLoading}>
             {libraryLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Oppdater
           </Button>
@@ -2324,10 +2520,46 @@ export default function ForfatterstudioPage() {
       </div>
 
       {status ? <p className="text-sm rounded-md border bg-muted/40 px-3 py-2">{status}</p> : null}
-      {creatingBook ? (
-        <p className="text-sm rounded-md border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" /> {creatingBook}
-        </p>
+      <CatalogCoverage />
+      <PublisherCockpit
+        projects={projects}
+        onCreate={() => { setShowNewBook(true); setShowInterview(false); }}
+        onFindIdea={() => { setShowInterview(true); setShowNewBook(false); }}
+        onOpen={openProject}
+      />
+      {visibleProduction ? (
+        <Card className={visibleProduction.status === "failed" ? "border-red-500/40" : visibleProduction.status === "completed" ? "border-emerald-500/40" : "border-primary/40"}>
+          <CardContent className="pt-5 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Aktiv bokproduksjon</p>
+                <p className="font-semibold">{visibleProduction.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground flex items-center gap-2">
+                  {visibleProduction.status === "in_progress" ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : visibleProduction.status === "completed" ? <Check className="h-4 w-4 text-emerald-600" /> : <X className="h-4 w-4 text-red-600" />}
+                  {visibleProduction.message}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => openProject(visibleProduction.projectId)}>Åpne prosjektet</Button>
+                {visibleProduction.status !== "in_progress" ? <Button size="sm" variant="ghost" onClick={() => setProductionJob(null)}>Skjul</Button> : null}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {["Registrert", "Bibel + canon", "Outline + første kapittel"].map((label, index) => {
+                const reached = visibleProduction.step >= index + 1 || (index === 0 && visibleProduction.step >= 0);
+                return (
+                  <div key={label} className="space-y-1">
+                    <div className={`h-2 rounded-full ${reached ? visibleProduction.status === "failed" && visibleProduction.step <= index + 1 ? "bg-red-500" : "bg-primary" : "bg-muted"}`} />
+                    <p className="text-[11px] text-muted-foreground">{index + 1}. {label}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">Prosjekt-ID: {visibleProduction.projectId.slice(0, 8)} · Registrert {new Date(visibleProduction.startedAt).toLocaleString("nb-NO")}. Statusen lagres og vises også etter at siden oppdateres.</p>
+          </CardContent>
+        </Card>
+      ) : creatingBook ? (
+        <p className="text-sm rounded-md border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> {creatingBook}</p>
       ) : null}
 
       {showImportManus ? (
@@ -2393,16 +2625,33 @@ export default function ForfatterstudioPage() {
       {showInterview ? (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4" /> Intervju — vi finner vinkelen sammen</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Search className="h-4 w-4" /> Finn og vurder neste bok</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Fortell løst hva du har lyst å skrive om, så foreslår AI-en retninger med kommersielt potensial og stiller oppfølgingsspørsmål. Svarene blir til en ferdig bokplan i Ny bok-skjemaet.
+              Velg hvordan ChatGPT skal lete. Markedsresearch bruker live nettsøk og viser kilder; de andre valgene bruker stikkordene dine eller dokumenterte kunnskapsområder.
             </p>
+            <div className="grid gap-2 md:grid-cols-3">
+              {[
+                { id: "keywords", label: "Fra mine stikkord", text: "Bygg ideer direkte fra temaet jeg skriver inn." },
+                { id: "author_knowledge", label: "Fra min kunnskap", text: "Koble temaet til mine fagområder og bokserier." },
+                { id: "market", label: "Sjekk markedet nå", text: "Undersøk aktuelle signaler på nettet og vis kilder." },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setIdeaSource(option.id as typeof ideaSource)}
+                  className={`rounded-md border p-3 text-left ${ideaSource === option.id ? "border-primary bg-primary/10" : "hover:bg-muted/40"}`}
+                >
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{option.text}</span>
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="flex-1 min-w-[260px]"
-                placeholder="F.eks. «en guide til å flytte til Costa Blanca» eller «barnebok om oliventreet Olivia»"
+                placeholder={ideaSource === "keywords" ? "Skriv stikkord eller tema…" : "Valgfritt: avgrens temaet eller la feltet stå tomt"}
                 value={interviewTheme}
                 onChange={(e) => setInterviewTheme(e.target.value)}
               />
@@ -2413,16 +2662,34 @@ export default function ForfatterstudioPage() {
               >
                 {GENRES.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
               </select>
-              <Button size="sm" onClick={runInterview} disabled={interviewLoading || !interviewTheme.trim()}>
+              <select
+                className="h-9 max-w-[260px] rounded-md border bg-background px-2 text-sm"
+                value={newBook.seriesName}
+                onChange={(e) => { setNewSeriesMode(false); setNewBook((b) => ({ ...b, seriesName: e.target.value })); }}
+                aria-label="Velg bokserie for forslagene"
+              >
+                <option value="">Alle serier / frittstående</option>
+                {knownSeries.map((series) => <option key={series} value={series}>{series}</option>)}
+              </select>
+              <Button size="sm" onClick={runInterview} disabled={interviewLoading || (ideaSource === "keywords" && !interviewTheme.trim())}>
                 {interviewLoading && !interviewData ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
-                Start intervjuet
+                {ideaSource === "market" ? "Undersøk markedet" : "Lag bokforslag"}
               </Button>
             </div>
 
             {interviewData ? (
               <div className="space-y-3">
+                {interviewData.researchSummary ? <p className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{interviewData.researchSummary}</p> : null}
+                {(interviewData.researchSources || []).length > 0 ? (
+                  <div className="rounded-md border bg-muted/20 p-3 text-xs">
+                    <p className="font-semibold">Kilder brukt i markedsresearchen</p>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                      {(interviewData.researchSources || []).map((source, index) => /^https:\/\//i.test(String(source.url || "")) ? <a key={`${source.url}-${index}`} className="underline" href={source.url} target="_blank" rel="noreferrer">{source.title || `Kilde ${index + 1}`}</a> : null)}
+                    </div>
+                  </div>
+                ) : null}
                 <div>
-                  <p className="mb-1 text-sm font-semibold">1. Velg retning</p>
+                  <p className="mb-1 text-sm font-semibold">1. Velg bokretning</p>
                   <div className="grid gap-2 md:grid-cols-2">
                     {interviewData.directions.map((d) => (
                       <label key={d.id} className={`cursor-pointer rounded-md border p-3 text-sm ${interviewDirection === d.id ? "border-primary bg-primary/10" : "hover:bg-muted/40"}`}>
@@ -2430,6 +2697,18 @@ export default function ForfatterstudioPage() {
                         <span className="font-medium">{d.title}</span>
                         {d.promise ? <span className="mt-0.5 block text-xs text-muted-foreground">{d.promise}</span> : null}
                         {d.audience ? <span className="mt-0.5 block text-xs text-muted-foreground">Målgruppe: {d.audience}</span> : null}
+                        <span className="mt-2 flex flex-wrap items-center gap-1">
+                          {d.commercial_potential ? <Badge variant="outline">Potensial: {d.commercial_potential}</Badge> : null}
+                          {(d.keywords || []).slice(0, 3).map((keyword) => <Badge key={keyword} variant="secondary">{keyword}</Badge>)}
+                        </span>
+                        {d.why_now ? <span className="mt-2 block text-xs"><b>Hvorfor nå:</b> {d.why_now}</span> : null}
+                        {d.why_freddy ? <span className="mt-1 block text-xs"><b>Hvorfor deg:</b> {d.why_freddy}</span> : null}
+                        {(d.sources || []).length > 0 ? (
+                          <span className="mt-2 block text-xs">
+                            <b>Kilder:</b>{" "}
+                            {(d.sources || []).map((source, index) => /^https:\/\//i.test(String(source.url || "")) ? <a key={`${source.url}-${index}`} className="underline" href={source.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{source.title || `Kilde ${index + 1}`}{index < (d.sources || []).length - 1 ? ", " : ""}</a> : null)}
+                          </span>
+                        ) : null}
                       </label>
                     ))}
                   </div>
@@ -2477,8 +2756,23 @@ export default function ForfatterstudioPage() {
                 <Input value={newBook.audience} onChange={(e) => setNewBook((b) => ({ ...b, audience: e.target.value }))} placeholder="F.eks. helsebevisste lesere 40+" />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium">Serie (valgfritt)</span>
-                <Input value={newBook.seriesName} onChange={(e) => setNewBook((b) => ({ ...b, seriesName: e.target.value }))} placeholder="Eksisterende eller ny bokserie" />
+                <span className="mb-1 block font-medium">Velg bokserie</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={newSeriesMode ? "__new__" : newBook.seriesName}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setNewSeriesMode(value === "__new__");
+                    setNewBook((book) => ({ ...book, seriesName: value === "__new__" ? "" : value }));
+                  }}
+                >
+                  <option value="">Frittstående bok / ingen serie</option>
+                  {knownSeries.map((series) => <option key={series} value={series}>{series}</option>)}
+                  <option value="__new__">+ Opprett en ny bokserie</option>
+                </select>
+                {newSeriesMode ? (
+                  <Input className="mt-2" autoFocus value={newBook.seriesName} onChange={(e) => setNewBook((b) => ({ ...b, seriesName: e.target.value }))} placeholder="Navn på ny bokserie" />
+                ) : null}
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">Sjanger</span>
@@ -2580,6 +2874,8 @@ export default function ForfatterstudioPage() {
           {projectGroups.map((group) => {
             const p = group.canonical;
             const approvedEdition = group.editions.find((edition) => publicationApproval(edition).approved);
+            const usesNewWorkflow = Boolean(p.metadata_plan?.production_bible?.locked);
+            const cockpit = bookCockpitStatus(p);
             return (
             <Card key={group.id} className="transition-shadow hover:shadow-md">
               <CardContent className="pt-5 space-y-2">
@@ -2608,8 +2904,27 @@ export default function ForfatterstudioPage() {
                   {p.images > 0 ? ` · ${p.images} bilder` : ""}
                   {group.editions.length > 1 ? ` · ${group.editions.length} versjoner/utgaver` : ""}
                 </p>
+                <div className={`rounded-md border px-3 py-2 text-xs ${cockpit.state === "attention" ? "border-red-500/35 bg-red-500/5" : cockpit.state === "approved" ? "border-emerald-500/35 bg-emerald-500/5" : cockpit.state === "ready" ? "border-blue-500/35 bg-blue-500/5" : "bg-muted/20"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Steg {cockpit.stage}/8 · {cockpit.stageLabel}</span>
+                    <span className="text-muted-foreground">{cockpit.progressPercent}%</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className={`h-full ${cockpit.state === "attention" ? "bg-red-500" : cockpit.state === "approved" ? "bg-emerald-600" : "bg-primary"}`} style={{ width: `${cockpit.progressPercent}%` }} />
+                  </div>
+                  <p className="mt-2 text-muted-foreground">Siste aktivitet: {cockpit.activityLabel}</p>
+                  {activityTime(cockpit.updatedAt) ? <p className="mt-1 text-muted-foreground">Oppdatert {activityTime(cockpit.updatedAt)}</p> : null}
+                  {cockpit.error ? <p className="mt-1 font-medium text-red-600">{cockpit.error}</p> : null}
+                  <p className="mt-1 font-medium">Neste: {cockpit.nextLabel}</p>
+                </div>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button size="sm" onClick={() => openProject(approvedEdition?.id || p.id)}>Åpne hovedmanus</Button>
+                  {!usesNewWorkflow ? (
+                    <Button size="sm" variant="outline" onClick={() => upgradeWorkflow(p)} disabled={upgradingId === p.id}>
+                      {upgradingId === p.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+                      Oppgrader til bibel/canon
+                    </Button>
+                  ) : <Badge variant="secondary" className="h-8">Ny arbeidsflyt ✓</Badge>}
                   {group.editions.length > 1 ? (
                     <details className="w-full rounded-md border bg-muted/20 px-3 py-2 text-xs">
                       <summary className="cursor-pointer font-medium">Vis versjonshistorikk og språkutgaver</summary>

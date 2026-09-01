@@ -11,6 +11,9 @@ export type BookAuthorOptions = {
   fallbackOnInvalidResponse?: boolean;
   model?: "haiku" | "sonnet";
   anthropicOnly?: boolean;
+  webSearch?: boolean;
+  requireOpenAI?: boolean;
+  onWebSources?: (sources: Array<{ title: string; url: string }>) => void;
 };
 
 const BOOK_SYSTEM = `Du er Freddy Bremseths primære bokproduksjonsassistent.
@@ -36,6 +39,13 @@ export function buildOpenAIBookResponsePayload(prompt: string, options: BookAuth
     max_output_tokens: fast
       ? Math.max(Number(options.maxTokens || 2000), 6000)
       : Math.max(Number(options.maxTokens || 8000), 25000),
+    ...(options.webSearch
+      ? {
+          tools: [{ type: "web_search", external_web_access: true }],
+          tool_choice: "required",
+          include: ["web_search_call.action.sources"],
+        }
+      : {}),
     ...(text ? { text } : {}),
   };
 }
@@ -50,6 +60,23 @@ export function extractOpenAIResponseText(payload: Record<string, any>) {
     }
   }
   return parts.join("\n").trim();
+}
+
+export function extractOpenAIWebSources(payload: Record<string, any>) {
+  const sources = new Map<string, { title: string; url: string }>();
+  for (const item of Array.isArray(payload.output) ? payload.output : []) {
+    for (const source of Array.isArray(item?.action?.sources) ? item.action.sources : []) {
+      const url = String(source?.url || "").trim();
+      if (/^https:\/\//i.test(url)) sources.set(url, { title: String(source?.title || source?.name || url), url });
+    }
+    for (const content of Array.isArray(item?.content) ? item.content : []) {
+      for (const annotation of Array.isArray(content?.annotations) ? content.annotations : []) {
+        const url = String(annotation?.url || "").trim();
+        if (/^https:\/\//i.test(url)) sources.set(url, { title: String(annotation?.title || url), url });
+      }
+    }
+  }
+  return [...sources.values()];
 }
 
 async function askOpenAIBookAuthor(prompt: string, options: BookAuthorOptions) {
@@ -68,6 +95,7 @@ async function askOpenAIBookAuthor(prompt: string, options: BookAuthorOptions) {
   if ((payload as any)?.status === "incomplete") {
     throw new Error(`OpenAI-svaret ble ufullstendig (${String((payload as any)?.incomplete_details?.reason || "ukjent årsak")}).`);
   }
+  if (options.onWebSources) options.onWebSources(extractOpenAIWebSources(payload as Record<string, any>));
   const text = extractOpenAIResponseText(payload as Record<string, any>);
   if (!text) throw new Error("OpenAI returnerte ikke boktekst.");
   if (options.validateResponse && !options.validateResponse(text)) throw new Error("OpenAI returnerte et svar som ikke bestod bokformat-kontrollen.");
@@ -81,8 +109,12 @@ export async function askBookAuthor(prompt: string, options: BookAuthorOptions =
     try {
       return await askOpenAIBookAuthor(prompt, options);
     } catch (error) {
+      if (options.requireOpenAI || options.webSearch) throw error;
       console.warn(`[Book Author] OpenAI primary failed, using reserve provider: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+  if (options.requireOpenAI || options.webSearch) {
+    throw new Error("OpenAI er ikke konfigurert for markedsresearch. Kontroller OPENAI_API_KEY.");
   }
   return askClaude(prompt, { ...options, anthropicOnly: false });
 }

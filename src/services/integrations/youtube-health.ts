@@ -1,7 +1,7 @@
-import { youtube } from "@googleapis/youtube";
 import { OAuth2Client } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
 import { getGoogleCredentials } from "@/lib/oauth/providers";
+import { createYoutubeOAuthClient } from "@/services/integrations/youtube-oauth-client";
 
 interface Candidate {
   source: string;
@@ -85,7 +85,7 @@ export async function checkBrandYouTubeHealth(brandId: string) {
       auth.setCredentials({ refresh_token: candidate.refreshToken });
       await auth.getAccessToken();
 
-      const client = youtube({ version: "v3", auth });
+      const client = createYoutubeOAuthClient(auth);
       const result = await client.channels.list({
         part: ["snippet", "statistics"],
         mine: true,

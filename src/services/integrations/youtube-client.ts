@@ -1,4 +1,4 @@
-import { youtube, type youtube_v3 } from '@googleapis/youtube';
+import type { youtube_v3 } from '@googleapis/youtube';
 import { OAuth2Client } from 'google-auth-library';
 import type { YouTubeVideoMetadata, YouTubeUploadResult } from '@/lib/types';
 import { BRANDS } from '@/lib/constants';
@@ -7,6 +7,7 @@ import {
   REMASTER_OAUTH_RETURN_PATH,
 } from '@/lib/remaster/oauth-return';
 import { Readable } from 'stream';
+import { createYoutubeOAuthClient } from '@/services/integrations/youtube-oauth-client';
 
 // Cache per (brandId, token) so we can re-use OAuth clients but also invalidate
 // when we fall back to a different token source.
@@ -161,7 +162,7 @@ function buildYoutubeClient(brandId: string | undefined, candidate: TokenCandida
   const cached = clientCache.get(cacheKey);
   if (cached) return cached.client;
   const oauth2Client = buildOAuthClient(candidate.token);
-  const client = youtube({ version: 'v3', auth: oauth2Client });
+  const client = createYoutubeOAuthClient(oauth2Client);
   clientCache.set(cacheKey, { client, refreshToken: candidate.token });
   return client;
 }

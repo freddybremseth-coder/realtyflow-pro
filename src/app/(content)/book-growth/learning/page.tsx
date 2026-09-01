@@ -1,46 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback,useEffect,useState } from "react";
 
-type Payload = { rules: any[]; evaluatedExperiments: any[] };
+type Payload={available:boolean;proposals:any[];legacyRules:any[];legacyRulesReadOnly:boolean};
 
-export default function LearningPage() {
-  const [data, setData] = useState<Payload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = async () => {
-    setError(null);
-    const res = await fetch("/api/book-growth/learning", { cache: "no-store", credentials: "same-origin" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) return setError(body?.error || `Learning load failed (${res.status})`);
-    setData(body as Payload);
-  };
-  useEffect(() => { void load(); }, []);
-  const refresh = async () => {
-    setBusy(true); setError(null);
-    try {
-      const res = await fetch("/api/book-growth/learning", { method: "POST", credentials: "same-origin" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || `Learning refresh failed (${res.status})`);
-      await load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  };
-  return <div style={{ maxWidth: 1500, margin: "0 auto", padding: 24, fontFamily: "system-ui,sans-serif" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-      <div><h1 style={{ margin: 0, fontSize: 27 }}>Book Growth OS · Learning</h1><p style={{ marginTop: 6, color: "#64748b" }}>Only repeated measured outcomes become reusable rules.</p></div>
-      <button onClick={() => void refresh()} disabled={busy} style={{ border: 0, borderRadius: 8, padding: "9px 13px", background: "#0f172a", color: "white", fontWeight: 800 }}>{busy ? "Oppdaterer…" : "Oppdater learning rules"}</button>
-    </div>
-    {error && <div style={{ marginTop: 14, padding: 12, background: "#fef2f2", color: "#b91c1c", borderRadius: 8 }}>{error}</div>}
-    <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 10 }}>
-      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 14 }}><div style={{ color: "#64748b", fontSize: 12, fontWeight: 800 }}>Learning rules</div><div style={{ fontSize: 26, fontWeight: 900 }}>{data?.rules?.length ?? 0}</div></div>
-      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 14 }}><div style={{ color: "#64748b", fontSize: 12, fontWeight: 800 }}>Evaluated experiments</div><div style={{ fontSize: 26, fontWeight: 900 }}>{data?.evaluatedExperiments?.length ?? 0}</div></div>
-    </div>
-    <section style={{ marginTop: 18, border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "white" }}>
-      <div style={{ padding: 14, borderBottom: "1px solid #e2e8f0", fontWeight: 900 }}>Evidence-gated rules</div>
-      <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}><thead><tr style={{ background: "#f8fafc", textAlign: "left" }}>{["Dimension","Metric","Sample","Lift","Evidence","Verdict","Finding"].map(h => <th key={h} style={{ padding: 9, borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}</tr></thead><tbody>{(data?.rules ?? []).map((r:any) => <tr key={r.id}><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.dimension}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.value}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.sample}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.lift == null ? "—" : `${(Number(r.lift)*100).toFixed(1)}%`}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.evidence_level}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9" }}>{r.verdict}</td><td style={{ padding: 9, borderBottom: "1px solid #f1f5f9", minWidth: 320 }}>{r.finding}</td></tr>)}</tbody></table></div>
-      {!data?.rules?.length && <div style={{ padding: 16, color: "#64748b" }}>Ingen learning rules ennå. Det er korrekt før minst tre moderate/strong målte eksperimenter finnes for samme dimensjon og metric.</div>}
-    </section>
-    <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: 12 }}><b>Guardrail:</b> ett resultat blir aldri generalisert. Minimum 3 moderate/strong experiments kreves; 8+ gir strong learning evidence.</div>
-  </div>;
+export default function LearningPage(){
+  const [data,setData]=useState<Payload|null>(null); const [error,setError]=useState(""); const [notice,setNotice]=useState(""); const [busy,setBusy]=useState("");
+  const [notes,setNotes]=useState<Record<string,string>>({});
+  const [form,setForm]=useState({seriesName:"",title:"",rationale:"",catalogGap:"",authorFit:"",marketEvidence:""});
+  const load=useCallback(async()=>{const res=await fetch("/api/book-growth/learning",{cache:"no-store"});const body=await res.json();if(!res.ok)throw new Error(body.error||"Kunne ikke laste Learning Center");setData(body);},[]);
+  useEffect(()=>{load().catch((reason)=>setError(reason instanceof Error?reason.message:"Kunne ikke laste Learning Center"));},[load]);
+  async function act(payload:Record<string,unknown>,id="global"){setBusy(id);setError("");setNotice("");try{const res=await fetch("/api/book-growth/learning",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});const body=await res.json();if(!res.ok)throw new Error(body.error||"Handlingen mislyktes");const status=body.result?.status;setNotice(payload.action==="generate"?`${body.result?.generated??0} nye forslag ble laget. Ingen regler, metadata eller bøker ble opprettet.`:payload.action==="stage_next_book"?"Bokideen er registrert som forslag. Ingen bokproduksjon er startet.":status==="approved"?"Forslaget er godkjent som intensjon. Det er ikke anvendt og ingen bok er startet.":status==="stale"?"Forslaget ble stoppet fordi kanonisk revisjon er endret.":"Forslaget er avvist uten endringer.");await load();}catch(reason){setError(reason instanceof Error?reason.message:"Handlingen mislyktes");}finally{setBusy("");}}
+  const ready=Object.values(form).every((value)=>value.trim()); const card:React.CSSProperties={background:"white",border:"1px solid #aebdce",borderRadius:12,padding:14};
+  return <main style={{maxWidth:1450,margin:"0 auto",padding:24,fontFamily:"system-ui,sans-serif"}}>
+    <header style={{display:"flex",justifyContent:"space-between",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}><div><p style={{margin:0,color:"#7c3aed",fontWeight:900}}>BOOK OS · FASE 5.3</p><h1 style={{margin:"5px 0"}}>Learning Proposal Center</h1><p style={{maxWidth:900,color:"#475569",marginTop:0}}>Gjentatte kontrollerte resultater og dokumentert bokmulighet blir forslag – aldri automatiske regler eller produksjonsordrer. Alle forslag krever en separat beslutning.</p></div><button disabled={busy==="global"} onClick={()=>act({action:"generate"})} style={{padding:"10px 14px",border:0,borderRadius:8,background:"#0f172a",color:"white",fontWeight:900}}>{busy==="global"?"Analyserer…":"Lag forslag fra målinger"}</button></header>
+    {error?<p role="alert" style={{padding:12,background:"#fef2f2",border:"1px solid #ef4444",borderRadius:8}}>{error}</p>:null}{notice?<p role="status" style={{padding:12,background:"#ecfdf5",border:"1px solid #22c55e",borderRadius:8}}>{notice}</p>:null}
+    <section style={{...card,marginTop:16}}><h2 style={{marginTop:0}}>Foreslå neste bok</h2><p style={{fontSize:12,color:"#475569"}}>Et bokforslag krever katalogbehov, forfattermatch og markedsevidens. Popularitet alene er ikke nok.</p><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:9}}><label>Serie<input value={form.seriesName} onChange={e=>setForm({...form,seriesName:e.target.value})} style={{display:"block",width:"100%",padding:8}}/></label><label>Arbeidstittel<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} style={{display:"block",width:"100%",padding:8}}/></label></div><label style={{display:"block",marginTop:9}}>Hvorfor denne boken?<textarea value={form.rationale} onChange={e=>setForm({...form,rationale:e.target.value})} style={{display:"block",width:"100%",minHeight:65,padding:8}}/></label><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:9,marginTop:9}}><label>Hull i katalogen<textarea value={form.catalogGap} onChange={e=>setForm({...form,catalogGap:e.target.value})} style={{display:"block",width:"100%",minHeight:70,padding:8}}/></label><label>Hvorfor passer den Freddy?<textarea value={form.authorFit} onChange={e=>setForm({...form,authorFit:e.target.value})} style={{display:"block",width:"100%",minHeight:70,padding:8}}/></label><label>Markedsevidens<textarea value={form.marketEvidence} onChange={e=>setForm({...form,marketEvidence:e.target.value})} style={{display:"block",width:"100%",minHeight:70,padding:8}}/></label></div><button disabled={!ready||busy==="new"} onClick={()=>act({action:"stage_next_book",...form},"new")} style={{marginTop:10,padding:"9px 13px",border:0,borderRadius:7,background:"#1d4ed8",color:"white",fontWeight:900}}>{busy==="new"?"Oppretter…":"Opprett bokforslag"}</button></section>
+    <section style={{marginTop:18,display:"grid",gap:12}}><h2 style={{marginBottom:0}}>Forslagskø</h2>{(data?.proposals??[]).map((row)=><article key={row.id} style={card}><div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><div><strong>{row.proposal_type==="next_book"?`${row.series_name}: ${row.proposed_title}`:row.work?.canonical_title||row.edition?.title}</strong><span style={{display:"block",fontSize:12,color:"#475569"}}>{row.proposal_type==="next_book"?"Neste bok":`Forbedring · ${row.dimension} · ${row.success_metric}`} · {row.evidence_count} evidenspunkter · {row.evidence_level}</span></div><strong>{String(row.status).toUpperCase()}</strong></div><p>{row.rationale}</p><pre style={{whiteSpace:"pre-wrap",fontSize:12,background:"#f8fafc",padding:9,borderRadius:7}}>{JSON.stringify(row.proposed_action,null,2)}</pre>{row.status==="pending"?<div style={{display:"flex",gap:7,flexWrap:"wrap"}}><button disabled={busy===row.id} onClick={()=>act({action:"decide",proposalId:row.id,decision:"approve"},row.id)} style={{padding:8,border:0,borderRadius:6,background:"#166534",color:"white",fontWeight:900}}>Godkjenn forslag</button><input value={notes[row.id]||""} onChange={e=>setNotes({...notes,[row.id]:e.target.value})} placeholder="Begrunnelse ved avvisning" style={{padding:8,flex:"1 1 280px"}}/><button disabled={busy===row.id||!(notes[row.id]||"").trim()} onClick={()=>act({action:"decide",proposalId:row.id,decision:"reject",note:notes[row.id]},row.id)} style={{padding:8}}>Avvis</button></div>:null}</article>)}{!data?.proposals?.length?<p style={{...card,color:"#64748b"}}>Ingen kanoniske læringsforslag ennå. Det er korrekt før tilstrekkelig evidens finnes.</p>:null}</section>
+    <details style={{...card,marginTop:18}}><summary style={{fontWeight:900,cursor:"pointer"}}>Historiske learning rules · kun lesing ({data?.legacyRules?.length??0})</summary><p style={{fontSize:12,color:"#92400e"}}>Disse eldre reglene beholdes som historikk, men fase 5.3 oppdaterer eller anvender dem ikke.</p>{(data?.legacyRules??[]).slice(0,50).map((row)=><p key={row.id} style={{fontSize:12,borderTop:"1px solid #e2e8f0",paddingTop:7}}><b>{row.dimension} · {row.value}</b> — {row.finding}</p>)}</details>
+    <div style={{marginTop:16,padding:13,border:"1px solid #fde68a",borderRadius:10,background:"#fffbeb",fontSize:12,color:"#92400e"}}><b>Fast sperre:</b> Godkjenning betyr «dette bør vurderes videre». Den endrer ikke metadata, oppretter ingen learning rule og starter aldri bokproduksjon.</div>
+  </main>;
 }

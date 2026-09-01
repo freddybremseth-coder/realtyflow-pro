@@ -170,9 +170,9 @@ export async function toEpubBuffer(project: Record<string, any>) {
       images.file(coverName, loaded.buffer);
       imageManifest.push(`<item id="cover-image" href="${coverHref}" media-type="${loaded.type === "jpg" ? "image/jpeg" : `image/${loaded.type}`}" properties="cover-image"/>`);
       text?.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" lang="${xmlEscape(language)}">
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${xmlEscape(language)}">
 <head><meta charset="UTF-8"/><title>${xmlEscape(title)}</title><style>body{margin:0;padding:0;text-align:center}img{max-width:100%;height:auto}</style></head>
-<body><img src="${coverHref}" alt="${xmlEscape(title)}"/></body></html>`);
+<body epub:type="cover"><img src="${coverHref}" alt="Cover for ${xmlEscape(title)}"/></body></html>`);
       coverPageHref = "text/cover.xhtml";
     }
   }
@@ -199,16 +199,23 @@ export async function toEpubBuffer(project: Record<string, any>) {
   oebps?.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${xmlEscape(language)}">
 <head><meta charset="UTF-8"/><title>Table of Contents</title></head>
-<body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navItems.join("\n")}</ol></nav></body></html>`);
+<body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navItems.join("\n")}</ol></nav>
+<nav epub:type="landmarks" hidden="hidden"><h2>Landmarks</h2><ol><li><a epub:type="bodymatter" href="text/chap1.xhtml">Start of content</a></li></ol></nav></body></html>`);
 
   const descriptionText = (description || subtitle || title).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const hasCover = Boolean(coverPageHref);
   oebps?.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0" prefix="schema: http://schema.org/">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="bookid">urn:uuid:${xmlEscape(slug(title) || `book-${Date.now()}`)}</dc:identifier>
     <dc:title>${xmlEscape(title)}</dc:title><dc:creator>${xmlEscape(author)}</dc:creator>
     <dc:language>${xmlEscape(language)}</dc:language><dc:description>${xmlEscape(descriptionText.slice(0, 4000))}</dc:description>
+    <meta property="schema:accessMode">textual</meta>
+    <meta property="schema:accessibilityFeature">tableOfContents</meta>
+    <meta property="schema:accessibilityFeature">structuralNavigation</meta>
+    <meta property="schema:accessibilityFeature">readingOrder</meta>
+    <meta property="schema:accessibilityHazard">none</meta>
+    <meta property="schema:accessibilitySummary">This publication uses headings, a structured reading order, navigation and alternative text for the cover.</meta>
     ${hasCover ? '<meta name="cover" content="cover-image"/>' : ""}
     <meta property="dcterms:modified">${modifiedIso}</meta>
   </metadata>

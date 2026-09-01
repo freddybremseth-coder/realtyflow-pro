@@ -8,6 +8,34 @@ export type BookProjectWorkflowRow = {
   parent_project_id?: string | null;
   updated_at?: string | null;
   metadata_plan?: Record<string, unknown> | null;
+  chapters?: number;
+  words?: number;
+};
+
+export const BOOK_LIFECYCLE_STEPS = [
+  "Idé og oppsett",
+  "Seriebibel og canon",
+  "Research og outline",
+  "Kumulativt manus",
+  "Redaksjon og fakta",
+  "EPUB og publiseringspakke",
+  "Endelig godkjenning",
+  "Salg og forbedring",
+] as const;
+
+export type BookCockpitState = "working" | "attention" | "ready" | "approved";
+
+export type BookCockpitStatus = {
+  state: BookCockpitState;
+  stage: number;
+  stageLabel: string;
+  nextLabel: string;
+  activityLabel: string;
+  error: string | null;
+  progressPercent: number;
+  updatedAt: string | null;
+  usesCurrentWorkflow: boolean;
+  approved: boolean;
 };
 
 export type PublishingBookWorkflowRow = {
@@ -27,7 +55,7 @@ export type DistributionPublicationWorkflowRow = {
   external_url?: string | null;
 };
 
-const ARTIFACT_WORDS = /\b(?:complete\s+manuscript|final(?:e)?|endelig(?:e)?|export|epub|master(?:manus(?:cript)?)?|version|versjon|v\s*\d+(?:[._-]\d+)*)\b/gi;
+const ARTIFACT_WORDS = /\b(?:complete\s+manuscript|ny\s+hovedutgave|new\s+main\s+edition|hovedutgave|final(?:e)?|ferdig|endelig(?:e)?|export|epub|ebook|paperback|docx|pdf|zip|master(?:manus(?:cript)?)?|version|versjon|v\s*\d+(?:[._-]\d+)*)\b/gi;
 
 export function normalizeBookIdentityTitle(value: unknown) {
   return String(value || "")
@@ -41,6 +69,95 @@ export function normalizeBookIdentityTitle(value: unknown) {
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function bookCockpitStatus(project: BookProjectWorkflowRow): BookCockpitStatus {
+  const metadata = objectValue(project.metadata_plan);
+  const production = objectValue(metadata.production_progress);
+  const bible = objectValue(metadata.production_bible);
+  const outline = objectValue(metadata.outline_plan);
+  const approved = publicationApproval(project).approved;
+  const productionState = textValue(production.status);
+  const hasBible = bible.locked === true;
+  const chapterCount = Math.max(0, Number(project.chapters || 0));
+  const wordCount = Math.max(0, Number(project.words || 0));
+  const hasOutline = Boolean(metadata.book_bible)
+    || Array.isArray(outline.toc)
+    || Number(production.step || 0) >= 2;
+  const readyForExport = project.status === "ready_for_export";
+
+  let stage = 1;
+  if (hasBible) stage = 2;
+  if (hasOutline || chapterCount > 0) stage = 3;
+  if (chapterCount > 0 || wordCount > 0) stage = 4;
+  if (readyForExport) stage = 6;
+  if (approved) stage = 8;
+
+  const error = productionState === "failed"
+    ? textValue(production.error) || textValue(production.label) || "Produksjonen stoppet og trenger oppmerksomhet."
+    : null;
+
+  const state: BookCockpitState = error
+    ? "attention"
+    : approved
+      ? "approved"
+      : readyForExport
+        ? "ready"
+        : "working";
+
+  const nextLabel = error
+    ? "Åpne feilen og fortsett"
+    : approved
+      ? "Selg og forbedre"
+      : readyForExport
+        ? "Kontroller og godkjenn boken"
+        : !hasBible
+          ? "Oppgrader til seriebibel og canon"
+          : chapterCount === 0
+            ? "Lag outline og start manus"
+            : "Fortsett manus og kvalitetsarbeid";
+
+  const activityLabel = textValue(production.label)
+    || (approved
+      ? "Endelig manus er godkjent for distribusjon."
+      : readyForExport
+        ? "Manuset er klart for sluttkontroll."
+        : chapterCount > 0
+          ? `${chapterCount} kapitler · ${wordCount.toLocaleString("nb-NO")} ord`
+          : "Bokprosjektet er opprettet.");
+
+  return {
+    state,
+    stage,
+    stageLabel: BOOK_LIFECYCLE_STEPS[stage - 1],
+    nextLabel,
+    activityLabel,
+    error,
+    progressPercent: Math.round((stage / BOOK_LIFECYCLE_STEPS.length) * 100),
+    updatedAt: project.updated_at || null,
+    usesCurrentWorkflow: hasBible,
+    approved,
+  };
+}
+
+export function publisherCockpitTargets<T extends BookProjectWorkflowRow>(projects: T[]) {
+  const ordered = [...projects].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  const statuses = ordered.map((project) => ({ project, status: bookCockpitStatus(project) }));
+  return {
+    continueProject: statuses.find(({ status }) => status.state === "attention")?.project
+      || statuses.find(({ status }) => status.state === "working")?.project
+      || null,
+    publishProject: statuses.find(({ status }) => status.state === "ready")?.project || null,
+    growthProject: statuses.find(({ status }) => status.state === "approved")?.project || null,
+    attentionCount: statuses.filter(({ status }) => status.state === "attention").length,
+    activeCount: statuses.filter(({ status }) => status.state === "working" || status.state === "attention").length,
+    readyCount: statuses.filter(({ status }) => status.state === "ready").length,
+    approvedCount: statuses.filter(({ status }) => status.state === "approved").length,
+  };
 }
 
 export function publicationApproval(project: BookProjectWorkflowRow) {
