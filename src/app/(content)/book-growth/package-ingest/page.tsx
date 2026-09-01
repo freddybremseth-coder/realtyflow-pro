@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PublicationArtifactUploader } from "@/components/publishing/publication-artifact-uploader";
 
 const example = {
   action: "preview",
@@ -16,55 +17,10 @@ const example = {
     language: "en",
     format: "ebook",
     revisionNumber: 1,
-    packageFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    packageFingerprint: "",
+    contentFingerprint: "",
     productionStatus: "production_ready",
-    assets: [
-      {
-        assetType: "manuscript_docx",
-        role: "english_master",
-        storageBucket: "publishing-assets",
-        storagePath: "money-power/debt-machine/r1/master.docx",
-        fingerprint: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        verified: true,
-        canonical: true,
-      },
-      {
-        assetType: "epub",
-        role: "retailer_epub",
-        storageBucket: "publishing-assets",
-        storagePath: "money-power/debt-machine/r1/book.epub",
-        fingerprint: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        verified: true,
-        canonical: true,
-      },
-      {
-        assetType: "cover",
-        role: "ebook_cover",
-        storageBucket: "publishing-assets",
-        storagePath: "money-power/debt-machine/r1/cover.jpg",
-        fingerprint: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-        verified: true,
-        canonical: true,
-      },
-      {
-        assetType: "pdf",
-        role: "print_interior",
-        storageBucket: "publishing-assets",
-        storagePath: "money-power/debt-machine/r1/interior.pdf",
-        fingerprint: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-        verified: true,
-        canonical: true,
-      },
-      {
-        assetType: "package_zip",
-        role: "complete_publication_package",
-        storageBucket: "publishing-assets",
-        storagePath: "money-power/debt-machine/r1/package.zip",
-        fingerprint: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-        verified: true,
-        canonical: true,
-      },
-    ],
+    assets: [],
   },
 };
 
@@ -76,6 +32,8 @@ type Ingest = {
   created_at: string;
   manifest?: { title?: string; seriesName?: string; productionStatus?: string };
 };
+
+type VerifiedAsset = Record<string, any> & { assetType: string; role: string; fingerprint: string };
 
 export default function PackageIngestPage() {
   const [text, setText] = useState(JSON.stringify(example, null, 2));
@@ -102,6 +60,23 @@ export default function PackageIngestPage() {
     catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : String(error) }; }
   }, [text]);
 
+  const identity = parsed.ok && parsed.value?.manifest ? {
+    workKey: String(parsed.value.manifest.workKey || ""),
+    editionKey: String(parsed.value.manifest.editionKey || ""),
+    revisionNumber: Number(parsed.value.manifest.revisionNumber || 1),
+  } : null;
+
+  function addVerifiedAsset(asset: VerifiedAsset) {
+    if (!parsed.ok || !parsed.value?.manifest) return;
+    const envelope = structuredClone(parsed.value);
+    const manifest = envelope.manifest;
+    const assets = Array.isArray(manifest.assets) ? manifest.assets : [];
+    manifest.assets = [...assets.filter((item: any) => String(item?.role || "") !== asset.role), asset];
+    if (asset.assetType === "package_zip") manifest.packageFingerprint = asset.fingerprint;
+    if (asset.assetType === "manuscript_docx") manifest.contentFingerprint = asset.fingerprint;
+    setText(JSON.stringify(envelope, null, 2));
+  }
+
   async function submit(action: "preview" | "ingest") {
     if (!parsed.ok) return;
     setBusy(true);
@@ -123,14 +98,16 @@ export default function PackageIngestPage() {
     <header style={{ marginBottom: 22 }}>
       <p style={{ fontWeight: 900, letterSpacing: 1.5, fontSize: 12, margin: 0 }}>BOOK OS · PRODUCTION HANDOFF</p>
       <h1 style={{ fontSize: 34, margin: "6px 0" }}>Publication Package Ingest</h1>
-      <p style={{ maxWidth: 900, lineHeight: 1.55 }}>
-        Register a completed publication package as canonical Book OS production output. Ingest never approves or publishes anything: the next mandatory gate remains Quality Center, followed by channel metadata, Launch Factory, preflight and release approval.
+      <p style={{ maxWidth: 950, lineHeight: 1.55 }}>
+        Upload completed publication artifacts, verify their stored bytes with SHA-256, assemble the immutable package manifest, then register the exact production revision. Ingest still never approves or publishes anything: Quality Center remains the next mandatory gate.
       </p>
     </header>
 
     {loadError ? <section style={{ padding: 14, border: "1px solid #b45309", borderRadius: 10, background: "#fff7ed", marginBottom: 18 }}>
       <b>Schema not ready:</b> {loadError}
     </section> : null}
+
+    <PublicationArtifactUploader identity={identity} onVerifiedAsset={addVerifiedAsset} />
 
     <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, .8fr)", gap: 18, alignItems: "start" }}>
       <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
@@ -145,21 +122,21 @@ export default function PackageIngestPage() {
         <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <button disabled={busy || !parsed.ok} onClick={() => submit("preview")} style={{ padding: "9px 14px", fontWeight: 900 }}>Preview gates</button>
           <button disabled={busy || !parsed.ok} onClick={() => submit("ingest")} style={{ padding: "9px 14px", fontWeight: 900, background: "#0f172a", color: "white", borderRadius: 8 }}>Ingest package</button>
-          <button disabled={busy} onClick={() => setText(JSON.stringify(example, null, 2))} style={{ padding: "9px 14px", fontWeight: 800 }}>Reset example</button>
+          <button disabled={busy} onClick={() => setText(JSON.stringify(example, null, 2))} style={{ padding: "9px 14px", fontWeight: 800 }}>New manifest</button>
         </div>
       </article>
 
       <aside style={{ display: "grid", gap: 18 }}>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Result</h2>
-          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Preview a manifest before ingesting it.</p>}
+          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Upload the assets, then preview the manifest before ingesting it.</p>}
         </article>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Safety boundary</h2>
           <ul style={{ paddingLeft: 18, lineHeight: 1.55 }}>
-            <li>Creates/updates canonical work and edition.</li>
+            <li>Storage paths are generated server-side and include the SHA-256 fingerprint.</li>
+            <li>Uploaded bytes are re-hashed before an asset becomes <b>verified</b>.</li>
             <li>Creates a canonical revision in <b>review</b>, not approved.</li>
-            <li>Registers production assets with fingerprints and roles.</li>
             <li>Does not create retailer publications.</li>
             <li>Does not approve launch campaigns or release candidates.</li>
           </ul>
