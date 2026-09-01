@@ -8,12 +8,20 @@ const links = fs.readFileSync(path.join(process.cwd(), "src/components/book-grow
 const page = fs.readFileSync(path.join(process.cwd(), "src/app/(business)/publishing/forfatterstudio/learning-intake/page.tsx"), "utf8");
 const [getSection, postSection = ""] = route.split("export async function POST");
 
-test("learning intake GET is admin-only, read-only and requires separate create and production-start actions", () => {
+test("learning intake GET is admin-only, read-only and resolves existing Book Engine state", () => {
   assert.match(getSection, /requireAdminApi\(request\)/);
   assert.match(getSection, /proposal\.proposal_type !== "next_book"/);
   assert.match(getSection, /proposal\.status !== "approved"/);
-  assert.match(getSection, /requiresExplicitCreate:\s*true/);
-  assert.match(getSection, /requiresExplicitProductionStart:\s*true/);
+  assert.match(getSection, /function summarizeProject/);
+  assert.match(getSection, /productionState:\s*"not_created"/);
+  assert.match(getSection, /"draft_pending"/);
+  assert.match(getSection, /"start_approved"/);
+  assert.match(getSection, /"attention"/);
+  assert.match(getSection, /"in_production"/);
+  assert.match(getSection, /"ready"/);
+  assert.match(getSection, /\.contains\("metadata_plan", \{ book_os_origin: \{ learning_proposal_id: proposalId \} \}\)/);
+  assert.match(getSection, /requiresExplicitCreate:\s*summary\.productionState === "not_created"/);
+  assert.match(getSection, /requiresExplicitProductionStart:/);
   assert.doesNotMatch(getSection, /\.insert\(/);
   assert.doesNotMatch(getSection, /\.upsert\(/);
   assert.doesNotMatch(getSection, /\.update\(/);
@@ -52,27 +60,30 @@ test("start_production requires matching provenance and approves only a clean pe
   assert.match(postSection, /requires_explicit_generation:\s*true/);
 });
 
-test("Learning Center exposes intake only for approved next-book proposals", () => {
+test("Learning Center exposes approved proposals with resumable Book Engine state", () => {
   assert.match(links, /row\.proposal_type === "next_book"/);
   assert.match(links, /row\.status === "approved"/);
-  assert.match(links, /Open controlled Book Engine intake/);
+  assert.match(links, /BOOK ENGINE STATUS/);
+  assert.match(links, /stateLabel/);
+  assert.match(links, /actionLabel/);
+  assert.match(links, /learning-intake\?proposalId=/);
+  assert.match(links, /\/publishing\/forfatterstudio\?project=/);
   assert.doesNotMatch(links, /method:\s*"POST"/);
 });
 
-test("controlled production UI keeps draft creation separate and runs canon before author generation", () => {
-  assert.match(page, /Create Book Engine draft/);
-  assert.match(page, /Start controlled production/);
-  assert.match(page, /async function createDraftProject/);
-  assert.match(page, /async function startControlledProduction/);
+test("controlled production UI resumes an existing project instead of creating a duplicate", () => {
+  assert.match(page, /body\?\.existingProject\?\.id/);
+  assert.match(page, /body\?\.productionState/);
+  assert.match(page, /setCreatedProjectId\(existingId\)/);
+  assert.match(page, /setProductionStarted\(\["in_production", "ready"\]\.includes\(state\)\)/);
+  assert.match(page, /resumeMessage\(state, body\?\.existingProject\)/);
+  assert.match(page, /Start \/ resume controlled production/);
   assert.match(page, /action:\s*"create_draft"/);
   assert.match(page, /action:\s*"start_production"/);
-  assert.match(page, /body\.production_started !== false \|\| body\.production_start_approved !== false/);
-  assert.match(page, /approved\.production_start_approved !== true \|\| approved\.production_started !== false/);
   assert.match(page, /mode:\s*"generate_seo"/);
   assert.match(page, /mode:\s*"generate_author"/);
   assert.ok(page.indexOf('action: "start_production"') < page.indexOf('mode: "generate_seo"'));
   assert.ok(page.indexOf('mode: "generate_seo"') < page.indexOf('mode: "generate_author"'));
   assert.match(page, /if \(!seoRes\.ok\) throw/);
   assert.match(page, /if \(!authorRes\.ok\) throw/);
-  assert.match(page, /productionStarted \? .*Open started project in Forfatterstudio/s);
 });

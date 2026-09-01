@@ -4,6 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+type ExistingProject = {
+  id: string;
+  title?: string;
+  status?: string;
+  chapter_count?: number;
+  outline_count?: number;
+  generation_state?: string | null;
+  production_progress?: Record<string, unknown>;
+  book_os_origin?: Record<string, unknown>;
+};
+
 type Intake = {
   ok?: boolean;
   proposal?: {
@@ -20,6 +31,8 @@ type Intake = {
   };
   evidence?: Array<{ id: string; evidence_type?: string; evidence?: Record<string, unknown> }>;
   suggestedDraft?: { title?: string; seriesName?: string; brief?: string; canonNotes?: string };
+  existingProject?: ExistingProject | null;
+  productionState?: string;
   safety?: Record<string, unknown>;
   error?: string;
 };
@@ -28,6 +41,15 @@ const LANGUAGES = [
   ["en", "English"], ["no", "Norwegian"], ["es", "Spanish"], ["de", "German"], ["fr", "French"], ["it", "Italian"],
 ];
 const GENRES = [["guide", "Nonfiction / guide"], ["self_development", "Self-development"], ["memoir", "Memoir / biography"], ["children", "Children"], ["fiction", "Fiction"]];
+
+function resumeMessage(state: string, project?: ExistingProject | null) {
+  if (state === "draft_pending") return "Existing traceable draft found. Production is still stopped.";
+  if (state === "start_approved") return "Production start was approved earlier. Resume the controlled sequence from canon/SEO.";
+  if (state === "attention") return "The previous production attempt stopped. Resume the controlled sequence; later steps will not run until the failed step succeeds.";
+  if (state === "ready") return `Existing Book Engine project is publication-ready with ${project?.chapter_count ?? 0} chapters.`;
+  if (state === "in_production") return `Existing Book Engine project is already in production with ${project?.chapter_count ?? 0} chapters.`;
+  return "";
+}
 
 export default function LearningBookEngineIntakePage() {
   const search = useSearchParams();
@@ -55,6 +77,13 @@ export default function LearningBookEngineIntakePage() {
           brief: String(body?.suggestedDraft?.brief || ""),
           canonNotes: String(body?.suggestedDraft?.canonNotes || ""),
         }));
+        const existingId = String(body?.existingProject?.id || "").trim();
+        const state = String(body?.productionState || "not_created");
+        if (existingId) {
+          setCreatedProjectId(existingId);
+          setProductionStarted(["in_production", "ready"].includes(state));
+          setProductionMessage(resumeMessage(state, body?.existingProject));
+        }
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setLoading(false));
@@ -142,10 +171,10 @@ export default function LearningBookEngineIntakePage() {
     <header>
       <p style={{ margin: 0, color: "#1d4ed8", fontWeight: 900 }}>BOOK OS · CONTROLLED BOOK ENGINE INTAKE</p>
       <h1 style={{ margin: "5px 0" }}>Approved learning proposal → draft → controlled production</h1>
-      <p style={{ color: "#475569", maxWidth: 900 }}>This page keeps the approval boundaries separate. First create a traceable Book Engine draft. Then use a second explicit action to approve and start production in the required order: SEO/canon first, then outline and first chapter.</p>
+      <p style={{ color: "#475569", maxWidth: 900 }}>This page keeps the approval boundaries separate and resumes the existing Book Engine state after reload. It never creates a second draft for the same approved proposal.</p>
     </header>
 
-    {loading ? <p>Resolving approved proposal…</p> : null}
+    {loading ? <p>Resolving approved proposal and Book Engine state…</p> : null}
     {error ? <p role="alert" style={{ padding: 12, background: "#fef2f2", border: "1px solid #ef4444", borderRadius: 8 }}>{error}</p> : null}
 
     {intake?.proposal ? <section style={{ ...card, marginTop: 16, background: "#eff6ff", borderColor: "#93c5fd" }}>
@@ -153,6 +182,7 @@ export default function LearningBookEngineIntakePage() {
       <p><b>{intake.proposal.series_name ? `${intake.proposal.series_name}: ` : ""}{intake.proposal.proposed_title}</b></p>
       <p style={{ fontSize: 13 }}>{intake.proposal.rationale}</p>
       <p style={{ fontSize: 12, color: "#475569" }}>Proposal {intake.proposal.id} · {intake.proposal.evidence_count ?? 0} evidence points · {intake.proposal.evidence_level || "unknown"}</p>
+      {intake.existingProject ? <p style={{ fontSize: 12, fontWeight: 800, color: "#0f766e" }}>Book Engine: {intake.productionState} · {intake.existingProject.title || intake.existingProject.id}</p> : null}
       <details><summary style={{ cursor: "pointer", fontWeight: 800 }}>Evidence snapshot</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: 11 }}>{JSON.stringify(intake.proposal.evidence_snapshot || {}, null, 2)}</pre></details>
     </section> : null}
 
@@ -170,16 +200,16 @@ export default function LearningBookEngineIntakePage() {
       <label style={{ display: "block", marginTop: 10 }}>Book promise / brief<textarea value={form.brief} onChange={(e) => setForm({ ...form, brief: e.target.value })} style={{ display: "block", width: "100%", minHeight: 100, padding: 9 }} /></label>
       <label style={{ display: "block", marginTop: 10 }}>Canon / provenance notes<textarea value={form.canonNotes} onChange={(e) => setForm({ ...form, canonNotes: e.target.value })} style={{ display: "block", width: "100%", minHeight: 90, padding: 9 }} /></label>
       <button disabled={!ready} onClick={createDraftProject} style={{ marginTop: 12, padding: "10px 14px", border: 0, borderRadius: 8, background: ready ? "#1d4ed8" : "#94a3b8", color: "white", fontWeight: 900 }}>{busy ? "Creating draft…" : "Create Book Engine draft"}</button>
-      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 1:</b> this creates one pending draft with structured proposal provenance. It does not start SEO, canon, outline, writing, publication or distribution.</p>
+      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 1:</b> this creates one pending draft with structured proposal provenance. It does not start production.</p>
     </section> : null}
 
     {createdProjectId ? <section style={{ ...card, marginTop: 16, background: productionStarted ? "#ecfdf5" : "#fffbeb", borderColor: productionStarted ? "#86efac" : "#fbbf24" }}>
-      <h2 style={{ marginTop: 0 }}>{productionStarted ? "Controlled production started" : "Draft created — production still stopped"}</h2>
-      <p>{productionMessage || "The approved proposal has produced one traceable Book Engine draft."}</p>
+      <h2 style={{ marginTop: 0 }}>{productionStarted ? "Book Engine production is active" : "Existing draft — controlled production can be resumed"}</h2>
+      <p>{productionMessage || "The approved proposal has one traceable Book Engine project."}</p>
       {!productionStarted ? <>
-        <button disabled={busy} onClick={startControlledProduction} style={{ padding: "10px 14px", border: 0, borderRadius: 8, background: busy ? "#94a3b8" : "#166534", color: "white", fontWeight: 900 }}>{busy ? "Running controlled start…" : "Start controlled production"}</button>
-        <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 2:</b> this separate action revalidates proposal provenance, approves production start, then runs SEO/canon before outline and first chapter. If a step fails, later steps are not started.</p>
-      </> : <Link href={`/publishing/forfatterstudio?project=${encodeURIComponent(createdProjectId)}`} style={{ fontWeight: 900 }}>Open started project in Forfatterstudio</Link>}
+        <button disabled={busy} onClick={startControlledProduction} style={{ padding: "10px 14px", border: 0, borderRadius: 8, background: busy ? "#94a3b8" : "#166534", color: "white", fontWeight: 900 }}>{busy ? "Running controlled start…" : "Start / resume controlled production"}</button>
+        <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Boundary 2:</b> the sequence remains start approval → SEO/canon → outline/first chapter. Existing approval is reused idempotently after reload or a failed attempt.</p>
+      </> : <Link href={`/publishing/forfatterstudio?project=${encodeURIComponent(createdProjectId)}`} style={{ fontWeight: 900 }}>Open Book Engine project in Forfatterstudio</Link>}
     </section> : null}
 
     <div style={{ marginTop: 16 }}><Link href="/book-growth/learning">Back to Learning Proposal Center</Link></div>
