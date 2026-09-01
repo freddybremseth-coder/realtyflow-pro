@@ -21,13 +21,18 @@ const SPINE_PER_PAGE_IN: Record<PrintPaper, number> = {
   white: 0.002252,
 };
 
+function rounded(value: number, places = 6) {
+  const factor = 10 ** places;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
 export function normalizePrintPageCount(pageCount: number) {
   const count = Math.max(1, Math.trunc(Number(pageCount || 0)));
   return count % 2 === 0 ? count : count + 1;
 }
 
 export function kdpSpineWidthIn(pageCount: number, paper: PrintPaper = "cream") {
-  return normalizePrintPageCount(pageCount) * SPINE_PER_PAGE_IN[paper];
+  return rounded(normalizePrintPageCount(pageCount) * SPINE_PER_PAGE_IN[paper]);
 }
 
 export function kdpFullCoverDimensionsIn(
@@ -39,13 +44,13 @@ export function kdpFullCoverDimensionsIn(
   return {
     pageCount: pages,
     spineWidthIn,
-    widthIn: profile.trimWidthIn * 2 + spineWidthIn + profile.bleedIn * 2,
-    heightIn: profile.trimHeightIn + profile.bleedIn * 2,
+    widthIn: rounded(profile.trimWidthIn * 2 + spineWidthIn + profile.bleedIn * 2),
+    heightIn: rounded(profile.trimHeightIn + profile.bleedIn * 2),
   };
 }
 
 export function inchesToPoints(value: number) {
-  return value * 72;
+  return rounded(value * 72);
 }
 
 export function printProfileSummary(pageCount: number, profile: PrintProductionProfile = DEFAULT_KDP_PRINT_PROFILE) {
