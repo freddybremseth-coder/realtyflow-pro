@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { publicationPackageGateSummary, validatePublicationPackageManifest } from "@/lib/publishing/publication-package";
+import { qualityCenterHref } from "@/lib/publishing/book-os-quality-center-link";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
@@ -53,14 +54,20 @@ export async function POST(request: NextRequest) {
   });
   if (error) return NextResponse.json({ error: error.message }, { status: unavailable(error.message) ? 503 : 409 });
 
+  const result = Array.isArray(data) ? data[0] : data;
+  const next = qualityCenterHref({
+    editionId: result && typeof result === "object" ? String((result as any).edition_id || "") : "",
+    revisionId: result && typeof result === "object" ? String((result as any).revision_id || "") : "",
+  });
+
   return NextResponse.json({
     ok: true,
     action,
-    result: Array.isArray(data) ? data[0] : data,
+    result,
     warnings: validation.warnings,
     gates: gateSummary,
     downstream: {
-      next: "/book-growth/quality-center",
+      next,
       autoApproved: false,
       autoPublished: false,
       note: "Package ingest registers production output; all existing Book OS approval and release gates remain mandatory.",

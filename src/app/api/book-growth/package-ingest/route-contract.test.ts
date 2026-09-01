@@ -20,8 +20,10 @@ test("package ingest delegates mutation to the controlled database function", ()
   assert.match(source, /p_actor/);
 });
 
-test("package ingest does not bypass downstream approvals", () => {
-  assert.match(source, /next: "\/book-growth\/quality-center"/);
+test("package ingest deep-links the exact revision without bypassing downstream approvals", () => {
+  assert.match(source, /qualityCenterHref/);
+  assert.match(source, /edition_id/);
+  assert.match(source, /revision_id/);
   assert.match(source, /autoApproved: false/);
   assert.match(source, /autoPublished: false/);
   assert.doesNotMatch(source, /publishing_decide_launch_campaign/);
