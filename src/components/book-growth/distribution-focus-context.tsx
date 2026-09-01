@@ -11,6 +11,10 @@ type FocusResult = {
   project?: { id: string; title?: string; language?: string; status?: string; approval?: { approved?: boolean; approvedAt?: string | null; approvedBy?: string | null } } | null;
   revisionMatches?: boolean;
   distributionReady?: boolean;
+  publications?: Array<{ id: string; channel?: string; marketplace?: string; status?: string; external_id?: string | null; external_url?: string | null }>;
+  publishedPublications?: Array<{ id: string; channel?: string; marketplace?: string; status?: string; external_id?: string | null; external_url?: string | null }>;
+  hasPublishedDistribution?: boolean;
+  salesEvidenceHref?: string | null;
   blocking?: string[];
   next?: string;
   error?: string;
@@ -39,6 +43,7 @@ export function DistributionFocusContext() {
 
   if (!editionId) return null;
   const ready = Boolean(result?.distributionReady && result?.revisionMatches);
+  const publishedCount = result?.publishedPublications?.length ?? 0;
 
   return <div style={{ maxWidth: 1500, margin: "16px auto 0", padding: "0 24px", fontFamily: "system-ui, sans-serif" }}>
     <section style={{ border: `2px solid ${ready ? "#166534" : "#b45309"}`, borderRadius: 12, background: ready ? "#f0fdf4" : "#fffbeb", padding: 14 }}>
@@ -50,15 +55,17 @@ export function DistributionFocusContext() {
           {result?.revision?.revision_number ? ` · Revision ${result.revision.revision_number}` : ""}
           {result?.project?.title ? ` · Canonical project: ${result.project.title}` : ""}
         </p>
-        <p style={{ margin: "8px 0 0", fontSize: 13 }}><b>Canonical revision:</b> {result?.revisionMatches ? "Yes" : "No"} · <b>Finally approved for Distribution:</b> {result?.distributionReady ? "Yes" : "No"}</p>
+        <p style={{ margin: "8px 0 0", fontSize: 13 }}><b>Canonical revision:</b> {result?.revisionMatches ? "Yes" : "No"} · <b>Finally approved for Distribution:</b> {result?.distributionReady ? "Yes" : "No"} · <b>Confirmed published channels:</b> {publishedCount}</p>
         {result?.project?.approval?.approvedAt ? <p style={{ margin: "5px 0 0", fontSize: 12 }}>Final approval: {result.project.approval.approvedBy || "owner"} · {new Date(result.project.approval.approvedAt).toLocaleString("nb-NO")}</p> : null}
+        {publishedCount > 0 ? <p style={{ margin: "7px 0 0", fontSize: 12 }}>{result?.publishedPublications?.map((row) => `${row.channel || "channel"}${row.marketplace ? ` · ${row.marketplace}` : ""}`).join(" · ")}</p> : null}
         {Array.isArray(result?.blocking) && result.blocking.length ? <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>{result.blocking.map((item) => <li key={item}>{item}</li>)}</ul> : null}
         <p style={{ margin: "8px 0 0", fontSize: 13 }}>{result?.next}</p>
-        {ready ? <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 800 }}>Canonical project resolved above. In the Distribution selector, use this exact project. Rights confirmation, AI disclosure, channel selection, prepare and approval remain explicit actions.</p> : null}
+        {ready && !result?.hasPublishedDistribution ? <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 800 }}>Canonical project resolved above. In the Distribution selector, use this exact project. Rights confirmation, AI disclosure, channel selection, prepare and approval remain explicit actions.</p> : null}
       </>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
         <Link href="/book-growth/distribution" style={{ fontWeight: 800 }}>Clear focused distribution context</Link>
         <Link href={`/book-growth/launch-factory?editionId=${encodeURIComponent(editionId)}${revisionId ? `&revisionId=${encodeURIComponent(revisionId)}` : ""}`} style={{ fontWeight: 800 }}>Back to this revision in Launch Factory</Link>
+        {result?.salesEvidenceHref ? <Link href={result.salesEvidenceHref} style={{ fontWeight: 900, color: "#0f766e" }}>Open this published revision in Sales Evidence →</Link> : null}
         {result?.project?.id ? <code style={{ fontSize: 11, overflowWrap: "anywhere" }}>canonical project: {result.project.id}</code> : null}
       </div>
     </section>
