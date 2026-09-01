@@ -53,6 +53,14 @@ test("verified manifest assets preserve noncanonical secondary covers", () => {
   assert.equal(asset.canonical, false);
 });
 
+test("verified manifest assets preserve the production revision number", () => {
+  const result = validateArtifactUploadTicketInput({ ...input(), revisionNumber: 3 });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const asset = verifiedManifestAsset(result.value, "book-os/test/r3/book.epub");
+  assert.equal(asset.version, 3);
+});
+
 test("sha256Buffer returns stable sha256", () => {
   assert.equal(sha256Buffer(new TextEncoder().encode("book-os")), "66f84cfdc7849268ec37194bf199ea97f69c3e3d3cb72226347bd3ad86d157e0");
 });
