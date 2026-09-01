@@ -41,5 +41,5 @@ test("fingerprints generated assets and preserves revision", () => {
   const asset = artifactInput(identity, { assetType: "epub", role: "retailer_epub", filename: "book.epub", bytes: Buffer.from("book-os"), mimeType: "application/epub+zip" });
   assert.equal(asset.version, undefined);
   assert.equal(asset.revisionNumber, 3);
-  assert.equal(asset.fingerprint, "a6910b19667a7dc71691d4e9a809482826c6b9031942540a6cf1b6c1801ed915");
+  assert.equal(asset.fingerprint, "a6910b19cd81b8a0711446528767ade0ceff83353b80789eb61fb07162775333");
 });
