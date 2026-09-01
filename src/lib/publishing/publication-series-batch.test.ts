@@ -54,9 +54,11 @@ test("prepares child publication packages without ingesting", async () => {
 });
 
 test("rejects a child package checksum mismatch", async () => {
-  await assert.rejects(() => prepareSeriesBatch(await batch((manifest) => { manifest.books[0].packageFingerprint = "b".repeat(64); })), /checksum mismatch/);
+  const bytes = await batch((manifest) => { manifest.books[0].packageFingerprint = "b".repeat(64); });
+  await assert.rejects(() => prepareSeriesBatch(bytes), /checksum mismatch/);
 });
 
 test("rejects duplicate works in a series batch", async () => {
-  await assert.rejects(() => prepareSeriesBatch(await batch((manifest) => { manifest.books[1].bookKey = "book-one"; })), /Duplicate workKey/);
+  const bytes = await batch((manifest) => { manifest.books[1].bookKey = "book-one"; });
+  await assert.rejects(() => prepareSeriesBatch(bytes), /Duplicate workKey/);
 });
