@@ -52,12 +52,15 @@ export default function ProductionHandoffPage() {
       const json = await res.json().catch(() => ({}));
       setResult({ ok: res.ok, status: res.status, ...json });
       if (!res.ok) throw new Error(json.error || `${action} failed (${res.status})`);
-      setStatus(action === "preview" ? "Gate preview passed. No revision was ingested." : "Revision registered in review. Continue in Quality Center; nothing has been auto-approved or auto-published.");
+      setStatus(action === "preview" ? "Gate preview passed. No revision was ingested." : "Revision registered in review. The Quality Center link now opens this exact edition and revision; nothing has been auto-approved or auto-published.");
     } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
 
   const generatedEntries = handoff?.generated && typeof handoff.generated === "object" ? Object.entries(handoff.generated) : [];
+  const qualityCenterLink = typeof result?.downstream?.next === "string" && result.downstream.next.startsWith("/book-growth/quality-center")
+    ? result.downstream.next
+    : "/book-growth/quality-center";
 
   return <main style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px 72px", fontFamily: "system-ui, sans-serif" }}>
     <header style={{ marginBottom: 22 }}>
@@ -118,7 +121,7 @@ export default function ProductionHandoffPage() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
         <button disabled={busy} onClick={() => packageAction("preview")} style={{ padding: "9px 14px", fontWeight: 900 }}>Preview Book OS gates</button>
         <button disabled={busy} onClick={() => packageAction("ingest")} style={{ padding: "9px 14px", fontWeight: 900, background: "#14532d", color: "white", borderRadius: 8 }}>Ingest into review</button>
-        <a href="/book-growth/quality-center" style={{ padding: "9px 14px", fontWeight: 900 }}>Open Quality Center</a>
+        <a href={qualityCenterLink} style={{ padding: "9px 14px", fontWeight: 900 }}>{result?.action === "ingest" ? "Open this revision in Quality Center" : "Open Quality Center"}</a>
       </div>
       <details style={{ marginTop: 14 }}><summary style={{ cursor: "pointer", fontWeight: 800 }}>Advanced manifest</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 11, background: "#f8fafc", padding: 12, borderRadius: 8 }}>{JSON.stringify(handoff.manifest, null, 2)}</pre></details>
     </section> : null}
