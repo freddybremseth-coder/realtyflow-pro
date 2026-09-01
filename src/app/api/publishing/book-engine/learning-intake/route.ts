@@ -18,6 +18,35 @@ async function loadApprovedNextBookProposal(sb: NonNullable<ReturnType<typeof ge
   return { proposal, response: null };
 }
 
+function summarizeProject(project: Record<string, any> | null) {
+  if (!project) return { existingProject: null, productionState: "not_created" };
+  const metadata = (project.metadata_plan || {}) as Record<string, any>;
+  const origin = (metadata.book_os_origin || {}) as Record<string, any>;
+  const progress = (metadata.production_progress || {}) as Record<string, any>;
+  const chapterCount = Array.isArray(project.chapter_drafts) ? project.chapter_drafts.length : 0;
+  const outlineCount = Array.isArray(project.outline_plan?.toc) ? project.outline_plan.toc.length : 0;
+  let productionState = "draft_pending";
+  if (String(project.status || "") === "ready_for_export") productionState = "ready";
+  else if (chapterCount > 0 || outlineCount > 0) productionState = "in_production";
+  else if (String(project.status || "") === "generation_failed" || String(progress.status || "") === "failed") productionState = "attention";
+  else if (origin.production_start_approved_at || String(progress.status || "") === "approved") productionState = "start_approved";
+  else if (String(progress.status || "") === "pending") productionState = "draft_pending";
+  return {
+    productionState,
+    existingProject: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      updated_at: project.updated_at,
+      chapter_count: chapterCount,
+      outline_count: outlineCount,
+      generation_state: metadata.generation_state || null,
+      production_progress: progress,
+      book_os_origin: origin,
+    },
+  };
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -31,16 +60,26 @@ export async function GET(request: NextRequest) {
   const loaded = await loadApprovedNextBookProposal(sb, proposalId);
   if (!loaded.proposal) return loaded.response!;
   const proposal = loaded.proposal;
-  const { data: evidence, error: evidenceError } = await sb.from("publishing_learning_proposal_evidence")
-    .select("id,proposal_id,evidence_type,evidence,created_at")
-    .eq("proposal_id", proposalId)
-    .order("created_at", { ascending: true });
-  if (evidenceError) return NextResponse.json({ error: evidenceError.message }, { status: 500 });
+  const [evidenceRes, projectRes] = await Promise.all([
+    sb.from("publishing_learning_proposal_evidence")
+      .select("id,proposal_id,evidence_type,evidence,created_at")
+      .eq("proposal_id", proposalId)
+      .order("created_at", { ascending: true }),
+    sb.from("publishing_book_projects")
+      .select("id,title,status,updated_at,metadata_plan,outline_plan,chapter_drafts")
+      .contains("metadata_plan", { book_os_origin: { learning_proposal_id: proposalId } })
+      .order("updated_at", { ascending: false })
+      .limit(1),
+  ]);
+  const error = evidenceRes.error || projectRes.error;
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const summary = summarizeProject((projectRes.data?.[0] as Record<string, any> | undefined) || null);
 
   return NextResponse.json({
     ok: true,
     proposal,
-    evidence: evidence ?? [],
+    evidence: evidenceRes.data ?? [],
+    ...summary,
     suggestedDraft: {
       title: proposal.proposed_title || "",
       seriesName: proposal.series_name || "",
@@ -49,12 +88,12 @@ export async function GET(request: NextRequest) {
     },
     safety: {
       readOnlyResolver: true,
-      projectCreated: false,
-      seoStarted: false,
-      canonStarted: false,
-      writingStarted: false,
-      requiresExplicitCreate: true,
-      requiresExplicitProductionStart: true,
+      projectCreated: Boolean(summary.existingProject),
+      seoStarted: ["in_production", "ready"].includes(summary.productionState),
+      canonStarted: ["in_production", "ready"].includes(summary.productionState),
+      writingStarted: ["in_production", "ready"].includes(summary.productionState),
+      requiresExplicitCreate: summary.productionState === "not_created",
+      requiresExplicitProductionStart: ["draft_pending", "start_approved", "attention"].includes(summary.productionState),
     },
   });
 }
