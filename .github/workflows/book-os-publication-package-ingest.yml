@@ -5,6 +5,7 @@ on:
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
+      - "src/app/(content)/book-growth/production-handoff/**"
       - "src/app/(content)/book-growth/package-ingest/**"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
@@ -33,9 +34,11 @@ on:
       - "feat/book-os-production-handoff-builder"
       - "feat/book-os-print-production-builder"
       - "feat/book-os-print-runtime-smoke"
+      - "feat/book-os-production-handoff-ui-sync"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
+      - "src/app/(content)/book-growth/production-handoff/**"
       - "src/app/(content)/book-growth/package-ingest/**"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
