@@ -7,6 +7,9 @@ on:
       - "src/app/api/book-growth/distribution/focus/**"
       - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/book-growth/learning/**"
+      - "src/app/api/publishing/book-engine/route.ts"
+      - "src/app/api/publishing/book-engine/core.ts"
+      - "src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts"
       - "src/app/api/publishing/book-engine/production-handoff/**"
       - "src/app/api/publishing/book-engine/learning-intake/**"
       - "src/app/(business)/publishing/forfatterstudio/learning-intake/**"
@@ -77,6 +80,9 @@ on:
       - "src/app/api/book-growth/distribution/focus/**"
       - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/book-growth/learning/**"
+      - "src/app/api/publishing/book-engine/route.ts"
+      - "src/app/api/publishing/book-engine/core.ts"
+      - "src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts"
       - "src/app/api/publishing/book-engine/production-handoff/**"
       - "src/app/api/publishing/book-engine/learning-intake/**"
       - "src/app/(business)/publishing/forfatterstudio/learning-intake/**"
@@ -154,5 +160,6 @@ jobs:
           src/app/api/book-growth/distribution/focus/route-contract.test.ts
           src/app/api/book-growth/experiments/focus/route-contract.test.ts
           src/app/api/book-growth/experiments/focus/learning-handoff-contract.test.ts
+          src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts
           src/app/api/publishing/book-engine/learning-intake/route-contract.test.ts
           src/app/api/publishing/book-engine/production-handoff/route-contract.test.ts
