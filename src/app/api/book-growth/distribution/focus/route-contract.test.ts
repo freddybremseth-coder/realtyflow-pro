@@ -31,7 +31,11 @@ test("Distribution focus is admin-only, read-only and resolves canonical project
   assert.match(source, /publicationApproval/);
   assert.doesNotMatch(source, /export async function POST/);
   assert.doesNotMatch(source, /publishing_distribution_jobs/);
-  assert.doesNotMatch(source, /publishing_distribution_publications.*(?:insert|upsert|update)/s);
+  assert.doesNotMatch(source, /\.insert\s*\(/);
+  assert.doesNotMatch(source, /\.upsert\s*\(/);
+  assert.doesNotMatch(source, /\.update\s*\(/);
+  assert.doesNotMatch(source, /\.delete\s*\(/);
+  assert.doesNotMatch(source, /\.rpc\s*\(/);
 });
 
 test("Launch context exposes Distribution only for an approved release", () => {
