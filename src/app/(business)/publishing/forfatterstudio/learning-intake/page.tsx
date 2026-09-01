@@ -58,31 +58,30 @@ export default function LearningBookEngineIntakePage() {
       .finally(() => setLoading(false));
   }, [proposalId]);
 
-  const ready = useMemo(() => Boolean(form.title.trim() && form.brief.trim() && !busy && !createdProjectId), [form, busy, createdProjectId]);
+  const ready = useMemo(() => Boolean(form.title.trim() && form.brief.trim() && proposalId && !busy && !createdProjectId), [form, proposalId, busy, createdProjectId]);
 
   async function createDraftProject() {
     if (!ready) return;
     setBusy(true); setError("");
     try {
-      const res = await fetch("/api/publishing/book-engine", {
+      const res = await fetch("/api/publishing/book-engine/learning-intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          proposalId,
           title: form.title.trim(),
           genre: form.genre,
           language: form.language,
-          audience: form.audience.trim() || undefined,
-          positioning: form.brief.trim(),
-          series_name: form.seriesName.trim() || undefined,
-          consistency_notes: form.canonNotes.trim() || undefined,
-          niche: "",
-          target_pages: Number(form.pages || 180),
-          target_words: Math.max(12000, Math.round(Number(form.pages || 180) * 190)),
-          source_mode: "from_brief",
+          audience: form.audience.trim(),
+          brief: form.brief.trim(),
+          seriesName: form.seriesName.trim(),
+          canonNotes: form.canonNotes.trim(),
+          pages: Number(form.pages || 180),
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.project?.id) throw new Error(body?.error || "Could not create Book Engine draft project");
+      if (body.production_started !== false) throw new Error("Book Engine safety contract was not confirmed");
       setCreatedProjectId(String(body.project.id));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -96,7 +95,7 @@ export default function LearningBookEngineIntakePage() {
     <header>
       <p style={{ margin: 0, color: "#1d4ed8", fontWeight: 900 }}>BOOK OS · CONTROLLED BOOK ENGINE INTAKE</p>
       <h1 style={{ margin: "5px 0" }}>Approved learning proposal → draft project</h1>
-      <p style={{ color: "#475569", maxWidth: 900 }}>This page can prepare a Book Engine draft from an explicitly approved next-book proposal. Nothing is created until you press the create button. Creating the draft does not run SEO, lock canon, build the outline or start writing.</p>
+      <p style={{ color: "#475569", maxWidth: 900 }}>This page can prepare a Book Engine draft from an explicitly approved next-book proposal. Nothing is created until you press the create button. Creating the draft records structured Book OS provenance and does not run SEO, lock canon, build the outline or start writing.</p>
     </header>
 
     {loading ? <p>Resolving approved proposal…</p> : null}
@@ -124,12 +123,12 @@ export default function LearningBookEngineIntakePage() {
       <label style={{ display: "block", marginTop: 10 }}>Book promise / brief<textarea value={form.brief} onChange={(e) => setForm({ ...form, brief: e.target.value })} style={{ display: "block", width: "100%", minHeight: 100, padding: 9 }} /></label>
       <label style={{ display: "block", marginTop: 10 }}>Canon / provenance notes<textarea value={form.canonNotes} onChange={(e) => setForm({ ...form, canonNotes: e.target.value })} style={{ display: "block", width: "100%", minHeight: 90, padding: 9 }} /></label>
       <button disabled={!ready} onClick={createDraftProject} style={{ marginTop: 12, padding: "10px 14px", border: 0, borderRadius: 8, background: ready ? "#1d4ed8" : "#94a3b8", color: "white", fontWeight: 900 }}>{busy ? "Creating draft…" : "Create Book Engine draft"}</button>
-      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Fixed boundary:</b> this button creates only the project record. It does not call generate_seo, generate_author or any publication/distribution action.</p>
+      <p style={{ marginBottom: 0, fontSize: 12, color: "#92400e" }}><b>Fixed boundary:</b> this button creates one draft with structured proposal provenance. It does not start SEO, canon, outline, writing, publication or distribution.</p>
     </section> : null}
 
     {createdProjectId ? <section style={{ ...card, marginTop: 16, background: "#ecfdf5", borderColor: "#86efac" }}>
       <h2 style={{ marginTop: 0 }}>Draft created</h2>
-      <p>The proposal has now produced a Book Engine draft project. No writing workflow was started.</p>
+      <p>The approved proposal has produced one traceable Book Engine draft. Production remains stopped until an explicit action in Forfatterstudio.</p>
       <Link href={`/publishing/forfatterstudio?project=${encodeURIComponent(createdProjectId)}`} style={{ fontWeight: 900 }}>Open draft in Forfatterstudio</Link>
     </section> : null}
 
