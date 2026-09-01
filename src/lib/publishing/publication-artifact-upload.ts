@@ -22,6 +22,7 @@ export type ArtifactUploadTicketInput = {
   fingerprint: string;
   size: number;
   mimeType?: string;
+  canonical: boolean;
 };
 
 function clean(value: unknown) {
@@ -64,6 +65,7 @@ export function validateArtifactUploadTicketInput(input: unknown):
   const size = Number(body.size);
   const revisionNumber = Math.trunc(Number(body.revisionNumber || 1));
   const mimeType = clean(body.mimeType) || undefined;
+  const canonical = body.canonical !== false;
 
   if (!SAFE_KEY.test(workKey)) errors.push("workKey has an invalid format");
   if (!SAFE_KEY.test(editionKey)) errors.push("editionKey has an invalid format");
@@ -75,7 +77,7 @@ export function validateArtifactUploadTicketInput(input: unknown):
   if (!safeFilename(filename)) errors.push("filename extension is unsupported");
 
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { workKey, editionKey, revisionNumber, assetType, role, filename, fingerprint, size, mimeType } };
+  return { ok: true, value: { workKey, editionKey, revisionNumber, assetType, role, filename, fingerprint, size, mimeType, canonical } };
 }
 
 export function publicationArtifactStoragePath(input: ArtifactUploadTicketInput) {
@@ -103,9 +105,9 @@ export function verifiedManifestAsset(input: ArtifactUploadTicketInput, storageP
     storageBucket: PUBLICATION_ASSET_BUCKET,
     storagePath,
     fingerprint: input.fingerprint,
-    version: input.revisionNumber,
+    version: 1,
     verified: true,
-    canonical: true,
+    canonical: input.canonical,
     metadata: {
       sourceFilename: input.filename,
       size: input.size,
