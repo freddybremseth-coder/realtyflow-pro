@@ -110,7 +110,26 @@ export function PublicationArtifactUploader({
       if (!finalizeResponse.ok || !finalized.asset) throw new Error(finalized.error || `Verification failed (${finalizeResponse.status})`);
 
       onVerifiedAsset(finalized.asset as VerifiedAsset);
-      setStatus(`Verified and added to manifest: ${finalized.asset.role}`);
+
+      if (input.assetType === "package_zip" && input.role === "complete_publication_package") {
+        setStatus("Package verified. Expanding and verifying publication assets…");
+        const expandResponse = await fetch("/api/book-growth/package-ingest/expand-package", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...input, storagePath: ticket.storagePath }),
+        });
+        const expanded = await expandResponse.json().catch(() => ({}));
+        if (!expandResponse.ok || !Array.isArray(expanded.assets)) {
+          throw new Error(expanded.error || `Package expansion failed (${expandResponse.status})`);
+        }
+        for (const asset of expanded.assets) onVerifiedAsset(asset as VerifiedAsset);
+        const ignored = Array.isArray(expanded.ignoredEntries) && expanded.ignoredEntries.length
+          ? ` Ignored helper files: ${expanded.ignoredEntries.length}.`
+          : "";
+        setStatus(`Package verified and expanded: ${expanded.assets.length} publication assets added.${ignored}`);
+      } else {
+        setStatus(`Verified and added to manifest: ${finalized.asset.role}`);
+      }
       setFile(null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -122,7 +141,7 @@ export function PublicationArtifactUploader({
   return <section style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18, marginBottom: 18 }}>
     <h2 style={{ marginTop: 0 }}>Artifact Upload</h2>
     <p style={{ lineHeight: 1.5 }}>
-      Files go directly from your browser to the private <code>publishing-assets</code> bucket using a short-lived signed token. Book OS then downloads the stored object server-side and verifies its SHA-256 fingerprint before adding it to the package manifest.
+      Upload a complete publication ZIP to assemble the package automatically, or upload individual repair assets. Files go directly from your browser to the private <code>publishing-assets</code> bucket using a short-lived signed token. Book OS verifies stored bytes with SHA-256 before any asset is added to the manifest.
     </p>
     {!identity ? <p style={{ fontWeight: 800, color: "#b45309" }}>Enter a valid manifest with workKey and editionKey first.</p> : <div style={{ display: "grid", gap: 10 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -144,7 +163,7 @@ export function PublicationArtifactUploader({
       </label>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button disabled={!ready || busy} onClick={upload} style={{ padding: "9px 14px", fontWeight: 900, background: "#0f172a", color: "white", borderRadius: 8 }}>
-          {busy ? "Uploading / verifying…" : "Upload and verify"}
+          {busy ? "Uploading / verifying…" : assetType === "package_zip" ? "Upload, verify and expand package" : "Upload and verify"}
         </button>
         {file ? <span style={{ fontSize: 12 }}>{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span> : null}
       </div>
