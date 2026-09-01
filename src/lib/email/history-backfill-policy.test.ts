@@ -16,6 +16,7 @@ test("email history backfill defaults to bounded preview with sent included", ()
     maxMessages: 250,
     includeSent: true,
     mode: "preview",
+    previewFingerprint: undefined,
   });
 });
 
@@ -31,17 +32,27 @@ test("email history backfill clamps requested history and message volume", () =>
   assert.equal(result.request?.includeSent, false);
 });
 
-test("email history backfill apply requires explicit confirmation", () => {
+test("email history backfill apply requires explicit confirmation and preview fingerprint", () => {
   const rejected = resolveEmailHistoryBackfillRequest({ brand_id: "soleada", mode: "apply" });
   assert.equal(rejected.ok, false);
+
+  const missingFingerprint = resolveEmailHistoryBackfillRequest({
+    brand_id: "soleada",
+    mode: "apply",
+    confirm: EMAIL_HISTORY_BACKFILL_CONFIRMATION,
+  });
+  assert.equal(missingFingerprint.ok, false);
+  assert.match(String(missingFingerprint.error), /preview_fingerprint/);
 
   const accepted = resolveEmailHistoryBackfillRequest({
     brand_id: "soleada",
     mode: "apply",
     confirm: EMAIL_HISTORY_BACKFILL_CONFIRMATION,
+    preview_fingerprint: "preview-123",
   });
   assert.equal(accepted.ok, true);
   assert.equal(accepted.request?.mode, "apply");
+  assert.equal(accepted.request?.previewFingerprint, "preview-123");
 });
 
 test("email history backfill requires an explicit brand", () => {

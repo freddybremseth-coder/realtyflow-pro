@@ -4,6 +4,13 @@ import { createServerClient } from "@/lib/supabase/server";
 import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill-policy";
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
+import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
+import {
+  EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
+  EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
+  buildEmailHistoryBackfillPreviewCookieValue,
+  readEmailHistoryBackfillPreviewCookieValue,
+} from "@/lib/email/history-backfill-preview-cookie";
 import { decryptPassword } from "@/services/email/crypto";
 import {
   fetchHistoricalMailboxEmails,
@@ -18,10 +25,20 @@ function stableMessageId(message: HistoricalFetchedEmail) {
   return message.messageId && !message.messageId.startsWith("gen-") ? message.messageId : null;
 }
 
+function clearPreviewCookie(response: NextResponse) {
+  response.cookies.set(EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+    path: "/api/email/inbox/backfill",
+  });
+}
+
 /**
  * POST /api/email/inbox/backfill
  * Controlled historical mailbox import. Preview is the default and performs no writes.
- * Apply requires the explicit confirmation phrase enforced by history-backfill-policy.
+ * Apply requires the explicit confirmation phrase and a fingerprint from a matching preview.
  * Historical messages are stored read + archived so they can be reviewed by Nexus
  * without flooding the operational unread inbox. This route never sends email and
  * never advances brand_email_configs.last_fetched_at.
@@ -31,8 +48,18 @@ export async function POST(req: NextRequest) {
   if (adminError) return adminError;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const policy = resolveEmailHistoryBackfillRequest(body as Record<string, unknown>);
+    const parsedBody = await req.json().catch(() => ({}));
+    const body: Record<string, unknown> = { ...(parsedBody as Record<string, unknown>) };
+    const requestedBrandId = String(body.brand_id || "").trim();
+    if (body.mode === "apply" && !body.preview_fingerprint && requestedBrandId) {
+      const cookieFingerprint = readEmailHistoryBackfillPreviewCookieValue(
+        req.cookies.get(EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE)?.value,
+        requestedBrandId
+      );
+      if (cookieFingerprint) body.preview_fingerprint = cookieFingerprint;
+    }
+
+    const policy = resolveEmailHistoryBackfillRequest(body);
     if (!policy.ok || !policy.request) {
       return NextResponse.json({ error: policy.error || "Invalid backfill request" }, { status: 400 });
     }
@@ -80,6 +107,8 @@ export async function POST(req: NextRequest) {
     let duplicates = 0;
     let skippedMissingMessageId = 0;
     let inserted = 0;
+    const candidateMessageIds: string[] = [];
+    const pendingMessages: Array<{ message: HistoricalFetchedEmail; accountIndex: number }> = [];
     const accountResults: Array<{
       email: string;
       fetched: number;
@@ -137,30 +166,11 @@ export async function POST(req: NextRequest) {
           else newMessages.push(message);
         }
 
-        let accountInserted = 0;
-        if (request.mode === "apply") {
-          for (const message of newMessages) {
-            const messageId = stableMessageId(message)!;
-            const { error: insertError } = await supabase.from("email_messages").insert({
-              brand_id: request.brandId,
-              message_id: messageId,
-              thread_id: message.threadId || messageId,
-              direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
-              from_address: message.from.address,
-              from_name: message.from.name || null,
-              to_addresses: message.to.map((address) => address.address),
-              cc_addresses: message.cc?.map((address) => address.address) || null,
-              subject: message.subject,
-              body_text: message.bodyText || null,
-              body_html: message.bodyHtml || null,
-              received_at: message.date.toISOString(),
-              is_read: true,
-              is_archived: true,
-            });
-            if (insertError) throw new Error(insertError.message);
-            existingIds.add(messageId);
-            accountInserted++;
-          }
+        const accountIndex = accountResults.length;
+        for (const message of newMessages) {
+          const messageId = stableMessageId(message)!;
+          candidateMessageIds.push(messageId);
+          pendingMessages.push({ message, accountIndex });
         }
 
         const accountFetched = combined.length;
@@ -168,14 +178,13 @@ export async function POST(req: NextRequest) {
         candidates += newMessages.length;
         duplicates += accountDuplicates;
         skippedMissingMessageId += accountSkippedMissing;
-        inserted += accountInserted;
         accountResults.push({
           email: config.email_address,
           fetched: accountFetched,
           candidates: newMessages.length,
           duplicates: accountDuplicates,
           skipped_missing_message_id: accountSkippedMissing,
-          inserted: accountInserted,
+          inserted: 0,
           mailboxes,
         });
       } catch (error) {
@@ -192,13 +201,69 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const previewFingerprint = buildEmailHistoryBackfillPreviewFingerprint({
+      brandId: request.brandId,
+      sinceDays: request.sinceDays,
+      maxMessages: request.maxMessages,
+      includeSent: request.includeSent,
+      candidateMessageIds,
+    });
+
+    if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
+      const response = NextResponse.json(
+        {
+          error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
+          preview_fingerprint_matches: false,
+          candidates,
+          safety: {
+            previewFingerprintRequired: true,
+            databaseMessagesWritten: false,
+            emailSent: false,
+          },
+        },
+        { status: 409 }
+      );
+      clearPreviewCookie(response);
+      return response;
+    }
+
+    if (request.mode === "apply") {
+      for (const pending of pendingMessages) {
+        const message = pending.message;
+        const messageId = stableMessageId(message)!;
+        const { error: insertError } = await supabase.from("email_messages").insert({
+          brand_id: request.brandId,
+          message_id: messageId,
+          thread_id: message.threadId || messageId,
+          direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
+          from_address: message.from.address,
+          from_name: message.from.name || null,
+          to_addresses: message.to.map((address) => address.address),
+          cc_addresses: message.cc?.map((address) => address.address) || null,
+          subject: message.subject,
+          body_text: message.bodyText || null,
+          body_html: message.bodyHtml || null,
+          received_at: message.date.toISOString(),
+          is_read: true,
+          is_archived: true,
+        });
+        if (insertError) throw new Error(insertError.message);
+        inserted++;
+        accountResults[pending.accountIndex].inserted += 1;
+      }
+    }
+
+    const response = NextResponse.json({
       success: true,
       mode: request.mode,
       brand_id: request.brandId,
       since_days: request.sinceDays,
       max_messages: request.maxMessages,
       include_sent: request.includeSent,
+      preview_fingerprint: previewFingerprint,
+      preview_fingerprint_matches: request.mode === "apply" ? true : null,
+      preview_token_expires_in_seconds:
+        request.mode === "preview" ? EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS : 0,
       fetched,
       candidates,
       duplicates,
@@ -210,6 +275,9 @@ export async function POST(req: NextRequest) {
         adminRequired: true,
         readinessRequiredServerSide: true,
         previewWrites: false,
+        previewFingerprintRequiredForApply: true,
+        previewTokenHttpOnly: true,
+        previewTokenBrandBound: true,
         applyRequiresExplicitConfirmation: true,
         historicalMessagesMarkedRead: true,
         historicalMessagesArchived: true,
@@ -219,6 +287,24 @@ export async function POST(req: NextRequest) {
         identityReviewRequired: true,
       },
     });
+
+    if (request.mode === "preview") {
+      response.cookies.set(
+        EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
+        buildEmailHistoryBackfillPreviewCookieValue(request.brandId, previewFingerprint),
+        {
+          httpOnly: true,
+          sameSite: "strict",
+          secure: process.env.NODE_ENV === "production",
+          maxAge: EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
+          path: "/api/email/inbox/backfill",
+        }
+      );
+    } else {
+      clearPreviewCookie(response);
+    }
+
+    return response;
   } catch (error) {
     console.error("[Email History Backfill]", error);
     return NextResponse.json(
