@@ -9,7 +9,9 @@ on:
       - "src/app/(content)/book-growth/production-handoff/**"
       - "src/app/(content)/book-growth/package-ingest/**"
       - "src/app/(content)/book-growth/quality-center/**"
+      - "src/app/(content)/book-growth/launch-factory/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
+      - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
       - "src/components/publishing/publication-series-batch-uploader.tsx"
@@ -24,6 +26,7 @@ on:
       - "src/lib/publishing/book-print-production*"
       - "src/lib/publishing/book-project-docx-export*"
       - "src/lib/publishing/book-os-quality-center-link*"
+      - "src/lib/publishing/book-os-launch-factory-link*"
       - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
@@ -44,6 +47,7 @@ on:
       - "feat/book-os-production-handoff-preflight"
       - "feat/book-os-handoff-candidate-banner"
       - "feat/book-os-quality-center-deeplink"
+      - "feat/book-os-launch-factory-deeplink"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
@@ -51,7 +55,9 @@ on:
       - "src/app/(content)/book-growth/production-handoff/**"
       - "src/app/(content)/book-growth/package-ingest/**"
       - "src/app/(content)/book-growth/quality-center/**"
+      - "src/app/(content)/book-growth/launch-factory/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
+      - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/components/publishing/publication-package-quickstart.tsx"
       - "src/components/publishing/publication-series-batch-uploader.tsx"
@@ -66,6 +72,7 @@ on:
       - "src/lib/publishing/book-print-production*"
       - "src/lib/publishing/book-project-docx-export*"
       - "src/lib/publishing/book-os-quality-center-link*"
+      - "src/lib/publishing/book-os-launch-factory-link*"
       - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
@@ -94,6 +101,7 @@ jobs:
           src/lib/publishing/book-production-handoff-preflight.test.ts
           src/lib/publishing/book-print-production.test.ts
           src/lib/publishing/book-os-quality-center-link.test.ts
+          src/lib/publishing/book-os-launch-factory-link.test.ts
           src/services/publishing/book-print-renderer.test.tsx
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
           src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
