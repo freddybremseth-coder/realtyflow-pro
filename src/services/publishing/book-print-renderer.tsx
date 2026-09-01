@@ -10,24 +10,27 @@ type CoverImage = {
   type: "jpg" | "png";
 };
 
-function clean(value: unknown) { return String(value || "").trim(); }
+function clean(value: unknown): string { return String(value || "").trim(); }
 
-function manuscriptText(raw: unknown) {
+function manuscriptText(raw: unknown): string {
   const text = clean(raw);
   if (!text) return "";
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/i)?.[1];
   const candidate = fenced || text;
   if (candidate.startsWith("{") && candidate.endsWith("}")) {
     try {
-      const parsed = JSON.parse(candidate);
-      if (typeof parsed?.draft === "string") return parsed.draft.trim();
+      const parsed: unknown = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && "draft" in parsed) {
+        const draft = (parsed as { draft?: unknown }).draft;
+        if (typeof draft === "string") return draft.trim();
+      }
     } catch { /* preserve source text */ }
   }
   return text.replace(/```json[\s\S]*?```/gi, "").replace(/```[\s\S]*?```/g, "").trim();
 }
 
-function paragraphs(raw: unknown) {
-  return manuscriptText(raw).split(/\n{2,}/).map((row) => row.trim()).filter(Boolean);
+function paragraphs(raw: unknown): string[] {
+  return manuscriptText(raw).split(/\n{2,}/).map((row: string) => row.trim()).filter((row: string) => Boolean(row));
 }
 
 const interiorStyles = StyleSheet.create({
@@ -54,7 +57,7 @@ const interiorStyles = StyleSheet.create({
 });
 
 function InteriorDocument({ project, addBlankPage = false }: { project: JsonRecord; addBlankPage?: boolean }) {
-  const chapters = Array.isArray(project.chapter_drafts) ? project.chapter_drafts : [];
+  const chapters: JsonRecord[] = Array.isArray(project.chapter_drafts) ? project.chapter_drafts : [];
   const metadata = project.metadata_plan && typeof project.metadata_plan === "object" ? project.metadata_plan : {};
   const author = clean(metadata.author) || "Freddy Bremseth";
   const year = new Date().getUTCFullYear();
@@ -71,15 +74,15 @@ function InteriorDocument({ project, addBlankPage = false }: { project: JsonReco
     <Page size={[432, 648]} wrap style={interiorStyles.page}>
       {chapters.map((chapter: JsonRecord, index: number) => <View key={`${index}-${clean(chapter.chapter_title)}`} break={index > 0} style={interiorStyles.chapter}>
         <Text style={interiorStyles.chapterTitle}>{clean(chapter.chapter_title) || `Chapter ${index + 1}`}</Text>
-        {paragraphs(chapter.draft).map((paragraph, paragraphIndex) => <Text key={paragraphIndex} style={interiorStyles.paragraph}>{paragraph}</Text>)}
+        {paragraphs(chapter.draft).map((paragraph: string, paragraphIndex: number) => <Text key={paragraphIndex} style={interiorStyles.paragraph}>{paragraph}</Text>)}
       </View>)}
-      <Text fixed style={interiorStyles.footer} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+      <Text fixed style={interiorStyles.footer} render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `${pageNumber} / ${totalPages}`} />
     </Page>
     {addBlankPage ? <Page size={[432, 648]}><View style={interiorStyles.blank} /></Page> : null}
   </Document>;
 }
 
-async function pdfPageCount(bytes: Buffer) {
+async function pdfPageCount(bytes: Buffer): Promise<number> {
   const proxy = await getDocumentProxy(new Uint8Array(bytes));
   try { return proxy.numPages; }
   finally { await proxy.destroy?.(); }
@@ -115,7 +118,7 @@ const wrapStyles = StyleSheet.create({
   barcodeText: { color: "#777777", fontSize: 7 },
 });
 
-function description(project: JsonRecord) {
+function description(project: JsonRecord): string {
   const metadata = project.metadata_plan && typeof project.metadata_plan === "object" ? project.metadata_plan : {};
   const kdp = metadata.kdp && typeof metadata.kdp === "object" ? metadata.kdp : metadata;
   return clean(kdp.description) || clean(kdp.description_html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ") || clean(project.subtitle);
