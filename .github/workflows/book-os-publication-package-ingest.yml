@@ -7,6 +7,7 @@ on:
       - "src/app/api/book-growth/distribution/focus/**"
       - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/book-growth/learning/**"
+      - "src/app/api/book-growth/lineage/**"
       - "src/app/api/publishing/book-engine/route.ts"
       - "src/app/api/publishing/book-engine/core.ts"
       - "src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts"
@@ -22,6 +23,7 @@ on:
       - "src/app/(content)/book-growth/sales-evidence/**"
       - "src/app/(content)/book-growth/experiments/**"
       - "src/app/(content)/book-growth/learning/**"
+      - "src/app/(content)/book-growth/lineage/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
       - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/book-growth/distribution-focus-context.tsx"
@@ -78,11 +80,13 @@ on:
       - "feat/book-os-learning-book-engine-intake"
       - "feat/book-os-learning-server-guard"
       - "feat/book-os-learning-provenance-catalog"
+      - "feat/book-os-lineage-audit"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/book-growth/distribution/focus/**"
       - "src/app/api/book-growth/experiments/focus/**"
       - "src/app/api/book-growth/learning/**"
+      - "src/app/api/book-growth/lineage/**"
       - "src/app/api/publishing/book-engine/route.ts"
       - "src/app/api/publishing/book-engine/core.ts"
       - "src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts"
@@ -98,6 +102,7 @@ on:
       - "src/app/(content)/book-growth/sales-evidence/**"
       - "src/app/(content)/book-growth/experiments/**"
       - "src/app/(content)/book-growth/learning/**"
+      - "src/app/(content)/book-growth/lineage/**"
       - "src/components/book-growth/quality-center-focus-context.tsx"
       - "src/components/book-growth/launch-factory-focus-context.tsx"
       - "src/components/book-growth/distribution-focus-context.tsx"
@@ -166,6 +171,7 @@ jobs:
           src/app/api/book-growth/distribution/focus/route-contract.test.ts
           src/app/api/book-growth/experiments/focus/route-contract.test.ts
           src/app/api/book-growth/experiments/focus/learning-handoff-contract.test.ts
+          src/app/api/book-growth/lineage/route-contract.test.ts
           src/app/api/publishing/book-engine/learning-origin-guard-route-contract.test.ts
           src/app/api/publishing/book-engine/learning-intake/route-contract.test.ts
           src/app/api/publishing/book-engine/production-handoff/route-contract.test.ts
