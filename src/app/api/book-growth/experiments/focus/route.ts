@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     sb.from("publishing_catalog_editions").select("id,work_id,title,language,format,status").eq("id", editionId).maybeSingle(),
     sb.from("publishing_catalog_revisions").select("id,edition_id,revision_number,is_canonical,status").eq("edition_id", editionId).eq("is_canonical", true).maybeSingle(),
     sb.from("publishing_sales_facts").select("id,edition_id,revision_id,attribution_status,channel,marketplace,metric_date,orders,units,pages_read,gross_sales,royalties,ad_sales,currency").eq("edition_id", editionId).order("metric_date", { ascending: false }).limit(5000),
-    sb.from("publishing_sales_experiments").select("id,edition_id,revision_id,channel,marketplace,change_field,success_metric,status,measurement_start,measurement_end,created_at").eq("edition_id", editionId).order("created_at", { ascending: false }).limit(100),
+    sb.from("publishing_sales_experiments").select("id,edition_id,revision_id,channel,marketplace,change_field,success_metric,proposed_value,status,measurement_start,measurement_end,relative_lift,evidence_level,created_at").eq("edition_id", editionId).order("created_at", { ascending: false }).limit(500),
   ]);
   const error = editionError || revisionError || factsError || experimentsError;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -31,6 +31,22 @@ export async function GET(request: NextRequest) {
   const exactRevisionFacts = exactFacts.filter((row: any) => row.attribution_status === "exact_revision");
   const focusedExperiments = (experiments ?? []).filter((row: any) => String(row.revision_id || "") === focusedRevisionId);
   const activeExperiments = focusedExperiments.filter((row: any) => ["proposed", "approved", "running"].includes(String(row.status)));
+  const completedDirectional = focusedExperiments.filter((row: any) => row.status === "completed" && row.evidence_level === "directional" && row.relative_lift != null);
+  const repeatedGroups = new Map<string, any[]>();
+  for (const row of completedDirectional) {
+    const key = [row.channel, row.marketplace, row.change_field, row.success_metric, JSON.stringify(row.proposed_value)].join("|");
+    repeatedGroups.set(key, [...(repeatedGroups.get(key) || []), row]);
+  }
+  const eligibleLearningGroups = [...repeatedGroups.values()].filter((rows) => rows.length >= 3).map((rows) => ({
+    channel: rows[0]?.channel,
+    marketplace: rows[0]?.marketplace,
+    changeField: rows[0]?.change_field,
+    successMetric: rows[0]?.success_metric,
+    proposedValue: rows[0]?.proposed_value,
+    experimentCount: rows.length,
+    averageRelativeLift: rows.reduce((sum, row) => sum + Number(row.relative_lift || 0), 0) / rows.length,
+    experimentIds: rows.map((row) => row.id),
+  }));
   const channels = [...new Set(exactFacts.map((row: any) => String(row.channel || "")).filter(Boolean))];
   const metricCoverage = {
     orders: exactFacts.some((row: any) => Number(row.orders || 0) !== 0),
@@ -57,7 +73,13 @@ export async function GET(request: NextRequest) {
     },
     experiments: focusedExperiments,
     activeExperimentCount: activeExperiments.length,
+    completedDirectionalCount: completedDirectional.length,
+    eligibleLearningGroups,
+    learningEligible: Boolean(revisionMatches && eligibleLearningGroups.length > 0),
+    learningHref: revisionMatches && eligibleLearningGroups.length > 0
+      ? `/book-growth/learning?editionId=${encodeURIComponent(editionId)}&revisionId=${encodeURIComponent(focusedRevisionId)}`
+      : null,
     canOpenProposalForm: Boolean(revisionMatches && canonicalRevisionId),
-    note: "This focus endpoint is read-only. Staging an experiment remains an explicit action and the database function independently locks the current canonical revision.",
+    note: "This focus endpoint is read-only. Staging an experiment remains explicit; learning eligibility mirrors the phase 5.3 minimum of three completed directional experiments in the same canonical evidence group.",
   });
 }
