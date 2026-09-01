@@ -17,7 +17,7 @@ on:
       - "src/lib/publishing/book-production-handoff*"
       - "src/lib/publishing/book-print-production*"
       - "src/lib/publishing/book-project-docx-export*"
-      - "src/services/publishing/book-print-renderer.tsx"
+      - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
@@ -32,6 +32,7 @@ on:
       - "feat/book-os-series-batch-import"
       - "feat/book-os-production-handoff-builder"
       - "feat/book-os-print-production-builder"
+      - "feat/book-os-print-runtime-smoke"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/api/publishing/book-engine/production-handoff/**"
@@ -47,7 +48,7 @@ on:
       - "src/lib/publishing/book-production-handoff*"
       - "src/lib/publishing/book-print-production*"
       - "src/lib/publishing/book-project-docx-export*"
-      - "src/services/publishing/book-print-renderer.tsx"
+      - "src/services/publishing/book-print-renderer*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
@@ -73,6 +74,7 @@ jobs:
           src/lib/publishing/publication-series-batch.test.ts
           src/lib/publishing/book-production-handoff.test.ts
           src/lib/publishing/book-print-production.test.ts
+          src/services/publishing/book-print-renderer.test.tsx
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
           src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
           src/app/api/book-growth/package-ingest/route-contract.test.ts
