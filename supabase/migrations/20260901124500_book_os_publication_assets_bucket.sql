@@ -28,6 +28,5 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
--- Browser users never receive bucket-wide upload rights. Upload capability is
--- granted per object with a server-generated signed token.
-revoke all on table storage.objects from anon, authenticated;
+-- No broad storage.objects grants are changed here. The bucket remains private;
+-- uploads are authorized per object with a short-lived server-generated token.
