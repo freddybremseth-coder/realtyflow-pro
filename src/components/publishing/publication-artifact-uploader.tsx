@@ -55,9 +55,15 @@ export function PublicationArtifactUploader({
   const ready = useMemo(() => Boolean(identity?.workKey && identity?.editionKey && file), [identity, file]);
 
   function changeType(value: string) {
+    const nextRole = DEFAULT_ROLE[value] || value;
     setAssetType(value);
-    setRole(DEFAULT_ROLE[value] || value);
-    setCanonical(!(value === "cover" && role === "kdp_full_wrap"));
+    setRole(nextRole);
+    setCanonical(true);
+  }
+
+  function changeRole(value: string) {
+    setRole(value);
+    if (assetType === "cover" && value.trim() === "kdp_full_wrap") setCanonical(false);
   }
 
   async function upload() {
@@ -126,7 +132,7 @@ export function PublicationArtifactUploader({
           </select>
         </label>
         <label style={{ fontWeight: 800 }}>Role
-          <input value={role} onChange={(event) => setRole(event.target.value)} style={{ width: "100%", padding: 8, display: "block", marginTop: 4, boxSizing: "border-box" }} />
+          <input value={role} onChange={(event) => changeRole(event.target.value)} style={{ width: "100%", padding: 8, display: "block", marginTop: 4, boxSizing: "border-box" }} />
         </label>
       </div>
       <label style={{ fontWeight: 800 }}>File
