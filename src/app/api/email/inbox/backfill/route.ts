@@ -6,6 +6,7 @@ import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backf
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
 import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
 import { evaluateEmailHistoryBackfillAccountGate } from "@/lib/email/history-backfill-account-gate";
+import { buildEmailHistoryBackfillAuditDetails } from "@/lib/email/history-backfill-audit";
 import {
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
@@ -203,7 +204,39 @@ export async function POST(req: NextRequest) {
     }
 
     const accountGate = evaluateEmailHistoryBackfillAccountGate(accountResults);
+    const writeApplyAudit = async (
+      status: "success" | "blocked" | "failed",
+      reason?: string
+    ) => {
+      if (request.mode !== "apply") return;
+      const details = buildEmailHistoryBackfillAuditDetails({
+        brandId: request.brandId,
+        mode: request.mode,
+        status,
+        sinceDays: request.sinceDays,
+        maxMessages: request.maxMessages,
+        includeSent: request.includeSent,
+        fetched,
+        candidates,
+        duplicates,
+        skippedMissingMessageId,
+        inserted,
+        accountFetchComplete: accountGate.ok,
+        failedAccounts: accountGate.failedAccounts,
+        reason,
+      });
+      const { error: auditError } = await supabase.from("automation_logs").insert({
+        action: "email_history_backfill",
+        agent_name: "nexus_communications",
+        status,
+        details,
+      });
+      if (auditError) console.warn("[Email History Backfill Audit]", auditError.message);
+    };
+
     if (request.mode === "apply" && !accountGate.ok) {
+      const reason = "One or more active email accounts failed during historical fetch";
+      await writeApplyAudit("blocked", reason);
       const response = NextResponse.json(
         {
           error: "Backfill apply is blocked because one or more active email accounts failed during historical fetch. Run preview again after every account succeeds.",
@@ -231,6 +264,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
+      const reason = "Preview fingerprint no longer matches the current candidate set";
+      await writeApplyAudit("blocked", reason);
       const response = NextResponse.json(
         {
           error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
@@ -249,29 +284,35 @@ export async function POST(req: NextRequest) {
     }
 
     if (request.mode === "apply") {
-      for (const pending of pendingMessages) {
-        const message = pending.message;
-        const messageId = stableMessageId(message)!;
-        const { error: insertError } = await supabase.from("email_messages").insert({
-          brand_id: request.brandId,
-          message_id: messageId,
-          thread_id: message.threadId || messageId,
-          direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
-          from_address: message.from.address,
-          from_name: message.from.name || null,
-          to_addresses: message.to.map((address) => address.address),
-          cc_addresses: message.cc?.map((address) => address.address) || null,
-          subject: message.subject,
-          body_text: message.bodyText || null,
-          body_html: message.bodyHtml || null,
-          received_at: message.date.toISOString(),
-          is_read: true,
-          is_archived: true,
-        });
-        if (insertError) throw new Error(insertError.message);
-        inserted++;
-        accountResults[pending.accountIndex].inserted += 1;
+      try {
+        for (const pending of pendingMessages) {
+          const message = pending.message;
+          const messageId = stableMessageId(message)!;
+          const { error: insertError } = await supabase.from("email_messages").insert({
+            brand_id: request.brandId,
+            message_id: messageId,
+            thread_id: message.threadId || messageId,
+            direction: message.mailboxRole === "sent" ? "outbound" : "inbound",
+            from_address: message.from.address,
+            from_name: message.from.name || null,
+            to_addresses: message.to.map((address) => address.address),
+            cc_addresses: message.cc?.map((address) => address.address) || null,
+            subject: message.subject,
+            body_text: message.bodyText || null,
+            body_html: message.bodyHtml || null,
+            received_at: message.date.toISOString(),
+            is_read: true,
+            is_archived: true,
+          });
+          if (insertError) throw new Error(insertError.message);
+          inserted++;
+          accountResults[pending.accountIndex].inserted += 1;
+        }
+      } catch (error) {
+        await writeApplyAudit("failed", error instanceof Error ? error.message : String(error));
+        throw error;
       }
+      await writeApplyAudit("success");
     }
 
     const response = NextResponse.json({
