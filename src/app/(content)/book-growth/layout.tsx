@@ -22,6 +22,7 @@ const MODULES = [
   { href: "/book-growth/distribution", label: "Distribution" },
   { href: "/book-growth/measurement", label: "Measurement" },
   { href: "/book-growth/learning", label: "Learning" },
+  { href: "/book-growth/lineage", label: "Lineage" },
 ];
 
 export default function BookGrowthLayout({ children }: { children: ReactNode }) {
