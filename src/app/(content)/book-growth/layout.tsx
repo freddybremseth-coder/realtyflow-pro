@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ProductionHandoffCandidateBanner } from "@/components/publishing/production-handoff-candidate-banner";
 
 const MODULES = [
   { href: "/book-growth", label: "Overview" },
@@ -119,6 +120,7 @@ export default function BookGrowthLayout({ children }: { children: ReactNode }) 
         >{item.label}</Link>)}
       </nav>
     </div>
+    <ProductionHandoffCandidateBanner />
     {children}
   </div>;
 }
