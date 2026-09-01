@@ -7,6 +7,9 @@ import { publicationPackageGateSummary, validatePublicationPackageManifest, type
 export const MAX_PUBLICATION_BATCH_BOOKS = 20;
 const SHA256 = /^[0-9a-f]{64}$/i;
 const SAFE_KEY = /^[a-z0-9][a-z0-9._:-]{1,159}$/i;
+const FORMATS = new Set(["ebook", "paperback", "hardcover", "audio", "other"]);
+
+type PublicationFormat = "ebook" | "paperback" | "hardcover" | "audio" | "other";
 
 export type SeriesBatchUploadInput = {
   batchKey: string;
@@ -73,9 +76,11 @@ export async function prepareSeriesBatch(batchBytes: ArrayBuffer | Uint8Array): 
     const filename = baseName(clean(book.filename));
     const declaredFingerprint = clean(book.packageFingerprint).toLowerCase();
     const declaredSize = Number(book.packageSize);
+    const format = clean(book.format) || "ebook";
     if (!filename || !filename.toLowerCase().endsWith(".zip")) throw new Error(`books[${index}].filename must be a ZIP`);
     if (!SHA256.test(declaredFingerprint)) throw new Error(`books[${index}].packageFingerprint must be sha256 hex`);
     if (!Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > MAX_PUBLICATION_ASSET_BYTES) throw new Error(`books[${index}].packageSize is invalid`);
+    if (!FORMATS.has(format)) throw new Error(`books[${index}].format is unsupported`);
 
     const childEntry = zip.file(`packages/${filename}`);
     if (!childEntry) throw new Error(`Missing child package: ${filename}`);
@@ -90,7 +95,7 @@ export async function prepareSeriesBatch(batchBytes: ArrayBuffer | Uint8Array): 
       seriesName: clean(book.seriesName) || seriesName,
       seriesNumber: Number(book.seriesNumber),
       language: clean(book.language) || "en",
-      format: (clean(book.format) || "ebook") as "ebook",
+      format: format as PublicationFormat,
       revisionNumber: Number(book.revisionNumber || 1),
     });
     if (seenWorkKeys.has(draft.manifest.workKey)) throw new Error(`Duplicate workKey in batch: ${draft.manifest.workKey}`);
