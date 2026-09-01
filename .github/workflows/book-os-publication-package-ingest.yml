@@ -8,6 +8,7 @@ on:
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/lib/publishing/publication-package*"
       - "src/lib/publishing/publication-artifact-upload*"
+      - "src/lib/publishing/publication-artifact-package-expander*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
@@ -17,12 +18,14 @@ on:
     branches:
       - "feat/book-os-publication-package-ingest"
       - "feat/book-os-artifact-upload"
+      - "feat/book-os-package-expander"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/(content)/book-growth/package-ingest/**"
       - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/lib/publishing/publication-package*"
       - "src/lib/publishing/publication-artifact-upload*"
+      - "src/lib/publishing/publication-artifact-package-expander*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
       - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
@@ -43,6 +46,7 @@ jobs:
           npx tsx --test
           src/lib/publishing/publication-package.test.ts
           src/lib/publishing/publication-artifact-upload.test.ts
+          src/lib/publishing/publication-artifact-package-expander.test.ts
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
           src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
           src/app/api/book-growth/package-ingest/route-contract.test.ts
