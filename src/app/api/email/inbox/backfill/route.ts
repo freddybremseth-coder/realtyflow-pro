@@ -5,6 +5,7 @@ import { resolveEmailHistoryBackfillRequest } from "@/lib/email/history-backfill
 import { evaluateEmailHistoryBackfillReadiness } from "@/lib/email/history-backfill-readiness";
 import { buildEmailHistoryReviewLinks } from "@/lib/email/history-backfill-review-links";
 import { buildEmailHistoryBackfillPreviewFingerprint } from "@/lib/email/history-backfill-preview-fingerprint";
+import { buildEmailHistoryBackfillAuditLog } from "@/lib/email/history-backfill-audit";
 import {
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE,
   EMAIL_HISTORY_BACKFILL_PREVIEW_COOKIE_MAX_AGE_SECONDS,
@@ -208,8 +209,29 @@ export async function POST(req: NextRequest) {
       includeSent: request.includeSent,
       candidateMessageIds,
     });
+    const accountErrorCount = accountResults.filter((account) => Boolean(account.error)).length;
 
     if (request.mode === "apply" && request.previewFingerprint !== previewFingerprint) {
+      const { error: auditError } = await supabase.from("automation_logs").insert(
+        buildEmailHistoryBackfillAuditLog({
+          status: "stale_preview",
+          brandId: request.brandId,
+          mode: request.mode,
+          sinceDays: request.sinceDays,
+          maxMessages: request.maxMessages,
+          includeSent: request.includeSent,
+          fetched,
+          candidates,
+          duplicates,
+          skippedMissingMessageId,
+          inserted: 0,
+          accountCount: accountResults.length,
+          accountErrorCount,
+          previewFingerprintMatches: false,
+        })
+      );
+      if (auditError) console.warn("[Email History Backfill] audit log failed", auditError.message);
+
       const response = NextResponse.json(
         {
           error: "Backfill preview is stale or no longer matches the current candidate set. Run preview again before apply.",
@@ -252,6 +274,26 @@ export async function POST(req: NextRequest) {
         accountResults[pending.accountIndex].inserted += 1;
       }
     }
+
+    const { error: auditError } = await supabase.from("automation_logs").insert(
+      buildEmailHistoryBackfillAuditLog({
+        status: request.mode === "preview" ? "preview" : "success",
+        brandId: request.brandId,
+        mode: request.mode,
+        sinceDays: request.sinceDays,
+        maxMessages: request.maxMessages,
+        includeSent: request.includeSent,
+        fetched,
+        candidates,
+        duplicates,
+        skippedMissingMessageId,
+        inserted,
+        accountCount: accountResults.length,
+        accountErrorCount,
+        previewFingerprintMatches: request.mode === "apply" ? true : null,
+      })
+    );
+    if (auditError) console.warn("[Email History Backfill] audit log failed", auditError.message);
 
     const response = NextResponse.json({
       success: true,
