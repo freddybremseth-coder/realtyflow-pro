@@ -1,7 +1,7 @@
 import type { SocialAutopilotRow } from "@/lib/social-autopilot";
 import { summarizeSocialAutopilot } from "@/lib/social-autopilot";
 
-export type NexusInboxSource = "system" | "approval" | "marketing";
+export type NexusInboxSource = "system" | "approval" | "marketing" | "email_identity";
 export type NexusInboxPriority = "critical" | "high" | "medium" | "low";
 
 export interface NexusInboxItem {
@@ -14,6 +14,7 @@ export interface NexusInboxItem {
   actionLabel: string;
   customerName?: string | null;
   blocked?: boolean;
+  occurredAt?: string | null;
 }
 
 type OsAttentionItem = {
@@ -35,6 +36,16 @@ type ApprovalItem = {
   reviewHref: string;
 };
 
+type EmailIdentityReviewItem = {
+  id: string;
+  subject: string;
+  priority: "high" | "medium" | "low";
+  reason: string;
+  state: "linked" | "exact_candidate" | "ambiguous" | "unlinked";
+  domain?: string | null;
+  occurredAt?: string | null;
+};
+
 const PRIORITY_WEIGHT: Record<NexusInboxPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
 function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
@@ -43,10 +54,16 @@ function osPriority(severity: OsAttentionItem["severity"]): NexusInboxPriority {
   return "medium";
 }
 
+function timestamp(value: string | null | undefined) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function buildNexusInbox(input: {
   attention: OsAttentionItem[];
   approvals: ApprovalItem[];
   marketingRows: SocialAutopilotRow[];
+  emailIdentityReviews?: EmailIdentityReviewItem[];
 }): NexusInboxItem[] {
   const items: NexusInboxItem[] = [];
 
@@ -100,7 +117,29 @@ export function buildNexusInbox(input: {
     });
   }
 
-  return items.sort((a, b) => PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority] || a.title.localeCompare(b.title, "nb"));
+  for (const row of input.emailIdentityReviews ?? []) {
+    if (row.priority !== "high") continue;
+    items.push({
+      id: `email-identity:${row.id}`,
+      source: "email_identity",
+      priority: row.state === "ambiguous" ? "critical" : "high",
+      title: row.subject || "E-postidentitet trenger review",
+      reason: `${row.reason}${row.domain ? ` · ${row.domain}` : ""}`,
+      href: `/nexus-os/email-link-health?messageId=${encodeURIComponent(row.id)}`,
+      actionLabel: "Review identitet",
+      occurredAt: row.occurredAt ?? null,
+    });
+  }
+
+  return items.sort((a, b) => {
+    const priorityDifference = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
+    if (priorityDifference) return priorityDifference;
+    if (a.source === "email_identity" && b.source === "email_identity") {
+      const recencyDifference = timestamp(b.occurredAt) - timestamp(a.occurredAt);
+      if (recencyDifference) return recencyDifference;
+    }
+    return a.title.localeCompare(b.title, "nb");
+  });
 }
 
 export function summarizeNexusInbox(items: NexusInboxItem[]) {
@@ -109,6 +148,7 @@ export function summarizeNexusInbox(items: NexusInboxItem[]) {
     critical: items.filter((item) => item.priority === "critical").length,
     approvals: items.filter((item) => item.source === "approval").length,
     marketing: items.filter((item) => item.source === "marketing").length,
+    emailIdentity: items.filter((item) => item.source === "email_identity").length,
     system: items.filter((item) => item.source === "system").length,
   };
 }

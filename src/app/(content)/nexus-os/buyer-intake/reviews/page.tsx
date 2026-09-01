@@ -17,6 +17,8 @@ type Criterion = {
   active: boolean;
 };
 
+type PersonaCandidate = { id: string; confidence: number; evidence?: string[] };
+
 type QueueItem = {
   id: string;
   priority: string;
@@ -44,7 +46,7 @@ type ApprovalPreview = {
   action: "revise_existing_profile" | "create_initial_profile";
   contact: { id: string; name?: string | null; email?: string | null; brand?: string | null; pipelineStatus?: string | null };
   activeProfile: { id: string; version: number; summary?: string | null } | null;
-  personas: Array<{ id: string; confidence: number }>;
+  personas: PersonaCandidate[];
   proposedLifestyleCriteria: Criterion[];
   existingCriteria: Criterion[];
   revisionDraft: RevisionDraft | null;
@@ -52,6 +54,22 @@ type ApprovalPreview = {
 
 function humanize(value: string) {
   return value.replaceAll("_", " ").replaceAll(":", " · ");
+}
+
+function routingPersonaCriterion(persona: PersonaCandidate): Criterion {
+  return {
+    criterionType: "hard_requirement",
+    key: "other",
+    otherKey: "routing_persona",
+    operator: "eq",
+    value: persona.id,
+    weight: null,
+    severity: null,
+    appliesToPropertyTypes: [],
+    sourceText: `Godkjent routing-persona fra Buyer Intake. AI confidence ${Math.round(persona.confidence * 100)}%. Evidence: ${(persona.evidence || []).join(" | ").slice(0, 350) || "ikke oppgitt"}`,
+    customerConfirmed: false,
+    active: true,
+  };
 }
 
 export default function BuyerIntakeReviewsPage() {
@@ -64,6 +82,7 @@ export default function BuyerIntakeReviewsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [selectedCriteria, setSelectedCriteria] = useState<Set<string>>(new Set());
+  const [selectedPersonaId, setSelectedPersonaId] = useState("");
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
@@ -88,6 +107,7 @@ export default function BuyerIntakeReviewsPage() {
     setPreviewLoading(true);
     setError("");
     setSuccess("");
+    setSelectedPersonaId("");
     try {
       const response = await fetch(`/api/nexus/buyer-intake/approval-preview?workItemId=${encodeURIComponent(workItemId)}`, { cache: "no-store" });
       const body = await response.json().catch(() => ({}));
@@ -107,15 +127,36 @@ export default function BuyerIntakeReviewsPage() {
     return preview.proposedLifestyleCriteria.filter((criterion) => selectedCriteria.has(criterion.otherKey || criterion.key));
   }, [preview, selectedCriteria]);
 
+  const selectedPersona = useMemo(() => preview?.personas.find((persona) => persona.id === selectedPersonaId) || null, [preview, selectedPersonaId]);
+
   const effectiveCriteria = useMemo(() => {
     if (!preview) return [];
-    const replace = new Set(selectedLifestyle.map((criterion) => `${criterion.key}:${criterion.otherKey || ""}`));
-    const existing = preview.existingCriteria.filter((criterion) => !replace.has(`${criterion.key}:${criterion.otherKey || ""}`));
-    return [...existing, ...selectedLifestyle];
-  }, [preview, selectedLifestyle]);
+    const replacements = new Set(selectedLifestyle.map((criterion) => `${criterion.key}:${criterion.otherKey || ""}`));
+    if (selectedPersona) replacements.add("other:routing_persona");
+    const existing = preview.existingCriteria.filter((criterion) => !replacements.has(`${criterion.key}:${criterion.otherKey || ""}`));
+    return [...existing, ...selectedLifestyle, ...(selectedPersona ? [routingPersonaCriterion(selectedPersona)] : [])];
+  }, [preview, selectedLifestyle, selectedPersona]);
+
+  const completeReview = async (buyerProfileId: string, version: string | number) => {
+    if (!selectedId) return;
+    const completeResponse = await fetch("/api/nexus/buyer-intake/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workItemId: selectedId, buyerProfileId }),
+    });
+    const completeBody = await completeResponse.json().catch(() => ({}));
+    if (!completeResponse.ok) throw new Error(`Buyer Profile v${version} ble opprettet, men intake kunne ikke lukkes: ${completeBody?.error || `HTTP ${completeResponse.status}`}`);
+
+    setSuccess(`Buyer Intake er godkjent. Buyer Profile v${version} er aktiv${selectedPersona ? ` med routing-persona «${humanize(selectedPersona.id)}»` : ""}. Ingen e-post er sendt.`);
+    setPreview(null);
+    setSelectedId(null);
+    setSelectedCriteria(new Set());
+    setSelectedPersonaId("");
+    await loadQueue();
+  };
 
   const approveRevision = async () => {
-    if (!selectedId || !preview?.activeProfile || !preview.revisionDraft || selectedLifestyle.length === 0) return;
+    if (!selectedId || !preview?.activeProfile || !preview.revisionDraft || (selectedLifestyle.length === 0 && !selectedPersona)) return;
     setApproving(true);
     setError("");
     setSuccess("");
@@ -129,20 +170,7 @@ export default function BuyerIntakeReviewsPage() {
       if (!revisionResponse.ok) throw new Error(revisionBody?.error?.message || revisionBody?.error || `Revision failed: HTTP ${revisionResponse.status}`);
       const buyerProfileId = String(revisionBody?.result?.buyerProfileId || "").trim();
       if (!buyerProfileId) throw new Error("Ny Buyer Profile-versjon ble opprettet, men responsen manglet buyerProfileId.");
-
-      const completeResponse = await fetch("/api/nexus/buyer-intake/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workItemId: selectedId, buyerProfileId }),
-      });
-      const completeBody = await completeResponse.json().catch(() => ({}));
-      if (!completeResponse.ok) throw new Error(`Profil v${revisionBody?.result?.version || "ny"} ble opprettet, men intake kunne ikke lukkes: ${completeBody?.error || `HTTP ${completeResponse.status}`}`);
-
-      setSuccess(`Buyer Intake er godkjent. Buyer Profile v${revisionBody?.result?.version || "ny"} er aktiv.`);
-      setPreview(null);
-      setSelectedId(null);
-      setSelectedCriteria(new Set());
-      await loadQueue();
+      await completeReview(buyerProfileId, revisionBody?.result?.version || "ny");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Kunne ikke godkjenne Buyer Intake");
     } finally {
@@ -150,13 +178,36 @@ export default function BuyerIntakeReviewsPage() {
     }
   };
 
+  const approveInitial = async () => {
+    if (!selectedId || !preview || preview.activeProfile || !preview.contact.brand || effectiveCriteria.length === 0) return;
+    setApproving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch("/api/nexus/buyer-intake/approve-initial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workItemId: selectedId, brand: preview.contact.brand, criteria: effectiveCriteria }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error?.message || body?.error || `Initial profile failed: HTTP ${response.status}`);
+      const buyerProfileId = String(body?.result?.buyerProfileId || "").trim();
+      if (!buyerProfileId) throw new Error("Første Buyer Profile ble opprettet, men responsen manglet buyerProfileId.");
+      await completeReview(buyerProfileId, body?.result?.version || 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Kunne ikke opprette første Buyer Profile");
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return (
-    <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 sm:py-8">
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-700">Nexus Buyer Intelligence · Real Estate</p>
-          <h2 className="mt-1 text-3xl font-black tracking-tight text-slate-950">Buyer Intake Review Queue</h2>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">Review bilde- og skjemaevidence før det blir del av Buyer Profile. Eksisterende boligkrav beholdes; valgte lifestyle-signaler går inn som en ny versjon — aldri som overskriving av historikken.</p>
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Buyer Intake Review Queue</h2>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">Godkjenn dokumenterte fakta og eventuelt én routing-persona før de blir del av den versjonerte Buyer Profile. AI foreslår; du bestemmer.</p>
         </div>
         <div className="flex gap-2">
           <Link href="/nexus-os/buyer-intake" className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-700">Ny Buyer Intake</Link>
@@ -179,19 +230,21 @@ export default function BuyerIntakeReviewsPage() {
           </button>)}
         </section>
 
-        <section className="min-h-[480px] rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="min-h-[480px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           {!selectedId ? <div className="flex min-h-[400px] items-center justify-center text-sm text-slate-500">Velg en intake i køen for å reviewe den.</div> : null}
           {previewLoading ? <div className="flex min-h-[400px] items-center justify-center text-sm font-bold text-slate-600">Laster Buyer Profile og evidence …</div> : null}
           {preview && !previewLoading ? <div className="space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="text-xs font-black uppercase tracking-wide text-slate-500">{preview.action === "revise_existing_profile" ? "Ny profilrevision" : "Første Buyer Profile"}</div><h3 className="mt-1 text-2xl font-black text-slate-950">{preview.contact.name || preview.contact.email || "CRM lead"}</h3><div className="mt-1 text-sm text-slate-500">{preview.contact.brand || "Ukjent brand"} · {preview.contact.pipelineStatus || "ukjent stage"}</div></div>{preview.activeProfile ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">Aktiv Buyer Profile v{preview.activeProfile.version}</div> : <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">Ingen aktiv Buyer Profile</div>}</div>
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="text-xs font-black uppercase tracking-wide text-slate-500">{preview.action === "revise_existing_profile" ? "Ny profilrevision" : "Første Buyer Profile"}</div><h3 className="mt-1 text-2xl font-black text-slate-950">{preview.contact.name || preview.contact.email || "CRM lead"}</h3><div className="mt-1 text-sm text-slate-500">{preview.contact.brand || "Ukjent brand"} · {preview.contact.pipelineStatus || "ukjent stage"}</div></div>{preview.activeProfile ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">Aktiv Buyer Profile v{preview.activeProfile.version}</div> : <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">Ingen aktiv Buyer Profile · opprettes her ved godkjenning</div>}</div>
 
-            {preview.personas.length ? <div><div className="text-xs font-black uppercase tracking-wide text-slate-500">Persona-kontekst — ikke lagret som kriterium</div><div className="mt-2 flex flex-wrap gap-2">{preview.personas.map((persona) => <span key={persona.id} className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold text-violet-800">{humanize(persona.id)} · {Math.round(persona.confidence * 100)}%</span>)}</div></div> : null}
+            {preview.personas.length ? <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><div className="text-xs font-black uppercase tracking-wide text-violet-800">Routing-persona · velg maks én</div><p className="mt-1 text-xs text-violet-700">Ingen Persona er forhåndsgodkjent. Valget lagres som godkjent `routing_persona` i Buyer Profile.</p><div className="mt-3 grid gap-2 md:grid-cols-2">{preview.personas.map((persona) => <label key={persona.id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${selectedPersonaId === persona.id ? "border-violet-400 bg-white" : "border-violet-200 bg-violet-50"}`}><input type="radio" name="routing-persona" checked={selectedPersonaId === persona.id} disabled={approving} onChange={() => setSelectedPersonaId(persona.id)} className="mt-1" /><div><div className="text-sm font-black text-slate-900">{humanize(persona.id)}</div><div className="mt-1 text-xs font-bold text-violet-700">AI confidence {Math.round(persona.confidence * 100)}%</div>{persona.evidence?.length ? <div className="mt-1 text-xs text-slate-600">{persona.evidence.slice(0, 2).join(" · ")}</div> : null}</div></label>)}</div>{selectedPersonaId ? <button type="button" onClick={() => setSelectedPersonaId("")} className="mt-3 text-xs font-black text-violet-800 underline">Ikke godkjenn Persona</button> : null}</div> : null}
 
             <div><div className="flex items-center justify-between gap-3"><div className="text-xs font-black uppercase tracking-wide text-slate-500">Nye lifestyle-signaler</div><div className="text-xs font-bold text-cyan-800">{selectedLifestyle.length} valgt</div></div><div className="mt-3 grid gap-2 md:grid-cols-2">{preview.proposedLifestyleCriteria.length ? preview.proposedLifestyleCriteria.map((criterion) => { const id = criterion.otherKey || criterion.key; const checked = selectedCriteria.has(id); return <label key={id} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${checked ? "border-cyan-300 bg-cyan-50" : "border-slate-200 bg-slate-50"}`}><input type="checkbox" checked={checked} disabled={approving} onChange={() => setSelectedCriteria((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className="mt-1" /><div><div className="text-sm font-black text-slate-900">{humanize(id)}</div><div className="mt-1 text-xs text-slate-600">Evidence: {criterion.sourceText || "ikke vist"}</div><div className="mt-1 text-[11px] font-bold text-slate-500">Weight {criterion.weight ?? "–"} · eksplisitt skjemaevidence</div></div></label>; }) : <div className="text-sm text-slate-500">Ingen eksplisitte lifestyle-signaler funnet.</div>}</div></div>
 
-            <div className="grid gap-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-black uppercase tracking-wide text-slate-500">Eksisterende aktive kriterier</div><div className="mt-2 text-3xl font-black text-slate-950">{preview.existingCriteria.length}</div><div className="mt-2 text-xs text-slate-600">Tidligere budsjett-, område-, bolig- og lifestyle-data beholdes.</div></div><div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4"><div className="text-xs font-black uppercase tracking-wide text-cyan-700">Profil etter valgene</div><div className="mt-2 text-3xl font-black text-slate-950">{effectiveCriteria.length}</div><div className="mt-2 text-xs text-slate-600">Valgte lifestyle-signaler erstatter kun samme namespacede nøkkel. Resten beholdes.</div></div></div>
+            <div className="grid gap-4 lg:grid-cols-2"><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-black uppercase tracking-wide text-slate-500">Eksisterende aktive kriterier</div><div className="mt-2 text-3xl font-black text-slate-950">{preview.existingCriteria.length}</div><div className="mt-2 text-xs text-slate-600">Tidligere budsjett-, område-, bolig-, persona- og lifestyle-data beholdes til du eksplisitt erstatter samme nøkkel.</div></div><div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4"><div className="text-xs font-black uppercase tracking-wide text-cyan-700">Profil etter valgene</div><div className="mt-2 text-3xl font-black text-slate-950">{effectiveCriteria.length}</div><div className="mt-2 text-xs text-slate-600">Valgt Persona erstatter kun `routing_persona`; valgte lifestyle-signaler erstatter kun samme namespacede nøkkel.</div></div></div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><Link href={`/customers/${preview.contact.id}`} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black text-slate-700">Customer 360</Link>{preview.activeProfile && preview.revisionDraft ? <button onClick={() => void approveRevision()} disabled={approving || selectedLifestyle.length === 0} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">{approving ? "Godkjenner og versjonerer …" : "Godkjenn og lag ny Buyer Profile-versjon"}</button> : <Link href="/lead-intelligence" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-900">Opprett første profil i Lead Intelligence →</Link>}</div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">Godkjenning oppretter eller versjonerer Buyer Profile. Den sender ikke e-post. Lead Nurture LIVE styres separat.</div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><Link href={`/customers/${preview.contact.id}`} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black text-slate-700">Customer 360</Link>{preview.activeProfile && preview.revisionDraft ? <button onClick={() => void approveRevision()} disabled={approving || (selectedLifestyle.length === 0 && !selectedPersona)} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">{approving ? "Godkjenner og versjonerer …" : "Godkjenn valg + lag ny Buyer Profile-versjon"}</button> : <button onClick={() => void approveInitial()} disabled={approving || effectiveCriteria.length === 0 || !preview.contact.brand} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">{approving ? "Oppretter og godkjenner …" : "Godkjenn valg + opprett første Buyer Profile"}</button>}</div>
           </div> : null}
         </section>
       </div>

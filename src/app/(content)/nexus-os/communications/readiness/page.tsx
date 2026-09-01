@@ -1,0 +1,419 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, MailCheck, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
+
+type EmailAccount = {
+  id: string;
+  brand_id: string;
+  email_address: string;
+  display_name?: string | null;
+  health_status?: string | null;
+  health_message?: string | null;
+  last_success_at?: string | null;
+  last_fetched_at?: string | null;
+  auto_fetch_paused_by_system?: boolean;
+  readiness?: {
+    state?: string;
+    label?: string;
+    reason?: string;
+    hasCredentials?: boolean;
+    canTestConnection?: boolean;
+    canBackfillHistory?: boolean;
+  };
+};
+
+type CommunicationsData = {
+  generatedAt: string;
+  summary?: {
+    unhealthyEmailAccounts?: number;
+    emailBackfillReady?: number;
+  };
+  emailAccounts: EmailAccount[];
+};
+
+type CheckResult = {
+  success: boolean;
+  checkedAt?: string;
+  inboxFound?: boolean;
+  sentFound?: boolean;
+  mailboxCount?: number;
+  error?: string;
+  detail?: string;
+};
+
+type RepairResult = {
+  success: boolean;
+  repairedAt?: string;
+  autoFetchPreserved?: boolean;
+  error?: string;
+  detail?: string;
+};
+
+type BackfillResult = {
+  success: boolean;
+  mode?: string;
+  since_days?: number;
+  max_messages?: number;
+  include_sent?: boolean;
+  fetched?: number;
+  candidates?: number;
+  duplicates?: number;
+  skipped_missing_message_id?: number;
+  inserted?: number;
+  accounts?: Array<{
+    email: string;
+    fetched: number;
+    candidates: number;
+    duplicates: number;
+    skipped_missing_message_id: number;
+    inserted: number;
+    mailboxes: { inbox?: number; sent?: number };
+    error?: string;
+  }>;
+  review?: {
+    emailLinkHealth?: string;
+    highPriority?: string;
+  };
+  safety?: {
+    identityReviewRequired?: boolean;
+  };
+  error?: string;
+};
+
+function fmt(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString("nb-NO", { dateStyle: "short", timeStyle: "short" });
+}
+
+function readinessClasses(state?: string) {
+  if (state === "ready") return "border-emerald-300 bg-emerald-50 text-emerald-950";
+  if (state === "paused") return "border-rose-300 bg-rose-50 text-rose-950";
+  if (state === "needs_connection") return "border-amber-300 bg-amber-50 text-amber-950";
+  return "border-slate-300 bg-slate-50 text-slate-950";
+}
+
+export default function EmailReadinessPage() {
+  const [data, setData] = useState<CommunicationsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState<string | null>(null);
+  const [checks, setChecks] = useState<Record<string, CheckResult>>({});
+  const [repairing, setRepairing] = useState<string | null>(null);
+  const [repairs, setRepairs] = useState<Record<string, RepairResult>>({});
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, BackfillResult>>({});
+  const [applying, setApplying] = useState<string | null>(null);
+  const [applies, setApplies] = useState<Record<string, BackfillResult>>({});
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/nexus/communications", { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`);
+      setData(body);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function checkConnection(account: EmailAccount) {
+    setChecking(account.id);
+    setChecks((current) => ({ ...current, [account.id]: { success: false } }));
+    try {
+      const response = await fetch("/api/email/connection-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.id }),
+      });
+      const body = await response.json().catch(() => ({}));
+      setChecks((current) => ({
+        ...current,
+        [account.id]: {
+          success: response.ok && body?.success === true,
+          checkedAt: body?.checkedAt,
+          inboxFound: body?.inboxFound,
+          sentFound: body?.sentFound,
+          mailboxCount: body?.mailboxCount,
+          error: response.ok ? undefined : body?.error || `HTTP ${response.status}`,
+          detail: body?.detail,
+        },
+      }));
+    } catch (err) {
+      setChecks((current) => ({
+        ...current,
+        [account.id]: { success: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    } finally {
+      setChecking(null);
+    }
+  }
+
+  async function repairConnection(account: EmailAccount) {
+    const confirmed = window.confirm(
+      `Reparer health for ${account.email_address}? Lagrede credentials verifiseres på nytt. Systempause og feiltellere ryddes bare ved vellykket IMAP-test. Auto-fetch, credentials og serverinnstillinger beholdes uendret.`
+    );
+    if (!confirmed) return;
+
+    setRepairing(account.id);
+    setRepairs((current) => ({ ...current, [account.id]: { success: false } }));
+    try {
+      const response = await fetch("/api/email/connection-repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.id, confirm: "REPAIR_EMAIL_CONNECTION" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      const result: RepairResult = {
+        success: response.ok && body?.success === true,
+        repairedAt: body?.repairedAt,
+        autoFetchPreserved: body?.autoFetchPreserved,
+        error: response.ok ? undefined : body?.error || `HTTP ${response.status}`,
+        detail: body?.detail,
+      };
+      setRepairs((current) => ({ ...current, [account.id]: result }));
+      if (result.success) {
+        setPreviews((current) => {
+          const next = { ...current };
+          delete next[account.id];
+          return next;
+        });
+        setApplies((current) => {
+          const next = { ...current };
+          delete next[account.id];
+          return next;
+        });
+        await load();
+      }
+    } catch (err) {
+      setRepairs((current) => ({
+        ...current,
+        [account.id]: { success: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    } finally {
+      setRepairing(null);
+    }
+  }
+
+  async function previewBackfill(account: EmailAccount) {
+    setPreviewing(account.id);
+    setPreviews((current) => ({ ...current, [account.id]: { success: false } }));
+    setApplies((current) => {
+      const next = { ...current };
+      delete next[account.id];
+      return next;
+    });
+    try {
+      const response = await fetch("/api/email/inbox/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: account.brand_id,
+          since_days: 180,
+          max_messages: 200,
+          include_sent: true,
+          mode: "preview",
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      setPreviews((current) => ({
+        ...current,
+        [account.id]: {
+          ...body,
+          success: response.ok && body?.success === true,
+          error: response.ok ? undefined : body?.error || `HTTP ${response.status}`,
+        },
+      }));
+    } catch (err) {
+      setPreviews((current) => ({
+        ...current,
+        [account.id]: { success: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    } finally {
+      setPreviewing(null);
+    }
+  }
+
+  async function applyBackfill(account: EmailAccount, preview: BackfillResult) {
+    const candidates = preview.candidates ?? 0;
+    if (!preview.success || candidates <= 0 || account.readiness?.canBackfillHistory !== true) return;
+
+    const sinceDays = preview.since_days ?? 180;
+    const maxMessages = preview.max_messages ?? 200;
+    const includeSent = preview.include_sent !== false;
+    const confirmed = window.confirm(
+      `Importer ${candidates} nye historiske meldinger for ${account.email_address}? Perioden er siste ${sinceDays} dager, maks ${maxMessages} meldinger${includeSent ? ", Inbox + Sent" : ", kun Inbox"}. Historikken lagres som lest + arkivert. Ingen e-post sendes og ingen CRM-kobling skjer automatisk.`
+    );
+    if (!confirmed) return;
+
+    setApplying(account.id);
+    setApplies((current) => ({ ...current, [account.id]: { success: false } }));
+    try {
+      const response = await fetch("/api/email/inbox/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand_id: account.brand_id,
+          since_days: sinceDays,
+          max_messages: maxMessages,
+          include_sent: includeSent,
+          mode: "apply",
+          confirm: "BACKFILL_EMAIL_HISTORY",
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      const result: BackfillResult = {
+        ...body,
+        success: response.ok && body?.success === true,
+        error: response.ok ? undefined : body?.error || `HTTP ${response.status}`,
+      };
+      setApplies((current) => ({ ...current, [account.id]: result }));
+      if (result.success) {
+        setPreviews((current) => ({
+          ...current,
+          [account.id]: {
+            ...preview,
+            candidates: Math.max(0, candidates - (result.inserted ?? 0)),
+          },
+        }));
+      }
+    } catch (err) {
+      setApplies((current) => ({
+        ...current,
+        [account.id]: { success: false, error: err instanceof Error ? err.message : String(err) },
+      }));
+    } finally {
+      setApplying(null);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-[1500px] space-y-6 p-4 text-slate-950 sm:p-6">
+      <header className="rounded-3xl border border-cyan-800 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-xl">
+        <div className="text-xs font-black uppercase tracking-[.22em] text-cyan-200">Nexus OS · Communications</div>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black">Email Readiness</h1>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-200">Kanonisk status for credentials, tilkoblingshelse og historisk backfill. Tilkoblingstesten leser kun mailbox-metadata. Controlled health repair kan rydde pause/feilstatus etter vellykket test uten å aktivere auto-fetch. Backfill preview beregner kandidater/duplikater uten write; apply er en separat eksplisitt handling etter preview.</p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/nexus-os/communications" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm font-black text-white">Communications</Link>
+            <button onClick={load} disabled={loading} className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-60">
+              {loading ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 inline h-4 w-4" />}
+              Oppdater
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {error && <div className="rounded-xl border border-rose-400 bg-rose-50 p-4 text-sm font-semibold text-rose-950"><AlertTriangle className="mr-2 inline h-4 w-4" />{error}</div>}
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><MailCheck className="h-5 w-5 text-cyan-800" /><div className="mt-3 text-xs font-bold uppercase text-slate-600">Aktive kontoer</div><div className="mt-1 text-2xl font-black">{data?.emailAccounts?.length ?? "—"}</div></div>
+        <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><AlertTriangle className="h-5 w-5 text-amber-700" /><div className="mt-3 text-xs font-bold uppercase text-slate-600">Ikke klare</div><div className="mt-1 text-2xl font-black">{data?.summary?.unhealthyEmailAccounts ?? "—"}</div></div>
+        <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><CheckCircle2 className="h-5 w-5 text-emerald-700" /><div className="mt-3 text-xs font-bold uppercase text-slate-600">Backfill-klare</div><div className="mt-1 text-2xl font-black">{data?.summary?.emailBackfillReady ?? "—"}</div></div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        {(data?.emailAccounts || []).map((account) => {
+          const readiness = account.readiness || {};
+          const check = checks[account.id];
+          const repair = repairs[account.id];
+          const preview = previews[account.id];
+          const apply = applies[account.id];
+          const canRepair = check?.success === true && readiness.state !== "ready";
+          const canApply = readiness.canBackfillHistory === true && preview?.success === true && (preview.candidates ?? 0) > 0;
+          return (
+            <article key={account.id} className={`rounded-2xl border p-5 shadow-sm ${readinessClasses(readiness.state)}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><div className="text-lg font-black">{account.display_name || account.brand_id}</div><div className="mt-1 text-sm opacity-80">{account.email_address}</div></div>
+                <span className="rounded-full border border-current/20 bg-white/70 px-2.5 py-1 text-[10px] font-black uppercase">{readiness.label || readiness.state || "Ukjent"}</span>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                <div><b>Credentials:</b> {readiness.hasCredentials ? "Finnes" : "Mangler"}</div>
+                <div><b>Systempause:</b> {account.auto_fetch_paused_by_system ? "Ja" : "Nei"}</div>
+                <div><b>Siste suksess:</b> {fmt(account.last_success_at)}</div>
+                <div><b>Sist hentet:</b> {fmt(account.last_fetched_at)}</div>
+                <div><b>Connection check:</b> {readiness.canTestConnection ? "Tillatt" : "Blokkert"}</div>
+                <div><b>Historisk backfill:</b> {readiness.canBackfillHistory ? "Klar" : "Blokkert"}</div>
+              </div>
+              {readiness.reason && <div className="mt-4 rounded-xl border border-current/20 bg-white/70 p-3 text-sm font-semibold">{readiness.reason}</div>}
+              {account.health_message && <div className="mt-3 text-xs opacity-80">Health: {account.health_message}</div>}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={() => checkConnection(account)} disabled={!readiness.canTestConnection || checking === account.id || repairing === account.id || applying === account.id} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  {checking === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 inline h-4 w-4" />}
+                  Test tilkobling
+                </button>
+                {canRepair && <button onClick={() => repairConnection(account)} disabled={repairing === account.id || applying === account.id} className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  {repairing === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <Wrench className="mr-2 inline h-4 w-4" />}
+                  Reparer health
+                </button>}
+                <button onClick={() => previewBackfill(account)} disabled={!readiness.canBackfillHistory || previewing === account.id || repairing === account.id || applying === account.id} className="rounded-xl border border-current/20 bg-white/80 px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40">
+                  {previewing === account.id ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <Eye className="mr-2 inline h-4 w-4" />}
+                  Preview historikk
+                </button>
+                <Link href="/nexus-os/communications" className="rounded-xl border border-current/20 bg-white/70 px-4 py-2 text-xs font-black">Åpne Communications</Link>
+              </div>
+              {!readiness.canBackfillHistory && <div className="mt-3 text-xs font-semibold opacity-75">Historikk-preview og apply er låst til kontoen har dokumentert vellykket tilkobling og ren readiness-status.</div>}
+              {check && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${check.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
+                {check.success ? `Tilkobling OK · Inbox ${check.inboxFound ? "funnet" : "ikke funnet"} · Sent ${check.sentFound ? "funnet" : "ikke funnet"} · ${check.mailboxCount ?? "—"} mapper` : `Tilkobling feilet: ${check.error || check.detail || "ukjent feil"}`}
+                {check.success && readiness.state !== "ready" && <div className="mt-2 text-xs">Lagret credential virker, men kanonisk health er fortsatt {readiness.state || "ikke klar"}. «Reparer health» er en separat eksplisitt handling og aktiverer ikke auto-fetch.</div>}
+                {check.checkedAt && <div className="mt-1 text-xs opacity-70">Sjekket {fmt(check.checkedAt)}</div>}
+              </div>}
+              {repair && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${repair.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
+                {repair.success ? `Health reparert. Auto-fetch ble bevart ${repair.autoFetchPreserved === true ? "uendret" : "etter eksisterende verdi"}.` : `Health repair feilet: ${repair.error || repair.detail || "ukjent feil"}`}
+                {repair.repairedAt && <div className="mt-1 text-xs opacity-70">Reparert {fmt(repair.repairedAt)}</div>}
+              </div>}
+              {preview && <div className={`mt-4 rounded-xl border p-3 text-sm ${preview.success ? "border-cyan-300 bg-cyan-50 text-cyan-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
+                {preview.success ? <>
+                  <div className="font-black">Backfill preview · ingen writes</div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div>Periode: siste {preview.since_days ?? 180} dager</div>
+                    <div>Maks: {preview.max_messages ?? 200} meldinger</div>
+                    <div>Hentet: {preview.fetched ?? 0}</div>
+                    <div>Nye kandidater: {preview.candidates ?? 0}</div>
+                    <div>Duplikater: {preview.duplicates ?? 0}</div>
+                    <div>Mangler Message-ID: {preview.skipped_missing_message_id ?? 0}</div>
+                    <div>Inserted: {preview.inserted ?? 0}</div>
+                    <div>Sent inkludert: {preview.include_sent ? "Ja" : "Nei"}</div>
+                  </div>
+                  {(preview.accounts || []).map((row) => <div key={row.email} className="mt-3 rounded-lg border border-cyan-200 bg-white/70 p-2 text-xs">
+                    <b>{row.email}</b> · Inbox {row.mailboxes?.inbox ?? 0} · Sent {row.mailboxes?.sent ?? 0} · kandidater {row.candidates} · duplikater {row.duplicates}{row.error ? ` · feil: ${row.error}` : ""}
+                  </div>)}
+                  {canApply && <button onClick={() => applyBackfill(account, preview)} disabled={applying === account.id} className="mt-4 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+                    {applying === account.id && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}
+                    Importer {preview.candidates ?? 0} meldinger
+                  </button>}
+                  {preview.success && (preview.candidates ?? 0) === 0 && <div className="mt-3 text-xs font-semibold">Ingen nye meldinger å importere fra denne previewen.</div>}
+                </> : <div className="font-semibold">Preview feilet: {preview.error || "ukjent feil"}</div>}
+              </div>}
+              {apply && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${apply.success ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-rose-300 bg-rose-100 text-rose-950"}`}>
+                {apply.success ? <>
+                  <div>Historisk backfill fullført: {apply.inserted ?? 0} meldinger importert som lest + arkivert. Ingen e-post ble sendt og ingen CRM-kobling ble gjort automatisk.</div>
+                  {(apply.safety?.identityReviewRequired || apply.review?.emailLinkHealth || apply.review?.highPriority) && <div className="mt-3 rounded-lg border border-emerald-300 bg-white/70 p-3 text-xs">
+                    <div className="font-black">Neste steg: menneskelig identity-review</div>
+                    <div className="mt-1 font-medium">Importerte meldinger må gjennom Email Link Health før eventuell kontrollert CRM-kobling.</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {apply.review?.highPriority && <Link href={apply.review.highPriority} className="rounded-lg bg-emerald-800 px-3 py-2 font-black text-white">Åpne high-priority review</Link>}
+                      {apply.review?.emailLinkHealth && <Link href={apply.review.emailLinkHealth} className="rounded-lg border border-emerald-400 bg-white px-3 py-2 font-black text-emerald-950">Åpne hele Email Link Health</Link>}
+                    </div>
+                  </div>}
+                </> : `Backfill apply feilet: ${apply.error || "ukjent feil"}`}
+              </div>}
+            </article>
+          );
+        })}
+      </section>
+
+      <div className="rounded-2xl border border-cyan-300 bg-cyan-50 p-4 text-sm text-cyan-950"><ShieldCheck className="mr-2 inline h-5 w-5" /><b>Sikkerhetsgrense:</b> Denne siden aktiverer ikke auto-fetch eller credential-rotasjon. Connection-check endrer ikke health. Controlled health repair krever vellykket connection-check + eksplisitt bekreftelse. Historikk-preview skriver ingenting. Backfill apply kan bare startes fra en vellykket preview med nye kandidater, krever en ny eksplisitt bekreftelse, lagrer historikk som lest + arkivert og utfører ingen automatisk CRM-kobling eller e-postsending. Etter import må identity-review gjøres eksplisitt i Email Link Health.</div>
+    </div>
+  );
+}

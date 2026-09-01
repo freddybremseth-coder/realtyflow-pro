@@ -9,6 +9,7 @@ import {
   buildCustomerTimelineInteraction,
   changedCustomerDetailFields,
   contactDetailPatch,
+  customerWaitingStatePatch,
 } from "@/lib/customer-updates";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,7 @@ export async function POST(
       interactions: appendCustomerInteraction(contact.interactions, interaction),
       updated_at: now,
       ...(parsed.data.update.nextFollowup ? { next_followup: parsed.data.update.nextFollowup } : {}),
+      ...customerWaitingStatePatch(parsed.data.update),
     };
   } else {
     const detailPatch = contactDetailPatch(parsed.data.details);

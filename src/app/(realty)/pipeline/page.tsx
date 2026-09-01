@@ -1,1921 +1,302 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CircleDollarSign,
+  ExternalLink,
+  GripVertical,
+  LayoutDashboard,
+  Loader2,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buildCustomerListAction } from "@/lib/customers/action-priority";
 import {
-  Users, Mail, DollarSign, Search, Plus, GripVertical,
-  ThumbsUp, ThumbsDown, Minus, Phone, Globe,
-  X, Upload, FileSpreadsheet, UserPlus, ArrowRight,
-  Crown, Trash2, Loader2, Calendar, Send, Bot,
-  Clock, CheckCircle2, Sparkles, MessageSquare, ChevronDown,
-  Save, Building2, Camera, FileText, Image, ScanLine,
-  Banknote, TrendingUp, UserCheck,
-} from "lucide-react";
-import { BRANDS } from "@/lib/constants";
+  CUSTOMER_PIPELINE_STATUS_LABELS,
+  normalizeCustomerPipelineStatus,
+  type CustomerPipelineStatus,
+} from "@/lib/customer-updates";
 
-// ── Types ──────────────────────────────────────────────
-
-type LeadStatus = "NEW" | "CONTACT" | "QUALIFIED" | "VIEWING" | "NEGOTIATION" | "WON" | "LOST";
-type CrmTab = "leads" | "pipeline" | "kunder";
-
-interface Interaction {
+interface Contact {
   id: string;
-  type: "email" | "call" | "meeting" | "note" | "ai";
-  content: string;
-  date: string;
-  direction?: "in" | "out";
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  pipeline_status?: string | null;
+  pipeline_value?: number | null;
+  property_interest?: string | null;
+  preferred_location?: string | null;
+  brand_id?: string | null;
+  brand?: string | null;
+  next_followup?: string | null;
+  last_contact?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  source?: string | null;
+  interactions?: Array<Record<string, unknown>> | null;
 }
 
-interface Lead {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  budget: string;
-  source: string;
-  sentiment: number;
-  status: LeadStatus;
-  property?: string;
-  notes?: string;
-  createdAt: string;
-  lastContact?: string;
-  interactions: Interaction[];
-  sale_price?: number;
-  commission_amount?: number;
-  commission_percent?: number;
-  commission_paid_date?: string;
-  brand_id?: string;
-}
-
-interface LeadIntelligenceCrmHistoryItem {
-  buyerProfileId: string;
-  intakeId: string;
-  profileStatus: string;
-  purchaseReadiness: string | null;
-  summary: string | null;
-  budgetAmount: number | null;
-  budgetCurrency: string | null;
-  contactLinked: boolean;
-  criterionCount: number;
-  shortlistCount: number;
-  latestShortlistId: string | null;
-  latestShortlistStatus: string | null;
-  latestShortlistItemCount: number;
-  presentationCount: number;
-  latestPresentationId: string | null;
-  latestPresentationStatus: string | null;
-  latestMessageDraftId: string | null;
-  latestMessageDraftStatus: string | null;
-  updatedAt: string;
-  approvedAt: string | null;
-}
-
-const TAB_COLUMNS: Record<CrmTab, LeadStatus[]> = {
-  leads: ["NEW"],
-  pipeline: ["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"],
-  kunder: ["WON", "LOST"],
-};
-
-const columns: { key: LeadStatus; label: string; color: string }[] = [
-  { key: "NEW", label: "Ny", color: "bg-blue-500" },
-  { key: "CONTACT", label: "Kontaktet", color: "bg-indigo-500" },
-  { key: "QUALIFIED", label: "Kvalifisert", color: "bg-purple-500" },
-  { key: "VIEWING", label: "Visning", color: "bg-amber-500" },
-  { key: "NEGOTIATION", label: "Forhandling", color: "bg-orange-500" },
-  { key: "WON", label: "Vunnet", color: "bg-emerald-500" },
-  { key: "LOST", label: "Tapt", color: "bg-red-500" },
+const ACTIVE_STAGES: CustomerPipelineStatus[] = [
+  "NEW",
+  "CONTACT",
+  "QUALIFIED",
+  "MATCHING",
+  "VIEWING",
+  "NEGOTIATION",
+  "RESERVED",
+  "ON_HOLD",
 ];
 
-const initialLeads: Lead[] = [];
-
-// ── Helpers ────────────────────────────────────────────
-
-function SentimentIcon({ score }: { score: number }) {
-  if (score >= 70) return <ThumbsUp size={14} className="text-emerald-400" />;
-  if (score >= 40) return <Minus size={14} className="text-amber-400" />;
-  return <ThumbsDown size={14} className="text-red-400" />;
-}
-
-function sentimentColor(score: number) {
-  if (score >= 70) return "text-emerald-400";
-  if (score >= 40) return "text-amber-400";
-  return "text-red-400";
-}
-
-function interactionIcon(type: string) {
-  switch (type) {
-    case "email": return <Mail size={14} className="text-blue-400" />;
-    case "call": return <Phone size={14} className="text-emerald-400" />;
-    case "meeting": return <Calendar size={14} className="text-purple-400" />;
-    case "ai": return <Bot size={14} className="text-amber-400" />;
-    default: return <MessageSquare size={14} className="text-slate-400" />;
-  }
-}
-
-function statusColor(status: LeadStatus) {
-  return columns.find((c) => c.key === status)?.color || "bg-slate-500";
-}
-
-function statusLabel(status: LeadStatus) {
-  return columns.find((c) => c.key === status)?.label || status;
-}
-
-const DEFAULT_NEW_LEAD_BRAND_ID = BRANDS.find((brand) => brand.id === "zeneco")?.id || BRANDS[0]?.id || "";
-
-function getBrandMeta(brandId?: string | null) {
-  return BRANDS.find((brand) => brand.id === brandId);
-}
-
-function getBuyingSignalScore(lead: Lead) {
-  const activityText = [lead.notes, lead.property, lead.source, ...lead.interactions.map((item) => item.content)]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  let score = lead.sentiment || 35;
-  if (Number(lead.budget.replace(/[^0-9]/g, "")) > 0) score += 10;
-  if (/kjøpssignal|oppdaterte ønsker|min side|favoritt|kalkulator|rapport|dokument/.test(activityText)) score += 25;
-  if (/klar nå|innen 3 mnd|visning|reservasjon|book|budsjett til/.test(activityText)) score += 20;
-  if (isBookedMeetingLead(lead)) score += 30;
-  if (["VIEWING", "NEGOTIATION"].includes(lead.status)) score += 15;
-  if (lead.email && lead.phone) score += 5;
-  return Math.min(100, Math.max(0, score));
-}
-
-function isBookedMeetingLead(lead: Lead) {
-  const activityText = [lead.notes, lead.property, lead.source, ...lead.interactions.map((item) => item.content)]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return lead.source?.startsWith("appointment_app:")
-    || /webmote booket|webmøte booket|bookingreferanse|bookingtype|ny booking|booket/.test(activityText)
-    || lead.interactions.some((item) => item.type === "meeting" && /book|mote|møte|samtale/.test(item.content.toLowerCase()));
-}
-
-function bookedMeetingSummary(lead: Lead) {
-  const meeting = lead.interactions.find((item) => item.type === "meeting");
-  if (meeting?.content) return meeting.content;
-  const match = lead.notes?.match(/Tidspunkt:\s*(.+)/i);
-  return match?.[1] || "Kunden har valgt tid og forventer oppfolging.";
-}
-
-function signalLabel(score: number) {
-  if (score >= 80) return "Varmt kjøpssignal";
-  if (score >= 60) return "Aktiv vurdering";
-  if (score >= 40) return "Bør følges";
-  return "Tidlig fase";
-}
-
-const emptyLead = {
-  name: "", email: "", phone: "", budget: "", source: "", property: "", notes: "", brand_id: DEFAULT_NEW_LEAD_BRAND_ID,
+const STAGE_ACCENTS: Record<CustomerPipelineStatus, string> = {
+  NEW: "border-blue-500/30 bg-blue-500/10 text-blue-200",
+  CONTACT: "border-indigo-500/30 bg-indigo-500/10 text-indigo-200",
+  QUALIFIED: "border-purple-500/30 bg-purple-500/10 text-purple-200",
+  MATCHING: "border-cyan-500/30 bg-cyan-500/10 text-cyan-200",
+  VIEWING: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  NEGOTIATION: "border-orange-500/30 bg-orange-500/10 text-orange-200",
+  RESERVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  WON: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  LOST: "border-red-500/30 bg-red-500/10 text-red-200",
+  ON_HOLD: "border-slate-600 bg-slate-800 text-slate-300",
 };
 
-function shortId(value: string | null | undefined) {
-  return value ? `${value.slice(0, 8)}...${value.slice(-4)}` : "Ikke satt";
+const BRAND_LABELS: Record<string, string> = {
+  zeneco: "Zen Eco Homes",
+  soleada: "Soleada.no",
+  pinosoecolife: "Pinoso EcoLife",
+  keyholding: "Keyholding",
+};
+
+function money(value: unknown) {
+  return new Intl.NumberFormat("nb-NO", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+    notation: Number(value || 0) >= 1_000_000 ? "compact" : "standard",
+  }).format(Number(value || 0));
 }
 
-function leadIntelligenceProfileUrl(item: LeadIntelligenceCrmHistoryItem) {
-  const params = new URLSearchParams({ buyerProfileId: item.buyerProfileId });
-  if (item.latestPresentationId) params.set("presentationId", item.latestPresentationId);
-  if (item.latestMessageDraftId) params.set("messageDraftId", item.latestMessageDraftId);
-  return `/lead-intelligence?${params.toString()}`;
+function dateInfo(value: unknown) {
+  if (!value) return { label: "Ikke planlagt", overdue: false, future: false };
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return { label: "Ugyldig dato", overdue: false, future: false };
+  const now = Date.now();
+  return {
+    label: date.toLocaleDateString("nb-NO", { day: "2-digit", month: "short" }),
+    overdue: date.getTime() < now,
+    future: date.getTime() >= now,
+  };
 }
-
-function leadIntelligenceMatchUrl(item: LeadIntelligenceCrmHistoryItem) {
-  return `${leadIntelligenceProfileUrl(item)}#lead-intelligence-property-match`;
-}
-
-function formatLeadIntelligenceBudget(item: LeadIntelligenceCrmHistoryItem) {
-  if (item.budgetAmount === null) return "Budsjett ikke satt";
-  return `${item.budgetAmount.toLocaleString("nb-NO")} ${item.budgetCurrency || ""}`.trim();
-}
-
-function formatLeadIntelligenceDate(value: string | null | undefined) {
-  if (!value) return "Ikke satt";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("nb-NO");
-}
-
-// ── Main Component ─────────────────────────────────────
 
 export default function PipelinePage() {
-  const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
-  const [draggedLead, setDraggedLead] = useState<string | null>(null);
-  const [showNewLead, setShowNewLead] = useState(false);
-  const [showCSVUpload, setShowCSVUpload] = useState(false);
-  const [newLead, setNewLead] = useState(emptyLead);
-  const [activeTab, setActiveTab] = useState<CrmTab>("pipeline");
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  // Commission modal state
-  const [showCommissionModal, setShowCommissionModal] = useState(false);
-  const [commissionLeadId, setCommissionLeadId] = useState<string | null>(null);
-  const [commissionData, setCommissionData] = useState({
-    sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "",
-  });
-  const [csvData, setCsvData] = useState<Lead[]>([]);
-  const [csvRaw, setCsvRaw] = useState("");
-  const [dbLoaded, setDbLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  // Document/image import state
-  const [showDocImport, setShowDocImport] = useState(false);
-  const [docFiles, setDocFiles] = useState<{ file: File; preview: string | null; status: "queued" | "analyzing" | "done" | "error"; leads: Lead[]; rawText: string; confidence: string; error?: string }[]>([]);
-  const [docParsing, setDocParsing] = useState(false);
-  const [docAllLeads, setDocAllLeads] = useState<Lead[]>([]);
-  const docFileRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
-
-  // Detail panel state
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [editNotes, setEditNotes] = useState("");
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailContent, setEmailContent] = useState("");
-  const [showCallLog, setShowCallLog] = useState(false);
-  const [callNotes, setCallNotes] = useState("");
-  const [showMeetingModal, setShowMeetingModal] = useState(false);
-  const [editingCommission, setEditingCommission] = useState(false);
-  const [editCommissionData, setEditCommissionData] = useState({ sale_price: "", commission_percent: "", commission_amount: "", commission_paid_date: "", brand_id: "" });
-  const [meetingData, setMeetingData] = useState({ date: "", time: "", notes: "" });
-  const [aiDraftLoading, setAiDraftLoading] = useState(false);
-  const [gmailSyncing, setGmailSyncing] = useState(false);
-  const [gmailInteractions, setGmailInteractions] = useState<Interaction[]>([]);
-  const [gmailError, setGmailError] = useState<string | null>(null);
-  const [showGmailMerged, setShowGmailMerged] = useState(false);
-  const [portalInviteStatus, setPortalInviteStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [portalInviteError, setPortalInviteError] = useState("");
-  const [portalTemporaryPassword, setPortalTemporaryPassword] = useState("");
-  const [leadIntelligenceHistory, setLeadIntelligenceHistory] = useState<LeadIntelligenceCrmHistoryItem[]>([]);
-  const [leadIntelligenceHistoryLoading, setLeadIntelligenceHistoryLoading] = useState(false);
-  const [leadIntelligenceHistoryError, setLeadIntelligenceHistoryError] = useState<string | null>(null);
-
-  // ── Load leads from database ───────────────────────
-
-  const loadLeads = useCallback(async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
-      const res = await fetch('/api/contacts?view=pipeline');
-      const { contacts } = await res.json();
-      if (contacts && contacts.length > 0) {
-        const mapped: Lead[] = contacts.map((c: any) => ({
-          id: c.id,
-          name: c.name || '',
-          email: c.email || '',
-          phone: c.phone || '',
-          budget: c.pipeline_value ? `€${c.pipeline_value.toLocaleString()}` : '€0',
-          source: c.source || 'Manuell',
-          sentiment: typeof c.sentiment === 'number' ? c.sentiment : c.sentiment === 'hot' ? 90 : c.sentiment === 'warm' ? 70 : c.sentiment === 'cold' ? 20 : 50,
-          status: (c.pipeline_status || 'NEW') as LeadStatus,
-          property: c.property_interest || undefined,
-          notes: c.notes || undefined,
-          createdAt: c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-          lastContact: c.last_contact ? c.last_contact.split('T')[0] : c.updated_at ? c.updated_at.split('T')[0] : undefined,
-          interactions: c.interactions || [],
-          sale_price: c.sale_price || undefined,
-          commission_amount: c.commission_amount || undefined,
-          commission_percent: c.commission_percent || undefined,
-          commission_paid_date: c.commission_paid_date ? c.commission_paid_date.split('T')[0] : undefined,
-          brand_id: c.brand_id || c.brand || undefined,
-        }));
-        setLeads(mapped);
-        setDbLoaded(true);
-      }
-    } catch {
-      // Fallback to hardcoded data silently
-    }
-  }, []);
-
-  useEffect(() => { loadLeads(); }, [loadLeads]);
-
-  const loadLeadIntelligenceHistory = useCallback(async (lead: Lead) => {
-    setLeadIntelligenceHistoryLoading(true);
-    setLeadIntelligenceHistoryError(null);
-    setLeadIntelligenceHistory([]);
-
-    if (!lead.brand_id) {
-      setLeadIntelligenceHistoryLoading(false);
-      setLeadIntelligenceHistoryError("Kontakten mangler brand, så Lead Intelligence-historikk kan ikke avgrenses trygt.");
-      return;
-    }
-
-    try {
-      const params = new URLSearchParams({
-        brand: lead.brand_id,
-        contactId: lead.id,
-        limit: "5",
-      });
-      const response = await fetch(`/api/lead-intelligence/worklist?${params.toString()}`);
+      const response = await fetch("/api/contacts", { cache: "no-store" });
       const body = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const code = body?.error?.code || "LEAD_INTELLIGENCE_HISTORY_UNAVAILABLE";
-        const message = body?.error?.message || "Kunne ikke hente Lead Intelligence-historikk.";
-        setLeadIntelligenceHistoryError(`${code}: ${message}`);
-        return;
-      }
-
-      setLeadIntelligenceHistory(body?.result?.items || []);
-    } catch {
-      setLeadIntelligenceHistoryError("Kunne ikke hente Lead Intelligence-historikk akkurat nå.");
+      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke hente pipeline.");
+      setContacts(body?.contacts || []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Kunne ikke hente pipeline.");
     } finally {
-      setLeadIntelligenceHistoryLoading(false);
+      setLoading(false);
     }
   }, []);
 
-  // Keep selectedLead in sync with leads state
   useEffect(() => {
-    if (selectedLead) {
-      const updated = leads.find((l) => l.id === selectedLead.id);
-      if (updated) setSelectedLead(updated);
+    void load();
+  }, [load]);
+
+  const activeContacts = useMemo(() => contacts.filter((contact) => ACTIVE_STAGES.includes(normalizeCustomerPipelineStatus(contact.pipeline_status))), [contacts]);
+
+  const visibleContacts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return activeContacts;
+    return activeContacts.filter((contact) => [
+      contact.name,
+      contact.email,
+      contact.phone,
+      contact.property_interest,
+      contact.preferred_location,
+      contact.brand_id,
+      contact.brand,
+      contact.source,
+    ].filter(Boolean).join(" ").toLowerCase().includes(query));
+  }, [activeContacts, search]);
+
+  const byStage = useMemo(() => {
+    const result = new Map<CustomerPipelineStatus, Contact[]>();
+    for (const stage of ACTIVE_STAGES) result.set(stage, []);
+    for (const contact of visibleContacts) {
+      const stage = normalizeCustomerPipelineStatus(contact.pipeline_status);
+      result.get(stage)?.push(contact);
     }
-  }, [leads, selectedLead?.id]);
-
-  useEffect(() => {
-    setPortalInviteStatus("idle");
-    setPortalInviteError("");
-    setPortalTemporaryPassword("");
-  }, [selectedLead?.id]);
-
-  useEffect(() => {
-    if (!selectedLead) {
-      setLeadIntelligenceHistory([]);
-      setLeadIntelligenceHistoryError(null);
-      setLeadIntelligenceHistoryLoading(false);
-      return;
+    for (const rows of result.values()) {
+      rows.sort((a, b) => buildCustomerListAction(b).score - buildCustomerListAction(a).score || Number(b.pipeline_value || 0) - Number(a.pipeline_value || 0));
     }
+    return result;
+  }, [visibleContacts]);
 
-    void loadLeadIntelligenceHistory(selectedLead);
-  }, [loadLeadIntelligenceHistory, selectedLead?.id, selectedLead?.brand_id]);
-
-  const filteredLeads = leads.filter(
-    (l) =>
-      l.name.toLowerCase().includes(search.toLowerCase()) ||
-      l.email.toLowerCase().includes(search.toLowerCase()) ||
-      (l.property && l.property.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  // ── Drag & drop ────────────────────────────────────
-
-  const handleDragStart = (leadId: string) => setDraggedLead(leadId);
-  const handleDrop = (newStatus: LeadStatus) => {
-    if (!draggedLead) return;
-    if (newStatus === "WON") {
-      setCommissionLeadId(draggedLead);
-      setShowCommissionModal(true);
-      setDraggedLead(null);
-      return;
-    }
-    setLeads((prev) => prev.map((l) => (l.id === draggedLead ? { ...l, status: newStatus } : l)));
-    if (dbLoaded) {
-      fetch('/api/contacts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draggedLead, pipeline_status: newStatus }),
-      }).catch(() => {});
-    }
-    setDraggedLead(null);
-  };
-
-  // ── CRUD operations ────────────────────────────────
-
-  const changeStatus = async (leadId: string, newStatus: LeadStatus) => {
-    if (newStatus === "WON") {
-      setCommissionLeadId(leadId);
-      setShowCommissionModal(true);
-      return;
-    }
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l)));
-    if (dbLoaded) {
-      fetch('/api/contacts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leadId, pipeline_status: newStatus }),
-      }).catch(() => {});
-    }
-  };
-
-  const confirmCommission = async () => {
-    if (!commissionLeadId) return;
-    const salePrice = parseFloat(commissionData.sale_price) || 0;
-    const pct = parseFloat(commissionData.commission_percent) || 0;
-    const amount = commissionData.commission_amount ? parseFloat(commissionData.commission_amount) : salePrice * (pct / 100);
-    const updates = {
-      id: commissionLeadId,
-      pipeline_status: "WON",
-      sale_price: salePrice,
-      commission_amount: amount,
-      commission_percent: pct,
-      commission_paid_date: commissionData.commission_paid_date || null,
-      brand_id: commissionData.brand_id,
+  const metrics = useMemo(() => {
+    const actions = activeContacts.map((contact) => buildCustomerListAction(contact));
+    return {
+      active: activeContacts.length,
+      needsAction: actions.filter((action) => action.needsAction).length,
+      overdue: activeContacts.filter((contact) => dateInfo(contact.next_followup).overdue).length,
+      matching: activeContacts.filter((contact) => normalizeCustomerPipelineStatus(contact.pipeline_status) === "MATCHING").length,
+      reserved: activeContacts.filter((contact) => normalizeCustomerPipelineStatus(contact.pipeline_status) === "RESERVED").length,
+      value: activeContacts.reduce((sum, contact) => sum + Number(contact.pipeline_value || 0), 0),
     };
-    setLeads((prev) => prev.map((l) => l.id === commissionLeadId ? {
-      ...l, status: "WON" as LeadStatus, sale_price: salePrice, commission_amount: amount,
-      commission_percent: pct, commission_paid_date: commissionData.commission_paid_date || undefined,
-      brand_id: commissionData.brand_id,
-    } : l));
-    if (dbLoaded) {
-      fetch('/api/contacts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      }).catch(() => {});
-    }
-    setShowCommissionModal(false);
-    setCommissionLeadId(null);
-    setCommissionData({ sale_price: "", commission_percent: "3", commission_amount: "", commission_paid_date: "", brand_id: "" });
-  };
+  }, [activeContacts]);
 
-  const deleteLead = async (leadId: string) => {
-    if (dbLoaded) {
-      await fetch('/api/contacts', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leadId }),
-      }).catch(() => {});
-    }
-    setLeads((prev) => prev.filter((l) => l.id !== leadId));
-    if (selectedLead?.id === leadId) setSelectedLead(null);
-  };
+  async function moveContact(contactId: string, stage: CustomerPipelineStatus) {
+    if (!ACTIVE_STAGES.includes(stage)) return;
+    const current = contacts.find((contact) => contact.id === contactId);
+    if (!current) return;
+    const previousStatus = current.pipeline_status || "NEW";
+    if (normalizeCustomerPipelineStatus(previousStatus) === stage) return;
 
-  const saveNotes = async (leadId: string, notes: string) => {
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, notes } : l)));
-    if (dbLoaded) {
-      fetch('/api/contacts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leadId, notes }),
-      }).catch(() => {});
-    }
-  };
-
-  // ── Interactions ───────────────────────────────────
-
-  const addInteraction = (type: "email" | "call" | "meeting", content: string) => {
-    if (!selectedLead || !content) return;
-    const interaction: Interaction = {
-      id: `i${Date.now()}`, type, content, date: new Date().toISOString().split("T")[0],
-      direction: type === "email" ? "out" : undefined,
-    };
-    const updatedInteractions = [interaction, ...selectedLead.interactions];
-    setLeads((prev) => prev.map((c) =>
-      c.id === selectedLead.id ? { ...c, interactions: updatedInteractions } : c
-    ));
-    if (dbLoaded) {
-      fetch('/api/contacts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedLead.id,
-          interactions: updatedInteractions,
-          last_contact: interaction.date,
-        }),
-      }).catch(() => {});
-    }
-  };
-
-  const sendEmail = () => { addInteraction("email", emailContent); setEmailContent(""); setShowEmailModal(false); };
-  const logCall = () => { addInteraction("call", callNotes); setCallNotes(""); setShowCallLog(false); };
-  const bookMeeting = () => { addInteraction("meeting", `Møte ${meetingData.date} kl ${meetingData.time}: ${meetingData.notes}`); setMeetingData({ date: "", time: "", notes: "" }); setShowMeetingModal(false); };
-
-  const generateAiDraft = async () => {
-    if (!selectedLead) return;
-    setAiDraftLoading(true);
+    setSavingId(contactId);
+    setError("");
+    setContacts((rows) => rows.map((contact) => contact.id === contactId ? { ...contact, pipeline_status: stage } : contact));
     try {
-      const res = await fetch('/api/contacts/email-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contact: {
-            name: selectedLead.name, email: selectedLead.email,
-            property: selectedLead.property, notes: selectedLead.notes,
-          },
-          context: 'Oppfølging av lead',
-        }),
-      });
-      const { draft } = await res.json();
-      setEmailContent(draft || '');
-      setShowEmailModal(true);
-    } catch {
-      setEmailContent('Kunne ikke generere AI-utkast. Skriv e-posten manuelt.');
-      setShowEmailModal(true);
-    }
-    setAiDraftLoading(false);
-  };
-
-  // ── Gmail sync ─────────────────────────────────────
-
-  const syncGmail = async () => {
-    if (!selectedLead?.email) return;
-    setGmailSyncing(true);
-    setGmailError(null);
-    setGmailInteractions([]);
-    try {
-      const res = await fetch(`/api/gmail/sync?contactEmail=${encodeURIComponent(selectedLead.email)}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setGmailError(data.error || "Kunne ikke hente Gmail-tråder");
-      } else {
-        setGmailInteractions(data.interactions || []);
-        if ((data.interactions || []).length === 0) setGmailError("Ingen e-poster funnet for denne kontakten");
-      }
-    } catch {
-      setGmailError("Nettverksfeil. Prøv igjen.");
-    }
-    setGmailSyncing(false);
-  };
-
-  const saveGmailInteractions = async () => {
-    if (!selectedLead || gmailInteractions.length === 0) return;
-    // Merge gmail interactions (avoid duplicates by id)
-    const existingIds = new Set(selectedLead.interactions.map((i) => i.id));
-    const newOnes = gmailInteractions.filter((i) => !existingIds.has(i.id));
-    if (newOnes.length === 0) return;
-    const merged = [...newOnes, ...selectedLead.interactions];
-    setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? { ...l, interactions: merged } : l));
-    if (dbLoaded) {
-      fetch("/api/contacts", {
+      const response = await fetch("/api/contacts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedLead.id, interactions: merged }),
-      }).catch(() => {});
-    }
-    setGmailInteractions([]);
-    setShowGmailMerged(true);
-    setTimeout(() => setShowGmailMerged(false), 3000);
-  };
-
-  const inviteToPortal = async () => {
-    if (!selectedLead) return;
-    setPortalInviteStatus("sending");
-    setPortalInviteError("");
-    try {
-      const res = await fetch("/api/portal/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contactId: selectedLead.id,
-          redirectTo: "https://www.zenecohomes.com/auth/callback",
-        }),
+        body: JSON.stringify({ id: contactId, pipeline_status: stage }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Kunne ikke sende portaltilgang");
-      setPortalInviteStatus("sent");
-      setPortalTemporaryPassword(data.temporaryPassword || "");
-      await loadLeads();
-    } catch (error) {
-      setPortalInviteError(error instanceof Error ? error.message : "Kunne ikke sende portaltilgang");
-      setPortalInviteStatus("error");
-    }
-  };
-
-  // ── Add lead / CSV ─────────────────────────────────
-
-  const totalValue = leads
-    .filter((l) => l.status !== "LOST")
-    .reduce((sum, l) => {
-      const num = parseInt(l.budget.replace(/[^0-9]/g, ""));
-      return sum + (isNaN(num) ? 0 : num);
-    }, 0);
-
-  const addNewLead = async () => {
-    if (!newLead.name || !newLead.brand_id) return;
-    const now = new Date().toISOString();
-    const selectedBrandId = newLead.brand_id || DEFAULT_NEW_LEAD_BRAND_ID;
-    const contactPayload = {
-      name: newLead.name,
-      email: newLead.email || "",
-      phone: newLead.phone || "",
-      brand: selectedBrandId,
-      brand_id: selectedBrandId,
-      pipeline_value: parseInt(String(newLead.budget).replace(/[^0-9]/g, '')) || 0,
-      source: newLead.source || "Manuell",
-      pipeline_status: "NEW",
-      property_interest: newLead.property || "",
-      notes: newLead.notes || "",
-      last_contact: now,
-      next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
-      created_at: now,
-      updated_at: now,
-    };
-
-    try {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contactPayload),
-      });
-      const { contact } = await res.json();
-      const lead: Lead = {
-        id: contact?.id || `L${String(leads.length + 1).padStart(3, "0")}`,
-        name: newLead.name, email: newLead.email || "", phone: newLead.phone || "",
-        budget: newLead.budget ? `€${newLead.budget}` : "€0",
-        source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
-        property: newLead.property || undefined, notes: newLead.notes || undefined,
-        brand_id: contact?.brand_id || contact?.brand || selectedBrandId,
-        createdAt: now.split("T")[0], lastContact: now.split("T")[0],
-        interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
-      };
-      setLeads((prev) => [lead, ...prev]);
-    } catch {
-      const lead: Lead = {
-        id: `L${String(leads.length + 1).padStart(3, "0")}`,
-        name: newLead.name, email: newLead.email || "", phone: newLead.phone || "",
-        budget: newLead.budget ? `€${newLead.budget}` : "€0",
-        source: newLead.source || "Manuell", sentiment: 50, status: "NEW",
-        property: newLead.property || undefined, notes: newLead.notes || undefined,
-        brand_id: selectedBrandId,
-        createdAt: now.split("T")[0], lastContact: now.split("T")[0],
-        interactions: [{ id: `manual-${Date.now()}`, type: "note", content: "Lead opprettet manuelt", date: now, direction: "in" }],
-      };
-      setLeads((prev) => [lead, ...prev]);
-    }
-    setNewLead(emptyLead);
-    setShowNewLead(false);
-    setActiveTab("leads");
-  };
-
-  const parseCSV = (text: string) => {
-    const lines = text.trim().split("\n");
-    if (lines.length < 2) return;
-    const headers = lines[0].toLowerCase().split(/[;,\t]/);
-    const findCol = (keywords: string[]) =>
-      headers.findIndex((h) => keywords.some((k) => h.trim().includes(k)));
-    const nameIdx = findCol(["name", "navn", "fullt navn", "full name"]);
-    const emailIdx = findCol(["email", "epost", "e-post", "mail"]);
-    const phoneIdx = findCol(["phone", "telefon", "tlf", "mobil"]);
-    const budgetIdx = findCol(["budget", "budsjett", "price", "pris"]);
-    const sourceIdx = findCol(["source", "kilde", "kanal"]);
-    const propertyIdx = findCol(["property", "eiendom", "bolig", "interest"]);
-    const notesIdx = findCol(["notes", "notater", "kommentar", "comment"]);
-
-    const parsed: Lead[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(/[;,\t]/);
-      if (cols.length < 2) continue;
-      const name = nameIdx >= 0 ? cols[nameIdx]?.trim() : cols[0]?.trim();
-      if (!name) continue;
-      parsed.push({
-        id: `CSV${String(i).padStart(3, "0")}`, name,
-        email: emailIdx >= 0 ? cols[emailIdx]?.trim() || "" : "",
-        phone: phoneIdx >= 0 ? cols[phoneIdx]?.trim() || "" : "",
-        budget: budgetIdx >= 0 ? `€${cols[budgetIdx]?.trim().replace(/[^0-9]/g, "") || "0"}` : "€0",
-        source: sourceIdx >= 0 ? cols[sourceIdx]?.trim() || "CSV Import" : "CSV Import",
-        sentiment: 50, status: "NEW",
-        property: propertyIdx >= 0 ? cols[propertyIdx]?.trim() : undefined,
-        notes: notesIdx >= 0 ? cols[notesIdx]?.trim() : undefined,
-        createdAt: new Date().toISOString().split("T")[0],
-        lastContact: new Date().toISOString().split("T")[0],
-        interactions: [],
-      });
-    }
-    setCsvData(parsed);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { const text = ev.target?.result as string; setCsvRaw(text); parseCSV(text); };
-    reader.readAsText(file);
-  };
-
-  const importCSVLeads = async () => {
-    if (csvData.length === 0) return;
-    setSaving(true);
-    const savedLeads: Lead[] = [];
-    for (const lead of csvData) {
-      try {
-        const now = new Date().toISOString();
-        const res = await fetch('/api/contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: lead.name, email: lead.email || '', phone: lead.phone || '',
-            pipeline_status: 'NEW',
-            pipeline_value: parseInt(String(lead.budget).replace(/[^0-9]/g, '')) || 0,
-            source: lead.source || 'CSV Import', property_interest: lead.property || '',
-            notes: lead.notes || '',
-            last_contact: now,
-            next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-            interactions: [{ id: `csv-${Date.now()}`, type: "note", content: "Lead importert fra CSV", date: now, direction: "in" }],
-            created_at: now,
-            updated_at: now,
-          }),
-        });
-        const data = await res.json();
-        savedLeads.push({ ...lead, id: data.contact?.id || lead.id, lastContact: now.split("T")[0] });
-      } catch {
-        savedLeads.push(lead);
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Kunne ikke flytte kunden.");
+      if (body?.contact) {
+        setContacts((rows) => rows.map((contact) => contact.id === contactId ? { ...contact, ...body.contact } : contact));
       }
+    } catch (moveError) {
+      setContacts((rows) => rows.map((contact) => contact.id === contactId ? { ...contact, pipeline_status: previousStatus } : contact));
+      setError(moveError instanceof Error ? moveError.message : "Kunne ikke flytte kunden.");
+    } finally {
+      setSavingId(null);
+      setDraggedId(null);
     }
-    setLeads((prev) => [...savedLeads, ...prev]);
-    setCsvData([]); setCsvRaw(""); setShowCSVUpload(false); setSaving(false); setActiveTab("leads");
-  };
-
-  // ── Document/Image Import ─────────────────────────
-
-  const handleDocFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const newFiles = Array.from(files).map((file) => ({
-      file,
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      status: "queued" as const,
-      leads: [] as Lead[],
-      rawText: "",
-      confidence: "",
-    }));
-    setDocFiles((prev) => [...prev, ...newFiles]);
-    // Reset file input so the same files can be re-selected
-    if (e.target) e.target.value = '';
-  };
-
-  const analyzeDocQueue = async () => {
-    setDocParsing(true);
-    const updated = [...docFiles];
-    const allLeads: Lead[] = [];
-    let leadCounter = 0;
-
-    for (let i = 0; i < updated.length; i++) {
-      if (updated[i].status !== "queued") continue;
-      updated[i] = { ...updated[i], status: "analyzing" };
-      setDocFiles([...updated]);
-
-      try {
-        const formData = new FormData();
-        formData.append('file', updated[i].file);
-        const res = await fetch('/api/contacts/import-document', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        const mapped: Lead[] = (data.leads || []).map((l: any) => {
-          leadCounter++;
-          return {
-            id: `DOC${String(leadCounter).padStart(3, '0')}`,
-            name: l.name || 'Ukjent',
-            email: l.email || '',
-            phone: l.phone || '',
-            budget: l.budget ? `€${l.budget.toLocaleString()}` : '€0',
-            source: l.source || 'Document Import',
-            property: l.property_interest || '',
-            notes: [
-              l.notes || '',
-              l.preferences?.features?.length ? `Ønsker: ${l.preferences.features.join(', ')}` : '',
-              l.preferences?.property_type ? `Type: ${l.preferences.property_type}` : '',
-              l.preferences?.location ? `Sted: ${l.preferences.location}` : '',
-            ].filter(Boolean).join('\n'),
-            sentiment: l.sentiment === 'hot' ? 90 : l.sentiment === 'warm' ? 70 : l.sentiment === 'cold' ? 20 : 50,
-            status: 'NEW' as LeadStatus,
-            createdAt: new Date().toISOString().split('T')[0],
-            lastContact: new Date().toISOString().split('T')[0],
-            interactions: [],
-          };
-        });
-        updated[i] = { ...updated[i], status: "done", leads: mapped, rawText: data.rawText || '', confidence: data.confidence || '' };
-        allLeads.push(...mapped);
-      } catch (err) {
-        updated[i] = { ...updated[i], status: "error", error: err instanceof Error ? err.message : 'Analyse feilet' };
-      }
-      setDocFiles([...updated]);
-    }
-    setDocAllLeads(allLeads);
-    setDocParsing(false);
-  };
-
-  const importDocLeads = async () => {
-    const leadsToImport = docAllLeads.length > 0 ? docAllLeads : docFiles.flatMap((f) => f.leads);
-    if (leadsToImport.length === 0) return;
-    setSaving(true);
-    const savedLeads: Lead[] = [];
-    for (const lead of leadsToImport) {
-      try {
-        const now = new Date().toISOString();
-        const res = await fetch('/api/contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: lead.name, email: lead.email || '', phone: lead.phone || '',
-            pipeline_status: 'NEW',
-            pipeline_value: parseInt(String(lead.budget).replace(/[^0-9]/g, '')) || 0,
-            source: lead.source || 'Document Import', property_interest: lead.property || '',
-            notes: lead.notes || '', created_at: now, updated_at: now,
-          }),
-        });
-        const data = await res.json();
-        savedLeads.push({ ...lead, id: data.contact?.id || lead.id });
-      } catch {
-        savedLeads.push(lead);
-      }
-    }
-    setLeads((prev) => [...savedLeads, ...prev]);
-    setDocFiles([]); setDocAllLeads([]); setShowDocImport(false);
-    setSaving(false); setActiveTab("leads");
-  };
-
-  // ── Select lead & open detail ──────────────────────
-
-  const openDetail = (lead: Lead) => {
-    setSelectedLead(lead);
-    setEditNotes(lead.notes || "");
-  };
-  const selectedLeadBrand = selectedLead?.brand_id ? getBrandMeta(selectedLead.brand_id) : null;
-
-  // ── RENDER ─────────────────────────────────────────
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">CRM</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Leads, pipeline og kunder samlet
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-sm text-slate-400">
-            Total verdi:{" "}
-            <span className="text-emerald-400 font-semibold">
-              €{(totalValue / 1000).toFixed(0)}K
-            </span>
+    <div className="mx-auto max-w-[1900px] space-y-5">
+      <header className="rounded-2xl border border-slate-700/70 bg-slate-900/70 p-4 sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-300"><LayoutDashboard size={17} /> Salgspipeline</div>
+            <h1 className="text-2xl font-bold text-white sm:text-3xl">Kanban</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-400">Én enkel pipeline-visning. Flytt kunden mellom steg her; åpne Customer 360 for detaljer, historikk, Buyer Intelligence og videre arbeid.</p>
           </div>
-          {leads.filter((l) => l.status === "WON" && l.commission_amount).length > 0 && (
-            <div className="text-sm text-slate-400">
-              Kommisjon:{" "}
-              <span className="text-amber-400 font-semibold">
-                €{leads.filter((l) => l.status === "WON").reduce((s, l) => s + (l.commission_amount || 0), 0).toLocaleString()}
-              </span>
-            </div>
-          )}
-          <Button size="sm" variant="outline" onClick={() => setShowCSVUpload(true)}>
-            <Upload size={16} className="mr-1" />CSV
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowDocImport(true)}>
-            <ScanLine size={16} className="mr-1" />Skann / PDF
-          </Button>
-          <Button size="sm" onClick={() => setShowNewLead(true)}>
-            <Plus size={16} className="mr-1" />Ny Lead
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <Button asChild variant="outline"><Link href="/customers"><Users size={16} className="mr-2" />CRM & leads</Link></Button>
+            <Button asChild variant="outline"><Link href="/customers?action=1"><Sparkles size={16} className="mr-2" />Trenger handling</Link></Button>
+            <Button onClick={load} disabled={loading} className="col-span-2 sm:col-span-1">{loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}Oppdater</Button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-900/50 rounded-lg p-1 w-fit">
-        {([
-          { key: "leads" as CrmTab, label: "Leads", icon: <UserPlus size={14} />, count: leads.filter((l) => l.status === "NEW").length },
-          { key: "pipeline" as CrmTab, label: "Pipeline", icon: <TrendingUp size={14} />, count: leads.filter((l) => ["CONTACT", "QUALIFIED", "VIEWING", "NEGOTIATION"].includes(l.status)).length },
-          { key: "kunder" as CrmTab, label: "Kunder", icon: <UserCheck size={14} />, count: leads.filter((l) => ["WON", "LOST"].includes(l.status)).length },
-        ]).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              activeTab === tab.key
-                ? "bg-primary-600 text-white shadow-lg"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-            <Badge variant={activeTab === tab.key ? "default" : "secondary"} className="text-[10px] ml-1">{tab.count}</Badge>
-          </button>
-        ))}
-      </div>
+      {error && <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><AlertTriangle size={18} className="mt-0.5 shrink-0" />{error}</div>}
 
-      {/* ── New Lead Modal ──────────────────────────── */}
-      {showNewLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowNewLead(false)}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <UserPlus size={20} className="text-primary-400" />Ny Lead
-                </h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowNewLead(false)}><X size={18} /></Button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Navn *</label>
-                  <Input placeholder="Fullt navn" value={newLead.name} onChange={(e) => setNewLead((p) => ({ ...p, name: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Brand *</label>
-                  <select
-                    value={newLead.brand_id}
-                    onChange={(e) => setNewLead((p) => ({ ...p, brand_id: e.target.value }))}
-                    className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
-                    required
-                  >
-                    {BRANDS.map((brand) => (
-                      <option key={brand.id} value={brand.id}>{brand.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">E-post</label>
-                    <Input placeholder="epost@example.com" value={newLead.email} onChange={(e) => setNewLead((p) => ({ ...p, email: e.target.value }))} /></div>
-                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Telefon</label>
-                    <Input placeholder="+47 xxx xx xxx" value={newLead.phone} onChange={(e) => setNewLead((p) => ({ ...p, phone: e.target.value }))} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Budsjett (€)</label>
-                    <Input type="number" placeholder="350000" value={newLead.budget} onChange={(e) => setNewLead((p) => ({ ...p, budget: e.target.value }))} /></div>
-                  <div><label className="text-xs font-medium text-slate-300 mb-1 block">Kilde</label>
-                    <select value={newLead.source} onChange={(e) => setNewLead((p) => ({ ...p, source: e.target.value }))} className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
-                      <option value="">Velg kilde</option>
-                      <option value="Facebook">Facebook</option><option value="Instagram">Instagram</option>
-                      <option value="LinkedIn">LinkedIn</option><option value="Google Ads">Google Ads</option>
-                      <option value="YouTube">YouTube</option><option value="Soleada.no">Soleada.no</option>
-                      <option value="Henvisning">Henvisning</option><option value="Kommo Event">Kommo Event</option>
-                      <option value="Manuell">Manuell</option>
-                    </select></div>
-                </div>
-                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Eiendomsinteresse</label>
-                  <Input placeholder="F.eks. Villa i Altea" value={newLead.property} onChange={(e) => setNewLead((p) => ({ ...p, property: e.target.value }))} /></div>
-                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Notater</label>
-                  <textarea placeholder="Tilleggsinfo..." value={newLead.notes} onChange={(e) => setNewLead((p) => ({ ...p, notes: e.target.value }))} className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-20 resize-none" /></div>
-                <Button onClick={addNewLead} className="w-full" disabled={!newLead.name || !newLead.brand_id}>
-                  <Plus size={16} className="mr-1" />Legg til lead
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><Users className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Aktiv pipeline</p><strong className="mt-1 block text-2xl text-white">{metrics.active}</strong></article>
+        <article className="rounded-xl border border-red-500/20 bg-slate-900/60 p-4"><Sparkles className="text-red-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Trenger handling</p><strong className="mt-1 block text-2xl text-white">{metrics.needsAction}</strong></article>
+        <article className="rounded-xl border border-amber-500/20 bg-slate-900/60 p-4"><CalendarClock className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Forfalt</p><strong className="mt-1 block text-2xl text-white">{metrics.overdue}</strong></article>
+        <article className="rounded-xl border border-cyan-500/20 bg-slate-900/60 p-4"><Search className="text-cyan-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Matching</p><strong className="mt-1 block text-2xl text-white">{metrics.matching}</strong></article>
+        <article className="rounded-xl border border-emerald-500/20 bg-slate-900/60 p-4"><CircleDollarSign className="text-emerald-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Reservert</p><strong className="mt-1 block text-2xl text-white">{metrics.reserved}</strong></article>
+        <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4"><CircleDollarSign className="text-amber-300" /><p className="mt-3 text-xs uppercase tracking-wide text-slate-500">Pipeline-verdi</p><strong className="mt-1 block text-2xl text-white">{money(metrics.value)}</strong></article>
+      </section>
 
-      {/* ── CSV Upload Modal ────────────────────────── */}
-      {showCSVUpload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowCSVUpload(false); setCsvData([]); setCsvRaw(""); }}>
-          <Card className="w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <FileSpreadsheet size={20} className="text-emerald-400" />Importer leads fra CSV
-                </h2>
-                <Button variant="ghost" size="icon" onClick={() => { setShowCSVUpload(false); setCsvData([]); setCsvRaw(""); }}><X size={18} /></Button>
-              </div>
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-slate-900/50 border border-dashed border-slate-600 text-center">
-                  <input ref={fileRef} type="file" accept=".csv,.txt,.tsv" onChange={handleFileUpload} className="hidden" />
-                  <Upload size={32} className="mx-auto text-slate-500 mb-2" />
-                  <p className="text-sm text-slate-300 mb-2">Dra og slipp CSV-fil eller klikk for å velge</p>
-                  <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>Velg CSV-fil</Button>
-                  <p className="text-[10px] text-slate-500 mt-2">Kolonner: Navn, E-post, Telefon, Budsjett, Kilde, Eiendom, Notater</p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Eller lim inn CSV-data</label>
-                  <textarea
-                    placeholder={"Navn;Epost;Telefon;Budsjett;Kilde;Eiendom\nOla Nordmann;ola@test.no;+47 123 45 678;300000;Facebook;Villa i Altea"}
-                    value={csvRaw} onChange={(e) => { setCsvRaw(e.target.value); parseCSV(e.target.value); }}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 font-mono h-32 resize-none"
-                  />
-                </div>
-                {csvData.length > 0 && (
-                  <div>
-                    <p className="text-sm text-emerald-400 font-medium mb-2">{csvData.length} leads funnet i filen:</p>
-                    <div className="max-h-48 overflow-y-auto space-y-1">
-                      {csvData.map((l, i) => (
-                        <div key={i} className="flex items-center gap-3 p-2 rounded bg-slate-900/50 text-sm">
-                          <span className="text-slate-200 font-medium">{l.name}</span>
-                          <span className="text-slate-500">{l.email}</span>
-                          <span className="text-slate-500">{l.phone}</span>
-                          <span className="text-emerald-400 ml-auto">{l.budget}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <Button onClick={importCSVLeads} className="w-full mt-3" disabled={saving}>
-                      {saving ? <Loader2 size={16} className="mr-1 animate-spin" /> : <ArrowRight size={16} className="mr-1" />}
-                      Importer {csvData.length} leads til pipeline
-                    </Button>
+      <section className="rounded-xl border border-slate-700/70 bg-slate-900/60 p-4">
+        <div className="relative max-w-xl"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Søk navn, område, e-post, brand eller kilde" className="pl-10" /></div>
+      </section>
+
+      {loading && contacts.length === 0 ? (
+        <div className="flex min-h-64 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" />Henter pipeline …</div>
+      ) : (
+        <section className="-mx-2 overflow-x-auto px-2 pb-4 [scrollbar-width:thin]">
+          <div className="flex min-w-max gap-3">
+            {ACTIVE_STAGES.map((stage) => {
+              const rows = byStage.get(stage) || [];
+              return (
+                <div
+                  key={stage}
+                  className="w-[285px] shrink-0 rounded-xl border border-slate-700/70 bg-slate-950/40 p-3"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => draggedId && void moveContact(draggedId, stage)}
+                >
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${STAGE_ACCENTS[stage]}`}>{CUSTOMER_PIPELINE_STATUS_LABELS[stage]}</span>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-400">{rows.length}</span>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
-      {/* ── Document/Image Import Modal ─────────────── */}
-      {showDocImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowDocImport(false); setDocFiles([]); setDocAllLeads([]); }}>
-          <Card className="w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <ScanLine size={20} className="text-cyan-400" />Importer fra dokument eller bilde
-                </h2>
-                <Button variant="ghost" size="icon" onClick={() => { setShowDocImport(false); setDocFiles([]); setDocAllLeads([]); }}><X size={18} /></Button>
-              </div>
-
-              <div className="space-y-4">
-                {/* Upload area - always visible so user can add more files */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <input ref={docFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic" multiple onChange={handleDocFiles} className="hidden" />
-                  <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleDocFiles} className="hidden" />
-
-                  <button
-                    onClick={() => cameraRef.current?.click()}
-                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-cyan-500/40 text-center hover:bg-cyan-500/5 transition-colors"
-                  >
-                    <Camera size={32} className="mx-auto text-cyan-400 mb-2" />
-                    <p className="text-sm font-medium text-white">Ta bilde</p>
-                    <p className="text-[10px] text-slate-500 mt-1">Kamera / mobilkamera</p>
-                  </button>
-
-                  <button
-                    onClick={() => { if (docFileRef.current) { docFileRef.current.accept = 'image/*,.pdf'; docFileRef.current.click(); } }}
-                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-purple-500/40 text-center hover:bg-purple-500/5 transition-colors"
-                  >
-                    <Image size={32} className="mx-auto text-purple-400 mb-2" />
-                    <p className="text-sm font-medium text-white">Velg filer</p>
-                    <p className="text-[10px] text-slate-500 mt-1">Flere bilder / PDF-er</p>
-                  </button>
-
-                  <button
-                    onClick={() => { if (docFileRef.current) { docFileRef.current.accept = '.pdf'; docFileRef.current.click(); } }}
-                    className="p-6 rounded-lg bg-slate-900/50 border border-dashed border-red-500/40 text-center hover:bg-red-500/5 transition-colors"
-                  >
-                    <FileText size={32} className="mx-auto text-red-400 mb-2" />
-                    <p className="text-sm font-medium text-white">Last opp PDF</p>
-                    <p className="text-[10px] text-slate-500 mt-1">PDF-dokumenter</p>
-                  </button>
-                </div>
-
-                {/* File queue */}
-                {docFiles.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-slate-300">{docFiles.length} fil{docFiles.length !== 1 ? 'er' : ''} i kø</p>
-                      {!docParsing && docFiles.some((f) => f.status === "queued") && (
-                        <Button size="sm" onClick={analyzeDocQueue} className="gap-1.5">
-                          <Sparkles size={14} />Analyser alle
-                        </Button>
-                      )}
-                    </div>
-                    <div className="max-h-40 overflow-y-auto space-y-1.5">
-                      {docFiles.map((df, i) => (
-                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-slate-900/50 border border-slate-700">
-                          {df.preview ? (
-                            <img src={df.preview} alt="" className="h-10 w-10 rounded border border-slate-600 object-cover" />
-                          ) : (
-                            <div className="h-10 w-10 rounded bg-slate-700 flex items-center justify-center shrink-0">
-                              <FileText size={16} className="text-red-400" />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-white truncate">{df.file.name}</p>
-                            <p className="text-[10px] text-slate-500">{(df.file.size / 1024).toFixed(0)} KB</p>
-                          </div>
-                          <div className="shrink-0">
-                            {df.status === "queued" && <Badge variant="outline" className="text-[10px]">Venter</Badge>}
-                            {df.status === "analyzing" && <Loader2 size={14} className="animate-spin text-cyan-400" />}
-                            {df.status === "done" && <Badge variant="default" className="text-[10px] bg-emerald-600">{df.leads.length} leads</Badge>}
-                            {df.status === "error" && <Badge variant="destructive" className="text-[10px]">Feil</Badge>}
-                          </div>
-                          {!docParsing && (
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDocFiles((prev) => prev.filter((_, idx) => idx !== i))}>
-                              <X size={12} />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Parsing indicator */}
-                {docParsing && (
-                  <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-                    <Loader2 className="h-5 w-5 animate-spin text-cyan-400 shrink-0" />
-                    <div>
-                      <p className="text-sm text-slate-300">AI analyserer filer...</p>
-                      <p className="text-xs text-slate-500">
-                        {docFiles.filter((f) => f.status === "done").length} av {docFiles.length} ferdig
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Errors */}
-                {docFiles.some((f) => f.status === "error") && (
-                  <div className="space-y-1">
-                    {docFiles.filter((f) => f.status === "error").map((f, i) => (
-                      <div key={i} className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
-                        <p className="text-xs text-red-300"><span className="font-medium">{f.file.name}:</span> {f.error}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Results - all leads from all files */}
-                {(() => {
-                  const allLeads = docAllLeads.length > 0 ? docAllLeads : docFiles.flatMap((f) => f.leads);
-                  return allLeads.length > 0 ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-emerald-400 font-medium">
-                          {allLeads.length} lead{allLeads.length !== 1 ? 's' : ''} funnet totalt
-                        </p>
-                      </div>
-                      <div className="max-h-60 overflow-y-auto space-y-2">
-                        {allLeads.map((l, i) => (
-                          <div key={i} className="p-3 rounded-lg bg-slate-900/50 border border-slate-700">
-                            <div className="flex items-center gap-3 mb-1">
-                              <span className="text-sm font-medium text-white">{l.name}</span>
-                              <span className="text-xs text-slate-500">{l.email}</span>
-                              <span className="text-xs text-slate-500">{l.phone}</span>
-                              <span className="text-xs text-emerald-400 ml-auto">{l.budget}</span>
-                            </div>
-                            {l.notes && (
-                              <p className="text-[11px] text-slate-400 whitespace-pre-line mt-1 pl-2 border-l-2 border-slate-700">{l.notes}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <Button onClick={importDocLeads} className="w-full" disabled={saving}>
-                        {saving ? <Loader2 size={16} className="mr-1 animate-spin" /> : <ArrowRight size={16} className="mr-1" />}
-                        Importer {allLeads.length} leads til pipeline
-                      </Button>
-                    </div>
-                  ) : null;
-                })()}
-
-                {docFiles.length === 0 && (
-                  <p className="text-[10px] text-slate-500 text-center">
-                    Velg flere filer samtidig - AI analyserer de i kø og trekker ut kontaktinfo, avkrysninger og notater
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Email Modal ─────────────────────────────── */}
-      {showEmailModal && selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowEmailModal(false)}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">E-post til {selectedLead.name}</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowEmailModal(false)}><X size={18} /></Button>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">Til: {selectedLead.email}</p>
-              <textarea value={emailContent} onChange={(e) => setEmailContent(e.target.value)} placeholder="Skriv din melding..."
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-40 resize-none mb-3" />
-              <div className="flex gap-2">
-                <Button onClick={sendEmail} className="flex-1" disabled={!emailContent}><Send size={16} className="mr-1" />Send e-post</Button>
-                <Button variant="outline" onClick={generateAiDraft} disabled={aiDraftLoading}>
-                  {aiDraftLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Call Log Modal ──────────────────────────── */}
-      {showCallLog && selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowCallLog(false)}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">Ring {selectedLead.name}</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowCallLog(false)}><X size={18} /></Button>
-              </div>
-              <p className="text-xs text-slate-400 mb-2">Telefon: {selectedLead.phone}</p>
-              <a href={`tel:${selectedLead.phone}`} className="block mb-3"><Button variant="outline" className="w-full"><Phone size={16} className="mr-1" />Ring nå</Button></a>
-              <textarea value={callNotes} onChange={(e) => setCallNotes(e.target.value)} placeholder="Logg samtalenotater etter samtalen..."
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none mb-3" />
-              <Button onClick={logCall} className="w-full" disabled={!callNotes}><CheckCircle2 size={16} className="mr-1" />Logg samtale</Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Meeting Modal ───────────────────────────── */}
-      {showMeetingModal && selectedLead && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowMeetingModal(false)}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">Book møte med {selectedLead.name}</h2>
-                <Button variant="ghost" size="icon" onClick={() => setShowMeetingModal(false)}><X size={18} /></Button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Dato</label>
-                  <Input type="date" value={meetingData.date} onChange={(e) => setMeetingData((p) => ({ ...p, date: e.target.value }))} /></div>
-                <div><label className="text-xs font-medium text-slate-300 mb-1 block">Tid</label>
-                  <Input type="time" value={meetingData.time} onChange={(e) => setMeetingData((p) => ({ ...p, time: e.target.value }))} /></div>
-              </div>
-              <textarea value={meetingData.notes} onChange={(e) => setMeetingData((p) => ({ ...p, notes: e.target.value }))} placeholder="Møteagenda / notater..."
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-24 resize-none mb-3" />
-              <Button onClick={bookMeeting} className="w-full" disabled={!meetingData.date}><Calendar size={16} className="mr-1" />Book møte</Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Commission Modal (WON) ──────────────────── */}
-      {showCommissionModal && commissionLeadId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => { setShowCommissionModal(false); setCommissionLeadId(null); }}>
-          <Card className="w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Banknote size={20} className="text-amber-400" />Registrer salg
-                </h2>
-                <Button variant="ghost" size="icon" onClick={() => { setShowCommissionModal(false); setCommissionLeadId(null); }}><X size={18} /></Button>
-              </div>
-              <p className="text-sm text-slate-400 mb-4">
-                Kontakt: <span className="text-white font-medium">{leads.find((l) => l.id === commissionLeadId)?.name}</span>
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-300 mb-1 block">Salgspris (€)</label>
-                  <Input type="number" placeholder="350000" value={commissionData.sale_price}
-                    onChange={(e) => {
-                      const sp = e.target.value;
-                      const pct = parseFloat(commissionData.commission_percent) || 0;
-                      setCommissionData((p) => ({ ...p, sale_price: sp, commission_amount: sp ? String(Math.round(parseFloat(sp) * (pct / 100))) : "" }));
-                    }} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 mb-1 block">Kommisjon %</label>
-                    <Input type="number" step="0.5" placeholder="3" value={commissionData.commission_percent}
-                      onChange={(e) => {
-                        const pct = e.target.value;
-                        const sp = parseFloat(commissionData.sale_price) || 0;
-                        setCommissionData((p) => ({ ...p, commission_percent: pct, commission_amount: sp ? String(Math.round(sp * (parseFloat(pct) / 100))) : "" }));
-                      }} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 mb-1 block">Kommisjon (€)</label>
-                    <Input type="number" placeholder="10500" value={commissionData.commission_amount}
-                      onChange={(e) => setCommissionData((p) => ({ ...p, commission_amount: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 mb-1 block">Utbetalingsdato</label>
-                    <Input type="date" value={commissionData.commission_paid_date}
-                      onChange={(e) => setCommissionData((p) => ({ ...p, commission_paid_date: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 mb-1 block">Brand</label>
-                    <select value={commissionData.brand_id}
-                      onChange={(e) => setCommissionData((p) => ({ ...p, brand_id: e.target.value }))}
-                      className="w-full h-10 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100">
-                      <option value="">Velg brand...</option>
-                      {BRANDS.map((b) => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <Button onClick={confirmCommission} className="w-full" disabled={!commissionData.sale_price || !commissionData.brand_id}>
-                  <CheckCircle2 size={16} className="mr-1" />Registrer som solgt
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <Input placeholder="Søk etter leads..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-      </div>
-
-      {/* ── Main Layout: Kanban + Detail Panel ──────── */}
-      <div className="flex gap-4">
-
-        {/* Kanban Board */}
-        <div className={`flex gap-3 overflow-x-auto pb-4 transition-all ${selectedLead ? "flex-1 min-w-0" : "w-full"}`}>
-          {columns.filter((col) => TAB_COLUMNS[activeTab].includes(col.key)).map((col) => {
-            const colLeads = filteredLeads.filter((l) => l.status === col.key);
-            return (
-              <div key={col.key} className="min-w-[200px] flex-1" onDragOver={(e) => e.preventDefault()} onDrop={() => handleDrop(col.key)}>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className={`w-3 h-3 rounded-full ${col.color}`} />
-                  <span className="text-sm font-semibold text-slate-200">{col.label}</span>
-                  <Badge variant="secondary" className="text-[10px] ml-auto">{colLeads.length}</Badge>
-                </div>
-                <div className="space-y-2 min-h-[200px] rounded-lg bg-slate-900/50 border border-slate-700/30 p-2">
-                  {colLeads.map((lead) => (
-                    (() => {
-                      const signalScore = getBuyingSignalScore(lead);
-                      const bookedMeeting = isBookedMeetingLead(lead);
-                      const leadBrand = getBrandMeta(lead.brand_id);
+                  <div className="space-y-3">
+                    {rows.length === 0 && <div className="rounded-lg border border-dashed border-slate-700 p-5 text-center text-xs text-slate-600">Dra en kunde hit</div>}
+                    {rows.map((contact) => {
+                      const action = buildCustomerListAction(contact);
+                      const followup = dateInfo(contact.next_followup);
+                      const brandId = String(contact.brand_id || contact.brand || "zeneco");
                       return (
-                    <Card
-                      key={lead.id}
-                      draggable
-                      onDragStart={() => handleDragStart(lead.id)}
-                      onClick={() => openDetail(lead)}
-                      className={`cursor-pointer transition-all ${bookedMeeting ? "border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.18)] hover:border-emerald-400" : "hover:border-slate-500"} ${selectedLead?.id === lead.id ? "ring-2 ring-primary-500 border-primary-500" : ""}`}
-                    >
-                      <CardContent className="p-3">
-                        {bookedMeeting && (
-                          <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1">
-                            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-200">
-                              <Calendar size={11} /> Booket webmøte
+                        <article
+                          key={contact.id}
+                          draggable={savingId !== contact.id}
+                          onDragStart={() => setDraggedId(contact.id)}
+                          onDragEnd={() => setDraggedId(null)}
+                          className={`rounded-lg border bg-slate-900 p-3 shadow-sm transition ${draggedId === contact.id ? "border-cyan-400/60 opacity-60" : "border-slate-700 hover:border-cyan-500/40"}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <GripVertical size={16} className="mt-1 shrink-0 cursor-grab text-slate-600" />
+                            <div className="min-w-0 flex-1">
+                              <h2 className="truncate text-sm font-semibold text-white">{contact.name || contact.email || "Ukjent kontakt"}</h2>
+                              <p className="mt-0.5 truncate text-[11px] text-slate-500">{BRAND_LABELS[brandId] || brandId}</p>
+                            </div>
+                            {savingId === contact.id && <Loader2 size={14} className="animate-spin text-cyan-300" />}
+                          </div>
+
+                          <p className="mt-3 line-clamp-2 min-h-9 text-xs text-slate-400">{contact.property_interest || contact.preferred_location || "Ingen boliginteresse registrert"}</p>
+
+                          <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/60 p-2">
+                            <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-slate-500"><span>Neste fokus</span><span>{action.score}/100</span></div>
+                            <p className="mt-1 text-xs font-medium text-slate-200">{action.label}</p>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                            <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2 py-1 text-slate-300">{money(contact.pipeline_value)}</span>
+                            <span className={`rounded-full border px-2 py-1 ${followup.overdue ? "border-red-500/30 bg-red-500/10 text-red-200" : followup.future ? "border-cyan-500/20 bg-cyan-500/5 text-cyan-200" : "border-slate-700 bg-slate-800/60 text-slate-400"}`}>
+                              {followup.overdue ? "Forfalt " : followup.future ? "Planlagt " : ""}{followup.label}
                             </span>
-                            <span className="text-[10px] font-semibold text-emerald-100">Prioritet</span>
                           </div>
-                        )}
-                        <div className="flex items-start justify-between mb-1">
-                          <div className="flex items-center gap-1.5">
-                            <GripVertical size={12} className="text-slate-600 cursor-grab" />
-                            <span className="text-sm font-medium text-slate-100 truncate max-w-[140px]">{lead.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <SentimentIcon score={signalScore} />
-                            <span className={`text-xs font-medium ${sentimentColor(signalScore)}`}>{signalScore}%</span>
-                          </div>
-                        </div>
-                        {lead.property && <p className="text-xs text-slate-400 mb-1.5 truncate">{lead.property}</p>}
-                        {lead.brand_id && (
-                          <Badge
-                            variant="outline"
-                            className="mb-1.5 text-[10px]"
-                            style={leadBrand?.color ? { borderColor: leadBrand.color, color: leadBrand.color } : undefined}
-                          >
-                            {leadBrand?.name || lead.brand_id}
-                          </Badge>
-                        )}
-                        {bookedMeeting && (
-                          <p className="mb-1.5 line-clamp-2 text-[11px] font-medium text-emerald-200">{bookedMeetingSummary(lead)}</p>
-                        )}
-                        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-amber-300">
-                          <Clock size={10} />
-                          <span>Siste kontakt: {lead.lastContact || lead.createdAt}</span>
-                        </div>
-                        <div className="space-y-0.5">
-                          {lead.email && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Mail size={10} /><span className="truncate">{lead.email}</span></div>}
-                          {lead.phone && <div className="flex items-center gap-1.5 text-xs text-slate-400"><Phone size={10} /><span>{lead.phone}</span></div>}
-                        </div>
-                        {lead.status === "WON" && lead.commission_amount ? (
-                          <div className="mt-2 pt-1.5 border-t border-slate-700/50 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-slate-500">Salg</span>
-                              <span className="text-xs text-emerald-400 font-medium">€{(lead.sale_price || 0).toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-slate-500">Kommisjon</span>
-                              <span className="text-xs text-amber-400 font-semibold">€{lead.commission_amount.toLocaleString()}</span>
-                            </div>
-                            {lead.commission_paid_date && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] text-slate-500">Utbetalt</span>
-                                <span className="text-[10px] text-slate-400">{lead.commission_paid_date}</span>
-                              </div>
-                            )}
-                            {lead.brand_id && (
-                              <Badge variant="outline" className="text-[10px]">{leadBrand?.name || lead.brand_id}</Badge>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-700/50">
-                            <Badge variant="outline" className="text-[10px]"><Globe size={8} className="mr-1" />{lead.source}</Badge>
-                            {lead.interactions.length > 0 && (
-                              <Badge variant="secondary" className="text-[10px]"><MessageSquare size={8} className="mr-1" />{lead.interactions.length}</Badge>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+
+                          <Link href={`/customers?contactId=${encodeURIComponent(contact.id)}&tab=all`} className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3 text-xs font-medium text-cyan-300 hover:text-cyan-200">
+                            Åpne Customer 360 <ExternalLink size={13} />
+                          </Link>
+                        </article>
                       );
-                    })()
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Detail Panel (slide-over) ─────────────── */}
-        {selectedLead && (
-          <div className="w-[380px] min-w-[380px] flex-shrink-0 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-            {/* Header */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-primary-500/30 to-purple-500/30 flex items-center justify-center text-sm font-semibold text-slate-200">
-                      {selectedLead.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{selectedLead.name}</CardTitle>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className={`w-2 h-2 rounded-full ${statusColor(selectedLead.status)}`} />
-                        <span className="text-xs text-slate-400">{statusLabel(selectedLead.status)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => setSelectedLead(null)}><X size={16} /></Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Contact info */}
-                <div className="space-y-2">
-                  {selectedLead.email && (
-                    <div className="flex items-center gap-2 text-sm text-slate-300"><Mail size={14} className="text-slate-500" />{selectedLead.email}</div>
-                  )}
-                  {selectedLead.phone && (
-                    <div className="flex items-center gap-2 text-sm text-slate-300"><Phone size={14} className="text-slate-500" />{selectedLead.phone}</div>
-                  )}
-                  {selectedLead.property && (
-                    <div className="flex items-center gap-2 text-sm text-slate-300"><Building2 size={14} className="text-slate-500" />{selectedLead.property}</div>
-                  )}
-                  <div className="flex items-center gap-2 text-sm text-emerald-400">
-                    <DollarSign size={14} className="text-slate-500" />{selectedLead.budget}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-300">
-                    <Globe size={14} className="text-slate-500" />{selectedLead.source}
-                  </div>
-                  {selectedLead.brand_id && (
-                    <div className="flex items-center gap-2 text-sm text-slate-300">
-                      <Building2 size={14} className="text-slate-500" />
-                      <span>{selectedLeadBrand?.name || selectedLead.brand_id}</span>
-                      <Badge
-                        variant="outline"
-                        className="text-[10px]"
-                        style={selectedLeadBrand?.color ? { borderColor: selectedLeadBrand.color, color: selectedLeadBrand.color } : undefined}
-                      >
-                        {selectedLead.brand_id}
-                      </Badge>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-sm text-amber-300">
-                    <Clock size={14} className="text-slate-500" />Siste kontakt: {selectedLead.lastContact || selectedLead.createdAt}
+                    })}
                   </div>
                 </div>
-
-                {isBookedMeetingLead(selectedLead) && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-200">
-                      <Calendar size={15} />
-                      Booket webmøte - prioriter denne
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-emerald-100/80">
-                      {bookedMeetingSummary(selectedLead)}
-                    </p>
-                  </div>
-                )}
-
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold text-amber-300">Kjøpssignal-score</p>
-                      <p className="text-[11px] text-slate-400">{signalLabel(getBuyingSignalScore(selectedLead))}</p>
-                    </div>
-                    <div className="text-2xl font-bold text-white">{getBuyingSignalScore(selectedLead)}%</div>
-                  </div>
-                  <div className="mt-3 h-2 rounded-full bg-slate-800">
-                    <div
-                      className="h-2 rounded-full bg-amber-400"
-                      style={{ width: `${getBuyingSignalScore(selectedLead)}%` }}
-                    />
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-                    <span>Aktivitet: {selectedLead.interactions.length}</span>
-                    <span>Status: {statusLabel(selectedLead.status)}</span>
-                    <span>Portal: {selectedLead.interactions.some((item) => /min side|portal|kjøpssignal/i.test(item.content)) ? "Aktiv" : "Ikke logget"}</span>
-                    <span>Oppfølging: {getBuyingSignalScore(selectedLead) >= 70 ? "Innen 24t" : "Normal"}</span>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-cyan-200">Lead Intelligence</p>
-                      <p className="text-[11px] text-slate-400">
-                        Read-only historikk for denne kontakten. Oppretter ikke lead, e-post eller matchingjobb.
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 shrink-0 text-[10px]"
-                      disabled={leadIntelligenceHistoryLoading}
-                      onClick={() => loadLeadIntelligenceHistory(selectedLead)}
-                    >
-                      {leadIntelligenceHistoryLoading ? (
-                        <Loader2 size={11} className="mr-1 animate-spin" />
-                      ) : (
-                        <Search size={11} className="mr-1" />
-                      )}
-                      Oppdater
-                    </Button>
-                  </div>
-
-                  {leadIntelligenceHistoryLoading && (
-                    <div className="rounded-md border border-slate-700 bg-slate-950/40 p-2 text-[11px] text-slate-400">
-                      Henter lagrede buyer profiles, shortlist og presentasjonsutkast...
-                    </div>
-                  )}
-
-                  {leadIntelligenceHistoryError && (
-                    <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-2 text-[11px] text-amber-100">
-                      {leadIntelligenceHistoryError}
-                    </div>
-                  )}
-
-                  {!leadIntelligenceHistoryLoading && !leadIntelligenceHistoryError && leadIntelligenceHistory.length === 0 && (
-                    <div className="rounded-md border border-slate-700 bg-slate-950/40 p-2 text-[11px] text-slate-400">
-                      Ingen koblede Lead Intelligence-profiler for denne kontakten ennå.
-                    </div>
-                  )}
-
-                  {leadIntelligenceHistory.length > 0 && (
-                    <div className="space-y-2">
-                      {leadIntelligenceHistory.map((item) => (
-                        <div key={item.buyerProfileId} className="rounded-md border border-cyan-500/15 bg-slate-950/40 p-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="line-clamp-2 text-xs font-semibold text-slate-100">
-                                {item.summary || "Buyer profile uten oppsummering"}
-                              </p>
-                              <p className="mt-1 text-[10px] text-slate-500">
-                                Profile {shortId(item.buyerProfileId)} · {formatLeadIntelligenceBudget(item)} · oppdatert {formatLeadIntelligenceDate(item.updatedAt)}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="shrink-0 text-[10px]">
-                              {item.profileStatus}
-                            </Badge>
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-slate-400">
-                            <span>Kriterier: {item.criterionCount}</span>
-                            <span>Shortlist: {item.shortlistCount}</span>
-                            <span>Boliger: {item.latestShortlistItemCount}</span>
-                            <span>Utkast: {item.latestMessageDraftStatus || "nei"}</span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <a
-                              href={leadIntelligenceProfileUrl(item)}
-                              className="inline-flex items-center rounded-md border border-cyan-500/30 px-2 py-1 text-[10px] font-medium text-cyan-100 hover:bg-cyan-500/10"
-                            >
-                              <ArrowRight size={10} className="mr-1" />
-                              Åpne Lead Intelligence
-                            </a>
-                            {item.latestPresentationId && (
-                              <a
-                                href={leadIntelligenceProfileUrl(item)}
-                                className="inline-flex items-center rounded-md border border-emerald-500/30 px-2 py-1 text-[10px] font-medium text-emerald-100 hover:bg-emerald-500/10"
-                              >
-                                <FileText size={10} className="mr-1" />
-                                Åpne siste presentasjonsutkast
-                              </a>
-                            )}
-                            <a
-                              href={leadIntelligenceMatchUrl(item)}
-                              className="inline-flex items-center rounded-md border border-slate-600 px-2 py-1 text-[10px] font-medium text-slate-200 hover:bg-slate-800"
-                            >
-                              <Search size={10} className="mr-1" />
-                              Finn/match boliger
-                            </a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Commission info for WON — editable */}
-                {selectedLead.status === "WON" && (
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                        <Banknote size={14} />Salgsdetaljer
-                      </div>
-                      <div className="flex gap-1">
-                        {!editingCommission ? (
-                          <Button size="sm" variant="ghost" className="h-6 text-[10px] text-slate-400 hover:text-white" onClick={() => {
-                            setEditingCommission(true);
-                            setEditCommissionData({
-                              sale_price: String(selectedLead.sale_price || ""),
-                              commission_percent: String(selectedLead.commission_percent || "3"),
-                              commission_amount: String(selectedLead.commission_amount || ""),
-                              commission_paid_date: selectedLead.commission_paid_date || "",
-                              brand_id: selectedLead.brand_id || "soleada",
-                            });
-                          }}>Rediger</Button>
-                        ) : (
-                          <>
-                            <Button size="sm" variant="ghost" className="h-6 text-[10px] text-slate-400" onClick={() => setEditingCommission(false)}>Avbryt</Button>
-                            <Button size="sm" className="h-6 text-[10px] bg-amber-600 hover:bg-amber-700" onClick={async () => {
-                              const sp = parseFloat(editCommissionData.sale_price) || 0;
-                              const pct = parseFloat(editCommissionData.commission_percent) || 0;
-                              const amt = editCommissionData.commission_amount ? parseFloat(editCommissionData.commission_amount) : sp * (pct / 100);
-                              await fetch("/api/contacts", {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                  id: selectedLead.id,
-                                  sale_price: sp || null,
-                                  commission_amount: amt || null,
-                                  commission_percent: pct || null,
-                                  commission_paid_date: editCommissionData.commission_paid_date || null,
-                                  brand_id: editCommissionData.brand_id || null,
-                                }),
-                              });
-                              setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? {
-                                ...l, sale_price: sp, commission_amount: amt, commission_percent: pct,
-                                commission_paid_date: editCommissionData.commission_paid_date || undefined,
-                                brand_id: editCommissionData.brand_id,
-                              } : l));
-                              setSelectedLead((prev) => prev ? {
-                                ...prev, sale_price: sp, commission_amount: amt, commission_percent: pct,
-                                commission_paid_date: editCommissionData.commission_paid_date || undefined,
-                                brand_id: editCommissionData.brand_id,
-                              } : prev);
-                              setEditingCommission(false);
-                            }}>Lagre</Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {editingCommission ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] text-slate-500">Salgspris (€)</label>
-                          <Input type="number" className="h-7 text-xs" value={editCommissionData.sale_price}
-                            onChange={(e) => {
-                              const sp = e.target.value;
-                              const pct = parseFloat(editCommissionData.commission_percent) || 0;
-                              setEditCommissionData((p) => ({ ...p, sale_price: sp, commission_amount: sp ? String(Math.round(parseFloat(sp) * (pct / 100))) : "" }));
-                            }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-slate-500">Kommisjon %</label>
-                          <Input type="number" step="0.5" className="h-7 text-xs" value={editCommissionData.commission_percent}
-                            onChange={(e) => {
-                              const pct = e.target.value;
-                              const sp = parseFloat(editCommissionData.sale_price) || 0;
-                              setEditCommissionData((p) => ({ ...p, commission_percent: pct, commission_amount: sp ? String(Math.round(sp * (parseFloat(pct) / 100))) : "" }));
-                            }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-slate-500">Kommisjon (€)</label>
-                          <Input type="number" className="h-7 text-xs" value={editCommissionData.commission_amount}
-                            onChange={(e) => setEditCommissionData((p) => ({ ...p, commission_amount: e.target.value }))} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-slate-500">Utbetalingsdato</label>
-                          <Input type="date" className="h-7 text-xs" value={editCommissionData.commission_paid_date}
-                            onChange={(e) => setEditCommissionData((p) => ({ ...p, commission_paid_date: e.target.value }))} />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-[10px] text-slate-500">Brand</label>
-                          <select className="w-full h-7 rounded border border-slate-600 bg-slate-800 px-2 text-xs text-slate-100"
-                            value={editCommissionData.brand_id} onChange={(e) => setEditCommissionData((p) => ({ ...p, brand_id: e.target.value }))}>
-                            {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                          </select>
-                        </div>
-                        <div className="col-span-2">
-                          <Button size="sm" variant="destructive" className="h-6 text-[10px] w-full" onClick={async () => {
-                            if (!confirm("Fjerne salgsdata og sette tilbake til Forhandling?")) return;
-                            await fetch("/api/contacts", {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                id: selectedLead.id,
-                                pipeline_status: "NEGOTIATION",
-                                sale_price: null,
-                                commission_amount: null,
-                                commission_percent: null,
-                                commission_paid_date: null,
-                                brand_id: null,
-                              }),
-                            });
-                            setLeads((prev) => prev.map((l) => l.id === selectedLead.id ? {
-                              ...l, status: "NEGOTIATION" as LeadStatus, sale_price: undefined, commission_amount: undefined,
-                              commission_percent: undefined, commission_paid_date: undefined, brand_id: undefined,
-                            } : l));
-                            setSelectedLead(null);
-                            setEditingCommission(false);
-                          }}>
-                            <Trash2 size={10} className="mr-1" />Fjern salg og sett tilbake til Forhandling
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div><span className="text-slate-500 text-xs">Salgspris:</span> <span className="text-slate-200">€{(selectedLead.sale_price || 0).toLocaleString()}</span></div>
-                        <div><span className="text-slate-500 text-xs">Kommisjon:</span> <span className="text-amber-400 font-semibold">€{(selectedLead.commission_amount || 0).toLocaleString()}</span></div>
-                        {selectedLead.commission_paid_date && (
-                          <div><span className="text-slate-500 text-xs">Utbetalt:</span> <span className="text-slate-200">{selectedLead.commission_paid_date}</span></div>
-                        )}
-                        {selectedLead.brand_id && (
-                          <div><span className="text-slate-500 text-xs">Brand:</span> <span className="text-slate-200">{BRANDS.find((b) => b.id === selectedLead.brand_id)?.name || selectedLead.brand_id}</span></div>
-                        )}
-                        {!selectedLead.commission_paid_date && selectedLead.commission_amount && (
-                          <div className="col-span-2"><Badge className="bg-orange-500/20 text-orange-400 text-[10px]">Venter på utbetaling</Badge></div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Status dropdown */}
-                <div>
-                  <label className="text-xs font-medium text-slate-400 mb-1 block">Endre status</label>
-                  <select
-                    value={selectedLead.status}
-                    onChange={(e) => changeStatus(selectedLead.id, e.target.value as LeadStatus)}
-                    className="w-full h-9 rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-slate-100"
-                  >
-                    {columns.map((c) => (
-                      <option key={c.key} value={c.key}>{c.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="text-xs font-medium text-slate-400 mb-1 block">Notater</label>
-                  <textarea
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    placeholder="Skriv notater om denne kontakten..."
-                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 h-20 resize-none"
-                  />
-                  {editNotes !== (selectedLead.notes || "") && (
-                    <Button size="sm" variant="outline" className="mt-1 text-xs" onClick={() => saveNotes(selectedLead.id, editNotes)}>
-                      <Save size={12} className="mr-1" />Lagre notater
-                    </Button>
-                  )}
-                </div>
-
-                {/* Action buttons */}
-                <div className="grid grid-cols-3 gap-2">
-                  <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowEmailModal(true)}>
-                    <Mail size={12} className="mr-1" />E-post
-                  </Button>
-                  <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowCallLog(true)}>
-                    <Phone size={12} className="mr-1" />Ring
-                  </Button>
-                  <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowMeetingModal(true)}>
-                    <Calendar size={12} className="mr-1" />Møte
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" size="sm" className="text-xs" onClick={generateAiDraft} disabled={aiDraftLoading}>
-                    {aiDraftLoading ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Sparkles size={12} className="mr-1" />}
-                    AI Utkast
-                  </Button>
-                  <Button variant="outline" size="sm" className="text-xs text-red-400 hover:text-red-300" onClick={() => deleteLead(selectedLead.id)}>
-                    <Trash2 size={12} className="mr-1" />Slett
-                  </Button>
-                </div>
-                {selectedLead.email && (
-                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-semibold text-emerald-300">Min side</p>
-                        <p className="text-[11px] text-slate-400">Lag midlertidig passord. Det sendes ikke automatisk til kunden.</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        className="text-xs bg-emerald-600 hover:bg-emerald-700"
-                        disabled={portalInviteStatus === "sending"}
-                        onClick={inviteToPortal}
-                      >
-                        {portalInviteStatus === "sending" ? (
-                          <Loader2 size={12} className="mr-1 animate-spin" />
-                        ) : (
-                          <UserCheck size={12} className="mr-1" />
-                        )}
-                        Lag passord
-                      </Button>
-                    </div>
-                    {portalInviteStatus === "sent" && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-emerald-300">Tilgang er opprettet for {selectedLead.email}. Del passordet manuelt med kunden.</p>
-                        {portalTemporaryPassword && (
-                          <div className="rounded-md border border-emerald-500/20 bg-slate-950/40 p-2">
-                            <p className="text-[10px] text-slate-400">Midlertidig passord kunden skal bytte ved første innlogging:</p>
-                            <code className="text-xs text-emerald-200 break-all">{portalTemporaryPassword}</code>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {portalInviteStatus === "error" && (
-                      <p className="text-[11px] text-red-300">{portalInviteError}</p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Interaction History */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Clock size={14} className="text-slate-400" />
-                    Aktivitetslogg ({selectedLead.interactions.length})
-                  </CardTitle>
-                  {selectedLead.email && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-[10px] gap-1 text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
-                      onClick={syncGmail}
-                      disabled={gmailSyncing}
-                    >
-                      {gmailSyncing ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
-                      {gmailSyncing ? "Henter…" : "Synk Gmail"}
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Gmail sync results */}
-                {gmailError && (
-                  <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-xs text-slate-400">
-                    {gmailError}
-                    {gmailError.includes("Settings") && (
-                      <a href="/api/oauth/gmail" className="ml-1 text-blue-400 underline">Koble til nå →</a>
-                    )}
-                  </div>
-                )}
-                {showGmailMerged && (
-                  <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                    ✓ Gmail-e-poster lagret i aktivitetsloggen
-                  </div>
-                )}
-                {gmailInteractions.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] text-blue-400 font-medium">{gmailInteractions.length} Gmail-tråder funnet:</p>
-                      <Button size="sm" className="h-5 text-[10px] bg-blue-600 hover:bg-blue-700" onClick={saveGmailInteractions}>
-                        Lagre alle
-                      </Button>
-                    </div>
-                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                      {gmailInteractions.map((i) => (
-                        <div key={i.id} className="flex gap-2 p-2 rounded bg-blue-500/5 border border-blue-500/10 text-xs">
-                          <Mail size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <p className="text-slate-200 truncate">{i.content}</p>
-                            <span className="text-[10px] text-slate-500">{i.date} · {i.direction === "in" ? "Innkommende" : "Utgående"}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Existing interactions */}
-                {selectedLead.interactions.length === 0 && gmailInteractions.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4">
-                    Ingen aktiviteter ennå. Bruk knappene over for å logge e-post, samtale eller møte.
-                  </p>
-                ) : (
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                    {selectedLead.interactions.map((interaction) => (
-                      <div key={interaction.id} className={`flex gap-3 p-3 rounded-lg ${
-                        interaction.type === "ai" ? "bg-amber-500/5 border border-amber-500/10" :
-                        (interaction as any).source === "gmail" ? "bg-blue-500/5 border border-blue-500/10" :
-                        "bg-slate-900/30"
-                      }`}>
-                        <div className="mt-0.5">{interactionIcon(interaction.type)}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-200 break-words">{interaction.content}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-slate-500">{interaction.date}</span>
-                            {interaction.direction && (
-                              <Badge variant="outline" className="text-[10px]">{interaction.direction === "in" ? "Innkommende" : "Utgående"}</Badge>
-                            )}
-                            {(interaction as any).source === "gmail" && <Badge variant="outline" className="text-[10px] text-blue-400">Gmail</Badge>}
-                            {interaction.type === "ai" && <Badge variant="warning" className="text-[10px]">AI</Badge>}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Meta info */}
-            <div className="text-[10px] text-slate-600 px-2">
-              Opprettet: {selectedLead.createdAt} · ID: {selectedLead.id.substring(0, 8)}
-            </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </section>
+      )}
+
+      <p className="text-xs text-slate-500">Gjennomførte og tapte saker håndteres i <Link href="/customers?tab=customers" className="text-cyan-300 hover:underline">CRM & leads → Avsluttet</Link>. Kanban endrer kun pipeline-status; all kundehistorikk og videre arbeid ligger i Customer 360.</p>
     </div>
   );
 }

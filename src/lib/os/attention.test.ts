@@ -11,6 +11,8 @@ function base(overrides: Partial<OsAttentionInput> = {}): OsAttentionInput {
     automationFailures24h: 0,
     automationPartial24h: 0,
     scheduledAutomationStale: [],
+    emailAccountsNotReady: 0,
+    emailAccountsSystemPaused: 0,
     socialSyncEnabled: true,
     socialLastSyncAt: "2026-08-25T16:55:00.000Z",
     socialLastSyncStatus: "success",
@@ -47,6 +49,23 @@ test("high-risk approval remains separate from execution", () => {
   assert.ok(approval);
   assert.equal(approval.severity, "high");
   assert.match(approval.detail, /Approval betyr ikke utført handling/);
+});
+
+test("system-paused email account is high priority and routes to readiness", () => {
+  const items = buildOsAttention(base({ emailAccountsNotReady: 2, emailAccountsSystemPaused: 1 }), now);
+  const email = items.find((item) => item.id === "email:system-paused");
+  assert.ok(email);
+  assert.equal(email.severity, "high");
+  assert.equal(email.href, "/nexus-os/communications/readiness");
+  assert.match(email.detail, /backfill/);
+});
+
+test("non-ready email account without system pause stays medium", () => {
+  const items = buildOsAttention(base({ emailAccountsNotReady: 2 }), now);
+  const email = items.find((item) => item.id === "email:not-ready");
+  assert.ok(email);
+  assert.equal(email.severity, "medium");
+  assert.match(email.detail, /aktiverer ikke kontoen automatisk/);
 });
 
 test("active scheduled automation without a fresh execution log is high priority", () => {

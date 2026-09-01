@@ -22,12 +22,14 @@ jobs:
         run: npm ci --silent
       - name: Contacts API auth tests
         run: npm run test:contacts-api
+      - name: Email admin and backfill safety tests
+        run: NODE_OPTIONS=--conditions=react-server npx tsx --test src/app/api/email-admin-routes-auth.test.ts src/lib/email/connection-repair-policy.test.ts src/lib/email/history-backfill-policy.test.ts src/lib/email/history-backfill-readiness.test.ts src/lib/email/history-backfill-review-links.test.ts src/lib/email/history-backfill-preview-fingerprint.test.ts src/lib/email/history-backfill-preview-cookie.test.ts src/lib/email/history-backfill-account-gate.test.ts src/lib/email/history-backfill-audit.test.ts src/lib/email/operations-audit.test.ts src/lib/email/config-readiness.test.ts
       - name: Revenue Inbox tests
         run: npm run test:revenue-today
       - name: Closing Workspace tests
         run: npm run test:closing
       - name: Customer 360 tests
-        run: npm run test:customer-360
+        run: npx tsx --test src/lib/customer-360.test.ts src/lib/customer-communication-timeline.test.ts
       - name: Customer CRM updates and Lead Inbox deletion tests
         run: npm run test:customer-crm
       - name: Approval Center tests
@@ -48,6 +50,10 @@ jobs:
         run: npm run test:revenue-goals
       - name: Lead Source Attribution tests
         run: npm run test:attribution
+      - name: CRM Source Normalization tests
+        run: npx tsx --test src/lib/crm/source-normalization.test.ts src/lib/crm/source-health.test.ts
+      - name: Email Link Health tests
+        run: npx tsx --test src/lib/crm/email-link-health.test.ts src/lib/crm/email-link-health-brand-scope.test.ts src/lib/crm/email-link-health-own-addresses.test.ts src/lib/crm/email-review-priority.test.ts src/lib/crm/email-review-summary.test.ts
       - name: Revenue Data Health tests
         run: npm run test:revenue-data-health
       - name: Controlled Communications tests

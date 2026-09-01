@@ -18,6 +18,8 @@ export type OsAttentionInput = {
   automationFailures24h: number;
   automationPartial24h: number;
   scheduledAutomationStale: Array<{ action: string; label: string; lastRunAt: string | null; expectedMinutes: number; href: string }>;
+  emailAccountsNotReady: number;
+  emailAccountsSystemPaused: number;
   socialSyncEnabled: boolean;
   socialLastSyncAt: string | null;
   socialLastSyncStatus: string | null;
@@ -74,6 +76,28 @@ export function buildOsAttention(input: OsAttentionInput, now = new Date()): OsA
       detail: "Kjøringene fullførte ikke helt rent. Se detaljene før du tolker subsystemet som grønt.",
       href: "/automation",
       source: "Automation",
+    });
+  }
+
+  if (input.emailAccountsSystemPaused > 0) {
+    items.push({
+      id: "email:system-paused",
+      severity: "high",
+      score: 92,
+      title: `${input.emailAccountsSystemPaused} e-postkonto${input.emailAccountsSystemPaused === 1 ? "" : "er"} er systempauset`,
+      detail: "Nexus har stoppet auto-fetch for minst én konto. Åpne Email Readiness og verifiser credentials/IMAP før reconnect eller historisk backfill vurderes.",
+      href: "/nexus-os/communications/readiness",
+      source: "Email",
+    });
+  } else if (input.emailAccountsNotReady > 0) {
+    items.push({
+      id: "email:not-ready",
+      severity: "medium",
+      score: 74,
+      title: `${input.emailAccountsNotReady} e-postkonto${input.emailAccountsNotReady === 1 ? "" : "er"} er ikke klare`,
+      detail: "Kontoene mangler verifisert readiness for stabil drift eller historisk backfill. Connection-check er diagnostikk og aktiverer ikke kontoen automatisk.",
+      href: "/nexus-os/communications/readiness",
+      source: "Email",
     });
   }
 

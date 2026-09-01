@@ -30,14 +30,30 @@ export const CUSTOMER_PIPELINE_STATUSES = [
   "NEW",
   "CONTACT",
   "QUALIFIED",
+  "MATCHING",
   "VIEWING",
   "NEGOTIATION",
+  "RESERVED",
+  "ON_HOLD",
   "WON",
   "LOST",
-  "ON_HOLD",
 ] as const;
 
 export type CustomerPipelineStatus = (typeof CUSTOMER_PIPELINE_STATUSES)[number];
+export type CustomerWaitingOn = "customer" | "third_party";
+
+export const CUSTOMER_PIPELINE_STATUS_LABELS: Record<CustomerPipelineStatus, string> = {
+  NEW: "Ny",
+  CONTACT: "Kontaktet",
+  QUALIFIED: "Kvalifisert",
+  MATCHING: "Boligmatching",
+  VIEWING: "Visning",
+  NEGOTIATION: "Forhandling",
+  RESERVED: "Reservert",
+  ON_HOLD: "På vent",
+  WON: "Gjennomført",
+  LOST: "Tapt",
+};
 
 export function normalizeCustomerPipelineStatus(value: unknown): CustomerPipelineStatus {
   const normalized = String(value || "NEW")
@@ -53,6 +69,9 @@ export function normalizeCustomerPipelineStatus(value: unknown): CustomerPipelin
 
   if (["WON", "CUSTOMER", "VIP", "VUNNET", "SOLGT", "SOLD", "CLOSED", "CLOSED_WON", "COMPLETED", "KUNDE"].includes(normalized)) return "WON";
   if (["LOST", "TAPT", "CLOSED_LOST"].includes(normalized)) return "LOST";
+  if (["PROPERTY_MATCHING", "SHORTLIST", "MATCH", "MATCHING"].includes(normalized)) return "MATCHING";
+  if (["RESERVATION", "RESERVERT", "RESERVED", "DEPOSIT_PAID"].includes(normalized)) return "RESERVED";
+  if (["WAITING", "PAUSED", "HOLD", "ON_HOLD"].includes(normalized)) return "ON_HOLD";
   return CUSTOMER_PIPELINE_STATUSES.includes(normalized as CustomerPipelineStatus)
     ? normalized as CustomerPipelineStatus
     : "NEW";
@@ -94,19 +113,29 @@ export const CustomerDetailsInputSchema = z.object({
   }).strict(),
 }).strict();
 
+const CustomerTimelineUpdateSchema = z.object({
+  updateType: z.enum(CUSTOMER_UPDATE_TYPES),
+  occurredAt: z.string().datetime(),
+  title: nullableText(180),
+  details: z.string().trim().min(1).max(8000),
+  propertyReference: nullableText(300),
+  outcome: z.enum(CUSTOMER_UPDATE_OUTCOMES).nullable(),
+  nextAction: nullableText(1500),
+  nextFollowup: z.string().datetime().nullable(),
+  direction: z.enum(["in", "out", "internal"]).default("internal"),
+}).strict().superRefine((update, ctx) => {
+  if (["waiting_customer", "waiting_third_party"].includes(update.outcome || "") && !update.nextFollowup) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["nextFollowup"],
+      message: "Ventetilstand krever en konkret dato for gjenopptakelse.",
+    });
+  }
+});
+
 export const CustomerTimelineUpdateInputSchema = z.object({
   action: z.literal("ADD_UPDATE"),
-  update: z.object({
-    updateType: z.enum(CUSTOMER_UPDATE_TYPES),
-    occurredAt: z.string().datetime(),
-    title: nullableText(180),
-    details: z.string().trim().min(1).max(8000),
-    propertyReference: nullableText(300),
-    outcome: z.enum(CUSTOMER_UPDATE_OUTCOMES).nullable(),
-    nextAction: nullableText(1500),
-    nextFollowup: z.string().datetime().nullable(),
-    direction: z.enum(["in", "out", "internal"]).default("internal"),
-  }).strict(),
+  update: CustomerTimelineUpdateSchema,
 }).strict();
 
 export const CustomerUpdateRequestSchema = z.discriminatedUnion("action", [
@@ -115,7 +144,7 @@ export const CustomerUpdateRequestSchema = z.discriminatedUnion("action", [
 ]);
 
 export type CustomerUpdateRequest = z.infer<typeof CustomerUpdateRequestSchema>;
-export type CustomerTimelineUpdate = z.infer<typeof CustomerTimelineUpdateInputSchema>["update"];
+export type CustomerTimelineUpdate = z.infer<typeof CustomerTimelineUpdateSchema>;
 
 export const CUSTOMER_UPDATE_TYPE_LABELS: Record<(typeof CUSTOMER_UPDATE_TYPES)[number], string> = {
   general_note: "Kundenotat",
@@ -155,6 +184,32 @@ export function contactDetailPatch(details: z.infer<typeof CustomerDetailsInputS
     pipeline_value: details.pipelineValue,
     pipeline_status: details.pipelineStatus,
   };
+}
+
+export function customerWaitingStatePatch(update: CustomerTimelineUpdate) {
+  if (update.outcome === "waiting_customer" || update.outcome === "waiting_third_party") {
+    const waitingOn: CustomerWaitingOn = update.outcome === "waiting_customer" ? "customer" : "third_party";
+    const waitingReason = update.title || update.details.slice(0, 1500);
+    return {
+      waiting_on: waitingOn,
+      waiting_reason: waitingReason,
+      waiting_until: update.nextFollowup,
+      next_followup: update.nextFollowup,
+    };
+  }
+
+  // A concrete non-waiting outcome means the previous wait has resolved.
+  // An internal/general note with outcome=null or outcome=other must not silently clear waiting.
+  if (update.outcome && update.outcome !== "other") {
+    return {
+      waiting_on: null,
+      waiting_reason: null,
+      waiting_until: null,
+      next_followup: update.nextFollowup,
+    };
+  }
+
+  return {};
 }
 
 export function buildCustomerTimelineInteraction(params: {

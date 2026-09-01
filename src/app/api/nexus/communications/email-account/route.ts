@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/api-admin";
 import { getServiceSupabase } from "@/services/marketing/campaign-production";
 import { encryptPassword } from "@/services/email/crypto";
-import { fetchRecentEmails, type ImapConfig } from "@/services/email/imap-reader";
+import { checkImapConnection } from "@/services/email/imap-connection-check";
+import type { ImapConfig } from "@/services/email/imap-reader";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    await fetchRecentEmails(imap, 1, 1);
+    await checkImapConnection(imap);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await supabase.from("automation_logs").insert({

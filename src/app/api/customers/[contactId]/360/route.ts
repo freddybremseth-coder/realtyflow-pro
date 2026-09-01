@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/api-admin";
+import { buildLinkedEmailTimelineEvents, buildNurtureTimelineEvents } from "@/lib/customer-communication-timeline";
 import {
   buildContactInteractionEvents,
   buildCustomerNextAction,
@@ -125,9 +126,21 @@ export async function GET(
       .eq("contact_id", contactId)
       .order("occurred_at", { ascending: false })
       .limit(150),
+    supabase
+      .from("lead_nurture_events")
+      .select("id,contact_id,brand_id,sequence_id,step_id,channel,subject,body_preview,status,dry_run,error,scheduled_for,sent_at,created_at")
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(150),
+    supabase
+      .from("email_messages")
+      .select("id,brand_id,direction,from_address,to_addresses,subject,ai_intent,ai_urgency,ai_sentiment,received_at,created_at,matched_lead_id,matched_customer_id")
+      .or(`matched_lead_id.eq.${contactId},matched_customer_id.eq.${contactId}`)
+      .order("received_at", { ascending: false })
+      .limit(150),
   ];
 
-  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled, revenueEventsSettled] = await Promise.allSettled(queries);
+  const [criteriaSettled, shortlistsSettled, presentationsSettled, draftsSettled, portalSettled, portalUserSettled, workItemsSettled, revenueEventsSettled, nurtureEventsSettled, emailMessagesSettled] = await Promise.allSettled(queries);
 
   const criteria = fulfilledData(criteriaSettled, "buyer_profile_criteria", warnings);
   const shortlists = fulfilledData(shortlistsSettled, "lead_property_shortlists", warnings);
@@ -136,6 +149,8 @@ export async function GET(
   const portalMessages = fulfilledData(portalSettled, "portal_messages", warnings);
   const allWorkItems = fulfilledData(workItemsSettled, "work_items", warnings);
   const revenueEvents = fulfilledData(revenueEventsSettled, "revenue_events", warnings);
+  const nurtureEvents = fulfilledData(nurtureEventsSettled, "lead_nurture_events", warnings);
+  const linkedEmailMessages = fulfilledData(emailMessagesSettled, "email_messages", warnings);
 
   let portalUser = null;
   if (portalUserSettled.status === "fulfilled") {
@@ -173,9 +188,14 @@ export async function GET(
   const activeCriteria = activeProfile ? criteria.filter((row: any) => row.buyer_profile_id === activeProfile.id) : [];
   const completeness = buildCustomerProfileCompleteness(contact, activeCriteria);
   const recommendedAction = recommendRevenueAction(contact, new Date(), { revenueEvents });
+  const crmInteractionEvents = buildContactInteractionEvents(contact.interactions);
+  const nurtureTimelineEvents = buildNurtureTimelineEvents(nurtureEvents);
+  const linkedEmailTimelineEvents = buildLinkedEmailTimelineEvents(linkedEmailMessages);
 
   const timeline = buildCustomerTimeline([
-    buildContactInteractionEvents(contact.interactions),
+    crmInteractionEvents,
+    linkedEmailTimelineEvents,
+    nurtureTimelineEvents,
     portalMessages.map((row: any) => event("portal", row, row.sender_type === "customer" ? "Melding fra kunden" : "Melding i Min side", row.body)).filter(Boolean) as CustomerTimelineEvent[],
     profiles.map((row: any) => event("profile", row, `Kjøperprofil ${row.status === "approved" ? "godkjent" : "opprettet"}`, row.summary)).filter(Boolean) as CustomerTimelineEvent[],
     shortlists.map((row: any) => event("shortlist", row, `Shortlist ${row.status}`, row.title)).filter(Boolean) as CustomerTimelineEvent[],
@@ -202,6 +222,14 @@ export async function GET(
     portalMessages,
     workItems,
     revenueEvents,
+    nurtureEvents,
+    linkedEmailMessages,
+    communicationCoverage: {
+      crmInteractions: crmInteractionEvents.length,
+      portalMessages: portalMessages.length,
+      nurtureEvents: nurtureTimelineEvents.length,
+      emailMessages: linkedEmailTimelineEvents.length,
+    },
     timeline,
     warnings,
   });

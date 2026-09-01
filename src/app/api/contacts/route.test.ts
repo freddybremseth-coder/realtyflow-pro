@@ -3,6 +3,11 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 import { createAdminSession } from "@/lib/admin-auth";
 import { DELETE, GET, PATCH, POST } from "./route";
+import {
+  filterContactsByView,
+  normalizeContactForClient,
+  normalizeIncomingContact,
+} from "./lifecycle";
 import { setContactsSupabaseFactoryForTests } from "./supabase-client";
 
 async function adminCookie(email = "freddy.bremseth@gmail.com") {
@@ -145,8 +150,9 @@ test("contacts GET is available only after valid admin auth", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(body.contacts[0].name, "Pipeline Lead");
+  assert.equal(body.contacts[0].pipeline_status, "NEW");
   assert.deepEqual(mock.calls[0], { method: "from", args: ["contacts"] });
-  assert.equal(mock.calls.some((call) => call.method === "in"), true);
+  assert.equal(mock.calls.some((call) => call.method === "order"), true);
 });
 
 test("contacts mutations require valid admin auth before using service route", async () => {
@@ -174,4 +180,48 @@ test("contacts route fails closed after auth when database is not configured", a
 
   assert.equal(response.status, 500);
   assert.equal(body.error.code, "DATABASE_NOT_CONFIGURED");
+});
+
+test("partial PATCH normalization never invents NEW when status was omitted", () => {
+  const normalized = normalizeIncomingContact({ notes: "Updated after phone call" });
+  assert.equal(Object.prototype.hasOwnProperty.call(normalized, "pipeline_status"), false);
+  assert.equal(normalized.notes, "Updated after phone call");
+});
+
+test("new contacts still default to NEW when explicitly requested by POST flow", () => {
+  const normalized = normalizeIncomingContact({ name: "New Buyer" }, { defaultPipelineStatus: true });
+  assert.equal(normalized.pipeline_status, "NEW");
+});
+
+test("contact client output canonicalizes legacy matching and reservation aliases", () => {
+  assert.equal(normalizeContactForClient({ pipeline_status: "shortlist" }).pipeline_status, "MATCHING");
+  assert.equal(normalizeContactForClient({ pipeline_status: "deposit paid" }).pipeline_status, "RESERVED");
+});
+
+test("CRM view includes matching and reserved while excluding brand-new leads", () => {
+  const contacts = [
+    { id: "new", pipeline_status: "NEW" },
+    { id: "matching", pipeline_status: "shortlist" },
+    { id: "reserved", pipeline_status: "deposit paid" },
+    { id: "won", pipeline_status: "CUSTOMER" },
+  ].map(normalizeContactForClient);
+
+  assert.deepEqual(filterContactsByView(contacts, "crm").map((contact) => contact.id), ["matching", "reserved", "won"]);
+  assert.deepEqual(filterContactsByView(contacts, "pipeline").map((contact) => contact.id), ["new", "matching", "reserved", "won"]);
+});
+
+test("authenticated partial PATCH sends no pipeline_status field to Supabase", async () => {
+  const mock = supabaseMock();
+  setContactsSupabaseFactoryForTests(() => mock.client);
+
+  const response = await PATCH(
+    request("PATCH", "/api/contacts", { id: "contact-1", notes: "Keep current lifecycle stage" }, { cookie: await adminCookie() }) as any,
+  );
+
+  assert.equal(response.status, 200);
+  const updateCall = mock.calls.find((call) => call.method === "update");
+  assert.ok(updateCall);
+  const payload = updateCall.args[0] as Record<string, unknown>;
+  assert.equal(payload.notes, "Keep current lifecycle stage");
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, "pipeline_status"), false);
 });

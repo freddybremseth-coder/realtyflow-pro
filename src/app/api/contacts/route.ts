@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestAccessContext } from '@/lib/api-admin';
 import { hasPermission } from '@/lib/access-control';
+import { normalizeCustomerPipelineStatus } from '@/lib/customer-updates';
 import { buildRevenueEventDedupeKey, insertRevenueEvent } from '@/lib/revenue/events';
+import { filterContactsByView, normalizeContactForClient, normalizeIncomingContact } from './lifecycle';
 import { getContactsSupabase } from './supabase-client';
 
 async function requireContactsAccess(request: NextRequest) {
@@ -29,51 +31,25 @@ function missingDatabaseResponse() {
   );
 }
 
-function normalizeStatus(status: unknown) {
-  const raw = String(status || '').trim();
-  const value = raw
-    .toUpperCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/Æ/g, 'AE')
-    .replace(/Ø/g, 'O')
-    .replace(/Å/g, 'A')
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  if (['WON', 'VUNNET', 'SOLGT', 'SOLD', 'CLOSED_WON', 'CLOSED', 'COMPLETED', 'CUSTOMER', 'KUNDE', 'VIP'].includes(value)) return 'WON';
-  if (['LOST', 'TAPT', 'CLOSED_LOST'].includes(value)) return 'LOST';
-  return value || 'NEW';
+function normalizeEmail(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizePhone(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const hasPlus = raw.startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return '';
+  return `${hasPlus ? '+' : ''}${digits}`;
+}
+
+function normalizeBrand(value: unknown) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function isCustomerStatus(status: unknown) {
-  return normalizeStatus(status) === 'WON';
-}
-
-function normalizeContactForClient(contact: any) {
-  if (!contact || typeof contact !== 'object') return contact;
-  if (!isCustomerStatus(contact.pipeline_status || contact.status || contact.stage)) return contact;
-  return {
-    ...contact,
-    pipeline_status: 'WON',
-    sentiment: contact.sentiment && String(contact.sentiment).toLowerCase() !== 'neutral' ? contact.sentiment : 'hot',
-    buying_signal_score: Number(contact.buying_signal_score || contact.purchase_signal_score || 100),
-    purchase_signal_score: Number(contact.purchase_signal_score || contact.buying_signal_score || 100),
-  };
-}
-
-function normalizeIncomingContact(contact: any) {
-  const next = { ...(contact || {}) };
-  if (next.status && !next.pipeline_status) next.pipeline_status = next.status;
-  if (next.stage && !next.pipeline_status) next.pipeline_status = next.stage;
-  next.pipeline_status = normalizeStatus(next.pipeline_status || 'NEW');
-  if (isCustomerStatus(next.pipeline_status)) {
-    next.pipeline_status = 'WON';
-    next.sentiment = 'hot';
-    next.buying_signal_score = 100;
-    next.purchase_signal_score = 100;
-    if (!next.pipeline_value && next.sale_price) next.pipeline_value = next.sale_price;
-  }
-  return next;
+  return normalizeCustomerPipelineStatus(status) === 'WON';
 }
 
 function stripUnknownColumn(payload: any, column?: string) {
@@ -92,6 +68,45 @@ function numericOrNull(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function findDuplicateContact(supabase: any, contact: any) {
+  const incomingEmail = normalizeEmail(contact.email);
+  const incomingPhone = normalizePhone(contact.phone);
+  const incomingBrand = normalizeBrand(contact.brand_id || contact.brand);
+  if (!incomingEmail && !incomingPhone) return null;
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id,name,email,phone,brand,brand_id,pipeline_status,source,updated_at')
+    .limit(1000);
+  if (error) return null;
+
+  const candidates = (data || []).filter((candidate: any) => {
+    const emailMatch = incomingEmail && normalizeEmail(candidate.email) === incomingEmail;
+    const phoneMatch = incomingPhone && normalizePhone(candidate.phone) === incomingPhone;
+    return Boolean(emailMatch || phoneMatch);
+  });
+  if (!candidates.length) return null;
+
+  const sameBrand = candidates.find((candidate: any) => {
+    const candidateBrand = normalizeBrand(candidate.brand_id || candidate.brand);
+    return incomingBrand && candidateBrand === incomingBrand;
+  });
+
+  if (sameBrand) {
+    return {
+      contact: normalizeContactForClient(sameBrand),
+      matchScope: 'same_brand' as const,
+      matchType: incomingEmail && normalizeEmail(sameBrand.email) === incomingEmail ? 'email' : 'phone',
+    };
+  }
+
+  return {
+    contact: normalizeContactForClient(candidates[0]),
+    matchScope: 'cross_brand' as const,
+    matchType: incomingEmail && normalizeEmail(candidates[0].email) === incomingEmail ? 'email' : 'phone',
+  };
 }
 
 async function insertContactWithFallbacks(supabase: any, contact: any) {
@@ -147,15 +162,12 @@ export async function GET(request: NextRequest) {
   if (!supabase) return missingDatabaseResponse();
   const { searchParams } = new URL(request.url);
   const view = searchParams.get('view');
-  let query = supabase.from('contacts').select('*').order('updated_at', { ascending: false });
-  if (view === 'pipeline') {
-    query = query.in('pipeline_status', ['NEW', 'CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST', 'ON_HOLD', 'CUSTOMER', 'VIP', 'VUNNET', 'SOLGT', 'KUNDE', 'SOLD', 'CLOSED_WON']);
-  } else if (view === 'crm') {
-    query = query.in('pipeline_status', ['CONTACT', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'CUSTOMER', 'VIP', 'LOST', 'VUNNET', 'SOLGT', 'KUNDE', 'SOLD', 'CLOSED_WON']);
-  }
-  const { data, error } = await query;
+
+  const { data, error } = await supabase.from('contacts').select('*').order('updated_at', { ascending: false });
   if (error) return NextResponse.json({ contacts: [], error: error.message });
-  const contacts = (data || []).map(normalizeContactForClient);
+
+  const normalizedContacts = (data || []).map(normalizeContactForClient);
+  const contacts = filterContactsByView(normalizedContacts, view);
   const repairs = contacts
     .filter((c: any) => isCustomerStatus(c.pipeline_status) && (c.buying_signal_score !== 100 || c.purchase_signal_score !== 100 || c.sentiment === 'neutral'))
     .map((c: any) => updateContactWithFallbacks(supabase, c.id, { pipeline_status: 'WON', sentiment: 'hot', buying_signal_score: 100, purchase_signal_score: 100, updated_at: new Date().toISOString() }));
@@ -168,10 +180,34 @@ export async function POST(request: NextRequest) {
   if (unauthorized) return unauthorized;
   const supabase = getContactsSupabase();
   if (!supabase) return missingDatabaseResponse();
-  const contact = normalizeIncomingContact(await request.json());
+  const contact = normalizeIncomingContact(await request.json(), { defaultPipelineStatus: true });
+
+  const duplicate = await findDuplicateContact(supabase, contact);
+  if (duplicate?.matchScope === 'same_brand') {
+    return NextResponse.json({
+      contact: duplicate.contact,
+      duplicate: true,
+      duplicateMatch: { scope: duplicate.matchScope, type: duplicate.matchType },
+    });
+  }
+  if (duplicate?.matchScope === 'cross_brand') {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: 'CROSS_BRAND_CONTACT_MATCH',
+          message: 'Samme e-post eller telefon finnes allerede på et annet brand. Velg eksisterende kontakt manuelt eller bekreft korrekt brand før du oppretter en ny.',
+        },
+        possibleContact: duplicate.contact,
+        duplicateMatch: { scope: duplicate.matchScope, type: duplicate.matchType },
+      },
+      { status: 409 },
+    );
+  }
+
   const { data, error } = await insertContactWithFallbacks(supabase, contact);
   if (error) return NextResponse.json({ error: error.message, contact }, { status: 500 });
-  return NextResponse.json({ contact: normalizeContactForClient(data) });
+  return NextResponse.json({ contact: normalizeContactForClient(data), duplicate: false });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -190,8 +226,8 @@ export async function PATCH(request: NextRequest) {
   const { data, error } = await updateContactWithFallbacks(supabase, id, updates);
   if (error) return NextResponse.json({ error: error.message, updates }, { status: 500 });
 
-  const previousStatus = normalizeStatus(previous?.pipeline_status);
-  const nextStatus = normalizeStatus(data?.pipeline_status || updates.pipeline_status);
+  const previousStatus = normalizeCustomerPipelineStatus(previous?.pipeline_status);
+  const nextStatus = normalizeCustomerPipelineStatus(data?.pipeline_status || updates.pipeline_status || previous?.pipeline_status);
   const contactId = String(data?.id || id);
   const brandId = String(data?.brand_id || data?.brand || previous?.brand_id || previous?.brand || '').trim();
 
