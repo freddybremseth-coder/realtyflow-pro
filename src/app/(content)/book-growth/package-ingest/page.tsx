@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PublicationArtifactUploader } from "@/components/publishing/publication-artifact-uploader";
+import { PublicationPackageQuickstart } from "@/components/publishing/publication-package-quickstart";
 
 const example = {
   action: "preview",
@@ -99,7 +100,7 @@ export default function PackageIngestPage() {
       <p style={{ fontWeight: 900, letterSpacing: 1.5, fontSize: 12, margin: 0 }}>BOOK OS · PRODUCTION HANDOFF</p>
       <h1 style={{ fontSize: 34, margin: "6px 0" }}>Publication Package Ingest</h1>
       <p style={{ maxWidth: 950, lineHeight: 1.55 }}>
-        Upload completed publication artifacts, verify their stored bytes with SHA-256, assemble the immutable package manifest, then register the exact production revision. Ingest still never approves or publishes anything: Quality Center remains the next mandatory gate.
+        Create the package identity, upload one complete publication ZIP, verify every stored byte with SHA-256, then preview and register the production revision. Ingest never approves or publishes anything: Quality Center remains the next mandatory gate.
       </p>
     </header>
 
@@ -107,35 +108,38 @@ export default function PackageIngestPage() {
       <b>Schema not ready:</b> {loadError}
     </section> : null}
 
+    <PublicationPackageQuickstart onCreate={(draft) => setText(JSON.stringify(draft, null, 2))} />
     <PublicationArtifactUploader identity={identity} onVerifiedAsset={addVerifiedAsset} />
 
     <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, .8fr)", gap: 18, alignItems: "start" }}>
       <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
         <h2 style={{ marginTop: 0 }}>Package manifest</h2>
+        <p style={{ lineHeight: 1.5 }}>Advanced view. The quickstart form and verified uploader maintain this manifest automatically; edit JSON only when you need an explicit override.</p>
         <textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
           spellCheck={false}
-          style={{ width: "100%", minHeight: 620, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.5, padding: 12, borderRadius: 10, border: `1px solid ${parsed.ok ? "#94a3b8" : "#dc2626"}`, boxSizing: "border-box" }}
+          style={{ width: "100%", minHeight: 520, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.5, padding: 12, borderRadius: 10, border: `1px solid ${parsed.ok ? "#94a3b8" : "#dc2626"}`, boxSizing: "border-box" }}
         />
         {!parsed.ok ? <p style={{ color: "#b91c1c", fontWeight: 800 }}>Invalid JSON: {parsed.error}</p> : null}
         <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <button disabled={busy || !parsed.ok} onClick={() => submit("preview")} style={{ padding: "9px 14px", fontWeight: 900 }}>Preview gates</button>
           <button disabled={busy || !parsed.ok} onClick={() => submit("ingest")} style={{ padding: "9px 14px", fontWeight: 900, background: "#0f172a", color: "white", borderRadius: 8 }}>Ingest package</button>
-          <button disabled={busy} onClick={() => setText(JSON.stringify(example, null, 2))} style={{ padding: "9px 14px", fontWeight: 800 }}>New manifest</button>
+          <button disabled={busy} onClick={() => setText(JSON.stringify(example, null, 2))} style={{ padding: "9px 14px", fontWeight: 800 }}>Load example</button>
         </div>
       </article>
 
       <aside style={{ display: "grid", gap: 18 }}>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Result</h2>
-          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Upload the assets, then preview the manifest before ingesting it.</p>}
+          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Create the identity, upload the package, then preview the gates before ingesting it.</p>}
         </article>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Safety boundary</h2>
           <ul style={{ paddingLeft: 18, lineHeight: 1.55 }}>
             <li>Storage paths are generated server-side and include the SHA-256 fingerprint.</li>
             <li>Uploaded bytes are re-hashed before an asset becomes <b>verified</b>.</li>
+            <li>Complete ZIPs are expanded only after package checksum verification.</li>
             <li>Creates a canonical revision in <b>review</b>, not approved.</li>
             <li>Does not create retailer publications.</li>
             <li>Does not approve launch campaigns or release candidates.</li>
