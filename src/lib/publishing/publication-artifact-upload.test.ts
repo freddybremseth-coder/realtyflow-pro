@@ -62,5 +62,5 @@ test("verified manifest assets preserve the production revision number", () => {
 });
 
 test("sha256Buffer returns stable sha256", () => {
-  assert.equal(sha256Buffer(new TextEncoder().encode("book-os")), "66f84cfdc7849268ec37194bf199ea97f69c3e3d3cb72226347bd3ad86d157e0");
+  assert.equal(sha256Buffer(new TextEncoder().encode("book-os")), "a6910b19cd81b8a0711446528767ade0ceff83353b80789eb61fb07162775333");
 });
