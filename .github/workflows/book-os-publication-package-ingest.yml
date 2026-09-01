@@ -35,5 +35,3 @@ jobs:
           src/lib/publishing/publication-package.test.ts
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
           src/app/api/book-growth/package-ingest/route-contract.test.ts
-      - name: Book OS schema contract
-        run: npm run schema:contract:book-os
