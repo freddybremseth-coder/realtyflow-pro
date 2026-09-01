@@ -5,19 +5,28 @@ on:
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/(content)/book-growth/package-ingest/**"
+      - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/lib/publishing/publication-package*"
+      - "src/lib/publishing/publication-artifact-upload*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
+      - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
+      - "supabase/migrations/20260901124500_book_os_publication_assets_bucket.sql"
       - ".github/workflows/book-os-publication-package-ingest.yml"
   push:
     branches:
       - "feat/book-os-publication-package-ingest"
+      - "feat/book-os-artifact-upload"
     paths:
       - "src/app/api/book-growth/package-ingest/**"
       - "src/app/(content)/book-growth/package-ingest/**"
+      - "src/components/publishing/publication-artifact-uploader.tsx"
       - "src/lib/publishing/publication-package*"
+      - "src/lib/publishing/publication-artifact-upload*"
       - "src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts"
+      - "src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts"
       - "supabase/migrations/20260901113000_book_os_publication_package_ingest.sql"
+      - "supabase/migrations/20260901124500_book_os_publication_assets_bucket.sql"
 
 jobs:
   contract:
@@ -33,5 +42,7 @@ jobs:
         run: >-
           npx tsx --test
           src/lib/publishing/publication-package.test.ts
+          src/lib/publishing/publication-artifact-upload.test.ts
           src/lib/publishing/book-os-publication-package-ingest-migration-contract.test.ts
+          src/lib/publishing/book-os-publication-assets-bucket-migration-contract.test.ts
           src/app/api/book-growth/package-ingest/route-contract.test.ts
