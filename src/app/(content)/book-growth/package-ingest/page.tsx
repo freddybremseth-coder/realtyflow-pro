@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PublicationArtifactUploader } from "@/components/publishing/publication-artifact-uploader";
 import { PublicationPackageQuickstart } from "@/components/publishing/publication-package-quickstart";
+import { PublicationSeriesBatchUploader } from "@/components/publishing/publication-series-batch-uploader";
 
 const example = {
   action: "preview",
@@ -100,7 +101,7 @@ export default function PackageIngestPage() {
       <p style={{ fontWeight: 900, letterSpacing: 1.5, fontSize: 12, margin: 0 }}>BOOK OS · PRODUCTION HANDOFF</p>
       <h1 style={{ fontSize: 34, margin: "6px 0" }}>Publication Package Ingest</h1>
       <p style={{ maxWidth: 950, lineHeight: 1.55 }}>
-        Create the package identity, upload one complete publication ZIP, verify every stored byte with SHA-256, then preview and register the production revision. Ingest never approves or publishes anything: Quality Center remains the next mandatory gate.
+        Import an entire series in one controlled bundle, or create a single-book package. Every stored byte is verified with SHA-256 before Book OS can preview or register a production revision. Quality Center remains mandatory.
       </p>
     </header>
 
@@ -108,13 +109,14 @@ export default function PackageIngestPage() {
       <b>Schema not ready:</b> {loadError}
     </section> : null}
 
+    <PublicationSeriesBatchUploader />
     <PublicationPackageQuickstart onCreate={(draft) => setText(JSON.stringify(draft, null, 2))} />
     <PublicationArtifactUploader identity={identity} onVerifiedAsset={addVerifiedAsset} />
 
     <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, .8fr)", gap: 18, alignItems: "start" }}>
       <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
-        <h2 style={{ marginTop: 0 }}>Package manifest</h2>
-        <p style={{ lineHeight: 1.5 }}>Advanced view. The quickstart form and verified uploader maintain this manifest automatically; edit JSON only when you need an explicit override.</p>
+        <h2 style={{ marginTop: 0 }}>Single-book manifest</h2>
+        <p style={{ lineHeight: 1.5 }}>Advanced single-book view. The quickstart form and verified uploader maintain this manifest automatically; edit JSON only when you need an explicit override.</p>
         <textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -132,17 +134,17 @@ export default function PackageIngestPage() {
       <aside style={{ display: "grid", gap: 18 }}>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Result</h2>
-          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Create the identity, upload the package, then preview the gates before ingesting it.</p>}
+          {result ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, lineHeight: 1.5, background: result.ok ? "#f0fdf4" : "#fef2f2", padding: 12, borderRadius: 10 }}>{JSON.stringify(result, null, 2)}</pre> : <p>Use Series Batch Import above for multi-book production, or preview a single-book manifest here.</p>}
         </article>
         <article style={{ background: "white", border: "1px solid #aebdce", borderRadius: 14, padding: 18 }}>
           <h2 style={{ marginTop: 0 }}>Safety boundary</h2>
           <ul style={{ paddingLeft: 18, lineHeight: 1.55 }}>
-            <li>Storage paths are generated server-side and include the SHA-256 fingerprint.</li>
-            <li>Uploaded bytes are re-hashed before an asset becomes <b>verified</b>.</li>
-            <li>Complete ZIPs are expanded only after package checksum verification.</li>
-            <li>Creates a canonical revision in <b>review</b>, not approved.</li>
-            <li>Does not create retailer publications.</li>
-            <li>Does not approve launch campaigns or release candidates.</li>
+            <li>Series batches verify the outer ZIP and every declared child ZIP before extraction.</li>
+            <li>Storage paths are immutable and include SHA-256 fingerprints.</li>
+            <li>Complete publication ZIPs are expanded only after checksum verification.</li>
+            <li>Batch preparation does not ingest anything.</li>
+            <li>Ingest creates revisions in <b>review</b>, never approved.</li>
+            <li>No retailer publication is created automatically.</li>
           </ul>
         </article>
       </aside>
