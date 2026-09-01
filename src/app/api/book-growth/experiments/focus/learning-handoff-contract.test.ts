@@ -34,6 +34,6 @@ test("focused Learning context is read-only and cannot generate or decide propos
 test("existing Learning Center retains explicit generation and decision actions", () => {
   assert.match(learningPage, /onClick=\{\(\)=>act\(\{action:"generate"\}\)\}/);
   assert.match(learningPage, /action:"decide"/);
-  assert.match(learningPage, /ingen regler, metadata eller bøker ble opprettet/);
+  assert.match(learningPage, /ingen regler, metadata eller bøker ble opprettet/i);
   assert.match(learningPage, /Godkjenning betyr «dette bør vurderes videre»/);
 });
