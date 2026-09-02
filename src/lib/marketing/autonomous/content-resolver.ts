@@ -46,6 +46,8 @@ export interface ResolverInput {
   maxFactAgeDays?: number;
   /** Likhet/fatigue-vindu (dager) for nylig gjenbruk (default 14). */
   recentReuseDays?: number;
+  /** Fail-closed sperre for eksakt gjenbruk. Brukes av autopilot, ikke manuelle utkast. */
+  minimumReuseIntervalDays?: number;
 }
 
 export interface AssetMedia {
@@ -158,6 +160,10 @@ export function scoreCandidate(candidate: ContentCandidate, input: ResolverInput
   // P0-diskvalifikasjon.
   if (candidate.brandId !== input.brandId) {
     return { ...candidate, score: -Infinity, disqualified: "BRAND_MISMATCH", reuseMode: mode, needsReapproval, breakdown: {} };
+  }
+  const reuseAgeDays = candidate.lastUsedAt ? daysBetween(now, candidate.lastUsedAt) : null;
+  if (reuseAgeDays != null && input.minimumReuseIntervalDays != null && reuseAgeDays < input.minimumReuseIntervalDays) {
+    return { ...candidate, score: -Infinity, disqualified: "RECENT_REUSE_COOLDOWN", reuseMode: mode, needsReapproval, breakdown: { reuseAgeDays } };
   }
 
   const b: Record<string, number> = {};

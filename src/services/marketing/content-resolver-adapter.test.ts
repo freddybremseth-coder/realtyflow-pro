@@ -82,3 +82,23 @@ test("ingen org-mapping → hopper over org-scopede kilder (fail-safe, ingen fuz
   const d = await resolveMarketingContent(db, { brandId: "b1", channel: "instagram", now: "2026-08-23T00:00:00Z" }); // ingen organizationId
   assert.equal(d.decision, "generate"); // rørte aldri orgX sitt innhold
 });
+
+test("publiseringsledger gir nylig brukt ad creative en autopilot-cooldown", async () => {
+  const db = makeDb({
+    media_assets: [],
+    ad_creatives: [{
+      id: "creative-1", campaign_id: "campaign-1", aspect_ratio: "1:1",
+      image_url: "https://cdn.example/olive.jpg", caption_primary: "Chefs choose terroir.",
+      status: "completed", is_top_pick: true, created_at: "2026-08-25T10:00:00Z",
+    }],
+    marketing_publications: [{
+      source_id: "ad_creative:creative-1", brand_id: "donaanna", channel: "instagram",
+      state: "published", created_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-01T10:00:00Z",
+    }],
+  });
+  const decision = await resolveMarketingContent(db, {
+    brandId: "donaanna", channel: "instagram", now: "2026-09-02T10:00:00Z", minimumReuseIntervalDays: 14,
+  }, { adCampaignIds: ["campaign-1"] });
+  assert.equal(decision.decision, "generate");
+  assert.equal(decision.ranked.length, 0);
+});

@@ -94,9 +94,15 @@ function publishActionFor(channel: MarketingChannel): MarketingAction {
 export async function planMarketingRun(
   deps: OrchestratorDeps,
   input: DirectorInput,
-  opts: { level?: MarketingRunState["level"] } = {},
+  opts: { level?: MarketingRunState["level"]; marketingRunId?: string; correlationId?: string } = {},
 ): Promise<{ run: MarketingRunState; plan: ReturnType<typeof buildMarketingPlan>; recommendation: Awaited<ReturnType<typeof recommendForGeneration>> | undefined; trace: ActionTraceEntry[] }> {
-  const run = createMarketingRun({ brandId: input.brandId, level: opts.level ?? "copilot", now: deps.now?.() });
+  const run = createMarketingRun({
+    brandId: input.brandId,
+    level: opts.level ?? "copilot",
+    marketingRunId: opts.marketingRunId,
+    correlationId: opts.correlationId,
+    now: deps.now?.(),
+  });
   const learningScope = input.channels?.length === 1
     ? channelLearningScope(input.brandId, input.channels[0])
     : input.brandId;
@@ -176,7 +182,12 @@ export async function dispatchGeneratedAsset(
   };
 
   // 1) Novelty-gate.
-  const novelty = contentNoveltyScore({ genome: asset.genome, angle: brief.angle, campaignId: brief.campaignId }, args.history ?? [], { now: deps.now?.() });
+  // Check both planning angle and final copy. Brief-only matching preserves the
+  // original thematic fatigue guard; caption matching catches a reusable asset
+  // whose text is posted verbatim under a newly generated brief.
+  const noveltyByBrief = contentNoveltyScore({ genome: asset.genome, angle: brief.angle, campaignId: brief.campaignId }, args.history ?? [], { now: deps.now?.() });
+  const noveltyByCaption = contentNoveltyScore({ genome: asset.genome, angle: caption, campaignId: brief.campaignId }, args.history ?? [], { now: deps.now?.() });
+  const novelty = noveltyByCaption.similarity > noveltyByBrief.similarity ? noveltyByCaption : noveltyByBrief;
   trace.push({ step: "novelty", actor: "novelty", summary: `${novelty.decision} (novelty ${novelty.noveltyScore})`, detail: { similarity: novelty.similarity } });
   if (novelty.decision === "regenerate") {
     return { publicationId, state: "regenerate", mode: "n/a", qualityScore: null, published: false, approvalId: null, trace };

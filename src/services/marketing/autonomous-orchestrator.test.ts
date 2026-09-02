@@ -78,6 +78,17 @@ test("novelty-gate: nesten-identisk asset regenereres (ingen publikasjon)", asyn
   assert.ok(!fake.calls.upserts.some((u: any) => u.table === "marketing_publications"));
 });
 
+test("novelty-gate: identisk publisert caption stoppes selv om brief-vinkelen er ny", async () => {
+  const fake = makeFake({});
+  const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1" }), marketingRunId: "mr1" };
+  const changedBrief = { ...brief, angle: "En helt ny planleggingsvinkel" };
+  const publishedCaption = [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n");
+  const history = [{ genome: asset.genome, angle: publishedCaption, usedAt: "2026-08-22T10:00:00Z" }];
+  const res = await dispatchGeneratedAsset(deps(fake), { asset, brief: changedBrief, run, history });
+  assert.equal(res.state, "regenerate");
+  assert.ok(!fake.calls.upserts.some((u: any) => u.table === "marketing_publications"));
+});
+
 test("sensitive fakta uten kilde (AI-generert) → BLOKKERT før approval (ingen approval)", async () => {
   const fake = makeFake({});
   const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "guarded" }), marketingRunId: "mr1" };
@@ -149,6 +160,14 @@ test("planMarketingRun persisterer run og starter på copilot", async () => {
   assert.ok(plan.production.exploit >= 0);
   const r = fake.calls.upserts.find((u: any) => u.table === "marketing_runs");
   assert.equal(r.o.onConflict, "marketing_run_id");
+});
+
+test("planMarketingRun honors stable IDs supplied by a cron slot", async () => {
+  const fake = makeFake({});
+  const input = { brandId: "b1", goals: [{ kind: "awareness" as const, target: 10 }], channels: ["instagram" as const], pipelineGaps: [], inventoryFocus: [], activeCampaignIds: [], budget: {}, publishingCapacityPerWeek: 4 };
+  const { run } = await planMarketingRun(deps(fake), input as any, { marketingRunId: "mrun_autopilot_b1_instagram_20260902_h12", correlationId: "rf_autopilot_b1_instagram_20260902_h12" });
+  assert.equal(run.marketingRunId, "mrun_autopilot_b1_instagram_20260902_h12");
+  assert.equal(run.correlationId, "rf_autopilot_b1_instagram_20260902_h12");
 });
 
 // ── P1 Hardening: kvalitativ/komparativ påstandsverifisering ────────────────
