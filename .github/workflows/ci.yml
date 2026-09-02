@@ -92,6 +92,10 @@ jobs:
         run: npx tsx --test src/lib/ads/creative-dna.test.ts src/lib/ads/creative-performance.test.ts src/lib/ads/creative-variants.test.ts src/lib/ads/creative-insights.test.ts
       - name: Book distribution control-plane tests
         run: npm run test:book-distribution
+      - name: Book production autopilot contracts
+        run: npm run test:book-production-autopilot && npm run typecheck:book-production-autopilot
+      - name: Marketing production, publishing and learning tests
+        run: npm run test:marketing
       - name: Instagram Growth learning tests
         run: npx tsx --test src/services/social-growth/performance-engine.test.ts src/services/social-growth/learning-ranking.test.ts src/services/social-growth/autopilot-learning-policy.test.ts
       - name: Build

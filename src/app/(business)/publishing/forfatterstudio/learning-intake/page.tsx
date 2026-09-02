@@ -138,29 +138,20 @@ export default function LearningBookEngineIntakePage() {
         throw new Error(approved?.error || "Controlled production start could not be approved");
       }
 
-      setProductionMessage("Step 2/3: building SEO metadata and locking series bible/canon 1.0…");
-      const seoRes = await fetch("/api/publishing/book-engine", {
+      setProductionMessage("Starting durable production autopilot…");
+      const autopilotRes = await fetch("/api/publishing/book-engine/autopilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_seo", id: createdProjectId }),
+        body: JSON.stringify({ projectId: createdProjectId }),
       });
-      const seo = await seoRes.json().catch(() => ({}));
-      if (!seoRes.ok) throw new Error(seo?.error || "Series bible/canon generation failed");
-
-      setProductionMessage("Step 3/3: building master outline, research and first chapter…");
-      const authorRes = await fetch("/api/publishing/book-engine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_author", id: createdProjectId }),
-      });
-      const author = await authorRes.json().catch(() => ({}));
-      if (!authorRes.ok) throw new Error(author?.error || "Outline and first-chapter generation failed");
+      const autopilot = await autopilotRes.json().catch(() => ({}));
+      if (!autopilotRes.ok) throw new Error(autopilot?.error || "Durable production autopilot could not start");
 
       setProductionStarted(true);
-      setProductionMessage(author?.warning ? String(author.warning) : "Controlled production started successfully: canon, outline and first chapter are ready.");
+      setProductionMessage("Controlled production is running durably through canon, outline and every chapter. It stops at ready-for-export for human final approval; this page may be closed.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
-      setProductionMessage("Production stopped at the failed step. No later step was started automatically.");
+      setProductionMessage("Production did not start. The approved draft is preserved and no later publishing action was taken.");
     } finally {
       setBusy(false);
     }

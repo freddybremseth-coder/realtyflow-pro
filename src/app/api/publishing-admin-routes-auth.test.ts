@@ -12,6 +12,7 @@ import { POST as POSTMarketingKitDrafts } from "./marketing-kit/drafts/route";
 import { GET as GETPublishingAutopilotResults } from "./publishing/autopilot-results/route";
 import { GET as GETPublishingAuthorStudio, POST as POSTPublishingAuthorStudio } from "./publishing/author-studio/route";
 import { GET as GETPublishingBookEngine, POST as POSTPublishingBookEngine } from "./publishing/book-engine/route";
+import { GET as GETPublishingBookAutopilot, POST as POSTPublishingBookAutopilot } from "./publishing/book-engine/autopilot/route";
 import { GET as GETPublishingBookExport } from "./publishing/book-engine/export/route";
 import { GET as GETPublishingBookExportFile } from "./publishing/book-engine/export-file/route";
 import { POST as POSTPublishingBookUploadSource } from "./publishing/book-engine/upload-source/route";
@@ -89,6 +90,8 @@ test("publishing, agent, advisor, and marketing admin routes require admin befor
 
     GETPublishingBookEngine(jsonRequest("/api/publishing/book-engine", "GET") as any),
     POSTPublishingBookEngine(jsonRequest("/api/publishing/book-engine", "POST", { title: "Book" }) as any),
+    GETPublishingBookAutopilot(jsonRequest("/api/publishing/book-engine/autopilot", "GET") as any),
+    POSTPublishingBookAutopilot(jsonRequest("/api/publishing/book-engine/autopilot", "POST", { projectId: "project-1" }) as any),
     GETPublishingBookExport(jsonRequest("/api/publishing/book-engine/export?id=project-1", "GET") as any),
     GETPublishingBookExportFile(jsonRequest("/api/publishing/book-engine/export-file?id=project-1", "GET") as any),
     POSTPublishingBookUploadSource(jsonRequest("/api/publishing/book-engine/upload-source", "POST") as any),

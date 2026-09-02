@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import test from "node:test";
 import {
   OWNED_GROWTH_BRANDS,
   OWNED_GROWTH_BRAND_IDS,
@@ -6,64 +7,62 @@ import {
   isPilotChannel,
 } from "./brand-registry";
 
-describe("Marketing Growth OS owned brand registry", () => {
-  it("keeps owned brand ids unique and Soleada outside the owned Growth OS brands", () => {
-    expect(new Set(OWNED_GROWTH_BRAND_IDS).size).toBe(OWNED_GROWTH_BRAND_IDS.length);
-    expect(OWNED_GROWTH_BRAND_IDS).not.toContain("soleada");
-    expect(growthBrandDefinition("soleada")).toBeNull();
+test("keeps owned brand ids unique and Soleada outside the owned Growth OS brands", () => {
+    assert.equal(new Set(OWNED_GROWTH_BRAND_IDS).size, OWNED_GROWTH_BRAND_IDS.length);
+    assert.ok(!OWNED_GROWTH_BRAND_IDS.includes("soleada"));
+    assert.equal(growthBrandDefinition("soleada"), null);
   });
 
-  it("uses remasterfreddy as the canonical Re-master Freddy brand id", () => {
-    expect(OWNED_GROWTH_BRAND_IDS).toContain("remasterfreddy");
-    expect(growthBrandDefinition("remasterfreddy")?.name).toBe("Re-Master Freddy");
-    expect(growthBrandDefinition("neuralbeat")).toBeNull();
+test("uses remasterfreddy as the canonical Re-master Freddy brand id", () => {
+    assert.ok(OWNED_GROWTH_BRAND_IDS.includes("remasterfreddy"));
+    assert.equal(growthBrandDefinition("remasterfreddy")?.name, "Re-Master Freddy");
+    assert.equal(growthBrandDefinition("neuralbeat"), null);
   });
 
-  it("does not mark new creator and product channels pilot-ready before write governance is hardened", () => {
-    expect(isPilotChannel("freddyb", "youtube")).toBe(false);
-    expect(isPilotChannel("freddypublishing", "facebook")).toBe(false);
-    expect(isPilotChannel("freddyai", "facebook")).toBe(false);
-    expect(isPilotChannel("remasterfreddy", "youtube")).toBe(false);
-    expect(isPilotChannel("donaanna", "youtube")).toBe(false);
-    expect(isPilotChannel("chatgenius", "youtube")).toBe(false);
+test("does not mark new creator and product channels pilot-ready before write governance is hardened", () => {
+    assert.equal(isPilotChannel("freddyb", "youtube"), false);
+    assert.equal(isPilotChannel("freddypublishing", "facebook"), false);
+    assert.equal(isPilotChannel("freddyai", "facebook"), false);
+    assert.equal(isPilotChannel("remasterfreddy", "youtube"), false);
+    assert.equal(isPilotChannel("donaanna", "youtube"), false);
+    assert.equal(isPilotChannel("chatgenius", "youtube"), false);
   });
 
-  it("keeps currently controlled Meta pilots enabled", () => {
-    expect(isPilotChannel("zeneco", "instagram")).toBe(true);
-    expect(isPilotChannel("zeneco", "facebook")).toBe(true);
-    expect(isPilotChannel("pinosoecolife", "facebook")).toBe(true);
-    expect(isPilotChannel("donaanna", "instagram")).toBe(true);
-    expect(isPilotChannel("chatgenius", "instagram")).toBe(true);
+test("keeps currently controlled Meta pilots enabled", () => {
+    assert.equal(isPilotChannel("zeneco", "instagram"), true);
+    assert.equal(isPilotChannel("zeneco", "facebook"), true);
+    assert.equal(isPilotChannel("pinosoecolife", "facebook"), true);
+    assert.equal(isPilotChannel("donaanna", "instagram"), true);
+    assert.equal(isPilotChannel("chatgenius", "instagram"), true);
   });
 
-  it("defines Freddy Bremseth as the professional expertise umbrella and excludes the private Facebook profile from automation", () => {
+test("defines Freddy Bremseth as the professional expertise umbrella and excludes the private Facebook profile from automation", () => {
     const brand = growthBrandDefinition("freddyb");
-    expect(brand?.kind).toBe("personal");
-    expect(brand?.contentPillars).toContain("expertise_and_analysis");
-    expect(brand?.contentPillars).toContain("selected_brand_stories");
-    expect(brand?.notes).toMatch(/professional umbrella\/expertise brand/i);
-    expect(brand?.notes).toMatch(/private Facebook profile is not an automated commercial publishing destination/i);
+    assert.equal(brand?.kind, "personal");
+    assert.ok(brand?.contentPillars.includes("expertise_and_analysis"));
+    assert.ok(brand?.contentPillars.includes("selected_brand_stories"));
+    assert.match(brand?.notes || "", /professional umbrella\/expertise brand/i);
+    assert.match(brand?.notes || "", /private Facebook profile is not an automated commercial publishing destination/i);
   });
 
-  it("defines Freddy Publishing as a separate publishing brand", () => {
+test("defines Freddy Publishing as a separate publishing brand", () => {
     const brand = growthBrandDefinition("freddypublishing");
-    expect(brand?.kind).toBe("publishing");
-    expect(brand?.website).toBe("https://books.freddybremseth.com");
-    expect(brand?.contentPillars).toContain("sample_chapters");
-    expect(brand?.primaryCtas).toContain("browse_catalog");
+    assert.equal(brand?.kind, "publishing");
+    assert.equal(brand?.website, "https://books.freddybremseth.com");
+    assert.ok(brand?.contentPillars.includes("sample_chapters"));
+    assert.ok(brand?.primaryCtas.includes("browse_catalog"));
   });
 
-  it("defines Freddy AI Products separately for RealtyFlow, Nexus OS and future AI products", () => {
+test("defines Freddy AI Products separately for RealtyFlow, Nexus OS and future AI products", () => {
     const brand = growthBrandDefinition("freddyai");
-    expect(brand?.kind).toBe("saas");
-    expect(brand?.contentPillars).toContain("realtyflow");
-    expect(brand?.contentPillars).toContain("nexus_os");
-    expect(brand?.pilotChannels).toEqual([]);
+    assert.equal(brand?.kind, "saas");
+    assert.ok(brand?.contentPillars.includes("realtyflow"));
+    assert.ok(brand?.contentPillars.includes("nexus_os"));
+    assert.deepEqual(brand?.pilotChannels, []);
   });
 
-  it("keeps a planned channel footprint for every owned brand", () => {
+test("keeps a planned channel footprint for every owned brand", () => {
     for (const brand of OWNED_GROWTH_BRANDS) {
-      expect(brand.plannedChannels.length, brand.id).toBeGreaterThan(0);
+      assert.ok(brand.plannedChannels.length > 0, brand.id);
     }
   });
-});
