@@ -275,7 +275,7 @@ test("removeLegacyScheduledRow: 0 rader (ikke scheduled) → feiler fail-closed"
   await assert.rejects(() => removeLegacyScheduledRow(db, "pub1"), /LEGACY_ROW_NOT_SCHEDULED/);
 });
 
-test("AI-modus: ingen legacyPublicationId → source=generated, kvalitativ post når manual-review", async () => {
+test("AI-modus: energieffektiv påstand uten kilde pauses før approval", async () => {
   delete process.env.ANTHROPIC_API_KEY; delete process.env.MARKETING_META_LIVE; // dry-run generator
   const db = makeDb();
   seedBrand(db);
@@ -286,9 +286,9 @@ test("AI-modus: ingen legacyPublicationId → source=generated, kvalitativ post 
   });
   assert.equal(draft.results.length, 1); // kun instagram (ikke begge Meta-kanaler)
   assert.equal(draft.results[0].source, "generated");
-  assert.equal(draft.results[0].state, "draft");
-  assert.equal(draft.results[0].mode, "manual-review");
-  assert.ok(draft.results[0].approvalId);
+  assert.equal(draft.results[0].state, "paused");
+  assert.match(draft.results[0].error ?? "", /CLAIM_NOT_VERIFIED/);
+  assert.equal(draft.results[0].approvalId, null);
   // AI-modus rører ALDRI legacy content_publications.
   assert.ok(!db.tables["content_publications"] || db.tables["content_publications"].length === 0);
 });
@@ -387,23 +387,23 @@ function fakeGraph(over: any = {}) {
 const igPub = (db: any, graph: any) => makeMetaPublisher({ supabase: db, live: true, igUserId: "IG1", graph });
 const fbPub = (db: any, graph: any) => makeMetaPublisher({ supabase: db, live: true, pageId: "PAGE1", graph });
 
-test("IG image: container → media_publish (posted først etter publish)", async () => {
+test("IG image: container readiness → media_publish (posted først etter publish)", async () => {
   const db = makeDb(); const { g: graph, calls } = fakeGraph();
   const res = await igPub(db, graph).publish(igImage, { idempotencyKey: "k1" });
   assert.equal(res.externalId, "ig_media_1");
   assert.equal(calls.createIgContainer, 1);
-  assert.equal(calls.getStatus, 0); // bilde: ingen polling
+  assert.equal(calls.getStatus, 1);
   assert.equal(calls.publishIg, 1);
   assert.equal(db.tables["marketing_publish_attempts"][0].status, "posted");
 });
 
-test("IG Reel: processing → FINISHED → publish (gjenopptar, ingen ny container)", async () => {
+test("IG Reel: processing → FINISHED → publish i samme robuste kall", async () => {
   const db = makeDb(); const { g: graph, calls } = fakeGraph({ statuses: ["IN_PROGRESS", "FINISHED"] });
   const pub = igPub(db, graph);
-  await assert.rejects(() => pub.publish(igReel, { idempotencyKey: "k2" }), /IG_CONTAINER_PROCESSING/);
   const res = await pub.publish(igReel, { idempotencyKey: "k2" });
   assert.equal(res.externalId, "ig_media_1");
-  assert.equal(calls.createIgContainer, 1); // ingen ny container ved retry
+  assert.equal(calls.createIgContainer, 1);
+  assert.equal(calls.getStatus, 2);
   assert.equal(calls.publishIg, 1);
 });
 

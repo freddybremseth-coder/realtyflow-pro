@@ -44,7 +44,7 @@ test("assembleAsset lagrer provenance (learning-regler, promptversjon)", () => {
   const req: CreativeRequest = { brief, brand, recommendation: { favor: { hookType: { value: "price_first", lift: 2, evidence: "reliable" } }, avoid: [], notes: [] } };
   const { asset, provenance } = assembleAsset(req, { headline: "H", body: "B", cta: "Book" }, { model: "sonnet" });
   assert.equal(asset.contentId, "c1");
-  assert.equal(provenance.promptVersion, "cg-1.0");
+  assert.equal(provenance.promptVersion, "cg-1.7");
   assert.ok(provenance.learningRulesUsed.includes("hookType=price_first"));
 });
 

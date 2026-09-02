@@ -214,7 +214,7 @@ test("formidler-formulering: «boligene vi hjelper deg å finne» → ikke blokk
   assert.equal(res.approvalId, "appr1");
 });
 
-test("ren kvalitativ Zen Eco Homes-caption → manual-review (ingen blokk)", async () => {
+test("energieffektiv Zen Eco Homes-caption uten energikilde blokkeres før review", async () => {
   const fake = makeFake({});
   const brand = parseBrandContext({ brandId: "b1", brandName: "Zen Eco Homes" });
   const run: MarketingRunState = { ...createMarketingRun({ brandId: "b1", level: "copilot" }), marketingRunId: "mr1" };
@@ -227,7 +227,8 @@ test("ren kvalitativ Zen Eco Homes-caption → manual-review (ingen blokk)", asy
     deps(fake, { requestApproval: async () => "appr1" }),
     { asset: clean, brief, run, brand, sourceType: "generated" },
   );
-  assert.equal(res.mode, "manual-review");
-  assert.equal(res.state, "draft");
-  assert.equal(res.approvalId, "appr1");
+  assert.equal(res.state, "paused");
+  assert.equal(res.mode, "blocked");
+  assert.equal(res.approvalId, null);
+  assert.match(res.error || "", /CLAIM_NOT_VERIFIED/);
 });

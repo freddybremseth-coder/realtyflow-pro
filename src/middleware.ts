@@ -300,4 +300,4 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
-export const config = { matcher: ["/((?!.*\\..*).*)"] };
+export const config = { matcher: ["/((?!.well-known/workflow/|.*\\..*).*)"] };

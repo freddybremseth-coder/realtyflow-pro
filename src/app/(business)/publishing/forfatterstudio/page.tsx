@@ -298,6 +298,27 @@ export default function ForfatterstudioPage() {
   }, []);
 
   useEffect(() => {
+    const recoverActiveRun = async () => {
+      try {
+        const response = await fetch("/api/publishing/book-engine/autopilot", { cache: "no-store" });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.run) return;
+        setProductionJob((current) => current || {
+          projectId: String(body.run.project_id),
+          title: String(body.projectTitle || "Bokproduksjon"),
+          step: Number(body.run.current_step || 0),
+          message: "Gjenopptok visning av bokautopiloten som allerede kjører på serveren.",
+          status: "in_progress",
+          startedAt: String(body.run.started_at || body.run.created_at || new Date().toISOString()),
+        });
+      } catch {
+        // The library remains usable even if the optional recovery lookup fails.
+      }
+    };
+    void recoverActiveRun();
+  }, []);
+
+  useEffect(() => {
     if (productionJob) window.localStorage.setItem(PRODUCTION_JOB_KEY, JSON.stringify(productionJob));
     else window.localStorage.removeItem(PRODUCTION_JOB_KEY);
   }, [productionJob]);
@@ -308,6 +329,50 @@ export default function ForfatterstudioPage() {
     const timer = window.setInterval(() => loadLibrary(true), 8000);
     return () => window.clearInterval(timer);
   }, [productionJob, projects, loadLibrary]);
+
+  useEffect(() => {
+    if (!productionJob || productionJob.status !== "in_progress") return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/publishing/book-engine/autopilot?projectId=${encodeURIComponent(productionJob.projectId)}`,
+          { cache: "no-store" },
+        );
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || cancelled || !body.run) return;
+        const runStatus = String(body.run.status || "running");
+        const stage = String(body.run.stage || "chapter_drafting");
+        const completed = Number(body.run.chapters_completed || 0);
+        const total = Number(body.run.chapters_total || 0);
+        const message = runStatus === "completed"
+          ? `Manuset er ferdig med ${completed} kapitler og venter på din endelige godkjenning.`
+          : runStatus === "failed"
+            ? `Autopiloten stoppet trygt: ${String(body.run.error || "ukjent feil")}`
+            : runStatus === "attention"
+              ? `Autopiloten trenger oppmerksomhet: ${String(body.run.error || "kontroller manusstatus")}`
+              : stage === "series_bible"
+                ? "ChatGPT bygger og låser seriebibel/canon 1.0."
+                : stage === "outline_and_first_chapter"
+                  ? "ChatGPT lager master outline, research og første kapittel."
+                  : `ChatGPT skriver bokkapitlene i bakgrunnen (${completed}/${total || "?"}).`;
+        setProductionJob((current) => current?.projectId === productionJob.projectId ? {
+          ...current,
+          step: Number(body.run.current_step || current.step),
+          message,
+          status: runStatus === "completed" ? "completed" : runStatus === "failed" ? "failed" : runStatus === "attention" ? "attention" : "in_progress",
+        } : current);
+        if (runStatus === "completed" || runStatus === "failed" || runStatus === "attention") {
+          await loadLibrary(true);
+        }
+      } catch {
+        // A transient polling failure must not stop the durable server workflow.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 8000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [productionJob?.projectId, productionJob?.status, loadLibrary]);
 
   useEffect(() => {
     if (productionJob) return;
@@ -740,35 +805,16 @@ export default function ForfatterstudioPage() {
       });
       await loadLibrary(true);
 
-      setCreatingBook("Steg 1/3: ChatGPT lager metadata og låser seriebibel/canon 1.0…");
-      setProductionJob((job) => job ? { ...job, step: 1, message: "ChatGPT bygger og låser seriebibel/canon 1.0." } : job);
-      const seoRes = await fetch("/api/publishing/book-engine", {
+      setCreatingBook("Starter varig bokautopilot…");
+      const autopilotRes = await fetch("/api/publishing/book-engine/autopilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_seo", id: projectId }),
+        body: JSON.stringify({ projectId }),
       });
-      if (!seoRes.ok) {
-        const seoErr = await seoRes.json().catch(() => ({}));
-        console.warn("SEO-steget feilet (fortsetter):", seoErr.error);
-      }
-      await loadLibrary(true);
-
-      setCreatingBook("Steg 2–3/3: ChatGPT lager master outline og skriver første kapittel (research → utkast → redaktørkritikk → revisjon). Dette kan ta noen minutter…");
-      setProductionJob((job) => job ? { ...job, step: 2, message: "Seriebibelen er behandlet. ChatGPT lager master outline, research og første kapittel." } : job);
-      const genRes = await fetch("/api/publishing/book-engine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_author", id: projectId }),
-      });
-      const gen = await genRes.json().catch(() => ({}));
-      const finalMessage = !genRes.ok
-        ? gen.error || "Genereringen fikk problemer — bruk «Lag kapitteloversikt»-knappen i boken for å prøve igjen."
-        : gen.warning
-          ? String(gen.warning)
-          : "Boken er i gang: kapitteloversikt + første kapittel er klart.";
-
-      if (!genRes.ok) throw new Error(finalMessage);
-      setProductionJob((job) => job ? { ...job, step: 3, message: finalMessage, status: "completed" } : job);
+      const autopilot = await autopilotRes.json().catch(() => ({}));
+      if (!autopilotRes.ok) throw new Error(autopilot.error || "Kunne ikke starte bokautopiloten.");
+      const finalMessage = "Bokautopiloten kjører trygt i bakgrunnen helt til manuset er klart for din endelige godkjenning. Du kan lukke siden.";
+      setProductionJob((job) => job ? { ...job, step: 0, message: finalMessage, status: "in_progress" } : job);
 
       setShowNewBook(false);
       setNewBook({ title: "", genre: "guide", language: "no", audience: "", brief: "", pages: 150, seriesName: "", style: "", canonNotes: "" });
@@ -789,28 +835,36 @@ export default function ForfatterstudioPage() {
     }
   }, [newBook, newBookSource, loadLibrary, openProject]);
 
-  // Redningsknapp: lager kapitteloversikt + første kapittel for et prosjekt
-  // som mangler dem — f.eks. hvis genereringen ble avbrutt ved opprettelse.
+  // Redningsknapp: starter eller gjenstarter den varige produksjonsflyten.
   const generateOutlineNow = useCallback(async () => {
     if (!project) return;
     setWritingNext(true);
-    setStatus("Lager kapitteloversikt og skriver første kapittel — tar 2–4 minutter, bli på siden…");
+    setStatus("Starter bokautopiloten. Du kan lukke siden når den er startet…");
     try {
-      const res = await fetch("/api/publishing/book-engine", {
+      const res = await fetch("/api/publishing/book-engine/autopilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_author", id: project.id }),
+        body: JSON.stringify({ projectId: project.id }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Genereringen feilet — prøv igjen.");
-      if (data.project) applyProject(data.project as FullProject);
-      setStatus(data.warning ? String(data.warning) : "Kapitteloversikten er klar — fortsett med «Skriv neste kapittel».");
+      setProductionJob({
+        projectId: project.id,
+        title: project.title,
+        step: 0,
+        message: "Bokautopiloten arbeider i bakgrunnen frem til manuset er klart for godkjenning.",
+        status: data.alreadyComplete ? "completed" : "in_progress",
+        startedAt: new Date().toISOString(),
+      });
+      setStatus(data.alreadyComplete
+        ? "Manuset er allerede klart for endelig godkjenning."
+        : "Bokautopiloten er startet og fortsetter selv om du lukker siden.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Genereringen feilet — prøv igjen.");
     } finally {
       setWritingNext(false);
     }
-  }, [project, applyProject]);
+  }, [project]);
 
   const handleManusFile = useCallback(async (file: File) => {
     setImportManusBusy(true);
@@ -1549,7 +1603,10 @@ export default function ForfatterstudioPage() {
     [productionJob, projects],
   );
   const storedProgress = activeProductionProject?.metadata_plan?.production_progress as Record<string, any> | undefined;
-  const preferLocalProgress = productionJob && Number(storedProgress?.step ?? -1) < productionJob.step;
+  const preferLocalProgress = productionJob && (
+    productionJob.status !== "in_progress"
+    || Number(storedProgress?.step ?? -1) < productionJob.step
+  );
   const visibleProduction = productionJob ? {
     ...productionJob,
     step: Math.max(productionJob.step, Number(storedProgress?.step ?? 0)),

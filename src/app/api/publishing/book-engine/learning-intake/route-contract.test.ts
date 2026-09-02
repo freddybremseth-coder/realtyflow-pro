@@ -80,10 +80,9 @@ test("controlled production UI resumes an existing project instead of creating a
   assert.match(page, /Start \/ resume controlled production/);
   assert.match(page, /action:\s*"create_draft"/);
   assert.match(page, /action:\s*"start_production"/);
-  assert.match(page, /mode:\s*"generate_seo"/);
-  assert.match(page, /mode:\s*"generate_author"/);
-  assert.ok(page.indexOf('action: "start_production"') < page.indexOf('mode: "generate_seo"'));
-  assert.ok(page.indexOf('mode: "generate_seo"') < page.indexOf('mode: "generate_author"'));
-  assert.match(page, /if \(!seoRes\.ok\) throw/);
-  assert.match(page, /if \(!authorRes\.ok\) throw/);
+  assert.match(page, /\/api\/publishing\/book-engine\/autopilot/);
+  assert.ok(page.indexOf('action: "start_production"') < page.indexOf('/api/publishing/book-engine/autopilot'));
+  assert.doesNotMatch(page, /mode:\s*"generate_seo"/);
+  assert.doesNotMatch(page, /mode:\s*"generate_author"/);
+  assert.doesNotMatch(page, /mode:\s*"continue"/);
 });

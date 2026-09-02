@@ -37,8 +37,8 @@ function assetWith(body: string, extra: Partial<GeneratedAsset> = {}): Generated
 // ── Rene detektorer ──────────────────────────────────────────────────────
 test("findOutcomeClaims: fanger «lavere energikostnader» (kvalitativ, ingen tall)", () => {
   assert.deepEqual(findOutcomeClaims(ENERGY_CLAIM), ["lavere energikostnader"]);
-  // Trygg posisjonering er IKKE en utfallspåstand.
-  assert.deepEqual(findOutcomeClaims("Energieffektive boliger med norsk oppfølging."), []);
+  // Energieffektivitet er en konkret egenskap ved boligen og krever kilde.
+  assert.deepEqual(findOutcomeClaims("Energieffektive boliger med norsk oppfølging."), ["energy-efficient property"]);
 });
 
 test("findOutcomeClaims: fanger trend- og absolutte canary-påstander", () => {
@@ -115,9 +115,10 @@ test("gate: AI-canary med sol/trend/ingen-overraskelser/språkbarrierer → blok
   assert.ok(r.reasons.some((x) => x.startsWith("CLAIM_NOT_VERIFIED")));
 });
 
-test("gate: «energieffektive boliger» (trygg posisjonering) → claimsVerified=true", () => {
+test("gate: «energieffektive boliger» uten energikilde blokkeres", () => {
   const r = contentQualityGate(assetWith(CLEAN_QUALITATIVE));
-  assert.equal(r.checks.claimsVerified, true);
+  assert.equal(r.checks.claimsVerified, false);
+  assert.deepEqual(r.unsupportedOutcomeClaims, ["energy-efficient property"]);
   assert.equal(r.checks.roleConsistent, true);
 });
 

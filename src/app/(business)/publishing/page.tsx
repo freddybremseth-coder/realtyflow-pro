@@ -470,33 +470,20 @@ export default function PublishingHubPage() {
         return;
       }
 
-      setHubStatus("Prosjekt opprettet. Kjører SEO-plan...");
-      const seoRes = await fetch("/api/publishing/book-engine", {
+      setHubStatus("Prosjekt opprettet. Starter varig bokautopilot...");
+      const autopilotRes = await fetch("/api/publishing/book-engine/autopilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_seo", id: projectId }),
+        body: JSON.stringify({ projectId }),
       });
-      const seoData = await seoRes.json().catch(() => ({}));
-      if (!seoRes.ok) {
-        setHubStatus(seoData.error || "SEO-generering feilet. Prosjektet ligger klart for retry.");
+      const autopilotData = await autopilotRes.json().catch(() => ({}));
+      if (!autopilotRes.ok) {
+        setHubStatus(autopilotData.error || "Bokautopiloten kunne ikke starte. Prosjektet ligger klart for retry.");
         await loadBookEngineProjects();
         return;
       }
 
-      setHubStatus("SEO-plan ferdig. Lager bokstruktur og kapittelutkast...");
-      const authorRes = await fetch("/api/publishing/book-engine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "generate_author", id: projectId }),
-      });
-      const authorData = await authorRes.json().catch(() => ({}));
-      if (!authorRes.ok) {
-        setHubStatus(authorData.error || "Forfatterplan feilet. Prosjektet ligger klart for retry.");
-        await loadBookEngineProjects();
-        return;
-      }
-
-      setHubStatus("Book Engine v1 har laget SEO-plan + bokstruktur + kapittelutkast.");
+      setHubStatus("Bokautopiloten kjører i bakgrunnen gjennom canon, outline og alle kapitler, og stopper før endelig godkjenning.");
       await loadBookEngineProjects();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Book Engine feilet.";
