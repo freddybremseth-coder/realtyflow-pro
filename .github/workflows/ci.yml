@@ -94,6 +94,8 @@ jobs:
         run: npm run test:book-distribution
       - name: Book production autopilot contracts
         run: npm run test:book-production-autopilot && npm run typecheck:book-production-autopilot
+      - name: Cron safety and runtime control tests
+        run: npm run test:cron-safety
       - name: Marketing production, publishing and learning tests
         run: npm run test:marketing
       - name: Instagram Growth learning tests

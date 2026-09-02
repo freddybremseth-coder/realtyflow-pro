@@ -1,4 +1,4 @@
-import { isCronEnabled } from "@/lib/nexus/runtime-controls";
+import { isCronEnabled, type CronControlOptions, type CronControlDecision } from "@/lib/nexus/runtime-controls";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
@@ -7,6 +7,14 @@ type SafeModeResult = {
   reason?: string;
   mode: "off" | "manual" | "health" | "nexus";
 };
+
+type CronEnabledCheck = (pathname: string, options?: CronControlOptions) => Promise<CronControlDecision>;
+
+type SafeModeDependencies = {
+  cronEnabledCheck?: CronEnabledCheck;
+};
+
+const FAIL_CLOSED_CONTROL_PATHS = new Set(["/api/cron/marketing-autopilot"]);
 
 function parseCsv(value?: string): string[] {
   if (!value) return [];
@@ -56,20 +64,29 @@ async function canReachSupabase(): Promise<boolean> {
   }
 }
 
-export async function evaluateCronSafeMode(pathname: string): Promise<SafeModeResult> {
-  if (isPathAllowed(pathname)) {
-    return { skip: false, mode: "off" };
-  }
-
+export async function evaluateCronSafeMode(
+  pathname: string,
+  dependencies: SafeModeDependencies = {},
+): Promise<SafeModeResult> {
   // Nexus is the operational control plane. Environment variables remain an
-  // emergency fallback, not the day-to-day way of starting/stopping jobs.
-  const nexus = await isCronEnabled(pathname);
+  // emergency fallback, not the day-to-day way of starting/stopping jobs. The
+  // Nexus decision must always happen before the emergency allowlist; otherwise
+  // an allowlisted route can bypass an explicit operator kill switch.
+  const cronEnabledCheck = dependencies.cronEnabledCheck ?? isCronEnabled;
+  const nexus = await cronEnabledCheck(pathname, {
+    failClosed: FAIL_CLOSED_CONTROL_PATHS.has(pathname),
+  });
   if (!nexus.enabled) {
     return {
       skip: true,
       mode: "nexus",
       reason: nexus.reason || "Disabled in Nexus runtime controls",
     };
+  }
+
+  // The allowlist only bypasses CRON_SAFE_MODE. It never bypasses Nexus.
+  if (isPathAllowed(pathname)) {
+    return { skip: false, mode: "off" };
   }
 
   if (isTrue(process.env.CRON_SAFE_MODE)) {

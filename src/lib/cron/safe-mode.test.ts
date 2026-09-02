@@ -37,6 +37,34 @@ test("cron safe mode manual switch skips non-allowlisted cron paths", async () =
   assert.deepEqual(await evaluateCronSafeMode("/api/cron/blocked"), {
     skip: true,
     mode: "manual",
-    reason: "CRON_SAFE_MODE is enabled",
+    reason: "CRON_SAFE_MODE emergency fallback is enabled",
+  });
+});
+
+test("Nexus route kill switch wins even when the cron path is allowlisted", async () => {
+  process.env.CRON_SAFE_MODE = "true";
+  process.env.CRON_SAFE_MODE_ALLOW_PATHS = "/api/cron/marketing-autopilot";
+
+  const result = await evaluateCronSafeMode("/api/cron/marketing-autopilot", {
+    cronEnabledCheck: async (_pathname, options) => {
+      assert.equal(options?.failClosed, true);
+      return { enabled: false, reason: "Marketing Autopilot is disabled in Nexus" };
+    },
+  });
+
+  assert.deepEqual(result, {
+    skip: true,
+    mode: "nexus",
+    reason: "Marketing Autopilot is disabled in Nexus",
+  });
+});
+
+test("Marketing Autopilot fails closed when Nexus controls cannot be verified", async () => {
+  const result = await evaluateCronSafeMode("/api/cron/marketing-autopilot");
+
+  assert.deepEqual(result, {
+    skip: true,
+    mode: "nexus",
+    reason: "Nexus runtime controls are not configured",
   });
 });
