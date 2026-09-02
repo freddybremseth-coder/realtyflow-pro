@@ -27,6 +27,54 @@ export interface ResolverSourceMap {
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
+function latestIso(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
+}
+
+/**
+ * Reell gjenbrukshistorikk kommer fra publiseringsledgeren, ikke fra assetets
+ * opprettelsesdato. Dette gjør fatigue/cooldown kildebevisst for både Content
+ * Hub, Media Studio og Ad Builder.
+ */
+async function attachPublicationUsage(
+  supabase: MarketingSupabaseLike,
+  input: ResolverInput,
+  candidates: ContentCandidate[],
+): Promise<ContentCandidate[]> {
+  const sourceIds = Array.from(new Set(candidates.map((candidate) => candidate.contentId).filter(Boolean)));
+  if (!sourceIds.length) return candidates;
+  const { data, error } = await supabase
+    .from("marketing_publications")
+    .select("source_id,created_at,updated_at,state")
+    .eq("brand_id", input.brandId)
+    .eq("channel", input.channel)
+    .in("source_id", sourceIds)
+    .in("state", ["published", "scheduled"])
+    .limit(5000);
+  if (error) throw new Error(`CONTENT_USAGE_HISTORY_FAILED: ${error.message}`);
+
+  const usage = new Map<string, { count: number; lastUsedAt: string | null }>();
+  for (const row of data ?? []) {
+    const sourceId = String((row as any).source_id ?? "");
+    if (!sourceId) continue;
+    const current = usage.get(sourceId) ?? { count: 0, lastUsedAt: null };
+    const usedAt = (row as any).created_at ?? (row as any).updated_at ?? null;
+    usage.set(sourceId, { count: current.count + 1, lastUsedAt: latestIso(current.lastUsedAt, usedAt) });
+  }
+
+  return candidates.map((candidate) => {
+    const found = usage.get(candidate.contentId);
+    if (!found) return candidate;
+    return {
+      ...candidate,
+      usageCount: Math.max(candidate.usageCount ?? 0, found.count),
+      lastUsedAt: latestIso(candidate.lastUsedAt, found.lastUsedAt),
+    };
+  });
+}
+
 /** Content Hub (social_posts) — godkjent = høyere tillit; draft/review = gjenbrukbart studio-asset. */
 async function searchContentHub(supabase: MarketingSupabaseLike, input: ResolverInput, orgId: string): Promise<ContentCandidate[]> {
   const { data } = await supabase
@@ -120,5 +168,13 @@ export async function resolveMarketingContent(
   if (sources.organizationId) candidates.push(...(await searchContentHub(supabase, input, sources.organizationId).catch(() => [])));
   candidates.push(...(await searchMedia(supabase, input).catch(() => [])));
   if (sources.adCampaignIds?.length) candidates.push(...(await searchAdCreatives(supabase, input, sources.adCampaignIds).catch(() => [])));
-  return resolveContent(candidates, input);
+  let rankedCandidates = candidates;
+  try {
+    rankedCandidates = await attachPublicationUsage(supabase, input, candidates);
+  } catch (error) {
+    // Autopilot requires authoritative history. Manual/copy workflows may
+    // still produce a reviewable draft if the optional history read fails.
+    if (input.minimumReuseIntervalDays != null) throw error;
+  }
+  return resolveContent(rankedCandidates, input);
 }

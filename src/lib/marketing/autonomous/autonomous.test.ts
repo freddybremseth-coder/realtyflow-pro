@@ -14,6 +14,7 @@ import {
   markStageDone,
   proposeStrategyChange,
   publicationIdempotencyKey,
+  resolveContent,
   resolveMarketingAutonomy,
   resumeStage,
   type CampaignPlan,
@@ -105,6 +106,28 @@ test("novelty godtar ny vinkel på samme tema", () => {
   const r = contentNoveltyScore({ genome: g({ hookType: "price_first", topic: "comparison", area: "altea" }), angle: "€500k comparison with Altea" }, hist, { now: "2026-08-23T00:00:00Z" });
   assert.equal(r.decision, "ok");
   assert.ok(r.noveltyScore > 50);
+});
+
+test("autopilot cooldown diskvalifiserer en nylig brukt kilde", () => {
+  const decision = resolveContent([{
+    source: "ad_creative",
+    contentId: "ad_creative:1",
+    brandId: "b1",
+    channels: ["instagram"],
+    text: "Samme godkjente post",
+    humanApproved: true,
+    createdAt: "2026-08-20T00:00:00Z",
+    lastUsedAt: "2026-09-01T10:00:00Z",
+    usageCount: 1,
+  }], {
+    brandId: "b1",
+    channel: "instagram",
+    now: "2026-09-02T10:00:00Z",
+    minimumReuseIntervalDays: 14,
+  });
+  assert.equal(decision.decision, "generate");
+  assert.equal(decision.ranked.length, 0);
+  assert.match(decision.reason, /Ingen egnet/);
 });
 
 // ── Autonomy / Policy Engine + nivå-tak ─────────────────────────────────────

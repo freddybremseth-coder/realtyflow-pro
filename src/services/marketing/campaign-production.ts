@@ -9,6 +9,7 @@ import {
   routeContentFormat,
   type CampaignPlan,
   type CommercialGoal,
+  type ContentHistoryItem,
   type CreativeResult,
 } from "@/lib/marketing/autonomous";
 import type { ContentGenome, ContentGoal, MarketingChannel } from "@/lib/marketing/genome";
@@ -109,6 +110,10 @@ export interface CreateCampaignDraftInput {
   mediaUrl?: string;
   useInventoryProperty?: boolean;
   propertyId?: string;
+  /** Autopilot-only: an exact reusable source cannot be selected inside this window. */
+  reuseCooldownDays?: number;
+  /** Fail closed if recent publication history cannot be loaded. */
+  requirePublicationHistory?: boolean;
 }
 
 export interface CampaignDraftResult {
@@ -166,12 +171,60 @@ export function makeConfiguredMetaPublisher(supabase: MarketingSupabaseLike, bra
   };
 }
 
+async function loadRecentPublicationHistory(
+  supabase: MarketingSupabaseLike,
+  brandId: string,
+  channel: MarketingChannel,
+  days = 14,
+): Promise<ContentHistoryItem[]> {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data: publications, error: publicationError } = await supabase
+    .from("marketing_publications")
+    .select("content_id,campaign_id,created_at,updated_at,state")
+    .eq("brand_id", brandId)
+    .eq("channel", channel)
+    .in("state", ["published", "scheduled"])
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(250);
+  if (publicationError) throw new Error(`PUBLICATION_HISTORY_FAILED: ${publicationError.message}`);
+
+  const contentIds = Array.from(new Set((publications ?? []).map((row: any) => String(row.content_id ?? "")).filter(Boolean)));
+  if (!contentIds.length) return [];
+  const { data: assets, error: assetError } = await supabase
+    .from("marketing_assets")
+    .select("content_id,campaign_id,genome,headline,body,cta")
+    .in("content_id", contentIds)
+    .limit(500);
+  if (assetError) throw new Error(`PUBLICATION_ASSET_HISTORY_FAILED: ${assetError.message}`);
+
+  const publicationByContent = new Map<string, any>();
+  for (const row of publications ?? []) {
+    const contentId = String((row as any).content_id ?? "");
+    if (contentId && !publicationByContent.has(contentId)) publicationByContent.set(contentId, row);
+  }
+  return (assets ?? []).flatMap((asset: any) => {
+    const genome = asset.genome as ContentGenome | null;
+    const publication = publicationByContent.get(String(asset.content_id ?? ""));
+    if (!genome || genome.brandId !== brandId || genome.channel !== channel || !publication) return [];
+    return [{
+      genome,
+      angle: [asset.headline, asset.body, asset.cta].filter(Boolean).join("\n"),
+      campaignId: asset.campaign_id ?? publication.campaign_id ?? undefined,
+      usedAt: publication.created_at ?? publication.updated_at,
+    } satisfies ContentHistoryItem];
+  });
+}
+
 function guardStateLoader() {
   return async () => ({ autopilotEnabled: process.env.MARKETING_AUTOPILOT_ENABLED !== "false" });
 }
 
-export async function createCampaignDraft(supabase: MarketingSupabaseLike, input: CreateCampaignDraftInput, ctx: { correlationIdSeed?: string } = {}): Promise<CampaignDraftResult> {
-  void ctx;
+export async function createCampaignDraft(
+  supabase: MarketingSupabaseLike,
+  input: CreateCampaignDraftInput,
+  ctx: { marketingRunId?: string; correlationId?: string } = {},
+): Promise<CampaignDraftResult> {
   const brand = await loadBrandContext(supabase, input.brandId);
   if (!brand) throw new Error("MISSING_BRAND_CONTEXT: brand_context mangler for " + input.brandId);
 
@@ -198,7 +251,9 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
   };
 
   const { run, plan, recommendation } = await planMarketingRun(
-    { supabase, loadGuardState: guardStateLoader() }, directorInput as any, { level: autonomy.level },
+    { supabase, loadGuardState: guardStateLoader() },
+    directorInput as any,
+    { level: autonomy.level, marketingRunId: ctx.marketingRunId, correlationId: ctx.correlationId },
   );
   await ensureMarketingAgentRun(supabase as any, { marketingRunId: run.marketingRunId, correlationId: run.correlationId });
 
@@ -224,6 +279,21 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
   const generator = makeConfiguredCreativeGenerator();
   const results: CampaignDraftResult["results"] = [];
   const trace: unknown[] = [];
+  const historyByChannel = new Map<MarketingChannel, ContentHistoryItem[]>();
+
+  async function historyFor(channel: MarketingChannel) {
+    const existing = historyByChannel.get(channel);
+    if (existing) return existing;
+    try {
+      const history = await loadRecentPublicationHistory(supabase, input.brandId, channel, input.reuseCooldownDays ?? 14);
+      historyByChannel.set(channel, history);
+      return history;
+    } catch (error) {
+      if (input.requirePublicationHistory) throw error;
+      historyByChannel.set(channel, []);
+      return [];
+    }
+  }
 
   for (const brief of briefs) {
     let creative: CreativeResult;
@@ -246,9 +316,15 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
         sourceId = `property:${inventoryProperty.id}`;
         reuseMode = "inventory_grounded";
       } else {
-        const decision = await resolveMarketingContent(supabase, {
-          brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format,
-        }, sources).catch(() => null);
+        let decision = null;
+        try {
+          decision = await resolveMarketingContent(supabase, {
+            brandId: input.brandId, channel: brief.channel, goal: brief.genome.goal, language: brief.genome.language, area: brief.genome.area, format: brief.genome.format,
+            minimumReuseIntervalDays: input.reuseCooldownDays,
+          }, sources);
+        } catch (error) {
+          if (input.requirePublicationHistory) throw error;
+        }
         if (decision && decision.decision !== "generate" && decision.chosen) {
           creative = assetFromCandidate(brief, brand, decision.chosen);
           sourceType = decision.chosen.source;
@@ -289,8 +365,9 @@ export async function createCampaignDraft(supabase: MarketingSupabaseLike, input
       && (approvedGenerated || approvedReusable)
     );
 
+    const history = await historyFor(brief.channel);
     const d = await dispatchGeneratedAsset(orchestratorDeps, {
-      asset: creative.asset, brief, run, brand, history: [], account: account ? { accountId: account.accountId } : null,
+      asset: creative.asset, brief, run, brand, history, account: account ? { accountId: account.accountId } : null,
       service: input.service ?? null, sourceType, sourceId, reuseMode, preapprovedFormat, propertyIds: creative.provenance.propertyIds ?? [],
     });
 

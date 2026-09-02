@@ -5,13 +5,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
+import {
+  autopilotRunIdentity,
+  autopilotTargetHour,
+  localAutopilotSlot,
+  parseLearnedAutopilotHour,
+  shouldRunAutopilotSlot,
+} from "@/lib/marketing/autopilot-safety";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
-const EXPLORATION_HOURS = [9, 12, 16, 20];
-
 type RunRequest = { id: string; brand_ids: string[] | null; channels: string[] | null };
 
 function configuredChannels(metadata: Record<string, unknown> | null | undefined): Array<"instagram" | "facebook"> {
@@ -20,30 +25,17 @@ function configuredChannels(metadata: Record<string, unknown> | null | undefined
   return Array.from(new Set(values.map((v) => v.trim().toLowerCase()).filter((v): v is "instagram" | "facebook" => SUPPORTED_CHANNELS.has(v))));
 }
 
-function localHourAndWeekday(timeZone = "Europe/Madrid") {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, weekday: "short", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
-  const weekday = String(parts.find((p) => p.type === "weekday")?.value ?? "Mon").toLowerCase();
-  const dayIndex = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(weekday);
-  return { hour, dayIndex: dayIndex >= 0 ? dayIndex : 1 };
-}
-
-function parseLearnedHour(value: string | undefined): number | null {
-  const m = String(value ?? "").match(/^h_(\d{2})$/);
-  if (!m) return null;
-  const hour = Number(m[1]);
-  return Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
-}
-
-function shouldRunAtThisSlot(currentHour: number, dayIndex: number, learnedHour: number | null) {
-  if (learnedHour != null) return Math.abs(currentHour - learnedHour) <= 1;
-  const explorationHour = EXPLORATION_HOURS[dayIndex % EXPLORATION_HOURS.length];
-  return Math.abs(currentHour - explorationHour) <= 1;
-}
-
 async function hasRecentAutoPublication(supabase: any, brandId: string, channel: string) {
   const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase.from("marketing_publications").select("publication_id").eq("brand_id", brandId).eq("channel", channel).eq("source_type", "generated").in("state", ["published", "scheduled"]).gte("updated_at", since).limit(1);
+  const { data, error } = await supabase
+    .from("marketing_publications")
+    .select("publication_id")
+    .eq("brand_id", brandId)
+    .eq("channel", channel)
+    .in("state", ["draft", "approved", "publishing", "published", "scheduled"])
+    .gte("created_at", since)
+    .limit(1);
+  if (error) throw new Error(`RECENT_PUBLICATION_CHECK_FAILED: ${error.message}`);
   return !!data?.length;
 }
 
@@ -77,7 +69,7 @@ export async function GET(request: NextRequest) {
   const supabase = getServiceSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   const timeZone = process.env.MARKETING_LEARNING_TIMEZONE || "Europe/Madrid";
-  const { hour: localHour, dayIndex } = localHourAndWeekday(timeZone);
+  const { hour: localHour, dayIndex, localDate } = localAutopilotSlot(new Date(), timeZone);
   const runRequest = await claimRunRequest(supabase).catch(() => null);
   const requestedBrands = new Set((runRequest?.brand_ids ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean));
   const requestedChannels = new Set((runRequest?.channels ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean));
@@ -97,17 +89,21 @@ export async function GET(request: NextRequest) {
       for (const channel of channels) {
         if (await hasRecentAutoPublication(supabase, brandId, channel)) { results.push({ brandId, channel, skipped: true, reason: "recent_auto_publication_exists" }); continue; }
         const recommendation = await recommendForGeneration(supabase as any, { scope: channelLearningScope(brandId, channel) }).catch(() => undefined);
-        const learnedHour = parseLearnedHour(recommendation?.favor?.publishHour?.value);
-        if (!manualRun && !shouldRunAtThisSlot(localHour, dayIndex, learnedHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour }); continue; }
+        const learnedHour = parseLearnedAutopilotHour(recommendation?.favor?.publishHour?.value);
+        const targetHour = autopilotTargetHour(dayIndex, learnedHour);
+        if (!manualRun && !shouldRunAutopilotSlot(localHour, targetHour)) { results.push({ brandId, channel, skipped: true, reason: learnedHour == null ? "exploration_time_slot_not_due" : "learned_time_slot_not_due", localHour, learnedHour, targetHour }); continue; }
 
         try {
           const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
           const role = String(plan?.metadata?.brand_role ?? "");
+          const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const run = await createCampaignDraft(supabase as any, {
             brandId, channel, useInventoryProperty: role === "real_estate", masterIdea: ideaForBrand(plan, guidance),
             goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 }, publishingCapacityPerWeek: 4,
-          });
-          results.push({ brandId, channel, marketingRunId: run.marketingRunId, manualRun, localHour, learnedHour, recommendation: recommendation?.favor ?? {}, publications: run.results.map((item) => ({ publicationId: item.publicationId, state: item.state, mode: item.mode, qualityScore: item.qualityScore, error: item.error ?? null })) });
+            reuseCooldownDays: 14,
+            requirePublicationHistory: true,
+          }, runIdentity);
+          results.push({ brandId, channel, marketingRunId: run.marketingRunId, manualRun, localHour, learnedHour, targetHour, recommendation: recommendation?.favor ?? {}, publications: run.results.map((item) => ({ publicationId: item.publicationId, state: item.state, mode: item.mode, qualityScore: item.qualityScore, error: item.error ?? null })) });
         } catch (err) { results.push({ brandId, channel, error: err instanceof Error ? err.message : String(err) }); }
       }
     }
