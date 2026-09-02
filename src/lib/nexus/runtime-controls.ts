@@ -26,6 +26,45 @@ export type RuntimeControl = {
   updated_at: string;
 };
 
+type CronRuntimeControl = Pick<RuntimeControl, "control_key" | "label" | "enabled">;
+
+export type CronControlOptions = {
+  /** High-risk outbound jobs must stop when their route control cannot be verified. */
+  failClosed?: boolean;
+};
+
+export type CronControlDecision = {
+  enabled: boolean;
+  reason?: string;
+};
+
+/** Pure decision helper kept separate from the database lookup so the safety
+ * precedence can be regression-tested without network access. */
+export function resolveCronControlDecision(
+  pathname: string,
+  controls: CronRuntimeControl[] | null,
+  options: CronControlOptions = {},
+  unavailableReason?: string,
+): CronControlDecision {
+  if (!controls) {
+    return options.failClosed
+      ? { enabled: false, reason: unavailableReason || "Nexus runtime controls are unavailable" }
+      : { enabled: true };
+  }
+
+  const global = controls.find((control) => control.control_key === "cron:global");
+  if (global && !global.enabled) return { enabled: false, reason: "Nexus global cron control is disabled" };
+
+  const routeKey = `cron:${pathname}`;
+  const route = controls.find((control) => control.control_key === routeKey);
+  if (route && !route.enabled) return { enabled: false, reason: `${route.label} is disabled in Nexus` };
+  if (!route && options.failClosed) {
+    return { enabled: false, reason: `Required Nexus runtime control ${routeKey} is missing` };
+  }
+
+  return { enabled: true };
+}
+
 export async function getRuntimeControl(controlKey: string): Promise<RuntimeControl | null> {
   const supabase = getClient();
   if (!supabase) return null;
@@ -50,12 +89,26 @@ export async function isNurtureLiveEnabled(): Promise<boolean> {
   return isTrue(process.env.NURTURE_LIVE);
 }
 
-export async function isCronEnabled(pathname: string): Promise<{ enabled: boolean; reason?: string }> {
-  const global = await getRuntimeControl("cron:global");
-  if (global && !global.enabled) return { enabled: false, reason: "Nexus global cron control is disabled" };
+export async function isCronEnabled(pathname: string, options: CronControlOptions = {}): Promise<CronControlDecision> {
+  const supabase = getClient();
+  if (!supabase) {
+    return resolveCronControlDecision(pathname, null, options, "Nexus runtime controls are not configured");
+  }
 
-  const route = await getRuntimeControl(`cron:${pathname}`);
-  if (route && !route.enabled) return { enabled: false, reason: `${route.label} is disabled in Nexus` };
+  const routeKey = `cron:${pathname}`;
+  const { data, error } = await supabase
+    .from("nexus_runtime_controls")
+    .select("control_key,label,enabled")
+    .in("control_key", ["cron:global", routeKey]);
 
-  return { enabled: true };
+  if (error) {
+    return resolveCronControlDecision(
+      pathname,
+      null,
+      options,
+      `Nexus runtime control lookup failed: ${error.message}`,
+    );
+  }
+
+  return resolveCronControlDecision(pathname, (data ?? []) as CronRuntimeControl[], options);
 }
