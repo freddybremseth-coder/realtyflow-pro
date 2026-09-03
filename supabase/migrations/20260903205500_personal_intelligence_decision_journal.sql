@@ -93,7 +93,7 @@ create index if not exists mentor_decision_options_decision_idx
 alter table mentor.decisions
   add constraint mentor_decisions_chosen_option_fk
   foreign key (chosen_option_id, owner_user_id, id)
-  references mentor.decision_options(id, owner_user_id, decision_id) on delete set null;
+  references mentor.decision_options(id, owner_user_id, decision_id) on delete restrict;
 
 create table if not exists mentor.decision_assumptions (
   id uuid primary key default gen_random_uuid(),
