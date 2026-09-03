@@ -5,6 +5,7 @@ import { NexusAttentionStrip } from "@/components/nexus/nexus-attention-strip";
 
 const LINKS = [
   { href: "/nexus-os/today", label: "Today" },
+  { href: "/personal-intelligence", label: "Mentor" },
   { href: "/nexus-os/revenue-command", label: "Revenue Command" },
   { href: "/nexus-os/commercial-targets", label: "Targets" },
   { href: "/nexus-os/reactivation", label: "Reactivation" },
