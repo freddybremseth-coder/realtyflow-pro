@@ -8,6 +8,7 @@ export default function PersonalIntelligenceLayout({ children }: { children: Rea
         <Link href="/personal-intelligence" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-800">Mentor</Link>
         <Link href="/personal-intelligence/orient" className="whitespace-nowrap rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 hover:border-cyan-400">Orient</Link>
         <Link href="/personal-intelligence/map" className="whitespace-nowrap rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-800 hover:border-teal-400">Map</Link>
+        <Link href="/personal-intelligence/interview" className="whitespace-nowrap rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-xs font-black text-fuchsia-800 hover:border-fuchsia-400">Interview</Link>
         <Link href="/personal-intelligence/learn" className="whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 hover:border-emerald-400">Learn</Link>
         <Link href="/personal-intelligence/think" className="whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 hover:border-amber-400">Think</Link>
         <Link href="/personal-intelligence/reflect" className="whitespace-nowrap rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-800 hover:border-violet-400">Reflect</Link>
