@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
     if (!claimId || !statement) return NextResponse.json({ error: "claimId and statement are required" }, { status: 400 });
     if (privacyLevel && !PRIVACY_LEVELS.has(privacyLevel)) return NextResponse.json({ error: "Invalid privacyLevel" }, { status: 400 });
 
-    const ownerUserId = getPersonalIntelligenceOwnerUserId();
     const supabase = getPersonalIntelligenceSupabase();
+    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
     const { data: source, error: sourceError } = await supabase
       .schema("personal_core")
       .from("sources")

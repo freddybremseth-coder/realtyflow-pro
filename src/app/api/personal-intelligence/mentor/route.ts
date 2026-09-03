@@ -36,8 +36,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await runMentorTurn(getPersonalIntelligenceSupabase(), {
-      ownerUserId: getPersonalIntelligenceOwnerUserId(),
+    const supabase = getPersonalIntelligenceSupabase();
+    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
+    const result = await runMentorTurn(supabase, {
+      ownerUserId,
       subjectEntityId,
       message,
       privacyScope,

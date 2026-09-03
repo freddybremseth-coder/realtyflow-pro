@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
     }
     if (!PRIVACY_LEVELS.has(privacyLevel)) return NextResponse.json({ error: "Invalid privacyLevel" }, { status: 400 });
 
-    const ownerUserId = getPersonalIntelligenceOwnerUserId();
     const supabase = getPersonalIntelligenceSupabase();
+    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
     const { data: subject } = await supabase
       .schema("personal_core")
       .from("entities")
