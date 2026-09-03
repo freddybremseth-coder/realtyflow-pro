@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAccessContext } from "@/lib/api-admin";
-import { getPersonalIntelligenceOwnerUserId, getPersonalIntelligenceSupabase } from "@/lib/personal-intelligence/supabase";
+import {
+  getPersonalIntelligenceOwnerUserId,
+  getPersonalIntelligenceSupabase,
+  PERSONAL_INTELLIGENCE_OWNER_CANONICAL_NAME,
+} from "@/lib/personal-intelligence/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,8 +14,8 @@ export async function POST(request: NextRequest) {
     const access = await getRequestAccessContext(request);
     if (!access || access.role !== "OWNER") return NextResponse.json({ error: "Owner session required" }, { status: 401 });
 
-    const ownerUserId = getPersonalIntelligenceOwnerUserId();
     const supabase = getPersonalIntelligenceSupabase();
+    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
     const displayName = process.env.PERSONAL_INTELLIGENCE_OWNER_DISPLAY_NAME?.trim() || "Freddy Bremseth";
 
     const { data: existing, error: lookupError } = await supabase
@@ -20,7 +24,7 @@ export async function POST(request: NextRequest) {
       .select("id,display_name,canonical_name,privacy_level,status")
       .eq("owner_user_id", ownerUserId)
       .eq("entity_type", "person")
-      .eq("canonical_name", displayName)
+      .eq("canonical_name", PERSONAL_INTELLIGENCE_OWNER_CANONICAL_NAME)
       .maybeSingle();
     if (lookupError) throw new Error(`Personal Intelligence bootstrap lookup failed: ${lookupError.message}`);
 
@@ -33,10 +37,10 @@ export async function POST(request: NextRequest) {
         owner_user_id: ownerUserId,
         entity_type: "person",
         display_name: displayName,
-        canonical_name: displayName,
+        canonical_name: PERSONAL_INTELLIGENCE_OWNER_CANONICAL_NAME,
         description: "Canonical owner identity for the private Personal Intelligence OS alpha.",
         status: "active",
-        privacy_level: "internal",
+        privacy_level: "private",
         metadata: { canonical_owner: true, private_alpha: true },
       })
       .select("id,display_name,canonical_name,privacy_level,status")
