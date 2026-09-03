@@ -26,13 +26,43 @@ create table if not exists mentor.decisions (
   scenario_notes text,
   decided_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (id, owner_user_id)
 );
 
 create index if not exists mentor_decisions_owner_status_idx
   on mentor.decisions(owner_user_id, subject_entity_id, status, created_at desc);
 create index if not exists mentor_decisions_review_idx
   on mentor.decisions(owner_user_id, deadline) where status in ('open','analyzing','review_due');
+
+create or replace function mentor.enforce_decision_owner_links()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1 from personal_core.entities e
+    where e.id = new.subject_entity_id and e.owner_user_id = new.owner_user_id
+  ) then
+    raise exception 'Decision subject must belong to the same owner';
+  end if;
+
+  if new.goal_id is not null and not exists (
+    select 1 from personal_core.goals g
+    where g.id = new.goal_id and g.owner_user_id = new.owner_user_id
+  ) then
+    raise exception 'Decision goal must belong to the same owner';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger mentor_decisions_owner_guard
+before insert or update of owner_user_id, subject_entity_id, goal_id on mentor.decisions
+for each row execute function mentor.enforce_decision_owner_links();
 
 create trigger mentor_decisions_touch_updated_at
 before update on mentor.decisions
@@ -41,7 +71,7 @@ for each row execute function personal_core.touch_updated_at();
 create table if not exists mentor.decision_options (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references auth.users(id) on delete cascade,
-  decision_id uuid not null references mentor.decisions(id) on delete cascade,
+  decision_id uuid not null,
   label text not null,
   description text,
   upside text,
@@ -51,7 +81,10 @@ create table if not exists mentor.decision_options (
   strategic_fit numeric(5,4) check (strategic_fit is null or (strategic_fit >= 0 and strategic_fit <= 1)),
   life_fit numeric(5,4) check (life_fit is null or (life_fit >= 0 and life_fit <= 1)),
   position smallint not null default 0,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (id, owner_user_id, decision_id),
+  foreign key (decision_id, owner_user_id)
+    references mentor.decisions(id, owner_user_id) on delete cascade
 );
 
 create index if not exists mentor_decision_options_decision_idx
@@ -59,12 +92,13 @@ create index if not exists mentor_decision_options_decision_idx
 
 alter table mentor.decisions
   add constraint mentor_decisions_chosen_option_fk
-  foreign key (chosen_option_id) references mentor.decision_options(id) on delete set null;
+  foreign key (chosen_option_id, owner_user_id, id)
+  references mentor.decision_options(id, owner_user_id, decision_id) on delete set null;
 
 create table if not exists mentor.decision_assumptions (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references auth.users(id) on delete cascade,
-  decision_id uuid not null references mentor.decisions(id) on delete cascade,
+  decision_id uuid not null,
   statement text not null,
   importance numeric(5,4) check (importance is null or (importance >= 0 and importance <= 1)),
   confidence numeric(5,4) check (confidence is null or (confidence >= 0 and confidence <= 1)),
@@ -74,7 +108,9 @@ create table if not exists mentor.decision_assumptions (
   status text not null default 'active'
     check (status in ('active','testing','confirmed','weakened','invalidated','retired')),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  foreign key (decision_id, owner_user_id)
+    references mentor.decisions(id, owner_user_id) on delete cascade
 );
 
 create index if not exists mentor_decision_assumptions_decision_idx
@@ -87,7 +123,7 @@ for each row execute function personal_core.touch_updated_at();
 create table if not exists mentor.decision_outcomes (
   id uuid primary key default gen_random_uuid(),
   owner_user_id uuid not null references auth.users(id) on delete cascade,
-  decision_id uuid not null references mentor.decisions(id) on delete cascade,
+  decision_id uuid not null,
   review_date timestamptz not null default now(),
   actual_outcome text,
   decision_quality numeric(5,4) check (decision_quality is null or (decision_quality >= 0 and decision_quality <= 1)),
@@ -95,7 +131,9 @@ create table if not exists mentor.decision_outcomes (
   luck_factor numeric(5,4) check (luck_factor is null or (luck_factor >= 0 and luck_factor <= 1)),
   lesson text,
   belief_update text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  foreign key (decision_id, owner_user_id)
+    references mentor.decisions(id, owner_user_id) on delete cascade
 );
 
 create index if not exists mentor_decision_outcomes_decision_idx
@@ -111,6 +149,9 @@ revoke all on mentor.decisions, mentor.decision_options, mentor.decision_assumpt
 
 grant all on mentor.decisions, mentor.decision_options, mentor.decision_assumptions, mentor.decision_outcomes
   to service_role;
+
+revoke all on function mentor.enforce_decision_owner_links() from public, anon, authenticated;
+grant execute on function mentor.enforce_decision_owner_links() to service_role;
 
 comment on table mentor.decisions is
   'Decision Journal snapshot of what was known, assumed and chosen at decision time; outcome quality must not be treated as decision quality.';
