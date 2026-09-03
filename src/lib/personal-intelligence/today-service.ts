@@ -1,12 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadNexusBusinessMentorSummary } from "@/lib/personal-intelligence/nexus-business-adapter";
 
 export interface TodayItem {
   id: string;
-  type: "action" | "followup" | "learning_review" | "goal";
+  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity";
   title: string;
   reason: string;
   priority: number;
   dueAt?: string | null;
+  source?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TodaySnapshot {
@@ -14,6 +17,7 @@ export interface TodaySnapshot {
   secondary: TodayItem[];
   learning: TodayItem | null;
   generatedAt: string;
+  warnings?: string[];
 }
 
 function score(item: TodayItem, now: number): number {
@@ -29,7 +33,15 @@ function score(item: TodayItem, now: number): number {
   }
   if (item.type === "followup") value += 15;
   if (item.type === "action") value += 10;
+  if (item.type === "business_opportunity") value += 8;
   return value;
+}
+
+function priorityFromNexus(priority: string): number {
+  if (priority === "CRITICAL") return 1;
+  if (priority === "HIGH") return 2;
+  if (priority === "MEDIUM") return 3;
+  return 4;
 }
 
 export async function buildTodaySnapshot(
@@ -37,7 +49,7 @@ export async function buildTodaySnapshot(
   ownerUserId: string,
   subjectEntityId: string,
 ): Promise<TodaySnapshot> {
-  const [actionsRes, followupsRes, reviewsRes, goalsRes] = await Promise.all([
+  const [actionsRes, followupsRes, reviewsRes, goalsRes, nexusResult] = await Promise.all([
     supabase.schema("mentor").from("actions")
       .select("id,title,priority,scheduled_at,commitment_status")
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
@@ -55,6 +67,10 @@ export async function buildTodaySnapshot(
       .select("id,title,priority,status")
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
       .eq("status", "active").order("priority", { ascending: true }).limit(10),
+    loadNexusBusinessMentorSummary(supabase).then(
+      (summary) => ({ summary, error: null as Error | null }),
+      (error: unknown) => ({ summary: null, error: error instanceof Error ? error : new Error(String(error)) }),
+    ),
   ]);
 
   for (const result of [actionsRes, followupsRes, reviewsRes, goalsRes]) {
@@ -79,6 +95,30 @@ export async function buildTodaySnapshot(
     reason: "Active goal without a more specific commitment", priority: Number(row.priority) || 3,
   });
 
+  if (nexusResult.summary) {
+    const nowMs = Date.now();
+    for (const mission of nexusResult.summary.topMissions.slice(0, 3)) {
+      candidates.push({
+        id: `nexus:${mission.id}`,
+        type: "business_opportunity",
+        title: mission.title,
+        reason: mission.whyNow || mission.nextAction,
+        priority: priorityFromNexus(mission.priority),
+        dueAt: new Date(nowMs + mission.dueInHours * 3_600_000).toISOString(),
+        source: nexusResult.summary.source,
+        metadata: {
+          nextAction: mission.nextAction,
+          expectedValue: mission.expectedValue,
+          currency: mission.currency,
+          autonomy: mission.autonomy,
+          brandId: mission.brandId,
+          pipelineId: mission.pipelineId,
+          persistAsPersonalMemory: false,
+        },
+      });
+    }
+  }
+
   const now = Date.now();
   candidates.sort((a, b) => score(b, now) - score(a, now));
   learningItems.sort((a, b) => score(b, now) - score(a, now));
@@ -88,5 +128,6 @@ export async function buildTodaySnapshot(
     secondary: candidates.slice(1, 3),
     learning: learningItems[0] || null,
     generatedAt: new Date().toISOString(),
+    warnings: nexusResult.error ? [`Nexus business context unavailable: ${nexusResult.error.message}`] : nexusResult.summary?.warnings || [],
   };
 }
