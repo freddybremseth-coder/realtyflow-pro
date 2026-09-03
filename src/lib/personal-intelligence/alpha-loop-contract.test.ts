@@ -15,6 +15,14 @@ const todayService = fs.readFileSync(
   path.join(process.cwd(), "src/lib/personal-intelligence/today-service.ts"),
   "utf8",
 );
+const teachBackRoute = fs.readFileSync(
+  path.join(process.cwd(), "src/app/api/personal-intelligence/learning/teach-back/route.ts"),
+  "utf8",
+);
+const learningService = fs.readFileSync(
+  path.join(process.cwd(), "src/lib/personal-intelligence/learning-service.ts"),
+  "utf8",
+);
 
 test("alpha loop keeps ideas separate from commitments", () => {
   assert.match(migration, /commitment_status in \('idea','considering','committed','scheduled','in_progress','done','dropped'\)/i);
@@ -33,4 +41,12 @@ test("learning reviews feed TODAY without streak mechanics", () => {
   assert.match(todayService, /type: "learning_review"/);
   assert.doesNotMatch(migration, /streak/i);
   assert.doesNotMatch(todayService, /streak/i);
+});
+
+test("teach-back is owner-only and records evidence rather than declaring mastery", () => {
+  assert.match(teachBackRoute, /access\.role !== "OWNER"/);
+  assert.match(learningService, /Judge conceptual correctness, not writing style/i);
+  assert.match(learningService, /evidence_type: "teach_back"/);
+  assert.match(learningService, /if \(mastery\?\.id\)/);
+  assert.doesNotMatch(learningService, /understanding_score.*update/i);
 });
