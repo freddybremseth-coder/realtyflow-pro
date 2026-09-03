@@ -9,6 +9,7 @@ export default function PersonalIntelligenceLayout({ children }: { children: Rea
         <Link href="/personal-intelligence/learn" className="whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 hover:border-emerald-400">Learn</Link>
         <Link href="/personal-intelligence/think" className="whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 hover:border-amber-400">Think</Link>
         <Link href="/personal-intelligence/reflect" className="whitespace-nowrap rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-800 hover:border-violet-400">Reflect</Link>
+        <Link href="/personal-intelligence/me" className="whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800 hover:border-sky-400">Me</Link>
         <Link href="/nexus-os/today" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-500 hover:text-slate-800">Nexus Today</Link>
       </nav>
     </div>
