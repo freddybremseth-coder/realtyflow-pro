@@ -57,7 +57,14 @@ export async function POST(request: NextRequest) {
 
     const { error: statusError } = await supabase.schema("mentor").from("decisions").update({ status: "reviewed" })
       .eq("owner_user_id", ownerUserId).eq("id", decision.id);
-    if (statusError) throw new Error(`Decision review status failed: ${statusError.message}`);
+    if (statusError) {
+      const { error: cleanupError } = await supabase.schema("mentor").from("decision_outcomes").delete()
+        .eq("owner_user_id", ownerUserId).eq("id", outcome.id).eq("decision_id", decision.id);
+      if (cleanupError) {
+        throw new Error(`Decision review status failed: ${statusError.message}; cleanup failed: ${cleanupError.message}`);
+      }
+      throw new Error(`Decision review status failed: ${statusError.message}; inserted outcome was removed`);
+    }
 
     return NextResponse.json({ ok: true, outcome });
   } catch (error) {
