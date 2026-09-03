@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Eye, Loader2, Lock, Save, Send, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { DictationButton } from "@/components/personal-intelligence/dictation-button";
 
 type PrivacyLevel = "public" | "internal" | "private" | "sensitive" | "restricted";
 type MemoryPersistence = "AUTO" | "CONFIRM" | "SESSION_ONLY" | "REJECT";
@@ -39,7 +40,7 @@ type MentorTurn = {
 
 type TodayItem = {
   id: string;
-  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity";
+  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity" | "publishing_attention";
   title: string;
   reason: string;
   priority: number;
@@ -198,6 +199,11 @@ export default function PersonalIntelligencePage() {
     setCandidates((current) => current.map((item) => item.id === id ? { ...item, status: "discarded" } : item));
   }
 
+  function appendTranscript(text: string) {
+    setError(null);
+    setMessage((current) => current.trim() ? `${current.trim()} ${text}` : text);
+  }
+
   return <main className="mx-auto max-w-[1280px] space-y-5 p-4 sm:p-6">
     <header className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -260,8 +266,12 @@ export default function PersonalIntelligencePage() {
         <form onSubmit={sendMessage} className="border-t border-slate-100 p-4">
           <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white p-2">
             <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} placeholder="Ask, think, speak or reflect…" className="min-h-[54px] flex-1 resize-none border-0 bg-transparent p-2 text-sm outline-none" />
-            <button disabled={!subject || sending || !message.trim()} className="self-end rounded-xl bg-slate-950 p-3 text-white disabled:opacity-40">{sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button>
+            <div className="flex self-end gap-2">
+              <DictationButton disabled={!subject || sending} onTranscript={appendTranscript} onError={setError} />
+              <button disabled={!subject || sending || !message.trim()} className="rounded-xl bg-slate-950 p-3 text-white disabled:opacity-40">{sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button>
+            </div>
           </div>
+          <div className="mt-2 text-[11px] text-slate-400">Mikrofonen transkriberer til redigerbar tekst. Opptaket lagres ikke av Personal Intelligence.</div>
         </form>
       </div>
 
