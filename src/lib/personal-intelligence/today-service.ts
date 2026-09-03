@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadNexusBusinessMentorSummary } from "@/lib/personal-intelligence/nexus-business-adapter";
+import { loadPublishingMentorSummary } from "@/lib/personal-intelligence/publishing-mentor-adapter";
 
 export interface TodayItem {
   id: string;
-  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity";
+  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity" | "publishing_attention";
   title: string;
   reason: string;
   priority: number;
@@ -34,6 +35,7 @@ function score(item: TodayItem, now: number): number {
   if (item.type === "followup") value += 15;
   if (item.type === "action") value += 10;
   if (item.type === "business_opportunity") value += 8;
+  if (item.type === "publishing_attention") value += 6;
   return value;
 }
 
@@ -44,12 +46,19 @@ function priorityFromNexus(priority: string): number {
   return 4;
 }
 
+function priorityFromPublishing(state: string): number {
+  if (state === "attention") return 1;
+  if (state === "ready") return 2;
+  if (state === "working") return 3;
+  return 4;
+}
+
 export async function buildTodaySnapshot(
   supabase: SupabaseClient,
   ownerUserId: string,
   subjectEntityId: string,
 ): Promise<TodaySnapshot> {
-  const [actionsRes, followupsRes, reviewsRes, goalsRes, nexusResult] = await Promise.all([
+  const [actionsRes, followupsRes, reviewsRes, goalsRes, nexusResult, publishingResult] = await Promise.all([
     supabase.schema("mentor").from("actions")
       .select("id,title,priority,scheduled_at,commitment_status")
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
@@ -68,6 +77,10 @@ export async function buildTodaySnapshot(
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
       .eq("status", "active").order("priority", { ascending: true }).limit(10),
     loadNexusBusinessMentorSummary(supabase).then(
+      (summary) => ({ summary, error: null as Error | null }),
+      (error: unknown) => ({ summary: null, error: error instanceof Error ? error : new Error(String(error)) }),
+    ),
+    loadPublishingMentorSummary(supabase).then(
       (summary) => ({ summary, error: null as Error | null }),
       (error: unknown) => ({ summary: null, error: error instanceof Error ? error : new Error(String(error)) }),
     ),
@@ -119,15 +132,43 @@ export async function buildTodaySnapshot(
     }
   }
 
+  if (publishingResult.summary) {
+    for (const item of publishingResult.summary.topAttention.slice(0, 2)) {
+      candidates.push({
+        id: `publishing:${item.id}`,
+        type: "publishing_attention",
+        title: item.title,
+        reason: item.nextAction,
+        priority: priorityFromPublishing(item.state),
+        dueAt: item.updatedAt,
+        source: publishingResult.summary.source,
+        metadata: {
+          seriesName: item.seriesName,
+          stage: item.stage,
+          stageLabel: item.stageLabel,
+          activity: item.activity,
+          state: item.state,
+          persistAsPersonalMemory: false,
+        },
+      });
+    }
+  }
+
   const now = Date.now();
   candidates.sort((a, b) => score(b, now) - score(a, now));
   learningItems.sort((a, b) => score(b, now) - score(a, now));
+
+  const warnings: string[] = [];
+  if (nexusResult.error) warnings.push(`Nexus business context unavailable: ${nexusResult.error.message}`);
+  else warnings.push(...(nexusResult.summary?.warnings || []));
+  if (publishingResult.error) warnings.push(`Book OS context unavailable: ${publishingResult.error.message}`);
+  else warnings.push(...(publishingResult.summary?.warnings || []));
 
   return {
     oneThing: candidates[0] || learningItems[0] || null,
     secondary: candidates.slice(1, 3),
     learning: learningItems[0] || null,
     generatedAt: new Date().toISOString(),
-    warnings: nexusResult.error ? [`Nexus business context unavailable: ${nexusResult.error.message}`] : nexusResult.summary?.warnings || [],
+    warnings,
   };
 }
