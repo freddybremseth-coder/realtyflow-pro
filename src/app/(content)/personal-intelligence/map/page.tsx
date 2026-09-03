@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { BookOpenCheck, Loader2, Map, Plus, RefreshCw } from "lucide-react";
+import { BookOpenCheck, Loader2, Map as MapIcon, Plus, RefreshCw } from "lucide-react";
 
 type Mastery = {
   exposure_score: number | null;
@@ -74,7 +74,7 @@ export default function KnowledgeMapPage() {
     <header className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-teal-700"><Map size={17}/> Knowledge Map</div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-teal-700"><MapIcon size={17}/> Knowledge Map</div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">What do you want mapped — not assumed?</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Et topic betyr bare at området er kartlagt som interesse eller læringsområde. Det betyr ikke at du kan det. Mastery forblir ukjent til LEARN, assessment eller teach-back gir evidens.</p>
         </div>
