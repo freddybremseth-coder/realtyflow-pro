@@ -10,6 +10,7 @@ const schemas = readMigration("20260903184000_personal_intelligence_schemas.sql"
 const core = readMigration("20260903184500_personal_intelligence_core.sql");
 const mentor = readMigration("20260903185000_personal_intelligence_mentor.sql");
 const learning = readMigration("20260903185500_personal_intelligence_learning.sql");
+const claimRuntime = readMigration("20260903190000_personal_intelligence_claim_runtime.sql");
 
 test("personal intelligence uses isolated schemas without colliding with RealtyFlow core", () => {
   assert.match(schemas, /create schema if not exists personal_core/i);
@@ -37,6 +38,15 @@ test("canonical personal claims preserve provenance, confidence and correction l
   assert.match(core, /create table if not exists personal_core\.claim_conflicts/i);
   assert.match(core, /enable row level security/i);
   assert.match(core, /revoke all on all tables in schema personal_core from public, anon, authenticated/i);
+});
+
+test("claim correction is atomic, owner-scoped and service-only", () => {
+  assert.match(claimRuntime, /create or replace function personal_core\.correct_claim/i);
+  assert.match(claimRuntime, /where id = p_claim_id\s+and owner_user_id = p_owner_user_id/is);
+  assert.match(claimRuntime, /update personal_core\.claims\s+set status = 'superseded'/is);
+  assert.match(claimRuntime, /supersedes_claim_id/is);
+  assert.match(claimRuntime, /grant execute on function personal_core\.correct_claim[\s\S]*to service_role/i);
+  assert.match(claimRuntime, /revoke all on function personal_core\.correct_claim[\s\S]*from public, anon, authenticated/i);
 });
 
 test("mentor runtime records context usage without storing hidden reasoning", () => {
