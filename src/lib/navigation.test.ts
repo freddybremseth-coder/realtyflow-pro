@@ -19,7 +19,7 @@ test("navigation groups every existing sidebar link exactly once", () => {
   assert.equal(new Set(coverage.sourceHrefs).size, coverage.sourceHrefs.length);
 });
 
-test("owner navigation promotes Nexus Today, Nexus Inbox and Nexus OS as the main work areas", () => {
+test("owner navigation promotes Nexus Today, Personal Intelligence, Nexus Inbox and Nexus OS as main work areas", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   assert.deepEqual(
     sections.map((section) => section.id),
@@ -27,7 +27,7 @@ test("owner navigation promotes Nexus Today, Nexus Inbox and Nexus OS as the mai
   );
   assert.deepEqual(
     sections.find((section) => section.id === "workspace")?.items.map((item) => item.href),
-    ["/", "/nexus-os/today", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
+    ["/", "/nexus-os/today", "/personal-intelligence/start", "/today", "/nexus-os/inbox", "/approvals", "/communications"],
   );
   assert.deepEqual(
     sections.find((section) => section.id === "os")?.items.slice(0, 5).map((item) => item.href),
@@ -56,6 +56,7 @@ test("role navigation excludes inaccessible owner and finance tools", () => {
   const hrefs = sales.flatMap((section) => section.items.map((item) => item.href));
   assert.equal(hrefs.includes("/access-control"), false);
   assert.equal(hrefs.includes("/monthly-close"), false);
+  assert.equal(hrefs.includes("/personal-intelligence/start"), false);
   assert.equal(hrefs.includes("/today"), true);
   assert.equal(hrefs.includes("/executive-briefing"), true);
 });
@@ -68,6 +69,7 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/book-growth/economics", sections), "publishing");
   assert.equal(activeNavigationSection("/os", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/today", sections), "workspace");
+  assert.equal(activeNavigationSection("/personal-intelligence/start", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/inbox", sections), "workspace");
   assert.equal(activeNavigationSection("/nexus-os/director", sections), "os");
   assert.equal(activeNavigationSection("/nexus-os/brand-brain", sections), "os");
@@ -80,12 +82,17 @@ test("active section follows nested routes", () => {
   assert.equal(activeNavigationSection("/inventory/property-360", sections), "properties");
 });
 
-test("menu search finds OS and growth surfaces by label", () => {
+test("menu search finds OS, Personal Intelligence and growth surfaces by label", () => {
   const sections = buildVisibleNavigation("OWNER", permissionsForRole("OWNER"));
   const social = filterNavigationSections(sections, "Instagram");
   assert.equal(social.length, 1);
   assert.equal(social[0]?.id, "marketing");
   assert.deepEqual(social[0]?.items.map((item) => item.href), ["/social-automation"]);
+
+  const personalIntelligence = filterNavigationSections(sections, "Personal Intelligence");
+  assert.equal(personalIntelligence.length, 1);
+  assert.equal(personalIntelligence[0]?.id, "workspace");
+  assert.deepEqual(personalIntelligence[0]?.items.map((item) => item.href), ["/personal-intelligence/start"]);
 
   const realtyflow = filterNavigationSections(sections, "RealtyFlow OS");
   assert.equal(realtyflow.length, 1);
