@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildNurtureRevenueEventInput } from "@/services/growth/nurture-engine";
-import type { NurtureSequence, NurtureStep } from "@/services/growth/nurture-sequences";
+import { renderTemplate, resolveSequence, type NurtureSequence, type NurtureStep } from "@/services/growth/nurture-sequences";
 
 const sequence: NurtureSequence = {
   id: "zeneco-buyer-v1",
@@ -92,4 +92,30 @@ test("buildNurtureRevenueEventInput marks reactivation sends with stronger confi
   assert.equal(event.confidenceScore, 78);
   assert.equal(event.dedupeKey, "lead_nurture:contact-456:soleada-reactivation-v1:reconnect");
   assert.equal((event.metadata as Record<string, unknown>).send_brand_id, "zeneco");
+});
+
+test("Soleada reactivation keeps Soleada relationship ownership while sending through ZenEco", () => {
+  const resolved = resolveSequence("soleada", "soleada-import");
+  assert.ok(resolved);
+  assert.equal(resolved.sendBrandId, "zeneco");
+  assert.equal(resolved.fromName, "Freddy Bremseth – Zen Eco Homes");
+  assert.deepEqual(resolved.eligibleStatuses, ["NEW", "CONTACT", "QUALIFIED", ""]);
+  assert.equal(resolved.maxNewEnrollmentsPerRun, 25);
+
+  const first = resolved.steps[0];
+  assert.match(first.text, /kundeforholdet og et eventuelt boligsalg ligger fortsatt hos Soleada\.no/i);
+  assert.match(first.text, /plattformen og e-postsystemet jeg nå bruker/i);
+});
+
+test("historical Casaverano source never appears in ZenEco nurture copy", () => {
+  const resolved = resolveSequence("zeneco", "casaverano-import");
+  assert.ok(resolved);
+  const rendered = renderTemplate(resolved.steps[0].text, {
+    name: "Kari Nordmann",
+    brand: resolved.brandName,
+    advisor: resolved.advisor,
+    booking_url: resolved.bookingUrl,
+  });
+  assert.doesNotMatch(rendered, /casaverano/i);
+  assert.match(rendered, /Zen Eco Homes/i);
 });
