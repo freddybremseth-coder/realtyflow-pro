@@ -8,6 +8,33 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const PRIVACY_LEVELS = new Set<PersonalPrivacyLevel>(["public", "internal", "private", "sensitive", "restricted"]);
+const SENSITIVE_SCOPES = new Set<PersonalPrivacyLevel>(["sensitive", "restricted"]);
+
+async function logSensitivePermissionEvent(
+  supabase: ReturnType<typeof getPersonalIntelligenceSupabase>,
+  input: {
+    ownerUserId: string;
+    sessionId?: string | null;
+    scope: "sensitive" | "restricted";
+    granted: boolean;
+  },
+) {
+  const { error } = await supabase.schema("mentor").from("audit_events").insert({
+    owner_user_id: input.ownerUserId,
+    session_id: input.sessionId ?? null,
+    event_type: input.granted ? "sensitive_context_permission_granted" : "sensitive_context_permission_denied",
+    resource_schema: "mentor",
+    resource_type: "privacy_permission",
+    resource_id: input.sessionId ?? null,
+    details: {
+      requested_scope: input.scope,
+      granted: input.granted,
+      reason: input.granted ? "explicit_user_permission" : "explicit_permission_required",
+      sensitive_content_recorded: false,
+    },
+  });
+  if (error) throw new Error(`Failed to audit sensitive context permission: ${error.message}`);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,15 +56,21 @@ export async function POST(request: NextRequest) {
 
     const privacyScope = requestedScope as PersonalPrivacyLevel;
     const explicitSensitivePermission = body.explicitSensitivePermission === true;
-    if ((privacyScope === "sensitive" || privacyScope === "restricted") && !explicitSensitivePermission) {
+    const supabase = getPersonalIntelligenceSupabase();
+    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
+
+    if (SENSITIVE_SCOPES.has(privacyScope) && !explicitSensitivePermission) {
+      await logSensitivePermissionEvent(supabase, {
+        ownerUserId,
+        scope: privacyScope as "sensitive" | "restricted",
+        granted: false,
+      });
       return NextResponse.json(
         { error: `${privacyScope} context requires explicitSensitivePermission=true` },
         { status: 400 },
       );
     }
 
-    const supabase = getPersonalIntelligenceSupabase();
-    const ownerUserId = await getPersonalIntelligenceOwnerUserId(supabase);
     const result = await runMentorTurn(supabase, {
       ownerUserId,
       subjectEntityId,
@@ -46,6 +79,15 @@ export async function POST(request: NextRequest) {
       explicitSensitivePermission,
       thinkDeeper: body.thinkDeeper === true,
     });
+
+    if (SENSITIVE_SCOPES.has(privacyScope)) {
+      await logSensitivePermissionEvent(supabase, {
+        ownerUserId,
+        sessionId: result.sessionId,
+        scope: privacyScope as "sensitive" | "restricted",
+        granted: true,
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error) {
