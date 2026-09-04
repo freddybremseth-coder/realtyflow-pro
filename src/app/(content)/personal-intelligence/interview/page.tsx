@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Check, Compass, Loader2, Save, Trash2 } from "lucide-react";
 
@@ -99,6 +100,12 @@ export default function LifeInterviewPage() {
         {candidate.type === "goal" && <p className="mt-2 text-[11px] font-semibold text-amber-700">Remembering a goal stores it as an idea, not an active commitment.</p>}
       </article>)}</div>}
       {candidates.some((candidate) => candidate.status === "saved") && <div className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800"><Check size={14}/> Saved items are now part of the canonical review/correction flow.</div>}
+    </section>
+    <section className="rounded-3xl border border-fuchsia-200 bg-fuchsia-50 p-5">
+      <div className="text-xs font-black uppercase tracking-[0.16em] text-fuchsia-700">Next step</div>
+      <h2 className="mt-1 text-lg font-black text-slate-950">Map what you want to understand</h2>
+      <p className="mt-1 text-sm text-slate-600">Knowledge Map records interests and learning areas only. It does not claim mastery.</p>
+      <Link href="/personal-intelligence/map" className="mt-3 inline-flex rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">Open Knowledge Map</Link>
     </section>
   </main>;
 }
