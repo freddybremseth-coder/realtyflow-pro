@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Eye, Loader2, Lock, Save, Send, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { DictationButton } from "@/components/personal-intelligence/dictation-button";
+import { todayDestination, type TodayDestinationType } from "@/lib/personal-intelligence/today-destination";
 
 type PrivacyLevel = "public" | "internal" | "private" | "sensitive" | "restricted";
 type MemoryPersistence = "AUTO" | "CONFIRM" | "SESSION_ONLY" | "REJECT";
@@ -40,7 +42,7 @@ type MentorTurn = {
 
 type TodayItem = {
   id: string;
-  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity" | "publishing_attention";
+  type: TodayDestinationType;
   title: string;
   reason: string;
   priority: number;
@@ -89,12 +91,14 @@ function confidenceLabel(value: number) {
 }
 
 function TodayCard({ label, item }: { label: string; item: TodayItem | null }) {
+  const destination = item ? todayDestination(item.type) : null;
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-700">{label}</div>
     {item ? <>
       <h3 className="mt-2 text-base font-black text-slate-950">{item.title}</h3>
       <p className="mt-1 text-sm leading-5 text-slate-600">{item.reason}</p>
       {item.source && <div className="mt-2 text-[11px] font-bold text-slate-400">Source: {item.source}</div>}
+      {destination && <Link href={destination} className="mt-3 inline-flex rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 hover:border-cyan-400">Open</Link>}
     </> : <p className="mt-2 text-sm text-slate-500">Ingen sterk kandidat akkurat nå.</p>}
   </section>;
 }
