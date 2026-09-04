@@ -21,12 +21,13 @@ export const NAVIGATION_FAVORITES_LIMIT = 6;
 const REVENUE_READ_PAGES = new Set(["/internal-alerts", "/executive-briefing", "/operating-review", "/weekly-management-review", "/continuous-improvement"]);
 const HIDDEN_LEGACY_HREFS = new Set(["/nexus"]);
 const NEXUS_TODAY_NAV_ITEM: NavigationItem = { label: "Nexus Today", href: "/nexus-os/today", icon: "Sparkles" };
+const PERSONAL_INTELLIGENCE_NAV_ITEM: NavigationItem = { label: "Personal Intelligence", href: "/personal-intelligence/start", icon: "BrainCircuit" };
 const PROPERTY_360_NAV_ITEM: NavigationItem = { label: "Property 360", href: "/inventory/property-360", icon: "Target" };
 const BRAND_BRAIN_NAV_ITEM: NavigationItem = { label: "Brand & Channel Brain", href: "/nexus-os/brand-brain", icon: "BrainCircuit" };
 const NEXUS_INBOX_NAV_ITEM: NavigationItem = { label: "Nexus Inbox", href: "/nexus-os/inbox", icon: "Inbox" };
 
 const GROUPS: Array<{ id: NavigationSectionId; label: string; icon: string; hrefs: string[] }> = [
-  { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/nexus-os/today", "/today", "/nexus-os/inbox", "/approvals", "/communications"] },
+  { id: "workspace", label: "Hjem", icon: "PanelsTopLeft", hrefs: ["/", "/nexus-os/today", "/personal-intelligence/start", "/today", "/nexus-os/inbox", "/approvals", "/communications"] },
   { id: "os", label: "Nexus OS & automatisering", icon: "Boxes", hrefs: ["/os", "/nexus-os", "/nexus-os/focus", "/nexus-os/brand-brain", "/nexus-os/communications", "/nexus-os/runtime", "/nexus-os/autonomy", "/connections"] },
   { id: "customers", label: "Kunder & salg", icon: "Users", hrefs: ["/customers", "/lead-intelligence", "/execution", "/recovery", "/after-sales", "/booking-admin", "/calendar", "/automation/nurture"] },
   { id: "care", label: "Keyholding Care", icon: "KeyRound", hrefs: ["/care", "/care/customers", "/care/reports", "/care/invoices", "/care/keys", "/service-revenue"] },
@@ -50,7 +51,7 @@ const ROLE_QUICK_LINKS: Record<AccessRole, string[]> = {
   VIEWER: ["/revenue-command", "/today", "/customers", "/executive-briefing", "/monthly-close", "/forecast"],
 };
 
-function sourceItems() { return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(), NEXUS_TODAY_NAV_ITEM, PROPERTY_360_NAV_ITEM, BRAND_BRAIN_NAV_ITEM, NEXUS_INBOX_NAV_ITEM]; }
+function sourceItems() { return [...(Object.values(SIDEBAR_NAV) as readonly (readonly NavigationItem[])[]).flat(), NEXUS_TODAY_NAV_ITEM, PERSONAL_INTELLIGENCE_NAV_ITEM, PROPERTY_360_NAV_ITEM, BRAND_BRAIN_NAV_ITEM, NEXUS_INBOX_NAV_ITEM]; }
 function canSeeItem(role: AccessRole, permissions: string[], href: string) { if (REVENUE_READ_PAGES.has(href)) return permissions.includes("revenue.read"); return canSeeNavHref(role, href); }
 export function buildVisibleNavigation(role: AccessRole, permissions: string[]): NavigationSection[] { const itemByHref = new Map(sourceItems().map((item) => [item.href, { ...item }])); return GROUPS.map((group) => ({ id: group.id, label: group.label, icon: group.icon, items: group.hrefs.map((href) => itemByHref.get(href)).filter((item): item is NavigationItem => Boolean(item)).filter((item) => canSeeItem(role, permissions, item.href)) })).filter((section) => section.items.length > 0); }
 export function isNavigationPathActive(pathname: string, href: string) { if (href === "/") return pathname === "/"; return pathname === href || pathname.startsWith(`${href}/`); }
