@@ -6,7 +6,7 @@ export type TodayDomain = "personal" | "business" | "publishing" | "learning";
 
 export interface TodayItem {
   id: string;
-  type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity" | "publishing_attention";
+  type: "action" | "followup" | "learning_review" | "goal" | "prediction_attention" | "business_opportunity" | "publishing_attention";
   title: string;
   reason: string;
   priority: number;
@@ -38,6 +38,7 @@ function score(item: TodayItem, now: number): number {
   }
   if (item.type === "followup") value += 15;
   if (item.type === "action") value += 10;
+  if (item.type === "prediction_attention") value += 5;
   if (item.type === "business_opportunity") value += 8;
   if (item.type === "publishing_attention") value += 6;
   return value;
@@ -85,7 +86,8 @@ export async function buildTodaySnapshot(
   ownerUserId: string,
   subjectEntityId: string,
 ): Promise<TodaySnapshot> {
-  const [actionsRes, followupsRes, reviewsRes, goalsRes, nexusResult, publishingResult] = await Promise.all([
+  const predictionHorizon = new Date(Date.now() + 72 * 3_600_000).toISOString();
+  const [actionsRes, followupsRes, reviewsRes, goalsRes, predictionsRes, nexusResult, publishingResult] = await Promise.all([
     supabase.schema("mentor").from("actions")
       .select("id,title,priority,scheduled_at,commitment_status")
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
@@ -103,6 +105,11 @@ export async function buildTodaySnapshot(
       .select("id,title,priority,status")
       .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
       .eq("status", "active").order("priority", { ascending: true }).limit(10),
+    supabase.schema("beliefs").from("predictions")
+      .select("id,statement,probability,deadline,domain,status")
+      .eq("owner_user_id", ownerUserId).eq("subject_entity_id", subjectEntityId)
+      .eq("status", "open").not("deadline", "is", null).lte("deadline", predictionHorizon)
+      .order("deadline", { ascending: true }).limit(10),
     loadNexusBusinessMentorSummary(supabase).then(
       (summary) => ({ summary, error: null as Error | null }),
       (error: unknown) => ({ summary: null, error: error instanceof Error ? error : new Error(String(error)) }),
@@ -113,7 +120,7 @@ export async function buildTodaySnapshot(
     ),
   ]);
 
-  for (const result of [actionsRes, followupsRes, reviewsRes, goalsRes]) {
+  for (const result of [actionsRes, followupsRes, reviewsRes, goalsRes, predictionsRes]) {
     if (result.error) throw new Error(`TODAY retrieval failed: ${result.error.message}`);
   }
 
@@ -133,6 +140,23 @@ export async function buildTodaySnapshot(
   for (const row of goalsRes.data || []) candidates.push({
     id: String(row.id), type: "goal", domain: "personal", title: String(row.title),
     reason: "Active goal without a more specific commitment", priority: Number(row.priority) || 3,
+  });
+  for (const row of predictionsRes.data || []) candidates.push({
+    id: `prediction:${String(row.id)}`,
+    type: "prediction_attention",
+    domain: "personal",
+    title: String(row.statement),
+    reason: "Prediction is due or approaching its deadline; review the outcome explicitly.",
+    priority: 3,
+    dueAt: row.deadline as string | null,
+    source: "Personal Intelligence Predictions",
+    metadata: {
+      probability: row.probability,
+      predictionDomain: row.domain,
+      resolutionRequired: true,
+      autoResolve: false,
+      persistAsPersonalMemory: false,
+    },
   });
 
   if (nexusResult.summary) {
@@ -200,7 +224,7 @@ export async function buildTodaySnapshot(
     secondary: selectBalancedSecondary(candidates, primaryCandidate),
     learning: learningItems[0] || null,
     generatedAt: new Date().toISOString(),
-    selectionPolicy: "primary_by_score; first_secondary_by_score; second_secondary_diversifies_domain_when_available",
+    selectionPolicy: "primary_by_score; first_secondary_by_score; second_secondary_diversifies_domain_when_available; open_predictions_due_within_72h_are_attention_only",
     warnings,
   };
 }
