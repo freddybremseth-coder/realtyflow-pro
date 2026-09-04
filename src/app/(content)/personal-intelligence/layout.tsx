@@ -5,6 +5,7 @@ export default function PersonalIntelligenceLayout({ children }: { children: Rea
   return <div className="min-h-screen bg-slate-50 text-slate-950">
     <div className="border-b border-slate-200 bg-white/95">
       <nav aria-label="Personal Intelligence" className="mx-auto flex max-w-[1280px] gap-2 overflow-x-auto px-4 py-3 sm:px-6">
+        <Link href="/personal-intelligence/start" className="whitespace-nowrap rounded-xl border border-cyan-300 bg-cyan-100 px-3 py-2 text-xs font-black text-cyan-900 hover:border-cyan-500">Start</Link>
         <Link href="/personal-intelligence" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:border-cyan-300 hover:text-cyan-800">Mentor</Link>
         <Link href="/personal-intelligence/orient" className="whitespace-nowrap rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 hover:border-cyan-400">Orient</Link>
         <Link href="/personal-intelligence/map" className="whitespace-nowrap rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-black text-teal-800 hover:border-teal-400">Map</Link>
