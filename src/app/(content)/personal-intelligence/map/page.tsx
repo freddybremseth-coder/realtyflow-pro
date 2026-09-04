@@ -115,5 +115,11 @@ export default function KnowledgeMapPage() {
         </article>)}</div>}
       </section>
     </section>
+    <section className="rounded-3xl border border-teal-200 bg-teal-50 p-5">
+      <div className="text-xs font-black uppercase tracking-[0.16em] text-teal-700">Next step</div>
+      <h2 className="mt-1 text-lg font-black text-slate-950">Use Mentor with the context you chose</h2>
+      <p className="mt-1 text-sm text-slate-600">You can continue even with an empty map. Mentor must not invent missing personal context.</p>
+      <Link href="/personal-intelligence" className="mt-3 inline-flex rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">Open Mentor</Link>
+    </section>
   </main>;
 }
