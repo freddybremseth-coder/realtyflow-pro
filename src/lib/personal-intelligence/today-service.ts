@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadNexusBusinessMentorSummary } from "@/lib/personal-intelligence/nexus-business-adapter";
 import { loadPublishingMentorSummary } from "@/lib/personal-intelligence/publishing-mentor-adapter";
 
+export type TodayDomain = "personal" | "business" | "publishing" | "learning";
+
 export interface TodayItem {
   id: string;
   type: "action" | "followup" | "learning_review" | "goal" | "business_opportunity" | "publishing_attention";
@@ -10,6 +12,7 @@ export interface TodayItem {
   priority: number;
   dueAt?: string | null;
   source?: string;
+  domain?: TodayDomain;
   metadata?: Record<string, unknown>;
 }
 
@@ -18,6 +21,7 @@ export interface TodaySnapshot {
   secondary: TodayItem[];
   learning: TodayItem | null;
   generatedAt: string;
+  selectionPolicy?: string;
   warnings?: string[];
 }
 
@@ -37,6 +41,29 @@ function score(item: TodayItem, now: number): number {
   if (item.type === "business_opportunity") value += 8;
   if (item.type === "publishing_attention") value += 6;
   return value;
+}
+
+function domainForItem(item: TodayItem): TodayDomain {
+  if (item.domain) return item.domain;
+  if (item.type === "business_opportunity") return "business";
+  if (item.type === "publishing_attention") return "publishing";
+  if (item.type === "learning_review") return "learning";
+  return "personal";
+}
+
+export function selectBalancedSecondary(candidates: TodayItem[], primary: TodayItem | null): TodayItem[] {
+  if (!primary) return candidates.slice(0, 2);
+  const remaining = candidates.filter((item) => item.id !== primary.id);
+  if (!remaining.length) return [];
+
+  // Preserve the highest-ranked remaining item so domain diversity never hides urgency.
+  const selected: TodayItem[] = [remaining[0]];
+  if (remaining.length === 1) return selected;
+
+  const represented = new Set<TodayDomain>([domainForItem(primary), domainForItem(remaining[0])]);
+  const diverse = remaining.slice(1).find((item) => !represented.has(domainForItem(item)));
+  selected.push(diverse || remaining[1]);
+  return selected;
 }
 
 function priorityFromNexus(priority: string): number {
@@ -92,19 +119,19 @@ export async function buildTodaySnapshot(
 
   const candidates: TodayItem[] = [];
   for (const row of actionsRes.data || []) candidates.push({
-    id: String(row.id), type: "action", title: String(row.title),
+    id: String(row.id), type: "action", domain: "personal", title: String(row.title),
     reason: "Committed action", priority: Number(row.priority) || 3, dueAt: row.scheduled_at as string | null,
   });
   for (const row of followupsRes.data || []) candidates.push({
-    id: String(row.id), type: "followup", title: "Follow up on an open commitment",
+    id: String(row.id), type: "followup", domain: "personal", title: "Follow up on an open commitment",
     reason: "Follow-up is due or approaching", priority: 2, dueAt: row.followup_at as string | null,
   });
   const learningItems: TodayItem[] = (reviewsRes.data || []).map((row) => ({
-    id: String(row.id), type: "learning_review", title: "Review a learned topic",
+    id: String(row.id), type: "learning_review", domain: "learning", title: "Review a learned topic",
     reason: "Retention review is due", priority: Number(row.priority) || 3, dueAt: row.due_at as string | null,
   }));
   for (const row of goalsRes.data || []) candidates.push({
-    id: String(row.id), type: "goal", title: String(row.title),
+    id: String(row.id), type: "goal", domain: "personal", title: String(row.title),
     reason: "Active goal without a more specific commitment", priority: Number(row.priority) || 3,
   });
 
@@ -114,6 +141,7 @@ export async function buildTodaySnapshot(
       candidates.push({
         id: `nexus:${mission.id}`,
         type: "business_opportunity",
+        domain: "business",
         title: mission.title,
         reason: mission.whyNow || mission.nextAction,
         priority: priorityFromNexus(mission.priority),
@@ -137,6 +165,7 @@ export async function buildTodaySnapshot(
       candidates.push({
         id: `publishing:${item.id}`,
         type: "publishing_attention",
+        domain: "publishing",
         title: item.title,
         reason: item.nextAction,
         priority: priorityFromPublishing(item.state),
@@ -164,11 +193,13 @@ export async function buildTodaySnapshot(
   if (publishingResult.error) warnings.push(`Book OS context unavailable: ${publishingResult.error.message}`);
   else warnings.push(...(publishingResult.summary?.warnings || []));
 
+  const oneThing = candidates[0] || learningItems[0] || null;
   return {
-    oneThing: candidates[0] || learningItems[0] || null,
-    secondary: candidates.slice(1, 3),
+    oneThing,
+    secondary: selectBalancedSecondary(candidates, oneThing && candidates[0] ? oneThing : null),
     learning: learningItems[0] || null,
     generatedAt: new Date().toISOString(),
+    selectionPolicy: "primary_by_score; first_secondary_by_score; second_secondary_diversifies_domain_when_available",
     warnings,
   };
 }
