@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { BookOpenCheck, Loader2, Map as MapIcon, Plus, RefreshCw } from "lucide-react";
 
@@ -110,6 +111,7 @@ export default function KnowledgeMapPage() {
             <div className="rounded-lg bg-slate-50 p-2"><strong>Evidence</strong><br/>{pct(topic.mastery?.evidence_strength)}</div>
           </div>
           {!topic.mastery && <p className="mt-3 text-[11px] font-semibold text-amber-700">Knowledge status: unknown — not zero.</p>}
+          <Link href={`/personal-intelligence/learn?topic=${encodeURIComponent(topic.id)}`} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800">Learn this</Link>
         </article>)}</div>}
       </section>
     </section>
