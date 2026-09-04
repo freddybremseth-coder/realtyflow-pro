@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Compass, Loader2, Save, Trash2 } from "lucide-react";
 
@@ -77,6 +78,12 @@ export default function OrientationPage(){
         </div>)}
         {candidates.some(c=>c.status==="saved")&&<div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800"><Check size={14} className="mr-1 inline"/>Saved items are now visible in Me/Freddy Core and remain correctable.</div>}
       </div>
+    </section>
+    <section className="rounded-3xl border border-cyan-200 bg-cyan-50 p-5">
+      <div className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">Next step</div>
+      <h2 className="mt-1 text-lg font-black text-slate-950">Continue with Life Interview</h2>
+      <p className="mt-1 text-sm text-slate-600">Go deeper only where you want. Interview answers still become candidates first and require explicit confirmation.</p>
+      <Link href="/personal-intelligence/interview" className="mt-3 inline-flex rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white">Open Interview</Link>
     </section>
   </main>;
 }
