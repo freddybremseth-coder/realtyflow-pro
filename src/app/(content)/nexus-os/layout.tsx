@@ -52,6 +52,12 @@ export default function NexusOsLayout({ children }: { children: ReactNode }) {
             <Link href="/nexus-os/autonomy" className="rounded-xl border border-slate-600 bg-slate-900/70 px-4 py-2 text-xs font-black text-slate-200 transition hover:border-slate-400">Autonomy Policy</Link>
           </div>
         </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:hidden">
+          <Link href="/nexus-os/buyer-intake" className="rounded-xl border border-cyan-400/60 bg-cyan-400/15 px-3 py-3 text-center text-xs font-black text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,.12)]">Buyer Intake</Link>
+          <Link href="/nexus-os/buyer-intake/reviews" className="rounded-xl border border-violet-400/50 bg-violet-400/10 px-3 py-3 text-center text-xs font-black text-violet-100">Intake Reviews</Link>
+        </div>
+
         <nav aria-label="Nexus Agentic OS" className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {LINKS.map((item) => <Link key={item.href} href={item.href} className="whitespace-nowrap rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-black text-slate-200 transition hover:border-cyan-400 hover:bg-cyan-400/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">{item.label}</Link>)}
         </nav>
