@@ -91,6 +91,12 @@ export default function LearnPage() {
       if (selectedTopic) {
         const refreshed = result.topics.find((topic) => topic.id === selectedTopic.id);
         if (refreshed) setSelectedTopic(refreshed);
+      } else if (typeof window !== "undefined") {
+        const requestedTopicId = new URLSearchParams(window.location.search).get("topic");
+        if (requestedTopicId) {
+          const requestedTopic = result.topics.find((topic) => topic.id === requestedTopicId);
+          if (requestedTopic) setSelectedTopic(requestedTopic);
+        }
       }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -204,6 +210,7 @@ export default function LearnPage() {
               <div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-black uppercase text-slate-400">Evidence</div><div className="mt-1 text-xs font-bold text-slate-700">{percent(selectedTopic.mastery?.evidenceStrength)}</div></div>
             </div>
             <div className="mt-2 text-[11px] text-slate-400">These are evidence signals, not a score of you as a person and not a declaration of mastery.</div>
+            {!lesson && !starting && <button type="button" onClick={() => void startTopic(selectedTopic)} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white"><BookOpen size={17}/> Start Professor</button>}
           </section>
 
           {starting && <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-8 text-center text-sm font-semibold text-emerald-900"><Loader2 size={20} className="mx-auto mb-2 animate-spin" />Professor prepares the lesson…</div>}
