@@ -20,6 +20,7 @@ export default function PersonalIntelligenceLayout({ children }: { children: Rea
         <Link href="/personal-intelligence/me" className="whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800 hover:border-sky-400">Me</Link>
         <Link href="/personal-intelligence/provenance" className="whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800 hover:border-sky-400">Provenance</Link>
         <Link href="/personal-intelligence/context" className="whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-800 hover:border-sky-400">Context</Link>
+        <Link href="/personal-intelligence/privacy" className="whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-800 hover:border-rose-400">Privacy</Link>
         <Link href="/personal-intelligence/review" className="whitespace-nowrap rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-800 hover:border-indigo-400">Review</Link>
         <Link href="/nexus-os/today" className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-500 hover:text-slate-800">Nexus Today</Link>
       </nav>
