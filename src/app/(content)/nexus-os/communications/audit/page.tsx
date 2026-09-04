@@ -56,12 +56,13 @@ export default function EmailOperationsAuditPage() {
   const [error, setError] = useState("");
   const [brand, setBrand] = useState("");
 
-  async function load() {
+  async function load(brandFilter = brand) {
     setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams();
-      if (brand.trim()) params.set("brand", brand.trim());
+      const normalizedBrand = brandFilter.trim();
+      if (normalizedBrand) params.set("brand", normalizedBrand);
       const response = await fetch(`/api/email/operations-audit${params.size ? `?${params.toString()}` : ""}`, { cache: "no-store" });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body?.error || `HTTP ${response.status}`);
@@ -73,7 +74,7 @@ export default function EmailOperationsAuditPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(""); }, []);
 
   const knownBrands = useMemo(() => {
     return Array.from(new Set((data?.events || []).map((event) => event.brandId).filter(Boolean) as string[])).sort();
@@ -112,7 +113,7 @@ export default function EmailOperationsAuditPage() {
             {loading ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 inline h-4 w-4" />}
             Oppdater
           </button>
-          {brand && <button onClick={() => { setBrand(""); setTimeout(() => void load(), 0); }} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black">Alle brands</button>}
+          {brand && <button onClick={() => { setBrand(""); void load(""); }} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black">Alle brands</button>}
         </div>
       </section>
 
