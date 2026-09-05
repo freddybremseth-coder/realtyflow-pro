@@ -121,6 +121,42 @@ export async function listRemasterPlaylists(maxResults = 50) {
   };
 }
 
+export async function createRemasterPlaylist(input: { title: string; description: string }) {
+  const { client, channelId, channelTitle } = await getVerifiedClient();
+  const title = input.title.trim().slice(0, 150);
+  const description = input.description.trim().slice(0, 5000);
+  if (!title) throw new Error("Re-Master playlist title is required.");
+
+  let pageToken: string | undefined;
+  do {
+    const page = await client.playlists.list({
+      part: ["snippet"],
+      channelId,
+      maxResults: 50,
+      pageToken,
+    });
+    const duplicate = (page.data.items ?? []).find((item) => item.snippet?.title?.trim().toLowerCase() === title.toLowerCase());
+    if (duplicate?.id) {
+      return { playlistId: duplicate.id, title, channelId, channelTitle, duplicate: true };
+    }
+    pageToken = page.data.nextPageToken || undefined;
+  } while (pageToken);
+
+  const response = await client.playlists.insert({
+    part: ["snippet", "status"],
+    requestBody: {
+      snippet: { title, description },
+      status: { privacyStatus: "public" },
+    },
+  });
+  const playlistId = response.data.id;
+  if (!playlistId) throw new Error("YouTube created no playlist id for Re-Master Freddy.");
+  if (response.data.snippet?.channelId && response.data.snippet.channelId !== channelId) {
+    throw new Error("Created playlist did not resolve to the verified Re-Master Freddy channel.");
+  }
+  return { playlistId, title, channelId, channelTitle, duplicate: false };
+}
+
 export async function addRemasterVideoToPlaylist(videoId: string, playlistId: string) {
   const { client, channelId, channelTitle } = await getVerifiedClient();
   const [videoResponse, playlistResponse] = await Promise.all([
