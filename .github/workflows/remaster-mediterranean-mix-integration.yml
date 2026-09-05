@@ -5,9 +5,14 @@ on:
     paths:
       - ".github/workflows/remaster-mediterranean-mix-integration.yml"
       - "scripts/test-remaster-mix-migration.mjs"
+      - "scripts/test-remaster-mix-production-guard.mjs"
       - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
+      - "supabase/migrations/20260905204500_remaster_mix_production_guard.sql"
       - "src/services/pipelines/remaster-mix-*.ts"
       - "src/services/integrations/remaster-youtube-longform.ts"
+      - "src/workflows/remaster-mix-production.ts"
+      - "src/app/api/neural-beat/mixes/**"
+      - "src/app/api/cron/remaster-mix-worker/**"
   workflow_dispatch:
 
 permissions:
@@ -51,6 +56,9 @@ jobs:
 
       - name: Test durable mix migration
         run: node scripts/test-remaster-mix-migration.mjs
+
+      - name: Test 30-minute production claim guard
+        run: node scripts/test-remaster-mix-production-guard.mjs
 
       - name: Test mix planner and crossfade contracts
         run: >-
