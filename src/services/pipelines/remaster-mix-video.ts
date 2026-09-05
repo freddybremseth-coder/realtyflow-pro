@@ -70,8 +70,6 @@ async function downloadImage(url: string, destination: string) {
 
 async function downloadVisuals(urls: string[], workingDirectory: string) {
   const imagePaths: string[] = [];
-  // Sequential downloads are deliberately conservative: property feeds can
-  // point at several different CDNs and a long mix may use 90–180 images.
   for (let index = 0; index < urls.length; index += 1) {
     const target = path.join(workingDirectory, `visual-${String(index).padStart(3, "0")}.jpg`);
     try {
@@ -104,36 +102,7 @@ function escapeAssText(value: string) {
     .trim();
 }
 
-/**
- * Build an Advanced SubStation Alpha overlay instead of relying on FFmpeg's
- * drawtext filter. The ffmpeg-static build used by the production worker ships
- * libass but does not expose drawtext, so ASS gives us deterministic text boxes
- * without adding a second FFmpeg binary or a native image dependency.
- */
-export function buildRemasterMixAssOverlay(input: {
-  durationSeconds: number;
-  sponsorSlide: boolean;
-  ctaText?: string | null;
-  zenEcoHomesEnabled: boolean;
-}) {
-  if (!input.zenEcoHomesEnabled) return "";
-
-  const end = assTime(input.durationSeconds);
-  const events = [
-    `Dialogue: 0,0:00:00.00,${end},Watermark,,0,0,0,,ZenEcoHomes.com`,
-  ];
-
-  if (input.sponsorSlide) {
-    events.push(
-      `Dialogue: 1,0:00:00.00,${end},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`,
-    );
-    if (input.ctaText?.trim()) {
-      events.push(
-        `Dialogue: 1,0:00:00.00,${end},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`,
-      );
-    }
-  }
-
+function assDocument(events: string[]) {
   return [
     "[Script Info]",
     "ScriptType: v4.00+",
@@ -156,41 +125,88 @@ export function buildRemasterMixAssOverlay(input: {
   ].join("\n");
 }
 
-function escapeAssFilterPath(value: string) {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/:/g, "\\:")
-    .replace(/'/g, "\\'");
+export function buildRemasterMixAssOverlay(input: {
+  durationSeconds: number;
+  sponsorSlide: boolean;
+  ctaText?: string | null;
+  zenEcoHomesEnabled: boolean;
+}) {
+  if (!input.zenEcoHomesEnabled) return "";
+  const end = assTime(input.durationSeconds);
+  const events = [`Dialogue: 0,0:00:00.00,${end},Watermark,,0,0,0,,ZenEcoHomes.com`];
+  if (input.sponsorSlide) {
+    events.push(`Dialogue: 1,0:00:00.00,${end},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`);
+    if (input.ctaText?.trim()) {
+      events.push(`Dialogue: 1,0:00:00.00,${end},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`);
+    }
+  }
+  return assDocument(events);
 }
 
-function buildOverlayFilter(input: {
-  imageIndex: number;
-  frames: number;
-  assPath?: string | null;
+export function buildRemasterMixGlobalAssOverlay(input: {
+  durationSeconds: number;
+  sponsorIntervalMinutes: number;
+  ctaText?: string | null;
+  zenEcoHomesEnabled: boolean;
 }) {
-  const motionPatterns = [
-    `zoompan=z='min(zoom+0.00022,1.065)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${input.frames}:s=${WIDTH}x${HEIGHT}:fps=${LONGFORM_FPS}`,
-    `zoompan=z='min(zoom+0.00018,1.055)':x='min(max(0,on*0.20),iw-iw/zoom)':y='ih/2-(ih/zoom/2)':d=${input.frames}:s=${WIDTH}x${HEIGHT}:fps=${LONGFORM_FPS}`,
-    `zoompan=z='min(zoom+0.00018,1.055)':x='max(0,iw-iw/zoom-on*0.20)':y='ih/2-(ih/zoom/2)':d=${input.frames}:s=${WIDTH}x${HEIGHT}:fps=${LONGFORM_FPS}`,
-  ];
+  if (!input.zenEcoHomesEnabled) return "";
+  const duration = Math.max(1, input.durationSeconds);
+  const events = [`Dialogue: 0,0:00:00.00,${assTime(duration)},Watermark,,0,0,0,,ZenEcoHomes.com`];
+  const interval = Math.max(5, input.sponsorIntervalMinutes) * 60;
+  const sponsorDuration = Math.min(12, Math.max(7, interval * 0.08));
 
+  for (let start = 0; start < duration; start += interval) {
+    const end = Math.min(duration, start + sponsorDuration);
+    events.push(`Dialogue: 1,${assTime(start)},${assTime(end)},Sponsor,,0,0,0,,{\\pos(960,464)}Presented by ZenEcoHomes.com`);
+    if (input.ctaText?.trim()) {
+      events.push(`Dialogue: 1,${assTime(start)},${assTime(end)},CTA,,0,0,0,,{\\pos(960,594)}${escapeAssText(input.ctaText)}`);
+    }
+  }
+  return assDocument(events);
+}
+
+function escapeAssFilterPath(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
+}
+
+function escapeConcatPath(value: string) {
+  return value.replace(/'/g, "'\\''");
+}
+
+export function buildVisualConcatFile(imagePaths: string[], segmentDuration: number) {
+  if (!imagePaths.length) return "";
+  const duration = Math.max(0.1, segmentDuration).toFixed(6);
+  const lines: string[] = ["ffconcat version 1.0"];
+  for (const imagePath of imagePaths) {
+    lines.push(`file '${escapeConcatPath(imagePath)}'`);
+    lines.push(`duration ${duration}`);
+  }
+  // concat demuxer needs the final image repeated so its duration is honored.
+  lines.push(`file '${escapeConcatPath(imagePaths[imagePaths.length - 1])}'`);
+  return `${lines.join("\n")}\n`;
+}
+
+function buildSinglePassFilter(assPath: string | null) {
   const filters = [
+    `fps=${LONGFORM_FPS}`,
     `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos`,
     `crop=${WIDTH}:${HEIGHT}`,
-    motionPatterns[input.imageIndex % motionPatterns.length],
+    // A very slow global Ken Burns movement keeps the slideshow alive without
+    // generating intermediate segment files. The source image switches are
+    // handled by the concat demuxer while zoompan emits one frame at a time.
+    `zoompan=z='min(max(zoom,pzoom)+0.00012,1.055)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${WIDTH}x${HEIGHT}:fps=${LONGFORM_FPS}`,
   ];
-
-  if (input.assPath) {
-    filters.push(`ass=filename='${escapeAssFilterPath(input.assPath)}'`);
-  }
-
+  if (assPath) filters.push(`ass=filename='${escapeAssFilterPath(assPath)}'`);
   filters.push("format=yuv420p");
   return filters.join(",");
 }
 
 /**
- * Disk-based renderer for 30–180 minute Re-Master mixes. Unlike the existing
- * single-song renderer, this function never reads the final MP4 into a Buffer.
+ * Single-pass long-form renderer. The previous implementation rendered every
+ * still image into a separate MPEG-TS file and retained all segments until the
+ * final mux. On constrained serverless /tmp storage that could exhaust disk at
+ * ~70%. This implementation keeps only source images, the audio file and one
+ * final MP4 on disk while FFmpeg renders the complete slideshow in one pass.
  */
 export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): Promise<RemasterMixVideoResult> {
   if (input.imageUrls.length < 12) throw new Error("At least 12 visual URLs are required for a long-form mix.");
@@ -209,69 +225,40 @@ export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): P
       ? input.audioDurationSeconds
       : await probeDuration(binary, input.audioPath);
     const segmentDuration = durationSeconds / imagePaths.length;
-    const sponsorEveryImages = Math.max(
-      1,
-      Math.round((Math.max(5, input.sponsorIntervalMinutes) * 60) / segmentDuration),
-    );
 
-    const segmentPaths: string[] = [];
-    for (let index = 0; index < imagePaths.length; index += 1) {
-      const segmentPath = path.join(workingDirectory, `segment-${String(index).padStart(3, "0")}.ts`);
-      const frames = Math.max(1, Math.round(segmentDuration * LONGFORM_FPS));
-      const sponsorSlide = index === 0 || index % sponsorEveryImages === 0;
-      let assPath: string | null = null;
+    const concatPath = path.join(workingDirectory, "visuals.ffconcat");
+    await fs.writeFile(concatPath, buildVisualConcatFile(imagePaths, segmentDuration), "utf8");
 
-      if (input.zenEcoHomesEnabled) {
-        assPath = path.join(workingDirectory, `overlay-${String(index).padStart(3, "0")}.ass`);
-        await fs.writeFile(
-          assPath,
-          buildRemasterMixAssOverlay({
-            durationSeconds: segmentDuration,
-            sponsorSlide,
-            ctaText: input.ctaText,
-            zenEcoHomesEnabled: true,
-          }),
-          "utf8",
-        );
-      }
-
-      const filter = buildOverlayFilter({
-        imageIndex: index,
-        frames,
+    let assPath: string | null = null;
+    if (input.zenEcoHomesEnabled) {
+      assPath = path.join(workingDirectory, "overlay.ass");
+      await fs.writeFile(
         assPath,
-      });
-
-      await runFFmpeg(binary, [
-        "-loop", "1",
-        "-framerate", String(LONGFORM_FPS),
-        "-i", imagePaths[index],
-        "-t", segmentDuration.toFixed(3),
-        "-vf", filter,
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "29",
-        "-r", String(LONGFORM_FPS),
-        "-an",
-        "-y",
-        segmentPath,
-      ]);
-      segmentPaths.push(segmentPath);
-
-      const progress = 10 + Math.round(((index + 1) / imagePaths.length) * 65);
-      await input.onProgress?.(progress, "rendering_visuals");
+        buildRemasterMixGlobalAssOverlay({
+          durationSeconds,
+          sponsorIntervalMinutes: input.sponsorIntervalMinutes,
+          ctaText: input.ctaText,
+          zenEcoHomesEnabled: true,
+        }),
+        "utf8",
+      );
     }
 
-    const concatPath = path.join(workingDirectory, "segments.txt");
-    await fs.writeFile(concatPath, segmentPaths.map((file) => `file '${file}'`).join("\n"), "utf8");
-
     const videoPath = path.join(workingDirectory, "remaster-mediterranean-mix.mp4");
-    await input.onProgress?.(78, "muxing_audio");
+    await input.onProgress?.(18, "rendering_visuals");
+
     await runFFmpeg(binary, [
+      "-hide_banner",
       "-f", "concat",
       "-safe", "0",
       "-i", concatPath,
       "-i", input.audioPath,
-      "-c:v", "copy",
+      "-t", durationSeconds.toFixed(3),
+      "-vf", buildSinglePassFilter(assPath),
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-crf", "30",
+      "-r", String(LONGFORM_FPS),
       "-c:a", "aac",
       "-b:a", "160k",
       "-shortest",
@@ -280,17 +267,13 @@ export async function renderRemasterLongFormMix(input: RemasterMixVideoInput): P
       videoPath,
     ]);
 
-    // Keep only the final MP4 after muxing; this can reclaim multiple GB before
-    // the resumable YouTube upload starts.
-    for (const segmentPath of segmentPaths) await fs.unlink(segmentPath).catch(() => undefined);
+    await input.onProgress?.(82, "video_ready");
+
+    // Remove source visuals/metadata before YouTube upload so only the final MP4
+    // remains in the renderer working directory.
     for (const imagePath of imagePaths) await fs.unlink(imagePath).catch(() => undefined);
     await fs.unlink(concatPath).catch(() => undefined);
-    const overlayFiles = await fs.readdir(workingDirectory).catch(() => [] as string[]);
-    for (const file of overlayFiles) {
-      if (file.startsWith("overlay-") && file.endsWith(".ass")) {
-        await fs.unlink(path.join(workingDirectory, file)).catch(() => undefined);
-      }
-    }
+    if (assPath) await fs.unlink(assPath).catch(() => undefined);
 
     const stat = await fs.stat(videoPath);
     await input.onProgress?.(85, "video_ready");
