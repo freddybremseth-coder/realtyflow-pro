@@ -40,6 +40,79 @@ async function getVerifiedClient() {
   throw new Error("Re-Master Freddy YouTube-tilkoblingen er utløpt eller peker mot feil kanal.");
 }
 
+export async function listRemasterChannelVideos(maxResults = 50) {
+  const { client, channelId, channelTitle } = await getVerifiedClient();
+  const search = await client.search.list({
+    part: ["snippet"],
+    channelId,
+    order: "date",
+    type: ["video"],
+    maxResults: Math.max(1, Math.min(maxResults, 50)),
+  });
+  const ids = (search.data.items ?? []).map((item) => item.id?.videoId).filter((id): id is string => Boolean(id));
+  if (!ids.length) return { channelId, channelTitle, videos: [] };
+
+  const response = await client.videos.list({ part: ["snippet", "statistics"], id: ids });
+  const videos = (response.data.items ?? []).filter((item) => item.id && item.snippet?.channelId === channelId).map((item) => ({
+    videoId: String(item.id),
+    title: item.snippet?.title || "Re-Master Freddy",
+    publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+    description: item.snippet?.description || "",
+    tags: item.snippet?.tags || [],
+    viewCount: Number(item.statistics?.viewCount || 0),
+    likeCount: Number(item.statistics?.likeCount || 0),
+    commentCount: Number(item.statistics?.commentCount || 0),
+  }));
+  return { channelId, channelTitle, videos };
+}
+
+export async function listRemasterPlaylists(maxResults = 50) {
+  const { client, channelId, channelTitle } = await getVerifiedClient();
+  const response = await client.playlists.list({
+    part: ["snippet", "contentDetails"],
+    channelId,
+    maxResults: Math.max(1, Math.min(maxResults, 50)),
+  });
+  return {
+    channelId,
+    channelTitle,
+    playlists: (response.data.items ?? []).map((item) => ({
+      playlistId: item.id || "",
+      title: item.snippet?.title || "",
+      description: item.snippet?.description || "",
+      itemCount: Number(item.contentDetails?.itemCount || 0),
+    })).filter((item) => item.playlistId),
+  };
+}
+
+export async function addRemasterVideoToPlaylist(videoId: string, playlistId: string) {
+  const { client, channelId, channelTitle } = await getVerifiedClient();
+  const [videoResponse, playlistResponse] = await Promise.all([
+    client.videos.list({ part: ["snippet"], id: [videoId] }),
+    client.playlists.list({ part: ["snippet"], id: [playlistId] }),
+  ]);
+  const video = videoResponse.data.items?.[0];
+  const playlist = playlistResponse.data.items?.[0];
+  if (!video?.id || video.snippet?.channelId !== channelId) throw new Error("Videoen tilhører ikke verifisert Re-Master Freddy-kanal.");
+  if (!playlist?.id || playlist.snippet?.channelId !== channelId) throw new Error("Spillelisten tilhører ikke verifisert Re-Master Freddy-kanal.");
+
+  const existing = await client.playlistItems.list({ part: ["id"], playlistId, videoId, maxResults: 1 });
+  if (existing.data.items?.length) {
+    return { videoId, playlistId, channelId, channelTitle, duplicate: true };
+  }
+
+  await client.playlistItems.insert({
+    part: ["snippet"],
+    requestBody: {
+      snippet: {
+        playlistId,
+        resourceId: { kind: "youtube#video", videoId },
+      },
+    },
+  });
+  return { videoId, playlistId, channelId, channelTitle, duplicate: false };
+}
+
 export async function updateRemasterVideoMetadata(
   videoId: string,
   metadata: { title?: string; description?: string; tags?: string[] },
