@@ -14,6 +14,12 @@ import {
 } from "@/lib/marketing/autopilot-safety";
 import { recommendForGeneration } from "@/services/marketing/learning-adapter";
 import { createCampaignDraft, getServiceSupabase } from "@/services/marketing/campaign-production";
+import {
+  loadRemasterPromotionSource,
+  markRemasterPromotionSourcePlanned,
+  remasterPromotionMasterIdea,
+  remasterPromotionMediaUrl,
+} from "@/services/marketing/remaster-promotion-source";
 
 const SUPPORTED_CHANNELS = new Set(["instagram", "facebook"]);
 const EXCLUDED_BRANDS = new Set(["soleada"]);
@@ -96,14 +102,59 @@ export async function GET(request: NextRequest) {
         try {
           const guidance = recommendation ? ` Bruk dokumentert læring når den finnes. Favoriserte signaler: ${JSON.stringify(recommendation.favor)}. Unngå: ${JSON.stringify(recommendation.avoid)}.` : "";
           const role = String(plan?.metadata?.brand_role ?? "");
+          const isRemasterCreator = brandId === "remasterfreddy" && role === "creator_media";
+          const remasterSource = isRemasterCreator
+            ? await loadRemasterPromotionSource(supabase, channel, { cooldownDays: 14 })
+            : null;
+          if (isRemasterCreator && !remasterSource) {
+            results.push({ brandId, channel, skipped: true, reason: "no_eligible_remaster_song_source", cooldownDays: 14 });
+            continue;
+          }
+
           const runIdentity = manualRun ? undefined : autopilotRunIdentity(brandId, channel, localDate, targetHour);
           const run = await createCampaignDraft(supabase as any, {
-            brandId, channel, useInventoryProperty: role === "real_estate", masterIdea: ideaForBrand(plan, guidance),
-            goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 }, publishingCapacityPerWeek: 4,
+            brandId,
+            channel,
+            useInventoryProperty: role === "real_estate",
+            masterIdea: remasterSource ? remasterPromotionMasterIdea(remasterSource, guidance) : ideaForBrand(plan, guidance),
+            mediaUrl: remasterSource ? remasterPromotionMediaUrl(remasterSource) : undefined,
+            goal: { kind: role === "real_estate" ? "qualified_leads" : "awareness", target: 10, horizonDays: 30 },
+            publishingCapacityPerWeek: 4,
             reuseCooldownDays: 14,
             requirePublicationHistory: true,
           }, runIdentity);
-          results.push({ brandId, channel, marketingRunId: run.marketingRunId, manualRun, localHour, learnedHour, targetHour, recommendation: recommendation?.favor ?? {}, publications: run.results.map((item) => ({ publicationId: item.publicationId, state: item.state, mode: item.mode, qualityScore: item.qualityScore, error: item.error ?? null })) });
+
+          const generated = run.results.some((item) => !item.error);
+          let sourceMarked = false;
+          let sourceMarkError: string | null = null;
+          if (remasterSource && generated) {
+            try {
+              await markRemasterPromotionSourcePlanned(supabase, remasterSource.id);
+              sourceMarked = true;
+            } catch (markError) {
+              sourceMarkError = markError instanceof Error ? markError.message : String(markError);
+            }
+          }
+
+          results.push({
+            brandId,
+            channel,
+            marketingRunId: run.marketingRunId,
+            manualRun,
+            localHour,
+            learnedHour,
+            targetHour,
+            recommendation: recommendation?.favor ?? {},
+            source: remasterSource ? {
+              sourceQueueId: remasterSource.id,
+              songId: remasterSource.source_id,
+              title: remasterSource.title,
+              youtubeUrl: remasterSource.payload?.youtube_url ?? remasterSource.source_url,
+              sourceMarked,
+              sourceMarkError,
+            } : null,
+            publications: run.results.map((item) => ({ publicationId: item.publicationId, state: item.state, mode: item.mode, qualityScore: item.qualityScore, error: item.error ?? null })),
+          });
         } catch (err) { results.push({ brandId, channel, error: err instanceof Error ? err.message : String(err) }); }
       }
     }
