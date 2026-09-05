@@ -39,14 +39,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
       - name: Install dependencies
         run: npm ci --silent
+
       - name: Test durable mix migration
         run: node scripts/test-remaster-mix-migration.mjs
+
       - name: Test mix planner and crossfade contracts
-        run: npx tsx --test src/services/pipelines/remaster-mix-planner.test.ts src/services/pipelines/remaster-mix-audio.test.ts
+        run: >-
+          npx tsx --test
+          src/services/pipelines/remaster-mix-planner.test.ts
+          src/services/pipelines/remaster-mix-audio.test.ts
