@@ -72,3 +72,4 @@ jobs:
           src/services/pipelines/remaster-mix-planner.test.ts
           src/services/pipelines/remaster-mix-audio.test.ts
           src/services/pipelines/remaster-mix-video.test.ts
+          src/services/pipelines/remaster-mix-video-v3.test.ts
