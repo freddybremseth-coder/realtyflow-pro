@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaUrl, type RemasterPromotionSource } from "./remaster-promotion-source";
+import { pickRemasterPromotionSource, remasterPromotionMasterIdea, remasterPromotionMediaUrl, remasterYoutubeVideoId, type RemasterPromotionSource } from "./remaster-promotion-source";
 
 function source(overrides: Partial<RemasterPromotionSource> = {}): RemasterPromotionSource {
   return {
@@ -49,13 +49,25 @@ describe("Re-Master promotion source", () => {
     expect(picked).toBeNull();
   });
 
-  it("builds a source-locked idea and uses verified artwork", () => {
+  it("builds a source-locked idea and prefers stable YouTube artwork", () => {
     const row = source();
     const idea = remasterPromotionMasterIdea(row, " Favor learned timing.");
     expect(idea).toContain("Night Signal");
     expect(idea).toContain("https://www.youtube.com/watch?v=abc123");
     expect(idea).toContain("Do not invent streaming numbers");
     expect(idea).toContain("Do not replace the selected song");
+    expect(remasterYoutubeVideoId(row)).toBe("abc123");
+    expect(remasterPromotionMediaUrl(row)).toBe("https://i.ytimg.com/vi/abc123/hqdefault.jpg");
+  });
+
+  it("extracts verified YouTube ids from short and shorts URLs", () => {
+    expect(remasterYoutubeVideoId(source({ source_url: "https://youtu.be/short123", payload: {} }))).toBe("short123");
+    expect(remasterYoutubeVideoId(source({ source_url: "https://www.youtube.com/shorts/shorts456", payload: {} }))).toBe("shorts456");
+  });
+
+  it("falls back to stored artwork only when the destination is not a parsable YouTube URL", () => {
+    const row = source({ source_url: "https://example.com/listen", payload: { image_url: "https://example.com/art.jpg" } });
+    expect(remasterYoutubeVideoId(row)).toBeNull();
     expect(remasterPromotionMediaUrl(row)).toBe("https://example.com/art.jpg");
   });
 });

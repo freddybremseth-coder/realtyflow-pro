@@ -45,6 +45,20 @@ async function hasRecentAutoPublication(supabase: any, brandId: string, channel:
   return !!data?.length;
 }
 
+async function markFailedControlledAutoPublications(supabase: any, brandId: string, run: { results: Array<{ publicationId: string; error?: string }> }) {
+  const failedIds = Array.from(new Set(run.results
+    .filter((item) => Boolean(item.error) && item.publicationId && item.publicationId !== "-")
+    .map((item) => item.publicationId)));
+  if (!failedIds.length) return { failedIds: [] as string[], error: null as string | null };
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("marketing_publications")
+    .update({ state: "failed", updated_at: now })
+    .eq("brand_id", brandId)
+    .in("publication_id", failedIds);
+  return { failedIds, error: error ? `FAILED_PUBLICATION_STATE_UPDATE: ${error.message}` : null };
+}
+
 async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
   const now = new Date().toISOString();
   await supabase.from("marketing_autopilot_run_requests").update({ status: "expired", completed_at: now }).eq("status", "pending").lt("expires_at", now);
@@ -124,6 +138,7 @@ export async function GET(request: NextRequest) {
             requirePublicationHistory: true,
           }, runIdentity);
 
+          const failureState = await markFailedControlledAutoPublications(supabase, brandId, run);
           const generated = run.results.some((item) => !item.error);
           let sourceMarked = false;
           let sourceMarkError: string | null = null;
@@ -145,6 +160,7 @@ export async function GET(request: NextRequest) {
             learnedHour,
             targetHour,
             recommendation: recommendation?.favor ?? {},
+            failureState,
             source: remasterSource ? {
               sourceQueueId: remasterSource.id,
               songId: remasterSource.source_id,
