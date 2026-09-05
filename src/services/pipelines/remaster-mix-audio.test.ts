@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAcrossfadeFilter } from "./remaster-mix-audio";
 
+const FOUR_TRACK_CROSSFADE = [
+  "[0:a][1:a]acrossfade=d=8:c1=tri:c2=tri[mix1]",
+  "[mix1][2:a]acrossfade=d=8:c1=tri:c2=tri[mix2]",
+  "[mix2][3:a]acrossfade=d=8:c1=tri:c2=tri[mixout]",
+].join(";");
+
 test("buildAcrossfadeFilter chains every track with the configured fade", () => {
   const result = buildAcrossfadeFilter(4, 8);
-  assert.equal(
-    result.filter,
-    "[0:a][1:a]acrossfade=d=8:c1=tri:c2=tri[mix1];[mix1][2:a]acrossfade=d=8:c1=tri:c2=tri[mix2];[mix2][3:a]acrossfade=d=8:c1=tri:c2=tri[mixout]",
-  );
+  assert.equal(result.filter, FOUR_TRACK_CROSSFADE);
   assert.equal(result.outputLabel, "mixout");
 });
 
