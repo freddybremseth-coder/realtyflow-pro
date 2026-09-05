@@ -6,7 +6,10 @@ test("revenue lead gaps identify missing value and next follow-up", () => {
   const gaps = revenuePriorityDataGaps({ score: 88, value: 0, stage: "NEGOTIATION", nextFollowupAt: null });
   assert.deepEqual(gaps.map((gap) => gap.field), ["pipeline_value", "next_followup"]);
   assert.ok(gaps.every((gap) => gap.resolution === "HUMAN_REQUIRED"));
-  assert.match(dataGapSummary(gaps, 62) || "", /Pipeline value is missing/);
+  const summary = dataGapSummary(gaps, 62) || "";
+  assert.match(summary, /Needs your input:/);
+  assert.match(summary, /Pipeline value is missing/);
+  assert.doesNotMatch(summary, /System can investigate:/);
 });
 
 test("complete revenue lead has no data gap recommendation", () => {
@@ -21,6 +24,11 @@ test("work gaps separate owner judgement from discoverable system evidence", () 
   const partitioned = partitionDataGaps(gaps);
   assert.deepEqual(partitioned.humanRequired.map((gap) => gap.field), ["due_date"]);
   assert.deepEqual(partitioned.autoDiscoverable.map((gap) => gap.field), ["ai_score", "source_type"]);
+  const summary = dataGapSummary(gaps, 61) || "";
+  assert.match(summary, /System can investigate:/);
+  assert.match(summary, /AI score is missing or zero/);
+  assert.match(summary, /Needs your input:/);
+  assert.match(summary, /Due date is missing/);
 });
 
 test("auto-discoverable never means autonomous write permission", () => {
@@ -30,4 +38,7 @@ test("auto-discoverable never means autonomous write permission", () => {
     assert.match(gap.rationale, /discover/i);
     assert.doesNotMatch(gap.rationale, /write|update|repair/i);
   }
+  const summary = dataGapSummary(gaps, 58) || "";
+  assert.match(summary, /System can investigate:/);
+  assert.doesNotMatch(summary, /Needs your input:/);
 });
