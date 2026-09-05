@@ -49,11 +49,12 @@ export async function GET(request: NextRequest) {
   const since24h = new Date(nowMs - 86_400_000).toISOString();
 
   try {
-    const [planR, channelsR, sourcesR, syncR, pendingRequestsR, failedRequestsR, failedGrowthR, growthR, youtubeHealth] = await Promise.all([
-      supabase.from("marketing_brand_growth_plans").select("status,autonomy_mode,metadata").eq("brand_id", "remasterfreddy").maybeSingle(),
+    const [planR, channelsR, sourcesR, syncR, growthLoopR, pendingRequestsR, failedRequestsR, failedGrowthR, growthR, youtubeHealth] = await Promise.all([
+      supabase.from("marketing_brand_growth_plans").select("status,autonomy_mode,metadata,updated_at").eq("brand_id", "remasterfreddy").maybeSingle(),
       supabase.from("social_channels").select("platform,is_active").eq("brand_id", "remasterfreddy").eq("is_active", true),
       supabase.from("marketing_source_queue").select("status,source_url,payload").eq("brand_id", "remasterfreddy").eq("source_type", "song").limit(1000),
       supabase.from("automation_logs").select("created_at").eq("action", "remaster_source_sync").eq("status", "success").order("created_at", { ascending: false }).limit(1),
+      supabase.from("automation_logs").select("created_at,status").eq("action", "remaster_growth_loop").in("status", ["success", "partial"]).order("created_at", { ascending: false }).limit(1),
       supabase.from("marketing_autopilot_run_requests").select("requested_at").eq("status", "pending").contains("brand_ids", ["remasterfreddy"]).order("requested_at", { ascending: true }).limit(1),
       supabase.from("marketing_autopilot_run_requests").select("id", { count: "exact", head: true }).eq("status", "failed").contains("brand_ids", ["remasterfreddy"]).gte("requested_at", since24h),
       supabase.from("growth_actions").select("id", { count: "exact", head: true }).eq("brand", "remasterfreddy").eq("platform", "youtube").eq("status", "failed").gte("created_at", since24h),
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
       checkBrandYouTubeHealth("remasterfreddy").catch(() => ({ connected: false })),
     ]);
 
-    const queryErrors = [planR.error, channelsR.error, sourcesR.error, syncR.error, pendingRequestsR.error, failedRequestsR.error, failedGrowthR.error, growthR.error].filter(Boolean);
+    const queryErrors = [planR.error, channelsR.error, sourcesR.error, syncR.error, growthLoopR.error, pendingRequestsR.error, failedRequestsR.error, failedGrowthR.error, growthR.error].filter(Boolean);
     if (queryErrors.length) throw new Error(queryErrors.map((error: any) => error?.message || "unknown query error").join(" | "));
 
     const plan: any = planR.data || {};
@@ -77,14 +78,18 @@ export async function GET(request: NextRequest) {
     }).length;
 
     const lastSourceSyncAt = syncR.data?.[0]?.created_at || null;
+    const lastGrowthLoopAt = growthLoopR.data?.[0]?.created_at || null;
     const pendingRequestedAt = pendingRequestsR.data?.[0]?.requested_at || null;
     const assessment = assessRemasterHealth({
       planActive: plan.status === "active",
       controlledAuto: plan.autonomy_mode === "controlled_auto",
+      planUpdatedAt: plan.updated_at || null,
       facebookConfigured,
       youtubeConnected: Boolean((youtubeHealth as any)?.connected),
       sourceSyncLastSuccessAt: lastSourceSyncAt,
       sourceSyncFreshnessMinutes: 90,
+      growthLoopLastRunAt: lastGrowthLoopAt,
+      growthLoopFreshnessMinutes: 26 * 60,
       sourceDriftCount,
       pendingPromotionRequestAgeMinutes: minutesSince(pendingRequestedAt, nowMs),
       failedPromotionRequests24h: failedRequestsR.count || 0,
@@ -103,6 +108,7 @@ export async function GET(request: NextRequest) {
         facebook_configured: assessment.facebookConfigured,
         youtube_connected: assessment.youtubeConnected,
         source_sync_last_success_at: assessment.sourceSyncLastSuccessAt,
+        growth_loop_last_run_at: assessment.growthLoopLastRunAt,
         source_drift_count: assessment.sourceDriftCount,
         pending_promotion_request_age_minutes: assessment.pendingPromotionRequestAgeMinutes,
         failed_promotion_requests_24h: assessment.failedPromotionRequests24h,

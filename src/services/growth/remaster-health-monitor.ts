@@ -3,10 +3,13 @@ export type RemasterHealthState = "healthy" | "partial" | "error";
 export type RemasterHealthSnapshot = {
   planActive: boolean;
   controlledAuto: boolean;
+  planUpdatedAt: string | null;
   facebookConfigured: boolean;
   youtubeConnected: boolean;
   sourceSyncLastSuccessAt: string | null;
   sourceSyncFreshnessMinutes: number;
+  growthLoopLastRunAt: string | null;
+  growthLoopFreshnessMinutes: number;
   sourceDriftCount: number;
   pendingPromotionRequestAgeMinutes: number | null;
   failedPromotionRequests24h: number;
@@ -24,6 +27,12 @@ function isStale(lastSuccessAt: string | null, freshnessMinutes: number, nowMs: 
   const time = Date.parse(lastSuccessAt);
   if (!Number.isFinite(time)) return true;
   return nowMs - time > freshnessMinutes * 60_000;
+}
+
+function isMature(value: string | null, freshnessMinutes: number, nowMs: number) {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && nowMs - time > freshnessMinutes * 60_000;
 }
 
 export function assessRemasterHealth(snapshot: RemasterHealthSnapshot, nowMs = Date.now()): RemasterHealthAssessment {
@@ -45,6 +54,10 @@ export function assessRemasterHealth(snapshot: RemasterHealthSnapshot, nowMs = D
 
   if (isStale(snapshot.sourceSyncLastSuccessAt, snapshot.sourceSyncFreshnessMinutes, nowMs)) {
     warn("Re-Master source reconciliation has no fresh successful run.");
+  }
+  if (isMature(snapshot.planUpdatedAt, snapshot.growthLoopFreshnessMinutes, nowMs)
+    && isStale(snapshot.growthLoopLastRunAt, snapshot.growthLoopFreshnessMinutes, nowMs)) {
+    warn("Re-Master growth loop has no fresh execution heartbeat.");
   }
   if (snapshot.sourceDriftCount > 0) warn(`${snapshot.sourceDriftCount} published Re-Master song source(s) are still out of sync.`);
   if (snapshot.pendingPromotionRequestAgeMinutes != null && snapshot.pendingPromotionRequestAgeMinutes > 90) {

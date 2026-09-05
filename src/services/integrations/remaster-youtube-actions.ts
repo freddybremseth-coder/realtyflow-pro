@@ -40,29 +40,65 @@ async function getVerifiedClient() {
   throw new Error("Re-Master Freddy YouTube-tilkoblingen er utløpt eller peker mot feil kanal.");
 }
 
+function chunks<T>(items: T[], size: number) {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export async function listRemasterChannelVideos(maxResults = 50) {
   const { client, channelId, channelTitle } = await getVerifiedClient();
-  const search = await client.search.list({
-    part: ["snippet"],
-    channelId,
-    order: "date",
-    type: ["video"],
-    maxResults: Math.max(1, Math.min(maxResults, 50)),
+  const requested = Math.max(1, Math.min(maxResults, 500));
+
+  const channelResponse = await client.channels.list({
+    part: ["contentDetails"],
+    id: [channelId],
   });
-  const ids = (search.data.items ?? []).map((item) => item.id?.videoId).filter((id): id is string => Boolean(id));
+  const uploadsPlaylistId = channelResponse.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploadsPlaylistId) return { channelId, channelTitle, videos: [] };
+
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  while (ids.length < requested) {
+    const page = await client.playlistItems.list({
+      part: ["contentDetails"],
+      playlistId: uploadsPlaylistId,
+      maxResults: Math.min(50, requested - ids.length),
+      pageToken,
+    });
+    for (const item of page.data.items ?? []) {
+      const id = item.contentDetails?.videoId;
+      if (id) ids.push(id);
+      if (ids.length >= requested) break;
+    }
+    pageToken = page.data.nextPageToken || undefined;
+    if (!pageToken) break;
+  }
+
   if (!ids.length) return { channelId, channelTitle, videos: [] };
 
-  const response = await client.videos.list({ part: ["snippet", "statistics"], id: ids });
-  const videos = (response.data.items ?? []).filter((item) => item.id && item.snippet?.channelId === channelId).map((item) => ({
-    videoId: String(item.id),
-    title: item.snippet?.title || "Re-Master Freddy",
-    publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
-    description: item.snippet?.description || "",
-    tags: item.snippet?.tags || [],
-    viewCount: Number(item.statistics?.viewCount || 0),
-    likeCount: Number(item.statistics?.likeCount || 0),
-    commentCount: Number(item.statistics?.commentCount || 0),
-  }));
+  const itemById = new Map<string, any>();
+  for (const batch of chunks(ids, 50)) {
+    const response = await client.videos.list({ part: ["snippet", "statistics"], id: batch });
+    for (const item of response.data.items ?? []) {
+      if (item.id && item.snippet?.channelId === channelId) itemById.set(String(item.id), item);
+    }
+  }
+
+  const videos = ids.flatMap((id) => {
+    const item = itemById.get(id);
+    if (!item) return [];
+    return [{
+      videoId: String(item.id),
+      title: item.snippet?.title || "Re-Master Freddy",
+      publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+      description: item.snippet?.description || "",
+      tags: item.snippet?.tags || [],
+      viewCount: Number(item.statistics?.viewCount || 0),
+      likeCount: Number(item.statistics?.likeCount || 0),
+      commentCount: Number(item.statistics?.commentCount || 0),
+    }];
+  });
   return { channelId, channelTitle, videos };
 }
 
