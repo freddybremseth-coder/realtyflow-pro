@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { start } from "workflow/api";
 import { requireAdminApi } from "@/lib/api-admin";
-import { remasterMixProduction } from "@/workflows/remaster-mix-production";
+import { remasterMixProductionV2 } from "@/workflows/remaster-mix-production-v2";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     .from("remaster_mix_jobs")
     .update({
       status: "queued",
-      pipeline_step: "queued",
+      pipeline_step: "queued_v2",
       progress: 0,
       error_code: null,
       error_message: null,
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
   if (queueError) return NextResponse.json({ error: queueError.message }, { status: 500 });
 
   try {
-    const workflowRun = await start(remasterMixProduction, [{
+    const workflowRun = await start(remasterMixProductionV2, [{
       trigger: "admin",
       requestedJobId: current.id,
     }]);
@@ -112,17 +112,18 @@ export async function POST(request: NextRequest) {
       success: true,
       started: true,
       mix: queued,
+      workflowVersion: "v2",
       workflowRunId: workflowRun.runId,
-      message: "30-minute production mix queued and worker started.",
+      message: "30-minute production mix queued and V2 worker started.",
     }, { status: 202 });
   } catch (error) {
-    // Keep the durable row queued. Recovery cron will start another workflow.
     return NextResponse.json({
       success: true,
       started: false,
       recoveryScheduled: true,
       mix: queued,
-      warning: error instanceof Error ? error.message : "Immediate workflow start failed; recovery cron will retry.",
+      workflowVersion: "v2",
+      warning: error instanceof Error ? error.message : "Immediate V2 workflow start failed; recovery cron will retry.",
     }, { status: 202 });
   }
 }
