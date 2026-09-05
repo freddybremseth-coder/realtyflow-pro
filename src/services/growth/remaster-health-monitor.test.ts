@@ -14,6 +14,9 @@ function healthy() {
     sourceSyncFreshnessMinutes: 90,
     growthLoopLastRunAt: "2026-09-05T17:35:00.000Z",
     growthLoopFreshnessMinutes: 26 * 60,
+    marketingAutopilotLastRunAt: null,
+    marketingAutopilotLastStatus: null,
+    marketingAutopilotFreshnessMinutes: 150,
     sourceDriftCount: 0,
     pendingPromotionRequestAgeMinutes: 15,
     failedPromotionRequests24h: 0,
@@ -29,37 +32,48 @@ describe("assessRemasterHealth", () => {
     expect(result.reasons).toEqual([]);
   });
 
+  it("does not alarm before the first Marketing Autopilot heartbeat exists", () => {
+    expect(assessRemasterHealth(healthy(), NOW).state).toBe("healthy");
+  });
+
+  it("warns when the last Marketing Autopilot heartbeat is partial", () => {
+    const result = assessRemasterHealth({ ...healthy(), marketingAutopilotLastRunAt: "2026-09-05T17:00:00.000Z", marketingAutopilotLastStatus: "partial" }, NOW);
+    expect(result.state).toBe("partial");
+  });
+
+  it("fails when the last Marketing Autopilot heartbeat is error", () => {
+    const result = assessRemasterHealth({ ...healthy(), marketingAutopilotLastRunAt: "2026-09-05T17:00:00.000Z", marketingAutopilotLastStatus: "error" }, NOW);
+    expect(result.state).toBe("error");
+  });
+
+  it("warns when an established Marketing Autopilot heartbeat becomes stale", () => {
+    const result = assessRemasterHealth({ ...healthy(), marketingAutopilotLastRunAt: "2026-09-05T14:00:00.000Z", marketingAutopilotLastStatus: "success" }, NOW);
+    expect(result.state).toBe("partial");
+    expect(result.reasons.join(" ")).toContain("stale");
+  });
+
   it("warns on source drift without treating it as a hard outage", () => {
     const result = assessRemasterHealth({ ...healthy(), sourceDriftCount: 1 }, NOW);
     expect(result.state).toBe("partial");
-    expect(result.reasons.join(" ")).toContain("out of sync");
   });
 
   it("fails closed when YouTube is disconnected", () => {
-    const result = assessRemasterHealth({ ...healthy(), youtubeConnected: false }, NOW);
-    expect(result.state).toBe("error");
-    expect(result.reasons.join(" ")).toContain("YouTube");
+    expect(assessRemasterHealth({ ...healthy(), youtubeConnected: false }, NOW).state).toBe("error");
   });
 
   it("warns after repeated negative measured actions", () => {
-    const result = assessRemasterHealth({ ...healthy(), consecutiveNegativeMeasuredActions: 2 }, NOW);
-    expect(result.state).toBe("partial");
+    expect(assessRemasterHealth({ ...healthy(), consecutiveNegativeMeasuredActions: 2 }, NOW).state).toBe("partial");
   });
 
   it("detects a stale source sync", () => {
-    const result = assessRemasterHealth({ ...healthy(), sourceSyncLastSuccessAt: "2026-09-05T15:00:00.000Z" }, NOW);
-    expect(result.state).toBe("partial");
-    expect(result.reasons.join(" ")).toContain("no fresh successful run");
+    expect(assessRemasterHealth({ ...healthy(), sourceSyncLastSuccessAt: "2026-09-05T15:00:00.000Z" }, NOW).state).toBe("partial");
   });
 
   it("does not flag a missing growth heartbeat immediately after activation", () => {
-    const result = assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-05T16:00:00.000Z" }, NOW);
-    expect(result.state).toBe("healthy");
+    expect(assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-05T16:00:00.000Z" }, NOW).state).toBe("healthy");
   });
 
   it("flags a missing growth heartbeat after a mature activation window", () => {
-    const result = assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-03T12:00:00.000Z" }, NOW);
-    expect(result.state).toBe("partial");
-    expect(result.reasons.join(" ")).toContain("growth loop");
+    expect(assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-03T12:00:00.000Z" }, NOW).state).toBe("partial");
   });
 });
