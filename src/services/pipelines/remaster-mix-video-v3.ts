@@ -7,7 +7,7 @@ import * as path from "path";
 import { pipeline } from "stream/promises";
 import { Readable } from "stream";
 import { ensureFFmpeg } from "@/services/integrations/ffmpeg-renderer";
-import { buildRemasterMixGlobalAssOverlay } from "./remaster-mix-video";
+import { buildRemasterMixGlobalAssOverlay } from "./remaster-mix-video-compat";
 
 const execFileAsync = promisify(execFile);
 const WIDTH = 1920;
