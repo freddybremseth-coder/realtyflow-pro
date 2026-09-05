@@ -9,6 +9,7 @@ import { getServiceSupabase } from "@/services/marketing/campaign-production";
 export const dynamic = "force-dynamic";
 
 const SUCCESS_AUTOMATION_STATUSES = new Set(["success", "ok", "completed", "drafted"]);
+const DEDICATED_ATTENTION_AUTOMATIONS = new Set(["remaster_health_monitor"]);
 const SCHEDULED_AUTOMATIONS = [
   { action: "email_ingest", runtimeKey: "cron:/api/cron/email-ingest", label: "E-postinnhenting", expectedMinutes: 15, freshnessMinutes: 40, href: "/nexus-os/communications" },
   { action: "email_auto_draft", runtimeKey: "cron:/api/cron/email-auto-draft", label: "E-post AI auto-draft", expectedMinutes: 15, freshnessMinutes: 40, href: "/nexus-os/communications" },
@@ -79,11 +80,15 @@ export async function GET(request: NextRequest) {
   const bookReviewCandidatesPending = candidateResults.reduce((sum, row) => sum + (row.error ? 0 : row.count), 0);
 
   const automationLogs = automationR.error ? [] : (automationR.data ?? []);
-  const automationFailures = automationLogs.filter((row: any) => {
+  const genericAutomationLogs = automationLogs.filter((row: any) => !DEDICATED_ATTENTION_AUTOMATIONS.has(String(row.action || "")));
+  const automationFailures = genericAutomationLogs.filter((row: any) => {
     const status = String(row.status || "").toLowerCase();
     return status && status !== "partial" && !SUCCESS_AUTOMATION_STATUSES.has(status);
   });
-  const automationPartial = automationLogs.filter((row: any) => String(row.status || "").toLowerCase() === "partial");
+  const automationPartial = genericAutomationLogs.filter((row: any) => String(row.status || "").toLowerCase() === "partial");
+  const lastRemasterHealth: any = automationLogs.find((row: any) => row.action === "remaster_health_monitor") ?? null;
+  const lastRemasterHealthStatus = String(lastRemasterHealth?.status || "").toLowerCase();
+  const lastRemasterHealthDetails: any = lastRemasterHealth?.details && typeof lastRemasterHealth.details === "object" ? lastRemasterHealth.details : {};
   const lastSocialSync: any = automationLogs.find((row: any) => row.action === "social_inbox_sync") ?? null;
   const lastSocialDetails: any = lastSocialSync?.details && typeof lastSocialSync.details === "object" ? lastSocialSync.details : {};
 
@@ -176,6 +181,8 @@ export async function GET(request: NextRequest) {
     whatsappStatus: whatsappReadiness.status,
     whatsappInboundReady: whatsappReadiness.inboundReady,
     whatsappAutoReplyEnabled: whatsappReadiness.autoReplyEnabled,
+    remasterHealthStatus: lastRemasterHealth?.status ?? null,
+    remasterHealthAt: lastRemasterHealth?.created_at ?? null,
   };
 
   const attention = buildOsAttention({
@@ -208,6 +215,23 @@ export async function GET(request: NextRequest) {
     bookRunningExperiments: summary.bookRunningExperiments,
     bookReviewCandidatesPending,
   });
+
+  if (lastRemasterHealth && ["partial", "error"].includes(lastRemasterHealthStatus)) {
+    const clearIndex = attention.findIndex((item) => item.id === "os:clear");
+    if (clearIndex >= 0) attention.splice(clearIndex, 1);
+    const reasons = Array.isArray(lastRemasterHealthDetails.reasons)
+      ? lastRemasterHealthDetails.reasons.map(String).filter(Boolean)
+      : [];
+    attention.unshift({
+      id: "remaster:health",
+      severity: lastRemasterHealthStatus === "error" ? "high" : "medium",
+      score: lastRemasterHealthStatus === "error" ? 94 : 68,
+      title: lastRemasterHealthStatus === "error" ? "Re-Master Growth OS trenger oppmerksomhet" : "Re-Master Growth OS er delvis degradert",
+      detail: reasons.length ? reasons.slice(0, 3).join(" · ") : "Re-Master health-monitoren rapporterte et operasjonelt avvik.",
+      href: "/remaster-freddy",
+      source: "Re-Master Health",
+    });
+  }
 
   if (whatsappReadiness.status === "BLOCKED") {
     attention.unshift({
@@ -269,6 +293,11 @@ export async function GET(request: NextRequest) {
       scheduled: scheduledAutomation,
       failures: automationFailures.slice(0, 20),
       partial: automationPartial.slice(0, 20),
+      remasterHealth: lastRemasterHealth ? {
+        status: lastRemasterHealth.status,
+        createdAt: lastRemasterHealth.created_at,
+        reasons: Array.isArray(lastRemasterHealthDetails.reasons) ? lastRemasterHealthDetails.reasons : [],
+      } : null,
     },
     runtime: {
       highRiskEnabled,
