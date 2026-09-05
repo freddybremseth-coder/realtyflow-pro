@@ -15,13 +15,15 @@ type AttentionItem = {
   source: string;
 };
 
+type RevenuePriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
 type RevenuePayload = {
   recommendedPlay?: {
     title: string;
     primaryAction: string;
     reason: string;
     href: string;
-    priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+    priority: RevenuePriority;
     score: number;
   } | null;
 };
@@ -70,7 +72,7 @@ async function readJson<T>(url: string): Promise<LoadState<T>> {
   }
 }
 
-function businessUrgency(priority: RevenuePayload["recommendedPlay"] extends infer T ? T extends { priority: infer P } ? P : never : never) {
+function businessUrgency(priority: RevenuePriority) {
   if (priority === "CRITICAL") return 100;
   if (priority === "HIGH") return 90;
   if (priority === "MEDIUM") return 70;
