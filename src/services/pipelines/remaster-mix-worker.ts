@@ -10,9 +10,17 @@ import {
   type RemasterMixStyle,
   type RemasterMixVisualType,
 } from "./remaster-mix-planner";
-import { buildRemasterMixAudio, cleanupRemasterMixAudio, type RemasterMixAudioResult } from "./remaster-mix-audio";
+import {
+  buildRemasterMixAudio,
+  cleanupRemasterMixAudio,
+  type RemasterMixAudioResult,
+} from "./remaster-mix-audio";
 import { loadZenEcoHomesVisualUrls } from "./remaster-mix-visual-source";
-import { cleanupRemasterLongFormMix, renderRemasterLongFormMix, type RemasterMixVideoResult } from "./remaster-mix-video";
+import {
+  cleanupRemasterLongFormMix,
+  renderRemasterLongFormMix,
+  type RemasterMixVideoResult,
+} from "./remaster-mix-video";
 import {
   addRemasterLongFormToPlaylist,
   createRemasterTopLevelComment,
@@ -65,7 +73,9 @@ interface MixJobRow {
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase is not configured for the Re-Master mix worker.");
+  if (!url || !key) {
+    throw new Error("Supabase is not configured for the Re-Master mix worker.");
+  }
   return createClient(url, key);
 }
 
@@ -77,9 +87,13 @@ function rpcRow<T>(data: unknown): T | null {
 
 function validateTracks(job: MixJobRow) {
   const tracks = Array.isArray(job.input_snapshot?.tracks) ? job.input_snapshot.tracks : [];
-  if (tracks.length < 2 || tracks.length > 60) throw new Error("Mix snapshot must contain 2–60 tracks.");
+  if (tracks.length < 2 || tracks.length > 60) {
+    throw new Error("Mix snapshot must contain 2–60 tracks.");
+  }
   for (const track of tracks) {
-    if (!track.id || !track.title || !track.audioUrl) throw new Error("Mix snapshot contains an incomplete track.");
+    if (!track.id || !track.title || !track.audioUrl) {
+      throw new Error("Mix snapshot contains an incomplete track.");
+    }
   }
   return [...tracks].sort((a, b) => a.position - b.position);
 }
@@ -111,18 +125,18 @@ async function heartbeat(job: MixJobRow, step?: string, progress?: number) {
 
 async function markUploadStarting(job: MixJobRow) {
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from("remaster_mix_jobs")
-    .update({
-      pipeline_step: "youtube_upload",
-      progress: 88,
-      youtube_upload_started_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", job.id)
-    .eq("status", "running")
-    .eq("lease_token", job.lease_token);
+  const { data, error } = await supabase.rpc("mark_remaster_mix_youtube_upload_started", {
+    p_job_id: job.id,
+    p_lease_token: job.lease_token,
+  });
   if (error) throw new Error(`Could not mark YouTube upload start: ${error.message}`);
+  const row = rpcRow<MixJobRow>(data);
+  if (!row) {
+    throw new Error(
+      "YouTube upload start was rejected because the lease expired or this mix already entered upload.",
+    );
+  }
+  return row;
 }
 
 async function completeJob(job: MixJobRow, videoId: string, youtubeUrl: string) {
@@ -154,7 +168,9 @@ async function failJob(job: MixJobRow, error: unknown, retryable: boolean) {
     p_error_message: message,
     p_retryable: retryable,
   });
-  if (failError) console.error("[RemasterMixWorker] Could not persist failure:", failError.message);
+  if (failError) {
+    console.error("[RemasterMixWorker] Could not persist failure:", failError.message);
+  }
 }
 
 async function loadFallbackVisualUrls(tracks: MixSnapshotTrack[], targetMinutes: number) {
@@ -162,7 +178,9 @@ async function loadFallbackVisualUrls(tracks: MixSnapshotTrack[], targetMinutes:
   const desired = recommendedVisualCount(targetMinutes);
   const images = await getGenreImages(genre, desired).catch(() => []);
   const urls = [...new Set(images.map((image) => image.imageUrl).filter(Boolean))];
-  if (urls.length < 12) throw new Error(`Only ${urls.length} Re-Master fallback visuals available for ${genre}.`);
+  if (urls.length < 12) {
+    throw new Error(`Only ${urls.length} Re-Master fallback visuals available for ${genre}.`);
+  }
   return urls.slice(0, desired);
 }
 
@@ -171,7 +189,11 @@ function mixPrivacy() {
   return raw === "public" || raw === "unlisted" ? raw : "private";
 }
 
-async function recordMixInSongHistory(job: MixJobRow, tracks: MixSnapshotTrack[], youtubeUrl: string) {
+async function recordMixInSongHistory(
+  job: MixJobRow,
+  tracks: MixSnapshotTrack[],
+  youtubeUrl: string,
+) {
   const supabase = getSupabase();
   const genre = tracks.find((track) => track.genre)?.genre || "Deep House";
   const { error } = await supabase.from("songs").insert({
@@ -190,7 +212,9 @@ async function recordMixInSongHistory(job: MixJobRow, tracks: MixSnapshotTrack[]
       processedAt: new Date().toISOString(),
     },
   });
-  if (error) console.warn("[RemasterMixWorker] Mix history insert skipped:", error.message);
+  if (error) {
+    console.warn("[RemasterMixWorker] Mix history insert skipped:", error.message);
+  }
 }
 
 export async function executeClaimedRemasterMixJob(job: MixJobRow) {
@@ -198,12 +222,17 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
   let audio: RemasterMixAudioResult | null = null;
   let video: RemasterMixVideoResult | null = null;
   let uploadStarted = false;
+  let jobCompleted = false;
 
   let lastStep = "claimed";
   let lastProgress = 1;
   const heartbeatTimer = setInterval(() => {
+    if (jobCompleted) return;
     heartbeat(job, lastStep, lastProgress).catch((error) => {
-      console.error("[RemasterMixWorker] heartbeat timer failed:", error instanceof Error ? error.message : error);
+      console.error(
+        "[RemasterMixWorker] heartbeat timer failed:",
+        error instanceof Error ? error.message : error,
+      );
     });
   }, HEARTBEAT_MS);
 
@@ -216,7 +245,11 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
   try {
     await report(4, "building_crossfade_audio");
     audio = await buildRemasterMixAudio(
-      tracks.map((track) => ({ id: track.id, title: track.title, audioUrl: track.audioUrl })),
+      tracks.map((track) => ({
+        id: track.id,
+        title: track.title,
+        audioUrl: track.audioUrl,
+      })),
       job.crossfade_seconds,
     );
 
@@ -272,10 +305,11 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       privacyStatus: mixPrivacy(),
     });
 
-    // Mark the durable job complete immediately after a verified YouTube
-    // upload. Playlist/comment enrichment is intentionally best-effort so it
-    // can never cause a duplicate video retry.
+    // Persist the verified video before optional enrichment. Playlist/comment
+    // failures must never cause a second full upload.
     await completeJob(job, upload.videoId, upload.youtubeUrl);
+    jobCompleted = true;
+    clearInterval(heartbeatTimer);
 
     try {
       const playlist = await ensureRemasterLongFormPlaylist(
@@ -284,14 +318,20 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       );
       await addRemasterLongFormToPlaylist(upload.videoId, playlist.playlistId);
     } catch (error) {
-      console.warn("[RemasterMixWorker] Playlist enrichment skipped:", error instanceof Error ? error.message : error);
+      console.warn(
+        "[RemasterMixWorker] Playlist enrichment skipped:",
+        error instanceof Error ? error.message : error,
+      );
     }
 
     if (job.zenecohomes_enabled) {
       try {
         await createRemasterTopLevelComment(upload.videoId, buildZenEcoHomesComment());
       } catch (error) {
-        console.warn("[RemasterMixWorker] Standard ZenEcoHomes comment skipped:", error instanceof Error ? error.message : error);
+        console.warn(
+          "[RemasterMixWorker] Standard ZenEcoHomes comment skipped:",
+          error instanceof Error ? error.message : error,
+        );
       }
     }
 
