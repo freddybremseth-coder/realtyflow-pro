@@ -7,9 +7,13 @@ import { positiveMetadataTags, summarizeRemasterActionLearning } from "@/service
 import { generateRemasterMetadataRefresh, selectBestRemasterPlaylist } from "@/services/growth/remaster-growth-optimizer";
 import { listRemasterActionHistory, recordCompletedRemasterAction, recordRemasterActionFeedback, type RemasterActionHistoryRow } from "@/services/growth/remaster-action-history";
 import { addRemasterVideoToPlaylist, listRemasterChannelVideos, listRemasterPlaylists, updateRemasterVideoMetadata } from "@/services/integrations/remaster-youtube-actions";
+import { getServiceSupabase } from "@/services/marketing/campaign-production";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+const FULL_CATALOG_LIMIT = 250;
+const MAX_VIDEOS_PER_RUN = 2;
 
 function parsedLearnings(row: RemasterActionHistoryRow) {
   try {
@@ -44,9 +48,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "REMASTER_GROWTH_AUTOPILOT_ENABLED is not true" });
   }
 
+  const supabase = getServiceSupabase();
+
   try {
     const [{ channelId, channelTitle, videos }, playlistResult, history] = await Promise.all([
-      listRemasterChannelVideos(50),
+      listRemasterChannelVideos(FULL_CATALOG_LIMIT),
       listRemasterPlaylists(50),
       listRemasterActionHistory(100),
     ]);
@@ -98,15 +104,35 @@ export async function GET(request: NextRequest) {
     const channelMedianViewsPerDay = median(rates);
     const assessed = videos.map((video) => ({ video, assessment: assessRemasterVideoPerformance(video, channelMedianViewsPerDay, now) }));
     const topTitles = [...assessed].sort((a, b) => b.assessment.viewsPerDay - a.assessment.viewsPerDay).slice(0, 8).map((item) => item.video.title);
-    const candidates = assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").sort((a, b) => a.assessment.viewsPerDay - b.assessment.viewsPerDay).slice(0, 2);
-    const actions: Array<Record<string, unknown>> = [];
+    const underperforming = assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").sort((a, b) => a.assessment.viewsPerDay - b.assessment.viewsPerDay);
     const suppressed: Array<Record<string, unknown>> = [];
 
+    if (metadataLearning.mode === "SUPPRESS") {
+      const affected = underperforming.filter((item) => item.assessment.actions.includes("REFRESH_DESCRIPTION") || item.assessment.actions.includes("REFRESH_TAGS")).length;
+      if (affected) suppressed.push({ type: "update_metadata", affectedVideos: affected, reason: metadataLearning.rationale });
+    }
+    if (playlistLearning.mode === "SUPPRESS") {
+      const affected = underperforming.filter((item) => item.assessment.actions.includes("ADD_TO_PLAYLIST")).length;
+      if (affected) suppressed.push({ type: "add_to_playlist", affectedVideos: affected, reason: playlistLearning.rationale });
+    }
+
+    const candidates = underperforming.filter(({ video, assessment }) => {
+      const metadataEligible = (assessment.actions.includes("REFRESH_DESCRIPTION") || assessment.actions.includes("REFRESH_TAGS"))
+        && metadataLearning.mode !== "SUPPRESS"
+        && !hasRecentAction(history, video.videoId, "update_metadata", 14);
+      const playlistEligible = assessment.actions.includes("ADD_TO_PLAYLIST")
+        && playlistLearning.mode !== "SUPPRESS"
+        && !hasRecentAction(history, video.videoId, "add_to_playlist", 30);
+      return metadataEligible || playlistEligible;
+    }).slice(0, MAX_VIDEOS_PER_RUN);
+
+    const actions: Array<Record<string, unknown>> = [];
+
     for (const { video, assessment } of candidates) {
-      const metadataEligible = assessment.actions.includes("REFRESH_DESCRIPTION") || assessment.actions.includes("REFRESH_TAGS");
-      if (metadataEligible && metadataLearning.mode === "SUPPRESS") {
-        suppressed.push({ videoId: video.videoId, type: "update_metadata", reason: metadataLearning.rationale });
-      } else if (metadataEligible && !hasRecentAction(history, video.videoId, "update_metadata", 14)) {
+      const metadataEligible = (assessment.actions.includes("REFRESH_DESCRIPTION") || assessment.actions.includes("REFRESH_TAGS"))
+        && metadataLearning.mode !== "SUPPRESS"
+        && !hasRecentAction(history, video.videoId, "update_metadata", 14);
+      if (metadataEligible) {
         const optimized = await generateRemasterMetadataRefresh({
           title: video.title,
           description: video.description || "",
@@ -135,9 +161,10 @@ export async function GET(request: NextRequest) {
         actions.push({ videoId: video.videoId, type: "update_metadata", title: video.title, learningMode: metadataLearning.mode });
       }
 
-      if (assessment.actions.includes("ADD_TO_PLAYLIST") && playlistLearning.mode === "SUPPRESS") {
-        suppressed.push({ videoId: video.videoId, type: "add_to_playlist", reason: playlistLearning.rationale });
-      } else if (assessment.actions.includes("ADD_TO_PLAYLIST") && !hasRecentAction(history, video.videoId, "add_to_playlist", 30)) {
+      const playlistEligible = assessment.actions.includes("ADD_TO_PLAYLIST")
+        && playlistLearning.mode !== "SUPPRESS"
+        && !hasRecentAction(history, video.videoId, "add_to_playlist", 30);
+      if (playlistEligible) {
         const playlist = selectBestRemasterPlaylist(video.title, playlistResult.playlists);
         if (playlist) {
           const result = await addRemasterVideoToPlaylist(video.videoId, playlist.playlistId);
@@ -159,11 +186,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       channelId,
       channelTitle,
       measuredVideos: videos.length,
+      requestedCatalogCoverage: FULL_CATALOG_LIMIT,
       channelMedianViewsPerDay,
       feedbackMeasured: feedback.length,
       feedback,
@@ -172,13 +200,40 @@ export async function GET(request: NextRequest) {
         playlist: playlistLearning,
         learnedPositiveTags,
       },
-      underperforming: assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").length,
+      underperforming: underperforming.length,
       candidatesReviewed: candidates.length,
       actions,
       suppressed,
-      guardrails: { maxVideosPerRun: 2, metadataCooldownDays: 14, playlistCooldownDays: 30, feedbackObservationDays: 7, minimumMeasuredOutcomesForBias: 2, automaticTitleChanges: false, automaticThumbnailChanges: false },
-    });
+      guardrails: { maxVideosPerRun: MAX_VIDEOS_PER_RUN, metadataCooldownDays: 14, playlistCooldownDays: 30, feedbackObservationDays: 7, minimumMeasuredOutcomesForBias: 2, automaticTitleChanges: false, automaticThumbnailChanges: false },
+    };
+
+    if (supabase) {
+      await supabase.from("automation_logs").insert({
+        action: "remaster_growth_loop",
+        agent_name: "nexus_remaster_growth_loop",
+        status: suppressed.length ? "partial" : "success",
+        details: {
+          measured_videos: videos.length,
+          underperforming: underperforming.length,
+          candidates_reviewed: candidates.length,
+          actions: actions.length,
+          feedback_measured: feedback.length,
+          suppressed,
+        },
+      });
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Re-Master growth loop failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Re-Master growth loop failed";
+    if (supabase) {
+      await supabase.from("automation_logs").insert({
+        action: "remaster_growth_loop",
+        agent_name: "nexus_remaster_growth_loop",
+        status: "error",
+        details: { error: message },
+      });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

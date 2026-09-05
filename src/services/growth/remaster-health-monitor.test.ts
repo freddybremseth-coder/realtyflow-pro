@@ -7,10 +7,13 @@ function healthy() {
   return {
     planActive: true,
     controlledAuto: true,
+    planUpdatedAt: "2026-09-05T16:00:00.000Z",
     facebookConfigured: true,
     youtubeConnected: true,
     sourceSyncLastSuccessAt: "2026-09-05T17:40:00.000Z",
     sourceSyncFreshnessMinutes: 90,
+    growthLoopLastRunAt: "2026-09-05T17:35:00.000Z",
+    growthLoopFreshnessMinutes: 26 * 60,
     sourceDriftCount: 0,
     pendingPromotionRequestAgeMinutes: 15,
     failedPromotionRequests24h: 0,
@@ -47,5 +50,16 @@ describe("assessRemasterHealth", () => {
     const result = assessRemasterHealth({ ...healthy(), sourceSyncLastSuccessAt: "2026-09-05T15:00:00.000Z" }, NOW);
     expect(result.state).toBe("partial");
     expect(result.reasons.join(" ")).toContain("no fresh successful run");
+  });
+
+  it("does not flag a missing growth heartbeat immediately after activation", () => {
+    const result = assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-05T16:00:00.000Z" }, NOW);
+    expect(result.state).toBe("healthy");
+  });
+
+  it("flags a missing growth heartbeat after a mature activation window", () => {
+    const result = assessRemasterHealth({ ...healthy(), growthLoopLastRunAt: null, planUpdatedAt: "2026-09-03T12:00:00.000Z" }, NOW);
+    expect(result.state).toBe("partial");
+    expect(result.reasons.join(" ")).toContain("growth loop");
   });
 });
