@@ -27,7 +27,6 @@ import { normalizeBrandId } from "@/lib/realty/brand-rules";
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
 
-  // Accept both new and legacy param names. New code should use `brand_id`.
   const rawBrandId = (params.get("brand_id") || params.get("brand") || "").trim();
   const brandId = normalizeBrandId(rawBrandId);
   if (!brandId) {
@@ -52,19 +51,16 @@ export async function GET(req: NextRequest) {
 
   const redirectUri = buildRedirectUri("google", req.nextUrl.origin);
 
-  // Scope set is YouTube-by-default with optional Drive add-on. We never
-  // request Gmail-write here — that's a separate provider (gmail) so the
-  // user can grant mail scopes independently.
   const youtubeOnly = service === "youtube";
   const scopes = [
     "https://www.googleapis.com/auth/youtube",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
     ...(!youtubeOnly ? ["https://www.googleapis.com/auth/drive.file"] : []),
   ];
 
-  // Persist the in-flight state. The callback will look the row up by nonce.
   let stateNonce: string;
   try {
     stateNonce = await createState({
@@ -90,14 +86,7 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", scopes.join(" "));
   authUrl.searchParams.set("access_type", "offline");
-  // `prompt=consent` is needed because Google only issues a refresh_token on
-  // the FIRST consent. Without this, re-running the flow for a brand that
-  // had already been consented returns access_token without refresh_token,
-  // leaving us unable to renew when the access token expires in an hour.
   authUrl.searchParams.set("prompt", "consent");
-  // `include_granted_scopes` lets the user incrementally add scopes without
-  // losing previously-granted ones (e.g. add Drive after originally just
-  // YouTube).
   authUrl.searchParams.set("include_granted_scopes", "true");
   authUrl.searchParams.set("state", stateNonce);
 

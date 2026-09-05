@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     supabase.from("social_channels").select("id,brand_id,platform,display_name,is_active").eq("brand_id", "remasterfreddy").eq("is_active", true),
     supabase.from("marketing_source_queue").select("id,status,source_id,source_url,title,payload,last_planned_at").eq("brand_id", "remasterfreddy").eq("source_type", "song"),
     supabase.from("marketing_publications").select("id,state,channel,source_id,created_at,updated_at").eq("brand_id", "remasterfreddy").order("created_at", { ascending: false }).limit(500),
-    checkBrandYouTubeHealth("remasterfreddy").catch((error) => ({ connected: false, configured: false, reason: "health_check_failed", message: error instanceof Error ? error.message : String(error) })),
+    checkBrandYouTubeHealth("remasterfreddy").catch((error) => ({ connected: false, configured: false, analyticsReady: false, analyticsScope: "https://www.googleapis.com/auth/yt-analytics.readonly", reason: "health_check_failed", message: error instanceof Error ? error.message : String(error) })),
     listRemasterActionHistory(250).catch(() => []),
   ]);
   if (songError) return NextResponse.json({ error: songError.message }, { status: 500 });
@@ -139,6 +139,8 @@ export async function GET(request: NextRequest) {
       youtube: {
         connected: Boolean(youtubeHealth.connected),
         configured: Boolean(youtubeHealth.configured),
+        analyticsReady: Boolean("analyticsReady" in youtubeHealth && youtubeHealth.analyticsReady),
+        analyticsScope: "analyticsScope" in youtubeHealth ? youtubeHealth.analyticsScope ?? null : null,
         reason: "reason" in youtubeHealth ? youtubeHealth.reason ?? null : null,
         message: "message" in youtubeHealth ? youtubeHealth.message ?? null : null,
         channel: "channel" in youtubeHealth ? youtubeHealth.channel ?? null : null,
