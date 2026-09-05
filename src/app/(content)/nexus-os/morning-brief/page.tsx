@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, BrainCircuit, BriefcaseBusiness, CheckCircle2, Lightbulb, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { confidenceFromSignal, revenuePriorityConfidence, revenueWorkConfidence, type EvidenceConfidence } from "@/lib/morning-brief-confidence";
+import { dataGapSummary, genericSignalDataGaps, revenuePriorityDataGaps, revenueWorkDataGaps } from "@/lib/morning-brief-data-gaps";
 import { revenuePriorityEvidenceDimensions, revenueWorkEvidenceDimensions } from "@/lib/morning-brief-evidence";
 import { rankMorningBriefPriorities } from "@/lib/morning-brief-priority";
 import { todayDestination, type TodayDestinationType } from "@/lib/personal-intelligence/today-destination";
@@ -86,6 +87,7 @@ type UnifiedItem = {
   ownerRequired: number;
   evidence?: string[];
   confidence: EvidenceConfidence;
+  dataGapSummary?: string | null;
   score?: number;
 };
 
@@ -152,6 +154,9 @@ export default function MorningBriefPage() {
       const confidence = play.source === "work_item"
         ? revenueWorkConfidence(workItem ?? { priority: play.priority, aiScore: play.score })
         : revenuePriorityConfidence(priorityItem ?? { score: play.score });
+      const gaps = play.source === "work_item"
+        ? revenueWorkDataGaps(workItem ?? { priority: play.priority, aiScore: play.score })
+        : revenuePriorityDataGaps(priorityItem ?? { score: play.score });
 
       items.push({
         id: "business:recommended-play",
@@ -167,12 +172,15 @@ export default function MorningBriefPage() {
         ownerRequired: canonicalEvidence.ownerRequired,
         evidence: canonicalEvidence.evidence,
         confidence,
+        dataGapSummary: dataGapSummary(gaps, confidence.score),
       });
     }
 
     const operational = (attention.data?.attention ?? []).filter((item) => item.id !== "os:clear")[0];
     if (operational) {
       const evidence = [`attention severity ${operational.severity}`, `attention score ${operational.score}/100`];
+      const confidence = confidenceFromSignal({ sourceStrength: 88, evidenceCount: evidence.length, hasCanonicalScore: true });
+      const gaps = genericSignalDataGaps({ evidenceCount: evidence.length, hasCanonicalScore: true, hasExplicitDeadline: false });
       items.push({
         id: `attention:${operational.id}`,
         lane: "business",
@@ -186,13 +194,16 @@ export default function MorningBriefPage() {
         deadlineOrIrreversibility: operational.severity === "high" ? 90 : operational.severity === "medium" ? 70 : 50,
         ownerRequired: operational.severity === "high" ? 75 : 55,
         evidence,
-        confidence: confidenceFromSignal({ sourceStrength: 88, evidenceCount: evidence.length, hasCanonicalScore: true }),
+        confidence,
+        dataGapSummary: dataGapSummary(gaps, confidence.score),
       });
     }
 
     const snapshot = personal.data?.snapshot;
     if (snapshot?.oneThing) {
       const evidence = [snapshot.oneThing.dueAt ? `due ${snapshot.oneThing.dueAt}` : "no explicit due date", "Personal Intelligence selected ONE THING"];
+      const confidence = confidenceFromSignal({ sourceStrength: 92, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.oneThing.dueAt), hasCanonicalScore: true });
+      const gaps = genericSignalDataGaps({ evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.oneThing.dueAt), hasCanonicalScore: true });
       items.push({
         id: `personal:${snapshot.oneThing.id}`,
         lane: "personal",
@@ -206,12 +217,15 @@ export default function MorningBriefPage() {
         deadlineOrIrreversibility: personalDeadlineScore(snapshot.oneThing.dueAt),
         ownerRequired: 100,
         evidence,
-        confidence: confidenceFromSignal({ sourceStrength: 92, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.oneThing.dueAt), hasCanonicalScore: true }),
+        confidence,
+        dataGapSummary: dataGapSummary(gaps, confidence.score),
       });
     }
 
     if (snapshot?.learning) {
       const evidence = ["Personal Intelligence learning signal"];
+      const confidence = confidenceFromSignal({ sourceStrength: 85, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.learning.dueAt) });
+      const gaps = genericSignalDataGaps({ evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.learning.dueAt), hasCanonicalScore: false });
       items.push({
         id: `learning:${snapshot.learning.id}`,
         lane: "learning",
@@ -225,13 +239,16 @@ export default function MorningBriefPage() {
         deadlineOrIrreversibility: personalDeadlineScore(snapshot.learning.dueAt),
         ownerRequired: 65,
         evidence,
-        confidence: confidenceFromSignal({ sourceStrength: 85, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(snapshot.learning.dueAt) }),
+        confidence,
+        dataGapSummary: dataGapSummary(gaps, confidence.score),
       });
     }
 
     const continuation = snapshot?.secondary?.[0];
     if (continuation) {
       const evidence = ["existing commitment / continuation signal"];
+      const confidence = confidenceFromSignal({ sourceStrength: 85, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(continuation.dueAt) });
+      const gaps = genericSignalDataGaps({ evidenceCount: evidence.length, hasExplicitDeadline: Boolean(continuation.dueAt), hasCanonicalScore: false });
       items.push({
         id: `continue:${continuation.id}`,
         lane: "personal",
@@ -245,7 +262,8 @@ export default function MorningBriefPage() {
         deadlineOrIrreversibility: personalDeadlineScore(continuation.dueAt),
         ownerRequired: 85,
         evidence,
-        confidence: confidenceFromSignal({ sourceStrength: 85, evidenceCount: evidence.length, hasExplicitDeadline: Boolean(continuation.dueAt) }),
+        confidence,
+        dataGapSummary: dataGapSummary(gaps, confidence.score),
       });
     }
 
@@ -287,6 +305,7 @@ export default function MorningBriefPage() {
             <span className="rounded-full border border-slate-700 px-2 py-1">Confidence {primary.confidence.label} {primary.confidence.score}</span>
           </div>
           {primary.evidence?.length ? <div className="mt-3 text-xs leading-5 text-slate-400"><strong className="text-slate-300">Evidence:</strong> {primary.evidence.join(" · ")}</div> : null}
+          {primary.dataGapSummary ? <div className="mt-3 rounded-xl border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs leading-5 text-amber-200"><strong className="text-amber-100">Improve confidence:</strong> {primary.dataGapSummary}</div> : null}
         </div>
         <Link href={primary.href} className="inline-flex items-center justify-center rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-slate-950">Open <ArrowRight size={16} className="ml-2" /></Link>
       </div> : <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4 text-emerald-100"><CheckCircle2 size={19} className="mt-0.5" /><div><div className="font-black">Ingen sterk kandidat akkurat nå.</div><div className="mt-1 text-sm text-emerald-200">Det er bedre enn å produsere kunstig urgency.</div></div></div>}
@@ -304,6 +323,7 @@ export default function MorningBriefPage() {
         <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
         <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source} · score {item.score}/100 · confidence {item.confidence.label} {item.confidence.score}/100</div>
         {item.evidence?.length ? <div className="mt-2 text-[11px] leading-4 text-slate-400">{item.evidence.slice(0, 3).join(" · ")}</div> : null}
+        {item.dataGapSummary ? <div className="mt-2 text-[11px] leading-4 text-amber-700">{item.dataGapSummary}</div> : null}
       </Link>)}
     </section>
 
