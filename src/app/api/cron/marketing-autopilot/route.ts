@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { channelLearningScope } from "@/lib/marketing/learning-scope";
+import { summarizeMarketingAutopilotHeartbeat } from "@/lib/marketing/autopilot-heartbeat";
 import {
   autopilotRunIdentity,
   autopilotTargetHour,
@@ -57,6 +58,19 @@ async function markFailedControlledAutoPublications(supabase: any, brandId: stri
     .eq("brand_id", brandId)
     .in("publication_id", failedIds);
   return { failedIds, error: error ? `FAILED_PUBLICATION_STATE_UPDATE: ${error.message}` : null };
+}
+
+async function recordAutopilotHeartbeat(supabase: any, status: string, details: Record<string, unknown>) {
+  try {
+    await supabase.from("automation_logs").insert({
+      action: "marketing_autopilot",
+      agent_name: "nexus_marketing_autopilot",
+      status,
+      details,
+    });
+  } catch {
+    // Observability is best-effort and must never block publishing.
+  }
 }
 
 async function claimRunRequest(supabase: any): Promise<RunRequest | null> {
@@ -176,9 +190,29 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = { success: true, manualRun, runRequestId: runRequest?.id ?? null, brands: Array.from(new Set(results.map((r) => String(r.brandId ?? "")).filter(Boolean))), localHour, timeZone, results };
+    const heartbeat = summarizeMarketingAutopilotHeartbeat(results);
+    await recordAutopilotHeartbeat(supabase, heartbeat.status, {
+      manual_run: manualRun,
+      run_request_id: runRequest?.id ?? null,
+      local_hour: localHour,
+      time_zone: timeZone,
+      brands: heartbeat.brands,
+      channels: heartbeat.channels,
+      result_count: heartbeat.resultCount,
+      skipped: heartbeat.skipped,
+      errored: heartbeat.errored,
+      publication_results: heartbeat.publicationResults,
+      publication_errors: heartbeat.publicationErrors,
+      source_marked: heartbeat.sourceMarked,
+    });
     if (runRequest?.id) await supabase.from("marketing_autopilot_run_requests").update({ status: "completed", completed_at: new Date().toISOString(), result: payload }).eq("id", runRequest.id);
     return NextResponse.json(payload);
   } catch (error) {
+    await recordAutopilotHeartbeat(supabase, "error", {
+      manual_run: manualRun,
+      run_request_id: runRequest?.id ?? null,
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
     if (runRequest?.id) await supabase.from("marketing_autopilot_run_requests").update({ status: "failed", completed_at: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }).eq("id", runRequest.id);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Marketing autopilot failed", manualRun, runRequestId: runRequest?.id ?? null }, { status: 500 });
   }
