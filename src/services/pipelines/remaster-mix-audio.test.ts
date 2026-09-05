@@ -32,5 +32,5 @@ test("buildAcrossfadeFilter rejects invalid track counts", () => {
 test("target-duration pass loops short mixes and trims to exactly 30 minutes", () => {
   const args = buildTargetDurationArgs("natural.mp3", "mix.mp3", 1800);
   assert.deepEqual(args.slice(0, 6), ["-stream_loop", "-1", "-i", "natural.mp3", "-t", "1800.000"]);
-  assert.equal(args.at(-1), "mix.mp3");
+  assert.equal(args[args.length - 1], "mix.mp3");
 });
