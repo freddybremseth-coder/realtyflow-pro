@@ -30,6 +30,27 @@ function youtubeUrl(row: RemasterPromotionSource) {
   return payloadUrl || clean(row.source_url);
 }
 
+export function remasterYoutubeVideoId(source: RemasterPromotionSource) {
+  const raw = youtubeUrl(source);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (host === "youtu.be" || host.endsWith(".youtu.be")) {
+      return url.pathname.replace(/^\//, "").split(/[/?#]/)[0] || null;
+    }
+    if (host === "youtube.com" || host.endsWith(".youtube.com")) {
+      const watch = url.searchParams.get("v");
+      if (watch) return watch;
+      const match = url.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/i);
+      return match?.[1] || null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function pickRemasterPromotionSource(
   rows: RemasterPromotionSource[],
   channel: "instagram" | "facebook",
@@ -57,6 +78,8 @@ export function pickRemasterPromotionSource(
 }
 
 export function remasterPromotionMediaUrl(source: RemasterPromotionSource) {
+  const videoId = remasterYoutubeVideoId(source);
+  if (videoId) return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
   return clean(source.payload?.thumbnail_url) || clean(source.payload?.image_url) || undefined;
 }
 
@@ -71,7 +94,7 @@ export function remasterPromotionMasterIdea(source: RemasterPromotionSource, gui
     payload.energy ? `energy: ${String(payload.energy)}` : null,
   ].filter(Boolean).join(", ");
 
-  return `Promote the verified Re-Master Freddy track "${source.title}". Use only this selected song as the creative subject. Verified YouTube destination: ${verifiedUrl}. ${facts ? `Verified song facts: ${facts}. ` : ""}Use the verified artwork supplied with the source when available. Goal: qualified YouTube listens/views, Re-Master Freddy followers and repeat listeners. Do not invent streaming numbers, chart positions, reviews, awards, listener counts or platform availability. Do not replace the selected song with another catalog item.${guidance}`;
+  return `Promote the verified Re-Master Freddy track "${source.title}". Use only this selected song as the creative subject. Verified YouTube destination: ${verifiedUrl}. ${facts ? `Verified song facts: ${facts}. ` : ""}Use the verified Re-Master/YouTube artwork supplied with the source when available. Goal: qualified YouTube listens/views, Re-Master Freddy followers and repeat listeners. Do not invent streaming numbers, chart positions, reviews, awards, listener counts or platform availability. Do not replace the selected song with another catalog item.${guidance}`;
 }
 
 export async function loadRemasterPromotionSource(
