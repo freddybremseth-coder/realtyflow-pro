@@ -1,0 +1,59 @@
+name: Re-Master Mediterranean Mix integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/remaster-mediterranean-mix-integration.yml"
+      - "scripts/test-remaster-mix-migration.mjs"
+      - "supabase/migrations/20260905195000_remaster_mediterranean_mix_jobs.sql"
+      - "src/services/pipelines/remaster-mix-*.ts"
+      - "src/services/integrations/remaster-youtube-longform.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mix-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: remaster_mix_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d remaster_mix_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MIGRATION_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/remaster_mix_test
+      SUPABASE_DB_URL: ""
+      POSTGRES_URL: ""
+      DATABASE_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --silent
+
+      - name: Test durable mix migration
+        run: node scripts/test-remaster-mix-migration.mjs
+
+      - name: Test mix planner and crossfade contracts
+        run: >-
+          npx tsx --test
+          src/services/pipelines/remaster-mix-planner.test.ts
+          src/services/pipelines/remaster-mix-audio.test.ts
