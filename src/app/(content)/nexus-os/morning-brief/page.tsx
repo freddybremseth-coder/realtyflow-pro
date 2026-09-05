@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, BrainCircuit, BriefcaseBusiness, CheckCircle2, Lightbulb, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { rankMorningBriefPriorities } from "@/lib/morning-brief-priority";
 import { todayDestination, type TodayDestinationType } from "@/lib/personal-intelligence/today-destination";
 
 type AttentionItem = {
@@ -59,6 +60,10 @@ type UnifiedItem = {
   href: string;
   source: string;
   urgency: number;
+  impact: number;
+  deadlineOrIrreversibility: number;
+  ownerRequired: number;
+  score?: number;
 };
 
 async function readJson<T>(url: string): Promise<LoadState<T>> {
@@ -77,6 +82,18 @@ function businessUrgency(priority: RevenuePriority) {
   if (priority === "HIGH") return 90;
   if (priority === "MEDIUM") return 70;
   return 50;
+}
+
+function personalDeadlineScore(dueAt?: string | null) {
+  if (!dueAt) return 45;
+  const timestamp = Date.parse(dueAt);
+  if (!Number.isFinite(timestamp)) return 45;
+  const hours = (timestamp - Date.now()) / 3_600_000;
+  if (hours <= 0) return 100;
+  if (hours <= 24) return 90;
+  if (hours <= 72) return 75;
+  if (hours <= 168) return 60;
+  return 40;
 }
 
 export default function MorningBriefPage() {
@@ -112,6 +129,9 @@ export default function MorningBriefPage() {
       href: play.href,
       source: "Nexus Revenue Today",
       urgency: businessUrgency(play.priority),
+      impact: Math.max(55, Math.min(100, play.score || 70)),
+      deadlineOrIrreversibility: play.priority === "CRITICAL" ? 95 : play.priority === "HIGH" ? 80 : 60,
+      ownerRequired: 80,
     });
 
     const operational = (attention.data?.attention ?? []).filter((item) => item.id !== "os:clear")[0];
@@ -124,6 +144,9 @@ export default function MorningBriefPage() {
       href: operational.href,
       source: operational.source || "Nexus Attention",
       urgency: operational.severity === "high" ? 95 : operational.severity === "medium" ? 75 : 55,
+      impact: Math.max(50, Math.min(100, operational.score || 60)),
+      deadlineOrIrreversibility: operational.severity === "high" ? 90 : operational.severity === "medium" ? 70 : 50,
+      ownerRequired: operational.severity === "high" ? 75 : 55,
     });
 
     const snapshot = personal.data?.snapshot;
@@ -136,6 +159,9 @@ export default function MorningBriefPage() {
       href: todayDestination(snapshot.oneThing.type),
       source: snapshot.oneThing.source || "Personal Intelligence TODAY",
       urgency: Math.max(45, 85 - snapshot.oneThing.priority * 5),
+      impact: 78,
+      deadlineOrIrreversibility: personalDeadlineScore(snapshot.oneThing.dueAt),
+      ownerRequired: 100,
     });
 
     if (snapshot?.learning) items.push({
@@ -147,6 +173,9 @@ export default function MorningBriefPage() {
       href: todayDestination(snapshot.learning.type),
       source: snapshot.learning.source || "Personal Intelligence TODAY",
       urgency: 40,
+      impact: 50,
+      deadlineOrIrreversibility: personalDeadlineScore(snapshot.learning.dueAt),
+      ownerRequired: 65,
     });
 
     const continuation = snapshot?.secondary?.[0];
@@ -159,9 +188,12 @@ export default function MorningBriefPage() {
       href: todayDestination(continuation.type),
       source: continuation.source || "Personal Intelligence TODAY",
       urgency: 35,
+      impact: 55,
+      deadlineOrIrreversibility: personalDeadlineScore(continuation.dueAt),
+      ownerRequired: 85,
     });
 
-    return items.sort((a, b) => b.urgency - a.urgency);
+    return rankMorningBriefPriorities(items).map(({ item, priority }) => ({ ...item, score: priority.score }));
   }, [attention.data?.attention, personal.data?.snapshot, revenue.data?.recommendedPlay]);
 
   const primary = unified[0] ?? null;
@@ -188,9 +220,15 @@ export default function MorningBriefPage() {
       <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300">ONE THING</div>
       {primary ? <div className="mt-3 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <div className="text-xs font-black text-slate-400">{primary.label} · {primary.source}</div>
+          <div className="text-xs font-black text-slate-400">{primary.label} · {primary.source} · decision score {primary.score}/100</div>
           <h2 className="mt-2 text-2xl font-black tracking-tight">{primary.title}</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">{primary.detail}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wide text-slate-300">
+            <span className="rounded-full border border-slate-700 px-2 py-1">Urgency {primary.urgency}</span>
+            <span className="rounded-full border border-slate-700 px-2 py-1">Impact {primary.impact}</span>
+            <span className="rounded-full border border-slate-700 px-2 py-1">Deadline / irreversible {primary.deadlineOrIrreversibility}</span>
+            <span className="rounded-full border border-slate-700 px-2 py-1">Needs you {primary.ownerRequired}</span>
+          </div>
         </div>
         <Link href={primary.href} className="inline-flex items-center justify-center rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-slate-950">Open <ArrowRight size={16} className="ml-2" /></Link>
       </div> : <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4 text-emerald-100"><CheckCircle2 size={19} className="mt-0.5" /><div><div className="font-black">Ingen sterk kandidat akkurat nå.</div><div className="mt-1 text-sm text-emerald-200">Det er bedre enn å produsere kunstig urgency.</div></div></div>}
@@ -206,7 +244,7 @@ export default function MorningBriefPage() {
         </div>
         <h3 className="mt-3 font-black text-slate-950">{item.title}</h3>
         <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
-        <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source}</div>
+        <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source} · score {item.score}/100</div>
       </Link>)}
     </section>
 
