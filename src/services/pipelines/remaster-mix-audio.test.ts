@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAcrossfadeFilter } from "./remaster-mix-audio";
+import { buildAcrossfadeFilter, buildTargetDurationArgs } from "./remaster-mix-audio";
 
 const FOUR_TRACK_CROSSFADE = [
   "[0:a][1:a]acrossfade=d=8:c1=tri:c2=tri[mix1]",
@@ -27,4 +27,10 @@ test("buildAcrossfadeFilter clamps oversized crossfade", () => {
 test("buildAcrossfadeFilter rejects invalid track counts", () => {
   assert.throws(() => buildAcrossfadeFilter(1, 8), /between 2 and 60 tracks/i);
   assert.throws(() => buildAcrossfadeFilter(61, 8), /between 2 and 60 tracks/i);
+});
+
+test("target-duration pass loops short mixes and trims to exactly 30 minutes", () => {
+  const args = buildTargetDurationArgs("natural.mp3", "mix.mp3", 1800);
+  assert.deepEqual(args.slice(0, 6), ["-stream_loop", "-1", "-i", "natural.mp3", "-t", "1800.000"]);
+  assert.equal(args[args.length - 1], "mix.mp3");
 });

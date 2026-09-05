@@ -17,6 +17,7 @@ export interface RemasterMixAudioResult {
   audioPath: string;
   workingDirectory: string;
   trackPaths: string[];
+  durationSeconds: number;
 }
 
 async function downloadToFile(url: string, destination: string) {
@@ -71,14 +72,31 @@ export function buildAcrossfadeFilter(trackCount: number, crossfadeSeconds: numb
   return { filter: parts.join(";"), outputLabel: "mixout" };
 }
 
+export function buildTargetDurationArgs(inputPath: string, outputPath: string, targetSeconds: number) {
+  const duration = Math.max(30, Math.round(targetSeconds));
+  return [
+    "-stream_loop", "-1",
+    "-i", inputPath,
+    "-t", duration.toFixed(3),
+    "-vn",
+    "-c:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    "-y",
+    outputPath,
+  ];
+}
+
 /**
- * Downloads selected tracks to disk and produces one MP3 with chained
- * crossfades. The returned working directory remains alive so the dedicated
- * worker can feed the MP3 directly into renderVideo(), then call cleanup.
+ * Downloads selected tracks, produces one natural chained-crossfade mix, then
+ * normalizes that mix to the requested long-form duration. Production is
+ * currently guarded to 30-minute jobs, so the backwards-compatible default is
+ * 1800 seconds until 60/90/120/180-minute production is explicitly enabled.
  */
 export async function buildRemasterMixAudio(
   tracks: RemasterMixAudioTrack[],
   crossfadeSeconds: number,
+  targetSeconds = 30 * 60,
 ): Promise<RemasterMixAudioResult> {
   if (tracks.length < 2 || tracks.length > 60) {
     throw new Error("A long-form mix requires between 2 and 60 tracks.");
@@ -86,21 +104,22 @@ export async function buildRemasterMixAudio(
   if (tracks.some((track) => !track.audioUrl)) {
     throw new Error("Every selected mix track must have an audio URL.");
   }
+  if (!Number.isFinite(targetSeconds) || targetSeconds < 30 || targetSeconds > 6 * 60 * 60) {
+    throw new Error("Mix target duration must be between 30 seconds and 6 hours.");
+  }
 
   const binary = await ensureFFmpeg();
   const workingDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "remaster-mix-audio-"));
   const trackPaths: string[] = [];
 
   try {
-    // Sequential download keeps memory and outbound pressure predictable for
-    // long mixes with many 5–15 MB source files.
     for (let index = 0; index < tracks.length; index += 1) {
       const target = path.join(workingDirectory, `track-${String(index).padStart(2, "0")}.mp3`);
       await downloadToFile(tracks[index].audioUrl, target);
       trackPaths.push(target);
     }
 
-    const outputPath = path.join(workingDirectory, "mix-audio.mp3");
+    const naturalMixPath = path.join(workingDirectory, "mix-audio-natural.mp3");
     const inputArgs = trackPaths.flatMap((trackPath) => ["-i", trackPath]);
     const { filter, outputLabel } = buildAcrossfadeFilter(trackPaths.length, crossfadeSeconds);
 
@@ -118,10 +137,19 @@ export async function buildRemasterMixAudio(
       "-ar",
       "44100",
       "-y",
-      outputPath,
+      naturalMixPath,
     ]);
 
-    return { audioPath: outputPath, workingDirectory, trackPaths };
+    const outputPath = path.join(workingDirectory, "mix-audio.mp3");
+    await runFFmpeg(binary, buildTargetDurationArgs(naturalMixPath, outputPath, targetSeconds));
+    await fs.unlink(naturalMixPath).catch(() => undefined);
+
+    return {
+      audioPath: outputPath,
+      workingDirectory,
+      trackPaths,
+      durationSeconds: Math.round(targetSeconds),
+    };
   } catch (error) {
     await fs.rm(workingDirectory, { recursive: true, force: true }).catch(() => undefined);
     throw error;
