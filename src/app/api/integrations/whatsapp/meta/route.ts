@@ -155,5 +155,26 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const failed = results.filter((row: any) => !row.ok || row.persistenceError).length;
+  const unresolved = results.filter((row: any) => row.referralMode === "REFERRAL_UNRESOLVED").length;
+  const replyErrors = results.filter((row: any) => Boolean(row.replyError)).length;
+  const duplicates = results.filter((row: any) => Boolean(row.duplicate)).length;
+  const status = failed > 0 ? (failed === results.length ? "error" : "partial") : replyErrors > 0 ? "partial" : "success";
+
+  await supabase.from("automation_logs").insert({
+    action: "whatsapp_inbound",
+    agent_name: "nexus_whatsapp_webhook",
+    status,
+    details: {
+      accepted: messages.length,
+      processed: results.length,
+      failed,
+      unresolved_referrals: unresolved,
+      duplicates,
+      reply_errors: replyErrors,
+      auto_reply_enabled: autoReplyEnabled,
+    },
+  });
+
   return NextResponse.json({ ok: true, accepted: messages.length, results });
 }
