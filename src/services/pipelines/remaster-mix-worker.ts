@@ -69,6 +69,12 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+function rpcRow<T>(data: unknown): T | null {
+  if (Array.isArray(data)) return (data[0] || null) as T | null;
+  if (data && typeof data === "object") return data as T;
+  return null;
+}
+
 function validateTracks(job: MixJobRow) {
   const tracks = Array.isArray(job.input_snapshot?.tracks) ? job.input_snapshot.tracks : [];
   if (tracks.length < 2 || tracks.length > 60) throw new Error("Mix snapshot must contain 2–60 tracks.");
@@ -85,8 +91,7 @@ async function claimNextJob(workerId: string) {
     p_lease_seconds: LEASE_SECONDS,
   });
   if (error) throw new Error(`Could not claim Re-Master mix job: ${error.message}`);
-  if (!data || !data.id) return null;
-  return data as MixJobRow;
+  return rpcRow<MixJobRow>(data);
 }
 
 async function heartbeat(job: MixJobRow, step?: string, progress?: number) {
@@ -99,7 +104,9 @@ async function heartbeat(job: MixJobRow, step?: string, progress?: number) {
     p_progress: typeof progress === "number" ? progress : null,
   });
   if (error) throw new Error(`Mix heartbeat failed: ${error.message}`);
-  return data as MixJobRow;
+  const row = rpcRow<MixJobRow>(data);
+  if (!row) throw new Error("Mix heartbeat returned no row.");
+  return row;
 }
 
 async function markUploadStarting(job: MixJobRow) {
@@ -127,7 +134,9 @@ async function completeJob(job: MixJobRow, videoId: string, youtubeUrl: string) 
     p_youtube_url: youtubeUrl,
   });
   if (error) throw new Error(`Could not complete Re-Master mix job: ${error.message}`);
-  return data as MixJobRow;
+  const row = rpcRow<MixJobRow>(data);
+  if (!row) throw new Error("Mix completion returned no row.");
+  return row;
 }
 
 async function failJob(job: MixJobRow, error: unknown, retryable: boolean) {
@@ -231,7 +240,6 @@ export async function executeClaimedRemasterMixJob(job: MixJobRow) {
       zenEcoHomesEnabled: job.zenecohomes_enabled,
       audioDurationSeconds: exactAudioSeconds,
       onProgress: async (renderProgress, renderStep) => {
-        // Renderer progress occupies roughly 15–85 of the full job lifecycle.
         await report(Math.max(15, Math.min(85, renderProgress)), renderStep);
       },
     });
