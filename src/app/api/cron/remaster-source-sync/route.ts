@@ -21,6 +21,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const reconciliation = await reconcileRemasterSongSources(supabase);
+    await supabase.from("automation_logs").insert({
+      action: "remaster_source_sync",
+      agent_name: "nexus_remaster_source_sync",
+      status: "success",
+      details: reconciliation,
+    });
     return NextResponse.json({
       success: true,
       generatedAt: new Date().toISOString(),
@@ -29,9 +35,13 @@ export async function GET(request: NextRequest) {
       note: "This route only reconciles canonical song/source state. It does not upload or publish songs.",
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Re-Master source reconciliation failed" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Re-Master source reconciliation failed";
+    await supabase.from("automation_logs").insert({
+      action: "remaster_source_sync",
+      agent_name: "nexus_remaster_source_sync",
+      status: "error",
+      details: { error: message },
+    });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
