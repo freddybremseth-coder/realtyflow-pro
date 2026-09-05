@@ -10,6 +10,9 @@ export type RemasterHealthSnapshot = {
   sourceSyncFreshnessMinutes: number;
   growthLoopLastRunAt: string | null;
   growthLoopFreshnessMinutes: number;
+  marketingAutopilotLastRunAt: string | null;
+  marketingAutopilotLastStatus: string | null;
+  marketingAutopilotFreshnessMinutes: number;
   sourceDriftCount: number;
   pendingPromotionRequestAgeMinutes: number | null;
   failedPromotionRequests24h: number;
@@ -59,6 +62,18 @@ export function assessRemasterHealth(snapshot: RemasterHealthSnapshot, nowMs = D
     && isStale(snapshot.growthLoopLastRunAt, snapshot.growthLoopFreshnessMinutes, nowMs)) {
     warn("Re-Master growth loop has no fresh execution heartbeat.");
   }
+
+  if (snapshot.marketingAutopilotLastRunAt) {
+    if (snapshot.marketingAutopilotLastStatus === "error") {
+      fail("Re-Master Marketing Autopilot last runtime heartbeat reported an error.");
+    } else if (snapshot.marketingAutopilotLastStatus === "partial") {
+      warn("Re-Master Marketing Autopilot last runtime heartbeat was partial.");
+    }
+    if (isStale(snapshot.marketingAutopilotLastRunAt, snapshot.marketingAutopilotFreshnessMinutes, nowMs)) {
+      warn("Re-Master Marketing Autopilot runtime heartbeat is stale.");
+    }
+  }
+
   if (snapshot.sourceDriftCount > 0) warn(`${snapshot.sourceDriftCount} published Re-Master song source(s) are still out of sync.`);
   if (snapshot.pendingPromotionRequestAgeMinutes != null && snapshot.pendingPromotionRequestAgeMinutes > 90) {
     warn("A Re-Master promotion request has remained pending for more than 90 minutes.");
