@@ -20,7 +20,8 @@ test("analytics reader fails closed until readonly scope is granted", async () =
 
 test("analytics reader is read-only and requests watch-quality metrics", async () => {
   const service = await source(servicePath);
-  assert.match(service, /youtubeanalytics\.googleapis\.com\/v2\/reports/);
+  assert.match(service, /google\.youtubeAnalytics/);
+  assert.match(service, /reports\.query/);
   assert.match(service, /averageViewDuration/);
   assert.match(service, /averageViewPercentage/);
   assert.match(service, /estimatedMinutesWatched/);
