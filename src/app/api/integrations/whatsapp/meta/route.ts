@@ -59,37 +59,48 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const customerName = resolution.customer?.name || "Ukjent kunde";
       const referrerName = resolution.referrer?.name || "Soleada";
-      await supabase.from("work_items").insert({
-        title: `Soleada referral mangler kundetelefon: ${customerName}`,
-        description: `Lead sendt av ${referrerName}. Kundens telefon ble ikke funnet i WhatsApp-meldingen.\n\n${inbound.text}`,
-        status: "TO_DO",
-        priority: "HIGH",
-        due_date: now.slice(0, 10),
-        brand_id: inbound.brandId || "soleada",
-        source_type: "whatsapp_referral",
-        source_id: inbound.messageId,
-        assigned_agent: "sales",
-        next_action: "Finn eller be om kundens telefonnummer før leadet opprettes i CRM. Ikke bruk referrerens telefon som kundeidentitet.",
-        ai_score: 88,
-        metadata: {
-          whatsapp_message_id: inbound.messageId,
-          referrer_name: resolution.referrer?.name || null,
-          referrer_phone: resolution.referrer?.phone || null,
-          customer_name: resolution.customer?.name || null,
-          referral_resolution: resolution.mode,
-          original_text: inbound.text,
-        },
-        created_at: now,
-        updated_at: now,
-      });
+      const { data: existingReferralTask } = await supabase
+        .from("work_items")
+        .select("id")
+        .eq("source_type", "whatsapp_referral")
+        .eq("source_id", inbound.messageId)
+        .limit(1)
+        .maybeSingle();
+
+      let workItemCreated = false;
+      if (!existingReferralTask?.id) {
+        const { error: taskError } = await supabase.from("work_items").insert({
+          title: `Soleada referral mangler kundetelefon: ${customerName}`,
+          description: `Lead sendt av ${referrerName}. Kundens telefon ble ikke funnet i WhatsApp-meldingen.\n\n${inbound.text}`,
+          status: "TO_DO",
+          priority: "HIGH",
+          due_date: now.slice(0, 10),
+          brand_id: inbound.brandId || "soleada",
+          source_type: "whatsapp_referral",
+          source_id: inbound.messageId,
+          assigned_agent: "sales",
+          next_action: "Finn eller be om kundens telefonnummer før leadet opprettes i CRM. Ikke bruk referrerens telefon som kundeidentitet.",
+          ai_score: 88,
+          metadata: {
+            whatsapp_message_id: inbound.messageId,
+            referrer_name: resolution.referrer?.name || null,
+            customer_name: resolution.customer?.name || null,
+            referral_resolution: resolution.mode,
+            original_text: inbound.text,
+          },
+          created_at: now,
+          updated_at: now,
+        });
+        workItemCreated = !taskError;
+      }
 
       results.push({
         messageId: inbound.messageId,
         ok: true,
-        duplicate: false,
+        duplicate: Boolean(existingReferralTask?.id),
         referralMode: resolution.mode,
         contactId: null,
-        workItemCreated: true,
+        workItemCreated,
         autoReplyMode: "NONE",
         autoReplyAllowed: false,
         replySent: false,
