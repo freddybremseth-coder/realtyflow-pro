@@ -27,13 +27,16 @@ export async function loadZenEcoHomesVisualUrls(input: {
   const supabase = getSupabase();
   const desiredCount = recommendedVisualCount(input.targetMinutes);
 
-  // Fetch enough inventory to have diversity even after region/type filters.
+  // Use select("*") intentionally. The property feed has evolved over time and
+  // different production snapshots can contain additional multilingual and
+  // visibility fields. Selecting a non-existent optional column would make the
+  // entire PostgREST request fail, while the planner only reads fields present.
   const allProperties: Record<string, unknown>[] = [];
   const pageSize = 500;
   for (let from = 0; from < 3000; from += pageSize) {
     const { data, error } = await supabase
       .from("properties")
-      .select("id,title,description,location,town,province,region,property_type,pool,primary_image,gallery,show_on_website,website_visible,brand,brand_id")
+      .select("*")
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Could not load ZenEcoHomes properties: ${error.message}`);
