@@ -17,6 +17,8 @@ export async function generateRemasterMetadataRefresh(input: {
   viewsPerDay: number;
   channelMedianViewsPerDay: number;
   topTitles: string[];
+  learnedPositiveTags?: Array<{ tag: string; count: number }>;
+  learningMode?: "EXPLORE" | "FAVOR" | "NEUTRAL" | "SUPPRESS";
 }) {
   const response = await askClaude(JSON.stringify(input), {
     maxTokens: 1800,
@@ -26,6 +28,8 @@ Return ONLY JSON with this shape: {"description":"...","tags":["..."]}.
 Do not change or propose the title. Do not invent awards, chart positions, listener counts, artist collaborations, licenses, genres or factual claims not supported by the supplied metadata.
 Description should be natural English, useful to a music listener, 700-1800 characters, include relevant search phrases without keyword stuffing, and invite listening/subscription naturally.
 Tags: 12-25 concise relevant tags, under YouTube limits, derived from the title/current metadata and patterns in supplied top-performing titles.
+If learnedPositiveTags are supplied, treat them only as measured channel evidence. Reuse a learned tag only when it is semantically relevant to this specific track; never force unrelated tags merely because they performed elsewhere.
+If learningMode is FAVOR, measured historical evidence supports this intervention type, but factual relevance and quality still override reuse. EXPLORE or NEUTRAL means stay conservative.
 The goal is sustainable discovery and listeners, not clickbait.`,
   });
   const parsed = extractJson(response) as { description?: unknown; tags?: unknown };
