@@ -75,7 +75,20 @@ export function partitionDataGaps(gaps: DataGap[]) {
   };
 }
 
+function compactMessages(gaps: DataGap[]) {
+  return gaps.slice(0, 3).map((gap) => gap.message.replace(/\.$/, "")).join(" · ");
+}
+
 export function dataGapSummary(gaps: DataGap[], confidenceScore: number) {
   if (confidenceScore >= 80 || gaps.length === 0) return null;
-  return `Confidence can improve by adding: ${gaps.slice(0, 3).map((gap) => gap.message.replace(/\.$/, "")).join(" · ")}.`;
+
+  const { autoDiscoverable, humanRequired } = partitionDataGaps(gaps);
+  const parts: string[] = [];
+  if (autoDiscoverable.length > 0) {
+    parts.push(`System can investigate: ${compactMessages(autoDiscoverable)}.`);
+  }
+  if (humanRequired.length > 0) {
+    parts.push(`Needs your input: ${compactMessages(humanRequired)}.`);
+  }
+  return parts.join(" ");
 }
