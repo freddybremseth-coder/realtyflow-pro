@@ -30,6 +30,18 @@ function youtubeUrl(row: RemasterPromotionSource) {
   return payloadUrl || clean(row.source_url);
 }
 
+export function remasterPromotionTitleFamily(value: unknown) {
+  let normalized = clean(value)
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "");
+  normalized = normalized.replace(/^a\s*(?=[¡¿])/i, "");
+  return normalized
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function pickRemasterPromotionSource(
   rows: RemasterPromotionSource[],
   channel: "instagram" | "facebook",
@@ -37,12 +49,24 @@ export function pickRemasterPromotionSource(
   cooldownDays = 14,
 ) {
   const cutoff = nowMs - Math.max(1, cooldownDays) * 86_400_000;
+  const familyLastPlanned = new Map<string, number>();
+  for (const row of rows) {
+    const family = remasterPromotionTitleFamily(row.title);
+    const planned = safeDate(row.last_planned_at);
+    if (!family || planned == null) continue;
+    familyLastPlanned.set(family, Math.max(familyLastPlanned.get(family) ?? Number.NEGATIVE_INFINITY, planned));
+  }
+
   const eligible = rows.filter((row) => {
     if (!ELIGIBLE_STATUSES.has(clean(row.status).toLowerCase())) return false;
     if (!youtubeUrl(row)) return false;
     if (!stringArray(row.recommended_channels).includes(channel)) return false;
     const lastPlanned = safeDate(row.last_planned_at);
-    return lastPlanned == null || lastPlanned < cutoff;
+    if (lastPlanned != null && lastPlanned >= cutoff) return false;
+    const family = remasterPromotionTitleFamily(row.title);
+    const familyPlanned = family ? familyLastPlanned.get(family) : undefined;
+    if (familyPlanned != null && familyPlanned >= cutoff) return false;
+    return true;
   });
 
   return eligible.sort((a, b) => {
