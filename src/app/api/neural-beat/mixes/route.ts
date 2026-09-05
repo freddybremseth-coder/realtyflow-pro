@@ -13,27 +13,38 @@ const styleSchema = z.enum([
 ]);
 
 const regionSchema = z.enum(["any", "north", "south", "inland", "costa-calida"]);
-const visualTypeSchema = z.enum(["mixed", "villas", "apartments", "pools", "sea-views", "interiors"]);
+const visualTypeSchema = z.enum([
+  "mixed",
+  "villas",
+  "apartments",
+  "pools",
+  "sea-views",
+  "interiors",
+]);
 
-const createMixSchema = z.object({
-  title: z.string().trim().min(3).max(160),
-  style: styleSchema,
-  targetMinutes: z.number().int().min(30).max(180),
-  crossfadeSeconds: z.number().int().min(0).max(20),
-  playlist: z.string().trim().min(3).max(180),
-  zenEcoHomesEnabled: z.boolean().default(true),
-  visualRegion: regionSchema.default("any"),
-  visualType: visualTypeSchema.default("mixed"),
-  sponsorIntervalMinutes: z.number().int().min(5).max(60).default(20),
-  ctaText: z.string().trim().max(500).default(""),
-  selectedSongIds: z.array(z.string().trim().min(1).max(200)).min(2).max(60),
-  queue: z.boolean().optional().default(false),
-}).strict();
+const createMixSchema = z
+  .object({
+    title: z.string().trim().min(3).max(160),
+    style: styleSchema,
+    targetMinutes: z.number().int().min(30).max(180),
+    crossfadeSeconds: z.number().int().min(0).max(20),
+    playlist: z.string().trim().min(3).max(180),
+    zenEcoHomesEnabled: z.boolean().default(true),
+    visualRegion: regionSchema.default("any"),
+    visualType: visualTypeSchema.default("mixed"),
+    sponsorIntervalMinutes: z.number().int().min(5).max(60).default(20),
+    ctaText: z.string().trim().max(500).default(""),
+    selectedSongIds: z.array(z.string().trim().min(1).max(200)).min(2).max(60),
+    queue: z.boolean().optional().default(false),
+  })
+  .strict();
 
-const patchMixSchema = z.object({
-  id: z.string().uuid(),
-  action: z.enum(["queue", "cancel"]),
-}).strict();
+const patchMixSchema = z
+  .object({
+    id: z.string().uuid(),
+    action: z.enum(["queue", "cancel"]),
+  })
+  .strict();
 
 type SongRow = {
   id: string;
@@ -45,6 +56,15 @@ type SongRow = {
   bpm: number | null;
   duration: number | null;
   brand: string | null;
+};
+
+type MixQueueRow = {
+  id: string;
+  status: string;
+  youtube_upload_started_at: string | null;
+  youtube_video_id: string | null;
+  retry_count: number;
+  max_retries: number;
 };
 
 function getSupabase() {
@@ -89,7 +109,9 @@ export async function GET(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
 
   const id = new URL(request.url).searchParams.get("id");
 
@@ -112,7 +134,10 @@ export async function GET(request: NextRequest) {
       .limit(50);
 
     if (error) return apiError(error.message);
-    return NextResponse.json({ mixes: data || [] }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { mixes: data || [] },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return apiError(error instanceof Error ? error.message : "Failed to load mix jobs");
   }
@@ -123,7 +148,9 @@ export async function POST(request: NextRequest) {
   if (unauthorized || !context) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
 
   let raw: unknown;
   try {
@@ -149,7 +176,10 @@ export async function POST(request: NextRequest) {
   const input = parsed.data;
   const uniqueTrackIds = [...new Set(input.selectedSongIds)];
   if (uniqueTrackIds.length !== input.selectedSongIds.length) {
-    return NextResponse.json({ error: "The same song cannot appear twice in one mix yet." }, { status: 400 });
+    return NextResponse.json(
+      { error: "The same song cannot appear twice in one mix yet." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -162,28 +192,38 @@ export async function POST(request: NextRequest) {
     if (songError) return apiError(songError.message);
 
     const byId = new Map((songs || []).map((song) => [song.id, song as SongRow]));
-    const orderedSongs = input.selectedSongIds.map((id) => byId.get(id)).filter(Boolean) as SongRow[];
+    const orderedSongs = input.selectedSongIds
+      .map((id) => byId.get(id))
+      .filter(Boolean) as SongRow[];
     const missingIds = input.selectedSongIds.filter((id) => !byId.has(id));
-    const missingAudio = orderedSongs.filter((song) => !song.file_url).map((song) => song.id);
+    const missingAudio = orderedSongs
+      .filter((song) => !song.file_url)
+      .map((song) => song.id);
 
     if (missingIds.length > 0) {
       return NextResponse.json(
-        { error: "One or more selected songs could not be found.", missingSongIds: missingIds },
+        {
+          error: "One or more selected songs could not be found.",
+          missingSongIds: missingIds,
+        },
         { status: 400 },
       );
     }
 
     if (missingAudio.length > 0) {
       return NextResponse.json(
-        { error: "One or more selected songs do not have an audio file.", missingAudioSongIds: missingAudio },
+        {
+          error: "One or more selected songs do not have an audio file.",
+          missingAudioSongIds: missingAudio,
+        },
         { status: 400 },
       );
     }
 
     const knownDuration = orderedSongs.every((song) => Number(song.duration) > 0);
     const exactAudioSeconds = knownDuration
-      ? orderedSongs.reduce((sum, song) => sum + Number(song.duration || 0), 0)
-        - Math.max(0, orderedSongs.length - 1) * input.crossfadeSeconds
+      ? orderedSongs.reduce((sum, song) => sum + Number(song.duration || 0), 0) -
+        Math.max(0, orderedSongs.length - 1) * input.crossfadeSeconds
       : null;
 
     const now = new Date().toISOString();
@@ -216,7 +256,9 @@ export async function POST(request: NextRequest) {
           durationSeconds: song.duration,
         })),
         visualPlan: {
-          source: input.zenEcoHomesEnabled ? "zenecohomes-properties" : "remaster-image-bank",
+          source: input.zenEcoHomesEnabled
+            ? "zenecohomes-properties"
+            : "remaster-image-bank",
           region: input.visualRegion,
           type: input.visualType,
           sponsorIntervalMinutes: input.sponsorIntervalMinutes,
@@ -259,7 +301,9 @@ export async function PATCH(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
 
   let raw: unknown;
   try {
@@ -269,24 +313,67 @@ export async function PATCH(request: NextRequest) {
   }
 
   const parsed = patchMixSchema.safeParse(raw);
-  if (!parsed.success) return NextResponse.json({ error: "Invalid mix action" }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid mix action" }, { status: 400 });
+  }
 
   const { id, action } = parsed.data;
 
   try {
-    const { data: current, error: loadError } = await supabase
+    const { data: currentData, error: loadError } = await supabase
       .from("remaster_mix_jobs")
-      .select("id,status")
+      .select(
+        "id,status,youtube_upload_started_at,youtube_video_id,retry_count,max_retries",
+      )
       .eq("id", id)
       .single();
 
-    if (loadError) return apiError(loadError.message, loadError.code === "PGRST116" ? 404 : 500);
+    if (loadError) {
+      return apiError(loadError.message, loadError.code === "PGRST116" ? 404 : 500);
+    }
 
+    const current = currentData as MixQueueRow | null;
     const now = new Date().toISOString();
+
     if (action === "queue") {
       if (!current || !["draft", "failed"].includes(current.status)) {
-        return NextResponse.json({ error: "Only draft or failed mixes can be queued." }, { status: 409 });
+        return NextResponse.json(
+          { error: "Only draft or failed mixes can be queued." },
+          { status: 409 },
+        );
       }
+
+      if (current.youtube_video_id) {
+        return NextResponse.json(
+          {
+            error: "This mix already has a YouTube video id and cannot be queued again.",
+            code: "MIX_ALREADY_UPLOADED",
+          },
+          { status: 409 },
+        );
+      }
+
+      if (current.youtube_upload_started_at) {
+        return NextResponse.json(
+          {
+            error:
+              "YouTube upload started previously but no verified video id was recorded. Manual review is required before any retry.",
+            code: "YOUTUBE_UPLOAD_AMBIGUOUS",
+          },
+          { status: 409 },
+        );
+      }
+
+      if (current.status === "failed" && current.retry_count >= current.max_retries) {
+        return NextResponse.json(
+          {
+            error: "This mix has reached its retry limit and requires manual review.",
+            code: "MIX_RETRY_LIMIT_REACHED",
+          },
+          { status: 409 },
+        );
+      }
+
       const { data, error } = await supabase
         .from("remaster_mix_jobs")
         .update({
@@ -295,10 +382,15 @@ export async function PATCH(request: NextRequest) {
           progress: 0,
           error_code: null,
           error_message: null,
+          lease_owner: null,
+          lease_token: null,
+          lease_expires_at: null,
           queued_at: now,
           updated_at: now,
         })
         .eq("id", id)
+        .is("youtube_upload_started_at", null)
+        .is("youtube_video_id", null)
         .select("*")
         .single();
       if (error) return apiError(error.message);
@@ -306,7 +398,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (!current || !["draft", "queued"].includes(current.status)) {
-      return NextResponse.json({ error: "Only draft or queued mixes can be cancelled." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Only draft or queued mixes can be cancelled." },
+        { status: 409 },
+      );
     }
 
     const { data, error } = await supabase
@@ -314,6 +409,9 @@ export async function PATCH(request: NextRequest) {
       .update({
         status: "cancelled",
         pipeline_step: "cancelled",
+        lease_owner: null,
+        lease_token: null,
+        lease_expires_at: null,
         updated_at: now,
       })
       .eq("id", id)
