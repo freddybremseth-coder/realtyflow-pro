@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, BrainCircuit, BriefcaseBusiness, CheckCircle2, Lightbulb, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { revenuePriorityEvidenceDimensions, revenueWorkEvidenceDimensions } from "@/lib/morning-brief-evidence";
 import { rankMorningBriefPriorities } from "@/lib/morning-brief-priority";
 import { todayDestination, type TodayDestinationType } from "@/lib/personal-intelligence/today-destination";
 
@@ -18,8 +19,27 @@ type AttentionItem = {
 
 type RevenuePriority = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
+type RevenuePriorityItem = {
+  score: number;
+  value: number;
+  kind: string;
+  stage: string;
+  isOverdue: boolean;
+  nextFollowupAt?: string | null;
+};
+
+type RevenueWorkItem = {
+  priority?: string | null;
+  dueAt?: string | null;
+  aiScore?: number | null;
+  sourceType?: string | null;
+};
+
 type RevenuePayload = {
+  priorities?: RevenuePriorityItem[];
+  workItems?: RevenueWorkItem[];
   recommendedPlay?: {
+    source?: "customer_priority" | "work_item";
     title: string;
     primaryAction: string;
     reason: string;
@@ -63,6 +83,7 @@ type UnifiedItem = {
   impact: number;
   deadlineOrIrreversibility: number;
   ownerRequired: number;
+  evidence?: string[];
   score?: number;
 };
 
@@ -120,19 +141,26 @@ export default function MorningBriefPage() {
   const unified = useMemo<UnifiedItem[]>(() => {
     const items: UnifiedItem[] = [];
     const play = revenue.data?.recommendedPlay;
-    if (play) items.push({
-      id: "business:recommended-play",
-      lane: "business",
-      label: "BUSINESS",
-      title: play.title,
-      detail: `${play.primaryAction} — ${play.reason}`,
-      href: play.href,
-      source: "Nexus Revenue Today",
-      urgency: businessUrgency(play.priority),
-      impact: Math.max(55, Math.min(100, play.score || 70)),
-      deadlineOrIrreversibility: play.priority === "CRITICAL" ? 95 : play.priority === "HIGH" ? 80 : 60,
-      ownerRequired: 80,
-    });
+    if (play) {
+      const canonicalEvidence = play.source === "work_item"
+        ? revenueWorkEvidenceDimensions(revenue.data?.workItems?.[0] ?? { priority: play.priority, aiScore: play.score })
+        : revenuePriorityEvidenceDimensions(revenue.data?.priorities?.[0] ?? { score: play.score });
+
+      items.push({
+        id: "business:recommended-play",
+        lane: "business",
+        label: "BUSINESS",
+        title: play.title,
+        detail: `${play.primaryAction} — ${play.reason}`,
+        href: play.href,
+        source: "Nexus Revenue Today",
+        urgency: canonicalEvidence.urgency || businessUrgency(play.priority),
+        impact: canonicalEvidence.impact,
+        deadlineOrIrreversibility: canonicalEvidence.deadlineOrIrreversibility,
+        ownerRequired: canonicalEvidence.ownerRequired,
+        evidence: canonicalEvidence.evidence,
+      });
+    }
 
     const operational = (attention.data?.attention ?? []).filter((item) => item.id !== "os:clear")[0];
     if (operational) items.push({
@@ -147,6 +175,7 @@ export default function MorningBriefPage() {
       impact: Math.max(50, Math.min(100, operational.score || 60)),
       deadlineOrIrreversibility: operational.severity === "high" ? 90 : operational.severity === "medium" ? 70 : 50,
       ownerRequired: operational.severity === "high" ? 75 : 55,
+      evidence: [`attention severity ${operational.severity}`, `attention score ${operational.score}/100`],
     });
 
     const snapshot = personal.data?.snapshot;
@@ -162,6 +191,7 @@ export default function MorningBriefPage() {
       impact: 78,
       deadlineOrIrreversibility: personalDeadlineScore(snapshot.oneThing.dueAt),
       ownerRequired: 100,
+      evidence: [snapshot.oneThing.dueAt ? `due ${snapshot.oneThing.dueAt}` : "no explicit due date", "Personal Intelligence selected ONE THING"],
     });
 
     if (snapshot?.learning) items.push({
@@ -176,6 +206,7 @@ export default function MorningBriefPage() {
       impact: 50,
       deadlineOrIrreversibility: personalDeadlineScore(snapshot.learning.dueAt),
       ownerRequired: 65,
+      evidence: ["Personal Intelligence learning signal"],
     });
 
     const continuation = snapshot?.secondary?.[0];
@@ -191,10 +222,11 @@ export default function MorningBriefPage() {
       impact: 55,
       deadlineOrIrreversibility: personalDeadlineScore(continuation.dueAt),
       ownerRequired: 85,
+      evidence: ["existing commitment / continuation signal"],
     });
 
     return rankMorningBriefPriorities(items).map(({ item, priority }) => ({ ...item, score: priority.score }));
-  }, [attention.data?.attention, personal.data?.snapshot, revenue.data?.recommendedPlay]);
+  }, [attention.data?.attention, personal.data?.snapshot, revenue.data?.priorities, revenue.data?.recommendedPlay, revenue.data?.workItems]);
 
   const primary = unified[0] ?? null;
   const rest = unified.slice(1, 5);
@@ -229,6 +261,7 @@ export default function MorningBriefPage() {
             <span className="rounded-full border border-slate-700 px-2 py-1">Deadline / irreversible {primary.deadlineOrIrreversibility}</span>
             <span className="rounded-full border border-slate-700 px-2 py-1">Needs you {primary.ownerRequired}</span>
           </div>
+          {primary.evidence?.length ? <div className="mt-3 text-xs leading-5 text-slate-400"><strong className="text-slate-300">Evidence:</strong> {primary.evidence.join(" · ")}</div> : null}
         </div>
         <Link href={primary.href} className="inline-flex items-center justify-center rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-slate-950">Open <ArrowRight size={16} className="ml-2" /></Link>
       </div> : <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-800 bg-emerald-950/40 p-4 text-emerald-100"><CheckCircle2 size={19} className="mt-0.5" /><div><div className="font-black">Ingen sterk kandidat akkurat nå.</div><div className="mt-1 text-sm text-emerald-200">Det er bedre enn å produsere kunstig urgency.</div></div></div>}
@@ -245,6 +278,7 @@ export default function MorningBriefPage() {
         <h3 className="mt-3 font-black text-slate-950">{item.title}</h3>
         <p className="mt-2 text-sm leading-5 text-slate-600">{item.detail}</p>
         <div className="mt-3 text-[11px] font-bold text-slate-400">Source: {item.source} · score {item.score}/100</div>
+        {item.evidence?.length ? <div className="mt-2 text-[11px] leading-4 text-slate-400">{item.evidence.slice(0, 3).join(" · ")}</div> : null}
       </Link>)}
     </section>
 
