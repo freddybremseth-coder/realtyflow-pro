@@ -7,6 +7,28 @@ import { checkBrandYouTubeHealth } from "@/services/integrations/youtube-health"
 
 export const dynamic = "force-dynamic";
 
+function parseLearnings(raw: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(raw || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function youtubeVideoId(url: unknown) {
+  const value = String(url || "").trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.hostname.includes("youtu.be")) return parsed.pathname.split("/").filter(Boolean)[0] || null;
+    if (parsed.pathname.startsWith("/shorts/")) return parsed.pathname.split("/")[2] || null;
+    return parsed.searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const denied = await requireAdminApi(request);
   if (denied) return denied;
@@ -26,40 +48,55 @@ export async function GET(request: NextRequest) {
     supabase.from("marketing_source_queue").select("id,status,source_id,source_url,title,payload,last_planned_at").eq("brand_id", "remasterfreddy").eq("source_type", "song"),
     supabase.from("marketing_publications").select("id,state,channel,source_id,created_at,updated_at").eq("brand_id", "remasterfreddy").order("created_at", { ascending: false }).limit(500),
     checkBrandYouTubeHealth("remasterfreddy").catch((error) => ({ connected: false, configured: false, reason: "health_check_failed", message: error instanceof Error ? error.message : String(error) })),
-    listRemasterActionHistory(100).catch(() => []),
+    listRemasterActionHistory(250).catch(() => []),
   ]);
   if (songError) return NextResponse.json({ error: songError.message }, { status: 500 });
 
   const rows = (songs ?? []).filter((row: any) => ["remasterfreddy", "neuralbeat", "neural-beat"].includes(String(row.brand ?? "")));
   const sourceRows = sources ?? [];
   const publicationRows = publications ?? [];
-  const recent = rows
+
+  const latestGrowthByVideo = new Map<string, { actionType: string; executedAt: string | null; outcome: unknown; liftPct: unknown }>();
+  for (const row of growthHistory) {
+    const parsed = parseLearnings(row.learnings);
+    const videoId = typeof parsed?.action?.videoId === "string" ? parsed.action.videoId : null;
+    if (!videoId || latestGrowthByVideo.has(videoId)) continue;
+    latestGrowthByVideo.set(videoId, {
+      actionType: row.action_type,
+      executedAt: row.executed_at,
+      outcome: parsed?.feedback?.outcome ?? null,
+      liftPct: parsed?.feedback?.liftPct ?? null,
+    });
+  }
+
+  const catalog = rows
     .slice()
     .sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
-    .slice(0, 12)
-    .map((row: any) => ({
-      id: row.id,
-      title: row.name,
-      artist: row.artist,
-      genre: row.genre,
-      mood: row.mood,
-      status: row.status,
-      youtubeUrl: row.youtube_url,
-      imageUrl: row.thumbnail_url || row.image_url || null,
-      legacyBrand: row.brand,
-    }));
+    .map((row: any) => {
+      const videoId = youtubeVideoId(row.youtube_url);
+      return {
+        id: row.id,
+        title: row.name,
+        artist: row.artist,
+        genre: row.genre,
+        mood: row.mood,
+        status: row.status,
+        youtubeUrl: row.youtube_url,
+        youtubeVideoId: videoId,
+        imageUrl: row.thumbnail_url || row.image_url || null,
+        legacyBrand: row.brand,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        growthAction: videoId ? latestGrowthByVideo.get(videoId) ?? null : null,
+      };
+    });
 
   const metadataLearning = summarizeRemasterActionLearning(growthHistory, "update_metadata");
   const playlistLearning = summarizeRemasterActionLearning(growthHistory, "add_to_playlist");
   const suppressedActions = [metadataLearning, playlistLearning].filter((item) => item.mode === "SUPPRESS").map((item) => item.actionType);
   const recentGrowthActions = growthHistory.slice(0, 12).map((row) => {
-    let feedback: Record<string, unknown> | null = null;
-    try {
-      const parsed = JSON.parse(row.learnings || "{}");
-      feedback = parsed?.feedback && typeof parsed.feedback === "object" ? parsed.feedback : null;
-    } catch {
-      feedback = null;
-    }
+    const parsed = parseLearnings(row.learnings);
+    const feedback = parsed?.feedback && typeof parsed.feedback === "object" ? parsed.feedback : null;
     return {
       id: row.id,
       actionType: row.action_type,
@@ -94,7 +131,8 @@ export async function GET(request: NextRequest) {
       publications: publicationRows.length,
     },
     channels: channels ?? [],
-    recent,
+    catalog,
+    recent: catalog.slice(0, 12),
     growth: {
       status: growthStatus,
       autopilotEnabled,
@@ -124,7 +162,8 @@ export async function GET(request: NextRequest) {
       legacyBrandReads: ["neuralbeat", "neural-beat"],
       legacyPipelinePreserved: true,
       automaticPublishingChanged: false,
-      note: "Re-Master hub reads legacy song data but does not change the existing YouTube autopublish pipeline.",
+      sourceOfTruth: "remaster.freddybremseth.com/admin -> shared Supabase -> RealtyFlow/Nexus Growth OS",
+      note: "New songs are created and published in Re-Master Admin. RealtyFlow is the read/monitor/growth layer and does not duplicate song publishing controls.",
     },
   });
 }
