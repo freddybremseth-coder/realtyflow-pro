@@ -3,7 +3,7 @@ import type { WhatsAppInboundMessage } from "@/lib/nexus/whatsapp-inbound";
 export type WhatsAppReferralResolution = {
   mode: "DIRECT" | "REFERRAL_RESOLVED" | "REFERRAL_UNRESOLVED";
   message: WhatsAppInboundMessage | null;
-  referrer: { name: string | null; phone: string } | null;
+  referrer: { name: string | null } | null;
   customer: { name: string | null; phone: string | null } | null;
   reason: string;
 };
@@ -68,7 +68,7 @@ export function resolveWhatsAppLeadIdentity(
 
   const customerPhone = extractCustomerPhone(message.text, senderPhone);
   const customerName = extractCustomerName(message.text);
-  const referrerContext = { name: message.profileName || null, phone: senderPhone };
+  const referrerContext = { name: message.profileName || null };
 
   if (!customerPhone) {
     return {
@@ -86,7 +86,7 @@ export function resolveWhatsAppLeadIdentity(
       ...message,
       from: customerPhone,
       profileName: customerName || undefined,
-      text: `${message.text}\n\n[Referral source: ${message.profileName || "Soleada"}; sender ${senderPhone}]`,
+      text: `${message.text}\n\n[Referral source: ${message.profileName || "Soleada"}]`,
     },
     referrer: referrerContext,
     customer: { name: customerName, phone: customerPhone },
