@@ -3,6 +3,7 @@ import { requireNexusSchedulerApi } from "@/lib/nexus/scheduler-auth";
 import { evaluateCronSafeMode } from "@/lib/cron/safe-mode";
 import { assessRemasterVideoPerformance, median } from "@/services/growth/remaster-growth-loop";
 import { evaluateRemasterGrowthOutcome } from "@/services/growth/remaster-growth-feedback";
+import { positiveMetadataTags, summarizeRemasterActionLearning } from "@/services/growth/remaster-growth-learning";
 import { generateRemasterMetadataRefresh, selectBestRemasterPlaylist } from "@/services/growth/remaster-growth-optimizer";
 import { listRemasterActionHistory, recordCompletedRemasterAction, recordRemasterActionFeedback, type RemasterActionHistoryRow } from "@/services/growth/remaster-action-history";
 import { addRemasterVideoToPlaylist, listRemasterChannelVideos, listRemasterPlaylists, updateRemasterVideoMetadata } from "@/services/integrations/remaster-youtube-actions";
@@ -86,6 +87,10 @@ export async function GET(request: NextRequest) {
       feedback.push({ actionId: row.id, videoId, actionType: row.action_type, outcome: outcome.outcome, liftPct: outcome.liftPct });
     }
 
+    const metadataLearning = summarizeRemasterActionLearning(history, "update_metadata");
+    const playlistLearning = summarizeRemasterActionLearning(history, "add_to_playlist");
+    const learnedPositiveTags = positiveMetadataTags(history);
+
     const rates = videos.map((video) => {
       const ageDays = Math.max(1, (now - Date.parse(video.publishedAt)) / 86_400_000);
       return video.viewCount / ageDays;
@@ -95,9 +100,13 @@ export async function GET(request: NextRequest) {
     const topTitles = [...assessed].sort((a, b) => b.assessment.viewsPerDay - a.assessment.viewsPerDay).slice(0, 8).map((item) => item.video.title);
     const candidates = assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").sort((a, b) => a.assessment.viewsPerDay - b.assessment.viewsPerDay).slice(0, 2);
     const actions: Array<Record<string, unknown>> = [];
+    const suppressed: Array<Record<string, unknown>> = [];
 
     for (const { video, assessment } of candidates) {
-      if ((assessment.actions.includes("REFRESH_DESCRIPTION") || assessment.actions.includes("REFRESH_TAGS")) && !hasRecentAction(history, video.videoId, "update_metadata", 14)) {
+      const metadataEligible = assessment.actions.includes("REFRESH_DESCRIPTION") || assessment.actions.includes("REFRESH_TAGS");
+      if (metadataEligible && metadataLearning.mode === "SUPPRESS") {
+        suppressed.push({ videoId: video.videoId, type: "update_metadata", reason: metadataLearning.rationale });
+      } else if (metadataEligible && !hasRecentAction(history, video.videoId, "update_metadata", 14)) {
         const optimized = await generateRemasterMetadataRefresh({
           title: video.title,
           description: video.description || "",
@@ -106,6 +115,8 @@ export async function GET(request: NextRequest) {
           viewsPerDay: assessment.viewsPerDay,
           channelMedianViewsPerDay,
           topTitles,
+          learnedPositiveTags,
+          learningMode: metadataLearning.mode,
         });
         const result = await updateRemasterVideoMetadata(video.videoId, { description: optimized.description, tags: optimized.tags });
         await recordCompletedRemasterAction({
@@ -118,13 +129,15 @@ export async function GET(request: NextRequest) {
         }, {
           title: `Re-optimize ${video.title}`,
           impact: "Increase sustainable YouTube discovery and listener growth; measure again after cooldown.",
-          priority: "medium",
+          priority: metadataLearning.mode === "FAVOR" ? "high" : "medium",
           approvedBy: "remaster-growth-autopilot",
-        }, { ...result, before: { viewCount: video.viewCount, viewsPerDay: assessment.viewsPerDay, channelMedianViewsPerDay } });
-        actions.push({ videoId: video.videoId, type: "update_metadata", title: video.title });
+        }, { ...result, before: { viewCount: video.viewCount, viewsPerDay: assessment.viewsPerDay, channelMedianViewsPerDay }, learning: metadataLearning, learnedPositiveTags });
+        actions.push({ videoId: video.videoId, type: "update_metadata", title: video.title, learningMode: metadataLearning.mode });
       }
 
-      if (assessment.actions.includes("ADD_TO_PLAYLIST") && !hasRecentAction(history, video.videoId, "add_to_playlist", 30)) {
+      if (assessment.actions.includes("ADD_TO_PLAYLIST") && playlistLearning.mode === "SUPPRESS") {
+        suppressed.push({ videoId: video.videoId, type: "add_to_playlist", reason: playlistLearning.rationale });
+      } else if (assessment.actions.includes("ADD_TO_PLAYLIST") && !hasRecentAction(history, video.videoId, "add_to_playlist", 30)) {
         const playlist = selectBestRemasterPlaylist(video.title, playlistResult.playlists);
         if (playlist) {
           const result = await addRemasterVideoToPlaylist(video.videoId, playlist.playlistId);
@@ -138,10 +151,10 @@ export async function GET(request: NextRequest) {
           }, {
             title: `Playlist boost for ${video.title}`,
             impact: "Increase session discovery and listener exposure through a relevant Re-Master playlist.",
-            priority: "medium",
+            priority: playlistLearning.mode === "FAVOR" ? "high" : "medium",
             approvedBy: "remaster-growth-autopilot",
-          }, { ...result, before: { viewCount: video.viewCount, viewsPerDay: assessment.viewsPerDay } });
-          actions.push({ videoId: video.videoId, type: "add_to_playlist", playlistId: playlist.playlistId, playlistTitle: playlist.title, duplicate: result.duplicate });
+          }, { ...result, before: { viewCount: video.viewCount, viewsPerDay: assessment.viewsPerDay }, learning: playlistLearning });
+          actions.push({ videoId: video.videoId, type: "add_to_playlist", playlistId: playlist.playlistId, playlistTitle: playlist.title, duplicate: result.duplicate, learningMode: playlistLearning.mode });
         }
       }
     }
@@ -154,10 +167,16 @@ export async function GET(request: NextRequest) {
       channelMedianViewsPerDay,
       feedbackMeasured: feedback.length,
       feedback,
+      learning: {
+        metadata: metadataLearning,
+        playlist: playlistLearning,
+        learnedPositiveTags,
+      },
       underperforming: assessed.filter((item) => item.assessment.status === "UNDERPERFORMING").length,
       candidatesReviewed: candidates.length,
       actions,
-      guardrails: { maxVideosPerRun: 2, metadataCooldownDays: 14, playlistCooldownDays: 30, feedbackObservationDays: 7, automaticTitleChanges: false, automaticThumbnailChanges: false },
+      suppressed,
+      guardrails: { maxVideosPerRun: 2, metadataCooldownDays: 14, playlistCooldownDays: 30, feedbackObservationDays: 7, minimumMeasuredOutcomesForBias: 2, automaticTitleChanges: false, automaticThumbnailChanges: false },
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Re-Master growth loop failed" }, { status: 500 });
