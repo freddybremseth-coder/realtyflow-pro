@@ -133,6 +133,27 @@ export async function recordCompletedRemasterAction(action: RemasterRecommendati
   return { duplicate: false, fingerprint, action: rows[0] };
 }
 
+export async function recordRemasterActionFeedback(row: RemasterActionHistoryRow, feedback: Record<string, unknown>) {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(row.learnings || "{}");
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) parsed = raw as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+  const now = new Date().toISOString();
+  const { baseUrl, key } = restConfig();
+  const requestUrl = `${baseUrl}?${new URLSearchParams({ id: `eq.${row.id}` }).toString()}`;
+  const response = await fetch(requestUrl, {
+    method: "PATCH",
+    headers: restHeaders(key, "return=representation"),
+    body: JSON.stringify({ learnings: JSON.stringify({ ...parsed, feedback }), reviewed_at: now, updated_at: now }),
+  });
+  const rows = await parseRows(response, "Could not record Re-Master growth feedback");
+  if (!rows[0]) throw new Error("Could not record Re-Master growth feedback: no row returned");
+  return rows[0];
+}
+
 export async function listRemasterActionHistory(limit = 50) {
   const { baseUrl, key } = restConfig();
   const safeLimit = Math.max(1, Math.min(limit, 100));
