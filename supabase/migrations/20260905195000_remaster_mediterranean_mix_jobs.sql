@@ -86,21 +86,21 @@ comment on table public.remaster_mix_jobs is
   'Durable long-form Re-Master Freddy mix plans/jobs. Service-role/server API only; no anonymous RLS policy.';
 
 comment on column public.remaster_mix_jobs.input_snapshot is
-  'Immutable-at-create planning snapshot of ordered song metadata plus future visual/render settings. Never store credentials or OAuth tokens here.';
+  'Immutable-at-create planning snapshot of ordered song metadata plus visual/render settings. Never store credentials or OAuth tokens here.';
 
--- Claim exactly one queued job. SKIP LOCKED prevents two workers from taking
--- the same long-running render when multiple runners overlap briefly.
+-- Claim exactly one safe job. An expired pre-upload render can be recovered by
+-- a new worker, but an ambiguous YouTube upload can never be claimed again.
 create or replace function public.claim_remaster_mix_job(
   p_worker_id text,
   p_lease_seconds integer default 900
 )
-returns public.remaster_mix_jobs
+returns setof public.remaster_mix_jobs
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  claimed public.remaster_mix_jobs;
+  v_job_id uuid;
 begin
   if coalesce(trim(p_worker_id), '') = '' then
     raise exception 'worker id is required';
@@ -109,33 +109,65 @@ begin
     raise exception 'lease seconds must be between 60 and 1800';
   end if;
 
-  with candidate as (
-    select id
-      from public.remaster_mix_jobs
-     where status = 'queued'
-       and youtube_video_id is null
-       and (lease_expires_at is null or lease_expires_at <= now())
-     order by queued_at nulls last, created_at
-     for update skip locked
-     limit 1
-  )
-  update public.remaster_mix_jobs j
+  -- Exhausted crashed renders are terminal. This prevents a permanently stale
+  -- running row when its lease has expired too many times.
+  update public.remaster_mix_jobs
+     set status = 'failed',
+         pipeline_step = 'failed',
+         error_code = 'MIX_LEASE_EXHAUSTED',
+         error_message = 'Long-form render exceeded its crash-recovery limit before YouTube upload.',
+         lease_owner = null,
+         lease_token = null,
+         lease_expires_at = null,
+         updated_at = now()
+   where status = 'running'
+     and lease_expires_at is not null
+     and lease_expires_at <= now()
+     and retry_count >= max_retries
+     and youtube_upload_started_at is null
+     and youtube_video_id is null;
+
+  select id
+    into v_job_id
+    from public.remaster_mix_jobs
+   where youtube_upload_started_at is null
+     and youtube_video_id is null
+     and (
+       (status = 'queued' and retry_count <= max_retries)
+       or (
+         status = 'running'
+         and lease_expires_at is not null
+         and lease_expires_at <= now()
+         and retry_count < max_retries
+       )
+     )
+   order by queued_at nulls last, created_at
+   for update skip locked
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  return query
+  update public.remaster_mix_jobs jobs
      set status = 'running',
          pipeline_step = 'claim',
-         progress = greatest(j.progress, 1),
+         progress = greatest(jobs.progress, 1),
+         retry_count = case
+           when jobs.status = 'running' then jobs.retry_count + 1
+           else jobs.retry_count
+         end,
          lease_owner = p_worker_id,
          lease_token = gen_random_uuid(),
          lease_expires_at = now() + make_interval(secs => p_lease_seconds),
          heartbeat_at = now(),
-         started_at = coalesce(j.started_at, now()),
+         started_at = coalesce(jobs.started_at, now()),
          updated_at = now(),
          error_code = null,
          error_message = null
-    from candidate
-   where j.id = candidate.id
-  returning j.* into claimed;
-
-  return claimed;
+   where jobs.id = v_job_id
+  returning jobs.*;
 end;
 $$;
 
@@ -146,33 +178,56 @@ create or replace function public.heartbeat_remaster_mix_job(
   p_pipeline_step text default null,
   p_progress integer default null
 )
-returns public.remaster_mix_jobs
+returns setof public.remaster_mix_jobs
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  updated public.remaster_mix_jobs;
 begin
-  update public.remaster_mix_jobs
+  return query
+  update public.remaster_mix_jobs jobs
      set lease_expires_at = now() + make_interval(secs => p_lease_seconds),
          heartbeat_at = now(),
          updated_at = now(),
-         pipeline_step = coalesce(nullif(trim(p_pipeline_step), ''), pipeline_step),
+         pipeline_step = coalesce(nullif(trim(p_pipeline_step), ''), jobs.pipeline_step),
          progress = case
-           when p_progress is null then progress
-           else greatest(progress, least(99, greatest(0, p_progress)))
+           when p_progress is null then jobs.progress
+           else greatest(jobs.progress, least(99, greatest(0, p_progress)))
          end
-   where id = p_job_id
-     and status = 'running'
-     and lease_token = p_lease_token
-     and lease_expires_at > now()
-  returning * into updated;
+   where jobs.id = p_job_id
+     and jobs.status = 'running'
+     and jobs.lease_token = p_lease_token
+     and jobs.lease_expires_at > now()
+  returning jobs.*;
+end;
+$$;
 
-  if updated.id is null then
-    raise exception 'mix lease is invalid or expired';
-  end if;
-  return updated;
+-- One-way marker immediately before videos.insert. Once this timestamp exists,
+-- no automatic or manual full-job retry is allowed without explicit recovery.
+create or replace function public.mark_remaster_mix_youtube_upload_started(
+  p_job_id uuid,
+  p_lease_token uuid
+)
+returns setof public.remaster_mix_jobs
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  update public.remaster_mix_jobs jobs
+     set pipeline_step = 'youtube_upload',
+         progress = greatest(jobs.progress, 88),
+         youtube_upload_started_at = now(),
+         heartbeat_at = now(),
+         updated_at = now()
+   where jobs.id = p_job_id
+     and jobs.status = 'running'
+     and jobs.lease_token = p_lease_token
+     and jobs.lease_expires_at > now()
+     and jobs.youtube_upload_started_at is null
+     and jobs.youtube_video_id is null
+  returning jobs.*;
 end;
 $$;
 
@@ -182,19 +237,18 @@ create or replace function public.complete_remaster_mix_job(
   p_youtube_video_id text,
   p_youtube_url text
 )
-returns public.remaster_mix_jobs
+returns setof public.remaster_mix_jobs
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  updated public.remaster_mix_jobs;
 begin
   if coalesce(trim(p_youtube_video_id), '') = '' or coalesce(trim(p_youtube_url), '') = '' then
     raise exception 'verified YouTube result is required';
   end if;
 
-  update public.remaster_mix_jobs
+  return query
+  update public.remaster_mix_jobs jobs
      set status = 'completed',
          pipeline_step = 'completed',
          progress = 100,
@@ -208,17 +262,13 @@ begin
          updated_at = now(),
          error_code = null,
          error_message = null
-   where id = p_job_id
-     and status = 'running'
-     and lease_token = p_lease_token
-     and lease_expires_at > now()
-     and youtube_video_id is null
-  returning * into updated;
-
-  if updated.id is null then
-    raise exception 'mix completion rejected: lease invalid, expired, or upload already recorded';
-  end if;
-  return updated;
+   where jobs.id = p_job_id
+     and jobs.status = 'running'
+     and jobs.lease_token = p_lease_token
+     and jobs.lease_expires_at > now()
+     and jobs.youtube_upload_started_at is not null
+     and jobs.youtube_video_id is null
+  returning jobs.*;
 end;
 $$;
 
@@ -229,7 +279,7 @@ create or replace function public.fail_remaster_mix_job(
   p_error_message text,
   p_retryable boolean default false
 )
-returns public.remaster_mix_jobs
+returns setof public.remaster_mix_jobs
 language plpgsql
 security definer
 set search_path = public
@@ -238,7 +288,8 @@ declare
   current_job public.remaster_mix_jobs;
   next_status text;
 begin
-  select * into current_job
+  select *
+    into current_job
     from public.remaster_mix_jobs
    where id = p_job_id
      and status = 'running'
@@ -246,21 +297,25 @@ begin
      and lease_expires_at > now()
    for update;
 
-  if current_job.id is null then
-    raise exception 'mix failure rejected: lease invalid or expired';
+  if not found then
+    return;
   end if;
 
   next_status := case
-    when p_retryable and current_job.retry_count < current_job.max_retries and current_job.youtube_video_id is null
+    when p_retryable
+      and current_job.retry_count < current_job.max_retries
+      and current_job.youtube_upload_started_at is null
+      and current_job.youtube_video_id is null
       then 'queued'
     else 'failed'
   end;
 
-  update public.remaster_mix_jobs
+  return query
+  update public.remaster_mix_jobs jobs
      set status = next_status,
          pipeline_step = case when next_status = 'queued' then 'retry_queued' else 'failed' end,
-         retry_count = case when next_status = 'queued' then retry_count + 1 else retry_count end,
-         queued_at = case when next_status = 'queued' then now() else queued_at end,
+         retry_count = case when next_status = 'queued' then jobs.retry_count + 1 else jobs.retry_count end,
+         queued_at = case when next_status = 'queued' then now() else jobs.queued_at end,
          error_code = left(coalesce(p_error_code, 'MIX_WORKER_FAILED'), 120),
          error_message = left(coalesce(p_error_message, 'Long-form mix worker failed'), 2000),
          lease_owner = null,
@@ -268,19 +323,19 @@ begin
          lease_expires_at = null,
          heartbeat_at = now(),
          updated_at = now()
-   where id = p_job_id
-  returning * into current_job;
-
-  return current_job;
+   where jobs.id = p_job_id
+  returning jobs.*;
 end;
 $$;
 
 revoke all on function public.claim_remaster_mix_job(text, integer) from public, anon, authenticated;
 revoke all on function public.heartbeat_remaster_mix_job(uuid, uuid, integer, text, integer) from public, anon, authenticated;
+revoke all on function public.mark_remaster_mix_youtube_upload_started(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.complete_remaster_mix_job(uuid, uuid, text, text) from public, anon, authenticated;
 revoke all on function public.fail_remaster_mix_job(uuid, uuid, text, text, boolean) from public, anon, authenticated;
 
 grant execute on function public.claim_remaster_mix_job(text, integer) to service_role;
 grant execute on function public.heartbeat_remaster_mix_job(uuid, uuid, integer, text, integer) to service_role;
+grant execute on function public.mark_remaster_mix_youtube_upload_started(uuid, uuid) to service_role;
 grant execute on function public.complete_remaster_mix_job(uuid, uuid, text, text) to service_role;
 grant execute on function public.fail_remaster_mix_job(uuid, uuid, text, text, boolean) to service_role;
